@@ -1,0 +1,86 @@
+.prose-spec h1,
+.prose-spec h2,
+.prose-spec h3,
+.prose-spec h4,
+.prose-spec h5,
+.prose-spec h6 {
+  position: relative;
+  padding-right: 56px;
+  scroll-margin-top: 10px;
+}
+
+.heading-actions {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 5px;
+  background: var(--c-bg);
+  opacity: 0;
+  transition: opacity 100ms ease;
+  pointer-events: none;
+  user-select: none;
+}
+
+.prose-spec h1:hover .heading-actions,
+.prose-spec h2:hover .heading-actions,
+.prose-spec h3:hover .heading-actions,
+.prose-spec h4:hover .heading-actions,
+.prose-spec h5:hover .heading-actions,
+.prose-spec h6:hover .heading-actions,
+.heading-actions:hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.heading-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--c-subtle);
+  cursor: pointer;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.heading-actions__btn:hover {
+  background: var(--c-accent-soft);
+  color: var(--c-ink);
+}
+
+.heading-actions__btn--disabled,
+.heading-actions__btn--disabled:hover {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: transparent;
+  color: var(--c-subtle);
+}
+
+@keyframes anchor-pulse {
+  0%, 30% {
+    background-color: var(--c-accent-soft);
+    box-shadow: 0 0 0 6px var(--c-accent-soft);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.prose-spec h1.anchor-highlight,
+.prose-spec h2.anchor-highlight,
+.prose-spec h3.anchor-highlight,
+.prose-spec h4.anchor-highlight,
+.prose-spec h5.anchor-highlight,
+.prose-spec h6.anchor-highlight {
+  animation: anchor-pulse 1000ms ease-out;
+  border-radius: 4px;
+}

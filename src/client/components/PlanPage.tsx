@@ -1,0 +1,453 @@
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from '@tanstack/react-router';
+import { MessageSquare, Pencil, Users } from 'lucide-react';
+import { requestChatPrefill } from '../chat/chatPrefill.js';
+import { useChatStore } from '../state/chat.js';
+import { useThreadList } from '../chat/useThreadList.js';
+import {
+  usePlan,
+  usePlanBlame,
+  useSavePlan,
+  useExecutePlan,
+  useUpdatePlanTitle,
+} from '../hooks/usePlan.js';
+import { PlanEditor } from './PlanEditor.js';
+import { ComparePanel } from './ComparePanel.js';
+import { ChatToggleButton } from './ChatToggleButton.js';
+import { OutlineButton } from './OutlineButton.js';
+import type { PlanExecuteMode } from '../../shared/entities.js';
+
+interface Props {
+  planId: number;
+}
+
+type PlanView = 'plan' | 'blame' | 'compare';
+
+export function PlanPage({ planId }: Props) {
+  const navigate = useNavigate();
+  const { data: plan, isLoading } = usePlan(planId);
+  const { data: blame = [] } = usePlanBlame(planId);
+  const savePlan = useSavePlan();
+  const executePlan = useExecutePlan();
+  const updateTitle = useUpdatePlanTitle();
+  const threadList = useThreadList();
+  const setChatThreadId = useChatStore((s) => s.setChatThreadId);
+  const setChatOpen = useChatStore((s) => s.setChatOpen);
+  const activeChatThreadId = useChatStore((s) => s.chatThreadId);
+
+  const attachedThreads = useMemo(
+    () =>
+      plan
+        ? threadList.threads.filter((t) => t.planId === plan.id)
+        : [],
+    [threadList.threads, plan],
+  );
+
+  // Mode='continue' uses currently-open chat thread if it references THIS plan,
+  // else falls back to the most recent attached thread.
+  const continueThreadId = useMemo(() => {
+    if (!plan) return null;
+    if (
+      activeChatThreadId &&
+      attachedThreads.some((t) => t.id === activeChatThreadId)
+    ) {
+      return activeChatThreadId;
+    }
+    return plan.lastThreadId;
+  }, [plan, activeChatThreadId, attachedThreads]);
+
+  const [dirtyContent, setDirtyContent] = useState<string | null>(null);
+  const [view, setView] = useState<PlanView>('plan');
+  const [error, setError] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState('');
+  const [showThreadDropdown, setShowThreadDropdown] = useState(false);
+
+  // Reset dirty when plan refetches to newer version.
+  useEffect(() => {
+    setDirtyContent(null);
+  }, [plan?.currentVersion]);
+
+  const handleSave = useCallback(async () => {
+    if (!plan || dirtyContent === null) return;
+    try {
+      await savePlan.mutateAsync({
+        planId: plan.id,
+        content: dirtyContent,
+      });
+      setDirtyContent(null);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [plan, dirtyContent, savePlan]);
+
+  const handleExecute = useCallback(
+    async (mode: PlanExecuteMode) => {
+      if (!plan) return;
+      try {
+        const threadIdForContinue =
+          mode === 'continue' ? continueThreadId ?? undefined : undefined;
+        if (mode === 'continue' && !threadIdForContinue) {
+          setError('No attached thread available for "continue".');
+          return;
+        }
+        const result = await executePlan.mutateAsync({
+          planId: plan.id,
+          mode,
+          threadId: threadIdForContinue,
+        });
+        setError(null);
+        await threadList.refresh();
+
+        if (result.mode === 'new-session') {
+          setChatThreadId(result.newThreadId);
+          setChatOpen(true);
+          dispatchPrefill(result.firstMessage);
+          navigate({
+            to: '/plans/$planId',
+            params: { planId: String(result.planId) },
+          });
+        } else {
+          setChatThreadId(result.threadId);
+          setChatOpen(true);
+          dispatchPrefill(result.firstMessage);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [
+      plan,
+      executePlan,
+      threadList,
+      setChatThreadId,
+      setChatOpen,
+      navigate,
+      continueThreadId,
+    ],
+  );
+
+  const handleStartEditTitle = useCallback(() => {
+    if (!plan) return;
+    setTitleDraft(plan.title ?? '');
+    setEditingTitle(true);
+  }, [plan]);
+
+  const handleSaveTitle = useCallback(async () => {
+    if (!plan) return;
+    const next = titleDraft.trim() || null;
+    if (next === plan.title) {
+      setEditingTitle(false);
+      return;
+    }
+    try {
+      await updateTitle.mutateAsync({ planId: plan.id, title: next });
+      setEditingTitle(false);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [plan, titleDraft, updateTitle]);
+
+  const handleOpenThread = useCallback(
+    (threadId: string) => {
+      setChatThreadId(threadId);
+      setChatOpen(true);
+      setShowThreadDropdown(false);
+    },
+    [setChatThreadId, setChatOpen],
+  );
+
+  if (isLoading || !plan) {
+    return (
+      <div className="flex-1 flex items-center justify-center px-10">
+        <div className="text-[13px]" style={{ color: 'var(--c-muted)' }}>
+          {isLoading ? 'Loading plan…' : 'Plan not found'}
+        </div>
+      </div>
+    );
+  }
+
+  const isDirty = dirtyContent !== null && dirtyContent !== plan.content;
+  const displayContent = dirtyContent ?? plan.content;
+  const canExecute = plan.content.trim().length > 0;
+
+  return (
+    <div className="flex-1 flex flex-col min-w-0 min-h-0">
+      <header
+        className="flex items-center gap-2 px-5 py-2.5"
+        style={{ borderBottom: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
+      >
+        <div className="flex items-center gap-2 min-w-0">
+          {editingTitle ? (
+            <input
+              type="text"
+              value={titleDraft}
+              autoFocus
+              onChange={(e) => setTitleDraft(e.target.value)}
+              onBlur={handleSaveTitle}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void handleSaveTitle();
+                } else if (e.key === 'Escape') {
+                  setEditingTitle(false);
+                }
+              }}
+              placeholder={`Plan #${plan.id}`}
+              className="text-[13px] font-semibold bg-transparent outline-none"
+              style={{
+                color: 'var(--c-ink)',
+                borderBottom: '1px solid var(--c-accent)',
+                minWidth: 220,
+              }}
+            />
+          ) : (
+            <button
+              onClick={handleStartEditTitle}
+              className="text-[13px] font-semibold btn-ghost rounded px-1 py-0.5 inline-flex items-center gap-1.5"
+              style={{ color: 'var(--c-ink)' }}
+              title="Click to rename plan"
+            >
+              <span className="truncate" style={{ maxWidth: 360 }}>
+                {plan.title ?? `Plan #${plan.id}`}
+              </span>
+              <Pencil size={10} style={{ color: 'var(--c-subtle)' }} />
+            </button>
+          )}
+          <span
+            className="font-mono text-[11px] px-1.5 py-0.5 rounded"
+            style={{
+              background: 'var(--c-hair)',
+              color: 'var(--c-muted)',
+            }}
+          >
+            v{plan.currentVersion}
+          </span>
+          {plan.threadCount > 1 ? (
+            <div className="relative">
+              <button
+                onClick={() => setShowThreadDropdown((v) => !v)}
+                className="font-mono text-[11px] px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                style={{
+                  background: 'var(--c-accent)',
+                  color: '#fff',
+                }}
+                title={`Plan referenced by ${plan.threadCount} threads — click to choose one`}
+              >
+                <Users size={10} />
+                Used by {plan.threadCount} threads
+              </button>
+              {showThreadDropdown ? (
+                <div
+                  className="absolute z-30 mt-1 rounded-md min-w-[240px] py-1"
+                  style={{
+                    background: 'var(--c-card)',
+                    border: '1px solid var(--c-hair-strong)',
+                    boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
+                  }}
+                >
+                  {attachedThreads.length === 0 ? (
+                    <div
+                      className="px-3 py-2 text-[12px]"
+                      style={{ color: 'var(--c-subtle)' }}
+                    >
+                      Loading threads…
+                    </div>
+                  ) : (
+                    attachedThreads.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => handleOpenThread(t.id)}
+                        className="w-full text-left px-3 py-1.5 text-[12px] btn-ghost flex items-center gap-2"
+                        style={{ color: 'var(--c-ink)' }}
+                      >
+                        <MessageSquare size={11} style={{ color: 'var(--c-muted)' }} />
+                        <span className="truncate">{t.title ?? '(untitled)'}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              ) : null}
+            </div>
+          ) : plan.lastThreadId ? (
+            <button
+              onClick={() => handleOpenThread(plan.lastThreadId!)}
+              className="flex items-center gap-1 text-[12px] btn-ghost rounded px-1.5 py-0.5 min-w-0"
+              title="Open attached thread in chat"
+              style={{ color: 'var(--c-muted)' }}
+            >
+              <MessageSquare size={11} />
+              <span className="truncate" style={{ maxWidth: 320 }}>
+                {attachedThreads[0]?.title ?? '(untitled)'}
+              </span>
+            </button>
+          ) : null}
+        </div>
+        <span className="flex-1" />
+        <ViewTabs view={view} onChange={setView} />
+        <OutlineButton />
+        <ChatToggleButton />
+      </header>
+
+      {error ? (
+        <div
+          className="px-5 py-2 text-[12px]"
+          style={{
+            background: 'rgba(179, 58, 58, 0.08)',
+            color: '#b33a3a',
+            borderBottom: '1px solid var(--c-hair)',
+          }}
+        >
+          {error}
+        </div>
+      ) : null}
+
+      <div className="flex-1 flex min-w-0 min-h-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+          {view === 'plan' || view === 'blame' ? (
+            <>
+              <PlanEditor
+                content={displayContent}
+                onChange={(md, dirty) => setDirtyContent(dirty ? md : null)}
+                blame={blame}
+                blameOn={view === 'blame'}
+                currentPage={`/plans/${plan.id}`}
+              />
+              {(isDirty || canExecute) && (
+                <footer
+                  className="px-5 py-2.5 flex items-center gap-2"
+                  style={{ borderTop: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
+                >
+                  {isDirty ? (
+                    <button
+                      onClick={handleSave}
+                      disabled={savePlan.isPending}
+                      className="text-[12.5px] px-3 py-1.5 rounded"
+                      style={{
+                        background: 'var(--c-accent)',
+                        color: '#fff',
+                        opacity: savePlan.isPending ? 0.6 : 1,
+                      }}
+                    >
+                      {savePlan.isPending ? 'Saving…' : 'Save'}
+                    </button>
+                  ) : null}
+                  {isDirty ? (
+                    <button
+                      onClick={() => setDirtyContent(null)}
+                      disabled={savePlan.isPending}
+                      className="text-[12.5px] px-2.5 py-1 rounded btn-ghost"
+                      style={{ color: 'var(--c-muted)' }}
+                    >
+                      Discard
+                    </button>
+                  ) : null}
+                  <div className="flex-1" />
+                  {canExecute ? (
+                    <>
+                      <button
+                        onClick={() => handleExecute('new-session')}
+                        disabled={executePlan.isPending}
+                        className="text-[12.5px] px-3 py-1.5 rounded"
+                        style={{
+                          background: 'var(--c-accent)',
+                          color: '#fff',
+                        }}
+                      >
+                        Run in new thread
+                      </button>
+                      <button
+                        onClick={() => handleExecute('continue')}
+                        disabled={
+                          executePlan.isPending || !continueThreadId
+                        }
+                        title={
+                          continueThreadId
+                            ? 'Continue running in attached thread'
+                            : 'No attached thread — open one first or use "Run in new thread"'
+                        }
+                        className="text-[12.5px] px-3 py-1.5 rounded"
+                        style={{
+                          background: 'var(--c-card)',
+                          border: '1px solid var(--c-hair-strong)',
+                          color: continueThreadId
+                            ? 'var(--c-ink)'
+                            : 'var(--c-subtle)',
+                          cursor: continueThreadId ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        Run in thread
+                      </button>
+                    </>
+                  ) : null}
+                </footer>
+              )}
+            </>
+          ) : (
+            <ComparePanel planId={plan.id} currentVersion={plan.currentVersion} />
+          )}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
+function ViewTabs({
+  view,
+  onChange,
+}: {
+  view: PlanView;
+  onChange(next: PlanView): void;
+}) {
+  return (
+    <div
+      className="flex items-center gap-0.5 p-0.5 rounded-md"
+      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+    >
+      <ViewTabButton label="Plan" active={view === 'plan'} onClick={() => onChange('plan')} />
+      <ViewTabButton
+        label="Blame"
+        active={view === 'blame'}
+        onClick={() => onChange('blame')}
+      />
+      <ViewTabButton
+        label="Compare"
+        active={view === 'compare'}
+        onClick={() => onChange('compare')}
+      />
+    </div>
+  );
+}
+
+function ViewTabButton({
+  label,
+  active,
+  onClick,
+}: {
+  label: string;
+  active: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="px-2 py-0.5 rounded text-[11.5px] font-medium"
+      style={{
+        background: active ? 'var(--c-card)' : 'transparent',
+        color: active ? 'var(--c-ink)' : 'var(--c-muted)',
+        border: active ? '1px solid var(--c-hair-strong)' : '1px solid transparent',
+        cursor: 'pointer',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+function dispatchPrefill(prompt: string): void {
+  requestChatPrefill({ prompt });
+}

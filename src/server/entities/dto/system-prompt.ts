@@ -1,0 +1,14 @@
+import type { SystemPromptContribution } from '../../../shared/plugin-host/types.js';
+
+export const dtoSystemPrompt: SystemPromptContribution = {
+  roleNoun: 'DTOs',
+  countStat: {
+    placeholder: 'dtoCount',
+    sqlQuery: 'SELECT COUNT(*) AS count FROM dto',
+    label: 'dtos',
+  },
+  mcpToolsLine:
+    'dto-tools: create_dto, get_dto, update_dto, delete_dto, list_dtos',
+  narrativeBlock:
+    'Data Transfer Objects (fields with types, validation, linked endpoints)',
+};
