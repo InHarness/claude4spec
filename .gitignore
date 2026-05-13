@@ -15,6 +15,8 @@ pages/
 # Prywatne skille (osobne repo: InHarness/claude4spec-private)
 .claude/skills/specyfikacja
 .claude/skills/pozycjonowanie
+.claude/skills/release-process
+
 
 # Pliki notatek / draftów
 PLAN-*.md
