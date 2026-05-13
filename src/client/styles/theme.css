@@ -1,0 +1,573 @@
+:root {
+  /* Warm paper-like palette inspired by Obsidian/Notion */
+  --c-bg: #faf8f4;
+  --c-panel: #f3efe7;
+  --c-card: #fffdf8;
+  --c-ink: #2a2722;
+  --c-muted: #7a7368;
+  --c-subtle: #a39b8e;
+  --c-hair: #e8e2d5;
+  --c-hair-strong: #d8d1c0;
+  --c-accent: #c45a3b;
+  --c-accent-soft: #f5dfd3;
+  --c-accent-ink: #8a3a22;
+  --c-yellow: #f9e6a2;
+  --c-yellow-ink: #7a5c00;
+  --c-green: #6e8a5f;
+  --c-green-soft: #dfe7d6;
+  --c-blue: #5d7ea2;
+  --c-blue-soft: #d8e2ef;
+  --c-purple: #8a6da3;
+  --c-purple-soft: #e3d8ec;
+  --c-red: #b6553c;
+  --c-red-soft: #efd4c9;
+}
+
+.dark {
+  --c-bg: #1b1a17;
+  --c-panel: #242320;
+  --c-card: #2c2b27;
+  --c-ink: #ece7dc;
+  --c-muted: #9a9184;
+  --c-subtle: #6a6357;
+  --c-hair: #383530;
+  --c-hair-strong: #4a463e;
+  --c-accent: #e07a5c;
+  --c-accent-soft: #4a2a1e;
+  --c-accent-ink: #f3b49a;
+  --c-yellow: #5a4820;
+  --c-yellow-ink: #e8cf7a;
+  --c-green: #8fa87f;
+  --c-green-soft: #2f3d28;
+  --c-blue: #8aa5c9;
+  --c-blue-soft: #2a3646;
+  --c-purple: #b39cca;
+  --c-purple-soft: #3a2f46;
+  --c-red: #d87a5f;
+  --c-red-soft: #4a2820;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--c-bg);
+  color: var(--c-ink);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* editor prose */
+.prose-spec h1 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 600;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+.prose-spec h2 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 600;
+  margin: 34px 0 10px;
+  letter-spacing: -0.005em;
+}
+.prose-spec h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 22px 0 6px;
+  color: var(--c-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.prose-spec p {
+  font-size: 15.5px;
+  line-height: 1.7;
+  margin: 0 0 14px;
+  color: var(--c-ink);
+}
+.prose-spec p.lede {
+  font-size: 17px;
+  color: var(--c-muted);
+  font-style: italic;
+  font-family: 'Lora', serif;
+}
+/* wrapped in @layer components so rules land AFTER tailwind preflight
+   (which is in @layer base) — :where() keeps specificity at (0,0,1), so the
+   .not-prose reset below (same layer, later in source) still wins locally,
+   and tailwind utilities in @layer utilities win naturally */
+@layer components {
+  :where(.prose-spec) ul {
+    margin: 8px 0 16px;
+    padding-left: 22px;
+    list-style-type: disc;
+  }
+  :where(.prose-spec) ol {
+    margin: 8px 0 16px;
+    padding-left: 22px;
+    list-style-type: decimal;
+  }
+  :where(.prose-spec) ul ul { list-style-type: circle; }
+  :where(.prose-spec) ul ul ul { list-style-type: square; }
+  :where(.prose-spec) ol ol { list-style-type: lower-alpha; }
+  :where(.prose-spec) ol ol ol { list-style-type: lower-roman; }
+  :where(.prose-spec) li {
+    font-size: 15.5px;
+    line-height: 1.65;
+    margin: 4px 0;
+  }
+  :where(.prose-spec) li::marker {
+    color: var(--c-subtle);
+  }
+  :where(.prose-spec) ul[data-type="taskList"] {
+    list-style: none;
+    padding-left: 0;
+  }
+  :where(.prose-spec) ul[data-type="taskList"] li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 4px 0;
+  }
+  :where(.prose-spec) ul[data-type="taskList"] li::marker {
+    content: none;
+  }
+  :where(.prose-spec) ul[data-type="taskList"] li > label {
+    flex: 0 0 auto;
+    margin-top: 2px;
+    user-select: none;
+  }
+  :where(.prose-spec) ul[data-type="taskList"] li > div {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  :where(.prose-spec) ul[data-type="taskList"] input[type="checkbox"] {
+    accent-color: var(--c-accent);
+    cursor: pointer;
+  }
+}
+.prose-spec code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--c-accent-ink);
+}
+.prose-spec pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-hair);
+  border-radius: 6px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 10px 0 16px;
+}
+.prose-spec pre code {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--c-ink);
+}
+.prose-spec strong {
+  font-weight: 600;
+  color: var(--c-ink);
+}
+.prose-spec blockquote {
+  border-left: 3px solid var(--c-accent);
+  padding: 2px 0 2px 14px;
+  margin: 16px 0;
+  color: var(--c-muted);
+  font-style: italic;
+}
+.prose-spec a {
+  color: var(--c-accent-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--c-hair-strong);
+  text-underline-offset: 3px;
+}
+.prose-spec hr {
+  border: 0;
+  border-top: 1px solid var(--c-hair);
+  margin: 24px 0;
+}
+.prose-spec table {
+  width: 100%;
+  font-size: 13.5px;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+.prose-spec th,
+.prose-spec td {
+  border: 1px solid var(--c-hair);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.prose-spec th {
+  background: var(--c-panel);
+  font-weight: 600;
+  color: var(--c-accent-ink);
+}
+.prose-spec .selectedCell {
+  background: color-mix(in srgb, var(--c-accent) 10%, transparent);
+}
+
+.prose-spec .ProseMirror:focus {
+  outline: none;
+}
+.prose-spec .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--c-subtle);
+  pointer-events: none;
+  height: 0;
+}
+
+/* reset prose-spec defaults for react-rendered nodeViews (entity cards).
+   Wrapped in :where() so specificity stays at element-level (0,0,1) —
+   tailwind utilities (mt-2, pl-0, text-[12px]) win naturally, and only
+   elements without explicit utility overrides get the reset defaults.
+   Must share @layer components with the .prose-spec list rules above so that
+   source order decides — .not-prose is later → wins locally inside node views */
+@layer components {
+  :where(.not-prose) ul,
+  :where(.not-prose) ol {
+    padding-left: 0;
+    margin: 0;
+    list-style: none;
+  }
+  :where(.not-prose) li {
+    margin: 0;
+  }
+  :where(.not-prose) li::marker {
+    content: none;
+  }
+  :where(.not-prose) p {
+    margin: 0;
+  }
+}
+
+/* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */
+.chat-input-pm {
+  font-size: 13px;
+  line-height: 1.54;
+  min-height: 20px;
+  color: var(--c-ink);
+}
+.chat-input-pm p {
+  margin: 0;
+}
+.chat-input-pm p + p {
+  margin-top: 0.25em;
+}
+.chat-input-pm p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--c-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+/* chat assistant prose — compact variant of prose-spec */
+.chat-prose {
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--c-ink);
+}
+.chat-prose > *:first-child { margin-top: 0; }
+.chat-prose > *:last-child { margin-bottom: 0; }
+.chat-prose h1 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 18px;
+  font-weight: 600;
+  margin: 10px 0 6px;
+  line-height: 1.25;
+}
+.chat-prose h2 {
+  font-family: 'Lora', Georgia, serif;
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 12px 0 4px;
+  line-height: 1.3;
+}
+.chat-prose h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 12px 0 2px;
+  color: var(--c-ink);
+}
+.chat-prose p {
+  font-size: 13.5px;
+  line-height: 1.6;
+  margin: 0 0 8px;
+}
+.chat-prose ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+.chat-prose ol {
+  margin: 4px 0 8px;
+  padding-left: 22px;
+  list-style-type: decimal;
+}
+.chat-prose ul ul { list-style-type: circle; }
+.chat-prose ul ul ul { list-style-type: square; }
+.chat-prose ol ol { list-style-type: lower-alpha; }
+.chat-prose ol ol ol { list-style-type: lower-roman; }
+.chat-prose li {
+  font-size: 13.5px;
+  line-height: 1.55;
+  margin: 2px 0;
+}
+.chat-prose li::marker {
+  color: var(--c-subtle);
+}
+.chat-prose li > p { margin: 0; }
+.chat-prose blockquote {
+  border-left: 3px solid var(--c-accent);
+  padding: 2px 0 2px 10px;
+  margin: 8px 0;
+  color: var(--c-muted);
+  font-style: italic;
+}
+.chat-prose a {
+  color: var(--c-accent-ink);
+  text-decoration: underline;
+  text-decoration-color: var(--c-hair-strong);
+  text-underline-offset: 2px;
+}
+.chat-prose strong { font-weight: 600; color: var(--c-ink); }
+.chat-prose em { font-style: italic; }
+.chat-prose hr {
+  border: 0;
+  border-top: 1px solid var(--c-hair);
+  margin: 12px 0;
+}
+.chat-prose :not(pre) > code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-hair);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--c-accent-ink);
+}
+.chat-prose table {
+  font-size: 12.5px;
+  border-collapse: collapse;
+  margin: 8px 0;
+  display: block;
+  overflow-x: auto;
+}
+.chat-prose th,
+.chat-prose td {
+  border: 1px solid var(--c-hair);
+  padding: 4px 8px;
+  text-align: left;
+}
+.chat-prose th {
+  background: var(--c-panel);
+  font-weight: 600;
+}
+
+/* scrollbar */
+.nice-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.nice-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.nice-scroll::-webkit-scrollbar-thumb {
+  background: var(--c-hair-strong);
+  border-radius: 999px;
+  border: 2px solid var(--c-bg);
+}
+.nice-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-subtle);
+}
+
+/* caret */
+@keyframes caret-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+.caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.15em;
+  background: var(--c-accent);
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  animation: caret-blink 1.1s step-end infinite;
+}
+
+/* streaming dots */
+@keyframes dot-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.dot-pulse span {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin: 0 1.5px;
+  background: var(--c-muted);
+  border-radius: 999px;
+  animation: dot-pulse 1.2s infinite ease-in-out;
+}
+.dot-pulse span:nth-child(2) { animation-delay: 0.15s; }
+.dot-pulse span:nth-child(3) { animation-delay: 0.3s; }
+
+/* JSON-view button on tool card bars */
+.tool-json-btn {
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tool-json-btn:hover {
+  background: var(--c-hair);
+  color: var(--c-ink);
+}
+
+/* Cross-browser thin auto-hide scrollbar dla wąskich pre-bloków */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.scroll-thin:hover,
+.scroll-thin:focus-within {
+  scrollbar-color: var(--c-hair-strong) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+  background: transparent;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 3px;
+  transition: background 120ms ease;
+}
+.scroll-thin:hover::-webkit-scrollbar-thumb,
+.scroll-thin:focus-within::-webkit-scrollbar-thumb {
+  background: var(--c-hair-strong);
+}
+.scroll-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--c-muted);
+}
+
+/* thin rule */
+.hair { background: var(--c-hair); }
+.hair-strong { background: var(--c-hair-strong); }
+
+/* ripple for chat messages appearing */
+@keyframes fade-in-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.fade-in-up { animation: fade-in-up 0.35s ease-out both; }
+.msg-enter { animation: fade-in-up 0.4s ease-out both; }
+
+/* subtle grain for the background */
+.paper {
+  background-color: var(--c-bg);
+  background-image: radial-gradient(rgba(120, 100, 60, 0.04) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* buttons */
+.btn-ghost { color: var(--c-muted); }
+.btn-ghost:hover {
+  color: var(--c-ink);
+  background: var(--c-panel);
+}
+
+/* focus */
+.focus-ring:focus {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
+}
+
+/* tag chip animation on hover */
+.chip-hover:hover { filter: brightness(0.96); }
+
+/* kbd */
+kbd {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  padding: 1.5px 5px;
+  border: 1px solid var(--c-hair-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--c-card);
+  color: var(--c-muted);
+}
+
+/* annotation highlight */
+.anno-hl {
+  background: var(--c-yellow);
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.15);
+  padding: 0 2px;
+  border-radius: 2px;
+  cursor: help;
+}
+
+/* tiptap selection */
+::selection {
+  background: var(--c-yellow);
+  color: var(--c-ink);
+}
+
+/* M10 — plan blame highlighting (paragraph-level per-version).
+   Pseudo-elements sit in the container's left padding gutter so they never
+   shift or overlap the block itself (important for tables, which override
+   margin via higher-specificity `.prose-spec table`). */
+.plan-blame {
+  position: relative;
+}
+.plan-blame::before {
+  content: '';
+  position: absolute;
+  left: -16px;
+  top: 2px;
+  bottom: 2px;
+  width: 3px;
+  border-radius: 1.5px;
+  background: var(--blame-color, var(--c-accent));
+  pointer-events: none;
+}
+.plan-blame::after {
+  content: 'v' attr(data-version);
+  position: absolute;
+  left: -40px;
+  top: 3px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--blame-color, var(--c-accent));
+  opacity: 0.85;
+  pointer-events: none;
+  user-select: none;
+}
+.plan-blame-v1 { --blame-color: #c45a3b; }
+.plan-blame-v2 { --blame-color: #5d7ea2; }
+.plan-blame-v3 { --blame-color: #6e8a5f; }
+.plan-blame-v4 { --blame-color: #8a6da3; }
+.plan-blame-v5 { --blame-color: #b6553c; }
+.plan-blame-v6 { --blame-color: #7a7368; }
+.plan-blame-v7 { --blame-color: #c4a24f; }
+.plan-blame-v8 { --blame-color: #4d7e86; }
+

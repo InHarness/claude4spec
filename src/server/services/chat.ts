@@ -1,0 +1,449 @@
+import type Database from 'better-sqlite3';
+import { nanoid } from 'nanoid';
+import type {
+  ChatContextType,
+  ChatMessage,
+  ChatMessageStatus,
+  ChatRole,
+  ChatSubagentTask,
+  ChatThread,
+  ChatThreadMeta,
+  TodoItem,
+  UsageStats,
+} from '../../shared/entities.js';
+import { DomainError } from './tags.js';
+
+interface ChatThreadRow {
+  id: string;
+  title: string | null;
+  last_session_id: string | null;
+  initial_system_prompt: string | null;
+  current_todo_items: string | null;
+  plan_mode: number;
+  last_usage_json: string | null;
+  last_context_size: number | null;
+  plan_id: number | null;
+  last_seen_plan_version: number | null;
+  has_system_prompt: number;
+  context_type: string;
+  brief_path: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ChatMessageRow {
+  id: number;
+  thread_id: string;
+  role: string;
+  content: string;
+  tool_name: string | null;
+  tool_id: string | null;
+  subagent_task_id: string | null;
+  plan_mode: number;
+  status: string;
+  usage_json: string | null;
+  context_size: number | null;
+  created_at: string;
+}
+
+interface ChatSubagentTaskRow {
+  thread_id: string;
+  task_id: string;
+  tool_use_id: string | null;
+  description: string;
+  status: string;
+  summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export class ChatService {
+  constructor(private db: Database.Database) {}
+
+  createThread(
+    title: string | null = null,
+    opts: { contextType?: ChatContextType; briefPath?: string | null } = {},
+  ): ChatThread {
+    const id = nanoid(12);
+    const contextType: ChatContextType = opts.contextType ?? 'chat';
+    const briefPath = opts.briefPath ?? null;
+    // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
+    if (contextType === 'brief' && !briefPath) {
+      throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
+    }
+    this.db
+      .prepare(
+        `INSERT INTO chat_thread (id, title, context_type, brief_path) VALUES (?, ?, ?, ?)`,
+      )
+      .run(id, title, contextType, briefPath);
+    return this.getThreadRow(id);
+  }
+
+  /** M21: list threads attached to a brief (path-keyed lookup). */
+  listThreadsForBrief(briefPath: string): ChatThreadMeta[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*,
+                COUNT(m.id) AS message_count,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+           FROM chat_thread t
+           LEFT JOIN chat_message m ON m.thread_id = t.id
+          WHERE t.brief_path = ? AND t.context_type = 'brief'
+          GROUP BY t.id
+          ORDER BY t.updated_at DESC`,
+      )
+      .all(briefPath) as Array<ChatThreadRow & { message_count: number }>;
+    return rows.map((r) => ({
+      ...this.hydrateThread(r),
+      messageCount: r.message_count,
+    }));
+  }
+
+  /** M21: count threads for a brief (cheap version of listThreadsForBrief for list UI). */
+  threadCountForBrief(briefPath: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM chat_thread WHERE brief_path = ? AND context_type = 'brief'`,
+      )
+      .get(briefPath) as { n: number };
+    return row.n;
+  }
+
+  listThreads(): ChatThreadMeta[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*,
+                COUNT(m.id) AS message_count,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+           FROM chat_thread t
+           LEFT JOIN chat_message m ON m.thread_id = t.id
+          GROUP BY t.id
+          ORDER BY t.updated_at DESC`
+      )
+      .all() as Array<ChatThreadRow & { message_count: number }>;
+    return rows.map((r) => ({
+      ...this.hydrateThread(r),
+      messageCount: r.message_count,
+    }));
+  }
+
+  getThread(
+    id: string,
+    limit?: number,
+    offset?: number
+  ): { thread: ChatThread; messages: ChatMessage[]; subagentTasks: ChatSubagentTask[] } | null {
+    const thread = this.findThread(id);
+    if (!thread) return null;
+    const messages = this.getMessages(id, limit, offset);
+    const subagentTasks = this.listSubagentTasks(id);
+    return { thread, messages, subagentTasks };
+  }
+
+  getThreadMeta(id: string): ChatThread | null {
+    return this.findThread(id);
+  }
+
+  deleteThread(id: string): { deleted: true } {
+    const info = this.db.prepare(`DELETE FROM chat_thread WHERE id = ?`).run(id);
+    if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${id}' not found`);
+    return { deleted: true };
+  }
+
+  addMessage(
+    threadId: string,
+    role: ChatRole,
+    content: string,
+    toolName: string | null = null,
+    toolId: string | null = null,
+    subagentTaskId: string | null = null,
+    planMode = false,
+    status: ChatMessageStatus = 'complete'
+  ): ChatMessage {
+    const tx = this.db.transaction(() => {
+      const info = this.db
+        .prepare(
+          `INSERT INTO chat_message (thread_id, role, content, tool_name, tool_id, subagent_task_id, plan_mode, status)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(threadId, role, content, toolName, toolId, subagentTaskId, planMode ? 1 : 0, status);
+      this.db
+        .prepare(`UPDATE chat_thread SET updated_at = datetime('now') WHERE id = ?`)
+        .run(threadId);
+      const row = this.db
+        .prepare(`SELECT * FROM chat_message WHERE id = ?`)
+        .get(info.lastInsertRowid) as ChatMessageRow;
+      return this.hydrateMessage(row);
+    });
+    return tx();
+  }
+
+  startSubagentTask(
+    threadId: string,
+    taskId: string,
+    description: string,
+    toolUseId: string | null
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO chat_subagent_task (thread_id, task_id, tool_use_id, description, status)
+         VALUES (?, ?, ?, ?, 'running')
+         ON CONFLICT(thread_id, task_id) DO UPDATE SET
+           tool_use_id = COALESCE(excluded.tool_use_id, chat_subagent_task.tool_use_id),
+           description = excluded.description,
+           updated_at  = datetime('now')`
+      )
+      .run(threadId, taskId, toolUseId, description);
+  }
+
+  updateSubagentTaskProgress(threadId: string, taskId: string, description: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_subagent_task
+            SET description = ?, updated_at = datetime('now')
+          WHERE thread_id = ? AND task_id = ?`
+      )
+      .run(description, threadId, taskId);
+  }
+
+  completeSubagentTask(
+    threadId: string,
+    taskId: string,
+    status: string,
+    summary: string | null
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE chat_subagent_task
+            SET status = ?, summary = ?, updated_at = datetime('now')
+          WHERE thread_id = ? AND task_id = ?`
+      )
+      .run(status, summary, threadId, taskId);
+  }
+
+  listSubagentTasks(threadId: string): ChatSubagentTask[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM chat_subagent_task
+          WHERE thread_id = ?
+          ORDER BY created_at ASC`
+      )
+      .all(threadId) as ChatSubagentTaskRow[];
+    return rows.map((r) => this.hydrateSubagentTask(r));
+  }
+
+  getMessages(threadId: string, limit?: number, offset?: number): ChatMessage[] {
+    const rows =
+      limit === undefined
+        ? (this.db
+            .prepare(
+              `SELECT * FROM chat_message
+                WHERE thread_id = ?
+                ORDER BY id ASC`
+            )
+            .all(threadId) as ChatMessageRow[])
+        : (this.db
+            .prepare(
+              `SELECT * FROM chat_message
+                WHERE thread_id = ?
+                ORDER BY id ASC
+                LIMIT ? OFFSET ?`
+            )
+            .all(threadId, limit, offset ?? 0) as ChatMessageRow[]);
+    return rows.map((r) => this.hydrateMessage(r));
+  }
+
+  updateTitle(threadId: string, title: string): void {
+    const info = this.db
+      .prepare(`UPDATE chat_thread SET title = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(title, threadId);
+    if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
+  }
+
+  setLastSessionId(threadId: string, sessionId: string): void {
+    this.db
+      .prepare(`UPDATE chat_thread SET last_session_id = ? WHERE id = ?`)
+      .run(sessionId, threadId);
+  }
+
+  setInitialSystemPrompt(threadId: string, prompt: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_thread SET initial_system_prompt = ?
+           WHERE id = ? AND initial_system_prompt IS NULL`
+      )
+      .run(prompt, threadId);
+  }
+
+  getInitialSystemPrompt(threadId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT initial_system_prompt FROM chat_thread WHERE id = ?`)
+      .get(threadId) as { initial_system_prompt: string | null } | undefined;
+    return row?.initial_system_prompt ?? null;
+  }
+
+  setLastUsage(threadId: string, usage: UsageStats): void {
+    this.db
+      .prepare(`UPDATE chat_thread SET last_usage_json = ? WHERE id = ?`)
+      .run(JSON.stringify(usage), threadId);
+  }
+
+  attachTurnUsage(threadId: string, messageId: number, usage: UsageStats): void {
+    this.db
+      .prepare(
+        `UPDATE chat_message SET usage_json = ? WHERE id = ? AND thread_id = ?`
+      )
+      .run(JSON.stringify(usage), messageId, threadId);
+  }
+
+  setLastContextSize(threadId: string, contextSize: number): void {
+    this.db
+      .prepare(`UPDATE chat_thread SET last_context_size = ? WHERE id = ?`)
+      .run(contextSize, threadId);
+  }
+
+  attachTurnContextSize(threadId: string, messageId: number, contextSize: number): void {
+    this.db
+      .prepare(
+        `UPDATE chat_message SET context_size = ? WHERE id = ? AND thread_id = ?`
+      )
+      .run(contextSize, messageId, threadId);
+  }
+
+  markToolUseComplete(threadId: string, toolUseId: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_message SET status = 'complete'
+           WHERE thread_id = ? AND tool_id = ? AND role = 'tool_use'`
+      )
+      .run(threadId, toolUseId);
+  }
+
+  finalizeStreamingRows(threadId: string): void {
+    this.db
+      .prepare(
+        `UPDATE chat_message SET status = 'complete'
+           WHERE thread_id = ? AND status = 'streaming'`
+      )
+      .run(threadId);
+  }
+
+  finalizeAllStreamingRows(): void {
+    this.db
+      .prepare(`UPDATE chat_message SET status = 'complete' WHERE status = 'streaming'`)
+      .run();
+  }
+
+  updateCurrentTodoItems(threadId: string, items: TodoItem[] | null): void {
+    const payload = items && items.length > 0 ? JSON.stringify(items) : null;
+    this.db
+      .prepare(`UPDATE chat_thread SET current_todo_items = ? WHERE id = ?`)
+      .run(payload, threadId);
+  }
+
+  updateThreadSettings(threadId: string, patch: { planMode?: boolean }): ChatThread {
+    if (patch.planMode !== undefined) {
+      const info = this.db
+        .prepare(
+          `UPDATE chat_thread SET plan_mode = ?, updated_at = datetime('now') WHERE id = ?`
+        )
+        .run(patch.planMode ? 1 : 0, threadId);
+      if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
+    }
+    return this.getThreadRow(threadId);
+  }
+
+  private findThread(id: string): ChatThread | null {
+    const row = this.db
+      .prepare(
+        `SELECT t.*,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+           FROM chat_thread t
+          WHERE t.id = ?`
+      )
+      .get(id) as ChatThreadRow | undefined;
+    return row ? this.hydrateThread(row) : null;
+  }
+
+  private getThreadRow(id: string): ChatThread {
+    const thread = this.findThread(id);
+    if (!thread) throw new Error(`thread ${id} disappeared mid-tx`);
+    return thread;
+  }
+
+  private hydrateThread(row: ChatThreadRow): ChatThread {
+    const usage = parseUsage(row.last_usage_json);
+    // Backward-compat: stare wątki bez kolumny last_context_size — fallback do
+    // usage.inputTokens + usage.outputTokens (mirror `contextSizeOf` z library).
+    // Wątki migracja-uwsteczna: zawsze NULL → fallback. Po pierwszej turze post-024
+    // server zapisze realny contextSize i fallback przestanie być potrzebny.
+    const contextSize =
+      row.last_context_size ?? (usage ? usage.inputTokens + usage.outputTokens : null);
+    return {
+      id: row.id,
+      title: row.title,
+      lastSessionId: row.last_session_id,
+      currentTodoItems: parseTodoItems(row.current_todo_items),
+      planMode: row.plan_mode === 1,
+      usage,
+      contextSize,
+      planId: row.plan_id ?? null,
+      lastSeenPlanVersion: row.last_seen_plan_version ?? null,
+      hasSystemPrompt: row.has_system_prompt === 1,
+      contextType: (row.context_type === 'brief' ? 'brief' : 'chat') as ChatContextType,
+      briefPath: row.brief_path,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private hydrateMessage(row: ChatMessageRow): ChatMessage {
+    return {
+      id: row.id,
+      threadId: row.thread_id,
+      role: row.role as ChatRole,
+      content: row.content,
+      toolName: row.tool_name,
+      toolId: row.tool_id,
+      subagentTaskId: row.subagent_task_id,
+      planMode: row.plan_mode === 1,
+      status: row.status === 'streaming' ? 'streaming' : 'complete',
+      usage: parseUsage(row.usage_json),
+      contextSize: row.context_size ?? null,
+      createdAt: row.created_at,
+    };
+  }
+
+  private hydrateSubagentTask(row: ChatSubagentTaskRow): ChatSubagentTask {
+    return {
+      threadId: row.thread_id,
+      taskId: row.task_id,
+      toolUseId: row.tool_use_id,
+      description: row.description,
+      status: row.status,
+      summary: row.summary,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+}
+
+function parseTodoItems(raw: string | null): TodoItem[] | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as TodoItem[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseUsage(raw: string | null): UsageStats | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object') return parsed as UsageStats;
+    return null;
+  } catch {
+    return null;
+  }
+}

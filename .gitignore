@@ -1,0 +1,27 @@
+node_modules/
+dist/
+data/
+sandbox/
+.claude4spec/
+.DS_Store
+*.log
+.env
+.env.local
+.claude/plans/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
+pages/
+
+# Prywatne skille (osobne repo: InHarness/claude4spec-private)
+.claude/skills/specyfikacja
+.claude/skills/pozycjonowanie
+
+# Pliki notatek / draftów
+PLAN-*.md
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# npm auth (token z .env)
+.npmrc
+
