@@ -17,6 +17,14 @@ pages/
 .claude/skills/pozycjonowanie
 .claude/skills/release-process
 
+# Prywatne skrypty (osobne repo: InHarness/claude4spec-private)
+scripts/deploy-site.sh
+scripts/screenshot.mjs
+scripts/agent-spike.ts
+scripts/roundtrip-check.ts
+scripts/deps-link.mjs
+scripts/deps-unlink.mjs
+
 
 # Pliki notatek / draftów
 PLAN-*.md
