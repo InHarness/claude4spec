@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-05-14
+
+### Changed
+- Rewrote `README.md` with new positioning ("plan the whole system before your agent writes a line of code"), badges, requirements section, screenshot embeds, and clearer CLI/MCP guidance.
+- Updated `package.json` `description` to match the new positioning.
+- Polished marketing site (`site/index.html`): chat-overlay mock layout, copy refinements, command-box width.
+
+### Added
+- `docs/screenshots/hero.png` and `docs/screenshots/hero-dark.png` referenced by the README.
+
 ## [1.0.1] - 2026-05-13
 
 ### Fixed
@@ -22,3 +32,5 @@ Initial public release.
 - Skills `c4s-spec-reader` and `c4s-brief-implementer` for Claude Code integration.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
+
+[1.0.2]: https://github.com/InHarness/claude4spec/compare/v1.0.1...v1.0.2

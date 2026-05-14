@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>claude4spec — plan the whole system before your agent writes a line of code</title>
-<meta name="description" content="Pre-code planning layer for people who build with AI. Structured entities (endpoints, DTOs, tables) with typed relations and impact analysis. Your agent generates against the plan, not the chat log. Local-first. npx claude4spec." />
+<meta name="description" content="Pre-code planning layer for people who build with AI. Structured entities (endpoints, DTOs, tables) with typed relations and impact analysis. Your agent generates against the plan, not the chat log. Local-first. npx @inharness-ai/claude4spec." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -149,7 +149,7 @@
     cursor: pointer;
     transition: border-color .15s, background .15s;
     user-select: none;
-    max-width: 360px;
+    max-width: 440px;
   }
   .cmd-box:hover { border-color: var(--c-accent); }
   .cmd-box .prompt { color: var(--c-muted); user-select: none; }
@@ -407,37 +407,67 @@
   .chrome-title { flex: 1; text-align: center; color: var(--c-ink); opacity: 0.8; }
   .chrome-meta { color: var(--c-subtle); }
 
-  /* 3-panel body */
+  /* 2-panel body (chat is an overlay on the right) */
   .app-mock-body {
     display: grid;
-    grid-template-columns: 196px 1fr 300px;
+    grid-template-columns: 232px 1fr;
     min-height: 520px;
     background: var(--c-bg);
+    position: relative;
   }
 
   /* ---- Sidebar ---- */
   .app-sidebar {
     border-right: 1px solid var(--c-hair);
     background: var(--c-panel);
-    padding: 14px 0;
+    padding: 14px 0 0;
     font-size: 12.5px;
     display: flex; flex-direction: column; gap: 4px;
+    min-width: 0;
   }
   .sb-header {
     display: flex; align-items: center; gap: 10px;
-    padding: 4px 14px 14px;
+    padding: 2px 12px 12px;
     border-bottom: 1px solid var(--c-hair);
-    margin-bottom: 10px;
+    margin-bottom: 8px;
   }
+  .sb-header .sb-identity { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
   .sb-logo {
-    width: 24px; height: 24px; border-radius: 5px;
-    background: var(--c-accent); color: #fff;
+    width: 22px; height: 22px; border-radius: 5px;
+    background: var(--c-accent-soft); color: var(--c-accent-ink);
     display: flex; align-items: center; justify-content: center;
-    font-family: 'Lora', serif; font-weight: 600; font-size: 12px;
-    letter-spacing: -0.02em;
+    flex-shrink: 0;
   }
+  .sb-logo svg { width: 13px; height: 13px; }
   .sb-title { font-weight: 600; font-size: 12.5px; color: var(--c-ink); line-height: 1.2; }
-  .sb-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--c-subtle); line-height: 1.3; margin-top: 1px; }
+  .sb-sub { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--c-subtle); line-height: 1.3; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sb-theme-btn {
+    width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 5px;
+    color: var(--c-subtle);
+    background: transparent;
+    flex-shrink: 0;
+  }
+  .sb-theme-btn svg { width: 13px; height: 13px; }
+
+  .sb-search {
+    margin: 0 12px 10px;
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 8px;
+    background: var(--c-bg);
+    border: 1px solid var(--c-hair);
+    border-radius: 5px;
+    color: var(--c-subtle);
+  }
+  .sb-search svg { width: 11px; height: 11px; flex-shrink: 0; }
+  .sb-search .sb-search-input {
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    color: var(--c-subtle);
+    flex: 1;
+    font-style: italic;
+  }
 
   .sb-section-head {
     font-family: 'JetBrains Mono', monospace;
@@ -478,12 +508,39 @@
     color: var(--c-muted);
     opacity: 0.7;
   }
+  .sb-tree li.sb-elem { padding: 4px 10px; gap: 8px; }
+  .sb-tree li.sb-elem::before { display: none; }
+  .sb-tree li.sb-elem .sb-elem-icon {
+    width: 14px; height: 14px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--c-muted);
+    flex-shrink: 0;
+  }
+  .sb-tree li.sb-elem .sb-elem-icon svg { width: 12px; height: 12px; }
+
+  .sb-others {
+    margin: 12px 6px 10px;
+    padding: 6px 10px;
+    display: flex; align-items: center; gap: 8px;
+    border-top: 1px dashed var(--c-hair);
+    padding-top: 12px;
+    color: var(--c-muted);
+    font-family: 'Inter', sans-serif;
+    font-size: 11.5px;
+    cursor: default;
+  }
+  .sb-others .sb-others-icon { color: var(--c-subtle); display: inline-flex; }
+  .sb-others .sb-others-icon svg { width: 13px; height: 13px; }
+  .sb-others .sb-others-label { flex: 1; text-transform: uppercase; letter-spacing: 0.08em; font-size: 10.5px; }
+  .sb-others .sb-others-caret { color: var(--c-subtle); display: inline-flex; }
+  .sb-others .sb-others-caret svg { width: 11px; height: 11px; }
 
   /* ---- Editor ---- */
   .app-editor {
     display: flex; flex-direction: column;
     background: var(--c-bg);
     min-width: 0;
+    padding-right: 320px; /* reserve space for the absolutely-positioned chat overlay on the right */
   }
   .ed-toolbar {
     display: flex; align-items: center; justify-content: space-between;
@@ -491,18 +548,35 @@
     border-bottom: 1px solid var(--c-hair);
     background: var(--c-card);
   }
-  .ed-breadcrumb { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--c-muted); }
+  .ed-breadcrumb { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--c-muted); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
   .ed-breadcrumb b { color: var(--c-ink); font-weight: 500; }
-  .ed-breadcrumb .sep { margin: 0 6px; color: var(--c-subtle); }
-  .ed-tabs { display: flex; gap: 2px; background: var(--c-panel); border: 1px solid var(--c-hair); border-radius: 5px; padding: 2px; }
-  .ed-tab {
+  .ed-breadcrumb .sep { color: var(--c-subtle); display: inline-flex; }
+  .ed-breadcrumb .sep svg { width: 11px; height: 11px; }
+
+  .ed-toolbar-actions { display: flex; align-items: center; gap: 4px; }
+  .ed-toolbar-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: 'Inter', sans-serif;
     font-size: 11.5px;
-    padding: 3px 10px;
-    border-radius: 3px;
+    padding: 4px 8px;
+    border-radius: 5px;
     color: var(--c-muted);
+    background: transparent;
     cursor: default;
+    transition: background .15s, color .15s;
   }
-  .ed-tab.active { background: var(--c-card); color: var(--c-ink); font-weight: 500; box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
+  .ed-toolbar-btn:hover { background: var(--c-panel); color: var(--c-ink); }
+  .ed-toolbar-btn svg { width: 13px; height: 13px; }
+  .ed-toolbar-btn kbd {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    padding: 0 4px;
+    border: 1px solid var(--c-hair-strong);
+    border-bottom-width: 2px;
+    border-radius: 3px;
+    background: var(--c-card);
+    color: var(--c-subtle);
+  }
 
   .ed-content {
     padding: 24px 36px 28px;
@@ -686,30 +760,73 @@
   .tb-row .m-path { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: var(--c-ink); min-width: 175px; }
   .tb-row .tb-sum { color: var(--c-muted); font-size: 11.5px; flex: 1; }
 
-  /* ---- Chat ---- */
-  .app-chat {
-    border-left: 1px solid var(--c-hair);
+  /* ---- Chat overlay (right drawer) ---- */
+  .app-chat-overlay {
+    position: absolute;
+    top: 0; right: 0; bottom: 0;
+    width: 320px;
+    border-left: 1px solid var(--c-hair-strong);
     background: var(--c-bg);
     display: flex; flex-direction: column;
     min-width: 0;
+    box-shadow: -16px 0 30px -16px rgba(60, 40, 20, 0.18), -2px 0 6px -2px rgba(60, 40, 20, 0.06);
   }
+  .dark .app-chat-overlay { box-shadow: -16px 0 32px -16px rgba(0,0,0,0.55), -2px 0 6px -2px rgba(0,0,0,0.3); }
+  .app-chat-overlay::before {
+    content: "";
+    position: absolute;
+    top: 0; bottom: 0; left: -2px;
+    width: 4px;
+    cursor: col-resize;
+  }
+  .app-chat-overlay::after {
+    content: "";
+    position: absolute;
+    top: 50%; left: -1.5px;
+    width: 2px; height: 32px;
+    background: var(--c-hair-strong);
+    border-radius: 999px;
+    transform: translateY(-50%);
+    opacity: 0.7;
+  }
+
   .chat-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px;
+    display: flex; align-items: center; gap: 7px;
+    padding: 9px 12px;
     border-bottom: 1px solid var(--c-hair);
     background: var(--c-card);
     font-size: 12px;
     color: var(--c-ink);
   }
-  .chat-header .chat-icon { color: var(--c-accent); font-size: 11px; }
-  .chat-header .chat-thread { font-weight: 500; font-size: 11.5px; line-height: 1.2; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .chat-header .chat-meta-icon {
-    width: 20px; height: 20px;
+  .chat-header .chat-icon {
+    color: var(--c-accent);
+    display: inline-flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .chat-header .chat-icon svg { width: 13px; height: 13px; }
+  .chat-header .chat-thread { font-weight: 500; font-size: 11.5px; line-height: 1.2; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .chat-usage-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    padding: 2px 6px;
+    border: 1px solid var(--c-hair);
+    border-radius: 999px;
+    color: var(--c-muted);
+    background: var(--c-panel);
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .chat-header-actions { display: inline-flex; align-items: center; gap: 1px; flex-shrink: 0; }
+  .chat-header-btn {
+    width: 22px; height: 22px;
     display: inline-flex; align-items: center; justify-content: center;
     border-radius: 4px;
     color: var(--c-subtle);
-    font-size: 13px;
+    transition: background .15s, color .15s;
   }
+  .chat-header-btn:hover { background: var(--c-panel); color: var(--c-ink); }
+  .chat-header-btn svg { width: 13px; height: 13px; }
 
   .chat-body {
     flex: 1;
@@ -797,11 +914,25 @@
     background: var(--c-bg);
     border-radius: 6px;
   }
+  .chat-input-cpu {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 2px 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--c-muted);
+    background: var(--c-panel);
+    border: 1px solid var(--c-hair);
+    border-radius: 999px;
+    flex-shrink: 0;
+  }
+  .chat-input-cpu svg { width: 11px; height: 11px; color: var(--c-subtle); }
   .chat-placeholder {
     flex: 1;
     font-size: 12px;
     color: var(--c-subtle);
     font-style: italic;
+    min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .chat-send {
     width: 22px; height: 22px;
@@ -810,6 +941,7 @@
     border-radius: 4px;
     font-size: 11px;
     font-weight: 600;
+    flex-shrink: 0;
   }
 
   /* Responsive */
@@ -826,8 +958,9 @@
     .step-row { grid-template-columns: 44px 1fr; gap: 14px; }
     .step-row .step-num { font-size: 32px; }
     .topbar-links { display: none; }
-    .app-mock-body { grid-template-columns: 180px 1fr !important; min-height: 460px; }
-    .app-chat { display: none; }
+    .app-mock-body { grid-template-columns: 196px 1fr !important; min-height: 460px; }
+    .app-chat-overlay { display: none; }
+    .app-editor { padding-right: 0; }
     .ed-content { padding: 20px 24px; max-height: 420px; }
   }
 
@@ -852,7 +985,7 @@
   <div class="container-spec flex items-center justify-between" style="height: 56px;">
     <a href="#top" class="flex items-center gap-2 focus-ring" style="color: var(--c-ink); text-decoration: none;">
       <span style="font-family: 'Lora', serif; font-weight: 600; font-size: 17px; letter-spacing: -0.01em;">claude4spec</span>
-      <span style="font-size: 11px; color: var(--c-muted); font-family: 'JetBrains Mono', monospace;">v0.1</span>
+      <span style="font-size: 11px; color: var(--c-muted); font-family: 'JetBrains Mono', monospace;">v1.0.1</span>
     </a>
     <nav class="topbar-links flex items-center gap-5" style="font-size: 13.5px;">
       <a href="#how" class="btn-ghost" style="padding: 6px 10px; border-radius: 4px; text-decoration: none;">How it works</a>
@@ -883,7 +1016,7 @@
 
         <div style="display: flex; align-items: center; gap: 16px; justify-content: center; flex-wrap: wrap; margin-top: 32px;">
           <div id="cmd-box" class="cmd-box focus-ring" role="button" tabindex="0" aria-label="Copy npx command">
-            <span><span class="prompt">$</span>&nbsp;npx claude4spec</span>
+            <span><span class="prompt">$</span>&nbsp;npx @inharness-ai/claude4spec</span>
             <span class="copy-btn">Copy</span>
           </div>
         </div>
@@ -906,44 +1039,89 @@
         <!-- Sidebar -->
         <aside class="app-sidebar">
           <div class="sb-header">
-            <div class="sb-logo">c4</div>
-            <div>
-              <div class="sb-title">claude4spec</div>
-              <div class="sb-sub">my-spec · local</div>
+            <div class="sb-identity">
+              <div class="sb-logo" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 13l.9 2.1L22 16l-2.1.9L19 19l-.9-2.1L16 16l2.1-.9L19 13z"/></svg>
+              </div>
+              <div style="min-width: 0;">
+                <div class="sb-title">claude4spec</div>
+                <div class="sb-sub">my-spec · ~/c4s</div>
+              </div>
             </div>
+            <button class="sb-theme-btn" aria-label="Toggle theme" type="button">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+            </button>
           </div>
 
-          <div class="sb-section-head">Files <span class="count">18</span></div>
+          <div class="sb-search">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+            <span class="sb-search-input">Search pages…</span>
+          </div>
+
+          <div class="sb-section-head">Pages <span class="count">18</span></div>
           <ul class="sb-tree">
             <li class="sb-leaf">index.md</li>
             <li class="sb-folder">layers</li>
             <li class="sb-leaf sb-indent">L6-references.md</li>
             <li class="sb-folder">modules</li>
             <li class="sb-leaf sb-indent">m01-project.md</li>
-            <li class="sb-leaf sb-indent">m02-pages.md</li>
-            <li class="sb-leaf sb-indent sb-active">m03-endpoint.md</li>
+            <li class="sb-leaf sb-indent">m02-pages.md<span class="sb-count">1</span></li>
+            <li class="sb-leaf sb-indent sb-active">m03-endpoint.md<span class="sb-count">2</span></li>
             <li class="sb-leaf sb-indent">m04-dto.md</li>
             <li class="sb-leaf sb-indent">m05-chat.md</li>
           </ul>
 
           <div class="sb-section-head" style="margin-top: 14px;">Elements</div>
           <ul class="sb-tree">
-            <li class="sb-leaf">Endpoints <span class="sb-count">12</span></li>
-            <li class="sb-leaf">DTOs <span class="sb-count">8</span></li>
-            <li class="sb-leaf">Tables <span class="sb-count">3</span></li>
-            <li class="sb-leaf">Tags <span class="sb-count">6</span></li>
+            <li class="sb-elem">
+              <span class="sb-elem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12h16"/><path d="m14 6 6 6-6 6"/></svg></span>
+              Endpoints<span class="sb-count">12</span>
+            </li>
+            <li class="sb-elem">
+              <span class="sb-elem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h2"/><path d="M16 3h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-2"/></svg></span>
+              DTOs<span class="sb-count">8</span>
+            </li>
+            <li class="sb-elem">
+              <span class="sb-elem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14a9 3 0 0 0 18 0V5"/><path d="M3 12a9 3 0 0 0 18 0"/></svg></span>
+              Database Tables<span class="sb-count">3</span>
+            </li>
+            <li class="sb-elem">
+              <span class="sb-elem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="14" rx="2"/><path d="M3 10h18"/></svg></span>
+              UI Views<span class="sb-count">4</span>
+            </li>
+            <li class="sb-elem">
+              <span class="sb-elem-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+              AC<span class="sb-count">7</span>
+            </li>
           </ul>
+
+          <div class="sb-others">
+            <span class="sb-others-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></span>
+            <span class="sb-others-label">Others</span>
+            <span class="sb-others-caret"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+          </div>
         </aside>
 
         <!-- Editor -->
         <section class="app-editor">
           <div class="ed-toolbar">
-            <div class="ed-breadcrumb">modules<span class="sep">›</span><b>m03-endpoint.md</b></div>
-            <div class="ed-tabs">
-              <span class="ed-tab active">Page</span>
-              <span class="ed-tab">Entity</span>
-              <span class="ed-tab">History</span>
-              <span class="ed-tab">Graph</span>
+            <div class="ed-breadcrumb">
+              <span>pages</span>
+              <span class="sep"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+              <span>modules</span>
+              <span class="sep"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+              <b>m03-endpoint.md</b>
+            </div>
+            <div class="ed-toolbar-actions">
+              <span class="ed-toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                Outline
+              </span>
+              <span class="ed-toolbar-btn">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8L12 3z"/><path d="M19 13l.9 2.1L22 16l-2.1.9L19 19l-.9-2.1L16 16l2.1-.9L19 13z"/></svg>
+                Chat
+                <kbd>⌘K</kbd>
+              </span>
             </div>
           </div>
           <div class="ed-content">
@@ -1004,12 +1182,25 @@
           </div>
         </section>
 
-        <!-- Chat -->
-        <aside class="app-chat">
+        <!-- Chat overlay (right drawer) -->
+        <aside class="app-chat-overlay">
           <div class="chat-header">
-            <span class="chat-icon">◆</span>
+            <span class="chat-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            </span>
             <span class="chat-thread">Add endpoints for billing module</span>
-            <span class="chat-meta-icon">+</span>
+            <span class="chat-usage-badge">sonnet-4-6 · plan</span>
+            <span class="chat-header-actions">
+              <span class="chat-header-btn" title="System prompt">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6"/><path d="M9 17h4"/></svg>
+              </span>
+              <span class="chat-header-btn" title="New conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+              </span>
+              <span class="chat-header-btn" title="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </span>
+            </span>
           </div>
           <div class="chat-body">
             <div class="msg-user">
@@ -1056,7 +1247,11 @@
               <span class="ctx-chip ctx-add">+ context</span>
             </div>
             <div class="chat-input-row">
-              <span class="chat-placeholder">Ask the agent to create or update entities…</span>
+              <span class="chat-input-cpu">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+                sonnet-4-6 · plan
+              </span>
+              <span class="chat-placeholder">Ask the agent…</span>
               <span class="chat-send">↵</span>
             </div>
           </div>
@@ -1177,7 +1372,7 @@ The response matches any DTO tagged with <span class="tok-kw">`auth`</span>:
 <span style="color: var(--c-muted);">claude-cli 1.0.4</span>
 
 <span class="tok-comment"># 2. start in any directory</span>
-<span class="tok-prompt">$</span> cd ~/my-spec &amp;&amp; npx claude4spec
+<span class="tok-prompt">$</span> cd ~/my-spec &amp;&amp; npx @inharness-ai/claude4spec
 <span style="color: var(--c-muted);">› scaffolded pages/index.md</span>
 <span style="color: var(--c-muted);">› claude4spec.db created</span>
 <span style="color: var(--c-muted);">› listening on http://localhost:3000</span>
@@ -1307,7 +1502,7 @@ The response matches any DTO tagged with <span class="tok-kw">`auth`</span>:
     </div>
 
 <pre class="arch">┌─────────────────────────────────────────────────────────────────────┐
-│                         npx claude4spec                             │
+│                    npx @inharness-ai/claude4spec                    │
 │                                                                     │
 │   ┌─────────────────┐   ┌─────────────────┐   ┌─────────────────┐   │
 │   │    Sidebar      │   │  Tiptap Editor  │   │  Chat Overlay   │   │
@@ -1382,8 +1577,8 @@ The response matches any DTO tagged with <span class="tok-kw">`auth`</span>:
         </ul>
       </div>
       <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 14px;">
-        <div id="cmd-box-2" class="cmd-box focus-ring" role="button" tabindex="0" aria-label="Copy npx command" style="max-width: 100%; width: 360px;">
-          <span><span class="prompt">$</span>&nbsp;npx claude4spec</span>
+        <div id="cmd-box-2" class="cmd-box focus-ring" role="button" tabindex="0" aria-label="Copy npx command" style="max-width: 100%; width: 440px;">
+          <span><span class="prompt">$</span>&nbsp;npx @inharness-ai/claude4spec</span>
           <span class="copy-btn">Copy</span>
         </div>
         <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--c-subtle);">
@@ -1459,7 +1654,7 @@ The response matches any DTO tagged with <span class="tok-kw">`auth`</span>:
     </div>
     <nav style="display: flex; gap: 22px; flex-wrap: wrap;">
       <a href="https://github.com/" target="_blank" rel="noopener" style="text-decoration: none;">GitHub</a>
-      <a href="https://www.npmjs.com/package/claude4spec" target="_blank" rel="noopener" style="text-decoration: none;">npm</a>
+      <a href="https://www.npmjs.com/package/@inharness-ai/claude4spec" target="_blank" rel="noopener" style="text-decoration: none;">npm</a>
       <a href="#how" style="text-decoration: none;">Docs</a>
       <a href="mailto:hello@inharness.ai" style="text-decoration: none;">Contact</a>
     </nav>
@@ -1487,7 +1682,7 @@ The response matches any DTO tagged with <span class="tok-kw">`auth`</span>:
 
   // Click-to-copy command box
   (function setupCopyBoxes() {
-    const cmd = 'npx claude4spec';
+    const cmd = 'npx @inharness-ai/claude4spec';
     function wire(box) {
       if (!box) return;
       const btn = box.querySelector('.copy-btn');
