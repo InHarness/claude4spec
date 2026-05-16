@@ -140,6 +140,7 @@ The rename propagates across every `pages/*.md` file via the reference layer. In
 
 ## Links
 
+- Homepage: <https://claude4spec.inharness.ai>
 - Landing page: [`site/index.html`](./site/index.html)
 - Issues: <https://github.com/InHarness/claude4spec/issues>
 - Changelog: [`CHANGELOG.md`](./CHANGELOG.md)
