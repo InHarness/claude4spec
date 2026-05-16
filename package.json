@@ -4,7 +4,7 @@
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
-  "homepage": "https://github.com/InHarness/claude4spec#readme",
+  "homepage": "https://claude4spec.inharness.ai",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/InHarness/claude4spec.git"
@@ -27,6 +27,7 @@
     "dist",
     ".claude/skills/c4s-spec-reader",
     ".claude/skills/c4s-brief-implementer",
+    "docs/screenshots",
     "README.md",
     "LICENSE",
     "CHANGELOG.md"
