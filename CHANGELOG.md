@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-05-16
+
+### Changed
+- Set `package.json` `homepage` to `https://claude4spec.inharness.ai` (was the GitHub `#readme` anchor) — npm now links the package to the project site.
+- Added `Homepage` link to the README's Links section.
+
+### Fixed
+- Included `docs/screenshots` in the `files` whitelist so the README hero image ships in the npm tarball instead of 404-ing on the package page.
+
 ## [1.0.2] - 2026-05-14
 
 ### Changed
@@ -33,4 +42,5 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.3]: https://github.com/InHarness/claude4spec/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/InHarness/claude4spec/compare/v1.0.1...v1.0.2
