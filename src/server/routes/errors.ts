@@ -21,6 +21,10 @@ const STATUS_FOR_CODE: Record<string, number> = {
   BRIEF_INVALID_FRONTMATTER: 400,
   BRIEF_CONFLICT: 409,
   PAGE_CONFLICT: 409,
+  // M23 Patches
+  PATCH_CONFLICT: 409,
+  PATCH_FRONTMATTER_IMMUTABLE: 400,
+  PATCH_INVALID_FRONTMATTER: 400,
 };
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {

@@ -518,8 +518,11 @@ export type ChatRole =
  * M21 generic context discriminator. 'chat' = default (full toolset, overlay UI).
  * 'brief' = brief editorial thread (whitelisted tools, brief-detail chrome,
  * brief_path points to FS file under briefsDir).
+ * M23 'patch' = patch resolution thread — applies a patch's findings to the
+ * spec. Full spec-editing toolset; patch_path points to FS file under
+ * patchesDir; the patch content is injected into the system prompt.
  */
-export type ChatContextType = 'chat' | 'brief';
+export type ChatContextType = 'chat' | 'brief' | 'patch';
 
 export interface ChatThread {
   id: string;
@@ -534,6 +537,8 @@ export interface ChatThread {
   hasSystemPrompt: boolean;
   contextType: ChatContextType;
   briefPath: string | null;
+  /** M23: FS path (relative to patchesDir) — set iff contextType='patch'. */
+  patchPath: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -691,7 +696,6 @@ export interface BriefListItem {
   implemented: boolean;
   generatedAt: string;
   lastModifiedAt: string | null;
-  threadCount: number;
 }
 
 export interface BriefCreateRequest {
@@ -730,4 +734,77 @@ export interface BriefThreadSummary {
   title: string | null;
   updatedAt: string;
   messageCount: number;
+}
+
+// --- M23: Patches ---
+
+/** Why a coding agent filed the patch (frontmatter `patch_kind`). */
+export type PatchKind = 'drift' | 'missing' | 'incorrect' | 'clarification';
+
+/** Resolution state — `awaiting` until the spec author resolves the patch. */
+export type PatchStatus = 'awaiting' | 'completed';
+
+/**
+ * Reserved frontmatter keys — set by the terminal agent that authored the
+ * patch, immutable from the claude4spec side. Only `status` is mutable.
+ */
+export const PATCH_IMMUTABLE_FRONTMATTER_KEYS = [
+  'type',
+  'brief',
+  'patch_kind',
+  'created_at',
+  'created_by',
+] as const;
+
+export interface PatchFrontmatter {
+  type: 'patch';
+  /** Path of the associated brief (relative to briefsDir). Absent ⇒ resolve by filename prefix. */
+  brief?: string;
+  patch_kind: PatchKind;
+  created_at: string;
+  created_by: string;
+  /** Absent is treated as `'awaiting'`. */
+  status?: PatchStatus;
+  [key: string]: unknown;
+}
+
+/** Response of `GET /api/patches/:path` and the result of PUT/PATCH writes. */
+export interface PatchResponse {
+  /** Path relative to patchesDir. */
+  path: string;
+  title: string;
+  frontmatter: PatchFrontmatter;
+  body: string;
+  /** Full file content (frontmatter + body, byte-faithful). */
+  content: string;
+  /** sha256 hex of `content` — used for optimistic concurrency. */
+  hash: string;
+}
+
+export interface PatchListItem {
+  path: string;
+  title: string;
+  /** `null` = orphan (no resolvable brief). */
+  briefPath: string | null;
+  patchKind: PatchKind;
+  status: PatchStatus;
+  createdAt: string;
+  createdBy: string;
+  /** `created_at` of the latest page_version row with kind='patch'. */
+  lastModified: string;
+  /** Count of chat threads with context_type='patch' pointing at this patch. */
+  threadCount: number;
+}
+
+export interface PatchContentUpdateRequest {
+  content: string;
+  expectedHash: string;
+}
+
+export interface PatchFrontmatterUpdateRequest {
+  status: PatchStatus;
+}
+
+export interface PatchThreadCreateRequest {
+  name?: string;
 }

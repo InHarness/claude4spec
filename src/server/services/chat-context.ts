@@ -1,4 +1,10 @@
-import type { Annotation, Brief, ChatContextType, Plan } from '../../shared/entities.js';
+import type {
+  Annotation,
+  Brief,
+  ChatContextType,
+  PatchResponse,
+  Plan,
+} from '../../shared/entities.js';
 import { pluginHost } from '../core/plugin-host/host.js';
 
 export interface SystemPromptInput {
@@ -21,6 +27,8 @@ export interface SystemPromptInput {
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
   brief?: Brief | null;
+  /** M23: snapshot of the patch attached to this thread (only when contextType='patch'). */
+  patch?: PatchResponse | null;
 }
 
 function escapeAttr(v: string): string {
@@ -441,6 +449,31 @@ function buildAnnotations(annotations: Annotation[]): string {
   return lines.join('\n');
 }
 
+/**
+ * M23: patch snapshot block for a patch-resolution thread. Mirrors
+ * `<current_brief>` — full file content verbatim plus a directive framing the
+ * task (apply the patch's findings to the spec).
+ */
+function buildCurrentPatch(patch: PatchResponse): string {
+  const fm = patch.frontmatter;
+  return [
+    `<current_patch ${attrs({
+      path: patch.path,
+      patch_kind: String(fm.patch_kind ?? ''),
+      status: fm.status ?? 'awaiting',
+      brief: typeof fm.brief === 'string' ? fm.brief : undefined,
+      hash: patch.hash,
+    })}>`,
+    `This thread exists to resolve the patch below — a coding agent in another`,
+    `terminal filed it as feedback while implementing a brief. Read it, then`,
+    `apply its findings to the specification (edit the relevant pages/entities).`,
+    `Once the spec reflects the patch, the author marks it \`status: completed\`.`,
+    ``,
+    patch.content,
+    `</current_patch>`,
+  ].join('\n');
+}
+
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const {
     projectName,
@@ -459,6 +492,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     writingStyle = null,
     contextType = 'chat',
     brief = null,
+    patch = null,
   } = input;
 
   // M21 m05ctxreg: brief context uses a completely different prompt frame —
@@ -499,6 +533,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (writingStyle) {
     parts.push(buildProjectSkill(writingStyle));
+  }
+
+  // M23: patch-resolution thread. The patch file (a coding agent's feedback
+  // about a spec problem found during implementation) is injected verbatim;
+  // this thread's job is to fold its findings into the spec, then the author
+  // marks the patch `completed`.
+  if (contextType === 'patch' && patch) {
+    parts.push(buildCurrentPatch(patch));
   }
 
   if (currentPagePath) {

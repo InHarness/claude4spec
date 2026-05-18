@@ -1,8 +1,10 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { Braces, ChevronRight, Database, Monitor } from 'lucide-react';
 import { MethodBadge } from './atoms.js';
+import { ButtonGroup } from './ButtonGroup.js';
 import { ChatToggleButton } from './ChatToggleButton.js';
 import { OutlineButton } from './OutlineButton.js';
+import { PageViewSwitcher } from './PageViewSwitcher.js';
 import type { EntityType, HttpMethod } from '../../shared/entities.js';
 
 export type EditorSelection =
@@ -49,8 +51,11 @@ export function EditorToolbar({ selection }: Props) {
         {renderBreadcrumb(selection, pathname)}
       </div>
       <span className="flex-1" />
-      <OutlineButton />
-      <ChatToggleButton />
+      {selection.kind === 'page' && <PageViewSwitcher />}
+      <ButtonGroup>
+        <OutlineButton onPage={selection.kind === 'page'} />
+        <ChatToggleButton />
+      </ButtonGroup>
     </div>
   );
 }

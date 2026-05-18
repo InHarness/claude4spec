@@ -12,10 +12,12 @@ export type PageChangedBy = 'user' | 'agent' | 'filesystem';
 export type PageOp = 'create' | 'update' | 'delete';
 /**
  * Dyskryminator źródła w `page_version`. `'page'` = pagesDir (M02), `'brief'` =
- * briefsDir (M21). Filtruje briefy z release snapshot/diff/restore — brief jest
- * artefaktem POST-release, nie częścią release'u (M17 spec, sekcja m17top001).
+ * briefsDir (M21), `'patch'` = patchesDir (M23). Filtruje briefy/patche z
+ * release snapshot/diff/restore — to artefakty POST-release, nie część
+ * release'u (M17 spec, sekcja m17top001). Wersjonowanie jest niezależne per
+ * `(path, kind)` — każda para ma własną oś czasu.
  */
-export type PageKind = 'page' | 'brief';
+export type PageKind = 'page' | 'brief' | 'patch';
 
 export interface PageVersionListItem {
   id: number;
@@ -78,7 +80,7 @@ export class PageVersionService {
           ? this.synthesizeDeleteFromLastVersion(relPath)
           : await ser.snapshot(relPath);
 
-    const next = this.nextVersionNumber(relPath);
+    const next = this.nextVersionNumber(relPath, kind);
     const summary = typeof changeSummary === 'string' && changeSummary.length > 0
       ? changeSummary
       : null;
@@ -114,30 +116,37 @@ export class PageVersionService {
    * M17: latest captured version of a page at-or-before a given release.
    * Mirrors VersionService.getLatestVersionForEntity.
    */
-  getLatestForPath(relPath: string, releaseId?: number | null): PageVersionDetail | null {
+  getLatestForPath(
+    relPath: string,
+    releaseId?: number | null,
+    kind?: PageKind,
+  ): PageVersionDetail | null {
+    // M23: optional `kind` filter — distinguishes page/brief/patch timelines
+    // for the same path. Omitted ⇒ legacy behaviour (latest regardless of kind).
+    const kindClause = kind ? ' AND kind = ?' : '';
     let row: Row | undefined;
     if (releaseId === undefined) {
       row = this.db
         .prepare(
-          `SELECT * FROM page_version WHERE path = ?
+          `SELECT * FROM page_version WHERE path = ?${kindClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(relPath) as Row | undefined;
+        .get(...(kind ? [relPath, kind] : [relPath])) as Row | undefined;
     } else if (releaseId === null) {
       row = this.db
         .prepare(
-          `SELECT * FROM page_version WHERE path = ? AND release_id IS NULL
+          `SELECT * FROM page_version WHERE path = ? AND release_id IS NULL${kindClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(relPath) as Row | undefined;
+        .get(...(kind ? [relPath, kind] : [relPath])) as Row | undefined;
     } else {
       row = this.db
         .prepare(
           `SELECT * FROM page_version
-            WHERE path = ? AND release_id IS NOT NULL AND release_id <= ?
+            WHERE path = ? AND release_id IS NOT NULL AND release_id <= ?${kindClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(relPath, releaseId) as Row | undefined;
+        .get(...(kind ? [relPath, releaseId, kind] : [relPath, releaseId])) as Row | undefined;
     }
     return row ? this.toDetail(row) : null;
   }
@@ -184,10 +193,15 @@ export class PageVersionService {
     return Number(info.changes);
   }
 
-  private nextVersionNumber(relPath: string): number {
+  /**
+   * M23: numer wersji jest sekwencyjny per `(path, kind)`, nie per `path` —
+   * page/brief/patch o tej samej ścieżce (teoretycznie) mają niezależne osie
+   * czasu. W praktyce ścieżki nie kolidują, bo każdy `kind` ma własny katalog.
+   */
+  private nextVersionNumber(relPath: string, kind: PageKind): number {
     const row = this.db
-      .prepare(`SELECT MAX(version) AS v FROM page_version WHERE path = ?`)
-      .get(relPath) as { v: number | null };
+      .prepare(`SELECT MAX(version) AS v FROM page_version WHERE path = ? AND kind = ?`)
+      .get(relPath, kind) as { v: number | null };
     return (row.v ?? 0) + 1;
   }
 

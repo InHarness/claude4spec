@@ -1,29 +1,24 @@
 import { List } from 'lucide-react';
 import { useOutlineStore } from '../state/outline.js';
+import { SegmentButton } from './ButtonGroup.js';
 
-export function OutlineButton() {
+export function OutlineButton({ onPage = false }: { onPage?: boolean }) {
   const editor = useOutlineStore((s) => s.editor);
   const outlineOpen = useOutlineStore((s) => s.outlineOpen);
   const toggleOutline = useOutlineStore((s) => s.toggleOutline);
 
-  if (!editor) return null;
+  if (!onPage && !editor) return null;
+
+  const disabled = !editor;
 
   return (
-    <button
-      type="button"
+    <SegmentButton
+      icon={<List size={12} />}
+      label="Outline"
+      active={!disabled && outlineOpen}
       onClick={toggleOutline}
-      aria-pressed={outlineOpen}
-      title={outlineOpen ? 'Hide outline' : 'Show outline'}
-      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition"
-      style={{
-        background: outlineOpen ? 'var(--c-card)' : 'var(--c-panel)',
-        color: outlineOpen ? 'var(--c-accent)' : 'var(--c-ink)',
-        border: `1px solid ${outlineOpen ? 'var(--c-accent)' : 'var(--c-hair-strong)'}`,
-        cursor: 'pointer',
-      }}
-    >
-      <List size={12} />
-      Outline
-    </button>
+      title={disabled ? 'Outline unavailable' : outlineOpen ? 'Hide outline' : 'Show outline'}
+      disabled={disabled}
+    />
   );
 }
