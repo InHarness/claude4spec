@@ -24,9 +24,10 @@ import { buildSystemPrompt } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
+import type { PatchService } from '../services/patch.js';
 import type { PageVersionService } from '../services/page-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
-import type { Annotation, Brief } from '../../shared/entities.js';
+import type { Annotation, Brief, PatchResponse } from '../../shared/entities.js';
 import type { WsGateway } from '../ws/gateway.js';
 import type { Db } from '../db/index.js';
 import { pluginHost } from '../core/plugin-host/host.js';
@@ -38,6 +39,7 @@ interface ChatRouterDeps {
   sectionsService: SectionsService;
   planService: PlanService;
   briefService: BriefService;
+  patchService: PatchService;
   pageVersions: PageVersionService;
   skillResolver: SkillResolver;
   skillRegistry: SkillRegistry;
@@ -194,6 +196,9 @@ export function chatRouter(deps: ChatRouterDeps): Router {
       }
 
       const isBrief = thread.contextType === 'brief';
+      // M23: patch threads keep the FULL spec-editing toolset (isBrief stays
+      // false) — their job is to edit the spec. Only the system prompt differs.
+      const isPatch = thread.contextType === 'patch';
 
       // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
       // i wkladamy do system promptu. Skip kosztownych obliczen pageCount/entityCounts
@@ -206,6 +211,16 @@ export function chatRouter(deps: ChatRouterDeps): Router {
           // Brief plik usuniety/uszkodzony — kontynuujemy bez snapshot, agent dostanie
           // banner przez get_brief tool call.
           console.warn(`[chat] brief read failed for ${thread.briefPath}:`, (err as Error).message);
+        }
+      }
+
+      // M23: dla patch context czytamy snapshot patcha i wkladamy do system promptu.
+      let patchSnapshot: PatchResponse | null = null;
+      if (isPatch && thread.patchPath) {
+        try {
+          patchSnapshot = await deps.patchService.getPatch(thread.patchPath);
+        } catch (err) {
+          console.warn(`[chat] patch read failed for ${thread.patchPath}:`, (err as Error).message);
         }
       }
 
@@ -270,6 +285,7 @@ export function chatRouter(deps: ChatRouterDeps): Router {
         writingStyle,
         contextType: thread.contextType,
         brief: briefSnapshot,
+        patch: patchSnapshot,
       });
 
       // claude-code CLI po resumeSessionId ignoruje kolejne systemPrompty —

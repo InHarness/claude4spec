@@ -13,6 +13,7 @@ import {
 } from '../hooks/usePlan.js';
 import { PlanEditor } from './PlanEditor.js';
 import { ComparePanel } from './ComparePanel.js';
+import { ButtonGroup } from './ButtonGroup.js';
 import { ChatToggleButton } from './ChatToggleButton.js';
 import { OutlineButton } from './OutlineButton.js';
 import type { PlanExecuteMode } from '../../shared/entities.js';
@@ -287,8 +288,10 @@ export function PlanPage({ planId }: Props) {
         </div>
         <span className="flex-1" />
         <ViewTabs view={view} onChange={setView} />
-        <OutlineButton />
-        <ChatToggleButton />
+        <ButtonGroup>
+          <OutlineButton />
+          <ChatToggleButton />
+        </ButtonGroup>
       </header>
 
       {error ? (

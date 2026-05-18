@@ -45,10 +45,12 @@ export type WsEvent =
   // M21 Briefs / M02 frontmatter indexer
   | { kind: 'pages:frontmatter-changed'; path: string; rootDir: PagesRootDir }
   | { kind: 'briefs:changed'; path?: string }
+  // M23 Patches
+  | { kind: 'patches:changed'; path?: string }
   | { kind: 'hello'; ts: number };
 
-/** M02 multidir: discriminator dla source-of-truth (pagesDir vs briefsDir). */
-export type PagesRootDir = 'pages' | 'briefs';
+/** M02 multidir: discriminator dla source-of-truth (pagesDir / briefsDir / patchesDir). */
+export type PagesRootDir = 'pages' | 'briefs' | 'patches';
 
 export interface TodoHit {
   pagePath: string;

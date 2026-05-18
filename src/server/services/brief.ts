@@ -122,7 +122,6 @@ export class BriefService {
         implemented,
         generatedAt: String(fm.generated_at ?? ''),
         lastModifiedAt: lastVersion?.createdAt ?? null,
-        threadCount: this.deps.chatService.threadCountForBrief(rec.path),
       });
     }
     return out;

@@ -20,6 +20,8 @@ import { PlanService } from './services/plan.js';
 import { plansRouter } from './routes/plans.js';
 import { BriefService } from './services/brief.js';
 import { briefsRouter } from './routes/briefs.js';
+import { PatchService } from './services/patch.js';
+import { patchesRouter } from './routes/patches.js';
 import { PagesFrontmatterIndexer } from './services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from './services/section-indexer.js';
 import { TodosIndexerService } from './services/todos-indexer.js';
@@ -164,6 +166,21 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `[config] briefsDir === pagesDir ("${pagesDir}") — brief files will be visible in both indexers`,
     );
   }
+  // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
+  const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
+  if (path.isAbsolute(patchesDir)) {
+    throw new Error(`config.json: patchesDir must be relative to cwd, got: ${patchesDir}`);
+  }
+  const patchesAbs = path.resolve(cwd, patchesDir);
+  const patchesRel = path.relative(cwd, patchesAbs);
+  if (patchesRel.startsWith('..') || path.isAbsolute(patchesRel)) {
+    throw new Error(`config.json: patchesDir must not escape project root, got: ${patchesDir}`);
+  }
+  if (patchesDir === pagesDir || patchesDir === briefsDir) {
+    console.warn(
+      `[config] patchesDir collides with pagesDir/briefsDir ("${patchesDir}") — patch files will be visible in multiple indexers`,
+    );
+  }
   pluginHost.consolidate(bootConfig.entities);
   const hostState = pluginHost.state();
   console.log(
@@ -189,6 +206,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // odpowiedniego rootDir).
   const briefsPages = new PagesService(cwd, briefsDir);
   await briefsPages.ensureRoot();
+  // M23 m02multidir: trzeci PagesService dla patchesDir (analogicznie do briefsDir).
+  const patchesPages = new PagesService(cwd, patchesDir);
+  await patchesPages.ensureRoot();
 
   const tagsService = new TagsService(db.handle);
   const versionService = new VersionService(db.handle);
@@ -292,6 +312,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // gateway (broadcast `page:changed` z drugiego katalogu — UI może slot-detect
   // przez prefix sciezki, jezeli kiedys bedzie potrzebne).
   const briefsWatcher = new PagesWatcher(briefsPages.root, gateway);
+  // M23 m02multidir: trzeci PagesWatcher na patchesDir.
+  const patchesWatcher = new PagesWatcher(patchesPages.root, gateway);
   const referencesService = new ReferencesService(pages, watcher);
   const sectionsService = new SectionsService(db.handle);
   sectionsService.setWriteDeps({ pages, watcher });
@@ -320,9 +342,16 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // PageVersionService akceptuje override serializera w recordVersion(),
   // wiec dwa serializery dziela jedna instancje wersjonowania.
   const briefsSerializer = new PageSerializer(briefsPages);
+  // M23: serializer dla patchesDir (analogicznie do briefsSerializer).
+  const patchesSerializer = new PageSerializer(patchesPages);
   const pageVersions = new PageVersionService(db.handle, pageSerializer);
-  // M21 m02fmidx: in-memory frontmatter indexer feeded przez oba watchery.
-  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(pages, briefsPages, gateway);
+  // M21 m02fmidx / M23: in-memory frontmatter indexer feeded przez trzy watchery.
+  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(
+    pages,
+    briefsPages,
+    patchesPages,
+    gateway,
+  );
 
   // Mount all active backend modules — each plugin constructs its own service,
   // mounts its router, registers its MCP server, and wires its id resolver via
@@ -380,6 +409,17 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     frontmatterIndexer: pagesFrontmatterIndexer,
   });
 
+  // M23: PatchService — top-level (nie plugin), wzorzec analogiczny do
+  // BriefService. Mountowany router /api/patches poniżej.
+  const patchService = new PatchService({
+    patchesPages,
+    patchesWatcher,
+    patchesSerializer,
+    pageVersions,
+    chatService,
+    frontmatterIndexer: pagesFrontmatterIndexer,
+  });
+
   app.use('/api', pluginHostRouter(pluginHost));
   app.use('/api/pages', pagesRouter(pages, watcher, pageVersions));
   app.use('/api/tags', tagsRouter(tagsService, referencesService));
@@ -392,6 +432,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/plans', plansRouter(planService));
   app.use('/api/releases', releasesRouter(releaseService, gateway));
   app.use('/api/briefs', briefsRouter(briefService, pageVersions));
+  app.use('/api/patches', patchesRouter(patchService));
   app.use('/api/chat', chatRouter({
     chatService,
     pagesService: pages,
@@ -399,6 +440,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     sectionsService,
     planService,
     briefService,
+    patchService,
     pageVersions,
     skillResolver,
     skillRegistry,
@@ -456,8 +498,25 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     }
   });
 
+  // M23: trzeci watcher dla patchesDir — analogicznie do briefsWatcher.
+  patchesWatcher.onChange((relPath, kind) => {
+    if (kind === 'unlink') {
+      pagesFrontmatterIndexer.handleUnlink('patches', relPath);
+      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, patchesSerializer, 'patch').catch((err) => {
+        console.warn(`[page-version] patch delete capture for ${relPath}:`, (err as Error).message);
+      });
+    } else {
+      pagesFrontmatterIndexer.schedulePage('patches', relPath);
+      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath) ? 'create' : 'update';
+      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, patchesSerializer, 'patch').catch((err) => {
+        console.warn(`[page-version] patch capture for ${relPath}:`, (err as Error).message);
+      });
+    }
+  });
+
   watcher.start();
   briefsWatcher.start();
+  patchesWatcher.start();
 
   sectionIndexer.indexAll().catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
@@ -472,12 +531,17 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   });
 
   // M17: initial sync of page_version. For each markdown file with no captured
-  // version, write `op = 'create'` baseline so the first release picks it up.
+  // version — or whose latest captured version is a `delete` tombstone while the
+  // file is back on disk — write an `op = 'create'` baseline. The latter case
+  // covers delete+recreate that happened while the server wasn't watching
+  // (server down, `git checkout` between restarts): without this, the phantom
+  // `delete` stays the latest row and release diffs show the page as removed.
   (async () => {
     try {
       const files = await pages.listMarkdownFiles();
       for (const relPath of files) {
-        if (pageVersions.hasAny(relPath)) continue;
+        const latest = pageVersions.getLatestForPath(relPath);
+        if (latest && latest.op !== 'delete') continue;
         await pageVersions.recordVersion(relPath, 'create', 'filesystem');
       }
     } catch (err) {
@@ -495,6 +559,16 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       }
     } catch (err) {
       console.warn('[page-version] briefs initial sync failed:', (err as Error).message);
+    }
+    // M23: initial sync — page_version baseline dla patchy.
+    try {
+      const files = await patchesPages.listMarkdownFiles();
+      for (const relPath of files) {
+        if (pageVersions.hasAny(relPath)) continue;
+        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, patchesSerializer, 'patch');
+      }
+    } catch (err) {
+      console.warn('[page-version] patches initial sync failed:', (err as Error).message);
     }
     try {
       await pagesFrontmatterIndexer.indexAll();
@@ -520,6 +594,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     shutdown: async () => {
       await watcher.close();
       await briefsWatcher.close();
+      await patchesWatcher.close();
       await gateway.close();
       await closeAssets();
       db.close();

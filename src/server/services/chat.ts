@@ -27,6 +27,7 @@ interface ChatThreadRow {
   has_system_prompt: number;
   context_type: string;
   brief_path: string | null;
+  patch_path: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -62,20 +63,30 @@ export class ChatService {
 
   createThread(
     title: string | null = null,
-    opts: { contextType?: ChatContextType; briefPath?: string | null } = {},
+    opts: {
+      contextType?: ChatContextType;
+      briefPath?: string | null;
+      patchPath?: string | null;
+    } = {},
   ): ChatThread {
     const id = nanoid(12);
     const contextType: ChatContextType = opts.contextType ?? 'chat';
     const briefPath = opts.briefPath ?? null;
+    const patchPath = opts.patchPath ?? null;
     // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
     if (contextType === 'brief' && !briefPath) {
       throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
     }
+    // M23: context_type='patch' ⇒ patch_path IS NOT NULL.
+    if (contextType === 'patch' && !patchPath) {
+      throw new DomainError('VALIDATION', "context_type='patch' requires patch_path");
+    }
     this.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, context_type, brief_path) VALUES (?, ?, ?, ?)`,
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path)
+         VALUES (?, ?, ?, ?, ?)`,
       )
-      .run(id, title, contextType, briefPath);
+      .run(id, title, contextType, briefPath, patchPath);
     return this.getThreadRow(id);
   }
 
@@ -99,13 +110,33 @@ export class ChatService {
     }));
   }
 
-  /** M21: count threads for a brief (cheap version of listThreadsForBrief for list UI). */
-  threadCountForBrief(briefPath: string): number {
+  /** M23: list threads attached to a patch (path-keyed lookup). */
+  listThreadsForPatch(patchPath: string): ChatThreadMeta[] {
+    const rows = this.db
+      .prepare(
+        `SELECT t.*,
+                COUNT(m.id) AS message_count,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+           FROM chat_thread t
+           LEFT JOIN chat_message m ON m.thread_id = t.id
+          WHERE t.patch_path = ? AND t.context_type = 'patch'
+          GROUP BY t.id
+          ORDER BY t.updated_at DESC`,
+      )
+      .all(patchPath) as Array<ChatThreadRow & { message_count: number }>;
+    return rows.map((r) => ({
+      ...this.hydrateThread(r),
+      messageCount: r.message_count,
+    }));
+  }
+
+  /** M23: count threads for a patch (cheap version for list UI). */
+  threadCountForPatch(patchPath: string): number {
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM chat_thread WHERE brief_path = ? AND context_type = 'brief'`,
+        `SELECT COUNT(*) AS n FROM chat_thread WHERE patch_path = ? AND context_type = 'patch'`,
       )
-      .get(briefPath) as { n: number };
+      .get(patchPath) as { n: number };
     return row.n;
   }
 
@@ -389,8 +420,9 @@ export class ChatService {
       planId: row.plan_id ?? null,
       lastSeenPlanVersion: row.last_seen_plan_version ?? null,
       hasSystemPrompt: row.has_system_prompt === 1,
-      contextType: (row.context_type === 'brief' ? 'brief' : 'chat') as ChatContextType,
+      contextType: hydrateContextType(row.context_type),
       briefPath: row.brief_path,
+      patchPath: row.patch_path,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -425,6 +457,11 @@ export class ChatService {
       updatedAt: row.updated_at,
     };
   }
+}
+
+/** Map the raw `context_type` column to the typed discriminator. */
+function hydrateContextType(raw: string): ChatContextType {
+  return raw === 'brief' || raw === 'patch' ? raw : 'chat';
 }
 
 function parseTodoItems(raw: string | null): TodoItem[] | null {

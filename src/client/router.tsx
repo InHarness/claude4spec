@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import {
   createRouter,
   createRootRouteWithContext,
@@ -29,6 +29,7 @@ import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
 import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
+import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { EndpointDetail } from './entities/endpoint/detail-panel.js';
 import { DtoDetail } from './entities/dto/detail-panel.js';
@@ -43,6 +44,7 @@ import { useDatabaseTable } from './hooks/useDatabaseTables.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useAc } from './hooks/useAcs.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
+import { usePageViewStore } from './state/pageView.js';
 import type { EntityType } from '../shared/entities.js';
 import type { PageNode } from '../shared/types.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
@@ -249,6 +251,12 @@ const briefDetailRoute = createRoute({
   component: BriefDetailRoute,
 });
 
+const patchDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/patches/$path',
+  component: PatchDetailRoute,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   pageRoute,
@@ -276,6 +284,7 @@ const routeTree = rootRoute.addChildren([
   releaseDetailRoute,
   briefsIndexRoute,
   briefDetailRoute,
+  patchDetailRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
@@ -329,7 +338,11 @@ function PageRoute() {
   const { _splat } = useParams({ from: '/pages/$' });
   const path = _splat ?? '';
   const navigate = useNavigate();
-  const [showHistory, setShowHistory] = useState(false);
+  const pageView = usePageViewStore((s) => s.pageView);
+  const setPageView = usePageViewStore((s) => s.setPageView);
+  useEffect(() => {
+    setPageView('editor');
+  }, [path, setPageView]);
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
@@ -341,9 +354,8 @@ function PageRoute() {
     <RoutePane selection={{ kind: 'page', path }}>
       <EditorBridgeProvider bridge={bridge}>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-          <PageHistoryToggle active={showHistory} onToggle={() => setShowHistory((v) => !v)} />
-          {showHistory ? (
-            <PageVersionHistory path={path} onBack={() => setShowHistory(false)} />
+          {pageView === 'history' ? (
+            <PageVersionHistory path={path} onBack={() => setPageView('editor')} />
           ) : (
             <Editor
               key={path}
@@ -355,28 +367,6 @@ function PageRoute() {
         </div>
       </EditorBridgeProvider>
     </RoutePane>
-  );
-}
-
-function PageHistoryToggle({ active, onToggle }: { active: boolean; onToggle: () => void }) {
-  return (
-    <div
-      className="flex items-center gap-1.5 px-5 py-1.5"
-      style={{ borderBottom: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
-    >
-      <button
-        onClick={onToggle}
-        className="rounded-md px-2 py-0.5 text-[11.5px] font-mono"
-        style={{
-          background: active ? 'var(--c-accent-soft)' : 'var(--c-card)',
-          color: active ? 'var(--c-accent-ink)' : 'var(--c-muted)',
-          border: `1px solid ${active ? 'var(--c-accent)' : 'var(--c-hair)'}`,
-        }}
-        title={active ? 'Hide history' : 'Show version history'}
-      >
-        {active ? '× History' : '⏱ History'}
-      </button>
-    </div>
   );
 }
 
@@ -835,6 +825,17 @@ function BriefDetailRoute() {
   return (
     <main className="flex-1 flex flex-col min-w-0 h-full" style={{ background: 'var(--c-bg)' }}>
       <BriefDetail key={decoded} briefPath={decoded} />
+    </main>
+  );
+}
+
+function PatchDetailRoute() {
+  const { path } = useParams({ from: '/patches/$path' });
+  // path comes URL-encoded (encodePatchPath splits on '/'); decode each segment.
+  const decoded = path.split('/').map(decodeURIComponent).join('/');
+  return (
+    <main className="flex-1 flex flex-col min-w-0 h-full" style={{ background: 'var(--c-bg)' }}>
+      <PatchDetail key={decoded} patchPath={decoded} />
     </main>
   );
 }

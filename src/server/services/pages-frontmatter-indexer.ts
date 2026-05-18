@@ -37,11 +37,20 @@ export class PagesFrontmatterIndexer {
   constructor(
     private pages: PagesService,
     private briefs: PagesService,
+    private patches: PagesService,
     private ws: WsGateway,
   ) {}
 
   private rootFor(rootDir: PagesRootDir): PagesService {
-    return rootDir === 'briefs' ? this.briefs : this.pages;
+    if (rootDir === 'briefs') return this.briefs;
+    if (rootDir === 'patches') return this.patches;
+    return this.pages;
+  }
+
+  /** Broadcast the rootDir-specific change event (briefs:changed / patches:changed). */
+  private broadcastRootChange(rootDir: PagesRootDir, relPath: string): void {
+    if (rootDir === 'briefs') this.ws.broadcast({ kind: 'briefs:changed', path: relPath });
+    else if (rootDir === 'patches') this.ws.broadcast({ kind: 'patches:changed', path: relPath });
   }
 
   private key(rootDir: PagesRootDir, relPath: string): string {
@@ -70,13 +79,13 @@ export class PagesFrontmatterIndexer {
     }
     if (this.byKey.delete(k)) {
       this.ws.broadcast({ kind: 'pages:frontmatter-changed', path: relPath, rootDir });
-      if (rootDir === 'briefs') this.ws.broadcast({ kind: 'briefs:changed', path: relPath });
+      this.broadcastRootChange(rootDir, relPath);
     }
   }
 
   async indexAll(): Promise<void> {
     let count = 0;
-    for (const rootDir of ['pages', 'briefs'] as const) {
+    for (const rootDir of ['pages', 'briefs', 'patches'] as const) {
       const svc = this.rootFor(rootDir);
       const files = await svc.listMarkdownFiles();
       for (const rel of files) {
@@ -104,7 +113,7 @@ export class PagesFrontmatterIndexer {
       // File disappeared between schedule and read — treat as unlink.
       if (this.byKey.delete(k) && !opts.silent) {
         this.ws.broadcast({ kind: 'pages:frontmatter-changed', path: relPath, rootDir });
-        if (rootDir === 'briefs') this.ws.broadcast({ kind: 'briefs:changed', path: relPath });
+        this.broadcastRootChange(rootDir, relPath);
       }
       return;
     }
@@ -113,7 +122,7 @@ export class PagesFrontmatterIndexer {
     this.byKey.set(k, { rootDir, frontmatter });
     if (changed && !opts.silent) {
       this.ws.broadcast({ kind: 'pages:frontmatter-changed', path: relPath, rootDir });
-      if (rootDir === 'briefs') this.ws.broadcast({ kind: 'briefs:changed', path: relPath });
+      this.broadcastRootChange(rootDir, relPath);
     }
   }
 

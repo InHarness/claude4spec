@@ -12,6 +12,12 @@ export interface Config {
    * Forward-compat: missing in pre-M21 configs = treated as default.
    */
   briefsDir: string;
+  /**
+   * M23: catalog of patch files (relative to cwd, default `.claude4spec/patches`).
+   * Same validation as `pagesDir`/`briefsDir` (must be relative, must not
+   * escape cwd). Forward-compat: missing in pre-M23 configs = treated as default.
+   */
+  patchesDir: string;
   mode: 'dev' | 'prod';
   writingStyle: string | null;
   onboardingCompleted: boolean;
@@ -58,6 +64,7 @@ export function defaults(cwd: string): Config {
     port: 4500,
     pagesDir: 'pages',
     briefsDir: '.claude4spec/briefs',
+    patchesDir: '.claude4spec/patches',
     mode: 'prod',
     writingStyle: null,
     // Forward compat: brak pola w istniejacym configu = projekt sprzed M16,
@@ -109,6 +116,10 @@ function validate(raw: unknown): Partial<Config> {
   if ('briefsDir' in r) {
     if (typeof r.briefsDir !== 'string') throw typeError('briefsDir', 'string', r.briefsDir);
     out.briefsDir = r.briefsDir;
+  }
+  if ('patchesDir' in r) {
+    if (typeof r.patchesDir !== 'string') throw typeError('patchesDir', 'string', r.patchesDir);
+    out.patchesDir = r.patchesDir;
   }
   if ('mode' in r) {
     if (r.mode !== 'dev' && r.mode !== 'prod') {
