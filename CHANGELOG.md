@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2026-05-19
+
+### Added
+- `c4s ask` — synchronous CLI Q&A against a running `npx claude4spec` server. Supports `--ct chat | brief | patch`, thread continuation via `--thread <id>`, and explicit server override via `--server <url>`. Skill templates (`c4s-spec-reader`, `c4s-brief-implementer`) document the escalation path as optional — only available when both `c4s` and the server are present.
+- `POST /api/threads/:id/ask` — synchronous JSON sibling of `POST /api/chat` (SSE). Shares the same adapter pool, `pendingInputs` map, and tool whitelist via a new `routes/agent-turn.ts` module extracted from `chat.ts`.
+
+### Changed
+- The server now binds to a single, deterministic port (the `port+1` fallback is gone). `EADDRINUSE` fails fast with a clear message so that `c4s ask` can reliably discover the server through `.claude4spec/config.json.port`.
+
 ## [1.0.4] - 2026-05-18
 
 ### Added
@@ -50,6 +59,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.5]: https://github.com/InHarness/claude4spec/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/InHarness/claude4spec/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/InHarness/claude4spec/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/InHarness/claude4spec/compare/v1.0.1...v1.0.2
