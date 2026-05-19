@@ -15,6 +15,7 @@ import { runCatalog } from './c4s/commands/catalog.js';
 import { runListTags } from './c4s/commands/list-tags.js';
 import { runListSlugs } from './c4s/commands/list-slugs.js';
 import { runResolve } from './c4s/commands/resolve.js';
+import { runAsk } from './c4s/commands/ask.js';
 
 const HELP = `Usage: c4s <command> [options]
 
@@ -31,6 +32,12 @@ Detail view (no XML counterpart):
 Utility:
   resolve <file.md> [--format inline|json]
 
+Agent Q&A (requires a running \`npx claude4spec\` server):
+  ask "<msg>" --ct chat
+  ask "<msg>" --ct brief --brief <path>
+  ask "<msg>" --thread <id>
+    --server <url>    override server discovery (remote / one-off --port)
+
 Discovery:
   catalog
   list-tags
@@ -45,7 +52,7 @@ Global flags:
   --help              show this help
 `;
 
-function main(): void {
+async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.length === 0 || argv[0] === '--help' || argv[0] === '-h') {
     process.stdout.write(HELP);
@@ -82,6 +89,8 @@ function main(): void {
       return runListTags(args);
     case 'list-slugs':
       return runListSlugs(args);
+    case 'ask':
+      return runAsk(args);
     default:
       throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
@@ -106,9 +115,7 @@ function readPackageVersion(): string {
   return 'unknown';
 }
 
-try {
-  main();
-} catch (err) {
+main().catch((err) => {
   if (err instanceof CliError) {
     writeError(err);
     process.exit(codeToExit(err.code));
@@ -116,7 +123,7 @@ try {
   const message = err instanceof Error ? err.message : String(err);
   writeError(new CliError('UNKNOWN_COMMAND', message));
   process.exit(1);
-}
+});
 
 function codeToExit(code: string): number {
   switch (code) {

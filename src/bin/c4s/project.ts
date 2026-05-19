@@ -28,3 +28,37 @@ export function resolveProject(override?: string): string {
     dir = parent;
   }
 }
+
+/**
+ * Wariant `resolveProject` dla `c4s ask` — markerem waznosci projektu jest
+ * `.claude4spec/config.json` (nie `db.sqlite`). `ask` nie czyta encji, tylko
+ * potrzebuje `config.json.port` do discovery serwera.
+ */
+export function resolveProjectByConfig(override?: string): string {
+  const hasConfig = (dir: string) =>
+    fs.existsSync(path.join(dir, '.claude4spec', 'config.json'));
+  if (override) {
+    const abs = path.resolve(process.cwd(), override);
+    if (!hasConfig(abs)) {
+      throw new CliError(
+        'PROJECT_NOT_FOUND',
+        `no claude4spec project at ${abs}`,
+        'check the path or run `npx claude4spec` there first'
+      );
+    }
+    return abs;
+  }
+  let dir = process.cwd();
+  while (true) {
+    if (hasConfig(dir)) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) {
+      throw new CliError(
+        'PROJECT_NOT_FOUND',
+        'no claude4spec project found in current directory or any parent',
+        'run `npx claude4spec` first or pass `--project <path>`'
+      );
+    }
+    dir = parent;
+  }
+}
