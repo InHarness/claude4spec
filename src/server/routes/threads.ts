@@ -1,8 +1,16 @@
 import { Router } from 'express';
-import type { ChatService } from '../services/chat.js';
+import { nanoid } from 'nanoid';
+import { readConfig } from '../config.js';
+import {
+  activeAdapters,
+  runAgentTurn,
+  AgentTurnError,
+  type AgentTurnDeps,
+} from './agent-turn.js';
 
-export function threadsRouter(chat: ChatService): Router {
+export function threadsRouter(deps: AgentTurnDeps): Router {
   const router = Router();
+  const chat = deps.chatService;
 
   router.get('/', (_req, res, next) => {
     try {
@@ -42,6 +50,56 @@ export function threadsRouter(chat: ChatService): Router {
       const initialSystemPrompt = chat.getInitialSystemPrompt(req.params.id);
       res.json({ data: { initialSystemPrompt } });
     } catch (err) {
+      next(err);
+    }
+  });
+
+  // M05 `m05ask`: headless synchroniczna tura agenta. W odroznieniu od
+  // `POST /api/chat` (SSE) blokuje zadanie do konca tury i zwraca skolapsowany
+  // kontrakt `{ threadId, answer }`. Generyczny po `context_type` — runtime
+  // budowany tym samym `runAgentTurn`, ktory zasila `POST /api/chat`.
+  router.post('/:id/ask', async (req, res, next) => {
+    try {
+      const message = typeof req.body?.message === 'string' ? req.body.message : '';
+      if (!message.trim()) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: 'message required' } });
+      }
+
+      // Endpoint NIE tworzy watku — `:id` musi juz istniec.
+      const thread = chat.getThreadMeta(req.params.id);
+      if (!thread) {
+        return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
+      }
+
+      // Gating one-stream-per-thread — wspoldzielony rejestr z `POST /api/chat`.
+      if (activeAdapters.has(thread.id)) {
+        return res.status(409).json({
+          error: { code: 'STREAM_IN_PROGRESS', message: 'Thread already streaming' },
+        });
+      }
+
+      const result = await runAgentTurn(deps, {
+        thread,
+        prompt: message,
+        model: 'sonnet-4.6',
+        architectureConfig: {
+          claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
+        },
+        requestId: nanoid(12),
+        consoleObserver: null,
+        // Headless: stream kolapsowany serwerowo, brak transportu eventow.
+        onEvent: () => {},
+        // Brak interaktywnego kanalu — patrz patch `headless-onuserinput`.
+      });
+
+      res.json(result);
+    } catch (err) {
+      if (err instanceof AgentTurnError) {
+        // 503 AGENT_UNAVAILABLE — `claude` CLI niedostepne/niezalogowane.
+        // 500 — tura zakonczona eventem `error`; `code ∈ AGENT_ERROR|TIMEOUT|ABORTED`.
+        const status = err.code === 'AGENT_UNAVAILABLE' ? 503 : 500;
+        return res.status(status).json({ error: { code: err.code, message: err.message } });
+      }
       next(err);
     }
   });

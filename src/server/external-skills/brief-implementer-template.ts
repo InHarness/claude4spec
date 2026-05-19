@@ -53,6 +53,20 @@ test. Stay focused on what the brief specifies.
 
 ### 4. Feedback loop (patches)
 
+**Optional — ask the spec agent first.** When the brief is unclear, you can —
+*before* guessing or writing a speculative patch — ask the specification agent
+synchronously and get an answer back in the same terminal:
+
+\`\`\`bash
+c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md
+\`\`\`
+
+Continue the same thread with \`c4s ask "..." --thread <threadId>\` (the
+\`threadId\` is printed with the answer). This escalation path is **optional**:
+it requires \`c4s\` installed *and* a running \`npx claude4spec\` server. When
+either is unavailable, skip it — the async patch loop below still works, and
+the core workflow never assumes \`c4s\` is present.
+
 When you discover that the brief diverges from reality — a missing detail, an
 incorrect assumption, an edge case not covered, or anything else the
 spec-author should know — write a patch file:

@@ -44,4 +44,16 @@ All output is JSON (pretty) by default. Use \`--compact\` for pipelines and
 an exit code > 0.
 
 The database is opened **read-only** — \`c4s\` never mutates the project.
+
+## Asking the spec agent
+
+When a question goes beyond resolving entities or pages, \`c4s ask\` runs a
+synchronous agent turn against the specification:
+
+\`\`\`sh
+c4s ask "<question>" --ct chat
+\`\`\`
+
+Unlike the read-only commands above, \`c4s ask\` requires a running
+\`npx claude4spec\` server (it delegates the turn to the server's agent).
 `;

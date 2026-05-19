@@ -65,30 +65,35 @@ export interface ServerHandle {
 }
 
 const DEFAULT_PORT = 3000;
-const PORT_FALLBACK_LIMIT = 20;
 
-async function tryListen(server: HttpServer, startPort: number): Promise<number> {
-  for (let p = startPort; p < startPort + PORT_FALLBACK_LIMIT; p++) {
-    try {
-      await new Promise<void>((resolve, reject) => {
-        const onError = (err: NodeJS.ErrnoException) => {
-          server.off('listening', onListening);
-          reject(err);
-        };
-        const onListening = () => {
-          server.off('error', onError);
-          resolve();
-        };
-        server.once('error', onError);
-        server.once('listening', onListening);
-        server.listen(p);
-      });
-      return p;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EADDRINUSE') throw err;
+// M01: deterministyczny port. Przy zajetym porcie serwer NIE wskakuje juz na
+// `port+1` — failuje z czytelnym bledem i niezerowym exit code. Powod: stały
+// `config.json.port` jest warunkiem discovery serwera przez `c4s ask`.
+async function listenOrExit(server: HttpServer, port: number): Promise<number> {
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const onError = (err: NodeJS.ErrnoException) => {
+        server.off('listening', onListening);
+        reject(err);
+      };
+      const onListening = () => {
+        server.off('error', onError);
+        resolve();
+      };
+      server.once('error', onError);
+      server.once('listening', onListening);
+      server.listen(port);
+    });
+    return port;
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
+      console.error(
+        `port ${port} zajęty — zatrzymaj drugą instancję lub zmień port w config.json / przekaż --port`,
+      );
+      process.exit(1);
     }
+    throw err;
   }
-  throw new Error(`No free port in range ${startPort}–${startPort + PORT_FALLBACK_LIMIT}`);
 }
 
 async function mountDevVite(app: Express, cwd: string) {
@@ -425,15 +430,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/tags', tagsRouter(tagsService, referencesService));
   app.use('/api/references', referencesRouter(referencesService));
   app.use('/api/entities', entitiesRouter(tagsService, versionService));
-  app.use('/api/threads', threadsRouter(chatService));
-  app.use('/api/sections', sectionsRouter(sectionsService));
-  app.use('/api/todos', todosRouter(todosIndexer));
-  app.use('/api/page-links', pageLinksRouter(pagesLinkIndexer));
-  app.use('/api/plans', plansRouter(planService));
-  app.use('/api/releases', releasesRouter(releaseService, gateway));
-  app.use('/api/briefs', briefsRouter(briefService, pageVersions));
-  app.use('/api/patches', patchesRouter(patchService));
-  app.use('/api/chat', chatRouter({
+  // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
+  // (POST /api/chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
+  const agentDeps = {
     chatService,
     pagesService: pages,
     tagsService,
@@ -449,7 +448,16 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     pagesDir,
     mode,
     db,
-  }));
+  };
+  app.use('/api/threads', threadsRouter(agentDeps));
+  app.use('/api/sections', sectionsRouter(sectionsService));
+  app.use('/api/todos', todosRouter(todosIndexer));
+  app.use('/api/page-links', pageLinksRouter(pagesLinkIndexer));
+  app.use('/api/plans', plansRouter(planService));
+  app.use('/api/releases', releasesRouter(releaseService, gateway));
+  app.use('/api/briefs', briefsRouter(briefService, pageVersions));
+  app.use('/api/patches', patchesRouter(patchService));
+  app.use('/api/chat', chatRouter(agentDeps));
   app.use(errorHandler);
 
   watcher.onChange((relPath, kind) => {
@@ -579,7 +587,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
   const closeAssets = mode === 'dev' ? await mountDevVite(app, cwd) : mountProd(app, cwd);
 
-  const port = await tryListen(httpServer, portRef.current);
+  const port = await listenOrExit(httpServer, portRef.current);
   portRef.current = port;
   const url = `http://localhost:${port}`;
 
