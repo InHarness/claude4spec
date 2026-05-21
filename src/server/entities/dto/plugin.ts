@@ -24,7 +24,7 @@ export const dtoBackendModule: BackendModule = {
       ctx.app.use(`/api${dtoBackendModule.pathPrefix}`, dtosRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${dtoBackendModule.type}-tools`,
-        createDtoToolsServer({
+        () => createDtoToolsServer({
           dtoService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,

@@ -27,7 +27,7 @@ export const databaseTableBackendModule: BackendModule = {
       );
       ctx.registerMcpServer(
         `${databaseTableBackendModule.type}-tools`,
-        createDatabaseToolsServer({
+        () => createDatabaseToolsServer({
           databaseTableService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,

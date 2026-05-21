@@ -303,7 +303,7 @@ export function ChatOverlay() {
     <div
       ref={rootRef}
       className="h-full flex"
-      style={{ width: chatWidth, flexShrink: 0, borderLeft: '1px solid var(--c-hair)' }}
+      style={{ width: chatWidth, flexShrink: 0 }}
     >
       <ResizeHandle onDrag={onResizeDrag} />
       <aside

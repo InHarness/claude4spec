@@ -27,7 +27,7 @@ export const uiViewBackendModule: BackendModule = {
       );
       ctx.registerMcpServer(
         `${uiViewBackendModule.type}-tools`,
-        createUiViewToolsServer({
+        () => createUiViewToolsServer({
           uiViewService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,

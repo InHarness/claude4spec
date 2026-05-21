@@ -85,7 +85,7 @@ export function Sidebar({
   return (
     <aside
       className="flex flex-col min-h-0 h-full"
-      style={{ width, background: 'var(--c-bg)', borderRight: '1px solid var(--c-hair)' }}
+      style={{ width, background: 'var(--c-panel)' }}
     >
       <div
         className="flex items-center gap-2 px-3.5 pt-3 pb-2"

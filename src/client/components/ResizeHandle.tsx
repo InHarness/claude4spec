@@ -33,7 +33,7 @@ export function ResizeHandle({ onDrag }: Props) {
       }}
       className="relative shrink-0 group hover:bg-[var(--c-accent)] transition-colors"
       style={{
-        width: 5,
+        width: 1,
         cursor: 'col-resize',
         background: 'var(--c-hair)',
         zIndex: 20,

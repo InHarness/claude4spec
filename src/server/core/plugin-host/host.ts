@@ -30,7 +30,7 @@ class PluginHostImpl implements PluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
   private idResolvers = new Map<string, (slug: string) => number | null>();
-  private mcpServers = new Map<string, McpServerInstance>();
+  private mcpServerFactories = new Map<string, () => McpServerInstance>();
   private entityServices = new Map<string, unknown>();
 
   registerBackendModule(module: BackendModule): void {
@@ -95,16 +95,15 @@ class PluginHostImpl implements PluginHost {
     }
   }
 
-  registerMcpServer(name: string, server: McpServerInstance): void {
-    this.mcpServers.set(name, server);
+  registerMcpServer(name: string, factory: () => McpServerInstance): void {
+    this.mcpServerFactories.set(name, factory);
   }
 
-  getMcpServer(name: string): McpServerInstance | null {
-    return this.mcpServers.get(name) ?? null;
-  }
-
-  listMcpServers(): Array<{ name: string; server: McpServerInstance }> {
-    return Array.from(this.mcpServers.entries()).map(([name, server]) => ({ name, server }));
+  buildMcpServers(): Array<{ name: string; server: McpServerInstance }> {
+    return Array.from(this.mcpServerFactories.entries()).map(([name, factory]) => ({
+      name,
+      server: factory(),
+    }));
   }
 
   setIdResolver(type: string, fn: (slug: string) => number | null): void {

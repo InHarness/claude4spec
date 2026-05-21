@@ -22,6 +22,10 @@ export interface SystemPromptInput {
   planMode?: boolean;
   currentPlan?: Plan | null;
   planToolsAvailable?: boolean;
+  /** M24 c4s-tools: cross-cutting MCP for synchronous cross-spec consultation.
+   *  Mounted for chat+patch threads; brief threads have a narrow toolset and
+   *  do not see this server. */
+  c4sToolsAvailable?: boolean;
   writingStyle?: { slug: string; title: string } | null;
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
   contextType?: ChatContextType;
@@ -230,6 +234,20 @@ plan-tools are NOT subject to plan_mode read-only restrictions — the plan is a
 </plan_tools_usage>`;
 
 /**
+ * M24 c4s-tools: usage contract for cross-spec synchronous consultation.
+ * Surfaces the same flow as the `c4s ask` CLI (M11) but via MCP, so it works
+ * in plan_mode (Bash is filtered, MCP is not). Mounted for chat + patch
+ * contexts; brief threads do not see it (narrow editorial toolset).
+ */
+const C4S_TOOLS_USAGE = `<c4s_tools_usage>
+c4s-tools MCP server consults another claude4spec specification synchronously.
+  - ask({ message, project? | server?, contextType?, threadId?, brief? }) — returns { threadId, answer }
+Use \`project\` (local path to peer .claude4spec/) OR \`server\` (URL override); if both, \`server\` wins.
+Continue an existing peer thread by passing its \`threadId\` (omit \`contextType\` then).
+Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled \`c4s ask\` does not.
+</c4s_tools_usage>`;
+
+/**
  * M21: usage contract for `brief-tools` MCP server (analog `PLAN_TOOLS_USAGE`).
  * Mounted only when this chat thread has `context_type='brief'`. The full
  * editorial doctrine lives in the bundled skill `brief-author` (loaded as
@@ -243,7 +261,6 @@ brief-tools MCP server is scoped automatically to this brief (no path param):
       * frontmatter is IMMUTABLE for the agent (type, from_release, to_release, generated_at, generator_version)
       * pass expectedHash from get_brief for optimistic concurrency (mismatch → BRIEF_CONFLICT)
       * unknown anchor → fallback append-at-end with warning
-  - list_brief_versions, get_brief_version — inspect history (page_version, M17)
 You also have read-only release-tools (get_release, get_release_diff, list_releases) for grounding the narrative.
 You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief content flows through get_brief / update_brief only.
 </brief_tools_usage>`;
@@ -266,7 +283,7 @@ plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXE
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, acknowledge and describe what you would do — do not execute.
 </claude4spec_plan_mode>`;
 
-function buildTooling(planToolsAvailable: boolean): string {
+function buildTooling(planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
     `  <builtin>Read, Write, Edit, MultiEdit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
@@ -285,6 +302,9 @@ function buildTooling(planToolsAvailable: boolean): string {
   );
   if (planToolsAvailable) {
     lines.push(`  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version</mcp>`);
+  }
+  if (c4sToolsAvailable) {
+    lines.push(`  <mcp name="c4s-tools">ask</mcp>`);
   }
   lines.push(`</tooling>`);
   return lines.join('\n');
@@ -324,7 +344,7 @@ function buildBriefSystemPrompt(input: {
       `You are operating in BRIEF mode for project "${input.projectName}".`,
       `cwd: ${input.cwd}`,
       `Your sole task is editorial work on a single brief artifact (markdown narrative summarising what changed between two releases).`,
-      `Use brief-tools (get_brief / update_brief / list_brief_versions / get_brief_version) and read-only release-tools.`,
+      `Use brief-tools (get_brief / update_brief) and read-only release-tools.`,
       `You have NO filesystem access (no Read/Write/Edit/Glob/Grep/Bash) and NO plan/entity tools.`,
       `</claude4spec_brief_identity>`,
     ].join('\n'),
@@ -367,7 +387,7 @@ function buildBriefSystemPrompt(input: {
   parts.push(
     [
       `<tooling>`,
-      `  <mcp name="brief-tools">get_brief, update_brief, list_brief_versions, get_brief_version</mcp>`,
+      `  <mcp name="brief-tools">get_brief, update_brief</mcp>`,
       `  <mcp name="release-tools">get_release, get_release_diff, list_releases</mcp>`,
       `</tooling>`,
     ].join('\n'),
@@ -489,6 +509,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     planMode = false,
     currentPlan = null,
     planToolsAvailable = false,
+    c4sToolsAvailable = false,
     writingStyle = null,
     contextType = 'chat',
     brief = null,
@@ -525,10 +546,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   projectAttrs.tags = tagCount;
   parts.push(selfClose('project', attrs(projectAttrs)));
 
-  parts.push(buildTooling(planToolsAvailable));
+  parts.push(buildTooling(planToolsAvailable, c4sToolsAvailable));
 
   if (planToolsAvailable) {
     parts.push(PLAN_TOOLS_USAGE);
+  }
+
+  if (c4sToolsAvailable) {
+    parts.push(C4S_TOOLS_USAGE);
   }
 
   if (writingStyle) {

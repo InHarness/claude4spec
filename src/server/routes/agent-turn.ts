@@ -18,6 +18,7 @@ import type { TagsService } from '../services/tags.js';
 import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
+import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildSystemPrompt } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
@@ -313,6 +314,7 @@ export async function runAgentTurn(
       planMode,
       currentPlan,
       planToolsAvailable: !isBrief,
+      c4sToolsAvailable: !isBrief,
       writingStyle,
       contextType: thread.contextType,
       brief: briefSnapshot,
@@ -339,17 +341,21 @@ export async function runAgentTurn(
           threadId: thread.id,
           briefPath: thread.briefPath,
           briefService: deps.briefService,
-          pageVersions: deps.pageVersions,
         })
       : null;
+    // M24 c4s-tools: cross-cutting MCP exposing `c4s ask` flow. Stateless,
+    // fresh factory per request. Whitelist: chat + patch contexts; brief is
+    // intentionally narrow (brief-tools + read-only release-tools only).
+    const c4sTools = isBrief ? null : buildC4sToolsServer();
 
     const pluginMcpEntries = pluginHost
-      .listMcpServers()
+      .buildMcpServers()
       .filter(({ name }) => (isBrief ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true))
       .map(({ name, server }) => [name, server.config] as const);
     const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
     if (planTools) mcpServers['plan-tools'] = planTools.config;
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;
+    if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
 
     const effectivePrompt = stalePlanReminder ? `${stalePlanReminder}\n\n${prompt}` : prompt;
     const stream = adapter.execute({
