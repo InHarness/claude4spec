@@ -35,7 +35,7 @@ export function DatabaseTablesList({
   const { data: tables = [], isLoading } = useDatabaseTables(query);
   const { data: tags = [] } = useTags();
 
-  const tagsWithTables = tags.filter((t) => t.counts['database-table'] > 0);
+  const tagsWithTables = tags.filter((t) => (t.counts['database-table'] ?? 0) > 0);
 
   function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
     const rect = e.currentTarget.getBoundingClientRect();

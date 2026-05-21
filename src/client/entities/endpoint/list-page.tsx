@@ -37,7 +37,7 @@ export function EndpointsList({
   const { data: endpoints = [], isLoading } = useEndpoints(query);
   const { data: tags = [] } = useTags();
 
-  const tagsWithEndpoints = tags.filter((t) => t.counts.endpoint > 0);
+  const tagsWithEndpoints = tags.filter((t) => (t.counts.endpoint ?? 0) > 0);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">

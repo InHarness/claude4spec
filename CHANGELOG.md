@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2026-05-21
+
+### Added
+- `c4s-tools` MCP server — exposes the cross-spec `c4s ask` Q&A flow over MCP, so it works in plan mode where Bash tools are filtered out. The plugin host registers MCP server factories and builds a fresh instance per turn.
+- Brief "implemented" workflow, with a status pill and collapsible patch view in the UI.
+
+### Changed
+- Extracted the shared `ask` logic into `src/core/ask/run-ask.ts`; the `c4s ask` CLI is now a thin wrapper over it.
+
+### Removed
+- `list_brief_versions` / `get_brief_version` tools from the brief-tools MCP surface.
+
+### Fixed
+- Restored a green client typecheck (`tsconfig.client.json`): widened the sidebar-tab `icon` contract to accept lucide-react's `size?: number | string`, and guarded `Tag.counts[...]` lookups against `undefined` under `noUncheckedIndexedAccess`.
+
 ## [1.0.5] - 2026-05-19
 
 ### Added
@@ -59,6 +74,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.6]: https://github.com/InHarness/claude4spec/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/InHarness/claude4spec/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/InHarness/claude4spec/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/InHarness/claude4spec/compare/v1.0.2...v1.0.3

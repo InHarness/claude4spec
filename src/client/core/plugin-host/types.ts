@@ -22,7 +22,7 @@ import type {
 } from '../../entities/registry.js';
 
 export interface SidebarTabSlot {
-  icon: ComponentType<{ className?: string; size?: number }>;
+  icon: ComponentType<{ className?: string; size?: number | string }>;
   label: string;
   /** Sort order — Pages = 1, Tags = 999, plugins live in between. */
   order: number;

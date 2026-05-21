@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
@@ -259,7 +259,7 @@ function NavLinkRow({
   highlightCount = false,
   extra,
 }: {
-  icon: LucideIcon;
+  icon: ComponentType<{ className?: string; size?: number | string }>;
   label: string;
   count: number;
   active: boolean;

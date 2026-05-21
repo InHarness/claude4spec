@@ -36,7 +36,7 @@ export function DtosList({
   const { data: dtos = [], isLoading } = useDtos(query);
   const { data: tags = [] } = useTags();
 
-  const tagsWithDtos = tags.filter((t) => t.counts.dto > 0);
+  const tagsWithDtos = tags.filter((t) => (t.counts.dto ?? 0) > 0);
 
   async function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
     const rect = e.currentTarget.getBoundingClientRect();

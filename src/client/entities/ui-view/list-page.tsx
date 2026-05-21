@@ -35,7 +35,7 @@ export function UiViewsList({
   const { data: views = [], isLoading } = useUiViews(query);
   const { data: tags = [] } = useTags();
 
-  const tagsWithViews = tags.filter((t) => t.counts['ui-view'] > 0);
+  const tagsWithViews = tags.filter((t) => (t.counts['ui-view'] ?? 0) > 0);
 
   function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
