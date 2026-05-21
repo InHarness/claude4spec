@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { FileText, FileWarning, MessageSquare, MessageSquarePlus } from 'lucide-react';
-import type { PatchListItem } from '../../shared/entities.js';
-import { useBriefs } from '../hooks/useBriefs.js';
+import { FileText, FileWarning, MessageSquarePlus, ChevronDown, ChevronRight } from 'lucide-react';
+import type { BriefListItem, PatchListItem } from '../../shared/entities.js';
+import { useBriefs, useCreateBriefThread } from '../hooks/useBriefs.js';
 import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
 import { useChatStore } from '../state/chat.js';
+import { usePersistedState } from '../state/persisted.js';
 
 type ImplementedFilter = 'all' | 'done' | 'pending';
 
@@ -24,6 +25,17 @@ export function BriefsList() {
     filter === 'all' ? undefined : filter === 'done';
   const { data: briefs = [], isLoading } = useBriefs({ implemented: implementedFilter });
   const { data: patches = [] } = usePatches();
+  const [collapsed, setCollapsed] = usePersistedState<string[]>(
+    'c4s:briefs:collapsed-patches',
+    [],
+    1,
+  );
+  const toggleCollapsed = (path: string) =>
+    setCollapsed(
+      collapsed.includes(path)
+        ? collapsed.filter((p) => p !== path)
+        : [...collapsed, path],
+    );
 
   const sortedBriefs = briefs
     .slice()
@@ -107,45 +119,17 @@ export function BriefsList() {
           )}
           <div className="space-y-2">
             {sortedBriefs.map((b) => {
-              const title = b.title ?? humanizePath(b.path);
               const briefPatches = patchesByBrief.get(b.path) ?? [];
+              const isCollapsed = collapsed.includes(b.path);
               return (
                 <div key={b.path}>
-                  <div
-                    className="flex items-start gap-3 px-4 py-3 rounded-md"
-                    style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-                  >
-                    <FileText size={14} style={{ color: 'var(--c-accent)', marginTop: 3 }} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2 flex-wrap">
-                        <Link
-                          to="/briefs/$path"
-                          params={{ path: encodeBriefPath(b.path) }}
-                          className="text-[14px] font-semibold"
-                          style={{ color: 'var(--c-ink)' }}
-                        >
-                          {title}
-                        </Link>
-                        {b.fromRelease === null ? (
-                          <InitialBadge />
-                        ) : (
-                          <ReleaseBadge label={b.fromRelease} />
-                        )}
-                        <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
-                        <ReleaseBadge label={b.toRelease} />
-                        <ImplementedBadge implemented={b.implemented} />
-                      </div>
-                      <div
-                        className="flex items-center gap-3 mt-1 text-[11px]"
-                        style={{ color: 'var(--c-subtle)' }}
-                      >
-                        <span className="font-mono">{b.path}</span>
-                        <span>·</span>
-                        <span>last modified {formatRelative(b.lastModifiedAt ?? b.generatedAt)}</span>
-                      </div>
-                    </div>
-                  </div>
-                  {briefPatches.length > 0 && (
+                  <BriefRow
+                    brief={b}
+                    patchCount={briefPatches.length}
+                    isCollapsed={isCollapsed}
+                    onToggleCollapsed={() => toggleCollapsed(b.path)}
+                  />
+                  {briefPatches.length > 0 && !isCollapsed && (
                     <div className="mt-1 ml-6 space-y-1">
                       {briefPatches.map((p) => (
                         <PatchRow key={p.path} patch={p} />
@@ -181,16 +165,102 @@ export function BriefsList() {
 }
 
 /**
+ * Brief row — wydzielony komponent, by `useCreateBriefThread` mogło żyć w hook
+ * scope na poziomie wiersza. Wyświetla `brief.path` jako tytuł (font-mono),
+ * obsługuje chevron toggle dla listy patchy oraz ikoniczny przycisk „Run new
+ * thread" otwierający chat side panel.
+ */
+function BriefRow({
+  brief,
+  patchCount,
+  isCollapsed,
+  onToggleCollapsed,
+}: {
+  brief: BriefListItem;
+  patchCount: number;
+  isCollapsed: boolean;
+  onToggleCollapsed(): void;
+}) {
+  const createThread = useCreateBriefThread(brief.path);
+  const setChatThreadId = useChatStore((s) => s.setChatThreadId);
+  const setChatOpen = useChatStore((s) => s.setChatOpen);
+
+  const handleNewThread = async () => {
+    const result = await createThread.mutateAsync(undefined);
+    setChatThreadId(result.threadId);
+    setChatOpen(true);
+  };
+
+  return (
+    <div
+      className="flex items-start gap-3 px-4 py-3 rounded-md"
+      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
+    >
+      {patchCount > 0 ? (
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="rounded p-0.5 btn-ghost shrink-0"
+          style={{ marginTop: 1 }}
+          title={isCollapsed ? `Show ${patchCount} ${patchCount === 1 ? 'patch' : 'patches'}` : 'Hide patches'}
+        >
+          {isCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+        </button>
+      ) : (
+        <span style={{ width: 22 }} aria-hidden />
+      )}
+      <FileText size={14} style={{ color: 'var(--c-accent)', marginTop: 3 }} />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-baseline gap-2 flex-wrap">
+          <Link
+            to="/briefs/$path"
+            params={{ path: encodeBriefPath(brief.path) }}
+            className="text-[13px] font-mono font-semibold truncate"
+            style={{ color: 'var(--c-ink)' }}
+          >
+            {brief.path}
+          </Link>
+          {brief.fromRelease === null ? (
+            <InitialBadge />
+          ) : (
+            <ReleaseBadge label={brief.fromRelease} />
+          )}
+          <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
+          <ReleaseBadge label={brief.toRelease} />
+          <ImplementedBadge implemented={brief.implemented} />
+        </div>
+        <div
+          className="flex items-center gap-3 mt-1 text-[11px]"
+          style={{ color: 'var(--c-subtle)' }}
+        >
+          <span>last modified {formatRelative(brief.lastModifiedAt ?? brief.generatedAt)}</span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={handleNewThread}
+        disabled={createThread.isPending}
+        className="rounded-md p-1.5 btn-ghost shrink-0"
+        style={{ opacity: createThread.isPending ? 0.5 : 1 }}
+        title="Run new thread"
+      >
+        <MessageSquarePlus size={14} />
+      </button>
+    </div>
+  );
+}
+
+/**
  * M23 patch row — nested under a brief, or in the "Orphaned patches" group.
- * Exposes patchKind / status / createdBy / lastModified / threadCount and the
- * "Change spec according to patch" action.
+ * Tytuł = `patch.path` (font-mono). Ikoniczny „Run new thread" zamiast długiego
+ * tekstowego przycisku; usunięto informację o thread count.
  */
 function PatchRow({ patch }: { patch: PatchListItem }) {
   const createThread = useCreatePatchThread(patch.path);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
 
-  const handleChangeSpec = async () => {
+  const handleNewThread = async () => {
     const result = await createThread.mutateAsync(undefined);
     setChatThreadId(result.threadId);
     setChatOpen(true);
@@ -207,62 +277,35 @@ function PatchRow({ patch }: { patch: PatchListItem }) {
           <Link
             to="/patches/$path"
             params={{ path: encodePatchPath(patch.path) }}
-            className="text-[12.5px] font-medium"
+            className="text-[12px] font-mono font-medium truncate"
             style={{ color: 'var(--c-ink)' }}
           >
-            {patch.title}
+            {patch.path}
           </Link>
-          <PatchKindBadge kind={patch.patchKind} />
           <PatchStatusBadge status={patch.status} />
         </div>
         <div
           className="flex items-center gap-2.5 mt-0.5 text-[10.5px]"
           style={{ color: 'var(--c-subtle)' }}
         >
-          <span className="font-mono">{patch.path}</span>
+          <span>{patch.patchKind}</span>
           <span>·</span>
           <span>by {patch.createdBy || 'unknown'}</span>
-          <span>·</span>
-          <span>
-            {patch.threadCount === 0 ? (
-              'no threads'
-            ) : (
-              <span className="inline-flex items-center gap-1">
-                <MessageSquare size={9} />
-                {patch.threadCount}
-              </span>
-            )}
-          </span>
           <span>·</span>
           <span>modified {formatRelative(patch.lastModified)}</span>
         </div>
       </div>
       <button
-        onClick={handleChangeSpec}
+        type="button"
+        onClick={handleNewThread}
         disabled={createThread.isPending}
-        className="rounded-md flex items-center gap-1 px-2 py-1 text-[10.5px] shrink-0"
-        style={{
-          background: 'var(--c-accent)',
-          color: '#fff',
-          opacity: createThread.isPending ? 0.5 : 1,
-        }}
-        title="Open a chat thread that applies this patch's findings to the spec"
+        className="rounded-md p-1 btn-ghost shrink-0"
+        style={{ opacity: createThread.isPending ? 0.5 : 1 }}
+        title="Run new thread"
       >
-        <MessageSquarePlus size={10} />
-        {createThread.isPending ? 'Opening…' : 'Change spec according to patch'}
+        <MessageSquarePlus size={12} />
       </button>
     </div>
-  );
-}
-
-function PatchKindBadge({ kind }: { kind: string }) {
-  return (
-    <span
-      className="font-mono text-[9.5px] uppercase tracking-wide px-1.5 py-0.5 rounded"
-      style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
-    >
-      {kind}
-    </span>
   );
 }
 
@@ -271,10 +314,14 @@ function PatchStatusBadge({ status }: { status: string }) {
   return (
     <span
       className="font-mono text-[9.5px] px-1.5 py-0.5 rounded"
-      style={{ background: 'var(--c-hair)', color: completed ? 'var(--c-ink)' : 'var(--c-muted)' }}
+      style={
+        completed
+          ? { background: 'var(--c-green-soft)', color: 'var(--c-green)' }
+          : { background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }
+      }
       title={completed ? 'Patch resolved' : 'Patch awaiting resolution'}
     >
-      {completed ? '✅ completed' : '⏳ awaiting'}
+      {completed ? 'completed' : 'awaiting'}
     </span>
   );
 }
@@ -284,8 +331,8 @@ function ReleaseBadge({ label }: { label: string }) {
     <span
       className="font-mono text-[11px] px-1.5 py-0.5 rounded"
       style={{
-        background: 'var(--c-accent)',
-        color: '#fff',
+        background: 'var(--c-hair)',
+        color: 'var(--c-ink)',
       }}
     >
       {label}
@@ -297,21 +344,21 @@ function ImplementedBadge({ implemented }: { implemented: boolean }) {
   if (implemented) {
     return (
       <span
-        className="inline-flex items-center gap-0.5 font-mono text-[10px] px-1.5 py-0.5 rounded"
-        style={{ background: 'var(--c-hair)', color: 'var(--c-ink)' }}
+        className="inline-flex items-center font-mono text-[10px] px-1.5 py-0.5 rounded"
+        style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
         title="Brief implemented (declared by implementer-agent or user)"
       >
-        ✅ implemented
+        implemented
       </span>
     );
   }
   return (
     <span
-      className="inline-flex items-center gap-0.5 font-mono text-[10px] px-1.5 py-0.5 rounded"
-      style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
+      className="inline-flex items-center font-mono text-[10px] px-1.5 py-0.5 rounded"
+      style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
       title="Brief pending — not yet implemented"
     >
-      ⏳ pending
+      pending
     </span>
   );
 }
@@ -356,10 +403,6 @@ function FilterTab({
       {label}
     </button>
   );
-}
-
-function humanizePath(p: string): string {
-  return p.replace(/\.md$/, '').replace(/-/g, ' ');
 }
 
 function formatRelative(iso: string): string {

@@ -21,7 +21,6 @@ The system prompt already binds you to the **self-contained invariant**: the bri
 **Available tools:**
 - `get_brief` — read the current brief state. Returns `{ frontmatter, body, content, hash }`. Use `hash` as `expectedHash` for the next `update_brief` to detect concurrent edits.
 - `update_brief` — edit the body via `replace`, `append`, or `insert_after_section`. You CANNOT modify frontmatter (immutable: `type`, `from_release`, `to_release`, `generated_at`, `generator_version`).
-- `list_brief_versions` / `get_brief_version` — inspect history, diff against earlier versions.
 - `release-tools` (read-only) — `release_list`, `release_show`, and `release_diff(fromIdOrName, toIdOrName, include?, entityTypes?)` returning a self-contained `MCPReleaseDiff`. Use `release_diff(brief.frontmatter.from_release, brief.frontmatter.to_release)` to obtain the `MCPReleaseDiff` that grounds your narrative — one round-trip is all you need.
 
 **`release-tools` is the ONLY plugin MCP available in this thread.** There is no `get_endpoint` / `get_dto` / `get_database-table` / `get_ui-view` / `get_ac`, no `Read pages/...`, no `Grep`, no filesystem. The `MCPReleaseDiff` payload is your entire ground truth — every snapshot you need is carried inside it.

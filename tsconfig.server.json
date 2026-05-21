@@ -17,6 +17,6 @@
     "sourceMap": true,
     "types": ["node"]
   },
-  "include": ["src/bin/**/*", "src/server/**/*", "src/shared/**/*"],
+  "include": ["src/bin/**/*", "src/server/**/*", "src/shared/**/*", "src/core/**/*"],
   "exclude": ["src/client/**/*", "node_modules", "dist"]
 }

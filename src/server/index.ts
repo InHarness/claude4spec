@@ -374,16 +374,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   });
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
-  const referenceToolsServer = createReferenceToolsServer({
-    tagsService,
-    referencesService,
-    pagesService: pages,
-    sectionsService,
-    ws: gateway,
-    db: db.handle,
-    cwd,
-  });
-  pluginHost.registerMcpServer('reference-tools', referenceToolsServer);
+  // Registered as a factory: a fresh instance is built per agent turn so
+  // concurrent turns never share one MCP transport.
+  pluginHost.registerMcpServer('reference-tools', () =>
+    createReferenceToolsServer({
+      tagsService,
+      referencesService,
+      pagesService: pages,
+      sectionsService,
+      ws: gateway,
+      db: db.handle,
+      cwd,
+    }),
+  );
 
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
@@ -399,8 +402,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     pages,
     watcher,
   );
-  const releaseToolsServer = createReleaseToolsServer({ releaseService, ws: gateway });
-  pluginHost.registerMcpServer('release-tools', releaseToolsServer);
+  pluginHost.registerMcpServer('release-tools', () =>
+    createReleaseToolsServer({ releaseService, ws: gateway }),
+  );
 
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /api/briefs poniżej.

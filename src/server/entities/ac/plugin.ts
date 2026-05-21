@@ -24,7 +24,7 @@ export const acBackendModule: BackendModule = {
       ctx.app.use(`/api${acBackendModule.pathPrefix}`, acsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${acBackendModule.type}-tools`,
-        createAcToolsServer({
+        () => createAcToolsServer({
           acService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,

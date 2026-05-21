@@ -37,13 +37,31 @@ type: brief
 from_release: v0.1.16
 to_release: v0.1.17
 generator_version: brief-author@0.1
-archived: false
+implemented: false
 ---
 ```
 
 The body contains everything you need — entity snapshots, section diffs, the
 narrative of what changes, and acceptance criteria. **Do not read the main
-specification.** If the brief omits something, that is drift (see step 4).
+specification.**
+
+If the brief is unclear — a missing detail, an ambiguous wording, a decision
+you'd otherwise have to guess — you have two paths:
+
+**Synchronous (preferred when available).** Ask the specification agent in the
+same terminal and continue once you have an answer:
+
+```bash
+c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md
+```
+
+Continue the same thread with `c4s ask "..." --thread <threadId>` (the
+`threadId` is printed with the answer). This path requires `c4s` installed
+*and* a running `npx claude4spec` server. When either is unavailable, skip it.
+
+**Asynchronous (always available).** If you cannot ask synchronously, proceed
+with your best judgement and file a patch afterwards (step 4) so the
+spec-author can fold the clarification into the next brief.
 
 ### 3. Implement
 
@@ -93,7 +111,23 @@ Patch-kind values:
 The `.claude4spec/patches/` directory is created **lazily** — only when you
 file your first patch. The claude4spec server does NOT create it.
 
-### 5. Hand-off
+### 5. Mark brief as implemented
+
+When the implementation is genuinely finished — code committed, tests green,
+merged to main / accepted by the user — flip the brief's frontmatter to
+`implemented: true`:
+
+```bash
+# Option A — Edit tool: change the line `implemented: false` → `implemented: true`.
+# Option B — yq (idempotent; adds the field to legacy briefs that never had it):
+yq -i '.implemented = true' .claude4spec/briefs/<brief-slug>.md
+```
+
+`implemented: true` is a **declaration**, not a computed fact derived from git.
+A revert on main does NOT roll the flag back. Set it ONLY when implementation
+is realistically done — never proactively or "just in case".
+
+### 6. Hand-off
 
 The spec-author reads patches manually (`ls .claude4spec/patches/`, `cat`)
 and folds them into the next brief or entity edits. There is no UI listing in
