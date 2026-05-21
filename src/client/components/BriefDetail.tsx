@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { FileText, MessageSquare, MessageSquarePlus, Settings, Check, Circle } from 'lucide-react';
 import {
   useBrief,
   useCreateBriefThread,
@@ -19,8 +19,9 @@ type ViewTab = 'artifact' | 'threads' | 'history';
  * M21 brief detail page. Three-pane layout zwiniety w taby (mniejszy ekran-real-estate
  * niz Plans, brief jest mocno read+chat, threads sa bardziej peryferyjne).
  *
- * Header pokazuje from→to badges + implemented (✅/⏳). Settings popover edytuje
- * wyłącznie `implemented` (toggle); reszta frontmatter to immutable badges read-only.
+ * Header pokazuje from→to badges + status (implemented/pending) w tinted bg.
+ * Settings popover edytuje wyłącznie `implemented` (toggle); reszta frontmatter
+ * to immutable badges read-only.
  */
 export function BriefDetail({ briefPath }: Props) {
   const { data: brief, isLoading } = useBrief(briefPath);
@@ -74,11 +75,21 @@ export function BriefDetail({ briefPath }: Props) {
           <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
           <Badge accent>{fm.to_release}</Badge>
           {fm.implemented ? (
-            <Badge title="Brief implemented (declared by implementer-agent or user)">
-              ✅ implemented
-            </Badge>
+            <span
+              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
+              style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
+              title="Brief implemented (declared by implementer-agent or user)"
+            >
+              implemented
+            </span>
           ) : (
-            <Badge title="Brief pending — not yet implemented">⏳ pending</Badge>
+            <span
+              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
+              style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
+              title="Brief pending — not yet implemented"
+            >
+              pending
+            </span>
           )}
         </div>
         <span className="flex-1" />
@@ -110,7 +121,7 @@ export function BriefDetail({ briefPath }: Props) {
                 style={{ color: 'var(--c-ink)' }}
                 title="Toggle the public 'implemented' declaration. Set true when the brief has been realized in the target repo (committed, tested, accepted)."
               >
-                <span aria-hidden>{fm.implemented ? '⏳' : '✅'}</span>
+                {fm.implemented ? <Circle size={12} /> : <Check size={12} />}
                 {fm.implemented ? 'Mark as pending' : 'Mark as implemented'}
               </button>
             </div>

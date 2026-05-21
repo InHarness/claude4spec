@@ -35,3 +35,4 @@ PLAN-*.md
 # npm auth (token z .env)
 .npmrc
 
+CLAUDE.md

@@ -386,19 +386,6 @@ const briefRenderers: Record<string, ToolRenderer> = {
       return 'Read brief';
     },
   },
-  list_brief_versions: {
-    summary(_i, r) {
-      const { result } = cx2(_i, r);
-      const versions = result?.versions;
-      const total = Array.isArray(versions) ? versions.length : null;
-      return total !== null ? `List brief versions (${total})` : 'List brief versions';
-    },
-  },
-  get_brief_version: {
-    summary(i) {
-      return `Brief v${cx(i).input.version ?? '?'}`;
-    },
-  },
   update_brief: {
     summary(i) {
       const { action, changeSummary } = cx(i).input;

@@ -27,7 +27,7 @@ export const endpointBackendModule: BackendModule = {
       ctx.app.use(`/api${endpointBackendModule.pathPrefix}`, endpointsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${endpointBackendModule.type}-tools`,
-        createEndpointToolsServer({
+        () => createEndpointToolsServer({
           endpointService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,

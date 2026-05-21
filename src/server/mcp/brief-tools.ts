@@ -4,14 +4,13 @@
  * creation time. Mounted by `routes/chat.ts` ONLY for threads with
  * `context_type='brief'`.
  *
- * Four tools, no `create_brief`/`list_briefs`/`brief_generate` (those are
- * UI/user surface, not agent loop).
+ * Two tools (get_brief, update_brief) — no `create_brief`/`list_briefs`/
+ * `brief_generate` (UI/user surface, not agent loop).
  */
 
 import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import type { BriefService } from '../services/brief.js';
-import type { PageVersionService } from '../services/page-version.js';
 import { ConflictError } from '../services/brief.js';
 import { DomainError } from '../services/tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
@@ -20,7 +19,6 @@ export interface BriefToolsContext {
   threadId: string;
   briefPath: string;
   briefService: BriefService;
-  pageVersions: PageVersionService;
 }
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
@@ -28,7 +26,7 @@ const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
 export function buildBriefToolsServer(ctx: BriefToolsContext): McpServerInstance {
-  const { briefService, pageVersions, briefPath } = ctx;
+  const { briefService, briefPath } = ctx;
 
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
@@ -116,39 +114,9 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): McpServerInstance
     },
   );
 
-  const listBriefVersions = mcpTool(
-    'list_brief_versions',
-    'List all versions of this thread\'s brief (metadata only). Use to inspect history before calling get_brief_version.',
-    {},
-    async () => {
-      try {
-        return ok({ versions: pageVersions.listVersions(briefPath) });
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
-  const getBriefVersion = mcpTool(
-    'get_brief_version',
-    'Get a specific version snapshot of this brief (full content + metadata).',
-    {
-      version: z.number().int().positive(),
-    },
-    async (args) => {
-      try {
-        const v = pageVersions.getVersion(briefPath, Number(args.version));
-        if (!v) return fail(new DomainError('VERSION_NOT_FOUND', `version ${args.version} not found`));
-        return ok(v);
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
   return createMcpServer({
     name: 'brief-tools',
-    tools: [getBrief, updateBrief, listBriefVersions, getBriefVersion],
+    tools: [getBrief, updateBrief],
   });
 }
 

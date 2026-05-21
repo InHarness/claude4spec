@@ -56,7 +56,14 @@ export interface MountContext {
   tagsService: TagsService;
   versionService: VersionService;
   referencesService: ReferencesService;
-  registerMcpServer(name: string, server: McpServerInstance): void;
+  /**
+   * Register a *factory* that builds a fresh MCP server instance. The host
+   * invokes it once per agent turn (see `buildMcpServers`) so each
+   * `adapter.execute()` gets its own `McpServer` — sharing one instance across
+   * concurrent turns breaks, because MCP `Protocol.connect` throws once an
+   * instance already holds a transport.
+   */
+  registerMcpServer(name: string, factory: () => McpServerInstance): void;
   setIdResolver(type: string, fn: (slug: string) => number | null): void;
   /**
    * M17: register the entity's L2 service with the host so cross-cutting
@@ -133,14 +140,21 @@ export interface PluginHost {
    */
   mountBackend(ctx: MountContext): void;
 
-  /** Register an MCP server instance under a unique name (e.g. "dto-tools"). */
-  registerMcpServer(name: string, server: McpServerInstance): void;
+  /**
+   * Register an MCP server *factory* under a unique name (e.g. "dto-tools").
+   * Stored as a thunk, not an instance: `buildMcpServers` calls it per turn so
+   * each agent run gets a fresh `McpServer` (concurrent turns must not share
+   * one instance — see the MountContext note).
+   */
+  registerMcpServer(name: string, factory: () => McpServerInstance): void;
 
-  /** Lookup a previously-registered MCP server by name (e.g. "dto-tools"). */
-  getMcpServer(name: string): McpServerInstance | null;
-
-  /** All registered MCP server names — used by chat to wire the adapter. */
-  listMcpServers(): Array<{ name: string; server: McpServerInstance }>;
+  /**
+   * Build a fresh MCP server instance from every registered factory. Called
+   * once per agent turn by the chat handler to wire the adapter. Each call
+   * produces brand-new instances, so concurrent turns never collide on a
+   * shared transport.
+   */
+  buildMcpServers(): Array<{ name: string; server: McpServerInstance }>;
 
   /**
    * Run each active plugin's `systemPrompt.countStat.sqlQuery` against the db

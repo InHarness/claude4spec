@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { FileWarning, MessageSquare, MessageSquarePlus, Settings } from 'lucide-react';
+import { FileWarning, MessageSquare, MessageSquarePlus, Settings, Check, Circle } from 'lucide-react';
 import { usePatch, useCreatePatchThread, useUpdatePatchStatus } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { useChatStore } from '../state/chat.js';
@@ -68,9 +68,21 @@ export function PatchDetail({ patchPath }: Props) {
           </span>
           <Badge>{String(fm.patch_kind ?? 'patch')}</Badge>
           {completed ? (
-            <Badge title="Patch resolved — the spec reflects its findings.">✅ completed</Badge>
+            <span
+              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
+              style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
+              title="Patch resolved — the spec reflects its findings."
+            >
+              completed
+            </span>
           ) : (
-            <Badge title="Patch awaiting resolution.">⏳ awaiting</Badge>
+            <span
+              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
+              style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
+              title="Patch awaiting resolution."
+            >
+              awaiting
+            </span>
           )}
         </div>
         <span className="flex-1" />
@@ -111,7 +123,7 @@ export function PatchDetail({ patchPath }: Props) {
               className="w-full text-left text-[12px] px-2 py-1 rounded btn-ghost flex items-center gap-2"
               style={{ color: 'var(--c-ink)' }}
             >
-              <span aria-hidden>{completed ? '⏳' : '✅'}</span>
+              {completed ? <Circle size={12} /> : <Check size={12} />}
               {completed ? 'Mark as awaiting' : 'Mark as completed'}
             </button>
             <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--c-hair)' }}>

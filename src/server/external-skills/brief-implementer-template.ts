@@ -44,7 +44,25 @@ implemented: false
 
 The body contains everything you need — entity snapshots, section diffs, the
 narrative of what changes, and acceptance criteria. **Do not read the main
-specification.** If the brief omits something, that is drift (see step 4).
+specification.**
+
+If the brief is unclear — a missing detail, an ambiguous wording, a decision
+you'd otherwise have to guess — you have two paths:
+
+**Synchronous (preferred when available).** Ask the specification agent in the
+same terminal and continue once you have an answer:
+
+\`\`\`bash
+c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md
+\`\`\`
+
+Continue the same thread with \`c4s ask "..." --thread <threadId>\` (the
+\`threadId\` is printed with the answer). This path requires \`c4s\` installed
+*and* a running \`npx claude4spec\` server. When either is unavailable, skip it.
+
+**Asynchronous (always available).** If you cannot ask synchronously, proceed
+with your best judgement and file a patch afterwards (step 4) so the
+spec-author can fold the clarification into the next brief.
 
 ### 3. Implement
 
@@ -52,20 +70,6 @@ Standard code flow in your target repository: read existing code, plan, edit,
 test. Stay focused on what the brief specifies.
 
 ### 4. Feedback loop (patches)
-
-**Optional — ask the spec agent first.** When the brief is unclear, you can —
-*before* guessing or writing a speculative patch — ask the specification agent
-synchronously and get an answer back in the same terminal:
-
-\`\`\`bash
-c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md
-\`\`\`
-
-Continue the same thread with \`c4s ask "..." --thread <threadId>\` (the
-\`threadId\` is printed with the answer). This escalation path is **optional**:
-it requires \`c4s\` installed *and* a running \`npx claude4spec\` server. When
-either is unavailable, skip it — the async patch loop below still works, and
-the core workflow never assumes \`c4s\` is present.
 
 When you discover that the brief diverges from reality — a missing detail, an
 incorrect assumption, an edge case not covered, or anything else the
