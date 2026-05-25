@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2026-05-25
+
+### Added
+- M24 Remote Account — device-flow login to the remote claude4spec API with a local session store (migration `030_remote_session`). Adds the `/api/remote-account` route (`GET /`, `POST /login/start`, `POST /login/poll`, `POST /logout`), `RemoteAuthService`, a single-per-process `RemoteHttpClient` with a startup reachability check, and a `remoteApiUrl` config override (defaults to the production remote). Client side: `remoteAccountApi`, the `useRemoteAccount` hook, and a `UserSection` in the sidebar.
+- `SegmentedControl` component for view switching, plus a `ContextLinkBar` in the chat overlay.
+- Shared entity-list primitives under `entities/_shared/` (`EntityListRow`, `ListPageHeader`, `ListPageLayout`, `ListScrollArea`, `TagFilterBar`, `EntityViewSwitcher`, `EntityDetailToolbar`, `useEntityListQuery`) that deduplicate the per-entity list and detail pages.
+
+### Changed
+- Reworked every entity list page (ac, dto, endpoint, database-table, ui-view) onto the shared `_shared/` primitives, replacing `ChatToggleButton` with `SegmentedControl` and centralizing tag filtering, list scrolling, and view switching.
+- `EditorToolbar` now takes a `path` prop instead of `selection`, simplifying its callers (`PlanPage`, `PatchDetail`, `BriefDetail`, `ReleaseDetail`).
+- Improved localization and wording in `SystemPromptView` and `OutlineFloater`.
+
+### Removed
+- Legacy marketing `site/index.html` and the unused `ChatToggleButton` component.
+
 ## [1.0.6] - 2026-05-21
 
 ### Added
@@ -74,6 +89,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.7]: https://github.com/InHarness/claude4spec/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/InHarness/claude4spec/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/InHarness/claude4spec/compare/v1.0.4...v1.0.5
 [1.0.4]: https://github.com/InHarness/claude4spec/compare/v1.0.3...v1.0.4
