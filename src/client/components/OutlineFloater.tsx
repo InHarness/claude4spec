@@ -48,7 +48,7 @@ export function OutlineFloater({ editor }: Props) {
               <button
                 type="button"
                 onClick={() => scrollToHeading(editor, item.pos)}
-                title={item.text || '(pusty nagłówek)'}
+                title={item.text || '(empty heading)'}
                 style={{
                   display: 'block',
                   width: '100%',

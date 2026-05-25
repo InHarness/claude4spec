@@ -55,7 +55,7 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
       Markdown.configure({ html: true, transformPastedText: true, breaks: false }),
       Placeholder.configure({
         placeholder:
-          'Plan jest pusty. Agent wypełni go przez update_plan podczas rozmowy w PLAN MODE.',
+          'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
       }),
       TaskList,
       TaskItem.configure({ nested: true }),

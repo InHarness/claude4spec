@@ -14,8 +14,9 @@ import {
 import { PlanEditor } from './PlanEditor.js';
 import { ComparePanel } from './ComparePanel.js';
 import { ButtonGroup } from './ButtonGroup.js';
-import { ChatToggleButton } from './ChatToggleButton.js';
+import { SegmentedControl } from './SegmentedControl.js';
 import { OutlineButton } from './OutlineButton.js';
+import { useOutlineStore } from '../state/outline.js';
 import type { PlanExecuteMode } from '../../shared/entities.js';
 
 interface Props {
@@ -32,6 +33,7 @@ export function PlanPage({ planId }: Props) {
   const executePlan = useExecutePlan();
   const updateTitle = useUpdatePlanTitle();
   const threadList = useThreadList();
+  const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const activeChatThreadId = useChatStore((s) => s.chatThreadId);
@@ -287,11 +289,20 @@ export function PlanPage({ planId }: Props) {
           ) : null}
         </div>
         <span className="flex-1" />
-        <ViewTabs view={view} onChange={setView} />
-        <ButtonGroup>
-          <OutlineButton />
-          <ChatToggleButton />
-        </ButtonGroup>
+        <SegmentedControl
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'plan', label: 'Plan' },
+            { value: 'blame', label: 'Blame' },
+            { value: 'compare', label: 'Compare' },
+          ]}
+        />
+        {editor && (
+          <ButtonGroup>
+            <OutlineButton />
+          </ButtonGroup>
+        )}
       </header>
 
       {error ? (
@@ -398,58 +409,6 @@ export function PlanPage({ planId }: Props) {
   );
 }
 
-function ViewTabs({
-  view,
-  onChange,
-}: {
-  view: PlanView;
-  onChange(next: PlanView): void;
-}) {
-  return (
-    <div
-      className="flex items-center gap-0.5 p-0.5 rounded-md"
-      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-    >
-      <ViewTabButton label="Plan" active={view === 'plan'} onClick={() => onChange('plan')} />
-      <ViewTabButton
-        label="Blame"
-        active={view === 'blame'}
-        onClick={() => onChange('blame')}
-      />
-      <ViewTabButton
-        label="Compare"
-        active={view === 'compare'}
-        onClick={() => onChange('compare')}
-      />
-    </div>
-  );
-}
-
-function ViewTabButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick(): void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-2 py-0.5 rounded text-[11.5px] font-medium"
-      style={{
-        background: active ? 'var(--c-card)' : 'transparent',
-        color: active ? 'var(--c-ink)' : 'var(--c-muted)',
-        border: active ? '1px solid var(--c-hair-strong)' : '1px solid transparent',
-        cursor: 'pointer',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
 
 function dispatchPrefill(prompt: string): void {
   requestChatPrefill({ prompt });

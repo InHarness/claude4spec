@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { FileText, MessageSquare, MessageSquarePlus, Settings, Check, Circle } from 'lucide-react';
+import { SegmentedControl } from './SegmentedControl.js';
+import { Link } from '@tanstack/react-router';
+import { FileText, MessageSquare, MessageSquarePlus, Settings, Check, Circle, ChevronRight } from 'lucide-react';
 import {
   useBrief,
   useCreateBriefThread,
@@ -43,7 +45,6 @@ export function BriefDetail({ briefPath }: Props) {
   }
 
   const fm = brief.frontmatter;
-  const title = (typeof fm.title === 'string' && fm.title) || briefPath.replace(/\.md$/, '');
 
   const handleNewThread = async () => {
     const result = await createThread.mutateAsync(undefined);
@@ -63,9 +64,20 @@ export function BriefDetail({ briefPath }: Props) {
         style={{ borderBottom: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
       >
         <FileText size={16} style={{ color: 'var(--c-accent)' }} />
-        <div className="flex items-center gap-1.5 min-w-0">
-          <span className="text-[13px] font-semibold truncate" style={{ color: 'var(--c-ink)', maxWidth: 320 }}>
-            {title}
+        <div className="flex items-center gap-1.5 min-w-0 text-[12px]" style={{ color: 'var(--c-muted)' }}>
+          <Link
+            to="/briefs"
+            className="inline-flex items-center rounded px-1 -mx-1 transition"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            Briefs
+          </Link>
+          <ChevronRight size={11} />
+          <span
+            className="font-mono truncate"
+            style={{ color: 'var(--c-ink)', fontWeight: 600, maxWidth: 320 }}
+          >
+            {briefPath}
           </span>
           {fm.from_release === null ? (
             <Badge initial>initial</Badge>
@@ -93,7 +105,15 @@ export function BriefDetail({ briefPath }: Props) {
           )}
         </div>
         <span className="flex-1" />
-        <ViewTabs view={view} onChange={setView} />
+        <SegmentedControl
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'artifact', label: 'Artifact' },
+            { value: 'threads', label: 'Threads' },
+            { value: 'history', label: 'History' },
+          ]}
+        />
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           className="rounded-md p-1 btn-ghost"
@@ -142,7 +162,29 @@ export function BriefDetail({ briefPath }: Props) {
       </header>
 
       <div className="flex-1 flex min-w-0 min-h-0">
-        {view === 'artifact' && <BriefEditor briefPath={briefPath} />}
+        {view === 'artifact' && (
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <BriefEditor briefPath={briefPath} />
+            <footer
+              className="px-5 py-2.5 flex items-center gap-2"
+              style={{ borderTop: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
+            >
+              <div className="flex-1" />
+              <button
+                onClick={handleNewThread}
+                disabled={createThread.isPending}
+                className="text-[12.5px] px-3 py-1.5 rounded"
+                style={{
+                  background: 'var(--c-accent)',
+                  color: '#fff',
+                  opacity: createThread.isPending ? 0.6 : 1,
+                }}
+              >
+                {createThread.isPending ? 'Starting…' : 'Run in new thread'}
+              </button>
+            </footer>
+          </div>
+        )}
         {view === 'threads' && (
           <ThreadsPanel
             threads={brief.threads}
@@ -267,28 +309,3 @@ function Badge({
   );
 }
 
-function ViewTabs({ view, onChange }: { view: ViewTab; onChange(v: ViewTab): void }) {
-  return (
-    <div
-      className="flex items-center gap-0.5 p-0.5 rounded-md"
-      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-    >
-      {(['artifact', 'threads', 'history'] as ViewTab[]).map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          className="px-2 py-0.5 rounded text-[11.5px] font-medium capitalize"
-          style={{
-            background: view === v ? 'var(--c-card)' : 'transparent',
-            color: view === v ? 'var(--c-ink)' : 'var(--c-muted)',
-            border: view === v ? '1px solid var(--c-hair-strong)' : '1px solid transparent',
-            cursor: 'pointer',
-          }}
-        >
-          {v}
-        </button>
-      ))}
-    </div>
-  );
-}

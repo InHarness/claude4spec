@@ -20,7 +20,6 @@ export interface EntityDetailProps {
   slug: string;
   onDeleted: () => void;
   onRenamed: (newSlug: string) => void;
-  onViewHistory: () => void;
   onBack: () => void;
 }
 

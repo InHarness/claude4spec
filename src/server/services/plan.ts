@@ -225,10 +225,10 @@ export class PlanService {
     if (row.current_version <= lastSeen) return null;
     return [
       '<system-reminder>',
-      'Plan został zaktualizowany w innym wątku.',
-      `Ostatnia wersja widziana w tym wątku: v${lastSeen}.`,
-      `Aktualna wersja: v${row.current_version}.`,
-      'Wykonaj get_plan, aby pobrać aktualny plan przed dalszą pracą.',
+      'The plan was updated in another thread.',
+      `Last version seen in this thread: v${lastSeen}.`,
+      `Current version: v${row.current_version}.`,
+      'Run get_plan to fetch the current plan before continuing.',
       '</system-reminder>',
     ].join('\n');
   }
@@ -417,7 +417,7 @@ export class PlanService {
     if (mode === 'new-session') {
       const { threadId: newThreadId } = this.attachThreadToPlan(plan.id);
       this.chat.updateThreadSettings(newThreadId, { planMode: false });
-      const firstMessage = `Wykonuje plan v${plan.currentVersion} — wyłaczam planMode i prosze o realizacje.`;
+      const firstMessage = `Executing plan v${plan.currentVersion} — disabling planMode and proceeding with implementation.`;
       return {
         mode: 'new-session',
         newThreadId,
@@ -451,7 +451,7 @@ export class PlanService {
       .prepare(`UPDATE chat_thread SET plan_mode = 0, updated_at = datetime('now') WHERE id = ?`)
       .run(threadId);
 
-    const firstMessage = `Wykonuje plan v${plan.currentVersion} — wyłaczam planMode i prosze o realizacje.`;
+    const firstMessage = `Executing plan v${plan.currentVersion} — disabling planMode and proceeding with implementation.`;
 
     return {
       mode: 'continue',

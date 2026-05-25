@@ -36,3 +36,6 @@ PLAN-*.md
 .npmrc
 
 CLAUDE.md
+
+# claude4spec (auto-added)
+*.deprecated

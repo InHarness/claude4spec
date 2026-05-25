@@ -8,6 +8,7 @@ import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
 import { useChatStore } from '../state/chat.js';
 import { usePersistedState } from '../state/persisted.js';
+import { SegmentedControl } from './SegmentedControl.js';
 
 type ImplementedFilter = 'all' | 'done' | 'pending';
 
@@ -77,14 +78,15 @@ export function BriefsList() {
           {patches.length > 0 && ` · ${patches.length} ${patches.length === 1 ? 'patch' : 'patches'}`}
         </span>
         <span className="flex-1" />
-        <div
-          className="flex items-center gap-0.5 p-0.5 rounded-md"
-          style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-        >
-          <FilterTab label="All" active={filter === 'all'} onClick={() => setFilter('all')} />
-          <FilterTab label="Done" active={filter === 'done'} onClick={() => setFilter('done')} />
-          <FilterTab label="Pending" active={filter === 'pending'} onClick={() => setFilter('pending')} />
-        </div>
+        <SegmentedControl
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'done', label: 'Done' },
+            { value: 'pending', label: 'Pending' },
+          ]}
+        />
       </div>
 
       <div className="flex-1 overflow-auto nice-scroll">
@@ -379,31 +381,6 @@ function InitialBadge() {
   );
 }
 
-function FilterTab({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick(): void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="px-2 py-0.5 rounded text-[11.5px] font-medium"
-      style={{
-        background: active ? 'var(--c-card)' : 'transparent',
-        color: active ? 'var(--c-ink)' : 'var(--c-muted)',
-        border: active ? '1px solid var(--c-hair-strong)' : '1px solid transparent',
-        cursor: 'pointer',
-      }}
-    >
-      {label}
-    </button>
-  );
-}
 
 function formatRelative(iso: string): string {
   if (!iso) return 'unknown';

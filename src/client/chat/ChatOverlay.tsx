@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMatches, useNavigate } from '@tanstack/react-router';
-import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, Cpu, Trash2, ClipboardList } from 'lucide-react';
+import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState } from '../state/persisted.js';
@@ -17,6 +17,10 @@ import { SystemPromptView } from './SystemPromptView.js';
 import { confirmDestructive } from '../ui/events.js';
 import { CHAT_PREFILL_EVENT, type ChatPrefillDetail } from './chatPrefill.js';
 import { usePlan } from '../hooks/usePlan.js';
+import { useBrief } from '../hooks/useBriefs.js';
+import { usePatch } from '../hooks/usePatches.js';
+import { encodeBriefPath } from '../lib/briefs-api.js';
+import { encodePatchPath } from '../lib/patches-api.js';
 
 const NEW_THREAD_DRAFT_KEY = '__new__';
 
@@ -107,6 +111,12 @@ export function ChatOverlay() {
     ? `Brief: ${activeThread.briefPath.replace(/\.md$/, '')}`
     : activeThread?.title ?? 'New conversation';
   const { data: activePlan } = usePlan(activeThread?.planId ?? null);
+  const { data: activeBrief } = useBrief(
+    activeThread?.contextType === 'brief' ? activeThread.briefPath : null,
+  );
+  const { data: activePatch } = usePatch(
+    activeThread?.contextType === 'patch' ? activeThread.patchPath : null,
+  );
 
   useEffect(() => {
     setPlanMode(activeThread?.planMode ?? false);
@@ -443,47 +453,65 @@ export function ChatOverlay() {
         {pendingUserInputs.length === 0 && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
           {activeThread?.planId != null && (
-            <button
+            <ContextLinkBar
+              icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
+              label={activePlan?.title ? `Plan: ${activePlan.title}` : 'Plan'}
+              title={
+                activePlan?.currentVersion
+                  ? `${activePlan.title ?? 'Plan'} · v${activePlan.currentVersion}`
+                  : 'Open plan'
+              }
+              badge={
+                activePlan?.currentVersion ? (
+                  <span
+                    className="font-mono text-[11px] px-1.5 py-0.5 rounded"
+                    style={{
+                      background: 'var(--c-hair)',
+                      color: 'var(--c-muted)',
+                      flexShrink: 0,
+                      marginLeft: 'auto',
+                    }}
+                  >
+                    v{activePlan.currentVersion}
+                  </span>
+                ) : null
+              }
               onClick={() =>
                 navigate({
                   to: '/plans/$planId',
                   params: { planId: String(activeThread.planId) },
                 })
               }
-              className="mb-2 w-full inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-mono btn-ghost min-w-0 transition-colors"
-              style={{
-                border: '1px solid var(--c-hair)',
-              }}
-              title={
-                activePlan?.currentVersion
-                  ? `${activePlan.title ?? 'Plan'} · v${activePlan.currentVersion}`
-                  : 'Open plan'
+            />
+          )}
+          {activeThread?.contextType === 'brief' && activeThread.briefPath && (
+            <ContextLinkBar
+              icon={<FileText size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
+              label={`Brief: ${
+                (typeof activeBrief?.frontmatter.title === 'string' && activeBrief.frontmatter.title) ||
+                activeThread.briefPath.replace(/\.md$/, '')
+              }`}
+              title="Open brief"
+              onClick={() =>
+                navigate({
+                  to: '/briefs/$path',
+                  params: { path: encodeBriefPath(activeThread.briefPath as string) },
+                })
               }
-            >
-              <ClipboardList
-                size={11}
-                style={{ color: 'var(--c-accent)', flexShrink: 0 }}
-              />
-              <span
-                className="truncate min-w-0 whitespace-nowrap overflow-hidden"
-                style={{ color: 'var(--c-ink)' }}
-              >
-                {activePlan?.title ?? 'Plan'}
-              </span>
-              {activePlan?.currentVersion ? (
-                <span
-                  className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-                  style={{
-                    background: 'var(--c-hair)',
-                    color: 'var(--c-muted)',
-                    flexShrink: 0,
-                    marginLeft: 'auto',
-                  }}
-                >
-                  v{activePlan.currentVersion}
-                </span>
-              ) : null}
-            </button>
+            />
+          )}
+          {activeThread?.contextType === 'patch' && activeThread.patchPath && (
+            <ContextLinkBar
+              icon={<FileWarning size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
+              label={`Patch: ${activePatch?.title || activeThread.patchPath.replace(/\.md$/, '')}`}
+              title="Open patch"
+              onClick={() =>
+                navigate({
+                  to: '/patches/$path',
+                  params: { path: encodePatchPath(activeThread.patchPath as string) },
+                })
+              }
+            />
           )}
           <div
             className="rounded-lg"
@@ -940,6 +968,38 @@ function relative(isoDate: string): string {
   const days = Math.floor(h / 24);
   if (days < 30) return `${days}d ago`;
   return new Date(isoDate).toLocaleDateString();
+}
+
+function ContextLinkBar({
+  icon,
+  label,
+  badge,
+  title,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  badge?: ReactNode;
+  title: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="mb-2 w-full inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] font-mono btn-ghost min-w-0 transition-colors"
+      style={{ border: '1px solid var(--c-hair)' }}
+      title={title}
+    >
+      {icon}
+      <span
+        className="truncate min-w-0 whitespace-nowrap overflow-hidden"
+        style={{ color: 'var(--c-ink)' }}
+      >
+        {label}
+      </span>
+      {badge}
+    </button>
+  );
 }
 
 function useCurrentPagePath(): string | null {

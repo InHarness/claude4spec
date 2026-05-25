@@ -22,7 +22,6 @@ interface Props {
   slug: string;
   onDeleted: () => void;
   onRenamed: (newSlug: string) => void;
-  onViewHistory?: () => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (path: string) => void;
 }

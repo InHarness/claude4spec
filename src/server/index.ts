@@ -22,6 +22,9 @@ import { BriefService } from './services/brief.js';
 import { briefsRouter } from './routes/briefs.js';
 import { PatchService } from './services/patch.js';
 import { patchesRouter } from './routes/patches.js';
+import { RemoteAuthService } from './services/remote-auth.js';
+import { RemoteHttpClient, assertRemoteApiReachable } from './services/remote-http-client.js';
+import { remoteAccountRouter } from './routes/remote-account.js';
 import { PagesFrontmatterIndexer } from './services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from './services/section-indexer.js';
 import { TodosIndexerService } from './services/todos-indexer.js';
@@ -88,7 +91,7 @@ async function listenOrExit(server: HttpServer, port: number): Promise<number> {
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'EADDRINUSE') {
       console.error(
-        `port ${port} zajęty — zatrzymaj drugą instancję lub zmień port w config.json / przekaż --port`,
+        `port ${port} is in use — stop the other instance or change the port in config.json / pass --port`,
       );
       process.exit(1);
     }
@@ -186,6 +189,11 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `[config] patchesDir collides with pagesDir/briefsDir ("${patchesDir}") — patch files will be visible in multiple indexers`,
     );
   }
+  // M24: an explicit config.remoteApiUrl override must be a valid, reachable
+  // host — hard error at boot, no fallback to the production constant.
+  if (bootConfig.remoteApiUrl != null && bootConfig.remoteApiUrl.trim() !== '') {
+    await assertRemoteApiReachable(bootConfig.remoteApiUrl);
+  }
   pluginHost.consolidate(bootConfig.entities);
   const hostState = pluginHost.state();
   console.log(
@@ -221,6 +229,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M17: wire snapshot capture deps. After this, every entity service
   // mutation captures a deterministic snapshot via host.snapshot(...).
   versionService.configureSnapshot(rawReader, pluginHost);
+  // M24: remote-account identity (device flow + local session). Single HTTP
+  // client per process; base URL from config.remoteApiUrl (or the prod constant).
+  const remoteHttpClient = new RemoteHttpClient(bootConfig.remoteApiUrl);
+  const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
   const chatService = new ChatService(db.handle);
   // Orphan cleanup: rowsy chat_message.status='streaming' pozostale po crashu poprzedniego
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
@@ -461,6 +473,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/releases', releasesRouter(releaseService, gateway));
   app.use('/api/briefs', briefsRouter(briefService, pageVersions));
   app.use('/api/patches', patchesRouter(patchService));
+  app.use('/api/remote-account', remoteAccountRouter(remoteAuthService));
   app.use('/api/chat', chatRouter(agentDeps));
   app.use(errorHandler);
 

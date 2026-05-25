@@ -25,6 +25,9 @@ const STATUS_FOR_CODE: Record<string, number> = {
   PATCH_CONFLICT: 409,
   PATCH_FRONTMATTER_IMMUTABLE: 400,
   PATCH_INVALID_FRONTMATTER: 400,
+  // M24 Remote Account
+  NO_ACTIVE_FLOW: 400,
+  REMOTE_UNAUTHORIZED: 401,
 };
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {

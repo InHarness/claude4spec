@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Braces, Clock, Trash } from 'lucide-react';
+import { Braces, Trash } from 'lucide-react';
 import { MethodBadge, METHOD_STYLE, TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
 import {
@@ -26,7 +26,6 @@ interface Props {
   slug: string;
   onDeleted: () => void;
   onRenamed: (newSlug: string) => void;
-  onViewHistory: () => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenPage?: (path: string) => void;
 }
@@ -53,7 +52,6 @@ export function EndpointDetail({
   slug,
   onDeleted,
   onRenamed,
-  onViewHistory,
   onOpenEntity,
   onOpenPage,
 }: Props) {
@@ -202,14 +200,6 @@ export function EndpointDetail({
             <span style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}>edited</span>
           )}
           <span className="flex-1" />
-          <button
-            onClick={onViewHistory}
-            className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"
-            style={{ color: 'var(--c-muted)' }}
-            title="History"
-          >
-            <Clock size={11} /> History
-          </button>
           <button
             onClick={handleDelete}
             className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px]"

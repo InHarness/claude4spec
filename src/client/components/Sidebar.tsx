@@ -24,6 +24,7 @@ import type { Theme } from '../state/tweaks.js';
 import { usePagesSearch } from '../hooks/usePages.js';
 import { usePersistedState } from '../state/persisted.js';
 import { WritingStyleSelector } from './WritingStyleSelector.js';
+import { UserSection } from './UserSection.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
 interface SidebarProps {
@@ -116,6 +117,8 @@ export function Sidebar({
           {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
         </button>
       </div>
+
+      <UserSection />
 
       <WritingStyleSelector />
 

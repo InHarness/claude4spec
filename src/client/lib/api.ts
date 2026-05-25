@@ -15,6 +15,11 @@ import type {
   VersionDetail,
   VersionListItem,
 } from '../../shared/entities.js';
+import type {
+  DeviceLoginPollResponse,
+  DeviceLoginStartResponse,
+  RemoteAccountResponse,
+} from '../../shared/remote-account.js';
 import { ApiError, handle } from './api-core.js';
 
 export { ApiError, handle };
@@ -227,5 +232,28 @@ export const sectionsApi = {
     const res = await fetch(`/api/sections/${encodeURIComponent(anchor)}`);
     if (res.status === 404) return null;
     return handle<SectionIndexEntry>(res);
+  },
+};
+
+// M24 Remote Account. Login is a human action — no agent path. `access_token`
+// is never present in any of these responses.
+export const remoteAccountApi = {
+  async get(): Promise<RemoteAccountResponse> {
+    return handle<RemoteAccountResponse>(await fetch('/api/remote-account'));
+  },
+  async startLogin(): Promise<DeviceLoginStartResponse> {
+    return handle<DeviceLoginStartResponse>(
+      await fetch('/api/remote-account/login/start', { method: 'POST' }),
+    );
+  },
+  async poll(): Promise<DeviceLoginPollResponse> {
+    return handle<DeviceLoginPollResponse>(
+      await fetch('/api/remote-account/login/poll', { method: 'POST' }),
+    );
+  },
+  async logout(): Promise<RemoteAccountResponse> {
+    return handle<RemoteAccountResponse>(
+      await fetch('/api/remote-account/logout', { method: 'POST' }),
+    );
   },
 };

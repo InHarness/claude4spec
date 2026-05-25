@@ -11,7 +11,7 @@ import {
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
 import { RootLayout } from './App.js';
-import { EditorToolbar, type EditorSelection } from './components/EditorToolbar.js';
+import { EditorToolbar } from './components/EditorToolbar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
@@ -42,7 +42,7 @@ import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
 import { useDatabaseTable } from './hooks/useDatabaseTables.js';
 import { useUiView } from './hooks/useUiViews.js';
-import { useAc } from './hooks/useAcs.js';
+import { EntityDetailToolbar } from './entities/_shared/EntityDetailToolbar.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import type { EntityType } from '../shared/entities.js';
@@ -303,19 +303,12 @@ declare module '@tanstack/react-router' {
   }
 }
 
-function RoutePane({
-  selection,
-  children,
-}: {
-  selection: EditorSelection;
-  children: React.ReactNode;
-}) {
+function RoutePane({ children }: { children: React.ReactNode }) {
   return (
     <main
       className="flex-1 flex flex-col min-w-0 h-full"
       style={{ background: 'var(--c-bg)' }}
     >
-      <EditorToolbar selection={selection} />
       {children}
     </main>
   );
@@ -328,7 +321,7 @@ function IndexRoute() {
     return <Navigate to="/pages/$" params={{ _splat: firstPage.path }} replace />;
   }
   return (
-    <RoutePane selection={{ kind: 'none' }}>
+    <RoutePane>
       <EmptyState onNewPage={promptNewPage} />
     </RoutePane>
   );
@@ -351,7 +344,8 @@ function PageRoute() {
     [navigate]
   );
   return (
-    <RoutePane selection={{ kind: 'page', path }}>
+    <RoutePane>
+      <EditorToolbar path={path} />
       <EditorBridgeProvider bridge={bridge}>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {pageView === 'history' ? (
@@ -374,7 +368,7 @@ function EndpointsIndexRoute() {
   const search = useSearch({ from: '/endpoints' });
   const navigate = useNavigate();
   return (
-    <RoutePane selection={{ kind: 'endpoints-list' }}>
+    <RoutePane>
       <EndpointsList
         search={search.q ?? ''}
         tagFilter={search.tag ? [search.tag] : []}
@@ -388,7 +382,6 @@ function EndpointsIndexRoute() {
           })
         }
         onSelect={(slug) => navigate({ to: '/endpoints/$slug', params: { slug } })}
-        onCreate={() => window.dispatchEvent(new CustomEvent('c4s:new-endpoint'))}
       />
     </RoutePane>
   );
@@ -399,16 +392,6 @@ function EndpointDetailRoute() {
   const navigate = useNavigate();
   const { data: endpoint } = useEndpoint(slug);
 
-  const selection: EditorSelection = endpoint
-    ? {
-        kind: 'entity',
-        entityType: 'endpoint',
-        slug,
-        method: endpoint.method,
-        path: endpoint.path,
-      }
-    : { kind: 'entity', entityType: 'endpoint', slug };
-
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
@@ -418,7 +401,15 @@ function EndpointDetailRoute() {
   );
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar
+        type="endpoint"
+        slug={slug}
+        method={endpoint?.method}
+        path={endpoint?.path}
+        view="details"
+        hasHistory
+      />
       <EditorBridgeProvider bridge={bridge}>
         <EndpointDetail
           key={slug}
@@ -426,9 +417,6 @@ function EndpointDetailRoute() {
           onDeleted={() => navigate({ to: '/endpoints' })}
           onRenamed={(newSlug) =>
             navigate({ to: '/endpoints/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onViewHistory={() =>
-            navigate({ to: '/endpoints/$slug/history', params: { slug } })
           }
           onOpenEntity={bridge.openEntity}
           onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
@@ -442,18 +430,17 @@ function EndpointHistoryRoute() {
   const { slug } = useParams({ from: '/endpoints/$slug/history' });
   const navigate = useNavigate();
   const { data: endpoint } = useEndpoint(slug);
-  const selection: EditorSelection = endpoint
-    ? {
-        kind: 'entity',
-        entityType: 'endpoint',
-        slug,
-        method: endpoint.method,
-        path: endpoint.path,
-      }
-    : { kind: 'entity', entityType: 'endpoint', slug };
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar
+        type="endpoint"
+        slug={slug}
+        method={endpoint?.method}
+        path={endpoint?.path}
+        view="history"
+        hasHistory
+      />
       <VersionHistory
         type="endpoint"
         slug={slug}
@@ -467,7 +454,7 @@ function DtosIndexRoute() {
   const search = useSearch({ from: '/dtos' });
   const navigate = useNavigate();
   return (
-    <RoutePane selection={{ kind: 'dtos-list' }}>
+    <RoutePane>
       <DtosList
         search={search.q ?? ''}
         tagFilter={search.tag ? [search.tag] : []}
@@ -490,9 +477,6 @@ function DtoDetailRoute() {
   const { slug } = useParams({ from: '/dtos/$slug' });
   const navigate = useNavigate();
   const { data: dto } = useDto(slug);
-  const selection: EditorSelection = dto
-    ? { kind: 'entity', entityType: 'dto', slug, name: dto.name }
-    : { kind: 'entity', entityType: 'dto', slug };
 
   const bridge = useMemo(
     () => ({
@@ -503,7 +487,8 @@ function DtoDetailRoute() {
   );
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="dto" slug={slug} name={dto?.name} view="details" hasHistory />
       <EditorBridgeProvider bridge={bridge}>
         <DtoDetail
           key={slug}
@@ -512,7 +497,6 @@ function DtoDetailRoute() {
           onRenamed={(newSlug) =>
             navigate({ to: '/dtos/$slug', params: { slug: newSlug }, replace: true })
           }
-          onViewHistory={() => navigate({ to: '/dtos/$slug/history', params: { slug } })}
           onOpenEntity={bridge.openEntity}
           onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
         />
@@ -525,12 +509,10 @@ function DtoHistoryRoute() {
   const { slug } = useParams({ from: '/dtos/$slug/history' });
   const navigate = useNavigate();
   const { data: dto } = useDto(slug);
-  const selection: EditorSelection = dto
-    ? { kind: 'entity', entityType: 'dto', slug, name: dto.name }
-    : { kind: 'entity', entityType: 'dto', slug };
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
       <VersionHistory
         type="dto"
         slug={slug}
@@ -544,7 +526,7 @@ function DatabaseTablesIndexRoute() {
   const search = useSearch({ from: '/database-tables' });
   const navigate = useNavigate();
   return (
-    <RoutePane selection={{ kind: 'database-tables-list' }}>
+    <RoutePane>
       <DatabaseTablesList
         search={search.q ?? ''}
         tagFilter={search.tag ? [search.tag] : []}
@@ -567,9 +549,6 @@ function DatabaseTableDetailRoute() {
   const { slug } = useParams({ from: '/database-tables/$slug' });
   const navigate = useNavigate();
   const { data: dbTable } = useDatabaseTable(slug);
-  const selection: EditorSelection = dbTable
-    ? { kind: 'entity', entityType: 'database-table', slug, name: dbTable.name }
-    : { kind: 'entity', entityType: 'database-table', slug };
 
   const bridge = useMemo(
     () => ({
@@ -580,7 +559,8 @@ function DatabaseTableDetailRoute() {
   );
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="database-table" slug={slug} name={dbTable?.name} view="details" hasHistory />
       <EditorBridgeProvider bridge={bridge}>
         <DatabaseTableDetail
           key={slug}
@@ -592,9 +572,6 @@ function DatabaseTableDetailRoute() {
               params: { slug: newSlug },
               replace: true,
             })
-          }
-          onViewHistory={() =>
-            navigate({ to: '/database-tables/$slug/history', params: { slug } })
           }
           onOpenEntity={bridge.openEntity}
           onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
@@ -608,12 +585,10 @@ function DatabaseTableHistoryRoute() {
   const { slug } = useParams({ from: '/database-tables/$slug/history' });
   const navigate = useNavigate();
   const { data: dbTable } = useDatabaseTable(slug);
-  const selection: EditorSelection = dbTable
-    ? { kind: 'entity', entityType: 'database-table', slug, name: dbTable.name }
-    : { kind: 'entity', entityType: 'database-table', slug };
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="database-table" slug={slug} name={dbTable?.name} view="history" hasHistory />
       <VersionHistory
         type="database-table"
         slug={slug}
@@ -627,7 +602,7 @@ function UiViewsIndexRoute() {
   const search = useSearch({ from: '/ui-views' });
   const navigate = useNavigate();
   return (
-    <RoutePane selection={{ kind: 'ui-views-list' }}>
+    <RoutePane>
       <UiViewsList
         search={search.q ?? ''}
         tagFilter={search.tag ? [search.tag] : []}
@@ -650,9 +625,6 @@ function UiViewDetailRoute() {
   const { slug } = useParams({ from: '/ui-views/$slug' });
   const navigate = useNavigate();
   const { data: uiView } = useUiView(slug);
-  const selection: EditorSelection = uiView
-    ? { kind: 'entity', entityType: 'ui-view', slug, name: uiView.name }
-    : { kind: 'entity', entityType: 'ui-view', slug };
 
   const bridge = useMemo(
     () => ({
@@ -663,7 +635,8 @@ function UiViewDetailRoute() {
   );
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="ui-view" slug={slug} name={uiView?.name} view="details" />
       <EditorBridgeProvider bridge={bridge}>
         <UiViewDetail
           key={slug}
@@ -688,7 +661,7 @@ function AcsIndexRoute() {
   const search = useSearch({ from: '/acs' });
   const navigate = useNavigate();
   return (
-    <RoutePane selection={{ kind: 'acs-list' }}>
+    <RoutePane>
       <AcsList
         search={search.q ?? ''}
         tagFilter={search.tag ? [search.tag] : []}
@@ -710,10 +683,6 @@ function AcsIndexRoute() {
 function AcDetailRoute() {
   const { slug } = useParams({ from: '/acs/$slug' });
   const navigate = useNavigate();
-  const { data: ac } = useAc(slug);
-  const selection: EditorSelection = ac
-    ? { kind: 'entity', entityType: 'ac', slug, name: ac.text.slice(0, 60) }
-    : { kind: 'entity', entityType: 'ac', slug };
 
   const bridge = useMemo(
     () => ({
@@ -724,7 +693,8 @@ function AcDetailRoute() {
   );
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="ac" slug={slug} view="details" hasHistory />
       <EditorBridgeProvider bridge={bridge}>
         <AcDetail
           key={slug}
@@ -733,7 +703,6 @@ function AcDetailRoute() {
           onRenamed={(newSlug) =>
             navigate({ to: '/acs/$slug', params: { slug: newSlug }, replace: true })
           }
-          onViewHistory={() => navigate({ to: '/acs/$slug/history', params: { slug } })}
           onOpenEntity={bridge.openEntity}
           onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
         />
@@ -745,13 +714,10 @@ function AcDetailRoute() {
 function AcHistoryRoute() {
   const { slug } = useParams({ from: '/acs/$slug/history' });
   const navigate = useNavigate();
-  const { data: ac } = useAc(slug);
-  const selection: EditorSelection = ac
-    ? { kind: 'entity', entityType: 'ac', slug, name: ac.text.slice(0, 60) }
-    : { kind: 'entity', entityType: 'ac', slug };
 
   return (
-    <RoutePane selection={selection}>
+    <RoutePane>
+      <EntityDetailToolbar type="ac" slug={slug} view="history" hasHistory />
       <VersionHistory
         type="ac"
         slug={slug}
@@ -763,7 +729,7 @@ function AcHistoryRoute() {
 
 function TagsRoute() {
   return (
-    <RoutePane selection={{ kind: 'tags-list' }}>
+    <RoutePane>
       <TagsList />
     </RoutePane>
   );
@@ -771,7 +737,7 @@ function TagsRoute() {
 
 function TodosRoute() {
   return (
-    <RoutePane selection={{ kind: 'todos-list' }}>
+    <RoutePane>
       <TodosList />
     </RoutePane>
   );
@@ -779,7 +745,7 @@ function TodosRoute() {
 
 function LinksIndexRoute() {
   return (
-    <RoutePane selection={{ kind: 'page-links-list' }}>
+    <RoutePane>
       <PageLinksList />
     </RoutePane>
   );
@@ -787,7 +753,7 @@ function LinksIndexRoute() {
 
 function ReleasesIndexRoute() {
   return (
-    <RoutePane selection={{ kind: 'releases-list' }}>
+    <RoutePane>
       <ReleasesList />
     </RoutePane>
   );
@@ -796,7 +762,7 @@ function ReleasesIndexRoute() {
 function ReleaseDetailRoute() {
   const { idOrName } = useParams({ from: '/releases/$idOrName' });
   return (
-    <RoutePane selection={{ kind: 'release-detail', idOrName }}>
+    <RoutePane>
       <ReleaseDetail idOrName={idOrName} />
     </RoutePane>
   );
@@ -804,7 +770,7 @@ function ReleaseDetailRoute() {
 
 function PlansIndexRoute() {
   return (
-    <RoutePane selection={{ kind: 'plans-list' }}>
+    <RoutePane>
       <PlansListPage />
     </RoutePane>
   );
@@ -812,7 +778,7 @@ function PlansIndexRoute() {
 
 function BriefsIndexRoute() {
   return (
-    <RoutePane selection={{ kind: 'briefs-list' }}>
+    <RoutePane>
       <BriefsList />
     </RoutePane>
   );
@@ -845,7 +811,7 @@ function PlanRoute() {
   const id = Number(planId);
   if (!Number.isInteger(id)) {
     return (
-      <RoutePane selection={{ kind: 'none' }}>
+      <RoutePane>
         <div
           className="flex-1 flex items-center justify-center text-[13px]"
           style={{ color: 'var(--c-muted)' }}
@@ -874,7 +840,7 @@ function EntityNotFound({ type }: { type: EntityType }) {
     navigateToEntityList(navigate, type);
   }
   return (
-    <RoutePane selection={{ kind: 'none' }}>
+    <RoutePane>
       <div className="flex-1 flex items-center justify-center px-10">
         <div className="max-w-md text-center" style={{ color: 'var(--c-muted)' }}>
           <div className="text-[15px] font-semibold mb-2" style={{ color: 'var(--c-ink)' }}>

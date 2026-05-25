@@ -29,6 +29,12 @@ export interface Config {
   entities?: string[];
   consistency?: ConsistencyConfig;
   agent?: AgentConfig;
+  /**
+   * M24: base URL of the remote claude4spec-API (dev/staging override).
+   * `null`/absent = the hardcoded production constant in M24. Additive — no
+   * `$schemaVersion` bump; projects from before M24 keep production behaviour.
+   */
+  remoteApiUrl?: string | null;
 }
 
 export type ConsistencySeverity = 'off' | 'warn' | 'error';
@@ -71,6 +77,8 @@ export function defaults(cwd: string): Config {
     // traktowany jako ukonczony onboarding (zaden retroaktywny redirect).
     // Swiezy bootstrap nadpisuje to na false w loadOrCreateConfig.
     onboardingCompleted: true,
+    // M24: null = use the hardcoded production remote in M24.
+    remoteApiUrl: null,
   };
 }
 
@@ -184,6 +192,22 @@ function validate(raw: unknown): Partial<Config> {
       agent.claudeUsePreset = ar.claudeUsePreset;
     }
     out.agent = agent;
+  }
+  if ('remoteApiUrl' in r) {
+    if (r.remoteApiUrl !== null && typeof r.remoteApiUrl !== 'string') {
+      throw typeError('remoteApiUrl', 'string | null', r.remoteApiUrl);
+    }
+    // Syntactic URL check here (sync). Reachability (HEAD ping) is enforced at
+    // server boot in startServer() — both failures share the same message:
+    // `config.json: field 'remoteApiUrl': invalid URL or unreachable host`.
+    if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '') {
+      try {
+        void new URL(r.remoteApiUrl);
+      } catch {
+        throw new Error(`config.json: field 'remoteApiUrl': invalid URL or unreachable host`);
+      }
+    }
+    out.remoteApiUrl = r.remoteApiUrl;
   }
   return out;
 }

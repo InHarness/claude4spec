@@ -17,11 +17,11 @@ export function SegmentButton({
   title,
   disabled = false,
 }: {
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   label: string;
   active: boolean;
   onClick(): void;
-  title: string;
+  title?: string;
   disabled?: boolean;
 }) {
   return (

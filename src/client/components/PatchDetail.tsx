@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SegmentedControl } from './SegmentedControl.js';
 import { Link } from '@tanstack/react-router';
 import { FileWarning, MessageSquare, MessageSquarePlus, Settings, Check, Circle } from 'lucide-react';
 import { usePatch, useCreatePatchThread, useUpdatePatchStatus } from '../hooks/usePatches.js';
@@ -97,7 +98,14 @@ export function PatchDetail({ patchPath }: Props) {
             ↗ {briefPath}
           </Link>
         )}
-        <ViewTabs view={view} onChange={setView} />
+        <SegmentedControl
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'artifact', label: 'Artifact' },
+            { value: 'threads', label: 'Threads' },
+          ]}
+        />
         <button
           onClick={() => setSettingsOpen((v) => !v)}
           className="rounded-md p-1 btn-ghost"
@@ -146,7 +154,29 @@ export function PatchDetail({ patchPath }: Props) {
       </header>
 
       <div className="flex-1 flex min-w-0 min-h-0">
-        {view === 'artifact' && <PatchEditor patchPath={patchPath} />}
+        {view === 'artifact' && (
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <PatchEditor patchPath={patchPath} />
+            <footer
+              className="px-5 py-2.5 flex items-center gap-2"
+              style={{ borderTop: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
+            >
+              <div className="flex-1" />
+              <button
+                onClick={handleNewThread}
+                disabled={createThread.isPending}
+                className="text-[12.5px] px-3 py-1.5 rounded"
+                style={{
+                  background: 'var(--c-accent)',
+                  color: '#fff',
+                  opacity: createThread.isPending ? 0.6 : 1,
+                }}
+              >
+                {createThread.isPending ? 'Starting…' : 'Run in new thread'}
+              </button>
+            </footer>
+          </div>
+        )}
         {view === 'threads' && (
           <ThreadsPanel
             threads={patch.threads}
@@ -240,28 +270,3 @@ function Badge({ children, title }: { children: React.ReactNode; title?: string 
   );
 }
 
-function ViewTabs({ view, onChange }: { view: ViewTab; onChange(v: ViewTab): void }) {
-  return (
-    <div
-      className="flex items-center gap-0.5 p-0.5 rounded-md"
-      style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-    >
-      {(['artifact', 'threads'] as ViewTab[]).map((v) => (
-        <button
-          key={v}
-          type="button"
-          onClick={() => onChange(v)}
-          className="px-2 py-0.5 rounded text-[11.5px] font-medium capitalize"
-          style={{
-            background: view === v ? 'var(--c-card)' : 'transparent',
-            color: view === v ? 'var(--c-ink)' : 'var(--c-muted)',
-            border: view === v ? '1px solid var(--c-hair-strong)' : '1px solid transparent',
-            cursor: 'pointer',
-          }}
-        >
-          {v}
-        </button>
-      ))}
-    </div>
-  );
-}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ArrowLeft, FileText, GitCommit, Plus, RotateCcw } from 'lucide-react';
+import { ArrowLeft, FileText, GitCommit, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import type {
   RawDeltaEntityChange,
   RawDeltaPageChange,
@@ -55,6 +55,8 @@ export function ReleaseDetail({ idOrName }: Props) {
   const [compareTo, setCompareTo] = useState<string | null>(null);
   // M21 m21ui: Generate brief modal — `to` jest biezacym release, user wybiera `from`.
   const [generateBriefOpen, setGenerateBriefOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // v0.1.12 — najnowszy release jest mutowalny (id == MAX(id)). Lista jest newest-first.
   const maxReleaseId = allReleases[0]?.id ?? null;
@@ -80,6 +82,22 @@ export function ReleaseDetail({ idOrName }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [release?.id, release?.name, release?.description, updateRelease.isPending]);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!menuRef.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
 
   async function saveName() {
     if (!release || !isLatest) return;
@@ -249,44 +267,73 @@ export function ReleaseDetail({ idOrName }: Props) {
             · {release.countBreakdown.pages} pages · {release.countBreakdown.total} total captures
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5">
+        <div className="relative" ref={menuRef}>
           <button
-            onClick={pullUnreleased}
-            disabled={!isLatest || updateRelease.isPending}
-            title={
-              isLatest
-                ? 'Pull all unreleased entity/page versions into this release'
-                : 'Frozen — pull only allowed on latest release'
-            }
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px]"
+            onClick={() => setMenuOpen((v) => !v)}
+            title="Release actions"
+            className="flex items-center justify-center rounded-md p-1.5"
             style={{
-              background: 'var(--c-card)',
+              background: menuOpen ? 'var(--c-panel)' : 'var(--c-card)',
               color: 'var(--c-muted)',
               border: '1px solid var(--c-hair)',
-              opacity: isLatest ? 1 : 0.5,
-              cursor: isLatest ? 'pointer' : 'not-allowed',
             }}
           >
-            <Plus size={12} />
-            Pull in unreleased changes
+            <MoreHorizontal size={16} />
           </button>
-          <button
-            onClick={() => setConfirmRestore(true)}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px]"
-            style={{ background: 'var(--c-card)', color: 'var(--c-muted)', border: '1px solid var(--c-hair)' }}
-          >
-            <RotateCcw size={12} />
-            Restore entire spec
-          </button>
-          <button
-            onClick={() => setGenerateBriefOpen(true)}
-            className="flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12.5px]"
-            style={{ background: 'var(--c-accent)', color: '#fff' }}
-            title="Generate a narrative brief comparing this release with another"
-          >
-            <FileText size={12} />
-            Generate brief from this release
-          </button>
+          {menuOpen && (
+            <div
+              className="absolute right-0 py-1"
+              style={{
+                top: 'calc(100% + 4px)',
+                minWidth: 240,
+                background: 'var(--c-card)',
+                border: '1px solid var(--c-hair-strong)',
+                borderRadius: 8,
+                boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                zIndex: 40,
+              }}
+            >
+              <button
+                onClick={() => {
+                  pullUnreleased();
+                  setMenuOpen(false);
+                }}
+                disabled={!isLatest || updateRelease.isPending}
+                title={
+                  isLatest
+                    ? 'Pull all unreleased entity/page versions into this release'
+                    : 'Frozen — pull only allowed on latest release'
+                }
+                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12.5px]"
+                style={{
+                  color: 'var(--c-muted)',
+                  opacity: isLatest ? 1 : 0.5,
+                  cursor: isLatest ? 'pointer' : 'not-allowed',
+                }}
+                onMouseEnter={(e) => {
+                  if (isLatest && !updateRelease.isPending)
+                    e.currentTarget.style.background = 'var(--c-panel)';
+                }}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Plus size={13} />
+                Pull in unreleased changes
+              </button>
+              <button
+                onClick={() => {
+                  setConfirmRestore(true);
+                  setMenuOpen(false);
+                }}
+                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-[12.5px]"
+                style={{ color: 'var(--c-muted)' }}
+                onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
+                onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+              >
+                <RotateCcw size={13} />
+                Restore entire spec
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -344,6 +391,22 @@ export function ReleaseDetail({ idOrName }: Props) {
           )}
         </div>
       </div>
+
+      <footer
+        className="px-8 py-2.5 flex items-center gap-2"
+        style={{ borderTop: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
+      >
+        <div className="flex-1" />
+        <button
+          onClick={() => setGenerateBriefOpen(true)}
+          className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px]"
+          style={{ background: 'var(--c-accent)', color: '#fff' }}
+          title="Generate a narrative brief comparing this release with another"
+        >
+          <FileText size={12} />
+          Generate brief from this release
+        </button>
+      </footer>
 
       {confirmRestore && (
         <ConfirmRestoreDialog

@@ -50,7 +50,7 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(prompt);
-      toast.success('Skopiowano system prompt');
+      toast.success('System prompt copied');
     } catch {
       toast.error('Nie udalo sie skopiowac');
     }
@@ -73,7 +73,7 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
           onClick={() => void handleCopy()}
           className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-mono btn-ghost"
           style={{ color: 'var(--c-muted)' }}
-          title="Kopiuj system prompt"
+          title="Copy system prompt"
         >
           <Copy size={11} />
           <span>Copy</span>
