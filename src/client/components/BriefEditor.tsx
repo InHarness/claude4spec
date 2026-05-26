@@ -6,6 +6,8 @@ import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
 import { ApiError } from '../lib/api-core.js';
+import { useFileEventsStore } from '../state/fileEvents.js';
+import { confirmDestructive } from '../ui/events.js';
 
 interface Props {
   briefPath: string;
@@ -32,6 +34,8 @@ export function BriefEditor({ briefPath }: Props) {
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
   const [conflict, setConflict] = useState<{ currentHash: string } | null>(null);
+  const briefExternalChange = useFileEventsStore((s) => s.briefExternalChange);
+  const clearBriefExternalChange = useFileEventsStore((s) => s.clearBriefExternalChange);
 
   const extensions = useMemo(
     () =>
@@ -86,7 +90,8 @@ export function BriefEditor({ briefPath }: Props) {
     }
   }
 
-  // Hydrate initial body when brief loads / changes.
+  // Hydrate initial body when brief loads / changes (also fires after a remote
+  // refetch — see external-change effect below).
   useEffect(() => {
     if (!editor || !brief) return;
     const current = editor.storage.markdown.getMarkdown() as string;
@@ -95,9 +100,51 @@ export function BriefEditor({ briefPath }: Props) {
       return;
     }
     if (isDirtyRef.current) return;
-    editor.commands.setContent(brief.body);
+    // Set the ref before setContent and pass emitUpdate=false so the swap never
+    // re-enters onUpdate as a phantom edit (mirrors Editor.tsx for pages).
     lastSavedBodyRef.current = brief.body;
+    editor.commands.setContent(brief.body, false);
   }, [editor, brief]);
+
+  // Live refresh when the brief changes outside this editor (agent via MCP, or a
+  // direct disk edit). Mirrors Editor.tsx:179-215 for pages. Clean editor → reload
+  // silently; dirty editor → ask whether to discard or keep local changes.
+  useEffect(() => {
+    if (!editor || !briefExternalChange) return;
+    if (briefExternalChange.path !== briefPath) return;
+    if (!isDirtyRef.current) {
+      clearBriefExternalChange();
+      qc.invalidateQueries({ queryKey: ['briefs', 'detail', briefPath] });
+      return;
+    }
+    let cancelled = false;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    void confirmDestructive({
+      title: 'Brief changed externally',
+      body: 'This brief was modified outside the editor (by an agent or on disk). Reload and discard your unsaved changes, or keep them?',
+      confirmLabel: 'Reload',
+      cancelLabel: 'Keep my changes',
+      danger: false,
+    }).then((confirmed) => {
+      if (cancelled) return;
+      clearBriefExternalChange();
+      if (confirmed) {
+        // Discard local edits and pull the latest from disk.
+        lastSavedBodyRef.current = null;
+        isDirtyRef.current = false;
+        qc.invalidateQueries({ queryKey: ['briefs', 'detail', briefPath] });
+      }
+      // Keep my changes → leave the editor dirty. Brief writes carry a mandatory
+      // expectedHash, so the eventual save surfaces BRIEF_CONFLICT and the
+      // existing conflict banner (no forced overwrite, unlike pages).
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editor, briefExternalChange, briefPath, qc, clearBriefExternalChange]);
 
   if (isLoading) {
     return (

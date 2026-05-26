@@ -32,6 +32,11 @@ import type { PagesWatcher } from '../fs/watcher.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
+import { readConfig } from '../config.js';
+import {
+  buildBundleArchive as buildBundleArchiveImpl,
+  type BuildBundleResult,
+} from './release-bundle.js';
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
 const ENTITY_TABLES: Record<RawEntityType, string> = {
@@ -121,6 +126,7 @@ export class ReleaseService {
     private tagsService: TagsService,
     private pagesService: PagesService,
     private watcher: PagesWatcher | null = null,
+    private cwd: string = process.cwd(),
   ) {}
 
   // ─── Listing & retrieval ─────────────────────────────────────────────────
@@ -137,6 +143,18 @@ export class ReleaseService {
     if (!row) throw new DomainError('NOT_FOUND', `release '${idOrName}' not found`);
     const release = this.toRelease(row);
     return { ...release, countBreakdown: this.computeCountBreakdown(row.id) };
+  }
+
+  /**
+   * Count of captures still queued at HEAD — entity_version + page_version rows
+   * with `release_id IS NULL`. Drives the M25 "You have N unreleased changes"
+   * banner shown only on the latest (mutable) release card.
+   */
+  countUnreleased(): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL`)
+      .get() as { n: number };
+    return row.n + this.pageVersions.countUnreleased();
   }
 
   // ─── Mutations ───────────────────────────────────────────────────────────
@@ -569,6 +587,46 @@ export class ReleaseService {
     }
 
     return { releaseId, entityResults, pageResults };
+  }
+
+  // ─── Portable bundle (transport format — M25 push / M26 import) ────────────
+
+  /**
+   * Build a portable `tar.gz` of release N, deterministically reconstructed
+   * from the versioning tables (`getReleaseSnapshot`) + sanitized `config.json`.
+   * Does NOT read `pagesDir` on disk nor entity HEADs. The returned `tarGzPath`
+   * points at a temp file the CALLER owns (M25 deletes after streaming to
+   * remote); the internal working dir is cleaned up before returning.
+   */
+  async buildBundleArchive(releaseId: number): Promise<BuildBundleResult> {
+    const snapshot = this.getReleaseSnapshot(releaseId); // throws NOT_FOUND if missing
+    const release = this.getRelease(releaseId);
+    return buildBundleArchiveImpl(snapshot, release, readConfig(this.cwd));
+  }
+
+  /**
+   * CONTRACT-ONLY in v1 — implementation deferred to M26 (Release Import,
+   * `c4s import <bundle>`). The signature is public so the bidirectional bundle
+   * contract is fixed now (write here, read in M26).
+   *
+   * M26 read-direction algorithm (do not implement here):
+   *   1. Parse `manifest.json` FIRST (first tar entry). Missing → throw
+   *      `BUNDLE_MANIFEST_MISSING`. `bundleSchemaVersion` > max supported →
+   *      throw `BUNDLE_SCHEMA_UNSUPPORTED { foundVersion, maxSupportedVersion }`.
+   *   2. Optionally verify SHA-256 (caller supplies expected hash, e.g. from an
+   *      M25 push header). Mismatch → throw `BUNDLE_HASH_MISMATCH { expected, actual }`.
+   *   3. Read `config.json` via a `bundleSchemaVersion`-aware parser; unknown
+   *      fields → warn + ignore (forward-compat).
+   *   4. Stream `pages/<path>.md`; reject `..` / absolute / null-byte paths →
+   *      throw `BUNDLE_MALFORMED_ENTRY { path, reason }`.
+   *   5. Stream `entities/<typePlural>.json`; plural absent from local
+   *      `config.entities` → throw `BUNDLE_UNKNOWN_ENTITY_TYPE { type }`.
+   *   6. Compose a `SpecSnapshot` (same shape as `getReleaseSnapshot`). M26 owns
+   *      what to do with it (UPSERT restore / dry-run diff / read-only mount).
+   * All errors are structured (code + payload), never bare strings.
+   */
+  async restoreBundleArchive(_stream: NodeJS.ReadableStream): Promise<SpecSnapshot> {
+    throw new Error('NOT_IMPLEMENTED — restoreBundleArchive deferred to M26 (Release Import)');
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────

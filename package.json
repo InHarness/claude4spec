@@ -87,6 +87,7 @@
     "react-markdown": "^9.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "tar": "^7.5.15",
     "tiptap-markdown": "^0.8.10",
     "ws": "^8.18.0",
     "zod": "^4.3.6",

@@ -28,6 +28,7 @@ import type {
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
+import type { WsGateway } from '../ws/gateway.js';
 import type { PageVersionService } from './page-version.js';
 import type { PageSerializer } from './page-serializer.js';
 import type { ChatService } from './chat.js';
@@ -45,6 +46,7 @@ export interface BriefServiceDeps {
   chatService: ChatService;
   releaseService: ReleaseService;
   frontmatterIndexer: PagesFrontmatterIndexer;
+  ws: WsGateway;
 }
 
 export interface BriefCreateOpts {
@@ -236,6 +238,16 @@ export class BriefService {
       opts.changeSummary,
     );
     await this.deps.frontmatterIndexer.indexPage('briefs', opts.path);
+    // The indexer only broadcasts `briefs:changed` when *frontmatter* changes; a
+    // body-only edit (the common agent case) emits nothing, and the chokidar event
+    // is suppressed above. Broadcast explicitly so open BriefEditors refresh.
+    // `agent` writes are external from the editor's POV (reload/conflict-dialog);
+    // a `user` write is this editor's own save (silent reconcile) — mirrors Pages.
+    this.deps.ws.broadcast({
+      kind: 'briefs:changed',
+      path: opts.path,
+      origin: opts.changedBy === 'agent' ? 'external' : 'server',
+    });
     return { newHash: hashContent(opts.content) };
   }
 

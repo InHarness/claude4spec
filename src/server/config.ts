@@ -35,6 +35,13 @@ export interface Config {
    * `$schemaVersion` bump; projects from before M24 keep production behaviour.
    */
   remoteApiUrl?: string | null;
+  /**
+   * M25: UUID of this project on the remote (set after the first successful
+   * push). `null`/absent = no remote project yet ⇒ the next push is a first push
+   * (creates a new project from `name`). Additive — no `$schemaVersion` bump; not
+   * a secret (the secret is `access_token` in `remote_session`).
+   */
+  remoteProjectId?: string | null;
 }
 
 export type ConsistencySeverity = 'off' | 'warn' | 'error';
@@ -79,6 +86,8 @@ export function defaults(cwd: string): Config {
     onboardingCompleted: true,
     // M24: null = use the hardcoded production remote in M24.
     remoteApiUrl: null,
+    // M25: null = no remote project yet ⇒ next push creates one.
+    remoteProjectId: null,
   };
 }
 
@@ -208,6 +217,12 @@ function validate(raw: unknown): Partial<Config> {
       }
     }
     out.remoteApiUrl = r.remoteApiUrl;
+  }
+  if ('remoteProjectId' in r) {
+    if (r.remoteProjectId !== null && typeof r.remoteProjectId !== 'string') {
+      throw typeError('remoteProjectId', 'string | null', r.remoteProjectId);
+    }
+    out.remoteProjectId = r.remoteProjectId;
   }
   return out;
 }

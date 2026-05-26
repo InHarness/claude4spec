@@ -16,6 +16,14 @@ export function useRelease(idOrName: string | number | undefined) {
   });
 }
 
+/** Count of unreleased captures at HEAD — for the "You have N unreleased changes" banner. */
+export function useUnreleasedCount() {
+  return useQuery({
+    queryKey: ['releases', 'unreleased-count'],
+    queryFn: () => releasesApi.unreleasedCount(),
+  });
+}
+
 export function useReleaseDiff(
   from: string | number | null | undefined,
   to: string | number | undefined,

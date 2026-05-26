@@ -13,6 +13,15 @@ export function releasesRouter(releases: ReleaseService, ws?: WsGateway): Router
     }
   });
 
+  // Literal path — MUST be declared before the `/:idOrName` catch-all.
+  router.get('/unreleased-count', (_req, res, next) => {
+    try {
+      res.json({ count: releases.countUnreleased() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post('/', (req, res, next) => {
     try {
       const body = (req.body ?? {}) as { name?: string; description?: string };

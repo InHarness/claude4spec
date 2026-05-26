@@ -11,6 +11,8 @@
  * not share a package.
  */
 
+import { createReadStream } from 'node:fs';
+
 /** Hardcoded production remote. `config.remoteApiUrl` overrides for dev/staging. */
 export const PROD_REMOTE_URL = 'https://claude4spec.inharness.ai';
 
@@ -51,6 +53,36 @@ export interface AccountProfileResponse {
   id: string;
   email: string;
   status: AccountStatus;
+}
+
+/** Release meta echoed by both push endpoints (claude4spec-api M02/M03). */
+export interface RemoteReleaseMeta {
+  id: string;
+  projectId: string;
+  sequence: number;
+  contentSha256: string;
+  contentSizeBytes: number;
+  createdAt: string;
+  pushedBy: { accountId: string; tokenId: string | null };
+}
+
+/** `POST /v1/projects` (first push) — creates a project and its first release. */
+export interface CreateProjectResponse {
+  project: { id: string; slug: string; name: string; description: string | null; createdAt: string };
+  release: RemoteReleaseMeta;
+}
+
+/** `POST /v1/projects/:id/releases` (subsequent push). 201 fresh / 200 dedup. */
+export interface PushReleaseResponse {
+  release: RemoteReleaseMeta;
+  deduplicated: boolean;
+}
+
+/** Bytes-derived inputs for a push, all sourced from M17.buildBundleArchive. */
+export interface PushBundlePayload {
+  tarGzPath: string;
+  sizeBytes: number;
+  sha256: string;
 }
 
 /** Result of the polling exchange: a one-time success or a polling-state error. */
@@ -125,6 +157,87 @@ export class RemoteHttpClient {
     if (res.status === 401) throw new RemoteUnauthorizedError();
     if (!res.ok) throw new RemoteRequestError(`GET /v1/account failed (HTTP ${res.status})`, res.status);
     return (await res.json()) as AccountProfileResponse;
+  }
+
+  /**
+   * POST /v1/projects — first push. Streams the bundle as octet-stream and
+   * creates a new remote project named `projectName`. 401 → RemoteUnauthorizedError;
+   * any other non-2xx → RemoteRequestError (message from the remote error envelope).
+   */
+  async createProject(
+    accessToken: string,
+    payload: PushBundlePayload,
+    projectName: string,
+  ): Promise<CreateProjectResponse> {
+    const res = await this.streamBundle('/v1/projects', accessToken, payload, {
+      'x-project-name': projectName,
+    });
+    if (res.status === 401) throw new RemoteUnauthorizedError();
+    if (!res.ok) {
+      throw new RemoteRequestError(await this.errorMessageFrom(res, `POST /v1/projects failed (HTTP ${res.status})`), res.status);
+    }
+    return (await res.json()) as CreateProjectResponse;
+  }
+
+  /**
+   * POST /v1/projects/:remoteProjectId/releases — subsequent push (no
+   * X-Project-Name). 200 = deduplicated hit, 201 = fresh release; both carry the
+   * `deduplicated` flag. 401 → RemoteUnauthorizedError; other non-2xx → RemoteRequestError.
+   */
+  async pushRelease(
+    accessToken: string,
+    remoteProjectId: string,
+    payload: PushBundlePayload,
+  ): Promise<PushReleaseResponse> {
+    const res = await this.streamBundle(
+      `/v1/projects/${encodeURIComponent(remoteProjectId)}/releases`,
+      accessToken,
+      payload,
+    );
+    if (res.status === 401) throw new RemoteUnauthorizedError();
+    if (!res.ok) {
+      throw new RemoteRequestError(await this.errorMessageFrom(res, `POST /v1/projects/:id/releases failed (HTTP ${res.status})`), res.status);
+    }
+    return (await res.json()) as PushReleaseResponse;
+  }
+
+  /** Streams `tarGzPath` as application/octet-stream with the integrity + auth headers. */
+  private streamBundle(
+    path: string,
+    accessToken: string,
+    payload: PushBundlePayload,
+    extraHeaders: Record<string, string> = {},
+  ): Promise<Response> {
+    const headers: Record<string, string> = {
+      'content-type': 'application/octet-stream',
+      'content-length': String(payload.sizeBytes),
+      'x-content-sha256': payload.sha256,
+      authorization: `Bearer ${accessToken}`,
+      ...extraHeaders,
+    };
+    // `duplex: 'half'` is required by undici when the body is a stream; it is not
+    // yet in the DOM RequestInit type, hence the cast.
+    return this.fetchRemote(path, {
+      method: 'POST',
+      headers,
+      body: createReadStream(payload.tarGzPath) as unknown as BodyInit,
+      duplex: 'half',
+    } as RequestInit);
+  }
+
+  /** Best-effort human message from a remote error response (`{error:{message|code}}` or NestJS `{message}`). */
+  private async errorMessageFrom(res: Response, fallback: string): Promise<string> {
+    try {
+      const body = (await res.json()) as
+        | { error?: { code?: string; message?: string }; message?: string }
+        | null;
+      if (body?.error?.message) return body.error.message;
+      if (body?.error?.code) return body.error.code;
+      if (typeof body?.message === 'string') return body.message;
+    } catch {
+      /* non-JSON body — fall through */
+    }
+    return fallback;
   }
 
   private async fetchRemote(path: string, init: RequestInit): Promise<Response> {

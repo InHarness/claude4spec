@@ -1,12 +1,24 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { GitCommit, Plus } from 'lucide-react';
 import { useReleases } from '../hooks/useReleases.js';
+import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
 import { CreateReleaseDialog } from './CreateReleaseDialog.js';
 
 export function ReleasesList() {
   const { data: releases = [], isLoading } = useReleases();
+  const { data: pushes = [] } = useAllReleasePushes();
   const [showCreate, setShowCreate] = useState(false);
+
+  // Per-release count of SUCCESSFUL pushes (dedup hits count; errors do not).
+  const pushedCounts = useMemo(() => {
+    const m = new Map<number, number>();
+    for (const p of pushes) {
+      if (p.status !== 'success') continue;
+      m.set(p.releaseId, (m.get(p.releaseId) ?? 0) + 1);
+    }
+    return m;
+  }, [pushes]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -80,6 +92,14 @@ export function ReleasesList() {
                     <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
                       by {r.createdBy} · {formatDate(r.createdAt)}
                     </span>
+                    {pushedCounts.get(r.id) ? (
+                      <span
+                        className="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                        style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent-ink)' }}
+                      >
+                        {pushedCounts.get(r.id) === 1 ? 'Pushed' : `Pushed ${pushedCounts.get(r.id)}×`}
+                      </span>
+                    ) : null}
                   </div>
                   <div
                     className="text-[12.5px] mt-1"

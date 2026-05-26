@@ -10,6 +10,8 @@ import type { ReleaseDetail } from '../../../shared/entities.js';
 
 export interface ReleaseActionContext {
   release: ReleaseDetail;
+  /** Close the host menu/dropdown the action is rendered in (optional). */
+  onClose?: () => void;
 }
 
 export interface ReleaseAction {

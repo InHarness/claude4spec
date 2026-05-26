@@ -28,6 +28,13 @@ const STATUS_FOR_CODE: Record<string, number> = {
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,
+  // M25 Release Push
+  NOT_CONNECTED: 409,
+  ACCOUNT_NOT_ACTIVE: 409,
+  RELEASE_NOT_FOUND: 404,
+  RELEASE_PUSH_NOT_FOUND: 404,
+  SESSION_EXPIRED: 502,
+  PUSH_FAILED: 502,
 };
 
 export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {

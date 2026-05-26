@@ -55,6 +55,19 @@ export function useFileWatcher() {
             batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
+          } else if (data.kind === 'briefs:changed') {
+            batcher.queue(['briefs', 'list']);
+            if (data.path) {
+              batcher.queue(['briefs', 'versions', data.path]);
+              if (data.origin === 'external') {
+                // Agent / on-disk edit — route through externalChange so the open
+                // BriefEditor can reload (clean) or confirm (dirty), like pages.
+                useFileEventsStore.getState().notifyBriefExternalChange(data.path);
+              } else {
+                // Our own save (origin 'server' / undefined) — silently reconcile.
+                batcher.queue(['briefs', 'detail', data.path]);
+              }
+            }
           }
         } catch {
           /* ignore */

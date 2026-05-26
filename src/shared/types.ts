@@ -44,7 +44,7 @@ export type WsEvent =
   | { kind: 'release:updated'; releaseId: number; name: string }
   // M21 Briefs / M02 frontmatter indexer
   | { kind: 'pages:frontmatter-changed'; path: string; rootDir: PagesRootDir }
-  | { kind: 'briefs:changed'; path?: string }
+  | { kind: 'briefs:changed'; path?: string; origin?: 'server' | 'external' }
   // M23 Patches
   | { kind: 'patches:changed'; path?: string }
   | { kind: 'hello'; ts: number };

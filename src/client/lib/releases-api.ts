@@ -30,6 +30,11 @@ export const releasesApi = {
     const data = await handle<{ releases: Release[] }>(await fetch('/api/releases'));
     return data.releases;
   },
+  /** Count of unreleased captures at HEAD (drives the M25 banner on the latest release). */
+  async unreleasedCount(): Promise<number> {
+    const data = await handle<{ count: number }>(await fetch('/api/releases/unreleased-count'));
+    return data.count;
+  },
   async create(input: { name: string; description: string }): Promise<ReleaseDetail> {
     return handle<ReleaseDetail>(
       await fetch('/api/releases', {

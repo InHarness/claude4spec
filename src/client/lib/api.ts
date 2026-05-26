@@ -80,12 +80,15 @@ export interface ConfigResponse {
   mode: 'dev' | 'prod';
   writingStyle: string | null;
   onboarding: { completed: boolean };
+  /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
+  remoteProjectId: string | null;
 }
 
 export interface ConfigPatch {
   name?: string;
   writingStyle?: string | null;
   onboardingCompleted?: boolean;
+  remoteProjectId?: string | null;
 }
 
 export const configApi = {

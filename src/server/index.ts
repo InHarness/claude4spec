@@ -34,6 +34,8 @@ import { PageVersionService } from './services/page-version.js';
 import { RawEntityReader } from './domain/raw-entity-reader.js';
 import { ReleaseService } from './services/release.js';
 import { releasesRouter } from './routes/releases.js';
+import { ReleasePushService } from './services/release-push.js';
+import { releasePushesRouter } from './routes/release-pushes.js';
 import { createReleaseToolsServer } from './mcp/release-tools/index.js';
 import { WsGateway } from './ws/gateway.js';
 import { PagesWatcher } from './fs/watcher.js';
@@ -257,13 +259,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       mode,
       writingStyle: c.writingStyle,
       onboarding: { completed: c.onboardingCompleted },
+      remoteProjectId: c.remoteProjectId ?? null,
     });
   });
 
   app.patch('/api/config', (req, res, next) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
-      const patch: Partial<{ name: string; writingStyle: string | null; onboardingCompleted: boolean }> = {};
+      const patch: Partial<{
+        name: string;
+        writingStyle: string | null;
+        onboardingCompleted: boolean;
+        remoteProjectId: string | null;
+      }> = {};
 
       if ('name' in body) {
         if (typeof body.name !== 'string') {
@@ -294,6 +302,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patch.onboardingCompleted = body.onboardingCompleted;
       }
 
+      // M25: allow manual clear/override of remoteProjectId (e.g. UI "clear" after
+      // a stale UUID). null ⇒ next push is a first push again.
+      if ('remoteProjectId' in body) {
+        if (body.remoteProjectId !== null && typeof body.remoteProjectId !== 'string') {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'remoteProjectId must be string | null' } });
+        }
+        patch.remoteProjectId = body.remoteProjectId;
+      }
+
       const updated = writeConfig(cwd, patch);
       res.json({
         name: updated.name,
@@ -302,6 +319,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         mode,
         writingStyle: updated.writingStyle,
         onboarding: { completed: updated.onboardingCompleted },
+        remoteProjectId: updated.remoteProjectId ?? null,
       });
     } catch (err) {
       next(err);
@@ -413,7 +431,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     tagsService,
     pages,
     watcher,
+    cwd,
   );
+  // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
+  const releasePushService = new ReleasePushService(db.handle, releaseService, remoteAuthService, cwd);
   pluginHost.registerMcpServer('release-tools', () =>
     createReleaseToolsServer({ releaseService, ws: gateway }),
   );
@@ -428,6 +449,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     chatService,
     releaseService,
     frontmatterIndexer: pagesFrontmatterIndexer,
+    ws: gateway,
   });
 
   // M23: PatchService — top-level (nie plugin), wzorzec analogiczny do
@@ -471,6 +493,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/page-links', pageLinksRouter(pagesLinkIndexer));
   app.use('/api/plans', plansRouter(planService));
   app.use('/api/releases', releasesRouter(releaseService, gateway));
+  app.use('/api/release-pushes', releasePushesRouter(releasePushService));
   app.use('/api/briefs', briefsRouter(briefService, pageVersions));
   app.use('/api/patches', patchesRouter(patchService));
   app.use('/api/remote-account', remoteAccountRouter(remoteAuthService));
@@ -520,6 +543,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       pageVersions.recordVersion(relPath, op, 'filesystem', undefined, briefsSerializer, 'brief').catch((err) => {
         console.warn(`[page-version] brief capture for ${relPath}:`, (err as Error).message);
       });
+      // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
+      // only fires `briefs:changed` on frontmatter changes, so body-only edits
+      // need this explicit broadcast. `external` → reload-or-confirm like Pages.
+      gateway.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' });
     }
   });
 

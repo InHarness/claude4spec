@@ -12,10 +12,16 @@ import {
   useReleaseSnapshot,
   useRestoreSpec,
   useUpdateRelease,
+  useUnreleasedCount,
 } from '../hooks/useReleases.js';
+import { useReleasePushes } from '../hooks/useReleasePushes.js';
+import { listReleaseActions } from '../lib/release-actions/registry.js';
 import { EntityDiffCard } from './release/EntityDiffCard.js';
 import { PageDiffCard } from './release/PageDiffCard.js';
+import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
+// Side-effect import: registers the M25 "Push to remote" action in the registry.
+import './release/push-to-remote-action.js';
 
 interface Props {
   idOrName: string;
@@ -220,8 +226,9 @@ export function ReleaseDetail({ idOrName }: Props) {
               {release.name}
             </h2>
           )}
-          <div className="text-[12px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
-            by {release.createdBy} · {formatDate(release.createdAt)}
+          <div className="text-[12px] mt-0.5 flex items-center gap-2" style={{ color: 'var(--c-subtle)' }}>
+            <span>by {release.createdBy} · {formatDate(release.createdAt)}</span>
+            <PushedBadge releaseId={release.id} />
           </div>
           {isLatest ? (
             <textarea
@@ -332,6 +339,10 @@ export function ReleaseDetail({ idOrName }: Props) {
                 <RotateCcw size={13} />
                 Restore entire spec
               </button>
+              {/* M17 actions registry — extension point (M25 "Push to remote", …). */}
+              {listReleaseActions().map((a) => (
+                <div key={a.id}>{a.render({ release, onClose: () => setMenuOpen(false) })}</div>
+              ))}
             </div>
           )}
         </div>
@@ -339,6 +350,9 @@ export function ReleaseDetail({ idOrName }: Props) {
 
       <div className="flex-1 overflow-auto nice-scroll">
         <div className="mx-auto" style={{ maxWidth: 920, padding: '24px 32px 48px' }}>
+          {/* M25: unreleased-changes banner — only on the latest (mutable) release. */}
+          {isLatest && <UnreleasedBanner />}
+
           {/* Compare-to selector */}
           <div className="flex items-center gap-2 mb-4 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
             <span>Compare to:</span>
@@ -389,6 +403,9 @@ export function ReleaseDetail({ idOrName }: Props) {
               fromSnapshot={fromSnapshot}
             />
           )}
+
+          {/* M25: push history for this release. */}
+          <ReleasePushesList releaseId={release.id} />
         </div>
       </div>
 
@@ -586,6 +603,39 @@ function formatDate(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** "Pushed" / "Pushed N×" badge next to the release name — counts successful pushes. */
+function PushedBadge({ releaseId }: { releaseId: number }) {
+  const { data: pushes = [] } = useReleasePushes(releaseId);
+  const n = pushes.filter((p) => p.status === 'success').length;
+  if (n === 0) return null;
+  return (
+    <span
+      className="inline-block rounded text-[10px] font-mono px-1.5 py-0.5"
+      style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent-ink)' }}
+    >
+      {n === 1 ? 'Pushed' : `Pushed ${n}×`}
+    </span>
+  );
+}
+
+/** "You have N unreleased changes" — rendered only on the latest release (caller-gated). */
+function UnreleasedBanner() {
+  const { data: count = 0 } = useUnreleasedCount();
+  if (count <= 0) return null;
+  return (
+    <div
+      className="mb-4 px-4 py-2.5 rounded-md text-[12.5px]"
+      style={{
+        background: 'var(--c-accent-soft)',
+        border: '1px solid var(--c-accent)',
+        color: 'var(--c-accent-ink)',
+      }}
+    >
+      You have {count} unreleased {count === 1 ? 'change' : 'changes'} not in any release.
+    </div>
+  );
 }
 
 function ConfirmRestoreDialog({

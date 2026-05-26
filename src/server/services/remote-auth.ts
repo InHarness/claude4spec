@@ -14,6 +14,25 @@ import type {
   RemoteAccountResponse,
 } from '../../shared/remote-account.js';
 
+/** Input to `RemoteAuthService.pushBundle` — bytes-derived values come from M17. */
+export interface PushBundleInput {
+  tarGzPath: string;
+  sizeBytes: number;
+  sha256: string;
+  /** Sent as `X-Project-Name` on first push (config.name). */
+  projectName: string;
+  /** `null` ⇒ first push (create project); a UUID ⇒ subsequent push. */
+  remoteProjectId: string | null;
+}
+
+/** Unified outcome from a push, regardless of first vs subsequent endpoint. */
+export interface PushBundleOutcome {
+  remoteProjectId: string;
+  remoteReleaseId: string;
+  remoteReleaseSequence: number;
+  deduplicated: boolean;
+}
+
 interface RemoteSessionRow {
   id: number;
   access_token: string;
@@ -105,6 +124,42 @@ export class RemoteAuthService {
     this.flow = null;
     this.db.prepare('DELETE FROM remote_session').run();
     return { connected: false };
+  }
+
+  /**
+   * M25 consumer entry point — transports a release bundle to the remote with the
+   * Bearer injected from the local session. First push (`remoteProjectId === null`)
+   * creates the project; subsequent pushes append a release. The access_token never
+   * leaves M24. On 401 the single-row `remote_session` is atomically wiped (same as
+   * logout) and the `RemoteUnauthorizedError` is re-thrown for M25 to map to 502.
+   */
+  async pushBundle(input: PushBundleInput): Promise<PushBundleOutcome> {
+    const row = this.readSession();
+    if (!row) throw new DomainError('NOT_CONNECTED', 'not connected to the remote server');
+    const payload = { tarGzPath: input.tarGzPath, sizeBytes: input.sizeBytes, sha256: input.sha256 };
+    try {
+      if (input.remoteProjectId === null) {
+        const res = await this.client.createProject(row.access_token, payload, input.projectName);
+        return {
+          remoteProjectId: res.project.id,
+          remoteReleaseId: res.release.id,
+          remoteReleaseSequence: res.release.sequence,
+          deduplicated: false,
+        };
+      }
+      const res = await this.client.pushRelease(row.access_token, input.remoteProjectId, payload);
+      return {
+        remoteProjectId: input.remoteProjectId,
+        remoteReleaseId: res.release.id,
+        remoteReleaseSequence: res.release.sequence,
+        deduplicated: res.deduplicated,
+      };
+    } catch (err) {
+      if (err instanceof RemoteUnauthorizedError) {
+        this.db.prepare('DELETE FROM remote_session').run();
+      }
+      throw err;
+    }
   }
 
   // --- internals ----------------------------------------------------------
