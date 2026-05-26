@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2026-05-26
+
+### Added
+- Push to remote — bundle a release into a tarball and push it to the remote claude4spec API. Adds the `/api/release-pushes` route, `ReleasePushService` and `ReleaseBundleService` (tarball packaging via `tar`), and migration `031_release_push`, with `RemoteHttpClient` / `RemoteAuthService` support for the authenticated upload. Client side: a "Push to remote" release action, the `ReleasePushesList` panel, the `useReleasePushes` hook, and `releasePushesApi`. Includes a `verify-bundle` script for validating produced tarballs.
+
 ## [1.0.7] - 2026-05-25
 
 ### Added
@@ -89,6 +94,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.8]: https://github.com/InHarness/claude4spec/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/InHarness/claude4spec/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/InHarness/claude4spec/compare/v1.0.5...v1.0.6
 [1.0.5]: https://github.com/InHarness/claude4spec/compare/v1.0.4...v1.0.5
