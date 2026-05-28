@@ -14,7 +14,7 @@ import path from 'node:path';
 import matter from 'gray-matter';
 import { diffLines } from 'diff';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
-import { parseXmlTags } from '../../shared/xml-tags.js';
+import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
 
 export const PAGE_SERIALIZER_VERSION = '1.1.0';
@@ -150,7 +150,7 @@ export class PageSerializer {
   snapshotFromContent(relPath: string, content: string): PageSnapshotData {
     const parsed = matter(content);
     const anchors = extractAnchorsInOrder(content);
-    const xml_refs = parseXmlTags(content).map((t) => ({
+    const xml_refs = parseXmlTagsExcludingCode(content).map((t) => ({
       tagType: t.kind,
       attributes: t.attrs,
       position: t.start,

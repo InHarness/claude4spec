@@ -1,4 +1,4 @@
-import { parseXmlTags, type XmlTag } from '../../shared/xml-tags.js';
+import { parseXmlTagsExcludingCode, type XmlTag } from '../../shared/xml-tags.js';
 import { isRawEntityType, type RawEntity, type RawEntityReader } from '../domain/raw-entity-reader.js';
 import {
   renderElementList,
@@ -30,7 +30,7 @@ export interface ResolvePageResult {
 }
 
 export function resolvePageContent(md: string, deps: ResolvePageDeps): ResolvePageResult {
-  const tags = parseXmlTags(md);
+  const tags = parseXmlTagsExcludingCode(md);
   const resolved: ResolvedEntry[] = [];
   const replacements: Array<{ start: number; end: number; replacement: string }> = [];
 

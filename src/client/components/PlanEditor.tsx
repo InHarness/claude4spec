@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
-import StarterKit from '@tiptap/starter-kit';
-import Placeholder from '@tiptap/extension-placeholder';
-import Table from '@tiptap/extension-table';
-import TableRow from '@tiptap/extension-table-row';
-import TableHeader from '@tiptap/extension-table-header';
-import TableCell from '@tiptap/extension-table-cell';
-import TaskList from '@tiptap/extension-task-list';
-import TaskItem from '@tiptap/extension-task-item';
-import { Markdown } from 'tiptap-markdown';
-import { AnchorMarker } from '../tiptap/extensions/AnchorMarker.js';
+import { useQueryClient } from '@tanstack/react-query';
+import '../tiptap/registrations.js';
+import { EditorFactory } from '../tiptap/EditorFactory.js';
+import { invokeSlash } from '../tiptap/slashInvoke.js';
 import {
   BlameDecoration,
   refreshBlame,
 } from '../tiptap/extensions/BlameDecoration.js';
-import {
-  AnnotationHighlight,
-  refreshAnnotations,
-} from '../tiptap/extensions/AnnotationHighlight.js';
+import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
 import { OutlineFloater } from './OutlineFloater.js';
 import { useChatStore } from '../state/chat.js';
 import { useOutlineStore } from '../state/outline.js';
+import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { BlameBlock } from '../../shared/entities.js';
 
 interface Props {
@@ -37,6 +29,8 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
   const blameRef = useRef<BlameBlock[]>(blame);
   const blameOnRef = useRef<boolean>(blameOn);
   const annotations = useChatStore((s) => s.annotations);
+  const qc = useQueryClient();
+  const pagesIndex = usePagesIndex();
 
   useEffect(() => {
     blameRef.current = blame;
@@ -45,31 +39,31 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
     blameOnRef.current = blameOn;
   }, [blameOn]);
 
+  // Same registry-driven extension set as the page editor (chips, slash-commands,
+  // @-mention, annotation highlighting), plus the plan-only BlameDecoration which
+  // is not part of the shared registry.
   const extensions = useMemo(
     () => [
-      StarterKit.configure({ heading: { levels: [1, 2, 3, 4, 5, 6] } }),
-      Table.configure({ resizable: false }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      Markdown.configure({ html: true, transformPastedText: true, breaks: false }),
-      Placeholder.configure({
-        placeholder:
-          'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
-      }),
-      TaskList,
-      TaskItem.configure({ nested: true }),
-      AnchorMarker,
+      ...EditorFactory.buildExtensions(
+        'plan',
+        {
+          qc,
+          currentPath: currentPage,
+          onSlashInvoke: (editor, command) =>
+            void invokeSlash(editor, command, { qc, currentPath: currentPage }),
+          getAnnotations: () => useChatStore.getState().annotations,
+        },
+        {
+          placeholder:
+            'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
+        },
+      ),
       BlameDecoration.configure({
         getBlame: () => blameRef.current,
         getBlameOn: () => blameOnRef.current,
       }),
-      AnnotationHighlight.configure({
-        getAnnotations: () => useChatStore.getState().annotations,
-        currentPage,
-      }),
     ],
-    [currentPage],
+    [qc, currentPage],
   );
 
   const editor = useEditor({
@@ -97,6 +91,21 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
       editor.commands.setContent(content, false);
     });
   }, [editor, content]);
+
+  // Provide the page-links index so @page_ref tags resolve to chips. Re-parse the
+  // body once the index arrives, but never when there are unsaved edits.
+  useEffect(() => {
+    if (!editor || !pagesIndex) return;
+    const storage = editor.storage as Record<string, unknown>;
+    storage.pagesIndex = pagesIndex;
+    storage.pageRefSourcePath = currentPage;
+    const current = editor.storage.markdown.getMarkdown() as string;
+    if (current !== lastServerBodyRef.current) return;
+    queueMicrotask(() => {
+      if (editor.isDestroyed) return;
+      editor.commands.setContent(content, false);
+    });
+  }, [editor, pagesIndex, content, currentPage]);
 
   // Refresh blame decorations whenever data or toggle change.
   useEffect(() => {

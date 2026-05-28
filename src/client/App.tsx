@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
 import { ResizeHandle } from './components/ResizeHandle.js';
+import { RestartRequiredBanner } from './components/RestartRequiredBanner.js';
 import { Sidebar } from './components/Sidebar.js';
 import { useFileWatcher } from './hooks/useFileWatcher.js';
 import { usePages } from './hooks/usePages.js';
@@ -64,7 +65,10 @@ export function RootLayout() {
 }
 
 function MainShell({ projectName }: { projectName: string | null }) {
-  const [theme, setTheme] = useTheme();
+  // M26 §7 — mount the theme hook here for its side-effects (subscribes to
+  // OS-level `prefers-color-scheme` changes, toggles the `.dark` class on
+  // <html>). The selectable UI lives in /settings → Appearance.
+  useTheme();
   const [sidebarW, setSidebarW] = usePersistedWidth('sidebar', 300);
   const rootRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
@@ -133,7 +137,13 @@ function MainShell({ projectName }: { projectName: string | null }) {
   }, []);
 
   return (
-    <div ref={rootRef} className="h-full w-full flex" style={{ color: 'var(--c-ink)' }}>
+    <div
+      ref={rootRef}
+      className="h-full w-full flex flex-col"
+      style={{ color: 'var(--c-ink)' }}
+    >
+      <RestartRequiredBanner />
+      <div className="flex-1 min-h-0 flex">
       <div style={{ width: sidebarW, flexShrink: 0 }} className="flex">
         <Sidebar
           width={sidebarW}
@@ -152,8 +162,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
           todoCountByPath={todoCounts?.byPath ?? {}}
           brokenLinkCount={pageLinkCounts?.brokenLinkCount ?? 0}
           unresolvedMentionCount={pageLinkCounts?.unresolvedMentionCount ?? 0}
-          theme={theme}
-          setTheme={setTheme}
         />
       </div>
       <ResizeHandle onDrag={onSidebarDrag} />
@@ -162,6 +170,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
+      </div>
       <NewDatabaseTablePopover />
       <NewUiViewPopover />
       <TodoPopover />

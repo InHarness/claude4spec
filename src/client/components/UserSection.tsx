@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink, Loader2, LogOut } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { ExternalLink, Loader2 } from 'lucide-react';
 import { ApiError, remoteAccountApi } from '../lib/api.js';
 import { toast } from '../ui/events.js';
 import { useRemoteAccount } from '../hooks/useRemoteAccount.js';
@@ -23,9 +24,9 @@ interface Flow {
 export function UserSection() {
   const { data } = useRemoteAccount();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [flow, setFlow] = useState<Flow | null>(null);
   const [starting, setStarting] = useState(false);
-  const [menuOpen, setMenuOpen] = useState(false);
 
   // --- polling loop while a device flow is active --------------------------
   useEffect(() => {
@@ -108,16 +109,6 @@ export function UserSection() {
     }
   }
 
-  async function handleLogout() {
-    setMenuOpen(false);
-    try {
-      const r = await remoteAccountApi.logout();
-      qc.setQueryData(['remote-account'], r);
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Logout failed');
-    }
-  }
-
   const shell =
     'w-full px-3.5 py-2 flex flex-col justify-center';
   const shellStyle = { minHeight: 56, borderBottom: '1px solid var(--c-hair)' } as const;
@@ -164,64 +155,48 @@ export function UserSection() {
   }
 
   // --- State 3: logged in ---------------------------------------------------
+  // M26: clicking the avatar/email opens Settings → User section, where
+  // Logout now lives. The sidebar no longer hosts a dropdown.
   if (data?.connected) {
     const email = data.accountEmail ?? '';
     const initials = initialsFor(email);
     const deactivated = data.accountStatus === 'deactivated';
     return (
       <div className={shell} style={shellStyle}>
-        <div className="relative">
-          <button
-            onClick={() => setMenuOpen((v) => !v)}
-            className="w-full flex items-center gap-2 text-left"
-            title={deactivated ? 'Account deactivated — publishing blocked' : email}
+        <button
+          onClick={() => navigate({ to: '/settings', hash: 'user-section' })}
+          className="w-full flex items-center gap-2 text-left"
+          title={deactivated ? 'Account deactivated — publishing blocked' : email}
+        >
+          <span
+            className="relative inline-flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+            style={{
+              width: 28,
+              height: 28,
+              background: 'var(--c-accent-soft)',
+              color: 'var(--c-accent)',
+              opacity: deactivated ? 0.55 : 1,
+            }}
           >
-            <span className="relative inline-flex shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-              style={{
-                width: 28,
-                height: 28,
-                background: 'var(--c-accent-soft)',
-                color: 'var(--c-accent)',
-                opacity: deactivated ? 0.55 : 1,
-              }}
-            >
-              {initials}
-              {deactivated && (
-                <span
-                  className="absolute -top-0.5 -right-0.5 rounded-full"
-                  style={{ width: 8, height: 8, background: '#a87033', border: '1.5px solid var(--c-panel)' }}
-                />
-              )}
+            {initials}
+            {deactivated && (
+              <span
+                className="absolute -top-0.5 -right-0.5 rounded-full"
+                style={{ width: 8, height: 8, background: '#a87033', border: '1.5px solid var(--c-panel)' }}
+              />
+            )}
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-ink)' }}>
+              {email || 'Connected'}
             </span>
-            <span className="flex-1 min-w-0">
-              <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-ink)' }}>
-                {email || 'Connected'}
+            {deactivated && (
+              <span className="block text-[9.5px]" style={{ color: '#a87033' }}>
+                account deactivated
               </span>
-              {deactivated && (
-                <span className="block text-[9.5px]" style={{ color: '#a87033' }}>
-                  account deactivated
-                </span>
-              )}
-            </span>
-          </button>
-          {menuOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-              <div
-                className="absolute left-0 right-0 top-full mt-1 z-20 rounded-md py-1 shadow-lg"
-                style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-              >
-                <button
-                  onClick={handleLogout}
-                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11.5px] text-left"
-                  style={{ color: 'var(--c-ink)' }}
-                >
-                  <LogOut size={12} /> Log out
-                </button>
-              </div>
-            </>
-          )}
-        </div>
+            )}
+          </span>
+        </button>
       </div>
     );
   }

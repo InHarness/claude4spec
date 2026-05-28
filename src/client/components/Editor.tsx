@@ -14,9 +14,8 @@ import { useOutlineStore } from '../state/outline.js';
 import { useChatStore } from '../state/chat.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { confirmDestructive } from '../ui/events.js';
-import { usePageLinks } from '../hooks/usePageLinks.js';
+import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { EntityType } from '../../shared/entities.js';
-import type { FileMeta } from '../../shared/page-links.js';
 
 interface Props {
   path: string;
@@ -35,21 +34,8 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
   const annotations = useChatStore((s) => s.annotations);
   const externalChange = useFileEventsStore((s) => s.externalChange);
   const clearExternalChange = useFileEventsStore((s) => s.clearExternalChange);
-  const pageLinks = usePageLinks();
   const routerHash = useRouterState({ select: (s) => s.location.hash });
-
-  const pagesIndex = useMemo<Map<string, FileMeta> | undefined>(() => {
-    const list = pageLinks.data;
-    if (!list) return undefined;
-    const map = new Map<string, FileMeta>();
-    const paths = new Set<string>();
-    for (const p of Object.keys(list.links)) paths.add(p);
-    for (const p of Object.keys(list.reverseLinks)) paths.add(p);
-    for (const sources of Object.values(list.reverseLinks)) sources.forEach((p) => paths.add(p));
-    for (const links of Object.values(list.links)) for (const l of links) paths.add(l.targetPath);
-    for (const p of paths) map.set(p, { path: p, title: basenameTitle(p), anchors: [] });
-    return map;
-  }, [pageLinks.data]);
+  const pagesIndex = usePagesIndex();
 
   const extensions = useMemo(
     () =>
@@ -272,9 +258,4 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
       <AnnotationBubble editor={editor} currentPage={path} />
     </EditorBridgeProvider>
   );
-}
-
-function basenameTitle(p: string): string {
-  const base = p.split('/').pop() ?? p;
-  return base.replace(/\.md$/, '');
 }

@@ -72,6 +72,15 @@ export interface CreateProjectResponse {
   release: RemoteReleaseMeta;
 }
 
+/** `GET /v1/projects/:id` (M26 §4) — owner-only snapshot of the remote project. */
+export interface GetProjectResponse {
+  id: string;
+  name: string;
+  createdAt: string;
+  lastReleaseAt?: string;
+  owner?: { email: string; name?: string };
+}
+
 /** `POST /v1/projects/:id/releases` (subsequent push). 201 fresh / 200 dedup. */
 export interface PushReleaseResponse {
   release: RemoteReleaseMeta;
@@ -146,6 +155,27 @@ export class RemoteHttpClient {
       if (body?.error) return { ok: false, error: body.error, description: body.error_description };
     }
     throw new RemoteRequestError(`device/token failed (HTTP ${res.status})`, res.status);
+  }
+
+  /**
+   * GET /v1/projects/:id — owner-only (Bearer). M26 §4 surface; consumed by
+   * `/api/remote-project`. 401 → RemoteUnauthorizedError so the M24 client can
+   * wipe the stale session; 404 distinguished via `status` on RemoteRequestError
+   * so the route handler can map it to `reason: 'not_found'`.
+   */
+  async getProject(accessToken: string, remoteProjectId: string): Promise<GetProjectResponse> {
+    const res = await this.fetchRemote(`/v1/projects/${encodeURIComponent(remoteProjectId)}`, {
+      method: 'GET',
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (res.status === 401) throw new RemoteUnauthorizedError();
+    if (!res.ok) {
+      throw new RemoteRequestError(
+        await this.errorMessageFrom(res, `GET /v1/projects/:id failed (HTTP ${res.status})`),
+        res.status,
+      );
+    }
+    return (await res.json()) as GetProjectResponse;
   }
 
   /** GET /v1/account — owner-only (Bearer). 401 → RemoteUnauthorizedError. */

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
-import { parseXmlTags, serializeXmlTag } from '../../shared/xml-tags.js';
+import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 
@@ -157,7 +157,7 @@ export class SectionsService {
 }
 
 function rewriteSectionRefAnchor(body: string, oldAnchor: string, newAnchor: string): string {
-  const tags = parseXmlTags(body);
+  const tags = parseXmlTagsExcludingCode(body);
   if (tags.length === 0) return body;
   let out = '';
   let cursor = 0;

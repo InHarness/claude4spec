@@ -2,10 +2,12 @@ import type Database from 'better-sqlite3';
 import { DomainError } from './tags.js';
 import {
   RemoteHttpClient,
+  RemoteRequestError,
   RemoteUnauthorizedError,
   type AccountProfileResponse,
   type DeviceTokenError,
   type DeviceTokenResponse,
+  type GetProjectResponse,
 } from './remote-http-client.js';
 import type {
   DeviceLoginPollResponse,
@@ -124,6 +126,40 @@ export class RemoteAuthService {
     this.flow = null;
     this.db.prepare('DELETE FROM remote_session').run();
     return { connected: false };
+  }
+
+  /**
+   * M26 §4 consumer entry point — fetch the remote project for the
+   * `/api/remote-project` proxy. Single owner of Bearer injection + 401 wipe;
+   * the route handler maps the discriminated result to the public DTO.
+   *
+   * Returns:
+   *  - `{ kind: 'ok', project }` on 200.
+   *  - `{ kind: 'not_found' }` on remote 404 (so the route surfaces `reason: 'not_found'`).
+   *
+   * Throws `DomainError('NOT_CONNECTED')` if there is no session; throws
+   * `RemoteUnauthorizedError` after wiping the session on 401 (route maps to
+   * 502 SESSION_EXPIRED); rethrows `RemoteRequestError` on other transport
+   * errors / 5xx (route maps to 502 REMOTE_UNAVAILABLE).
+   */
+  async getRemoteProject(
+    remoteProjectId: string,
+  ): Promise<{ kind: 'ok'; project: GetProjectResponse } | { kind: 'not_found' }> {
+    const row = this.readSession();
+    if (!row) throw new DomainError('NOT_CONNECTED', 'not connected to the remote server');
+    try {
+      const project = await this.client.getProject(row.access_token, remoteProjectId);
+      return { kind: 'ok', project };
+    } catch (err) {
+      if (err instanceof RemoteUnauthorizedError) {
+        this.db.prepare('DELETE FROM remote_session').run();
+        throw err;
+      }
+      if (err instanceof RemoteRequestError && err.status === 404) {
+        return { kind: 'not_found' };
+      }
+      throw err;
+    }
   }
 
   /**

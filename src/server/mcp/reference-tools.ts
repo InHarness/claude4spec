@@ -9,7 +9,7 @@ import type { WsGateway } from '../ws/gateway.js';
 import { DomainError } from '../services/tags.js';
 import { pluginHost } from '../core/plugin-host/host.js';
 import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
-import { parseXmlTags } from '../../shared/xml-tags.js';
+import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { PageNode } from '../../shared/types.js';
@@ -247,7 +247,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
               for (const p of pagePaths) {
                 const page = await deps.pagesService.read(p);
-                for (const tag of parseXmlTags(page.body)) {
+                for (const tag of parseXmlTagsExcludingCode(page.body)) {
                   if (tag.kind !== 'tagged_list' && tag.kind !== 'tagged_list_mixed') continue;
                   if (tag.kind === 'tagged_list' && tag.attrs.type !== type) continue;
                   const pageTags = (tag.attrs.tags ?? '')
@@ -326,7 +326,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
         for (const p of pagePaths) {
           const page = await deps.pagesService.read(p);
-          for (const tag of parseXmlTags(page.body)) {
+          for (const tag of parseXmlTagsExcludingCode(page.body)) {
             const tagType = tag.attrs.type;
             if (tag.kind !== 'tagged_list_mixed' && tagType) {
               const cat = categorise(tagType);

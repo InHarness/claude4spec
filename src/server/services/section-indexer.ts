@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { customAlphabet } from 'nanoid';
 import type Database from 'better-sqlite3';
-import { parseXmlTags } from '../../shared/xml-tags.js';
+import { parseXmlTags, parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
@@ -181,7 +181,7 @@ export class SectionIndexerService {
                VALUES (?, ?, ?, 'uses')`
         );
         for (const s of sections) {
-          const xmlTags = parseXmlTags(s.content);
+          const xmlTags = parseXmlTagsExcludingCode(s.content);
           const seen = new Set<string>();
           for (const tag of xmlTags) {
             const type = tag.attrs.type;

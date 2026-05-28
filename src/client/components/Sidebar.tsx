@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
   ChevronRight,
@@ -8,22 +8,19 @@ import {
   Folder,
   GitCommit,
   Link2,
-  Moon,
   MoreHorizontal,
   Plus,
   Search,
+  Settings as SettingsIcon,
   Sparkles,
   StickyNote,
-  Sun,
   Tag,
   X,
   type LucideIcon,
 } from 'lucide-react';
 import type { PageNode, PageSearchHit } from '../../shared/types.js';
-import type { Theme } from '../state/tweaks.js';
 import { usePagesSearch } from '../hooks/usePages.js';
 import { usePersistedState } from '../state/persisted.js';
-import { WritingStyleSelector } from './WritingStyleSelector.js';
 import { UserSection } from './UserSection.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
@@ -40,8 +37,6 @@ interface SidebarProps {
   todoCountByPath: Record<string, number>;
   brokenLinkCount: number;
   unresolvedMentionCount: number;
-  theme: Theme;
-  setTheme: (t: Theme) => void;
 }
 
 export function Sidebar({
@@ -56,9 +51,8 @@ export function Sidebar({
   todoCountByPath,
   brokenLinkCount,
   unresolvedMentionCount,
-  theme,
-  setTheme,
 }: SidebarProps) {
+  const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const activePagePath = pathname.startsWith('/pages/')
     ? decodeURIComponent(pathname.slice('/pages/'.length))
@@ -109,18 +103,17 @@ export function Sidebar({
           </div>
         </div>
         <button
-          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          onClick={() => navigate({ to: '/settings' })}
           className="rounded p-1"
           style={{ color: 'var(--c-muted)' }}
-          title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} theme`}
+          title="Settings"
+          aria-label="Open settings"
         >
-          {theme === 'dark' ? <Sun size={13} /> : <Moon size={13} />}
+          <SettingsIcon size={13} />
         </button>
       </div>
 
       <UserSection />
-
-      <WritingStyleSelector />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SectionHeader

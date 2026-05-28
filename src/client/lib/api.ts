@@ -20,6 +20,7 @@ import type {
   DeviceLoginStartResponse,
   RemoteAccountResponse,
 } from '../../shared/remote-account.js';
+import type { RemoteProjectInfo } from '../../shared/remote-project.js';
 import { ApiError, handle } from './api-core.js';
 
 export { ApiError, handle };
@@ -80,15 +81,57 @@ export interface ConfigResponse {
   mode: 'dev' | 'prod';
   writingStyle: string | null;
   onboarding: { completed: boolean };
+  /** M21: catalog of brief files. */
+  briefsDir: string;
+  /** M23: catalog of patch files. */
+  patchesDir: string;
+  /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
+  entities?: string[];
+  /** M26: hot-reload Claude agent flags. */
+  agent: { claudeUsePreset: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
   remoteProjectId: string | null;
+  /** M24: explicit remote-API override; null = production constant. UI hides this. */
+  remoteApiUrl: string | null;
+  /** M01: config schema version (currently 2). */
+  $schemaVersion: number;
+  /** M26 §3: ISO 8601 timestamp of the current server boot — runtime-only. */
+  serverStartedAt: string;
 }
 
 export interface ConfigPatch {
   name?: string;
+  port?: number;
+  pagesDir?: string;
+  briefsDir?: string;
+  patchesDir?: string;
+  mode?: 'dev' | 'prod';
   writingStyle?: string | null;
   onboardingCompleted?: boolean;
+  entities?: string[];
+  agent?: { claudeUsePreset?: boolean };
   remoteProjectId?: string | null;
+}
+
+/**
+ * M26 §2 — restart-required keys. Mutating any of these via PATCH /api/config
+ * stamps `c4s:settings:last-restart-patch-at` in localStorage so the banner can
+ * appear. Hot-reload keys (`name`, `writingStyle`, `agent.claudeUsePreset`) do
+ * NOT trigger the marker.
+ */
+export const RESTART_REQUIRED_CONFIG_FIELDS = [
+  'port',
+  'mode',
+  'pagesDir',
+  'briefsDir',
+  'patchesDir',
+  'entities',
+] as const satisfies readonly (keyof ConfigPatch)[];
+
+export type RestartRequiredConfigField = (typeof RESTART_REQUIRED_CONFIG_FIELDS)[number];
+
+export function patchTouchesRestartRequired(patch: ConfigPatch): boolean {
+  return RESTART_REQUIRED_CONFIG_FIELDS.some((k) => k in patch);
 }
 
 export const configApi = {
@@ -258,5 +301,12 @@ export const remoteAccountApi = {
     return handle<RemoteAccountResponse>(
       await fetch('/api/remote-account/logout', { method: 'POST' }),
     );
+  },
+};
+
+// M26 §4 — remote-project proxy (used by Settings → "Remote project" section).
+export const remoteProjectApi = {
+  async get(): Promise<RemoteProjectInfo> {
+    return handle<RemoteProjectInfo>(await fetch('/api/remote-project'));
   },
 };

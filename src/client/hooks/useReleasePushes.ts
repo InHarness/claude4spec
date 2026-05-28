@@ -26,9 +26,12 @@ export function usePushRelease() {
     onSuccess: () => {
       // Refresh push history (both per-release and 'all'), plus config
       // (remoteProjectId changes on first push) and the releases list (badges).
+      // M26: also refresh remote-project so the Settings card reflects the
+      // newly-created or freshly-pushed project.
       qc.invalidateQueries({ queryKey: ['release-pushes'] });
       qc.invalidateQueries({ queryKey: ['config'] });
       qc.invalidateQueries({ queryKey: ['releases'] });
+      qc.invalidateQueries({ queryKey: ['remote-project'] });
     },
   });
 }

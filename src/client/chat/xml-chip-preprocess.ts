@@ -9,13 +9,23 @@
  * without rehype-raw drops raw HTML, so the user sees nothing rather than a
  * dangerous chip.
  *
- * Code-aware: tags inside inline code spans or fenced code blocks are NOT
- * converted (see computeCodeRanges). A placeholder link emitted inside code
- * would be rendered verbatim by react-markdown, leaking `[__C4S_CHIP](#...)`
- * as visible text; leaving the raw tag instead renders the intended example
- * syntax.
+ * Code-aware (code-range scanning lives in shared/code-ranges). Two cases:
+ *  - Inline code whose ONLY content is chip tag(s), e.g. `<inline_mention .../>`:
+ *    the surrounding backticks are stripped so the tag renders as a chip. The
+ *    agent is shown the tag grammar in backticks (chat-context prompt) and often
+ *    echoes that formatting; unwrapping keeps such refs working as chips.
+ *  - Fenced code blocks, and inline code mixing a tag with other text: tags are
+ *    left raw (deliberate syntax examples). A placeholder link emitted inside
+ *    code would be rendered verbatim by react-markdown, leaking
+ *    `[__C4S_CHIP](#...)`; the raw tag is the readable fallback instead.
  */
 import { parseXmlTags, type XmlTag } from '../../shared/xml-tags.js';
+import {
+  computeCodeRanges,
+  findInlineCodeSpans,
+  intersectsCode,
+  scanFences,
+} from '../../shared/code-ranges.js';
 
 export const CHIP_HREF_PREFIX = '#__c4s_chip__';
 
@@ -33,21 +43,26 @@ export function preprocessXmlChips(text: string, activeTypes: Set<string>): stri
     && !text.includes('<section_ref'))) {
     return text;
   }
-  const tags = parseXmlTags(text);
-  if (!tags.length) return text;
+  // Strip backticks around inline-code spans that contain only chip tag(s), so
+  // a ref the agent wrapped in `...` still renders as a chip. Done before tag
+  // conversion so the now-bare tag falls outside any code range below.
+  const unwrapped = unwrapChipOnlyInlineCode(text);
 
-  const codeRanges = computeCodeRanges(text);
+  const tags = parseXmlTags(unwrapped);
+  if (!tags.length) return unwrapped;
+
+  const codeRanges = computeCodeRanges(unwrapped);
   let out = '';
   let cursor = 0;
   for (const tag of tags) {
-    out += text.slice(cursor, tag.start);
+    out += unwrapped.slice(cursor, tag.start);
     if (intersectsCode(tag.start, tag.end, codeRanges)) {
-      // Inside an inline code span or fenced code block: leave the tag raw.
-      // react-markdown renders code content verbatim (it never parses links
-      // inside code), so a placeholder link here would leak as visible
-      // `[__C4S_CHIP](#...)` text. Emitting the raw tag instead renders the
-      // intended example syntax (e.g. `<inline_mention .../>`).
-      out += text.slice(tag.start, tag.end);
+      // Inside a fenced block, or inline code mixing the tag with other text:
+      // leave the tag raw. react-markdown renders code content verbatim (it
+      // never parses links inside code), so a placeholder link here would leak
+      // as visible `[__C4S_CHIP](#...)` text. The raw tag is the readable
+      // fallback (intended for syntax examples).
+      out += unwrapped.slice(tag.start, tag.end);
     } else {
       const sanitized = sanitizeTag(tag, activeTypes);
       if (sanitized) {
@@ -60,97 +75,45 @@ export function preprocessXmlChips(text: string, activeTypes: Set<string>): stri
     }
     cursor = tag.end;
   }
-  out += text.slice(cursor);
+  out += unwrapped.slice(cursor);
   return out;
 }
 
-type CodeRange = [start: number, end: number]; // half-open [start, end)
-
-/**
- * Compute char ranges that markdown treats as code (inline code spans and
- * fenced blocks), so chip conversion can skip them. An unclosed fence extends
- * to end-of-string — this matches how react-markdown parses a mid-stream
- * message (everything after an open fence is code until it closes) and keeps
- * the streaming-transient case showing the raw tag rather than a placeholder.
- *
- * Known gap: 4-space indented code blocks are not detected (rare in agent
- * output). Tilde fences are handled; tildes never start inline code.
- */
-function computeCodeRanges(text: string): CodeRange[] {
-  const ranges: CodeRange[] = [];
-  const nonFenced: CodeRange[] = []; // gaps between fenced blocks, scanned for inline code
-  const fenceRe = /^( {0,3})(`{3,}|~{3,})/;
-  const len = text.length;
-
-  // Phase 1: fenced code blocks (line scan, tracking absolute offsets).
-  let i = 0;
-  let segStart = 0;
-  while (i < len) {
-    const nl = text.indexOf('\n', i);
-    const lineEnd = nl === -1 ? len : nl;
-    const m = fenceRe.exec(text.slice(i, lineEnd));
-    if (m) {
-      const fenceChar = m[2]![0]!;
-      const n = m[2]!.length;
-      const openLineStart = i;
-      if (openLineStart > segStart) nonFenced.push([segStart, openLineStart]);
-      let j = nl === -1 ? len : nl + 1;
-      let blockEnd = len; // unclosed fence → to EOF
-      const closeRe = new RegExp(`^ {0,3}(\\${fenceChar}{${n},})[ \\t]*$`);
-      while (j < len) {
-        const jnl = text.indexOf('\n', j);
-        const jEnd = jnl === -1 ? len : jnl;
-        if (closeRe.test(text.slice(j, jEnd))) {
-          blockEnd = jEnd;
-          break;
-        }
-        j = jnl === -1 ? len : jnl + 1;
-      }
-      ranges.push([openLineStart, blockEnd]);
-      const after = text.indexOf('\n', blockEnd);
-      i = after === -1 ? len : after + 1;
-      segStart = i;
-      continue;
-    }
-    i = nl === -1 ? len : nl + 1;
+/** True when `inner` is composed solely of chip tag(s) and whitespace. */
+function isChipOnly(inner: string): boolean {
+  const trimmed = inner.trim();
+  if (!trimmed.startsWith('<')) return false;
+  const tags = parseXmlTags(trimmed);
+  if (!tags.length) return false;
+  let cursor = 0;
+  for (const tag of tags) {
+    if (trimmed.slice(cursor, tag.start).trim() !== '') return false;
+    cursor = tag.end;
   }
-  if (segStart < len) nonFenced.push([segStart, len]);
-
-  // Phase 2: inline code spans within the non-fenced gaps. A run of N backticks
-  // opens; the next run of exactly N backticks closes. Unmatched runs are
-  // literal text, not code.
-  for (const [gStart, gEnd] of nonFenced) {
-    const seg = text.slice(gStart, gEnd);
-    const tickRe = /`+/g;
-    const runs: Array<{ start: number; len: number }> = [];
-    let mm: RegExpExecArray | null;
-    while ((mm = tickRe.exec(seg)) !== null) runs.push({ start: mm.index, len: mm[0].length });
-    let k = 0;
-    while (k < runs.length) {
-      const open = runs[k]!;
-      let closed = false;
-      for (let q = k + 1; q < runs.length; q++) {
-        if (runs[q]!.len === open.len) {
-          ranges.push([gStart + open.start, gStart + runs[q]!.start + runs[q]!.len]);
-          k = q + 1;
-          closed = true;
-          break;
-        }
-      }
-      if (!closed) k++;
-    }
-  }
-
-  ranges.sort((a, b) => a[0] - b[0]);
-  return ranges;
+  return trimmed.slice(cursor).trim() === '';
 }
 
-function intersectsCode(start: number, end: number, ranges: CodeRange[]): boolean {
-  for (const [rs, re] of ranges) {
-    if (start < re && end > rs) return true;
-    if (rs >= end) break;
+/**
+ * Replace inline-code spans whose content is only chip tag(s) with the bare
+ * tag(s), dropping the backticks. The conversion pass then turns those bare
+ * tags into chips. Fenced blocks and mixed-content inline code are untouched.
+ */
+function unwrapChipOnlyInlineCode(text: string): string {
+  if (!text.includes('`')) return text;
+  const { gaps } = scanFences(text);
+  const spans = findInlineCodeSpans(text, gaps);
+  if (!spans.length) return text;
+  let out = '';
+  let cursor = 0;
+  for (const span of spans) {
+    const inner = text.slice(span.innerStart, span.innerEnd);
+    if (!isChipOnly(inner)) continue;
+    out += text.slice(cursor, span.start);
+    out += inner.trim();
+    cursor = span.end;
   }
-  return false;
+  out += text.slice(cursor);
+  return out;
 }
 
 function sanitizeTag(tag: XmlTag, activeTypes: Set<string>): SanitizedChip | null {

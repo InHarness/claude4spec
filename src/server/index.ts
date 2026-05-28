@@ -25,6 +25,7 @@ import { patchesRouter } from './routes/patches.js';
 import { RemoteAuthService } from './services/remote-auth.js';
 import { RemoteHttpClient, assertRemoteApiReachable } from './services/remote-http-client.js';
 import { remoteAccountRouter } from './routes/remote-account.js';
+import { remoteProjectRouter } from './routes/remote-project.js';
 import { PagesFrontmatterIndexer } from './services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from './services/section-indexer.js';
 import { TodosIndexerService } from './services/todos-indexer.js';
@@ -36,6 +37,7 @@ import { ReleaseService } from './services/release.js';
 import { releasesRouter } from './routes/releases.js';
 import { ReleasePushService } from './services/release-push.js';
 import { releasePushesRouter } from './routes/release-pushes.js';
+import { C4S_VERSION } from './services/release-bundle.js';
 import { createReleaseToolsServer } from './mcp/release-tools/index.js';
 import { WsGateway } from './ws/gateway.js';
 import { PagesWatcher } from './fs/watcher.js';
@@ -150,6 +152,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const cwd = opts.cwd;
   const mode = opts.mode ?? (process.env.NODE_ENV === 'production' ? 'prod' : 'dev');
   const portRef = { current: opts.port ?? DEFAULT_PORT };
+  // M26 §3: runtime-only ISO timestamp captured at boot; surfaced in
+  // GET /api/config so the client can detect "Restart required" by comparing
+  // it to `localStorage['c4s:settings:last-restart-patch-at']`. Not persisted.
+  const serverStartedAt = new Date().toISOString();
 
   const app = express();
   app.use(express.json({ limit: '2mb' }));
@@ -245,7 +251,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   });
 
   app.get('/api/meta', (_req, res) => {
-    res.json({ cwd, cwdName: path.basename(cwd) });
+    res.json({ cwd, cwdName: path.basename(cwd), c4sVersion: C4S_VERSION });
   });
 
   app.get('/api/config', (_req, res) => {
@@ -259,17 +265,36 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       mode,
       writingStyle: c.writingStyle,
       onboarding: { completed: c.onboardingCompleted },
+      briefsDir: c.briefsDir,
+      patchesDir: c.patchesDir,
+      entities: c.entities,
+      agent: { claudeUsePreset: c.agent?.claudeUsePreset ?? true },
       remoteProjectId: c.remoteProjectId ?? null,
+      remoteApiUrl: c.remoteApiUrl ?? null,
+      $schemaVersion: c.$schemaVersion,
+      serverStartedAt,
     });
   });
 
   app.patch('/api/config', (req, res, next) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
+      // M26 §2: hot-reload (name, writingStyle, agent.claudeUsePreset) and
+      // restart-required (port, mode, pagesDir, briefsDir, patchesDir, entities)
+      // share one atomic disk write. `writeConfig` re-runs the full validation in
+      // `config.ts`; this handler only enforces semantic checks the validator
+      // cannot do (writingStyle selectability, name regex, path safety).
       const patch: Partial<{
         name: string;
+        port: number;
+        pagesDir: string;
+        briefsDir: string;
+        patchesDir: string;
+        mode: 'dev' | 'prod';
         writingStyle: string | null;
         onboardingCompleted: boolean;
+        entities: string[];
+        agent: { claudeUsePreset?: boolean };
         remoteProjectId: string | null;
       }> = {};
 
@@ -282,6 +307,48 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'name: 1-80 chars, allowed [a-zA-Z0-9._- ]' } });
         }
         patch.name = trimmed;
+      }
+
+      if ('port' in body) {
+        if (typeof body.port !== 'number' || !Number.isInteger(body.port) || body.port < 1 || body.port > 65535) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'port must be an integer in [1, 65535]' } });
+        }
+        patch.port = body.port;
+      }
+
+      if ('mode' in body) {
+        if (body.mode !== 'dev' && body.mode !== 'prod') {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: "mode must be 'dev' | 'prod'" } });
+        }
+        patch.mode = body.mode;
+      }
+
+      // pagesDir/briefsDir/patchesDir share the same path-safety contract as boot:
+      // must be relative, must not escape cwd. Reuse the local helper inline to
+      // keep validation co-located with the patch handler.
+      const validateDir = (field: string, value: unknown): string | { error: string } => {
+        if (typeof value !== 'string' || value.trim() === '') {
+          return { error: `${field} must be a non-empty string` };
+        }
+        if (path.isAbsolute(value)) {
+          return { error: `${field} must be relative to cwd` };
+        }
+        const abs = path.resolve(cwd, value);
+        const rel = path.relative(cwd, abs);
+        if (rel.startsWith('..') || path.isAbsolute(rel)) {
+          return { error: `${field} must not escape project root` };
+        }
+        return value;
+      };
+
+      for (const field of ['pagesDir', 'briefsDir', 'patchesDir'] as const) {
+        if (field in body) {
+          const result = validateDir(field, body[field]);
+          if (typeof result === 'object') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: result.error } });
+          }
+          patch[field] = result;
+        }
       }
 
       if ('writingStyle' in body) {
@@ -302,6 +369,29 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patch.onboardingCompleted = body.onboardingCompleted;
       }
 
+      if ('entities' in body) {
+        if (!Array.isArray(body.entities) || !body.entities.every((e) => typeof e === 'string')) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'entities must be string[]' } });
+        }
+        patch.entities = body.entities as string[];
+      }
+
+      if ('agent' in body) {
+        const a = body.agent;
+        if (a === null || typeof a !== 'object' || Array.isArray(a)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent must be an object' } });
+        }
+        const ar = a as Record<string, unknown>;
+        const next: { claudeUsePreset?: boolean } = {};
+        if ('claudeUsePreset' in ar) {
+          if (typeof ar.claudeUsePreset !== 'boolean') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.claudeUsePreset must be boolean' } });
+          }
+          next.claudeUsePreset = ar.claudeUsePreset;
+        }
+        patch.agent = next;
+      }
+
       // M25: allow manual clear/override of remoteProjectId (e.g. UI "clear" after
       // a stale UUID). null ⇒ next push is a first push again.
       if ('remoteProjectId' in body) {
@@ -319,7 +409,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         mode,
         writingStyle: updated.writingStyle,
         onboarding: { completed: updated.onboardingCompleted },
+        briefsDir: updated.briefsDir,
+        patchesDir: updated.patchesDir,
+        entities: updated.entities,
+        agent: { claudeUsePreset: updated.agent?.claudeUsePreset ?? true },
         remoteProjectId: updated.remoteProjectId ?? null,
+        remoteApiUrl: updated.remoteApiUrl ?? null,
+        $schemaVersion: updated.$schemaVersion,
+        serverStartedAt,
       });
     } catch (err) {
       next(err);
@@ -497,6 +594,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/briefs', briefsRouter(briefService, pageVersions));
   app.use('/api/patches', patchesRouter(patchService));
   app.use('/api/remote-account', remoteAccountRouter(remoteAuthService));
+  app.use('/api/remote-project', remoteProjectRouter(remoteAuthService, cwd));
   app.use('/api/chat', chatRouter(agentDeps));
   app.use(errorHandler);
 

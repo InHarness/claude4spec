@@ -2,6 +2,7 @@ import {
   getExtensionReferenceType,
   listExtensionReferenceTypes,
 } from './reference-extensions.js';
+import { computeCodeRanges, intersectsCode } from './code-ranges.js';
 
 export const XML_TAG_KINDS = [
   'inline_mention',
@@ -80,6 +81,25 @@ export function parseXmlTags(md: string): XmlTag[] {
 
   out.sort((a, b) => a.start - b.start);
   return out;
+}
+
+/**
+ * Like {@link parseXmlTags}, but drops tags that sit inside fenced code blocks
+ * or inline code spans — i.e. documentation syntax examples, not real
+ * references. Server reference operations (resolve, slug/anchor rename,
+ * indexers, consistency, find_references, MCP) use this so they stay consistent
+ * with the markdown-it editor, which already renders tags-in-code as literal
+ * code rather than chips.
+ *
+ * Retained tags keep their original absolute `start`/`end`/`line`, so callers
+ * that splice the body by offset (e.g. roundtrip-safe rewriters) are unaffected:
+ * omitting a code tag is exactly equivalent to leaving it verbatim.
+ */
+export function parseXmlTagsExcludingCode(md: string): XmlTag[] {
+  const tags = parseXmlTags(md);
+  if (tags.length === 0) return tags;
+  const ranges = computeCodeRanges(md);
+  return tags.filter((t) => !intersectsCode(t.start, t.end, ranges));
 }
 
 export function serializeXmlTag(

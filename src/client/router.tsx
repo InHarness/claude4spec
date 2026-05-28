@@ -31,6 +31,7 @@ import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
 import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
+import { SettingsPage } from './components/settings/SettingsPage.js';
 import { EndpointDetail } from './entities/endpoint/detail-panel.js';
 import { DtoDetail } from './entities/dto/detail-panel.js';
 import { DatabaseTableDetail } from './entities/database-table/detail-panel.js';
@@ -227,6 +228,12 @@ const onboardingRoute = createRoute({
   component: OnboardingPage,
 });
 
+const settingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings',
+  component: SettingsRoute,
+});
+
 const releasesIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
@@ -280,6 +287,7 @@ const routeTree = rootRoute.addChildren([
   plansIndexRoute,
   planDetailRoute,
   onboardingRoute,
+  settingsRoute,
   releasesIndexRoute,
   releaseDetailRoute,
   briefsIndexRoute,
@@ -806,8 +814,24 @@ function PatchDetailRoute() {
   );
 }
 
+function SettingsRoute() {
+  return (
+    <RoutePane>
+      <SettingsPage />
+    </RoutePane>
+  );
+}
+
 function PlanRoute() {
   const { planId } = useParams({ from: '/plans/$planId' });
+  const navigate = useNavigate();
+  const bridge = useMemo(
+    () => ({
+      openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
+      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
+    }),
+    [navigate]
+  );
   const id = Number(planId);
   if (!Number.isInteger(id)) {
     return (
@@ -826,7 +850,9 @@ function PlanRoute() {
       className="flex-1 flex flex-col min-w-0 h-full"
       style={{ background: 'var(--c-bg)' }}
     >
-      <PlanPage key={id} planId={id} />
+      <EditorBridgeProvider bridge={bridge}>
+        <PlanPage key={id} planId={id} />
+      </EditorBridgeProvider>
     </main>
   );
 }
