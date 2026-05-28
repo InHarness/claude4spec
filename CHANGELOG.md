@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2026-05-28
+
+### Added
+- `SettingsPage` — centralized settings UI with dedicated sections (`AppearanceSection`, `AgentSection`, `EntitiesSection`, `ProjectSection`, `RemoteProjectSection`, `ServerSection`, `UserSettingsSection`, `AboutSection`) wrapped in a shared `SettingsCard`. The `Sidebar` and `UserSection` now navigate to it, and a new `RestartRequiredBanner` surfaces when settings changes require a server restart.
+- Remote project plumbing — `/api/remote-project` route, `useRemoteProject` hook, and `shared/remote-project.ts` types, plus `RemoteAuthService` / `RemoteHttpClient` extensions.
+- `shared/code-ranges.ts` and `shared/xml-tags.ts` helpers, and a `usePagesIndex` hook.
+
+### Changed
+- Rewrote `xml-chip-preprocess` and tightened `Editor` / `PlanEditor` around the new code-range helpers.
+- `UserSection` and `Sidebar` simplified — settings navigation replaces inline controls.
+
+### Removed
+- `WritingStyleSelector` component (UI cleanup).
+
 ## [1.0.8] - 2026-05-26
 
 ### Added
@@ -94,6 +108,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.9]: https://github.com/InHarness/claude4spec/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/InHarness/claude4spec/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/InHarness/claude4spec/compare/v1.0.6...v1.0.7
 [1.0.6]: https://github.com/InHarness/claude4spec/compare/v1.0.5...v1.0.6
