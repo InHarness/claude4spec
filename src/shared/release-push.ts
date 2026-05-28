@@ -23,7 +23,8 @@ export interface ReleasePushResponse {
   id: number;
   releaseId: number;
   release: { id: number; name: string };
-  remoteProjectId: string;
+  /** UUID; undefined for first-push error rows (peer never returned an id). */
+  remoteProjectId?: string;
   /** NULL/undefined for status='error'. */
   remoteReleaseId?: string;
   /** NULL/undefined for status='error'. */

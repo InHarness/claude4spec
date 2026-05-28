@@ -305,7 +305,7 @@ export function ChatOverlay() {
     [setChatWidth],
   );
 
-  const modelLabel = model === 'sonnet-4.6' ? 'Sonnet 4.6' : model === 'opus-4.7' ? 'Opus 4.7' : 'Haiku 4.5';
+  const modelLabel = model === 'sonnet-4.6' ? 'Sonnet 4.6' : model === 'opus-4.8' ? 'Opus 4.8' : 'Haiku 4.5';
 
   if (!chatOpen) return null;
 
@@ -789,14 +789,16 @@ interface ModelSettingsPopoverProps {
 function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
     { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
-    { id: 'opus-4.7', label: 'Opus 4.7', sub: 'Deep reasoning · slow' },
+    { id: 'opus-4.8', label: 'Opus 4.8', sub: 'Deep reasoning · slow' },
     { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light' },
   ];
+  // 'Max' reasoning effort is Opus 4.8 only.
   const levels: Array<{ id: ChatThinking; label: string }> = [
     { id: 'off', label: 'Off' },
     { id: 'low', label: 'Low' },
     { id: 'medium', label: 'Medium' },
     { id: 'high', label: 'High' },
+    ...(model === 'opus-4.8' ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
   ];
 
   return (
@@ -880,9 +882,9 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
           style={{ color: 'var(--c-subtle)' }}
         >
           Thinking level
-          {model === 'opus-4.7' && thinking !== 'off' && (
+          {model === 'opus-4.8' && thinking !== 'off' && (
             <span className="ml-2 normal-case" style={{ color: 'var(--c-muted)' }}>
-              (opus only supports adaptive)
+              (opus uses adaptive thinking; level sets reasoning effort)
             </span>
           )}
         </div>

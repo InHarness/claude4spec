@@ -25,7 +25,7 @@ import type { ReleasePushResponse } from '../../shared/release-push.js';
 interface ReleasePushRow {
   id: number;
   release_id: number;
-  remote_project_id: string;
+  remote_project_id: string | null;
   remote_release_id: string | null;
   remote_release_sequence: number | null;
   content_sha256: string;
@@ -48,7 +48,11 @@ const SELECT_WITH_RELEASE =
 
 interface InsertArgs {
   releaseId: number;
-  remoteProjectId: string;
+  /**
+   * UUID from the peer. `null` on first-push error rows (the peer never returned
+   * an id). Subsequent-push errors persist the known `config.remoteProjectId`.
+   */
+  remoteProjectId: string | null;
   remoteReleaseId: string | null;
   remoteReleaseSequence: number | null;
   contentSha256: string;
@@ -124,7 +128,9 @@ export class ReleasePushService {
             : 'Network error';
         this.insertRow({
           releaseId,
-          remoteProjectId: config.remoteProjectId ?? '',
+          // First-push error → null (column is nullable since migration 032).
+          // Subsequent-push error → persist the known config.remoteProjectId.
+          remoteProjectId: config.remoteProjectId ?? null,
           remoteReleaseId: null,
           remoteReleaseSequence: null,
           contentSha256: bundle.sha256,
@@ -183,7 +189,12 @@ export class ReleasePushService {
     return row ? toDto(row) : null;
   }
 
-  /** Forward-looking — the whole audit log, newest first. */
+  /**
+   * Whole audit log, newest first. Consumed by the `/releases` page to derive
+   * per-release push-count badges — one request per render, aggregated
+   * client-side, rather than N × `?releaseId=X`. (M17 owns release identity,
+   * M25 owns the push audit log — see brief 0.1.32 §3.)
+   */
   listAll(): ReleasePushResponse[] {
     const rows = this.db
       .prepare(`${SELECT_WITH_RELEASE} ORDER BY rp.pushed_at DESC, rp.id DESC`)
@@ -224,7 +235,7 @@ function toDto(row: ReleasePushRow): ReleasePushResponse {
     id: row.id,
     releaseId: row.release_id,
     release: { id: row.release_id, name: row.release_name },
-    remoteProjectId: row.remote_project_id,
+    remoteProjectId: row.remote_project_id ?? undefined,
     remoteReleaseId: row.remote_release_id ?? undefined,
     remoteReleaseSequence: row.remote_release_sequence ?? undefined,
     contentSha256: row.content_sha256,

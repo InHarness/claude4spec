@@ -4,6 +4,7 @@ import { GitCommit, Plus } from 'lucide-react';
 import { useReleases } from '../hooks/useReleases.js';
 import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
 import { CreateReleaseDialog } from './CreateReleaseDialog.js';
+import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 
 export function ReleasesList() {
   const { data: releases = [], isLoading } = useReleases();
@@ -46,6 +47,7 @@ export function ReleasesList() {
 
       <div className="flex-1 overflow-auto nice-scroll">
         <div className="mx-auto" style={{ maxWidth: 800, padding: '24px 32px 48px' }}>
+          <UnreleasedBanner />
           {isLoading && (
             <div className="text-center text-[13px] py-10" style={{ color: 'var(--c-subtle)' }}>
               Loading…

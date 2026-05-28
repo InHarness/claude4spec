@@ -20,7 +20,10 @@ import type {
   DeviceLoginStartResponse,
   RemoteAccountResponse,
 } from '../../shared/remote-account.js';
-import type { RemoteProjectInfo } from '../../shared/remote-project.js';
+import type {
+  RemoteProjectInfo,
+  UpdateRemoteProjectRequest,
+} from '../../shared/remote-project.js';
 import { ApiError, handle } from './api-core.js';
 
 export { ApiError, handle };
@@ -308,5 +311,14 @@ export const remoteAccountApi = {
 export const remoteProjectApi = {
   async get(): Promise<RemoteProjectInfo> {
     return handle<RemoteProjectInfo>(await fetch('/api/remote-project'));
+  },
+  async update(body: UpdateRemoteProjectRequest): Promise<RemoteProjectInfo> {
+    return handle<RemoteProjectInfo>(
+      await fetch('/api/remote-project', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
   },
 };

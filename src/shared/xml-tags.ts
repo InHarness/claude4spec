@@ -147,3 +147,19 @@ export function extractTags(tag: XmlTag): string[] {
   }
   return [];
 }
+
+/**
+ * Matched tag slugs ("via") when a tagged_list / tagged_list_mixed node references an
+ * entity of `entityType` carrying `entityTags`; [] when it does not match.
+ * Single source of truth for tag-driven reference matching — used by both
+ * find_references(includeTagMatches) and check_consistency rule 3.
+ */
+export function taggedListVia(
+  tag: XmlTag,
+  entityType: string,
+  entityTags: ReadonlySet<string>,
+): string[] {
+  if (tag.kind !== 'tagged_list' && tag.kind !== 'tagged_list_mixed') return [];
+  if (tag.kind === 'tagged_list' && tag.attrs.type !== entityType) return [];
+  return extractTags(tag).filter((t) => entityTags.has(t));
+}

@@ -4,12 +4,12 @@ import type { ChatModel } from '../state/chat.js';
 
 // Lokalne defaulty — NIE inline z @inharness-ai/agent-adapters.
 // Biblioteka ma 200_000 dla wszystkich claude-code modeli (zgodnie z publicznym SDK),
-// ale ta aplikacja odpala Opus 4.7 z betą `context-1m-2025-08-07` → 1M okno.
+// ale ta aplikacja odpala Opus 4.8 z betą `context-1m` → 1M okno.
 // Override per-thread przez `architectureConfig.context_window_override` (konwencja
 // z agent-adapters/src/options.ts — UI-only, adaptery ignorują).
 const CLAUDE_CODE_CONTEXT_WINDOWS: Record<ChatModel, number> = {
   'sonnet-4.6': 200_000,
-  'opus-4.7': 1_000_000,
+  'opus-4.8': 1_000_000,
   'haiku-4.5': 200_000,
 };
 

@@ -57,7 +57,7 @@ export interface AgentTurnDeps {
  *  database-table-tools, plan-tools, reference-tools) are NOT mounted. */
 const BRIEF_ALLOWED_PLUGIN_MCP = new Set(['release-tools']);
 
-export const ALLOWED_MODELS = ['sonnet-4.6', 'opus-4.7', 'haiku-4.5'] as const;
+export const ALLOWED_MODELS = ['sonnet-4.6', 'opus-4.8', 'haiku-4.5'] as const;
 export type Model = (typeof ALLOWED_MODELS)[number];
 
 interface PendingInput {

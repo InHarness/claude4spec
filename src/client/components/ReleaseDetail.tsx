@@ -12,13 +12,13 @@ import {
   useReleaseSnapshot,
   useRestoreSpec,
   useUpdateRelease,
-  useUnreleasedCount,
 } from '../hooks/useReleases.js';
 import { useReleasePushes } from '../hooks/useReleasePushes.js';
 import { listReleaseActions } from '../lib/release-actions/registry.js';
 import { EntityDiffCard } from './release/EntityDiffCard.js';
 import { PageDiffCard } from './release/PageDiffCard.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
+import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
@@ -617,24 +617,6 @@ function PushedBadge({ releaseId }: { releaseId: number }) {
     >
       {n === 1 ? 'Pushed' : `Pushed ${n}×`}
     </span>
-  );
-}
-
-/** "You have N unreleased changes" — rendered only on the latest release (caller-gated). */
-function UnreleasedBanner() {
-  const { data: count = 0 } = useUnreleasedCount();
-  if (count <= 0) return null;
-  return (
-    <div
-      className="mb-4 px-4 py-2.5 rounded-md text-[12.5px]"
-      style={{
-        background: 'var(--c-accent-soft)',
-        border: '1px solid var(--c-accent)',
-        color: 'var(--c-accent-ink)',
-      }}
-    >
-      You have {count} unreleased {count === 1 ? 'change' : 'changes'} not in any release.
-    </div>
   );
 }
 

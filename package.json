@@ -53,8 +53,8 @@
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.2.109",
     "@google/gemini-cli-core": "^0.42.0",
-    "@inharness-ai/agent-adapters": "^0.4.0",
-    "@inharness-ai/agent-chat": "^0.2.0",
+    "@inharness-ai/agent-adapters": "^0.6.1",
+    "@inharness-ai/agent-chat": "^0.3.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "^0.130.0",

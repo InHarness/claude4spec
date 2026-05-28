@@ -9,7 +9,7 @@ import type { WsGateway } from '../ws/gateway.js';
 import { DomainError } from '../services/tags.js';
 import { pluginHost } from '../core/plugin-host/host.js';
 import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
-import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
 import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { PageNode } from '../../shared/types.js';
@@ -248,13 +248,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
               for (const p of pagePaths) {
                 const page = await deps.pagesService.read(p);
                 for (const tag of parseXmlTagsExcludingCode(page.body)) {
-                  if (tag.kind !== 'tagged_list' && tag.kind !== 'tagged_list_mixed') continue;
-                  if (tag.kind === 'tagged_list' && tag.attrs.type !== type) continue;
-                  const pageTags = (tag.attrs.tags ?? '')
-                    .split(',')
-                    .map((t) => t.trim())
-                    .filter(Boolean);
-                  const via = pageTags.filter((t) => entityTags.has(t));
+                  const via = taggedListVia(tag, type, entityTags);
                   if (via.length === 0) continue;
                   references.push({
                     pagePath: p,
@@ -290,12 +284,21 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const slugSetsByType: Record<string, Set<string>> = {};
         const referencedByType: Record<string, Set<string>> = {};
         const entitiesByType: Record<string, Array<{ slug: string }>> = {};
+        // Per-entity tag sets, used by rule 3 to mark tag-driven references
+        // (<tagged_list>/<tagged_list_mixed>) via the shared taggedListVia predicate.
+        const entityTagsByType: Record<string, Map<string, Set<string>>> = {};
         for (const m of pluginHost.listEntities()) {
           if (!isRawEntityType(m.type)) continue;
           const slugs = reader.listSlugs(m.type as RawEntityType);
           entitiesByType[m.type] = slugs.map((s) => ({ slug: s }));
           slugSetsByType[m.type] = new Set(slugs);
           referencedByType[m.type] = new Set<string>();
+          const tagMap = new Map<string, Set<string>>();
+          for (const s of slugs) {
+            const id = pluginHost.resolveEntityId(m.type, s);
+            tagMap.set(s, new Set(id ? deps.tagsService.getEntityTagSlugs(m.type, id) : []));
+          }
+          entityTagsByType[m.type] = tagMap;
         }
         const tagSlugs = new Set(deps.tagsService.list().map((t) => t.slug));
 
@@ -371,6 +374,20 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
             if (tag.kind === 'tagged_list' || tag.kind === 'tagged_list_mixed') {
               for (const t of (tag.attrs.tags ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
                 if (!tagSlugs.has(t)) invalidTagReferences.push({ pagePath: p, tagType: tag.kind, tag: t, line: tag.line });
+              }
+              // Rule 3 — tag-driven references: mark every entity whose tag set intersects
+              // this tagged_list/tagged_list_mixed, via the shared taggedListVia predicate.
+              const candidateTypes =
+                tag.kind === 'tagged_list'
+                  ? (tag.attrs.type ? [tag.attrs.type] : [])
+                  : Object.keys(entityTagsByType);
+              for (const t of candidateTypes) {
+                const tagMap = entityTagsByType[t];
+                const referenced = referencedByType[t];
+                if (!tagMap || !referenced) continue;
+                for (const [slug, etags] of tagMap) {
+                  if (taggedListVia(tag, t, etags).length > 0) referenced.add(slug);
+                }
               }
             }
             // Rule 8 — broken extension reference (e.g. <section_ref/> with unknown anchor).

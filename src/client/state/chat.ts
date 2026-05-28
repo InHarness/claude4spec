@@ -19,18 +19,20 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'sonnet-4.6' | 'opus-4.7' | 'haiku-4.5';
-export type ChatThinking = 'off' | 'low' | 'medium' | 'high';
+export type ChatModel = 'sonnet-4.6' | 'opus-4.8' | 'haiku-4.5';
+export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 // Map UI thinking level → adapter architectureConfig.
-// Opus 4.7 supports only 'adaptive' — any level other than 'off' becomes 'adaptive'.
+// Opus 4.8 supports 'adaptive' thinking only, plus a reasoning-effort knob
+// (claude_effort: low/medium/high/max) — the UI level drives that effort.
+// Other models use a fixed thinking budget; 'max' is opus-only so it clamps to 'high'.
 export function thinkingToConfig(
   level: ChatThinking,
   model: ChatModel,
 ): Record<string, unknown> | undefined {
   if (level === 'off') return undefined;
-  if (model === 'opus-4.7') return { claude_thinking: 'adaptive' };
-  const budget = { low: 2048, medium: 8192, high: 24000 }[level];
+  if (model === 'opus-4.8') return { claude_thinking: 'adaptive', claude_effort: level };
+  const budget = { low: 2048, medium: 8192, high: 24000, max: 24000 }[level];
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
 
@@ -66,7 +68,12 @@ export const useChatStore = create<ChatState>()(
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
       setChatWidth: (px) => set({ chatWidth: Math.max(320, Math.min(900, px)) }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
-      setModel: (m) => set({ model: m }),
+      setModel: (m) =>
+        set((s) => ({
+          model: m,
+          // 'max' effort is opus-4.8 only — clamp it when leaving Opus.
+          thinking: m !== 'opus-4.8' && s.thinking === 'max' ? 'high' : s.thinking,
+        })),
       setThinking: (t) => set({ thinking: t }),
       addAnnotation: (a) => set((s) => ({ annotations: [...s.annotations, a], chatOpen: true })),
       updateAnnotation: (id, comment) =>
@@ -79,7 +86,18 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: 'c4s:m05:chat-store',
-      version: 1,
+      version: 2,
+      // v2: opus-4.7 retired in favour of opus-4.8 (Opus 4.8 release).
+      migrate: (persisted, version) => {
+        const s = (persisted ?? {}) as Partial<ChatState>;
+        if (version < 2 && (s.model as string) === 'opus-4.7') {
+          s.model = 'opus-4.8';
+        }
+        if (s.thinking === 'max' && s.model !== 'opus-4.8') {
+          s.thinking = 'high';
+        }
+        return s as ChatState;
+      },
       partialize: (s) => ({
         chatOpen: s.chatOpen,
         chatWidth: s.chatWidth,

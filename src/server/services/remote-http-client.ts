@@ -72,13 +72,28 @@ export interface CreateProjectResponse {
   release: RemoteReleaseMeta;
 }
 
-/** `GET /v1/projects/:id` (M26 §4) — owner-only snapshot of the remote project. */
+/**
+ * `GET /v1/projects/by-id/:uuid` (M26 §4, 0.1.32) — anon-tolerant snapshot of the
+ * remote project. Anonymous and non-owner readers get the public subset
+ * (`name`, `description`, `createdAt`); the owner additionally sees
+ * `lastReleaseAt` and `owner`. `isOwner` is the discriminator surfaced by the
+ * peer; locally we still defense-in-depth strip owner-only fields if they
+ * appear with `isOwner: false`.
+ */
 export interface GetProjectResponse {
   id: string;
   name: string;
+  description: string | null;
   createdAt: string;
+  isOwner: boolean;
   lastReleaseAt?: string;
   owner?: { email: string; name?: string };
+}
+
+/** Body of `PATCH /v1/projects/by-id/:uuid` (0.1.32) — owner-only edit. */
+export interface UpdateProjectPayload {
+  name?: string;
+  description?: string | null;
 }
 
 /** `POST /v1/projects/:id/releases` (subsequent push). 201 fresh / 200 dedup. */
@@ -112,7 +127,7 @@ export class RemoteUnauthorizedError extends Error {
 
 /** Thrown for transport-level failures (connection refused / 5xx / unexpected shape). */
 export class RemoteRequestError extends Error {
-  constructor(message: string, public status?: number) {
+  constructor(message: string, public status?: number, public details?: unknown) {
     super(message);
     this.name = 'RemoteRequestError';
   }
@@ -158,22 +173,57 @@ export class RemoteHttpClient {
   }
 
   /**
-   * GET /v1/projects/:id — owner-only (Bearer). M26 §4 surface; consumed by
-   * `/api/remote-project`. 401 → RemoteUnauthorizedError so the M24 client can
-   * wipe the stale session; 404 distinguished via `status` on RemoteRequestError
-   * so the route handler can map it to `reason: 'not_found'`.
+   * GET /v1/projects/by-id/:uuid — bearer OPTIONAL. M26 §4 surface; consumed by
+   * `/api/remote-project`. Anonymous reader gets the public subset; the owner
+   * gets the owner subset; non-owner gets the public subset. 401 → only happens
+   * when a bearer WAS sent (token expired/revoked) — RemoteUnauthorizedError so
+   * the M24 client can wipe the stale session. 404 distinguished via `status`
+   * on RemoteRequestError so the route handler can map it to `reason: 'not_found'`.
    */
-  async getProject(accessToken: string, remoteProjectId: string): Promise<GetProjectResponse> {
-    const res = await this.fetchRemote(`/v1/projects/${encodeURIComponent(remoteProjectId)}`, {
+  async getProject(accessToken: string | null, remoteProjectId: string): Promise<GetProjectResponse> {
+    const headers: Record<string, string> = {};
+    if (accessToken !== null) headers.authorization = `Bearer ${accessToken}`;
+    const res = await this.fetchRemote(`/v1/projects/by-id/${encodeURIComponent(remoteProjectId)}`, {
       method: 'GET',
-      headers: { authorization: `Bearer ${accessToken}` },
+      headers,
     });
     if (res.status === 401) throw new RemoteUnauthorizedError();
     if (!res.ok) {
       throw new RemoteRequestError(
-        await this.errorMessageFrom(res, `GET /v1/projects/:id failed (HTTP ${res.status})`),
+        await this.errorMessageFrom(res, `GET /v1/projects/by-id/:uuid failed (HTTP ${res.status})`),
         res.status,
       );
+    }
+    return (await res.json()) as GetProjectResponse;
+  }
+
+  /**
+   * PATCH /v1/projects/by-id/:uuid — owner-only (Bearer required). 0.1.32 M25 §1a.
+   * On 422 the peer's NestJS class-validator body is preserved on the thrown
+   * RemoteRequestError.details so the local route can extract the offending
+   * `property` for inline form error surfacing. 401 → RemoteUnauthorizedError
+   * (session wipe). 403 → owner mismatch race (status preserved).
+   */
+  async updateProject(
+    accessToken: string,
+    remoteProjectId: string,
+    body: UpdateProjectPayload,
+  ): Promise<GetProjectResponse> {
+    const res = await this.fetchRemote(`/v1/projects/by-id/${encodeURIComponent(remoteProjectId)}`, {
+      method: 'PATCH',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) throw new RemoteUnauthorizedError();
+    if (!res.ok) {
+      const { message, details } = await this.errorEnvelopeFrom(
+        res,
+        `PATCH /v1/projects/by-id/:uuid failed (HTTP ${res.status})`,
+      );
+      throw new RemoteRequestError(message, res.status, details);
     }
     return (await res.json()) as GetProjectResponse;
   }
@@ -257,17 +307,32 @@ export class RemoteHttpClient {
 
   /** Best-effort human message from a remote error response (`{error:{message|code}}` or NestJS `{message}`). */
   private async errorMessageFrom(res: Response, fallback: string): Promise<string> {
+    return (await this.errorEnvelopeFrom(res, fallback)).message;
+  }
+
+  /**
+   * Best-effort human message + raw body for downstream parsing (e.g. extracting
+   * the offending `property` from a NestJS class-validator 422 envelope).
+   * Consumes the response body once; safe to swallow non-JSON.
+   */
+  private async errorEnvelopeFrom(
+    res: Response,
+    fallback: string,
+  ): Promise<{ message: string; details: unknown }> {
+    let raw: unknown = null;
     try {
-      const body = (await res.json()) as
-        | { error?: { code?: string; message?: string }; message?: string }
-        | null;
-      if (body?.error?.message) return body.error.message;
-      if (body?.error?.code) return body.error.code;
-      if (typeof body?.message === 'string') return body.message;
+      raw = await res.json();
     } catch {
-      /* non-JSON body — fall through */
+      return { message: fallback, details: null };
     }
-    return fallback;
+    const body = raw as
+      | { error?: { code?: string; message?: string }; message?: string | string[] }
+      | null;
+    if (body?.error?.message) return { message: body.error.message, details: raw };
+    if (body?.error?.code) return { message: body.error.code, details: raw };
+    if (Array.isArray(body?.message)) return { message: body.message.join('; '), details: raw };
+    if (typeof body?.message === 'string') return { message: body.message, details: raw };
+    return { message: fallback, details: raw };
   }
 
   private async fetchRemote(path: string, init: RequestInit): Promise<Response> {
