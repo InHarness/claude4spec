@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.10] - 2026-05-29
+
+### Added
+- `UnreleasedBanner` component surfacing unreleased changes in `ReleasesList` and `ReleaseDetail`.
+- Remote project update flow — `RemoteProjectSection` gains create/update with validation and error handling, backed by an expanded `/api/remote-project` route, `useRemoteProject` hook, and `remote-http-client` / `remote-auth` support. Migration `032_release_push_remote_project_id_nullable` makes the release-push remote project id nullable.
+
+### Changed
+- Chat model support extended to Opus 4.8 — updated model labels and reasoning levels across `ChatOverlay`, `UsageBadge`, and chat state.
+- Bumped `@inharness-ai/agent-adapters` and `@inharness-ai/agent-chat` dependencies; extended `reference-tools` and shared `xml-tags` helpers.
+
 ## [1.0.9] - 2026-05-28
 
 ### Added
@@ -108,6 +118,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.10]: https://github.com/InHarness/claude4spec/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/InHarness/claude4spec/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/InHarness/claude4spec/compare/v1.0.7...v1.0.8
 [1.0.7]: https://github.com/InHarness/claude4spec/compare/v1.0.6...v1.0.7
