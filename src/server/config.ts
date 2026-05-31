@@ -62,6 +62,11 @@ export interface ConfigCliArgs {
   port?: number;
   pagesDir?: string;
   mode?: 'dev' | 'prod';
+  /**
+   * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `port`/`name` —
+   * persisted to `config.json` on first bootstrap, then drives M24/M27 base URL.
+   */
+  remoteApiUrl?: string | null;
 }
 
 export const CURRENT_SCHEMA_VERSION = 2;

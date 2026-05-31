@@ -10,7 +10,7 @@ import { pagesRouter } from './routes/pages.js';
 import { tagsRouter } from './routes/tags.js';
 import { entitiesRouter } from './core/plugin-host/entities-router.js';
 import { referencesRouter } from './routes/references.js';
-import { TagsService } from './services/tags.js';
+import { TagsService, DomainError } from './services/tags.js';
 import { VersionService } from './services/versions.js';
 import { ReferencesService } from './services/references.js';
 import { ChatService } from './services/chat.js';
@@ -37,6 +37,7 @@ import { ReleaseService } from './services/release.js';
 import { releasesRouter } from './routes/releases.js';
 import { ReleasePushService } from './services/release-push.js';
 import { releasePushesRouter } from './routes/release-pushes.js';
+import { ReleaseImportService, rollbackClone } from './services/release-import.js';
 import { C4S_VERSION } from './services/release-bundle.js';
 import { createReleaseToolsServer } from './mcp/release-tools/index.js';
 import { WsGateway } from './ws/gateway.js';
@@ -62,6 +63,21 @@ export interface StartOptions {
   mode?: 'dev' | 'prod';
   pagesDir?: string;
   name?: string;
+  /** M27: bootstrap-time clone of this published remote project slug, before app.listen. */
+  clone?: string;
+  /**
+   * M01 (0.1.36): resolved `--remote-url` value (flag > config.json). `null`/
+   * absent ⇒ fall back to `bootConfig.remoteApiUrl`, then the M24 prod constant
+   * (applied inside RemoteHttpClient). Drives both the M24 auth client and the
+   * M27 clone-fetch base URL.
+   */
+  remoteApiUrl?: string | null;
+  /** M27 (0.1.37): did THIS bootstrap run write config.json? Drives clone rollback. */
+  configCreated?: boolean;
+  /** M27 (0.1.37): did THIS bootstrap run create .claude4spec/? Drives clone rollback. */
+  claudeDirCreated?: boolean;
+  /** M27 (0.1.37): did THIS bootstrap run create .gitignore (vs append to a user's)? Drives clone rollback. */
+  gitignoreCreated?: boolean;
 }
 
 export interface ServerHandle {
@@ -197,10 +213,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `[config] patchesDir collides with pagesDir/briefsDir ("${patchesDir}") — patch files will be visible in multiple indexers`,
     );
   }
-  // M24: an explicit config.remoteApiUrl override must be a valid, reachable
-  // host — hard error at boot, no fallback to the production constant.
-  if (bootConfig.remoteApiUrl != null && bootConfig.remoteApiUrl.trim() !== '') {
-    await assertRemoteApiReachable(bootConfig.remoteApiUrl);
+  // M01 (0.1.36): resolve the remote base URL with precedence
+  // `--remote-url` flag (opts) > config.json > prod constant. The prod-constant
+  // fallback lives in RemoteHttpClient; here `null` means "use prod".
+  const remoteApiUrl = opts.remoteApiUrl ?? bootConfig.remoteApiUrl;
+  // M24: an explicit remoteApiUrl override (flag or config.json) must be a valid,
+  // reachable host — hard error at boot, no fallback to the production constant.
+  if (remoteApiUrl != null && remoteApiUrl.trim() !== '') {
+    await assertRemoteApiReachable(remoteApiUrl);
   }
   pluginHost.consolidate(bootConfig.entities);
   const hostState = pluginHost.state();
@@ -239,7 +259,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   versionService.configureSnapshot(rawReader, pluginHost);
   // M24: remote-account identity (device flow + local session). Single HTTP
   // client per process; base URL from config.remoteApiUrl (or the prod constant).
-  const remoteHttpClient = new RemoteHttpClient(bootConfig.remoteApiUrl);
+  const remoteHttpClient = new RemoteHttpClient(remoteApiUrl);
   const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
   const chatService = new ChatService(db.handle);
   // Orphan cleanup: rowsy chat_message.status='streaming' pozostale po crashu poprzedniego
@@ -535,6 +555,34 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   pluginHost.registerMcpServer('release-tools', () =>
     createReleaseToolsServer({ releaseService, ws: gateway }),
   );
+
+  // M27 Project Clone — bootstrap-time only. Runs after services exist (DB
+  // migrated, plugin host mounted, pages root ensured) but BEFORE watchers start
+  // and before app.listen, so restore writes land without watcher double-capture.
+  if (opts.clone) {
+    const importService = new ReleaseImportService(db.handle, releaseService, remoteHttpClient, cwd);
+    try {
+      const result = await importService.clone(opts.clone, { nameOverride: opts.name });
+      console.log(
+        `  cloned remote project '${opts.clone}' → local release #${result.localReleaseId ?? '?'}`,
+      );
+    } catch (err) {
+      const code = err instanceof DomainError ? err.code : 'CLONE_FAILED';
+      console.error(
+        `\x1b[31mclone failed\x1b[0m: ${code} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+      // Full all-or-nothing rollback: cwd returns to its pre-`--clone` state. Close
+      // the DB handle first so db.sqlite can be unlinked (required on Windows).
+      db.close();
+      rollbackClone(cwd, {
+        pagesDir,
+        configCreated: opts.configCreated ?? false,
+        claudeDirCreated: opts.claudeDirCreated ?? false,
+        gitignoreCreated: opts.gitignoreCreated ?? false,
+      });
+      process.exit(1);
+    }
+  }
 
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /api/briefs poniżej.

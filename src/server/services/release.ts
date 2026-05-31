@@ -8,6 +8,9 @@
  * `m17dom001`, `m17dcre01`).
  */
 
+import nodeFs from 'node:fs';
+import nodeOs from 'node:os';
+import nodePath from 'node:path';
 import type Database from 'better-sqlite3';
 import type {
   ChangedBy,
@@ -35,7 +38,11 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { readConfig } from '../config.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
+  extractBundleStream,
+  BUNDLE_SCHEMA_VERSION,
+  PLURAL_FILE_TO_ENTITY_TYPE,
   type BuildBundleResult,
+  type BundleManifest,
 } from './release-bundle.js';
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
@@ -46,6 +53,29 @@ const ENTITY_TABLES: Record<RawEntityType, string> = {
   'ui-view': 'ui_view',
   ac: 'ac',
 };
+
+/** Recursively list files under `dir` as posix-style relative paths (read direction). */
+function listBundleFiles(dir: string): string[] {
+  if (!nodeFs.existsSync(dir)) return [];
+  const out: string[] = [];
+  const walk = (abs: string, rel: string): void => {
+    for (const entry of nodeFs.readdirSync(abs, { withFileTypes: true })) {
+      const childAbs = nodePath.join(abs, entry.name);
+      const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) walk(childAbs, childRel);
+      else out.push(childRel);
+    }
+  };
+  walk(dir, '');
+  return out;
+}
+
+/** Reject `..` / absolute / null-byte bundle entry paths (M27 §1 step 4). */
+function assertSafeBundlePath(rel: string): void {
+  if (rel.includes('\0') || nodePath.isAbsolute(rel) || rel.split(/[\\/]/).includes('..')) {
+    throw new DomainError('BUNDLE_MALFORMED_ENTRY', `unsafe bundle entry path '${rel}'`);
+  }
+}
 
 interface ReleaseRow {
   id: number;
@@ -625,8 +655,97 @@ export class ReleaseService {
    *      what to do with it (UPSERT restore / dry-run diff / read-only mount).
    * All errors are structured (code + payload), never bare strings.
    */
-  async restoreBundleArchive(_stream: NodeJS.ReadableStream): Promise<SpecSnapshot> {
-    throw new Error('NOT_IMPLEMENTED — restoreBundleArchive deferred to M26 (Release Import)');
+  async restoreBundleArchive(stream: NodeJS.ReadableStream): Promise<SpecSnapshot> {
+    const restoreDir = nodeFs.mkdtempSync(nodePath.join(nodeOs.tmpdir(), 'c4s-restore-'));
+    try {
+      // 1. Extract the tar.gz into a sandboxed temp dir.
+      await extractBundleStream(stream, restoreDir);
+
+      // 2. Manifest first — schema gate.
+      const manifestPath = nodePath.join(restoreDir, 'manifest.json');
+      if (!nodeFs.existsSync(manifestPath)) {
+        throw new DomainError('BUNDLE_MANIFEST_MISSING', 'bundle is missing manifest.json');
+      }
+      const manifest = JSON.parse(nodeFs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
+      if (manifest.bundleSchemaVersion > BUNDLE_SCHEMA_VERSION) {
+        throw new DomainError(
+          'BUNDLE_SCHEMA_UNSUPPORTED',
+          `bundle schema version ${manifest.bundleSchemaVersion} exceeds supported ${BUNDLE_SCHEMA_VERSION}`,
+        );
+      }
+
+      // 3. Pages — write byte-for-byte, then capture an unreleased page_version.
+      //    (Mirrors restorePage's raw-write path. Watcher is suppressed; at clone
+      //    bootstrap it is not yet started, so this is a no-op there.)
+      const pages: SpecSnapshotPageRow[] = [];
+      const pagesRoot = nodePath.join(restoreDir, 'pages');
+      for (const rel of listBundleFiles(pagesRoot)) {
+        assertSafeBundlePath(rel);
+        const content = nodeFs.readFileSync(nodePath.join(pagesRoot, rel), 'utf8');
+        const abs = nodePath.join(this.pagesService.root, rel);
+        this.watcher?.suppress(rel);
+        nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
+        nodeFs.writeFileSync(abs, content, 'utf8');
+        await this.pageVersions.recordVersion(rel, 'create', 'user');
+        pages.push({ path: rel, op: 'create', data: { path: rel, content } });
+      }
+
+      // 4. Entities — UPSERT via host.restore in dependency order (DTO before
+      //    Endpoint, which references DTO slugs). Each lands as an entity_version
+      //    row with release_id = NULL (the normal write-API capture).
+      const writer = new HostEntityWriter(this.host, this.tagsService);
+      const restoreCtx: RestoreContext = {
+        reader: this.rawReader,
+        writer,
+        releaseId: null,
+        actor: 'user',
+      };
+      const entities: SpecSnapshotEntityRow[] = [];
+      const entitiesDir = nodePath.join(restoreDir, 'entities');
+      if (nodeFs.existsSync(entitiesDir)) {
+        // Validate every bundle file maps to a known + locally-active type up front.
+        const byType = new Map<RawEntityType, SpecSnapshotEntityRow[]>();
+        for (const file of nodeFs.readdirSync(entitiesDir).filter((f) => f.endsWith('.json'))) {
+          const type = PLURAL_FILE_TO_ENTITY_TYPE[file] as RawEntityType | undefined;
+          if (!type) {
+            throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `unknown entity bundle file '${file}'`);
+          }
+          if (!this.host.getEntity(type)) {
+            throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `entity type '${type}' is not active locally`);
+          }
+          byType.set(
+            type,
+            JSON.parse(nodeFs.readFileSync(nodePath.join(entitiesDir, file), 'utf8')) as SpecSnapshotEntityRow[],
+          );
+        }
+        const order: RawEntityType[] = ['dto', 'database-table', 'ui-view', 'endpoint', 'ac'];
+        for (const type of order) {
+          const rows = byType.get(type);
+          if (!rows) continue;
+          for (const row of rows) {
+            if (row.op === 'delete') continue;
+            this.host.restore(type, row.data, restoreCtx);
+            entities.push({ type, slug: row.slug, op: row.op, data: row.data });
+          }
+        }
+      }
+
+      // 5. Compose a SpecSnapshot (same shape as getReleaseSnapshot).
+      return {
+        release: {
+          id: manifest.release.id,
+          name: manifest.release.name,
+          description: manifest.release.description,
+          createdBy: 'user',
+          createdAt: manifest.release.createdAt,
+        },
+        serializer_versions: manifest.serializerVersions,
+        entities,
+        pages,
+      };
+    } finally {
+      nodeFs.rmSync(restoreDir, { recursive: true, force: true });
+    }
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────

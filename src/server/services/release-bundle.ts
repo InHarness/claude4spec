@@ -18,11 +18,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
-import { create as tarCreate } from 'tar';
+import { pipeline } from 'node:stream/promises';
+import { create as tarCreate, extract as tarExtract } from 'tar';
 import { nanoid } from 'nanoid';
 import type { Release, SpecSnapshot, SpecSnapshotEntityRow } from '../../shared/entities.js';
 import type { PageSnapshotData } from './page-serializer.js';
 import type { Config } from '../config.js';
+import { DomainError } from './tags.js';
 
 /**
  * Bundle layout version. Bump = breaking change in the bundle shape (layout,
@@ -45,6 +47,11 @@ export const ENTITY_TYPE_TO_PLURAL_FILE: Record<string, string> = {
   'ui-view': 'ui-views.json',
   ac: 'acs.json',
 };
+
+/** Reverse of {@link ENTITY_TYPE_TO_PLURAL_FILE} — read direction (M27 clone). */
+export const PLURAL_FILE_TO_ENTITY_TYPE: Record<string, string> = Object.fromEntries(
+  Object.entries(ENTITY_TYPE_TO_PLURAL_FILE).map(([type, file]) => [file, type]),
+);
 
 /** Sanitized `config.json` shape embedded in the bundle (white-list, see below). */
 export interface BundleConfig {
@@ -144,7 +151,7 @@ function collectSortedEntries(dir: string): string[] {
 }
 
 /** Streaming SHA-256 over a file → lowercase hex64. */
-function sha256File(file: string): Promise<string> {
+export function sha256File(file: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
     const stream = fs.createReadStream(file);
@@ -239,5 +246,46 @@ export async function buildBundleArchive(
     return { tarGzPath, sizeBytes, sha256, bundleSchemaVersion: BUNDLE_SCHEMA_VERSION };
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+// ─── Read direction (M27 Project Clone) ──────────────────────────────────────
+
+/**
+ * Extract a bundle `tar.gz` stream into `destDir`. The inverse transport step of
+ * {@link buildBundleArchive}'s `tarCreate`. Caller owns `destDir` (cleanup).
+ */
+export async function extractBundleStream(
+  stream: NodeJS.ReadableStream,
+  destDir: string,
+): Promise<void> {
+  await pipeline(stream, tarExtract({ cwd: destDir }));
+}
+
+/**
+ * Cheaply read just `manifest.json` + `config.json` out of an already-downloaded
+ * bundle tar.gz. Consumed by the M27 clone service for the `release_import`
+ * audit row's `bundle_schema_version` and for the post-restore config patch
+ * (name / entities) — facts that the `restoreBundleArchive(): Promise<SpecSnapshot>`
+ * signature cannot carry. Missing manifest ⇒ `BUNDLE_MANIFEST_MISSING`.
+ */
+export async function readBundleMeta(
+  tarGzPath: string,
+): Promise<{ manifest: BundleManifest; config: BundleConfig | null }> {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-meta-'));
+  try {
+    await pipeline(fs.createReadStream(tarGzPath), tarExtract({ cwd: tmpDir }));
+    const manifestPath = path.join(tmpDir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      throw new DomainError('BUNDLE_MANIFEST_MISSING', 'bundle is missing manifest.json');
+    }
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as BundleManifest;
+    const configPath = path.join(tmpDir, 'config.json');
+    const config = fs.existsSync(configPath)
+      ? (JSON.parse(fs.readFileSync(configPath, 'utf8')) as BundleConfig)
+      : null;
+    return { manifest, config };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 }
