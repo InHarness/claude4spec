@@ -15,6 +15,9 @@ export function ProjectSection() {
   const { data: writingStyles } = useWritingStyles();
   const patch = usePatchConfig();
   const [name, setName] = useState<string>('');
+  // M26 §3 — surface a 400 from an unknown writingStyle inline under the dropdown
+  // (the backend rejects with `... not a selectable writing-style skill. Available: ...`).
+  const [writingStyleError, setWritingStyleError] = useState<string | null>(null);
   const initialName = config?.name ?? '';
   const dirty = name && name !== initialName;
 
@@ -29,11 +32,16 @@ export function ProjectSection() {
   }
 
   async function handleChangeWritingStyle(slug: string) {
+    setWritingStyleError(null);
     try {
       await patch.mutateAsync({ writingStyle: slug === '' ? null : slug });
       toast.success('Writing style updated');
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Failed to update writing style');
+      if (err instanceof ApiError) {
+        setWritingStyleError(err.message);
+      } else {
+        toast.error('Failed to update writing style');
+      }
     }
   }
 
@@ -83,7 +91,13 @@ export function ProjectSection() {
               </option>
             ))}
           </select>
-          <Hint>Applied on the next chat turn — no restart needed.</Hint>
+          {writingStyleError ? (
+            <span className="text-[11.5px]" style={{ color: '#a83232' }}>
+              {writingStyleError}
+            </span>
+          ) : (
+            <Hint>Applied on the next chat turn — no restart needed.</Hint>
+          )}
         </Field>
       </div>
     </SettingsCard>

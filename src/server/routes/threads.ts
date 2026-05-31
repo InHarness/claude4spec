@@ -1,10 +1,13 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
+import { findResumeViolations } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import {
   activeAdapters,
   runAgentTurn,
   AgentTurnError,
+  ALLOWED_MODELS,
+  type Model,
   type AgentTurnDeps,
 } from './agent-turn.js';
 
@@ -71,6 +74,42 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
       }
 
+      // Opcjonalny `model` z body (domyslnie `sonnet-4.6`); merge `architectureConfig` jak w
+      // `POST /api/chat` — serwer wygrywa wylacznie na `claude_usePreset`.
+      const modelArg = typeof req.body?.model === 'string' ? req.body.model : 'sonnet-4.6';
+      const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg)
+        ? (modelArg as Model)
+        : 'sonnet-4.6';
+      const clientArchitectureConfig =
+        req.body?.architectureConfig && typeof req.body.architectureConfig === 'object'
+          ? (req.body.architectureConfig as Record<string, unknown>)
+          : {};
+      const architectureConfig: Record<string, unknown> = {
+        ...clientArchitectureConfig,
+        claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
+      };
+
+      // M05 session-lock: ten sam invariant co `POST /api/chat`. Defensywny backstop dla
+      // nie-UI konsumentow (`c4s ask`, skrypty) — resume z innym modelem/reasoningiem = 409.
+      if (thread.lastSessionId != null) {
+        const snapshot = chat.getInitialArchitectureConfig(thread.id);
+        if (snapshot) {
+          const violations = findResumeViolations('claude-code', JSON.parse(snapshot), {
+            model,
+            architectureConfig,
+          });
+          if (violations.length > 0) {
+            return res.status(409).json({
+              error: {
+                code: 'RESUME_CONFIG_LOCKED',
+                message: 'Model and reasoning settings are locked for the lifetime of a session.',
+                violations: violations.map((v) => ({ path: v.path, reason: v.reason })),
+              },
+            });
+          }
+        }
+      }
+
       // Gating one-stream-per-thread — wspoldzielony rejestr z `POST /api/chat`.
       if (activeAdapters.has(thread.id)) {
         return res.status(409).json({
@@ -81,10 +120,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       const result = await runAgentTurn(deps, {
         thread,
         prompt: message,
-        model: 'sonnet-4.6',
-        architectureConfig: {
-          claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
-        },
+        model,
+        architectureConfig,
         requestId: nanoid(12),
         consoleObserver: null,
         // Headless: stream kolapsowany serwerowo, brak transportu eventow.

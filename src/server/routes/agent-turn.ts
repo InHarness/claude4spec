@@ -325,6 +325,13 @@ export async function runAgentTurn(
     // wiążący dla audytu jest tylko pierwszy. UPDATE idempotentny (no-op na 2.+ turze).
     deps.chatService.setInitialSystemPrompt(thread.id, systemPrompt);
 
+    // M05 session-lock: snapshot { model, architectureConfig } pierwszej tury — punkt
+    // odniesienia dla guarda RESUME_CONFIG_LOCKED w routes. Idempotentny (no-op na 2.+ turze).
+    deps.chatService.setInitialArchitectureConfig(thread.id, {
+      model: input.model,
+      architectureConfig: input.architectureConfig,
+    });
+
     if (isFirstTurn && currentPlan) {
       deps.planService.markPlanSeenByThread(thread.id);
     }

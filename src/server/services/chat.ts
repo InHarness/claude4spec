@@ -312,6 +312,32 @@ export class ChatService {
     return row?.initial_system_prompt ?? null;
   }
 
+  /**
+   * M05 session-lock: snapshot `{ model, architectureConfig }` z PIERWSZEJ tury.
+   * Punkt odniesienia dla guarda `RESUME_CONFIG_LOCKED` — model i pola reasoningu
+   * sa session-immutable. Idempotentny (UPDATE tylko gdy kolumna jest NULL), wiec
+   * no-op na 2.+ turze. Wzorowane na `setInitialSystemPrompt`.
+   */
+  setInitialArchitectureConfig(
+    threadId: string,
+    snapshot: { model: string; architectureConfig: Record<string, unknown> },
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE chat_thread SET initial_architecture_config_json = ?
+           WHERE id = ? AND initial_architecture_config_json IS NULL`
+      )
+      .run(JSON.stringify(snapshot), threadId);
+  }
+
+  /** Debug-only — NIE w domyslnej projekcji GET /api/threads/:id (jak initial_system_prompt). */
+  getInitialArchitectureConfig(threadId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT initial_architecture_config_json FROM chat_thread WHERE id = ?`)
+      .get(threadId) as { initial_architecture_config_json: string | null } | undefined;
+    return row?.initial_architecture_config_json ?? null;
+  }
+
   setLastUsage(threadId: string, usage: UsageStats): void {
     this.db
       .prepare(`UPDATE chat_thread SET last_usage_json = ? WHERE id = ?`)

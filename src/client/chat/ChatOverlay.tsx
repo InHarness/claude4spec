@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMatches, useNavigate } from '@tanstack/react-router';
+import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
@@ -21,6 +22,7 @@ import { useBrief } from '../hooks/useBriefs.js';
 import { usePatch } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
+import { chatConfigApi, type SessionResumeConstraint } from '../lib/api.js';
 
 const NEW_THREAD_DRAFT_KEY = '__new__';
 
@@ -105,6 +107,10 @@ export function ChatOverlay() {
 
   const threadList = useThreadList();
   const activeThread = threadList.threads.find((t) => t.id === chatThreadId) ?? null;
+  // M05 session-lock: which fields freeze once a thread has a session. Declared by the
+  // adapter package, served via GET /api/chat/config (not hardcoded in the UI).
+  const { data: chatConfig } = useQuery({ queryKey: ['chat-config'], queryFn: () => chatConfigApi.get() });
+  const resumeConstraints = chatConfig?.sessionResumeConstraints ?? [];
   // M21: dla brief context naglowek pokazuje "Brief: <filename>" zamiast title.
   // Pozwala na szybka identyfikacje ze rozmowa ma whitelisted toolset (brief-tools).
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
@@ -641,6 +647,8 @@ export function ChatOverlay() {
               planMode={planMode}
               setPlanMode={togglePlanMode}
               currentPage={currentPage}
+              sessionLocked={activeThread?.lastSessionId != null}
+              resumeConstraints={resumeConstraints}
               onClose={() => setSettingsOpen(false)}
             />
           )}
@@ -783,10 +791,14 @@ interface ModelSettingsPopoverProps {
   planMode: boolean;
   setPlanMode(v: boolean): void;
   currentPage: string | null;
+  /** M05 session-lock: true once the active thread has a session (`lastSessionId != null`). */
+  sessionLocked: boolean;
+  /** Locked fields declared by the adapter package (served via GET /api/chat/config). */
+  resumeConstraints: SessionResumeConstraint[];
   onClose(): void;
 }
 
-function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, onClose }: ModelSettingsPopoverProps) {
+function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
     { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
     { id: 'opus-4.8', label: 'Opus 4.8', sub: 'Deep reasoning · slow' },
@@ -800,6 +812,17 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
     { id: 'high', label: 'High' },
     ...(model === 'opus-4.8' ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
   ];
+
+  // M05 session-lock: model + reasoning fields freeze once the thread has a session.
+  // Locked paths come from the adapter package (via /api/chat/config), not hardcoded, so
+  // new immutable fields in the package lock automatically. Plan Mode stays mutable per-turn.
+  const constraints = sessionLocked ? resumeConstraints : [];
+  const lockFor = (path: string) => constraints.find((c) => c.path === path);
+  const modelLock = lockFor('model');
+  const thinkingLock =
+    lockFor('architectureConfig.claude_thinking') ??
+    lockFor('architectureConfig.claude_thinking_budget') ??
+    lockFor('architectureConfig.claude_effort');
 
   return (
     <div
@@ -837,6 +860,14 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
       </div>
 
       <div className="p-2.5">
+        {sessionLocked && (modelLock || thinkingLock) && (
+          <div
+            className="text-[10.5px] mb-2 px-2 py-1 rounded-md"
+            style={{ color: 'var(--c-muted)', background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+          >
+            Model & reasoning are locked for this session. Start a new conversation to change them.
+          </div>
+        )}
         <div
           className="text-[10.5px] uppercase tracking-wider font-mono mb-1.5"
           style={{ color: 'var(--c-subtle)' }}
@@ -849,11 +880,14 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
             return (
               <button
                 key={m.id}
-                onClick={() => setModel(m.id)}
-                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md"
+                onClick={() => { if (!modelLock) setModel(m.id); }}
+                disabled={Boolean(modelLock)}
+                title={modelLock?.reason}
+                className="w-full text-left flex items-center gap-2 px-2 py-1.5 rounded-md disabled:cursor-not-allowed"
                 style={{
                   background: active ? 'var(--c-accent-soft)' : 'var(--c-panel)',
                   border: `1px solid ${active ? 'var(--c-accent)' : 'var(--c-hair)'}`,
+                  opacity: modelLock && !active ? 0.4 : 1,
                 }}
               >
                 <span
@@ -894,12 +928,15 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
             return (
               <button
                 key={l.id}
-                onClick={() => setThinking(l.id)}
-                className="flex-1 px-2 py-1 rounded-md text-[11.5px] font-medium"
+                onClick={() => { if (!thinkingLock) setThinking(l.id); }}
+                disabled={Boolean(thinkingLock)}
+                title={thinkingLock?.reason}
+                className="flex-1 px-2 py-1 rounded-md text-[11.5px] font-medium disabled:cursor-not-allowed"
                 style={{
                   background: active ? 'var(--c-accent)' : 'var(--c-panel)',
                   color: active ? '#fff' : 'var(--c-ink)',
                   border: `1px solid ${active ? 'var(--c-accent)' : 'var(--c-hair-strong)'}`,
+                  opacity: thinkingLock && !active ? 0.4 : 1,
                 }}
               >
                 {l.label}

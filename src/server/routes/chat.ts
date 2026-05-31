@@ -2,6 +2,8 @@ import { Router, type Response } from 'express';
 import { nanoid } from 'nanoid';
 import {
   createConsoleObserver,
+  findResumeViolations,
+  getSessionResumeConstraints,
   type StreamObserver,
   type UserInputRequest,
   type UserInputResponse,
@@ -45,6 +47,11 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         },
       },
       defaultArchitecture: 'claude-code',
+      // M05 session-lock: fields frozen for the lifetime of a session. Sourced from the
+      // adapter helper so the UI lock is NOT hardcoded — new immutable fields in the package
+      // propagate automatically. Server-side because the package's main entry pulls the agent
+      // runtime (not browser-safe), so the client reads the declared list from here.
+      sessionResumeConstraints: getSessionResumeConstraints('claude-code'),
     });
   });
 
@@ -84,6 +91,30 @@ export function chatRouter(deps: AgentTurnDeps): Router {
 
       if (planModeArg !== undefined && planModeArg !== thread.planMode) {
         thread = deps.chatService.updateThreadSettings(thread.id, { planMode: planModeArg });
+      }
+
+      // M05 session-lock: na turze wznawiajacej (`lastSessionId != null`) model i pola
+      // reasoningu sa immutable — claude-code wiaze bloki thinking ostatniej tury z konfiguracja,
+      // ktora je wyprodukowala, wiec ich zmiana na resume = twardy 400. Backstop dla nie-UI
+      // konsumentow i wyscigu (zmiana modelu miedzy fetchem a sendem). MUSI byc przed `setupSse`
+      // (po flush naglowkow SSE nie ustawimy juz statusu 409).
+      if (thread.lastSessionId != null) {
+        const snapshot = deps.chatService.getInitialArchitectureConfig(thread.id);
+        if (snapshot) {
+          const violations = findResumeViolations('claude-code', JSON.parse(snapshot), {
+            model,
+            architectureConfig,
+          });
+          if (violations.length > 0) {
+            return res.status(409).json({
+              error: {
+                code: 'RESUME_CONFIG_LOCKED',
+                message: 'Model and reasoning settings are locked for the lifetime of a session.',
+                violations: violations.map((v) => ({ path: v.path, reason: v.reason })),
+              },
+            });
+          }
+        }
       }
 
       // One-stream-per-thread guard. Klient powinien dolaczyc przez GET /api/chat/stream/:threadId

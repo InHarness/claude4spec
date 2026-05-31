@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { clientPluginHost } from '../../../core/plugin-host/host.js';
-import { ApiError } from '../../../lib/api.js';
+import { ApiError, metaApi } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 
@@ -20,6 +21,11 @@ export function EntitiesSection() {
   const available = useMemo(() => clientPluginHost.listAvailable(), []);
   const availableTypes = useMemo(() => available.map((m) => m.type).join('|'), [available]);
   const [draft, setDraft] = useState<Set<string>>(() => initialSelection(config, available.map((m) => m.type)));
+  // M26 §2 — slugs persisted in `config.json` that match no registered plugin are
+  // reported by GET /api/_meta/entities under `unknown`. Surface them read-only so the
+  // user can see (but not toggle) an unrecognised entity type after refetch.
+  const { data: activation } = useQuery({ queryKey: ['meta-entities'], queryFn: () => metaApi.entities() });
+  const unknownTypes = activation?.unknown ?? [];
 
   useEffect(() => {
     setDraft(initialSelection(config, availableTypes ? availableTypes.split('|') : []));
@@ -91,6 +97,31 @@ export function EntitiesSection() {
             );
           })
         )}
+
+        {unknownTypes.map((type) => (
+          <label
+            key={type}
+            className="flex items-center gap-3 rounded-md px-3 py-2 opacity-60"
+            style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', cursor: 'not-allowed' }}
+            title="Unknown entity type — present in config.json but no plugin is registered for it."
+          >
+            <input type="checkbox" checked disabled className="h-4 w-4" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+                {type}
+              </span>
+              <span className="block text-[11px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+                {type}
+              </span>
+            </span>
+            <span
+              className="text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5"
+              style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
+            >
+              unknown
+            </span>
+          </label>
+        ))}
 
         <div className="flex justify-end">
           <button

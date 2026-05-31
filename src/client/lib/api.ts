@@ -266,6 +266,25 @@ export const metaApi = {
   },
 };
 
+// M05 session-lock: a field frozen for the lifetime of a chat session. `path` is
+// `'model'` or `'architectureConfig.<key>'`; `reason` is tooltip-ready.
+export interface SessionResumeConstraint {
+  path: string;
+  reason: string;
+}
+
+export interface ChatConfigResponse {
+  architectures: Record<string, { models: string[]; default: string }>;
+  defaultArchitecture: string;
+  sessionResumeConstraints: SessionResumeConstraint[];
+}
+
+export const chatConfigApi = {
+  async get(): Promise<ChatConfigResponse> {
+    return handle<ChatConfigResponse>(await fetch('/api/chat/config'));
+  },
+};
+
 export const sectionsApi = {
   async list(query: { pagePath?: string; search?: string } = {}): Promise<SectionIndexEntry[]> {
     const params = new URLSearchParams();
