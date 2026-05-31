@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.11] - 2026-05-31
+
+### Added
+- M27 Project Clone — bootstrap a local project from a published remote project. New `--clone <slug>` CLI option, backed by `ReleaseImportService` (validation, error handling) and the `release_import` table (migration `034_release_import`) that logs each clone attempt with its success or error state.
+- `--remote-url <url>` CLI option for a sticky override of the remote API base URL.
+- Chat session-lock — model and reasoning settings are now immutable for the duration of a chat session, with a chat configuration API exposing session resume constraints (migration `033_chat_initial_architecture_config`).
+- Error handling for unknown writing styles in `ProjectSection`, surfacing a relevant message to the user.
+
+### Changed
+- `BriefsList` now sorts briefs by release order via the new `useReleases` hook.
+- Bumped `@inharness-ai/agent-adapters` to 0.6.2.
+
 ## [1.0.10] - 2026-05-29
 
 ### Added
@@ -118,6 +130,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.11]: https://github.com/InHarness/claude4spec/compare/v1.0.10...v1.0.11
 [1.0.10]: https://github.com/InHarness/claude4spec/compare/v1.0.9...v1.0.10
 [1.0.9]: https://github.com/InHarness/claude4spec/compare/v1.0.8...v1.0.9
 [1.0.8]: https://github.com/InHarness/claude4spec/compare/v1.0.7...v1.0.8
