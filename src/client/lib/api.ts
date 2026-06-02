@@ -92,6 +92,8 @@ export interface ConfigResponse {
   entities?: string[];
   /** M26: hot-reload Claude agent flags. */
   agent: { claudeUsePreset: boolean };
+  /** M28: hot-reload git-sync toggles (always resolved; both default false). */
+  git: { syncCommitOnRelease: boolean; syncPushOnPush: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
@@ -113,6 +115,8 @@ export interface ConfigPatch {
   onboardingCompleted?: boolean;
   entities?: string[];
   agent?: { claudeUsePreset?: boolean };
+  /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
+  git?: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
   remoteProjectId?: string | null;
 }
 

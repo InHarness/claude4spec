@@ -1,8 +1,13 @@
 import { Router } from 'express';
 import type { ReleaseService } from '../services/release.js';
+import type { GitService } from '../services/git.js';
 import type { WsGateway } from '../ws/gateway.js';
 
-export function releasesRouter(releases: ReleaseService, ws?: WsGateway): Router {
+export function releasesRouter(
+  releases: ReleaseService,
+  ws?: WsGateway,
+  gitService?: GitService,
+): Router {
   const router = Router();
 
   router.get('/', (_req, res, next) => {
@@ -22,7 +27,7 @@ export function releasesRouter(releases: ReleaseService, ws?: WsGateway): Router
     }
   });
 
-  router.post('/', (req, res, next) => {
+  router.post('/', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as { name?: string; description?: string };
       const release = releases.createRelease(
@@ -30,7 +35,11 @@ export function releasesRouter(releases: ReleaseService, ws?: WsGateway): Router
         'user',
       );
       ws?.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
-      res.status(201).json(release);
+      // M28: best-effort git commit AFTER the release is persisted. Non-fatal —
+      // gitSync rides this synchronous response (null when off / no repo) and a
+      // failure surfaces as a warning toast, never blocking release creation.
+      const gitSync = gitService ? await gitService.commitOnRelease(release) : null;
+      res.status(201).json({ ...release, gitSync });
     } catch (err) {
       next(err);
     }

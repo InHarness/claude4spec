@@ -20,6 +20,7 @@ import { readConfig, writeConfig } from '../config.js';
 import { RemoteUnauthorizedError, RemoteRequestError } from './remote-http-client.js';
 import type { ReleaseService } from './release.js';
 import type { RemoteAuthService, PushBundleOutcome } from './remote-auth.js';
+import type { GitService } from './git.js';
 import type { ReleasePushResponse } from '../../shared/release-push.js';
 
 interface ReleasePushRow {
@@ -70,6 +71,7 @@ export class ReleasePushService {
     private db: Database.Database,
     private releaseService: ReleaseService,
     private remoteAuth: RemoteAuthService,
+    private gitService: GitService,
     private cwd: string,
   ) {}
 
@@ -167,7 +169,12 @@ export class ReleasePushService {
         status: 'success',
         errorMessage: null,
       });
-      return this.getById(id)!;
+      // M28: best-effort git push AFTER the remote push succeeded. Non-fatal —
+      // a git failure surfaces as gitSync.status='error' (warning toast) and
+      // never alters the recorded push status. Attached to this synchronous
+      // response only; not persisted (getById() carries gitSync: null).
+      const gitSync = await this.gitService.pushOnPush();
+      return { ...this.getById(id)!, gitSync };
     } finally {
       // 6. ALWAYS clean up the bundle the consumer owns.
       await unlink(bundle.tarGzPath).catch(() => {});
@@ -247,5 +254,9 @@ function toDto(row: ReleasePushRow): ReleasePushResponse {
     status: row.status === 'error' ? 'error' : 'success',
     errorMessage: row.error_message ?? undefined,
     pushedAt: row.pushed_at,
+    // M28: git push result is ephemeral advisory data — never persisted. Audit
+    // replay (getById/list*) always reports null; only the live POST response
+    // overrides this with the actual push outcome.
+    gitSync: null,
   };
 }

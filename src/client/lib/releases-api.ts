@@ -1,4 +1,5 @@
 import type {
+  CreateReleaseResponse,
   RawDelta,
   Release,
   ReleaseDetail,
@@ -35,8 +36,8 @@ export const releasesApi = {
     const data = await handle<{ count: number }>(await fetch('/api/releases/unreleased-count'));
     return data.count;
   },
-  async create(input: { name: string; description: string }): Promise<ReleaseDetail> {
-    return handle<ReleaseDetail>(
+  async create(input: { name: string; description: string }): Promise<CreateReleaseResponse> {
+    return handle<CreateReleaseResponse>(
       await fetch('/api/releases', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

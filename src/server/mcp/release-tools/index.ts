@@ -15,6 +15,7 @@
 import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import type { ReleaseService } from '../../services/release.js';
+import type { GitService } from '../../services/git.js';
 import type { WsGateway } from '../../ws/gateway.js';
 import { DomainError } from '../../services/tags.js';
 import { projectReleaseDiff, projectSpecSnapshot } from './projection.js';
@@ -27,6 +28,7 @@ import type {
 
 export interface ReleaseToolsDeps {
   releaseService: ReleaseService;
+  gitService: GitService;
   ws: WsGateway;
 }
 
@@ -61,7 +63,10 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
           'agent',
         );
         deps.ws.broadcast({ kind: 'release:created', releaseId: release.id, name: release.name });
-        return ok(release);
+        // M28: agent-surface parity — same best-effort git commit as the HTTP
+        // surface, with the outcome returned in `gitSync` (null when off/no repo).
+        const gitSync = await deps.gitService.commitOnRelease(release);
+        return ok({ ...release, gitSync });
       } catch (err) {
         return fail(err);
       }

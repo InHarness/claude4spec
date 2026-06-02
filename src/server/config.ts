@@ -42,6 +42,19 @@ export interface Config {
    * a secret (the secret is `access_token` in `remote_session`).
    */
   remoteProjectId?: string | null;
+  /**
+   * M28: optional Git Sync toggles. Absent/missing ⇒ both `false` (opt-in,
+   * forward-compatible with configs written before M28). Additive — no
+   * `$schemaVersion` bump. Read per-action (hot-reload).
+   */
+  git?: GitSyncConfig;
+}
+
+export interface GitSyncConfig {
+  /** When on, creating a release best-effort `git commit`s pagesDir + config.json. */
+  syncCommitOnRelease?: boolean;
+  /** When on, a successful remote push best-effort `git push`es the current branch. */
+  syncPushOnPush?: boolean;
 }
 
 export type ConsistencySeverity = 'off' | 'warn' | 'error';
@@ -229,6 +242,27 @@ function validate(raw: unknown): Partial<Config> {
     }
     out.remoteProjectId = r.remoteProjectId;
   }
+  if ('git' in r) {
+    const g = r.git;
+    if (g === null || typeof g !== 'object' || Array.isArray(g)) {
+      throw typeError('git', 'object', g);
+    }
+    const git: GitSyncConfig = {};
+    const gr = g as Record<string, unknown>;
+    if ('syncCommitOnRelease' in gr) {
+      if (typeof gr.syncCommitOnRelease !== 'boolean') {
+        throw typeError('git.syncCommitOnRelease', 'boolean', gr.syncCommitOnRelease);
+      }
+      git.syncCommitOnRelease = gr.syncCommitOnRelease;
+    }
+    if ('syncPushOnPush' in gr) {
+      if (typeof gr.syncPushOnPush !== 'boolean') {
+        throw typeError('git.syncPushOnPush', 'boolean', gr.syncPushOnPush);
+      }
+      git.syncPushOnPush = gr.syncPushOnPush;
+    }
+    out.git = git;
+  }
   return out;
 }
 
@@ -315,7 +349,13 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
   const current = readConfig(cwd);
   // Walidacja typow przez ponowne uzycie validate() na zmergowanym obiekcie.
   // validate() zignoruje brakujace pola — dlatego najpierw merge, potem walidacja.
-  const merged: Config = { ...current, ...validate(partial) };
+  const validated = validate(partial);
+  const merged: Config = { ...current, ...validated };
+  // M28: deep-merge the `git` object so toggling one flag preserves the other
+  // (shallow spread would replace the whole object and drop the untouched flag).
+  if (validated.git) {
+    merged.git = { ...current.git, ...validated.git };
+  }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   return merged;
 }

@@ -40,6 +40,8 @@ import { releasePushesRouter } from './routes/release-pushes.js';
 import { ReleaseImportService, rollbackClone } from './services/release-import.js';
 import { C4S_VERSION } from './services/release-bundle.js';
 import { createReleaseToolsServer } from './mcp/release-tools/index.js';
+import { GitService } from './services/git.js';
+import { gitRouter } from './routes/git.js';
 import { WsGateway } from './ws/gateway.js';
 import { PagesWatcher } from './fs/watcher.js';
 import { createReferenceToolsServer } from './mcp/reference-tools.js';
@@ -289,6 +291,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       patchesDir: c.patchesDir,
       entities: c.entities,
       agent: { claudeUsePreset: c.agent?.claudeUsePreset ?? true },
+      git: {
+        syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
+        syncPushOnPush: c.git?.syncPushOnPush ?? false,
+      },
       remoteProjectId: c.remoteProjectId ?? null,
       remoteApiUrl: c.remoteApiUrl ?? null,
       $schemaVersion: c.$schemaVersion,
@@ -315,6 +321,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         onboardingCompleted: boolean;
         entities: string[];
         agent: { claudeUsePreset?: boolean };
+        git: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
         remoteProjectId: string | null;
       }> = {};
 
@@ -412,6 +419,30 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patch.agent = next;
       }
 
+      // M28: hot-reload git-sync toggles. Only present subfields are forwarded;
+      // writeConfig deep-merges `git` so the untouched toggle is preserved.
+      if ('git' in body) {
+        const g = body.git;
+        if (g === null || typeof g !== 'object' || Array.isArray(g)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'git must be an object' } });
+        }
+        const gr = g as Record<string, unknown>;
+        const next: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean } = {};
+        if ('syncCommitOnRelease' in gr) {
+          if (typeof gr.syncCommitOnRelease !== 'boolean') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncCommitOnRelease must be boolean' } });
+          }
+          next.syncCommitOnRelease = gr.syncCommitOnRelease;
+        }
+        if ('syncPushOnPush' in gr) {
+          if (typeof gr.syncPushOnPush !== 'boolean') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncPushOnPush must be boolean' } });
+          }
+          next.syncPushOnPush = gr.syncPushOnPush;
+        }
+        patch.git = next;
+      }
+
       // M25: allow manual clear/override of remoteProjectId (e.g. UI "clear" after
       // a stale UUID). null ⇒ next push is a first push again.
       if ('remoteProjectId' in body) {
@@ -433,6 +464,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patchesDir: updated.patchesDir,
         entities: updated.entities,
         agent: { claudeUsePreset: updated.agent?.claudeUsePreset ?? true },
+        git: {
+          syncCommitOnRelease: updated.git?.syncCommitOnRelease ?? false,
+          syncPushOnPush: updated.git?.syncPushOnPush ?? false,
+        },
         remoteProjectId: updated.remoteProjectId ?? null,
         remoteApiUrl: updated.remoteApiUrl ?? null,
         $schemaVersion: updated.$schemaVersion,
@@ -550,10 +585,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     watcher,
     cwd,
   );
+  // M28 Git Sync — best-effort mirroring of release create/push into the user's
+  // git repo. Probes `pages.root` for the worktree; reads config per-action.
+  const gitService = new GitService(cwd, pages.root);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
-  const releasePushService = new ReleasePushService(db.handle, releaseService, remoteAuthService, cwd);
+  const releasePushService = new ReleasePushService(
+    db.handle,
+    releaseService,
+    remoteAuthService,
+    gitService,
+    cwd,
+  );
   pluginHost.registerMcpServer('release-tools', () =>
-    createReleaseToolsServer({ releaseService, ws: gateway }),
+    createReleaseToolsServer({ releaseService, gitService, ws: gateway }),
   );
 
   // M27 Project Clone — bootstrap-time only. Runs after services exist (DB
@@ -637,8 +681,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/todos', todosRouter(todosIndexer));
   app.use('/api/page-links', pageLinksRouter(pagesLinkIndexer));
   app.use('/api/plans', plansRouter(planService));
-  app.use('/api/releases', releasesRouter(releaseService, gateway));
+  app.use('/api/releases', releasesRouter(releaseService, gateway, gitService));
   app.use('/api/release-pushes', releasePushesRouter(releasePushService));
+  app.use('/api/git', gitRouter(gitService));
   app.use('/api/briefs', briefsRouter(briefService, pageVersions));
   app.use('/api/patches', patchesRouter(patchService));
   app.use('/api/remote-account', remoteAccountRouter(remoteAuthService));
