@@ -49,6 +49,11 @@ function PushToRemoteMenuItem({ release, onClose }: ReleaseActionContext) {
       const seq = res.remoteReleaseSequence;
       if (res.deduplicated) toast.info(`Already pushed as release #${seq}`);
       else toast.success(`Pushed as release #${seq}`);
+      // M28: git push-sync is best-effort — surface a warning on failure without
+      // contradicting the successful remote push above.
+      if (res.gitSync?.status === 'error') {
+        toast.warning(`Git push failed: ${res.gitSync.message ?? 'unknown error'}`);
+      }
     } catch (err) {
       toast.error((err as Error).message);
     }

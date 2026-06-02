@@ -326,6 +326,16 @@ export interface ReleaseDetail extends Release {
   countBreakdown: ReleaseCountBreakdown;
 }
 
+/**
+ * M28: body of `POST /api/releases` and the MCP `release_create` result.
+ * `ReleaseDetail` plus the best-effort `git commit` outcome — `null` when
+ * commit-sync is off or no repo was detected. Not persisted (no column on the
+ * `release` table); present only on the synchronous create response.
+ */
+export interface CreateReleaseResponse extends ReleaseDetail {
+  gitSync?: { status: 'committed' | 'nothing-to-commit' | 'skipped' | 'error'; message?: string } | null;
+}
+
 export interface SpecSnapshotEntityRow {
   type: string;
   slug: string;

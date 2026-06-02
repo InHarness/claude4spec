@@ -3,6 +3,7 @@ import { UserSettingsSection } from './sections/UserSettingsSection.js';
 import { ProjectSection } from './sections/ProjectSection.js';
 import { AppearanceSection } from './sections/AppearanceSection.js';
 import { RemoteProjectSection } from './sections/RemoteProjectSection.js';
+import { GitSection } from './sections/GitSection.js';
 import { ServerSection } from './sections/ServerSection.js';
 import { EntitiesSection } from './sections/EntitiesSection.js';
 import { AgentSection } from './sections/AgentSection.js';
@@ -10,12 +11,12 @@ import { AboutSection } from './sections/AboutSection.js';
 
 /**
  * M26 — full-page Settings surface mounted at `/settings`. Vertical stack of
- * eight sections in a 720px-wide column. Smooth-scroll to the hash anchor on
- * mount and on `hashchange`.
+ * sections in a 720px-wide column. Smooth-scroll to the hash anchor on mount
+ * and on `hashchange`.
  *
  * Section ids match the anchors referenced from the rest of the app:
- *   user-section · project · appearance · remote-project · server · entities
- *   · agent · about.
+ *   user-section · project · appearance · remote-project · git · server ·
+ *   entities · agent · about.
  */
 export function SettingsPage() {
   useEffect(() => {
@@ -44,6 +45,7 @@ export function SettingsPage() {
           <ProjectSection />
           <AppearanceSection />
           <RemoteProjectSection />
+          <GitSection />
           <ServerSection />
           <EntitiesSection />
           <AgentSection />
