@@ -21,12 +21,12 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
     return (
       <div
         role="region"
-        aria-label="System prompt — snapshot z pierwszej tury"
+        aria-label="System prompt"
         className="flex items-center gap-2 px-3 py-6 text-[12.5px]"
         style={{ color: 'var(--c-muted)' }}
       >
         <Loader2 size={14} className="animate-spin" />
-        <span>Ladowanie system promptu...</span>
+        <span>Loading system prompt...</span>
       </div>
     );
   }
@@ -35,13 +35,13 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
     return (
       <div
         role="region"
-        aria-label="System prompt — snapshot z pierwszej tury"
+        aria-label="System prompt"
         className="flex flex-col items-center gap-2 px-3 py-10 text-center"
         style={{ color: 'var(--c-muted)' }}
       >
         <FileText size={28} style={{ opacity: 0.4 }} />
         <div className="text-[12.5px]">
-          System prompt zostanie wyrenderowany po pierwszej wiadomosci.
+          System prompt will be rendered after the first message.
         </div>
       </div>
     );
@@ -52,22 +52,22 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
       await navigator.clipboard.writeText(prompt);
       toast.success('System prompt copied');
     } catch {
-      toast.error('Nie udalo sie skopiowac');
+      toast.error('Failed to copy');
     }
   };
 
   return (
-    <div role="region" aria-label="System prompt — snapshot z pierwszej tury">
+    <div role="region" aria-label="System prompt">
       <div
-        className="flex items-center gap-2 mb-3 px-2 py-1.5 rounded-md"
-        style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
+        className="flex items-center gap-2 px-2 py-1.5"
+        style={{ background: 'var(--c-panel)', borderBottom: '1px solid var(--c-hair)' }}
       >
         <FileText size={11} style={{ color: 'var(--c-accent)' }} />
         <span
           className="flex-1 text-[10.5px] font-mono uppercase tracking-wider"
           style={{ color: 'var(--c-subtle)' }}
         >
-          System prompt — snapshot z pierwszej tury
+          System prompt
         </span>
         <button
           onClick={() => void handleCopy()}
@@ -80,10 +80,9 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
         </button>
       </div>
       <pre
-        className="m-0 rounded-md"
+        className="m-0"
         style={{
-          padding: '10px 12px',
-          border: '1px solid var(--c-hair)',
+          padding: 0,
           fontFamily: "'JetBrains Mono', monospace",
           fontSize: 12,
           lineHeight: 1.55,
@@ -93,6 +92,7 @@ export function SystemPromptView({ prompt, loading }: SystemPromptViewProps) {
       >
         <code
           className="hljs language-xml"
+          style={{ display: 'block', padding: '10px 12px' }}
           dangerouslySetInnerHTML={{ __html: highlighted }}
         />
       </pre>

@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Annotation } from '../../shared/entities.js';
+import { projectKey } from './persisted.js';
 
 // One-shot migration: stary klucz `c4s-chat` → `c4s:m05:chat-store` (zgodnie z L5-ui clpst5l1).
 if (typeof window !== 'undefined') {
@@ -85,7 +86,7 @@ export const useChatStore = create<ChatState>()(
       clearAnnotations: () => set({ annotations: [] }),
     }),
     {
-      name: 'c4s:m05:chat-store',
+      name: projectKey('c4s:m05:chat-store'),
       version: 2,
       // v2: opus-4.7 retired in favour of opus-4.8 (Opus 4.8 release).
       migrate: (persisted, version) => {

@@ -8,7 +8,7 @@ import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { encodePatchPath } from '../lib/patches-api.js';
 import { useChatStore } from '../state/chat.js';
-import { usePersistedState } from '../state/persisted.js';
+import { usePersistedState, projectKey } from '../state/persisted.js';
 import { SegmentedControl } from './SegmentedControl.js';
 
 type ImplementedFilter = 'all' | 'done' | 'pending';
@@ -33,7 +33,7 @@ export function BriefsList() {
   const { data: releases = [] } = useReleases();
   const { data: patches = [] } = usePatches();
   const [collapsed, setCollapsed] = usePersistedState<string[]>(
-    'c4s:briefs:collapsed-patches',
+    projectKey('c4s:briefs:collapsed-patches'),
     [],
     1,
   );

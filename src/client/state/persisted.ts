@@ -4,6 +4,24 @@ type Envelope<T> = { v: number; data: T };
 
 type PersistedKey = `c4s:${string}:${string}`;
 
+// Tozsamosc projektu wstrzyknieta przez serwer do HTML (server/index.ts → injectProjectGlobal),
+// dostepna synchronicznie zanim zustand `persist` odczyta localStorage. Sluzy do suffiksowania
+// project-scoped kluczy, zeby nie wyciekaly miedzy projektami na tym samym host:port.
+// Brak globalu (legacy/stale cached HTML, testy) → scope 'default' (zachowanie jak przed zmiana).
+declare global {
+  interface Window {
+    __C4S_PROJECT__?: { id: string; name?: string };
+  }
+}
+
+export const PROJECT_SCOPE: string =
+  (typeof window !== 'undefined' && window.__C4S_PROJECT__?.id) || 'default';
+
+// Suffiksuje klucz scope'em projektu: 'c4s:m05:chat-store' → 'c4s:m05:chat-store::a1b2c3d4e5f6'.
+// `::<scope>` jest czescia wartosci klucza, nie elementem gramatyki namespace'u.
+export const projectKey = (base: PersistedKey): PersistedKey =>
+  `${base}::${PROJECT_SCOPE}` as PersistedKey;
+
 function readEnvelope<T>(
   key: PersistedKey,
   version: number,

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { useConfig } from '../hooks/useConfig.js';
+import { projectKey } from '../state/persisted.js';
 
-const MARKER_KEY = 'c4s:settings:last-restart-patch-at';
+const MARKER_KEY = projectKey('c4s:settings:last-restart-patch-at');
 const MARKER_EVENT = 'c4s:restart-marker-changed';
 
 function readMarker(): string | null {

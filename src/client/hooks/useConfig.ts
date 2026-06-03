@@ -4,6 +4,7 @@ import {
   patchTouchesRestartRequired,
   type ConfigPatch,
 } from '../lib/api.js';
+import { projectKey } from '../state/persisted.js';
 
 /**
  * M26 §2 — write the "last restart patch at" envelope when a restart-required
@@ -11,7 +12,7 @@ import {
  * automatically once `config.serverStartedAt > lastRestartPatchAt`. Custom
  * event lets `RestartRequiredBanner` react without polling localStorage.
  */
-const RESTART_MARKER_KEY = 'c4s:settings:last-restart-patch-at';
+const RESTART_MARKER_KEY = projectKey('c4s:settings:last-restart-patch-at');
 const RESTART_MARKER_EVENT = 'c4s:restart-marker-changed';
 
 function writeRestartMarker(): void {

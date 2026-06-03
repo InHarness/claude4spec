@@ -3,6 +3,7 @@ import { createServer as createHttpServer, type Server as HttpServer } from 'nod
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { readConfig, writeConfig } from './config.js';
 import { openDb, type Db } from './db/index.js';
 import { PagesService } from './services/pages.js';
@@ -121,6 +122,17 @@ async function listenOrExit(server: HttpServer, port: number): Promise<number> {
   }
 }
 
+// Wstrzykuje tozsamosc projektu do serwowanego HTML — zaraz po <head>, czyli PRZED
+// inline theme-scriptem i bundlem React. Klient czyta `window.__C4S_PROJECT__.id`
+// synchronicznie przy module-load, zeby suffiksowac project-scoped klucze localStorage
+// (`::<scope>`). Scope = sha1(cwd) jest niezalezny od portu — kolizja brala sie z reuzycia
+// tego samego host:port dla roznych katalogow. Zobacz brief 0.1.40→0.1.41 (c4sproj01).
+function injectProjectGlobal(html: string, cwd: string): string {
+  const id = createHash('sha1').update(cwd).digest('hex').slice(0, 12);
+  const payload = JSON.stringify({ id, name: path.basename(cwd) }).replace(/</g, '\\u003c');
+  return html.replace('<head>', `<head><script>window.__C4S_PROJECT__=${payload};</script>`);
+}
+
 async function mountDevVite(app: Express, cwd: string) {
   const { createServer } = await import('vite');
   const repoRoot = findRepoRoot(cwd);
@@ -137,6 +149,7 @@ async function mountDevVite(app: Express, cwd: string) {
       const htmlPath = path.join(repoRoot, 'src/client/index.html');
       let html = await fs.promises.readFile(htmlPath, 'utf-8');
       html = await vite.transformIndexHtml(req.originalUrl, html);
+      html = injectProjectGlobal(html, cwd);
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
       vite.ssrFixStacktrace(err as Error);
@@ -152,7 +165,12 @@ function mountProd(app: Express, cwd: string) {
   app.use(express.static(clientDist));
   app.use('*', (req, res, next) => {
     if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/ws')) return next();
-    res.sendFile(path.join(clientDist, 'index.html'));
+    try {
+      const raw = fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8');
+      res.status(200).set({ 'Content-Type': 'text/html' }).end(injectProjectGlobal(raw, cwd));
+    } catch (err) {
+      next(err);
+    }
   });
   return async () => {};
 }

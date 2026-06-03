@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import type { PageNode, PageSearchHit } from '../../shared/types.js';
 import { usePagesSearch } from '../hooks/usePages.js';
-import { usePersistedState } from '../state/persisted.js';
+import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
@@ -60,7 +60,7 @@ export function Sidebar({
   const [query, setQuery] = useState('');
   const searching = query.trim().length > 0;
   const [openFolders, setOpenFolders] = usePersistedState<Record<string, boolean>>(
-    'c4s:sidebar:pages-open',
+    projectKey('c4s:sidebar:pages-open'),
     {},
     1,
   );

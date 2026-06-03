@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
-import { usePersistedState } from '../state/persisted.js';
+import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
 import { useThreadList } from './useThreadList.js';
@@ -54,7 +54,7 @@ export function ChatOverlay() {
   const [systemPromptLoading, setSystemPromptLoading] = useState(false);
 
   const [drafts, setDrafts] = usePersistedState<Record<string, string>>(
-    'c4s:m05:chat-drafts',
+    projectKey('c4s:m05:chat-drafts'),
     {},
     1,
   );
@@ -361,8 +361,8 @@ export function ChatOverlay() {
             }}
             title={
               activeThread?.hasSystemPrompt
-                ? 'Pokaz system prompt (snapshot z pierwszej tury)'
-                : 'System prompt zostanie wyrenderowany po pierwszej wiadomosci'
+                ? 'Show system prompt'
+                : 'System prompt will be rendered after the first message'
             }
           >
             <FileText size={14} />
@@ -388,7 +388,10 @@ export function ChatOverlay() {
         </div>
 
         {/* Message list — swap z <SystemPromptView /> gdy toggle aktywny */}
-        <div ref={listRef} className="flex-1 overflow-auto nice-scroll px-3 py-3">
+        <div
+          ref={listRef}
+          className={`flex-1 overflow-auto nice-scroll ${systemPromptViewOpen ? '' : 'px-3 py-3'}`}
+        >
           {systemPromptViewOpen ? (
             <SystemPromptView
               prompt={chatThreadId ? systemPromptCache[chatThreadId] : undefined}
@@ -456,7 +459,7 @@ export function ChatOverlay() {
         <CurrentTodoList items={currentTodoItems} />
 
         {/* Input — hidden while a user_input_request is pending (answer via the card instead) */}
-        {pendingUserInputs.length === 0 && (
+        {pendingUserInputs.length === 0 && !systemPromptViewOpen && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
           {activeThread?.planId != null && (
             <ContextLinkBar

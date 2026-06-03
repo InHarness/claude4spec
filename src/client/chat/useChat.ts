@@ -34,6 +34,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   const currentThreadIdRef = useRef<string | null>(threadId);
   const loadingThreadRef = useRef<string | null>(null);
+  // threadId utworzony przez biezacy stream (implicit-create przy threadId=null).
+  // Sygnal dla efektu load-thread, ze zmiana threadId NIE jest switchem watku
+  // i nie wolno robic teardownu trwajacej tury.
+  const createdByActiveStreamRef = useRef<string | null>(null);
   const isStreamingRef = useRef(false);
   useEffect(() => {
     isStreamingRef.current = state.isStreaming;
@@ -111,7 +115,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // w UI (uzytkownik przelaczyl sie zanim doszedl event z poprzedniego streamu).
       if (currentThreadIdRef.current && tid !== currentThreadIdRef.current) return;
       currentThreadIdRef.current = tid;
-      if (tid && tid !== threadId) onThreadCreated?.(tid);
+      if (tid && tid !== threadId) {
+        createdByActiveStreamRef.current = tid;
+        onThreadCreated?.(tid);
+      }
     },
     [onThreadCreated, threadId],
   );
@@ -298,6 +305,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   // Load thread history when threadId changes
   useEffect(() => {
+    // Watek dopiero co utworzony przez aktywny stream (threadId: null -> tid).
+    // Reducer juz streamuje pierwsza ture — NIE wolno robic clear()/disconnect().
+    if (createdByActiveStreamRef.current && createdByActiveStreamRef.current === threadId) {
+      createdByActiveStreamRef.current = null;
+      currentThreadIdRef.current = threadId;
+      loadingThreadRef.current = null;
+      return;
+    }
     // Posprzataj po poprzednim watku zanim cokolwiek zaladujemy:
     // - disconnectStream() zamyka tylko lokalny SSE (POST do /api/chat/abort NIE leci);
     //   server-side adapter zyje dalej, persystuje eventy do DB, a powrot na ten watek
