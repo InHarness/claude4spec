@@ -26,12 +26,17 @@ export function UsageBadge({ usage, contextSize, model, architectureConfig }: Pr
   const override = typeof overrideRaw === 'number' && overrideRaw > 0 ? overrideRaw : undefined;
   const contextWindow = override ?? CLAUDE_CODE_CONTEXT_WINDOWS[model] ?? 200_000;
 
-  // agent-chat 0.1.1: contextSize jest last-turn utilization (NIE cumulative).
-  // Sumowanie inputTokens+outputTokens+cache w starym kodzie dawalo >100% po
-  // kilku turach — biblioteka teraz wystawia poprawną wartość bezpośrednio.
+  // Badge liczymy z usage OSTATNIEJ wiadomości = realne zajęcie okna kontekstu.
+  // Prop `contextSize` (event `result`) to kumulatyw per-query() — suma inputTokens
+  // po WSZYSTKICH iteracjach pętli narzędzi + subagentach w turze; po dłuższej turze
+  // rósł >1M i przycinał badge do 100%. NIE używać go do procentu.
+  // `usage.inputTokens` już zawiera cache read/creation (agent-adapters normalizuje,
+  // chunk-XTEFMTBM:78), więc occupancy = inputTokens + outputTokens (= contextSizeOf);
+  // cache to podzbiór inputTokens, dodawany osobno liczyłby podwójnie.
+  const occupancy = usage ? usage.inputTokens + usage.outputTokens : null;
   const percent =
-    contextSize != null && contextWindow > 0
-      ? Math.min(100, (contextSize / contextWindow) * 100)
+    occupancy != null && contextWindow > 0
+      ? Math.min(100, (occupancy / contextWindow) * 100)
       : null;
 
   const color =
