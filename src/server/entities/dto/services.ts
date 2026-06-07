@@ -17,9 +17,9 @@ import { dtoSlug } from '../../services/slug.js';
 import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
+import type { EntityStore } from '../../services/entity-store.js';
 
 interface DtoRow {
-  id: number;
   slug: string;
   name: string;
   description: string | null;
@@ -29,14 +29,27 @@ interface DtoRow {
   updated_at: string;
 }
 
+/**
+ * M29: write options. `capture: false` suppresses the entity_version capture —
+ * used by the index-reconstruction path (boot rebuild / incremental reindex),
+ * where the file is the commit point and capture happens once in the write-path
+ * orchestrator, not inside the service mutation.
+ */
+export interface MutateOpts {
+  capture?: boolean;
+  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
+  writeFile?: boolean;
+}
+
 export class DtoService {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
-    private versions: VersionService
+    private versions: VersionService,
+    private store: EntityStore
   ) {}
 
-  create(input: DtoCreateInput, actor: ChangedBy): Dto {
+  create(input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Dto {
     if (!input.name) throw new DomainError('VALIDATION', 'name is required');
     const slug = input.slug?.trim() || dtoSlug(input.name);
     if (!slug) throw new DomainError('VALIDATION', 'slug resolves to empty');
@@ -47,7 +60,7 @@ export class DtoService {
       const conflict = this.db.prepare(`SELECT 1 FROM dto WHERE slug = ?`).get(slug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `dto slug '${slug}' already exists`);
 
-      const info = this.db
+      this.db
         .prepare(
           `INSERT INTO dto (slug, name, description, fields, examples)
            VALUES (?, ?, ?, ?, ?)`
@@ -59,13 +72,18 @@ export class DtoService {
           JSON.stringify(input.fields ?? []),
           JSON.stringify(examples)
         );
-      const id = Number(info.lastInsertRowid);
-      if (input.tags?.length) this.tags.assignTags('dto', id, input.tags);
-      const created = this.getByIdInternal(id);
-      this.versions.captureEntitySnapshot('dto', id, 'create', actor, 'Created', '1.1.0');
+      if (input.tags?.length) this.tags.assignTags('dto', slug, input.tags);
+      const created = this.getBySlugInternal(slug);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('dto', slug, 'create', actor, 'Created', '1.1.0');
+      }
       return created;
     });
-    return tx();
+    const created = tx();
+    // M29: the entity file is the source of truth — persist after the index
+    // commit (skipped on the index-rebuild path, opts.writeFile === false).
+    if (opts.writeFile !== false) this.store.persist('dto', created.slug);
+    return created;
   }
 
   list(query: DtoListQuery = {}): Dto[] {
@@ -83,22 +101,20 @@ export class DtoService {
       const placeholders = tagSlugs.map(() => '?').join(',');
       if (query.tagFilter === 'and') {
         where.push(`
-          id IN (
-            SELECT et.entity_id
+          slug IN (
+            SELECT et.entity_slug
               FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'dto' AND t.slug IN (${placeholders})
-          GROUP BY et.entity_id
-            HAVING COUNT(DISTINCT t.slug) = ?
+             WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
+          GROUP BY et.entity_slug
+            HAVING COUNT(DISTINCT et.tag_slug) = ?
           )
         `);
         params.push(...tagSlugs, tagSlugs.length);
       } else {
         where.push(`
-          id IN (
-            SELECT et.entity_id FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'dto' AND t.slug IN (${placeholders})
+          slug IN (
+            SELECT et.entity_slug FROM entity_tag et
+             WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
           )
         `);
         params.push(...tagSlugs);
@@ -125,17 +141,11 @@ export class DtoService {
     return row ? this.hydrate(row) : null;
   }
 
-  getIdBySlug(slug: string): number | null {
-    const row = this.db.prepare(`SELECT id FROM dto WHERE slug = ?`).get(slug) as
-      | { id: number }
-      | undefined;
-    return row?.id ?? null;
-  }
-
   update(
     slug: string,
     input: DtoUpdateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { dto: Dto; previousSlug: string } {
     const tx = this.db.transaction(() => {
       const current = this.db.prepare(`SELECT * FROM dto WHERE slug = ?`).get(slug) as
@@ -165,7 +175,7 @@ export class DtoService {
           `UPDATE dto
              SET slug = ?, name = ?, description = ?, fields = ?, examples = ?,
                  updated_at = datetime('now')
-           WHERE id = ?`
+           WHERE slug = ?`
         )
         .run(
           nextSlug,
@@ -173,27 +183,43 @@ export class DtoService {
           input.description !== undefined ? input.description : current.description,
           nextFields,
           nextExamples,
-          current.id
+          slug
         );
 
-      if (input.tags) this.tags.assignTags('dto', current.id, input.tags);
+      // M29: a rename moves entity_tag rows to the new slug (entity_tag is
+      // polymorphic, no FK on entity_slug — must follow the rename explicitly).
+      if (nextSlug !== slug) {
+        this.db
+          .prepare(`UPDATE entity_tag SET entity_slug = ? WHERE entity_type = 'dto' AND entity_slug = ?`)
+          .run(nextSlug, slug);
+      }
 
-      const updated = this.getByIdInternal(current.id);
+      if (input.tags) this.tags.assignTags('dto', nextSlug, input.tags);
+
+      const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
-      this.versions.captureEntitySnapshot('dto', current.id, 'update', actor, summary, '1.1.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('dto', nextSlug, 'update', actor, summary, '1.1.0');
+      }
       return { dto: updated, previousSlug: slug };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) {
+      const nextSlug = result.dto.slug;
+      if (nextSlug !== slug) this.store.remove('dto', slug); // rename: drop the old file
+      this.store.persist('dto', nextSlug);
+    }
+    return result;
   }
 
   /**
    * Idempotent UPSERT for M17 restore. CREATE if slug missing, UPDATE
    * otherwise; preserves slug.
    */
-  upsert(slug: string, input: DtoCreateInput, actor: ChangedBy): { dto: Dto; op: 'created' | 'updated' } {
+  upsert(slug: string, input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { dto: Dto; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const dto = this.create({ ...input, slug } as DtoCreateInput & { slug?: string }, actor);
+      const dto = this.create({ ...input, slug } as DtoCreateInput & { slug?: string }, actor, opts);
       return { dto, op: 'created' };
     }
     const { dto } = this.update(slug, {
@@ -202,11 +228,11 @@ export class DtoService {
       fields: input.fields,
       examples: input.examples,
       tags: input.tags,
-    }, actor);
+    }, actor, opts);
     return { dto, op: 'updated' };
   }
 
-  remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = []): DtoDeleteResult {
+  remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = [], opts: MutateOpts = {}): DtoDeleteResult {
     const tx = this.db.transaction(() => {
       const row = this.db.prepare(`SELECT * FROM dto WHERE slug = ?`).get(slug) as
         | DtoRow
@@ -214,19 +240,23 @@ export class DtoService {
       if (!row) throw new DomainError('NOT_FOUND', `dto '${slug}' not found`);
 
       // M17: capture snapshot BEFORE delete (tombstone with last-known data).
-      this.versions.captureEntitySnapshot('dto', row.id, 'delete', actor, 'Deleted', '1.1.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('dto', slug, 'delete', actor, 'Deleted', '1.1.0');
+      }
       this.db
-        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'dto' AND entity_id = ?`)
-        .run(row.id);
-      this.db.prepare(`DELETE FROM dto WHERE id = ?`).run(row.id);
+        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'dto' AND entity_slug = ?`)
+        .run(slug);
+      this.db.prepare(`DELETE FROM dto WHERE slug = ?`).run(slug);
       return { deleted: true as const, brokenReferences };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) this.store.remove('dto', slug);
+    return result;
   }
 
-  private getByIdInternal(id: number): Dto {
-    const row = this.db.prepare(`SELECT * FROM dto WHERE id = ?`).get(id) as DtoRow | undefined;
-    if (!row) throw new Error(`dto id ${id} disappeared mid-tx`);
+  private getBySlugInternal(slug: string): Dto {
+    const row = this.db.prepare(`SELECT * FROM dto WHERE slug = ?`).get(slug) as DtoRow | undefined;
+    if (!row) throw new Error(`dto '${slug}' disappeared mid-tx`);
     return this.hydrate(row);
   }
 
@@ -237,24 +267,24 @@ export class DtoService {
       description: row.description,
       fields: parseFields(row.fields),
       examples: parseExamples(row.examples),
-      tags: this.tags.getEntityTagSlugs('dto', row.id),
-      endpoints: this.getLinkedEndpoints(row.id),
+      tags: this.tags.getEntityTagSlugs('dto', row.slug),
+      endpoints: this.getLinkedEndpoints(row.slug),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   }
 
-  private getLinkedEndpoints(dtoId: number): DtoEndpointLink[] {
+  private getLinkedEndpoints(dtoSlug: string): DtoEndpointLink[] {
     const rows = this.db
       .prepare(
         `SELECT e.slug AS slug, e.method AS method, e.path AS path,
                 ed.relation AS relation, ed.status_code AS status_code
            FROM endpoint_dto ed
-           JOIN endpoint e ON e.id = ed.endpoint_id
-          WHERE ed.dto_id = ?
+           JOIN endpoint e ON e.slug = ed.endpoint_slug
+          WHERE ed.dto_slug = ?
           ORDER BY ed.relation, ed.status_code, e.path`
       )
-      .all(dtoId) as Array<{
+      .all(dtoSlug) as Array<{
         slug: string;
         method: string;
         path: string;

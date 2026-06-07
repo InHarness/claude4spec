@@ -242,7 +242,7 @@ export const uiViewSerializer: EntitySerializer<RawEntity> = {
 
   detail: (entity, ctx: SerializeContext) => {
     const base = baseSingle(entity);
-    const references = ctx.reader.findSectionReferences('ui-view', entity.id).map((r) => ({
+    const references = ctx.reader.findSectionReferences('ui-view', entity.slug).map((r) => ({
       anchor: r.anchor,
       pagePath: r.pagePath,
       headingText: r.headingText,

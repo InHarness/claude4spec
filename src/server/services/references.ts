@@ -1,3 +1,4 @@
+import type Database from 'better-sqlite3';
 import type { EntityType, ReferenceHit } from '../../shared/entities.js';
 import {
   parseXmlTagsExcludingCode,
@@ -6,9 +7,83 @@ import {
 } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
+import type { EntityStore } from './entity-store.js';
+import { isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
 
 export class ReferencesService {
   constructor(private pages: PagesService, private watcher: PagesWatcher) {}
+
+  /**
+   * M29: deps for propagating a slug rename into the committed entity files
+   * (not just page markdown). Wired post-construction (store is built later).
+   */
+  private db: Database.Database | null = null;
+  private store: EntityStore | null = null;
+  setEntityDeps(db: Database.Database, store: EntityStore): void {
+    this.db = db;
+    this.store = store;
+  }
+
+  /**
+   * M29 (m29ren001): after an entity rename, rewrite the slug inside OTHER
+   * committed entity files whose snapshots embed it:
+   *   - dto rename → endpoint files' `linked_dtos[]` (endpoint_dto already
+   *     cascaded in the index; re-persist the affected endpoint files).
+   *   - any rename → ac files' `verifies[]` (soft JSON ref, no FK) — repoint in
+   *     the index then re-persist the affected ac files.
+   * Files-only; page XML refs are handled by the caller above.
+   */
+  private propagateInEntityFiles(type: EntityType, oldSlug: string, newSlug: string): void {
+    const db = this.db;
+    const store = this.store;
+    if (!db || !store) return;
+
+    // dto rename → endpoints (linked_dtos)
+    if (type === 'dto') {
+      const eps = db
+        .prepare(`SELECT DISTINCT endpoint_slug AS slug FROM endpoint_dto WHERE dto_slug = ?`)
+        .all(newSlug) as Array<{ slug: string }>;
+      for (const e of eps) {
+        try {
+          store.persist('endpoint', e.slug);
+        } catch {
+          /* skip */
+        }
+      }
+    }
+
+    // any rename → ac verifies[] ({type, slug} soft refs)
+    if (isRawEntityType(type)) {
+      const acs = db
+        .prepare(`SELECT slug, verifies FROM ac WHERE verifies LIKE ?`)
+        .all(`%${oldSlug}%`) as Array<{ slug: string; verifies: string }>;
+      const upd = db.prepare(`UPDATE ac SET verifies = ? WHERE slug = ?`);
+      for (const ac of acs) {
+        let parsed: Array<{ type?: string; slug?: string }>;
+        try {
+          parsed = JSON.parse(ac.verifies);
+          if (!Array.isArray(parsed)) continue;
+        } catch {
+          continue;
+        }
+        let changed = false;
+        for (const ref of parsed) {
+          if (ref && ref.type === type && ref.slug === oldSlug) {
+            ref.slug = newSlug;
+            changed = true;
+          }
+        }
+        if (changed) {
+          upd.run(JSON.stringify(parsed), ac.slug);
+          try {
+            store.persist('ac', ac.slug);
+          } catch {
+            /* skip */
+          }
+        }
+      }
+    }
+  }
 
   async findReferences(type: EntityType, slug: string): Promise<ReferenceHit[]> {
     const hits: ReferenceHit[] = [];
@@ -95,6 +170,9 @@ export class ReferencesService {
       }
       throw err;
     }
+
+    // M29: also rewrite the slug inside other committed entity files.
+    this.propagateInEntityFiles(type, oldSlug, newSlug);
 
     return { changed };
   }

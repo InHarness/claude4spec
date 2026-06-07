@@ -4,6 +4,18 @@ import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 
+/** Map an entity type → its React Query list key (plural). */
+const ENTITY_LIST_KEY: Record<string, string> = {
+  endpoint: 'endpoints',
+  dto: 'dtos',
+  'database-table': 'database-tables',
+  'ui-view': 'ui-views',
+  ac: 'acs',
+};
+function entityListKey(type: string): string {
+  return ENTITY_LIST_KEY[type] ?? 'entities';
+}
+
 export function useFileWatcher() {
   const qc = useQueryClient();
 
@@ -28,14 +40,14 @@ export function useFileWatcher() {
               batcher.queue(['page', data.path]);
             }
           } else if (data.kind === 'entity:changed') {
-            const key =
-              data.entityType === 'endpoint'
-                ? 'endpoints'
-                : data.entityType === 'dto'
-                  ? 'dtos'
-                  : 'database-tables';
-            batcher.queue([key]);
+            batcher.queue([entityListKey(data.entityType)]);
             batcher.queue([data.entityType, data.slug]);
+            batcher.queue(['entities']);
+          } else if (data.kind === 'entity:indexed') {
+            // M29: a file-watch reindex (external edit / git pull). Invalidate
+            // the same React Query keys as a write-API change — idempotent.
+            batcher.queue([entityListKey(data.type)]);
+            batcher.queue([data.type, data.slug]);
             batcher.queue(['entities']);
           } else if (data.kind === 'tag:changed') {
             batcher.queue(['tags']);

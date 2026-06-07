@@ -172,14 +172,14 @@ export const dtoSerializer: EntitySerializer<RawEntity> = {
 
   detail: (entity, ctx: SerializeContext) => {
     const base = baseSingle(entity);
-    const endpoints = ctx.reader.findDtoEndpoints(entity.id).map((e) => ({
+    const endpoints = ctx.reader.findDtoEndpoints(entity.slug).map((e) => ({
       endpointSlug: e.endpointSlug,
       method: e.method,
       path: e.path,
       relation: e.relation,
       statusCode: e.statusCode,
     }));
-    const references = ctx.reader.findSectionReferences('dto', entity.id).map((r) => ({
+    const references = ctx.reader.findSectionReferences('dto', entity.slug).map((r) => ({
       anchor: r.anchor,
       pagePath: r.pagePath,
       headingText: r.headingText,

@@ -18,6 +18,15 @@ export interface Config {
    * escape cwd). Forward-compat: missing in pre-M23 configs = treated as default.
    */
   patchesDir: string;
+  /**
+   * M29: directory of committed entity JSON files + tags.json (relative to cwd,
+   * default `.claude4spec/entities`). Source of truth for entities; SQLite is a
+   * derived index rebuilt from these files at boot. Same validation as
+   * `briefsDir`/`patchesDir` (must be relative, must not escape cwd) — but,
+   * unlike them, this directory is COMMITTED to git. Forward-compat: missing in
+   * pre-M29 configs = treated as default. Additive — no `$schemaVersion` bump.
+   */
+  entitiesDir: string;
   mode: 'dev' | 'prod';
   writingStyle: string | null;
   onboardingCompleted: boolean;
@@ -96,6 +105,7 @@ export function defaults(cwd: string): Config {
     pagesDir: 'pages',
     briefsDir: '.claude4spec/briefs',
     patchesDir: '.claude4spec/patches',
+    entitiesDir: '.claude4spec/entities',
     mode: 'prod',
     writingStyle: null,
     // Forward compat: brak pola w istniejacym configu = projekt sprzed M16,
@@ -155,6 +165,10 @@ function validate(raw: unknown): Partial<Config> {
   if ('patchesDir' in r) {
     if (typeof r.patchesDir !== 'string') throw typeError('patchesDir', 'string', r.patchesDir);
     out.patchesDir = r.patchesDir;
+  }
+  if ('entitiesDir' in r) {
+    if (typeof r.entitiesDir !== 'string') throw typeError('entitiesDir', 'string', r.entitiesDir);
+    out.entitiesDir = r.entitiesDir;
   }
   if ('mode' in r) {
     if (r.mode !== 'dev' && r.mode !== 'prod') {

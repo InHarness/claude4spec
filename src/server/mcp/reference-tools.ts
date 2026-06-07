@@ -15,6 +15,7 @@ import type { EntityType } from '../../shared/entities.js';
 import type { PageNode } from '../../shared/types.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
 import type { AcService } from '../entities/ac/services.js';
+import type { EntityStore } from '../services/entity-store.js';
 
 export interface ReferenceToolsDeps {
   tagsService: TagsService;
@@ -24,6 +25,8 @@ export interface ReferenceToolsDeps {
   ws: WsGateway;
   db: Database;
   cwd: string;
+  /** M29: persist an entity file after a tag_entity/untag_entity mutation. */
+  entityStore: EntityStore;
 }
 
 interface BrokenReferenceRow {
@@ -173,11 +176,11 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const type = validateActiveType(String(args.type));
         const slug = String(args.slug);
         const newTags = args.tags as string[];
-        const id = pluginHost.resolveEntityId(type, slug);
-        if (!id) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
-        const existing = deps.tagsService.getEntityTagSlugs(type, id);
+        if (!pluginHost.entityExists(type, slug)) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
+        const existing = deps.tagsService.getEntityTagSlugs(type, slug);
         const union = [...new Set([...existing, ...newTags])];
-        deps.tagsService.assignTags(type, id, union);
+        deps.tagsService.assignTags(type, slug, union);
+        if (isRawEntityType(type)) deps.entityStore.persist(type, slug);
         deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
         return ok({ tagged: true, addedCount: union.length - existing.length });
       } catch (err) {
@@ -199,11 +202,11 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const type = validateActiveType(String(args.type));
         const slug = String(args.slug);
         const toRemove = new Set(args.tags as string[]);
-        const id = pluginHost.resolveEntityId(type, slug);
-        if (!id) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
-        const existing = deps.tagsService.getEntityTagSlugs(type, id);
+        if (!pluginHost.entityExists(type, slug)) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
+        const existing = deps.tagsService.getEntityTagSlugs(type, slug);
         const remaining = existing.filter((s) => !toRemove.has(s));
-        deps.tagsService.assignTags(type, id, remaining);
+        deps.tagsService.assignTags(type, slug, remaining);
+        if (isRawEntityType(type)) deps.entityStore.persist(type, slug);
         deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
         return ok({ untagged: true, removedCount: existing.length - remaining.length });
       } catch (err) {
@@ -231,9 +234,8 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
           hits.map((h) => ({ pagePath: h.pagePath, tagType: h.tagType, line: h.line }));
 
         if (includeTagMatches) {
-          const id = pluginHost.resolveEntityId(type, slug);
-          if (id) {
-            const entityTagSlugs = deps.tagsService.getEntityTagSlugs(type, id);
+          if (pluginHost.entityExists(type, slug)) {
+            const entityTagSlugs = deps.tagsService.getEntityTagSlugs(type, slug);
             const entityTags = new Set(entityTagSlugs);
             if (entityTags.size > 0) {
               const tree = await deps.pagesService.listTree();
@@ -295,8 +297,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
           referencedByType[m.type] = new Set<string>();
           const tagMap = new Map<string, Set<string>>();
           for (const s of slugs) {
-            const id = pluginHost.resolveEntityId(m.type, s);
-            tagMap.set(s, new Set(id ? deps.tagsService.getEntityTagSlugs(m.type, id) : []));
+            tagMap.set(s, new Set(deps.tagsService.getEntityTagSlugs(m.type, s)));
           }
           entityTagsByType[m.type] = tagMap;
         }

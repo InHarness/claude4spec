@@ -20,7 +20,7 @@ export const databaseTableBackendModule: BackendModule = {
   systemPrompt: databaseTableSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new DatabaseTableService(ctx.db, ctx.tagsService, ctx.versionService);
+      const service = new DatabaseTableService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(
         `/api${databaseTableBackendModule.pathPrefix}`,
         databaseTablesRouter(service, ctx.referencesService, ctx.ws),
@@ -33,7 +33,6 @@ export const databaseTableBackendModule: BackendModule = {
           ws: ctx.ws,
         }),
       );
-      ctx.setIdResolver(databaseTableBackendModule.type, (slug) => service.getIdBySlug(slug));
       ctx.registerEntityService(databaseTableBackendModule.type, service);
     },
   },

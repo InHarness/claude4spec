@@ -15,9 +15,9 @@ import { databaseTableSlug } from '../../services/slug.js';
 import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
+import type { EntityStore } from '../../services/entity-store.js';
 
 interface DatabaseTableRow {
-  id: number;
   slug: string;
   name: string;
   description: string | null;
@@ -27,16 +27,30 @@ interface DatabaseTableRow {
   updated_at: string;
 }
 
+/**
+ * M29: write options. `capture: false` suppresses the entity_version capture —
+ * used by the index-reconstruction path (boot rebuild / incremental reindex),
+ * where the file is the commit point and capture happens once in the write-path
+ * orchestrator, not inside the service mutation.
+ */
+export interface MutateOpts {
+  capture?: boolean;
+  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
+  writeFile?: boolean;
+}
+
 export class DatabaseTableService {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
-    private versions: VersionService
+    private versions: VersionService,
+    private store: EntityStore
   ) {}
 
   create(
     input: DatabaseTableCreateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { dbTable: DatabaseTable; warnings: string[] } {
     if (!input.name) throw new DomainError('VALIDATION', 'name is required');
     const slug = input.slug?.trim() || databaseTableSlug(input.name);
@@ -53,7 +67,7 @@ export class DatabaseTableService {
           `database table slug '${slug}' already exists`
         );
 
-      const info = this.db
+      this.db
         .prepare(
           `INSERT INTO database_table (slug, name, description, columns, indexes)
            VALUES (?, ?, ?, ?, ?)`
@@ -65,14 +79,19 @@ export class DatabaseTableService {
           JSON.stringify(columns),
           JSON.stringify(indexes)
         );
-      const id = Number(info.lastInsertRowid);
-      if (input.tags?.length) this.tags.assignTags('database-table', id, input.tags);
-      const created = this.getByIdInternal(id);
-      this.versions.captureEntitySnapshot('database-table', id, 'create', actor, 'Created', '1.0.0');
+      if (input.tags?.length) this.tags.assignTags('database-table', slug, input.tags);
+      const created = this.getBySlugInternal(slug);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('database-table', slug, 'create', actor, 'Created', '1.0.0');
+      }
       const warnings = this.computeWarnings(columns, slug);
       return { dbTable: created, warnings };
     });
-    return tx();
+    const created = tx();
+    // M29: the entity file is the source of truth — persist after the index
+    // commit (skipped on the index-rebuild path, opts.writeFile === false).
+    if (opts.writeFile !== false) this.store.persist('database-table', created.dbTable.slug);
+    return created;
   }
 
   list(query: DatabaseTableListQuery = {}): DatabaseTable[] {
@@ -90,22 +109,20 @@ export class DatabaseTableService {
       const placeholders = tagSlugs.map(() => '?').join(',');
       if (query.tagFilter === 'or') {
         where.push(`
-          id IN (
-            SELECT et.entity_id FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'database-table' AND t.slug IN (${placeholders})
+          slug IN (
+            SELECT et.entity_slug FROM entity_tag et
+             WHERE et.entity_type = 'database-table' AND et.tag_slug IN (${placeholders})
           )
         `);
         params.push(...tagSlugs);
       } else {
         where.push(`
-          id IN (
-            SELECT et.entity_id
+          slug IN (
+            SELECT et.entity_slug
               FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'database-table' AND t.slug IN (${placeholders})
-          GROUP BY et.entity_id
-            HAVING COUNT(DISTINCT t.slug) = ?
+             WHERE et.entity_type = 'database-table' AND et.tag_slug IN (${placeholders})
+          GROUP BY et.entity_slug
+            HAVING COUNT(DISTINCT et.tag_slug) = ?
           )
         `);
         params.push(...tagSlugs, tagSlugs.length);
@@ -134,17 +151,11 @@ export class DatabaseTableService {
     return row ? this.hydrate(row) : null;
   }
 
-  getIdBySlug(slug: string): number | null {
-    const row = this.db.prepare(`SELECT id FROM database_table WHERE slug = ?`).get(slug) as
-      | { id: number }
-      | undefined;
-    return row?.id ?? null;
-  }
-
   update(
     slug: string,
     input: DatabaseTableUpdateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { dbTable: DatabaseTable; previousSlug: string; warnings: string[] } {
     const tx = this.db.transaction(() => {
       const current = this.db
@@ -177,7 +188,7 @@ export class DatabaseTableService {
           `UPDATE database_table
              SET slug = ?, name = ?, description = ?, columns = ?, indexes = ?,
                  updated_at = datetime('now')
-           WHERE id = ?`
+           WHERE slug = ?`
         )
         .run(
           nextSlug,
@@ -185,19 +196,35 @@ export class DatabaseTableService {
           input.description !== undefined ? input.description : current.description,
           nextColumns,
           nextIndexes,
-          current.id
+          slug
         );
 
-      if (input.tags) this.tags.assignTags('database-table', current.id, input.tags);
+      // M29: a rename moves entity_tag rows to the new slug (entity_tag is
+      // polymorphic, no FK on entity_slug — must follow the rename explicitly).
+      if (nextSlug !== slug) {
+        this.db
+          .prepare(`UPDATE entity_tag SET entity_slug = ? WHERE entity_type = 'database-table' AND entity_slug = ?`)
+          .run(nextSlug, slug);
+      }
 
-      const updated = this.getByIdInternal(current.id);
+      if (input.tags) this.tags.assignTags('database-table', nextSlug, input.tags);
+
+      const updated = this.getBySlugInternal(nextSlug);
       const summary =
         nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
-      this.versions.captureEntitySnapshot('database-table', current.id, 'update', actor, summary, '1.0.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('database-table', nextSlug, 'update', actor, summary, '1.0.0');
+      }
       const warnings = this.computeWarnings(updated.columns, updated.slug);
       return { dbTable: updated, previousSlug: slug, warnings };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) {
+      const nextSlug = result.dbTable.slug;
+      if (nextSlug !== slug) this.store.remove('database-table', slug); // rename: drop the old file
+      this.store.persist('database-table', nextSlug);
+    }
+    return result;
   }
 
   /**
@@ -207,11 +234,12 @@ export class DatabaseTableService {
   upsert(
     slug: string,
     input: DatabaseTableCreateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { dbTable: DatabaseTable; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const result = this.create({ ...input, slug }, actor);
+      const result = this.create({ ...input, slug }, actor, opts);
       return { dbTable: result.dbTable, op: 'created', warnings: result.warnings };
     }
     const result = this.update(slug, {
@@ -220,14 +248,15 @@ export class DatabaseTableService {
       columns: input.columns,
       indexes: input.indexes,
       tags: input.tags,
-    }, actor);
+    }, actor, opts);
     return { dbTable: result.dbTable, op: 'updated', warnings: result.warnings ?? [] };
   }
 
   remove(
     slug: string,
     actor: ChangedBy,
-    brokenReferences: BrokenReference[] = []
+    brokenReferences: BrokenReference[] = [],
+    opts: MutateOpts = {}
   ): DatabaseTableDeleteResult {
     const tx = this.db.transaction(() => {
       const row = this.db.prepare(`SELECT * FROM database_table WHERE slug = ?`).get(slug) as
@@ -238,14 +267,18 @@ export class DatabaseTableService {
       const danglingFks = this.findDanglingFks(slug);
 
       // M17: capture snapshot BEFORE delete.
-      this.versions.captureEntitySnapshot('database-table', row.id, 'delete', actor, 'Deleted', '1.0.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('database-table', slug, 'delete', actor, 'Deleted', '1.0.0');
+      }
       this.db
-        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'database-table' AND entity_id = ?`)
-        .run(row.id);
-      this.db.prepare(`DELETE FROM database_table WHERE id = ?`).run(row.id);
+        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'database-table' AND entity_slug = ?`)
+        .run(slug);
+      this.db.prepare(`DELETE FROM database_table WHERE slug = ?`).run(slug);
       return { deleted: true as const, brokenReferences, danglingFks };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) this.store.remove('database-table', slug);
+    return result;
   }
 
   /**
@@ -265,10 +298,10 @@ export class DatabaseTableService {
       const like = `%"table":"${oldSlug}"%`;
       const rows = this.db
         .prepare(
-          `SELECT id, slug, columns FROM database_table
+          `SELECT slug, columns FROM database_table
             WHERE slug != ? AND columns LIKE ?`
         )
-        .all(newSlug, like) as Array<{ id: number; slug: string; columns: string }>;
+        .all(newSlug, like) as Array<{ slug: string; columns: string }>;
 
       for (const row of rows) {
         const columns = parseColumns(row.columns);
@@ -286,13 +319,13 @@ export class DatabaseTableService {
           .prepare(
             `UPDATE database_table
                SET columns = ?, updated_at = datetime('now')
-             WHERE id = ?`
+             WHERE slug = ?`
           )
-          .run(JSON.stringify(nextColumns), row.id);
-        const updated = this.getByIdInternal(row.id);
+          .run(JSON.stringify(nextColumns), row.slug);
+        const updated = this.getBySlugInternal(row.slug);
         this.versions.captureEntitySnapshot(
           'database-table',
-          row.id,
+          row.slug,
           'update',
           actor,
           `FK slug propagation: '${oldSlug}' → '${newSlug}'`,
@@ -302,6 +335,9 @@ export class DatabaseTableService {
       }
     });
     tx();
+    // M29: each propagated row's snapshot (its fk.table) changed — persist its
+    // file. No opts here (this path has no writeFile gate), so persist always.
+    for (const changedSlug of changedTables) this.store.persist('database-table', changedSlug);
     return { changedTables };
   }
 
@@ -326,11 +362,11 @@ export class DatabaseTableService {
     return out;
   }
 
-  private getByIdInternal(id: number): DatabaseTable {
-    const row = this.db.prepare(`SELECT * FROM database_table WHERE id = ?`).get(id) as
+  private getBySlugInternal(slug: string): DatabaseTable {
+    const row = this.db.prepare(`SELECT * FROM database_table WHERE slug = ?`).get(slug) as
       | DatabaseTableRow
       | undefined;
-    if (!row) throw new Error(`database_table id ${id} disappeared mid-tx`);
+    if (!row) throw new Error(`database table '${slug}' disappeared mid-tx`);
     return this.hydrate(row);
   }
 
@@ -341,7 +377,7 @@ export class DatabaseTableService {
       description: row.description,
       columns: parseColumns(row.columns),
       indexes: parseIndexes(row.indexes),
-      tags: this.tags.getEntityTagSlugs('database-table', row.id),
+      tags: this.tags.getEntityTagSlugs('database-table', row.slug),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

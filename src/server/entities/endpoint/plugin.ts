@@ -23,7 +23,7 @@ export const endpointBackendModule: BackendModule = {
   systemPrompt: endpointSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new EndpointService(ctx.db, ctx.tagsService, ctx.versionService);
+      const service = new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(`/api${endpointBackendModule.pathPrefix}`, endpointsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${endpointBackendModule.type}-tools`,
@@ -33,7 +33,6 @@ export const endpointBackendModule: BackendModule = {
           ws: ctx.ws,
         }),
       );
-      ctx.setIdResolver(endpointBackendModule.type, (slug) => service.getIdBySlug(slug));
       ctx.registerEntityService(endpointBackendModule.type, service);
     },
   },

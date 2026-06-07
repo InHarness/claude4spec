@@ -29,7 +29,6 @@ class PluginHostImpl implements PluginHost {
   private modules = new Map<string, BackendModule>();
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
-  private idResolvers = new Map<string, (slug: string) => number | null>();
   private mcpServerFactories = new Map<string, () => McpServerInstance>();
   private entityServices = new Map<string, unknown>();
 
@@ -106,17 +105,13 @@ class PluginHostImpl implements PluginHost {
     }));
   }
 
-  setIdResolver(type: string, fn: (slug: string) => number | null): void {
-    this.idResolvers.set(type, fn);
-  }
-
-  resolveEntityId(type: string, slug: string): number | null {
-    const fn = this.idResolvers.get(type);
-    return fn ? fn(slug) : null;
-  }
-
   entityExists(type: string, slug: string): boolean {
-    return this.resolveEntityId(type, slug) !== null;
+    // M29: slug is the sole identity. Existence is a slug lookup via the
+    // registered entity service (every active type exposes getBySlug).
+    const service = this.entityServices.get(type) as
+      | { getBySlug?: (slug: string) => unknown }
+      | undefined;
+    return service?.getBySlug ? service.getBySlug(slug) != null : false;
   }
 
   registerEntityService(type: string, service: unknown): void {

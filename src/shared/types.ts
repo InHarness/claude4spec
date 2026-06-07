@@ -28,6 +28,11 @@ export interface PageSearchHit {
 export type WsEvent =
   | { kind: 'page:changed'; event: 'add' | 'change' | 'unlink'; path: string; origin: 'server' | 'external' }
   | { kind: 'entity:changed'; entityType: string; slug: string }
+  // M29: emitted by EntityIndexerService after a file-watch reindex (external
+  // edit / git pull / self-write that slipped past suppress). `op: 'delete'`
+  // when the entity file was unlinked. Boot indexAll() does NOT emit (runs
+  // before listen()).
+  | { kind: 'entity:indexed'; type: string; slug: string; op?: 'upsert' | 'delete' }
   | { kind: 'tag:changed'; slug: string }
   | { kind: 'section:indexed'; pagePath: string; anchors: string[] }
   | { kind: 'todos:changed'; pagePath?: string }

@@ -135,7 +135,7 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
     const dom = editor.view.dom as HTMLElement;
 
     function scrollToHash() {
-      const m = /^#anchor-([a-z0-9]{8})$/.exec(window.location.hash);
+      const m = /^#anchor-([a-z0-9]{6,12})$/.exec(window.location.hash);
       if (!m) return;
       const anchorId = m[1];
       requestAnimationFrame(() => {

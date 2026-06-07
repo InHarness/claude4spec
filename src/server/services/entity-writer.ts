@@ -28,35 +28,47 @@ import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 
 export class HostEntityWriter implements EntityWriter {
-  constructor(private host: PluginHost, private tags: TagsService) {}
+  /**
+   * M29: `capture` gates `entity_version` capture inside the service mutation.
+   *   - index-reconstruction path (boot rebuild / reindex): capture=false
+   *   - M17 release restore: capture=true (a real mutation, append-only)
+   * `writeFile` is ALWAYS false here: the restore path must never write entity
+   * files inside the service (the index rebuild reads files; release restore
+   * persists each entity's file once at the end, after junctions are synced).
+   */
+  private readonly mutateOpts: { capture: boolean; writeFile: boolean };
+
+  constructor(private host: PluginHost, private tags: TagsService, opts: { capture?: boolean } = {}) {
+    this.mutateOpts = { capture: opts.capture ?? true, writeFile: false };
+  }
 
   upsertEndpoint(slug: string, input: Parameters<EndpointService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<EndpointService['upsert']>['entity']> {
     const service = this.requireService<EndpointService>('endpoint');
-    const result = service.upsert(slug, input, actor);
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.entity, op: result.op };
   }
 
   upsertDto(slug: string, input: Parameters<DtoService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DtoService['upsert']>['dto']> {
     const service = this.requireService<DtoService>('dto');
-    const result = service.upsert(slug, input, actor);
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.dto, op: result.op };
   }
 
   upsertDatabaseTable(slug: string, input: Parameters<DatabaseTableService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DatabaseTableService['upsert']>['dbTable']> {
     const service = this.requireService<DatabaseTableService>('database-table');
-    const result = service.upsert(slug, input, actor);
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.dbTable, op: result.op, warnings: result.warnings };
   }
 
   upsertUiView(slug: string, input: Parameters<UiViewService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<UiViewService['upsert']>['uiView']> {
     const service = this.requireService<UiViewService>('ui-view');
-    const result = service.upsert(slug, input, actor);
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.uiView, op: result.op, warnings: result.warnings };
   }
 
   upsertAc(slug: string, input: Parameters<AcService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<AcService['upsert']>['ac']> {
     const service = this.requireService<AcService>('ac');
-    const result = service.upsert(slug, input, actor);
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.ac, op: result.op };
   }
 
@@ -81,7 +93,7 @@ export class HostEntityWriter implements EntityWriter {
     for (const [k, current] of currentSet) {
       if (!targetSet.has(k)) {
         try {
-          service.unlinkDto(endpointSlug, current.dtoSlug, current.relation, current.statusCode);
+          service.unlinkDto(endpointSlug, current.dtoSlug, current.relation, current.statusCode, { writeFile: false });
           unlinked += 1;
         } catch (err) {
           warnings.push(`unlink '${k}' failed: ${(err as Error).message}`);
@@ -92,7 +104,7 @@ export class HostEntityWriter implements EntityWriter {
     for (const [k, want] of targetSet) {
       if (!currentSet.has(k)) {
         try {
-          service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode);
+          service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode, { writeFile: false });
           linked += 1;
         } catch (err) {
           warnings.push(`link '${k}' failed: ${(err as Error).message}`);
@@ -103,9 +115,10 @@ export class HostEntityWriter implements EntityWriter {
   }
 
   syncTags(type: RawEntityType, slug: string, tags: string[]): void {
-    const id = this.host.resolveEntityId(type, slug);
-    if (id == null) return;
-    this.tags.assignTags(type, id, tags);
+    // M29: slug is the sole identity — assign directly. The caller's upsert has
+    // already ensured the entity row exists.
+    if (!this.host.entityExists(type, slug)) return;
+    this.tags.assignTags(type, slug, tags);
   }
 
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {

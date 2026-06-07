@@ -4,7 +4,6 @@ export type RawEntityType = 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 
 
 export interface RawEntity {
   type: RawEntityType;
-  id: number;
   slug: string;
   data: Record<string, unknown>;
   tags: string[];
@@ -77,15 +76,6 @@ export class RawEntityReader {
     return this.hydrate(type, row);
   }
 
-  getEntityById(type: RawEntityType, id: number): RawEntity | null {
-    const table = ENTITY_TABLES[type];
-    const row = this.db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id) as
-      | Record<string, unknown>
-      | undefined;
-    if (!row) return null;
-    return this.hydrate(type, row);
-  }
-
   getEntities(type: RawEntityType, slugs: string[]): { items: RawEntity[]; missing: string[] } {
     const items: RawEntity[] = [];
     const missing: string[] = [];
@@ -120,13 +110,12 @@ export class RawEntityReader {
     if (filter === 'and') {
       sql = `
         SELECT e.* FROM ${table} e
-         WHERE e.id IN (
-          SELECT et.entity_id
+         WHERE e.slug IN (
+          SELECT et.entity_slug
             FROM entity_tag et
-            JOIN tag t ON t.id = et.tag_id
-           WHERE et.entity_type = ? AND t.slug IN (${placeholders})
-        GROUP BY et.entity_id
-          HAVING COUNT(DISTINCT t.slug) = ?
+           WHERE et.entity_type = ? AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
          )
          ORDER BY e.slug
       `;
@@ -134,10 +123,9 @@ export class RawEntityReader {
     } else {
       sql = `
         SELECT e.* FROM ${table} e
-         WHERE e.id IN (
-          SELECT et.entity_id FROM entity_tag et
-            JOIN tag t ON t.id = et.tag_id
-           WHERE et.entity_type = ? AND t.slug IN (${placeholders})
+         WHERE e.slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = ? AND et.tag_slug IN (${placeholders})
          )
          ORDER BY e.slug
       `;
@@ -169,7 +157,6 @@ export class RawEntityReader {
 
   listTags(): RawTag[] {
     const rows = this.db.prepare(`SELECT * FROM tag ORDER BY name`).all() as Array<{
-      id: number;
       slug: string;
       name: string;
       color: string | null;
@@ -177,10 +164,9 @@ export class RawEntityReader {
     }>;
     const countRows = this.db
       .prepare(
-        `SELECT t.slug AS slug, et.entity_type AS entity_type, COUNT(*) AS c
+        `SELECT et.tag_slug AS slug, et.entity_type AS entity_type, COUNT(*) AS c
            FROM entity_tag et
-           JOIN tag t ON t.id = et.tag_id
-         GROUP BY t.slug, et.entity_type`
+         GROUP BY et.tag_slug, et.entity_type`
       )
       .all() as Array<{ slug: string; entity_type: string; c: number }>;
 
@@ -202,17 +188,17 @@ export class RawEntityReader {
   }
 
   /** Returns sections that referenced the given entity (populated by section-indexer). */
-  findSectionReferences(type: RawEntityType, entityId: number): SectionEntityRef[] {
+  findSectionReferences(type: RawEntityType, slug: string): SectionEntityRef[] {
     const rows = this.db
       .prepare(
         `SELECT sel.anchor AS anchor, sel.relation AS relation,
                 si.page_path AS page_path, si.heading_text AS heading_text
            FROM section_entity_link sel
            JOIN section_index si ON si.anchor = sel.anchor
-          WHERE sel.entity_type = ? AND sel.entity_id = ?
+          WHERE sel.entity_type = ? AND sel.entity_slug = ?
           ORDER BY si.page_path, si.line_start`
       )
-      .all(type, entityId) as Array<{
+      .all(type, slug) as Array<{
         anchor: string;
         relation: string;
         page_path: string;
@@ -228,18 +214,18 @@ export class RawEntityReader {
 
   /** Endpoint-DTO links (denormalised). */
   findEndpointDtos(
-    endpointId: number
+    endpointSlug: string
   ): Array<{ dtoSlug: string; dtoName: string; relation: string; statusCode: number | null }> {
     const rows = this.db
       .prepare(
         `SELECT d.slug AS dto_slug, d.name AS dto_name,
                 ed.relation AS relation, ed.status_code AS status_code
            FROM endpoint_dto ed
-           JOIN dto d ON d.id = ed.dto_id
-          WHERE ed.endpoint_id = ?
+           JOIN dto d ON d.slug = ed.dto_slug
+          WHERE ed.endpoint_slug = ?
           ORDER BY ed.relation, ed.status_code, d.name`
       )
-      .all(endpointId) as Array<{
+      .all(endpointSlug) as Array<{
         dto_slug: string;
         dto_name: string;
         relation: string;
@@ -255,7 +241,7 @@ export class RawEntityReader {
 
   /** Reverse: endpoints linked to a DTO. */
   findDtoEndpoints(
-    dtoId: number
+    dtoSlug: string
   ): Array<{
     endpointSlug: string;
     method: string;
@@ -268,11 +254,11 @@ export class RawEntityReader {
         `SELECT e.slug AS slug, e.method AS method, e.path AS path,
                 ed.relation AS relation, ed.status_code AS status_code
            FROM endpoint_dto ed
-           JOIN endpoint e ON e.id = ed.endpoint_id
-          WHERE ed.dto_id = ?
+           JOIN endpoint e ON e.slug = ed.endpoint_slug
+          WHERE ed.dto_slug = ?
           ORDER BY ed.relation, ed.status_code, e.path`
       )
-      .all(dtoId) as Array<{
+      .all(dtoSlug) as Array<{
         slug: string;
         method: string;
         path: string;
@@ -289,13 +275,12 @@ export class RawEntityReader {
   }
 
   private hydrate(type: RawEntityType, row: Record<string, unknown>): RawEntity {
-    const id = row.id as number;
     const slug = row.slug as string;
-    const tags = this.getEntityTagSlugs(type, id);
+    const tags = this.getEntityTagSlugs(type, slug);
 
     const data: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
-      if (key === 'id' || key === 'created_at' || key === 'updated_at') continue;
+      if (key === 'created_at' || key === 'updated_at') continue;
       data[key] = value;
     }
 
@@ -309,7 +294,7 @@ export class RawEntityReader {
       data[key] = safeJsonArray(value);
     }
 
-    return { type, id, slug, data, tags };
+    return { type, slug, data, tags };
   }
 
   private hydrateSection(row: Record<string, unknown>): RawSection {
@@ -325,16 +310,16 @@ export class RawEntityReader {
     };
   }
 
-  private getEntityTagSlugs(type: RawEntityType, entityId: number): string[] {
+  private getEntityTagSlugs(type: RawEntityType, slug: string): string[] {
     const rows = this.db
       .prepare(
         `SELECT t.slug AS slug
            FROM entity_tag et
-           JOIN tag t ON t.id = et.tag_id
-          WHERE et.entity_type = ? AND et.entity_id = ?
+           JOIN tag t ON t.slug = et.tag_slug
+          WHERE et.entity_type = ? AND et.entity_slug = ?
           ORDER BY t.name`
       )
-      .all(type, entityId) as Array<{ slug: string }>;
+      .all(type, slug) as Array<{ slug: string }>;
     return rows.map((r) => r.slug);
   }
 }
