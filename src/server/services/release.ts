@@ -46,13 +46,6 @@ import {
 } from './release-bundle.js';
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
-const ENTITY_TABLES: Record<RawEntityType, string> = {
-  endpoint: 'endpoint',
-  dto: 'dto',
-  'database-table': 'database_table',
-  'ui-view': 'ui_view',
-  ac: 'ac',
-};
 
 /** Recursively list files under `dir` as posix-style relative paths (read direction). */
 function listBundleFiles(dir: string): string[] {
@@ -86,9 +79,8 @@ interface ReleaseRow {
 }
 
 interface EntityVersionRow {
-  id: number;
   entity_type: string;
-  entity_id: number;
+  entity_slug: string;
   version: number;
   data: string;
   changed_by: string;
@@ -158,6 +150,16 @@ export class ReleaseService {
     private watcher: PagesWatcher | null = null,
     private cwd: string = process.cwd(),
   ) {}
+
+  /**
+   * M29: restoring an entity to a past version mutates the index — its committed
+   * file must follow, else the next reindex reverts the restore (files win).
+   * Wired post-construction (the store is built later in boot).
+   */
+  private entityStore: import('./entity-store.js').EntityStore | null = null;
+  setEntityStore(store: import('./entity-store.js').EntityStore): void {
+    this.entityStore = store;
+  }
 
   // ─── Listing & retrieval ─────────────────────────────────────────────────
 
@@ -319,7 +321,7 @@ export class ReleaseService {
       const rows = this.latestEntityRowsAtOrBefore(type, row.id);
       for (const r of rows) {
         if (!r.op) continue;
-        const slug = this.resolveSlug(type, r.entity_id, r.data);
+        const slug = r.entity_slug;
         if (!slug) continue;
         entities.push({
           type,
@@ -461,6 +463,7 @@ export class ReleaseService {
     if (!targetRow || targetRow.op === 'delete' || targetRow.data === 'null') {
       // Snapshot says entity didn't exist (or was deleted) at this release.
       const deleted = writer.delete(input.type, input.slug, actor);
+      if (deleted.deleted) this.entityStore?.remove(input.type, input.slug); // M29: file follows the index
       return {
         type: input.type,
         slug: input.slug,
@@ -484,6 +487,14 @@ export class ReleaseService {
     }
 
     const result = this.host.restore(input.type, targetSnapshot, restoreCtx);
+    // M29: persist the restored entity's file (host.restore used writeFile:false).
+    if (result.op !== 'noop' && result.op !== 'deleted') {
+      try {
+        this.entityStore?.persist(input.type, input.slug);
+      } catch {
+        /* index row missing — skip */
+      }
+    }
     return {
       type: input.type,
       slug: input.slug,
@@ -564,7 +575,7 @@ export class ReleaseService {
       const targetSlugs = new Set<string>();
       for (const r of targetRows) {
         if (!r.op || r.op === 'delete' || r.data === 'null') continue;
-        const slug = this.resolveSlug(type, r.entity_id, r.data);
+        const slug = r.entity_slug;
         if (slug) targetSlugs.add(slug);
       }
       // Restore each slug present in target
@@ -796,49 +807,27 @@ export class ReleaseService {
 
   /**
    * Find the latest entity_version row matching a slug at-or-before
-   * `releaseId`. Slug lookup is index-by-data-slug since legacy rows may
-   * predate slug presence in `data`. Returns null if no row found.
+   * `releaseId`. M29: slug is the entity_version natural key, so this is a
+   * direct query. Returns null if no row found.
    */
   private latestEntityRowForSlug(
     type: RawEntityType,
     slug: string,
     releaseId: number,
   ): EntityVersionRow | null {
-    // Resolve current entity id by slug (if entity still exists).
-    const currentId = this.host.resolveEntityId(type, slug);
-    if (currentId != null) {
-      const row = this.db
-        .prepare(
-          `SELECT * FROM entity_version
-            WHERE entity_type = ? AND entity_id = ?
-              AND release_id IS NOT NULL AND release_id <= ?
-            ORDER BY version DESC LIMIT 1`,
-        )
-        .get(type, currentId, releaseId) as EntityVersionRow | undefined;
-      if (row) return row;
-    }
-    // Entity no longer exists or never existed under this slug — scan rows
-    // in the target release range and match against snapshot data.slug.
-    const rows = this.db
+    const row = this.db
       .prepare(
         `SELECT * FROM entity_version
-          WHERE entity_type = ?
+          WHERE entity_type = ? AND entity_slug = ?
             AND release_id IS NOT NULL AND release_id <= ?
-          ORDER BY entity_id, version DESC`,
+          ORDER BY version DESC LIMIT 1`,
       )
-      .all(type, releaseId) as EntityVersionRow[];
-    const seen = new Set<number>();
-    for (const r of rows) {
-      if (seen.has(r.entity_id)) continue;
-      seen.add(r.entity_id);
-      const rowSlug = this.resolveSlug(type, r.entity_id, r.data);
-      if (rowSlug === slug) return r;
-    }
-    return null;
+      .get(type, slug, releaseId) as EntityVersionRow | undefined;
+    return row ?? null;
   }
 
   /**
-   * For each entity_id seen in the release range, return the latest version
+   * For each entity_slug seen in the release range, return the latest version
    * row at-or-before `releaseId`. Rows where the underlying entity table has
    * since been DELETEd appear as op='delete' tombstones (data carries the
    * last snapshot before deletion).
@@ -852,10 +841,10 @@ export class ReleaseService {
             AND ev1.version = (
               SELECT MAX(ev2.version) FROM entity_version ev2
                WHERE ev2.entity_type = ev1.entity_type
-                 AND ev2.entity_id = ev1.entity_id
+                 AND ev2.entity_slug = ev1.entity_slug
                  AND ev2.release_id IS NOT NULL AND ev2.release_id <= ?
             )
-          ORDER BY ev1.entity_id`,
+          ORDER BY ev1.entity_slug`,
       )
       .all(type, releaseId, releaseId) as EntityVersionRow[];
   }
@@ -877,28 +866,6 @@ export class ReleaseService {
       .all(releaseId, releaseId) as PageVersionRow[];
   }
 
-  /**
-   * Resolve a slug for an entity_version row. Snapshot data carries `slug`
-   * directly (post-M17 rows). For pre-M17 legacy rows, fall back to the
-   * underlying table — but the table may be deleted. Return null in that
-   * case (caller skips the entry).
-   */
-  private resolveSlug(type: RawEntityType, entityId: number, dataJson: string): string | null {
-    try {
-      const parsed = JSON.parse(dataJson);
-      if (parsed && typeof parsed === 'object' && typeof (parsed as { slug?: unknown }).slug === 'string') {
-        return (parsed as { slug: string }).slug;
-      }
-    } catch {
-      /* fall through */
-    }
-    // Legacy fallback: read slug from the entity table directly.
-    const table = ENTITY_TABLES[type];
-    const row = this.db.prepare(`SELECT slug FROM ${table} WHERE id = ?`).get(entityId) as
-      | { slug: string }
-      | undefined;
-    return row?.slug ?? null;
-  }
 }
 
 function safeJsonParse(raw: string): unknown {

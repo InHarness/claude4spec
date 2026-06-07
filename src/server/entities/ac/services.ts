@@ -17,9 +17,9 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { EntityStore } from '../../services/entity-store.js';
 
 interface AcRow {
-  id: number;
   slug: string;
   text: string;
   kind: string;
@@ -28,6 +28,18 @@ interface AcRow {
   description: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/**
+ * M29: write options. `capture: false` suppresses the entity_version capture —
+ * used by the index-reconstruction path (boot rebuild / incremental reindex),
+ * where the file is the commit point and capture happens once in the write-path
+ * orchestrator, not inside the service mutation.
+ */
+export interface MutateOpts {
+  capture?: boolean;
+  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
+  writeFile?: boolean;
 }
 
 const SERIALIZER_VERSION = '1.0.0';
@@ -47,9 +59,10 @@ export class AcService {
     private tags: TagsService,
     private versions: VersionService,
     private host: PluginHost,
+    private store: EntityStore,
   ) {}
 
-  create(input: AcCreateInput, actor: ChangedBy): Ac {
+  create(input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Ac {
     const text = (input.text ?? '').trim();
     if (!text) throw new DomainError('VALIDATION', 'text is required');
     const slug = (input.slug?.trim() || this.allocateSlug(text));
@@ -61,19 +74,24 @@ export class AcService {
     const tx = this.db.transaction(() => {
       const conflict = this.db.prepare(`SELECT 1 FROM ac WHERE slug = ?`).get(slug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `ac slug '${slug}' already exists`);
-      const info = this.db
+      this.db
         .prepare(
           `INSERT INTO ac (slug, text, kind, status, verifies, description)
            VALUES (?, ?, ?, ?, ?, ?)`,
         )
         .run(slug, text, kind, status, JSON.stringify(verifies), input.description ?? null);
-      const id = Number(info.lastInsertRowid);
-      if (input.tags?.length) this.tags.assignTags('ac', id, input.tags);
-      const ac = this.getByIdInternal(id);
-      this.versions.captureEntitySnapshot('ac', id, 'create', actor, 'Created', SERIALIZER_VERSION);
+      if (input.tags?.length) this.tags.assignTags('ac', slug, input.tags);
+      const ac = this.getBySlugInternal(slug);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ac', slug, 'create', actor, 'Created', SERIALIZER_VERSION);
+      }
       return ac;
     });
-    return tx();
+    const created = tx();
+    // M29: the entity file is the source of truth — persist after the index
+    // commit (skipped on the index-rebuild path, opts.writeFile === false).
+    if (opts.writeFile !== false) this.store.persist('ac', created.slug);
+    return created;
   }
 
   list(query: AcListQuery = {}): Ac[] {
@@ -102,22 +120,20 @@ export class AcService {
       const placeholders = tagSlugs.map(() => '?').join(',');
       if (query.tagFilter === 'and') {
         where.push(`
-          id IN (
-            SELECT et.entity_id
+          slug IN (
+            SELECT et.entity_slug
               FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'ac' AND t.slug IN (${placeholders})
-          GROUP BY et.entity_id
-            HAVING COUNT(DISTINCT t.slug) = ?
+             WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
+          GROUP BY et.entity_slug
+            HAVING COUNT(DISTINCT et.tag_slug) = ?
           )
         `);
         params.push(...tagSlugs, tagSlugs.length);
       } else {
         where.push(`
-          id IN (
-            SELECT et.entity_id FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'ac' AND t.slug IN (${placeholders})
+          slug IN (
+            SELECT et.entity_slug FROM entity_tag et
+             WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
           )
         `);
         params.push(...tagSlugs);
@@ -144,14 +160,7 @@ export class AcService {
     return row ? this.hydrate(row) : null;
   }
 
-  getIdBySlug(slug: string): number | null {
-    const row = this.db.prepare(`SELECT id FROM ac WHERE slug = ?`).get(slug) as
-      | { id: number }
-      | undefined;
-    return row?.id ?? null;
-  }
-
-  update(slug: string, input: AcUpdateInput, actor: ChangedBy): AcUpdateResult {
+  update(slug: string, input: AcUpdateInput, actor: ChangedBy, opts: MutateOpts = {}): AcUpdateResult {
     const tx = this.db.transaction(() => {
       const current = this.db.prepare(`SELECT * FROM ac WHERE slug = ?`).get(slug) as
         | AcRow
@@ -179,7 +188,7 @@ export class AcService {
           `UPDATE ac
              SET slug = ?, text = ?, kind = ?, status = ?, verifies = ?, description = ?,
                  updated_at = datetime('now')
-           WHERE id = ?`,
+           WHERE slug = ?`,
         )
         .run(
           nextSlug,
@@ -188,24 +197,40 @@ export class AcService {
           nextStatus,
           nextVerifies,
           nextDescription,
-          current.id,
+          slug,
         );
 
-      if (input.tags) this.tags.assignTags('ac', current.id, input.tags);
+      // M29: a rename moves entity_tag rows to the new slug (entity_tag is
+      // polymorphic, no FK on entity_slug — must follow the rename explicitly).
+      if (nextSlug !== slug) {
+        this.db
+          .prepare(`UPDATE entity_tag SET entity_slug = ? WHERE entity_type = 'ac' AND entity_slug = ?`)
+          .run(nextSlug, slug);
+      }
 
-      const updated = this.getByIdInternal(current.id);
+      if (input.tags) this.tags.assignTags('ac', nextSlug, input.tags);
+
+      const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
-      this.versions.captureEntitySnapshot('ac', current.id, 'update', actor, summary, SERIALIZER_VERSION);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ac', nextSlug, 'update', actor, summary, SERIALIZER_VERSION);
+      }
       return { ac: updated, previousSlug: slug };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) {
+      const nextSlug = result.ac.slug;
+      if (nextSlug !== slug) this.store.remove('ac', slug); // rename: drop the old file
+      this.store.persist('ac', nextSlug);
+    }
+    return result;
   }
 
   /** Idempotent UPSERT for M17 restore. */
-  upsert(slug: string, input: AcCreateInput, actor: ChangedBy): { ac: Ac; op: 'created' | 'updated' } {
+  upsert(slug: string, input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { ac: Ac; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const ac = this.create({ ...input, slug }, actor);
+      const ac = this.create({ ...input, slug }, actor, opts);
       return { ac, op: 'created' };
     }
     const { ac } = this.update(
@@ -219,11 +244,12 @@ export class AcService {
         tags: input.tags,
       },
       actor,
+      opts,
     );
     return { ac, op: 'updated' };
   }
 
-  remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = []): AcDeleteResult {
+  remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = [], opts: MutateOpts = {}): AcDeleteResult {
     const tx = this.db.transaction(() => {
       const row = this.db.prepare(`SELECT * FROM ac WHERE slug = ?`).get(slug) as
         | AcRow
@@ -231,14 +257,18 @@ export class AcService {
       if (!row) throw new DomainError('NOT_FOUND', `ac '${slug}' not found`);
 
       // M17: capture tombstone BEFORE delete.
-      this.versions.captureEntitySnapshot('ac', row.id, 'delete', actor, 'Deleted', SERIALIZER_VERSION);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ac', slug, 'delete', actor, 'Deleted', SERIALIZER_VERSION);
+      }
       this.db
-        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ac' AND entity_id = ?`)
-        .run(row.id);
-      this.db.prepare(`DELETE FROM ac WHERE id = ?`).run(row.id);
+        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ac' AND entity_slug = ?`)
+        .run(slug);
+      this.db.prepare(`DELETE FROM ac WHERE slug = ?`).run(slug);
       return { deleted: true as const, brokenReferences };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) this.store.remove('ac', slug);
+    return result;
   }
 
   /** Resolve verifies refs against the host; non-blocking. */
@@ -273,9 +303,9 @@ export class AcService {
     return candidate;
   }
 
-  private getByIdInternal(id: number): Ac {
-    const row = this.db.prepare(`SELECT * FROM ac WHERE id = ?`).get(id) as AcRow | undefined;
-    if (!row) throw new Error(`ac id ${id} disappeared mid-tx`);
+  private getBySlugInternal(slug: string): Ac {
+    const row = this.db.prepare(`SELECT * FROM ac WHERE slug = ?`).get(slug) as AcRow | undefined;
+    if (!row) throw new Error(`ac '${slug}' disappeared mid-tx`);
     return this.hydrate(row);
   }
 
@@ -287,7 +317,7 @@ export class AcService {
       status: (row.status as AcStatus) ?? 'active',
       verifies: parseVerifies(row.verifies),
       description: row.description,
-      tags: this.tags.getEntityTagSlugs('ac', row.id),
+      tags: this.tags.getEntityTagSlugs('ac', row.slug),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

@@ -289,7 +289,6 @@ export interface TagUpdateInput {
 }
 
 export interface VersionListItem {
-  id: number;
   version: number;
   changedBy: ChangedBy;
   changeSummary: string | null;
@@ -302,7 +301,8 @@ export interface VersionListItem {
 
 export interface VersionDetail extends VersionListItem {
   entityType: EntityType;
-  entityId: number;
+  /** M29: slug is the sole entity identity; versions are keyed by (entityType, entitySlug, version). */
+  entitySlug: string;
   data: unknown;
 }
 

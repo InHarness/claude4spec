@@ -14,9 +14,9 @@ import { uiViewSlug } from '../../services/slug.js';
 import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
+import type { EntityStore } from '../../services/entity-store.js';
 
 interface UiViewRow {
-  id: number;
   slug: string;
   name: string;
   url: string | null;
@@ -26,18 +26,32 @@ interface UiViewRow {
   updated_at: string;
 }
 
+/**
+ * M29: write options. `capture: false` suppresses the entity_version capture —
+ * used by the index-reconstruction path (boot rebuild / incremental reindex),
+ * where the file is the commit point and capture happens once in the write-path
+ * orchestrator, not inside the service mutation.
+ */
+export interface MutateOpts {
+  capture?: boolean;
+  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
+  writeFile?: boolean;
+}
+
 const VALID_LOCATIONS: ReadonlyArray<UiViewParamLocation> = ['path', 'query', 'hash'];
 
 export class UiViewService {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
-    private versions: VersionService
+    private versions: VersionService,
+    private store: EntityStore
   ) {}
 
   create(
     input: UiViewCreateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { uiView: UiView; warnings: string[] } {
     if (!input.name) throw new DomainError('VALIDATION', 'name is required');
     const slug = input.slug?.trim() || uiViewSlug(input.name);
@@ -51,20 +65,25 @@ export class UiViewService {
       if (conflict)
         throw new DomainError('SLUG_CONFLICT', `ui view slug '${slug}' already exists`);
 
-      const info = this.db
+      this.db
         .prepare(
           `INSERT INTO ui_view (slug, name, url, description, params)
            VALUES (?, ?, ?, ?, ?)`
         )
         .run(slug, input.name, url, input.description ?? null, JSON.stringify(params));
-      const id = Number(info.lastInsertRowid);
-      if (input.tags?.length) this.tags.assignTags('ui-view', id, input.tags);
-      const created = this.getByIdInternal(id);
-      this.versions.captureEntitySnapshot('ui-view', id, 'create', actor, 'Created', '1.0.0');
+      if (input.tags?.length) this.tags.assignTags('ui-view', slug, input.tags);
+      const created = this.getBySlugInternal(slug);
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ui-view', slug, 'create', actor, 'Created', '1.0.0');
+      }
       const warnings = computeWarnings(url, params);
       return { uiView: created, warnings };
     });
-    return tx();
+    const created = tx();
+    // M29: the entity file is the source of truth — persist after the index
+    // commit (skipped on the index-rebuild path, opts.writeFile === false).
+    if (opts.writeFile !== false) this.store.persist('ui-view', created.uiView.slug);
+    return created;
   }
 
   list(query: UiViewListQuery = {}): UiView[] {
@@ -82,22 +101,20 @@ export class UiViewService {
       const placeholders = tagSlugs.map(() => '?').join(',');
       if (query.tagFilter === 'or') {
         where.push(`
-          id IN (
-            SELECT et.entity_id FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'ui-view' AND t.slug IN (${placeholders})
+          slug IN (
+            SELECT et.entity_slug FROM entity_tag et
+             WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
           )
         `);
         params.push(...tagSlugs);
       } else {
         where.push(`
-          id IN (
-            SELECT et.entity_id
+          slug IN (
+            SELECT et.entity_slug
               FROM entity_tag et
-              JOIN tag t ON t.id = et.tag_id
-             WHERE et.entity_type = 'ui-view' AND t.slug IN (${placeholders})
-          GROUP BY et.entity_id
-            HAVING COUNT(DISTINCT t.slug) = ?
+             WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
+          GROUP BY et.entity_slug
+            HAVING COUNT(DISTINCT et.tag_slug) = ?
           )
         `);
         params.push(...tagSlugs, tagSlugs.length);
@@ -126,17 +143,11 @@ export class UiViewService {
     return row ? this.hydrate(row) : null;
   }
 
-  getIdBySlug(slug: string): number | null {
-    const row = this.db.prepare(`SELECT id FROM ui_view WHERE slug = ?`).get(slug) as
-      | { id: number }
-      | undefined;
-    return row?.id ?? null;
-  }
-
   update(
     slug: string,
     input: UiViewUpdateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { uiView: UiView; previousSlug: string; warnings: string[] } {
     const tx = this.db.transaction(() => {
       const current = this.db.prepare(`SELECT * FROM ui_view WHERE slug = ?`).get(slug) as
@@ -164,7 +175,7 @@ export class UiViewService {
           `UPDATE ui_view
              SET slug = ?, name = ?, url = ?, description = ?, params = ?,
                  updated_at = datetime('now')
-           WHERE id = ?`
+           WHERE slug = ?`
         )
         .run(
           nextSlug,
@@ -172,18 +183,34 @@ export class UiViewService {
           nextUrl,
           input.description !== undefined ? input.description : current.description,
           nextParams,
-          current.id
+          slug
         );
 
-      if (input.tags) this.tags.assignTags('ui-view', current.id, input.tags);
+      // M29: a rename moves entity_tag rows to the new slug (entity_tag is
+      // polymorphic, no FK on entity_slug — must follow the rename explicitly).
+      if (nextSlug !== slug) {
+        this.db
+          .prepare(`UPDATE entity_tag SET entity_slug = ? WHERE entity_type = 'ui-view' AND entity_slug = ?`)
+          .run(nextSlug, slug);
+      }
 
-      const updated = this.getByIdInternal(current.id);
+      if (input.tags) this.tags.assignTags('ui-view', nextSlug, input.tags);
+
+      const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
-      this.versions.captureEntitySnapshot('ui-view', current.id, 'update', actor, summary, '1.0.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ui-view', nextSlug, 'update', actor, summary, '1.0.0');
+      }
       const warnings = computeWarnings(updated.url, updated.params);
       return { uiView: updated, previousSlug: slug, warnings };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) {
+      const nextSlug = result.uiView.slug;
+      if (nextSlug !== slug) this.store.remove('ui-view', slug); // rename: drop the old file
+      this.store.persist('ui-view', nextSlug);
+    }
+    return result;
   }
 
   /**
@@ -193,11 +220,12 @@ export class UiViewService {
   upsert(
     slug: string,
     input: UiViewCreateInput,
-    actor: ChangedBy
+    actor: ChangedBy,
+    opts: MutateOpts = {}
   ): { uiView: UiView; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const result = this.create({ ...input, slug }, actor);
+      const result = this.create({ ...input, slug }, actor, opts);
       return { uiView: result.uiView, op: 'created', warnings: result.warnings };
     }
     const result = this.update(slug, {
@@ -206,14 +234,15 @@ export class UiViewService {
       description: input.description,
       params: input.params,
       tags: input.tags,
-    }, actor);
+    }, actor, opts);
     return { uiView: result.uiView, op: 'updated', warnings: result.warnings };
   }
 
   remove(
     slug: string,
     actor: ChangedBy,
-    brokenReferences: BrokenReference[] = []
+    brokenReferences: BrokenReference[] = [],
+    opts: MutateOpts = {}
   ): UiViewDeleteResult {
     const tx = this.db.transaction(() => {
       const row = this.db.prepare(`SELECT * FROM ui_view WHERE slug = ?`).get(slug) as
@@ -222,21 +251,25 @@ export class UiViewService {
       if (!row) throw new DomainError('NOT_FOUND', `ui view '${slug}' not found`);
 
       // M17: capture snapshot BEFORE delete.
-      this.versions.captureEntitySnapshot('ui-view', row.id, 'delete', actor, 'Deleted', '1.0.0');
+      if (opts.capture !== false) {
+        this.versions.captureEntitySnapshot('ui-view', slug, 'delete', actor, 'Deleted', '1.0.0');
+      }
       this.db
-        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ui-view' AND entity_id = ?`)
-        .run(row.id);
-      this.db.prepare(`DELETE FROM ui_view WHERE id = ?`).run(row.id);
+        .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ui-view' AND entity_slug = ?`)
+        .run(slug);
+      this.db.prepare(`DELETE FROM ui_view WHERE slug = ?`).run(slug);
       return { deleted: true as const, brokenReferences };
     });
-    return tx();
+    const result = tx();
+    if (opts.writeFile !== false) this.store.remove('ui-view', slug);
+    return result;
   }
 
-  private getByIdInternal(id: number): UiView {
-    const row = this.db.prepare(`SELECT * FROM ui_view WHERE id = ?`).get(id) as
+  private getBySlugInternal(slug: string): UiView {
+    const row = this.db.prepare(`SELECT * FROM ui_view WHERE slug = ?`).get(slug) as
       | UiViewRow
       | undefined;
-    if (!row) throw new Error(`ui_view id ${id} disappeared mid-tx`);
+    if (!row) throw new Error(`ui_view '${slug}' disappeared mid-tx`);
     return this.hydrate(row);
   }
 
@@ -247,7 +280,7 @@ export class UiViewService {
       url: row.url,
       description: row.description,
       params: parseParams(row.params),
-      tags: this.tags.getEntityTagSlugs('ui-view', row.id),
+      tags: this.tags.getEntityTagSlugs('ui-view', row.slug),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

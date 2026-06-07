@@ -20,7 +20,7 @@ export const dtoBackendModule: BackendModule = {
   systemPrompt: dtoSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new DtoService(ctx.db, ctx.tagsService, ctx.versionService);
+      const service = new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(`/api${dtoBackendModule.pathPrefix}`, dtosRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${dtoBackendModule.type}-tools`,
@@ -30,7 +30,6 @@ export const dtoBackendModule: BackendModule = {
           ws: ctx.ws,
         }),
       );
-      ctx.setIdResolver(dtoBackendModule.type, (slug) => service.getIdBySlug(slug));
       ctx.registerEntityService(dtoBackendModule.type, service);
     },
   },

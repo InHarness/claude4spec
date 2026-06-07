@@ -20,7 +20,7 @@ export const uiViewBackendModule: BackendModule = {
   systemPrompt: uiViewSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new UiViewService(ctx.db, ctx.tagsService, ctx.versionService);
+      const service = new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(
         `/api${uiViewBackendModule.pathPrefix}`,
         uiViewsRouter(service, ctx.referencesService, ctx.ws),
@@ -33,7 +33,6 @@ export const uiViewBackendModule: BackendModule = {
           ws: ctx.ws,
         }),
       );
-      ctx.setIdResolver(uiViewBackendModule.type, (slug) => service.getIdBySlug(slug));
       ctx.registerEntityService(uiViewBackendModule.type, service);
     },
   },

@@ -27,6 +27,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsGateway } from '../../ws/gateway.js';
+import type { EntityStore } from '../../services/entity-store.js';
 
 export type SqlMigration = {
   /** Per-plugin sequential version. Starts at 1 (post-baseline). */
@@ -56,6 +57,8 @@ export interface MountContext {
   tagsService: TagsService;
   versionService: VersionService;
   referencesService: ReferencesService;
+  /** M29: file store — entity services persist their JSON file after each mutation. */
+  entityStore: EntityStore;
   /**
    * Register a *factory* that builds a fresh MCP server instance. The host
    * invokes it once per agent turn (see `buildMcpServers`) so each
@@ -64,7 +67,6 @@ export interface MountContext {
    * instance already holds a transport.
    */
   registerMcpServer(name: string, factory: () => McpServerInstance): void;
-  setIdResolver(type: string, fn: (slug: string) => number | null): void;
   /**
    * M17: register the entity's L2 service with the host so cross-cutting
    * consumers (release restore) can drive idempotent UPSERT through normal
@@ -76,7 +78,7 @@ export interface MountContext {
 /**
  * Per-plugin mount hook. Constructs the entity service from cross-cutting
  * deps + db, mounts its Express subrouter under `/api${pathPrefix}`, registers
- * the MCP server as `${type}-tools`, and wires the id resolver.
+ * the MCP server as `${type}-tools`, and registers the entity service.
  */
 export type PluginMountFn = (ctx: MountContext) => void;
 
@@ -86,13 +88,6 @@ export interface BackendModule extends EntityModuleManifest {
 
   /** M05 — system prompt contribution composed by buildSystemPrompt. */
   systemPrompt: SystemPromptContribution;
-
-  /**
-   * Resolve an entity row id from its slug. Used by section-indexer and
-   * reference-tools to translate page-level mentions into FK-eligible ids
-   * without knowing the entity table directly.
-   */
-  getIdBySlug?: (slug: string) => number | null;
 
   /**
    * L1–L4 backend slots. The `mount` hook is the single entry point used by
@@ -164,13 +159,10 @@ export interface PluginHost {
   computeEntityCounts(db: Database): Record<string, number>;
 
   /**
-   * Runtime id resolver registry. Populated by index.ts after services are
-   * instantiated; consumed by section-indexer and reference-tools to map
-   * `(type, slug) → entity_id` without per-type switches.
+   * M29: existence check by slug (the sole entity identity). Delegates to the
+   * registered entity service's `getBySlug`. Consumed by section-indexer and
+   * reference-tools to validate page-level mentions without per-type switches.
    */
-  setIdResolver(type: string, fn: (slug: string) => number | null): void;
-  resolveEntityId(type: string, slug: string): number | null;
-  /** Convenience: true if `(type, slug)` resolves to a row id via setIdResolver. */
   entityExists(type: string, slug: string): boolean;
 
   /**

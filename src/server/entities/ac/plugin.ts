@@ -20,7 +20,7 @@ export const acBackendModule: BackendModule = {
   systemPrompt: acSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new AcService(ctx.db, ctx.tagsService, ctx.versionService, pluginHost);
+      const service = new AcService(ctx.db, ctx.tagsService, ctx.versionService, pluginHost, ctx.entityStore);
       ctx.app.use(`/api${acBackendModule.pathPrefix}`, acsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${acBackendModule.type}-tools`,
@@ -30,7 +30,6 @@ export const acBackendModule: BackendModule = {
           ws: ctx.ws,
         }),
       );
-      ctx.setIdResolver(acBackendModule.type, (slug) => service.getIdBySlug(slug));
       ctx.registerEntityService(acBackendModule.type, service);
     },
   },

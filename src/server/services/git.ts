@@ -102,8 +102,13 @@ export class GitService {
     // worktree). `git add` matches pathspecs lexically against the real worktree
     // root, so an unresolved symlink path reads as "outside repository". Resolve
     // to real paths and keep only those that actually live inside `root`.
+    //
+    // M29: also stage the committed entity store (<entitiesDir> contains the
+    // entity JSON files + tags.json — the source of truth). db.sqlite is
+    // gitignored, so the whole dir can be staged safely.
+    const entitiesPath = path.resolve(this.cwd, readConfig(this.cwd).entitiesDir);
     const targets: string[] = [];
-    for (const p of [this.pagesPath, configPath(this.cwd)]) {
+    for (const p of [this.pagesPath, configPath(this.cwd), entitiesPath]) {
       let real: string;
       try {
         real = fs.realpathSync(p);

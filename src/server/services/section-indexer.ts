@@ -177,7 +177,7 @@ export class SectionIndexerService {
           .run(...anchorsInFile);
 
         const linkStmt = this.db.prepare(
-          `INSERT OR IGNORE INTO section_entity_link (anchor, entity_type, entity_id, relation)
+          `INSERT OR IGNORE INTO section_entity_link (anchor, entity_type, entity_slug, relation)
                VALUES (?, ?, ?, 'uses')`
         );
         for (const s of sections) {
@@ -191,8 +191,9 @@ export class SectionIndexerService {
               const key = `${type}|${slug}`;
               if (seen.has(key)) continue;
               seen.add(key);
-              const entityId = this.resolveEntityId(type, slug);
-              if (entityId != null) linkStmt.run(s.anchor, type, entityId);
+              // M29: link by slug (sole identity); only persist for entities
+              // that actually exist, mirroring the prior id-resolver guard.
+              if (pluginHost.entityExists(type, slug)) linkStmt.run(s.anchor, type, slug);
             }
           }
         }
@@ -205,10 +206,6 @@ export class SectionIndexerService {
       pagePath: relPath,
       anchors: sections.map((s) => s.anchor),
     });
-  }
-
-  private resolveEntityId(type: string, slug: string): number | null {
-    return pluginHost.resolveEntityId(type, slug);
   }
 }
 

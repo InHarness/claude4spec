@@ -26,7 +26,7 @@ function href(entity: RawEntity): string {
 }
 
 function baseSingle(entity: RawEntity, ctx: SerializeContext, includeDtos = true) {
-  const dtos = includeDtos ? ctx.reader.findEndpointDtos(entity.id) : undefined;
+  const dtos = includeDtos ? ctx.reader.findEndpointDtos(entity.slug) : undefined;
   return {
     type: 'endpoint',
     slug: entity.slug,
@@ -65,7 +65,7 @@ export interface EndpointSnapshot {
 }
 
 function buildSnapshot(entity: RawEntity, ctx: SerializeContext): EndpointSnapshot {
-  const dtos = ctx.reader.findEndpointDtos(entity.id);
+  const dtos = ctx.reader.findEndpointDtos(entity.slug);
   return {
     slug: entity.slug,
     method: entity.data.method as HttpMethod,
@@ -219,7 +219,7 @@ export const endpointSerializer: EntitySerializer<RawEntity> = {
   detail: (entity, ctx) => {
     const base = baseSingle(entity, ctx, true);
     const brokenRefs: string[] = [];
-    const dtos = ctx.reader.findEndpointDtos(entity.id);
+    const dtos = ctx.reader.findEndpointDtos(entity.slug);
     const dtoObjects = dtos.map((link) => {
       const dto = ctx.reader.getEntity('dto', link.dtoSlug);
       if (!dto) {
@@ -241,7 +241,7 @@ export const endpointSerializer: EntitySerializer<RawEntity> = {
       };
     });
 
-    const references = ctx.reader.findSectionReferences('endpoint', entity.id);
+    const references = ctx.reader.findSectionReferences('endpoint', entity.slug);
     return {
       ...base,
       dtos: dtoObjects,

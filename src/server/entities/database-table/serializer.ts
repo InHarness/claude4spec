@@ -186,7 +186,7 @@ export const databaseTableSerializer: EntitySerializer<RawEntity> = {
 
   detail: (entity, ctx: SerializeContext) => {
     const base = baseSingle(entity);
-    const references = ctx.reader.findSectionReferences('database-table', entity.id).map((r) => ({
+    const references = ctx.reader.findSectionReferences('database-table', entity.slug).map((r) => ({
       anchor: r.anchor,
       pagePath: r.pagePath,
       headingText: r.headingText,

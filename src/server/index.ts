@@ -45,6 +45,9 @@ import { GitService } from './services/git.js';
 import { gitRouter } from './routes/git.js';
 import { WsGateway } from './ws/gateway.js';
 import { PagesWatcher } from './fs/watcher.js';
+import { EntitiesWatcher } from './fs/entities-watcher.js';
+import { EntityStore } from './services/entity-store.js';
+import { EntityIndexerService } from './services/entity-indexer.js';
 import { createReferenceToolsServer } from './mcp/reference-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsDir } from './services/skill-registry.js';
 import { chatRouter } from './routes/chat.js';
@@ -91,6 +94,21 @@ export interface ServerHandle {
 }
 
 const DEFAULT_PORT = 3000;
+
+/**
+ * M29: one-time best-effort backup of the derived SQLite before a DB→text
+ * export / divergent-rebuild, so the prior index is recoverable. Idempotent —
+ * skips if the `.pre-migration.bak` already exists.
+ */
+function backupDbBeforeMigration(cwd: string): void {
+  const src = path.join(cwd, '.claude4spec', 'db.sqlite');
+  const bak = path.join(cwd, '.claude4spec', 'db.sqlite.pre-migration.bak');
+  try {
+    if (fs.existsSync(src) && !fs.existsSync(bak)) fs.copyFileSync(src, bak);
+  } catch (err) {
+    console.warn('[m29] db backup failed:', (err as Error).message);
+  }
+}
 
 // M01: deterministyczny port. Przy zajetym porcie serwer NIE wskakuje juz na
 // `port+1` — failuje z czytelnym bledem i niezerowym exit code. Powod: stały
@@ -232,6 +250,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     console.warn(
       `[config] patchesDir collides with pagesDir/briefsDir ("${patchesDir}") — patch files will be visible in multiple indexers`,
     );
+  }
+
+  // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
+  // briefsDir/patchesDir — but this directory is COMMITTED to git (source of
+  // truth for entities; SQLite is a derived index rebuilt from it at boot).
+  const entitiesDir = bootConfig.entitiesDir ?? '.claude4spec/entities';
+  if (path.isAbsolute(entitiesDir)) {
+    throw new Error(`config.json: entitiesDir must be relative to cwd, got: ${entitiesDir}`);
+  }
+  const entitiesAbs = path.resolve(cwd, entitiesDir);
+  const entitiesRel = path.relative(cwd, entitiesAbs);
+  if (entitiesRel.startsWith('..') || path.isAbsolute(entitiesRel)) {
+    throw new Error(`config.json: entitiesDir must not escape project root, got: ${entitiesDir}`);
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
   // `--remote-url` flag (opts) > config.json > prod constant. The prod-constant
@@ -519,6 +550,21 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const briefsWatcher = new PagesWatcher(briefsPages.root, gateway);
   // M23 m02multidir: trzeci PagesWatcher na patchesDir.
   const patchesWatcher = new PagesWatcher(patchesPages.root, gateway);
+  // M29: dedicated watcher + file store + indexer for the committed entity store.
+  // The page-family watchers above are rooted outside `.claude4spec/`, so this
+  // watcher owns `<entitiesDir>` exclusively.
+  const entitiesWatcher = new EntitiesWatcher(entitiesAbs);
+  const entityStore = new EntityStore(cwd, entitiesDir, entitiesWatcher, rawReader, pluginHost);
+  entityStore.ensureRoot();
+  const entityIndexer = new EntityIndexerService(
+    db.handle,
+    entityStore,
+    entitiesWatcher,
+    gateway,
+    pluginHost,
+    tagsService,
+    rawReader,
+  );
   const referencesService = new ReferencesService(pages, watcher);
   const sectionsService = new SectionsService(db.handle);
   sectionsService.setWriteDeps({ pages, watcher });
@@ -559,8 +605,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   );
 
   // Mount all active backend modules — each plugin constructs its own service,
-  // mounts its router, registers its MCP server, and wires its id resolver via
-  // the supplied MountContext. Inactive plugins are skipped (config.entities).
+  // mounts its router, registers its MCP server, and registers its entity
+  // service via the supplied MountContext. Inactive plugins are skipped
+  // (config.entities).
   pluginHost.mountBackend({
     app,
     db: db.handle,
@@ -568,8 +615,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     tagsService,
     versionService,
     referencesService,
+    entityStore,
     registerMcpServer: (name, server) => pluginHost.registerMcpServer(name, server),
-    setIdResolver: (type, fn) => pluginHost.setIdResolver(type, fn),
     registerEntityService: (type, service) => pluginHost.registerEntityService(type, service),
   });
 
@@ -585,6 +632,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       ws: gateway,
       db: db.handle,
       cwd,
+      entityStore,
     }),
   );
 
@@ -603,6 +651,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     watcher,
     cwd,
   );
+  // M29: release restore must persist restored entities' files.
+  releaseService.setEntityStore(entityStore);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
   // git repo. Probes `pages.root` for the worktree; reads config per-action.
   const gitService = new GitService(cwd, pages.root);
@@ -674,7 +724,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/pages', pagesRouter(pages, watcher, pageVersions));
   app.use('/api/tags', tagsRouter(tagsService, referencesService));
   app.use('/api/references', referencesRouter(referencesService));
-  app.use('/api/entities', entitiesRouter(tagsService, versionService));
+  app.use('/api/entities', entitiesRouter(tagsService, versionService, entityStore));
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
   // (POST /api/chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
   const agentDeps = {
@@ -775,6 +825,17 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     }
   });
 
+  // M29: external edits / git pull of entity files → incremental reindex.
+  entitiesWatcher.onChange((relPath, kind) => {
+    if (kind === 'unlink') {
+      entityIndexer.handleUnlink(relPath).catch((err) => {
+        console.error(`[entity-indexer] unlink ${relPath}:`, err);
+      });
+    } else {
+      entityIndexer.schedulePage(relPath);
+    }
+  });
+
   watcher.start();
   briefsWatcher.start();
   patchesWatcher.start();
@@ -838,6 +899,52 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     }
   })();
 
+  // M29: entity store boot. (1) one-time DB→text export for pre-M29 projects
+  // whose entities live only in SQLite; (2) rebuild the derived index from the
+  // committed files. Awaited BEFORE listen() — the app is entity-centric, so
+  // serving REST/MCP before the index is ready would 404 / return empty.
+  try {
+    const fileEntityCount = entityStore.listAll().length;
+    const hasTagsFile = entityStore.readTags().length > 0;
+    const dbEntityCount = rawReader
+      .listTypes()
+      .filter((t) => pluginHost.getEntity(t))
+      .reduce((n, t) => n + rawReader.listSlugs(t).length, 0);
+    const filesPresent = fileEntityCount > 0 || hasTagsFile;
+
+    if (!filesPresent && dbEntityCount > 0) {
+      // Pre-M29 project: entities live only in SQLite → export to text once.
+      console.log(`[m29] exporting ${dbEntityCount} entities DB→text into ${entitiesDir} ...`);
+      backupDbBeforeMigration(cwd);
+      for (const type of rawReader.listTypes()) {
+        if (!pluginHost.getEntity(type)) continue;
+        for (const slug of rawReader.listSlugs(type)) entityStore.persist(type, slug);
+      }
+      entityStore.persistTags();
+    } else if (filesPresent && dbEntityCount > 0 && fileEntityCount !== dbEntityCount) {
+      // Edge (brief migrt001 §3): committed files differ from a non-empty DB
+      // (e.g. a git pull dropped/added entities). Files win on rebuild — back up
+      // the derived DB first so the prior index is recoverable.
+      console.warn(
+        `[m29] entity file count (${fileEntityCount}) != DB count (${dbEntityCount}); rebuilding from files (db backed up)`,
+      );
+      backupDbBeforeMigration(cwd);
+    }
+
+    await entityIndexer.indexAll();
+  } catch (err) {
+    console.error('[entity-indexer] boot indexAll failed:', err);
+  }
+  // M29: enable tags.json persistence only AFTER the boot rebuild, so any
+  // auto-created tag during indexAll does not write files mid-rebuild.
+  tagsService.setEntityStore(entityStore);
+  // M29: enable slug-rename propagation into entity files (dto→endpoint
+  // linked_dtos, *→ac verifies). After indexAll so the index is consistent.
+  referencesService.setEntityDeps(db.handle, entityStore);
+  // Start the entities watcher only after the boot export/rebuild, so bulk
+  // self-writes during export never race a live reindex.
+  entitiesWatcher.start();
+
   const closeAssets = mode === 'dev' ? await mountDevVite(app, cwd) : mountProd(app, cwd);
 
   const port = await listenOrExit(httpServer, portRef.current);
@@ -856,6 +963,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       await watcher.close();
       await briefsWatcher.close();
       await patchesWatcher.close();
+      await entitiesWatcher.close();
       await gateway.close();
       await closeAssets();
       db.close();

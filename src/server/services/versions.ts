@@ -12,9 +12,8 @@ import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader
 export type VersionOp = 'create' | 'update' | 'delete';
 
 interface VersionRow {
-  id: number;
   entity_type: string;
-  entity_id: number;
+  entity_slug: string;
   version: number;
   data: string;
   changed_by: string;
@@ -27,7 +26,7 @@ interface VersionRow {
 
 export interface CreateVersionInput {
   entityType: EntityType;
-  entityId: number;
+  entitySlug: string;
   data: unknown;
   changedBy: ChangedBy;
   changeSummary?: string | null;
@@ -59,7 +58,7 @@ export class VersionService {
    */
   captureEntitySnapshot(
     type: RawEntityType,
-    entityId: number,
+    entitySlug: string,
     op: VersionOp,
     actor: ChangedBy,
     summary: string | null,
@@ -67,21 +66,21 @@ export class VersionService {
   ): VersionListItem {
     if (!this.snapshotDeps) {
       // Fallback: deps not yet wired. Store legacy domain object via createVersion.
-      return this.createVersion(type, entityId, null, actor, summary, op, serializerVersion);
+      return this.createVersion(type, entitySlug, null, actor, summary, op, serializerVersion);
     }
     // For all ops (including delete), snapshot the entity *as it currently is*
     // (callers must call this BEFORE the row is deleted from its table).
-    const rawEntity = this.snapshotDeps.reader.getEntityById(type, entityId);
+    const rawEntity = this.snapshotDeps.reader.getEntity(type, entitySlug);
     if (!rawEntity) {
       // Entity not found — fall back to last-known snapshot so tombstone has
       // restorable data. This path is only hit if a caller calls capture
       // post-delete (anti-pattern but defensive).
-      const last = this.getLatestVersionForEntity(type, entityId);
-      return this.createVersion(type, entityId, last?.data ?? null, actor, summary, op, serializerVersion);
+      const last = this.getLatestVersionForEntity(type, entitySlug);
+      return this.createVersion(type, entitySlug, last?.data ?? null, actor, summary, op, serializerVersion);
     }
     const ctx = { reader: this.snapshotDeps.reader, depth: 0, maxDepth: 1 };
     const snapshot = this.snapshotDeps.host.snapshot(type, rawEntity, ctx);
-    return this.createVersion(type, entityId, snapshot, actor, summary, op, serializerVersion);
+    return this.createVersion(type, entitySlug, snapshot, actor, summary, op, serializerVersion);
   }
 
   /**
@@ -91,24 +90,24 @@ export class VersionService {
    */
   createVersion(
     entityType: EntityType,
-    entityId: number,
+    entitySlug: string,
     data: unknown,
     changedBy: ChangedBy,
     changeSummary?: string | null,
     op?: VersionOp,
     serializerVersion?: string | null
   ): VersionListItem {
-    const next = this.nextVersionNumber(entityType, entityId);
+    const next = this.nextVersionNumber(entityType, entitySlug);
     const inferredOp: VersionOp = op ?? (data === null ? 'delete' : (next === 1 ? 'create' : 'update'));
-    const info = this.db
+    this.db
       .prepare(
         `INSERT INTO entity_version
-           (entity_type, entity_id, version, data, changed_by, change_summary, op, serializer_version)
+           (entity_type, entity_slug, version, data, changed_by, change_summary, op, serializer_version)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         entityType,
-        entityId,
+        entitySlug,
         next,
         JSON.stringify(data),
         changedBy,
@@ -117,21 +116,22 @@ export class VersionService {
         serializerVersion ?? null
       );
     const row = this.db
-      .prepare(`SELECT * FROM entity_version WHERE id = ?`)
-      .get(info.lastInsertRowid) as VersionRow;
+      .prepare(
+        `SELECT * FROM entity_version WHERE entity_type = ? AND entity_slug = ? AND version = ?`
+      )
+      .get(entityType, entitySlug, next) as VersionRow;
     return this.toListItem(row);
   }
 
-  listVersions(entityType: EntityType, entityId: number): VersionListItem[] {
+  listVersions(entityType: EntityType, entitySlug: string): VersionListItem[] {
     const rows = this.db
       .prepare(
-        `SELECT id, version, changed_by, change_summary, created_at, release_id, op
+        `SELECT version, changed_by, change_summary, created_at, release_id, op
            FROM entity_version
-          WHERE entity_type = ? AND entity_id = ?
+          WHERE entity_type = ? AND entity_slug = ?
           ORDER BY version DESC`
       )
-      .all(entityType, entityId) as Array<{
-        id: number;
+      .all(entityType, entitySlug) as Array<{
         version: number;
         changed_by: string;
         change_summary: string | null;
@@ -140,7 +140,6 @@ export class VersionService {
         op: string | null;
       }>;
     return rows.map((r) => ({
-      id: r.id,
       version: r.version,
       changedBy: r.changed_by as ChangedBy,
       changeSummary: r.change_summary,
@@ -150,13 +149,13 @@ export class VersionService {
     }));
   }
 
-  getVersion(entityType: EntityType, entityId: number, version: number): VersionDetail | null {
+  getVersion(entityType: EntityType, entitySlug: string, version: number): VersionDetail | null {
     const row = this.db
       .prepare(
         `SELECT * FROM entity_version
-          WHERE entity_type = ? AND entity_id = ? AND version = ?`
+          WHERE entity_type = ? AND entity_slug = ? AND version = ?`
       )
-      .get(entityType, entityId, version) as VersionRow | undefined;
+      .get(entityType, entitySlug, version) as VersionRow | undefined;
     if (!row) return null;
     return this.toDetail(row);
   }
@@ -168,7 +167,7 @@ export class VersionService {
    */
   getLatestVersionForEntity(
     entityType: EntityType,
-    entityId: number,
+    entitySlug: string,
     releaseId?: number | null
   ): VersionDetail | null {
     let row: VersionRow | undefined;
@@ -176,54 +175,53 @@ export class VersionService {
       row = this.db
         .prepare(
           `SELECT * FROM entity_version
-            WHERE entity_type = ? AND entity_id = ?
+            WHERE entity_type = ? AND entity_slug = ?
             ORDER BY version DESC LIMIT 1`
         )
-        .get(entityType, entityId) as VersionRow | undefined;
+        .get(entityType, entitySlug) as VersionRow | undefined;
     } else if (releaseId === null) {
       row = this.db
         .prepare(
           `SELECT * FROM entity_version
-            WHERE entity_type = ? AND entity_id = ? AND release_id IS NULL
+            WHERE entity_type = ? AND entity_slug = ? AND release_id IS NULL
             ORDER BY version DESC LIMIT 1`
         )
-        .get(entityType, entityId) as VersionRow | undefined;
+        .get(entityType, entitySlug) as VersionRow | undefined;
     } else {
       row = this.db
         .prepare(
           `SELECT * FROM entity_version
-            WHERE entity_type = ? AND entity_id = ? AND release_id IS NOT NULL AND release_id <= ?
+            WHERE entity_type = ? AND entity_slug = ? AND release_id IS NOT NULL AND release_id <= ?
             ORDER BY version DESC LIMIT 1`
         )
-        .get(entityType, entityId, releaseId) as VersionRow | undefined;
+        .get(entityType, entitySlug, releaseId) as VersionRow | undefined;
     }
     return row ? this.toDetail(row) : null;
   }
 
   diff(
     entityType: EntityType,
-    entityId: number,
+    entitySlug: string,
     fromVersion: number,
     toVersion: number
   ): { from: VersionDetail; to: VersionDetail; changes: DiffEntry[] } {
-    const from = this.getVersion(entityType, entityId, fromVersion);
-    const to = this.getVersion(entityType, entityId, toVersion);
+    const from = this.getVersion(entityType, entitySlug, fromVersion);
+    const to = this.getVersion(entityType, entitySlug, toVersion);
     if (!from || !to) throw new DomainError('NOT_FOUND', 'version not found');
     return { from, to, changes: computeDiff(from.data, to.data) };
   }
 
-  private nextVersionNumber(entityType: EntityType, entityId: number): number {
+  private nextVersionNumber(entityType: EntityType, entitySlug: string): number {
     const row = this.db
       .prepare(
-        `SELECT MAX(version) AS v FROM entity_version WHERE entity_type = ? AND entity_id = ?`
+        `SELECT MAX(version) AS v FROM entity_version WHERE entity_type = ? AND entity_slug = ?`
       )
-      .get(entityType, entityId) as { v: number | null };
+      .get(entityType, entitySlug) as { v: number | null };
     return (row.v ?? 0) + 1;
   }
 
   private toListItem(row: VersionRow): VersionListItem {
     return {
-      id: row.id,
       version: row.version,
       changedBy: row.changed_by as ChangedBy,
       changeSummary: row.change_summary,
@@ -235,9 +233,8 @@ export class VersionService {
 
   private toDetail(row: VersionRow): VersionDetail {
     return {
-      id: row.id,
       entityType: row.entity_type as EntityType,
-      entityId: row.entity_id,
+      entitySlug: row.entity_slug,
       version: row.version,
       data: safeParse(row.data),
       changedBy: row.changed_by as ChangedBy,
