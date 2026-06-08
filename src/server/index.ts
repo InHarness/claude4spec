@@ -611,6 +611,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   pluginHost.mountBackend({
     app,
     db: db.handle,
+    cwd,
     ws: gateway,
     tagsService,
     versionService,

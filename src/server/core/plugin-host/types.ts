@@ -53,6 +53,8 @@ export interface RouteRegistration {
 export interface MountContext {
   app: Application;
   db: Database;
+  /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
+  cwd: string;
   ws: WsGateway;
   tagsService: TagsService;
   versionService: VersionService;

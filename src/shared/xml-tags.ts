@@ -149,6 +149,29 @@ export function extractTags(tag: XmlTag): string[] {
 }
 
 /**
+ * True when a static XML tag (inline_mention / single_element / element_list) explicitly
+ * references the entity `(entityType, slug)`. tagged_list / tagged_list_mixed never match
+ * here — those are dynamic, tag-driven refs resolved via `taggedListVia`.
+ * Single source of truth for static reference matching — used by the references core
+ * (M19) and ReferencesService.
+ */
+export function tagMatchesEntity(tag: XmlTag, entityType: string, slug: string): boolean {
+  if (tag.kind === 'tagged_list_mixed') return false;
+  if (tag.attrs.type !== entityType) return false;
+  if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
+    return tag.attrs.slug === slug;
+  }
+  if (tag.kind === 'element_list') {
+    return (tag.attrs.slugs ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .includes(slug);
+  }
+  return false;
+}
+
+/**
  * Matched tag slugs ("via") when a tagged_list / tagged_list_mixed node references an
  * entity of `entityType` carrying `entityTags`; [] when it does not match.
  * Single source of truth for tag-driven reference matching — used by both

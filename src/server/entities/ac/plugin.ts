@@ -28,6 +28,8 @@ export const acBackendModule: BackendModule = {
           acService: service,
           referencesService: ctx.referencesService,
           ws: ctx.ws,
+          db: ctx.db,
+          cwd: ctx.cwd,
         }),
       );
       ctx.registerEntityService(acBackendModule.type, service);
