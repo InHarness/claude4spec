@@ -30,6 +30,7 @@ export const acBackendModule: BackendModule = {
           ws: ctx.ws,
           db: ctx.db,
           cwd: ctx.cwd,
+          host: pluginHost,
         }),
       );
       ctx.registerEntityService(acBackendModule.type, service);

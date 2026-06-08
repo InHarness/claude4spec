@@ -1,21 +1,16 @@
 import {
-  createAdapter,
   createMcpServer,
-  extractText,
   mcpTool,
   type McpServerInstance,
 } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { AcService } from './services.js';
+import { AcAnalysisService } from './ac-analysis.service.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsGateway } from '../../ws/gateway.js';
+import type { PluginHost } from '../../core/plugin-host/types.js';
 import { DomainError } from '../../services/tags.js';
-import {
-  RawEntityReader,
-  isRawEntityType,
-  type RawEntityType,
-} from '../../domain/raw-entity-reader.js';
 import type {
   AcKind,
   AcStatus,
@@ -30,6 +25,8 @@ export interface AcToolsDeps {
   db: Database;
   /** M19→AC: project root for the LLM adapter. */
   cwd: string;
+  /** Brief 0.1.45 §1: inactive guard for the semantic audit. */
+  host: PluginHost;
 }
 
 export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
@@ -211,71 +208,33 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
     },
   );
 
+  const analysisService = new AcAnalysisService({
+    acService: deps.acService,
+    db: deps.db,
+    cwd: deps.cwd,
+    host: deps.host,
+  });
+
   const analyzeAcAgainstEntities = mcpTool(
     'analyze_ac_against_entities',
-    'LLM-based on-demand semantic check: for each active AC, load its `text` + `verifies[]` + the linked entity snapshots and ask the model whether the AC text matches the shape of those entities. Non-deterministic and expensive — call deliberately, not in a loop. Distinct from `check_consistency` (which is deterministic and structural). Output: { issues: [{ ac_slug, issue_type, details, affected_entity?, confidence, suggested_correction? }] }.',
+    'LLM-based on-demand semantic check: for each active AC, load its `text` + `verifies[]` + the linked entity snapshots and ask the model whether the AC text matches the shape of those entities. Non-deterministic and expensive — call deliberately, not in a loop. Distinct from `check_consistency` (which is deterministic and structural). Output: { issues: [{ ac_slug, issue_type, details, affected_entity?, confidence, suggested_correction? }], analyzed_count, skipped_count, skipped_reasons }.',
     {
-      acSlug: z.string().optional().describe('Limit analysis to a single AC by slug. Omit to analyse all active ACs.'),
+      scope_tag: z
+        .string()
+        .optional()
+        .describe('Limit analysis to active ACs carrying this tag slug. Omit for all active ACs.'),
+      ac_slug: z
+        .string()
+        .optional()
+        .describe('Limit analysis to a single AC by slug. Omit to analyse all active ACs.'),
     },
     async (args) => {
       try {
-        const filterSlug = args.acSlug ? String(args.acSlug) : undefined;
-        const allActive = deps.acService.list({ status: 'active' });
-        const targets = filterSlug ? allActive.filter((a) => a.slug === filterSlug) : allActive;
-        if (targets.length === 0) {
-          return ok({ issues: [] });
-        }
-
-        const reader = new RawEntityReader(deps.db);
-        const dossier = targets.map((ac) => {
-          const linked = ac.verifies.map((v) => {
-            if (!isRawEntityType(v.type)) {
-              return { type: v.type, slug: v.slug, status: 'unknown-type' as const };
-            }
-            const entity = reader.getEntity(v.type as RawEntityType, v.slug);
-            if (!entity) {
-              return { type: v.type, slug: v.slug, status: 'missing' as const };
-            }
-            return {
-              type: v.type,
-              slug: v.slug,
-              status: 'active' as const,
-              data: entity.data,
-            };
-          });
-          return { slug: ac.slug, text: ac.text, kind: ac.kind, linked };
+        const result = await analysisService.analyze({
+          scope_tag: args.scope_tag as string | undefined,
+          ac_slug: args.ac_slug as string | undefined,
         });
-
-        const prompt = [
-          'You are a specification consistency auditor.',
-          '',
-          'For each Acceptance Criterion (AC) below, decide whether its `text` is semantically consistent with the linked entities (their fields, params, shape).',
-          '',
-          'Return ONLY a JSON object on a single line, no prose, matching:',
-          '{"issues":[{"ac_slug":string,"issue_type":string,"details":string,"affected_entity"?:{"type":string,"slug":string},"confidence":number,"suggested_correction"?:string}]}',
-          '',
-          'Rules:',
-          '- If an AC has no issues, do not emit a row for it.',
-          '- `confidence` is between 0 and 1.',
-          '- `issue_type` is a short kebab-case label (e.g. "field-mismatch", "verb-mismatch", "missing-coverage", "stale-shape").',
-          '- Skip ACs whose linked entities are missing or unknown-type (those are caught by check_consistency rule 9).',
-          '',
-          'Dossier:',
-          JSON.stringify(dossier),
-        ].join('\n');
-
-        const adapter = createAdapter('claude-code');
-        const stream = adapter.execute({
-          prompt,
-          systemPrompt: 'You output only a single JSON object on one line. No commentary, no code fences.',
-          model: 'sonnet-4.6',
-          cwd: deps.cwd,
-          maxTurns: 1,
-        });
-        const text = await extractText(stream);
-
-        const issues = parseIssuesJson(text);
-        return ok({ issues });
+        return ok(result);
       } catch (err) {
         return fail(err);
       }
@@ -286,54 +245,4 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
     name: 'ac-tools',
     tools: [createAc, getAc, updateAc, deleteAc, listAcs, analyzeAcAgainstEntities],
   });
-}
-
-interface AcAnalysisIssue {
-  ac_slug: string;
-  issue_type: string;
-  details: string;
-  affected_entity?: { type: string; slug: string };
-  confidence: number;
-  suggested_correction?: string;
-}
-
-function parseIssuesJson(text: string): AcAnalysisIssue[] {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return [];
-  const slice = text.slice(start, end + 1);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(slice);
-  } catch {
-    return [];
-  }
-  if (!parsed || typeof parsed !== 'object') return [];
-  const rawIssues = (parsed as Record<string, unknown>).issues;
-  if (!Array.isArray(rawIssues)) return [];
-  const out: AcAnalysisIssue[] = [];
-  for (const raw of rawIssues) {
-    if (!raw || typeof raw !== 'object') continue;
-    const r = raw as Record<string, unknown>;
-    if (typeof r.ac_slug !== 'string' || typeof r.issue_type !== 'string') continue;
-    const details = typeof r.details === 'string' ? r.details : '';
-    const confidence = typeof r.confidence === 'number' ? r.confidence : 0;
-    const issue: AcAnalysisIssue = {
-      ac_slug: r.ac_slug,
-      issue_type: r.issue_type,
-      details,
-      confidence,
-    };
-    if (r.affected_entity && typeof r.affected_entity === 'object') {
-      const ae = r.affected_entity as Record<string, unknown>;
-      if (typeof ae.type === 'string' && typeof ae.slug === 'string') {
-        issue.affected_entity = { type: ae.type, slug: ae.slug };
-      }
-    }
-    if (typeof r.suggested_correction === 'string') {
-      issue.suggested_correction = r.suggested_correction;
-    }
-    out.push(issue);
-  }
-  return out;
 }

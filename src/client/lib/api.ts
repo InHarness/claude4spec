@@ -162,6 +162,8 @@ export interface WritingStyleItem {
   description: string;
   version: number;
   language: string;
+  /** `bundled` = in-package; `user` = from a `.claude/skills` root (project or global). */
+  source: 'bundled' | 'user';
 }
 
 export interface WritingStylesResponse {

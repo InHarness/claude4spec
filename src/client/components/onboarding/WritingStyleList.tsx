@@ -40,6 +40,7 @@ export function WritingStyleList({
             title={s.title}
             description={s.description}
             selected={selection === s.slug}
+            badge={s.source === 'user' ? 'yours' : undefined}
             onClick={() => onSelect(s.slug)}
             radioName="writing-style"
             radioValue={s.slug}
