@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.15] - 2026-06-09
+
+### Added
+- M30 Static HTML preview — new `HtmlViewer` component renders read-only previews of `.html` files, backed by a static file server (`static.ts` / `static-html.ts`) with secure access and proper MIME-type handling. `router.tsx` routes `.html` files to the viewer, the `Sidebar` shows distinct icons for `.html` vs `.md`, and `PagesService` plus the file watcher now recognize HTML files.
+- Chat orchestration for seeded threads — `startSeededThread` seeds new chat threads with a prompt for immediate agent interaction, paired with a sticky `ActionBar` UI and a new AC analysis service (`ac-analysis.service.ts`). `StyleOption` / `WritingStyleList` / `ProjectSection` now badge user-defined writing styles.
+- `find-references` CLI command and core reference-search logic (`core/references`) supporting static and dynamic references, with `ReferencesService` delegating to the shared core and extended XML-tag matching.
+
+### Changed
+- M29 Slug-Based Entity Identity — entities are now identified solely by slug, replacing the previous integer-ID system. Adds an `entitiesDir` config option for committed entity JSON files, an `EntityStore` / `EntityIndexer` / `EntitiesWatcher`, a `MutateOpts` interface for granular control over file persistence, and migration `035_m29_slug_identity` for the ID→slug transition.
+- `UsageBadge` context-window occupancy now uses the sum of input and output tokens for accurate context-utilization display.
+
 ## [1.0.14] - 2026-06-03
 
 ### Removed
@@ -150,6 +161,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.15]: https://github.com/InHarness/claude4spec/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/InHarness/claude4spec/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/InHarness/claude4spec/compare/v1.0.12...v1.0.13
 [1.0.12]: https://github.com/InHarness/claude4spec/compare/v1.0.11...v1.0.12
