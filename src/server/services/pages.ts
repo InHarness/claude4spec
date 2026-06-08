@@ -139,7 +139,10 @@ export class PagesService {
         const children = await this.walk(path.join(dir, entry.name), rel);
         nodes.push({ type: 'folder', name: entry.name, path: rel, children });
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        nodes.push({ type: 'file', name: entry.name, path: rel });
+        nodes.push({ type: 'file', name: entry.name, path: rel, fileType: 'markdown' });
+      } else if (entry.isFile() && entry.name.endsWith('.html')) {
+        // M30: .html files are read-only previews served via /api/static/*.
+        nodes.push({ type: 'file', name: entry.name, path: rel, fileType: 'html' });
       }
     }
     nodes.sort((a, b) => {

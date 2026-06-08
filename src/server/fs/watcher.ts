@@ -45,7 +45,10 @@ export class PagesWatcher {
   }
 
   private emit(kind: EventKind, absPath: string): void {
-    if (!absPath.endsWith('.md')) return;
+    const isMd = absPath.endsWith('.md');
+    // M30: watch .html too (so the preview iframe can refresh), but only .md drives indexing.
+    const isHtml = absPath.endsWith('.html');
+    if (!isMd && !isHtml) return;
     const relPath = path.relative(this.pagesRoot, absPath).replaceAll(path.sep, '/');
     const suppressedUntil = this.suppressUntil.get(relPath);
     if (suppressedUntil && Date.now() < suppressedUntil) {
@@ -53,6 +56,8 @@ export class PagesWatcher {
       return;
     }
     this.gateway.broadcast({ kind: 'page:changed', event: kind, path: relPath, origin: 'external' });
+    // Indexer callbacks (M06 section index) run for .md only — .html is never indexed/versioned.
+    if (!isMd) return;
     for (const cb of this.callbacks) {
       try {
         cb(relPath, kind);
