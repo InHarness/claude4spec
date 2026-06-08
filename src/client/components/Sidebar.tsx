@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  FileCode2,
   FileText,
   Folder,
   GitCommit,
@@ -478,7 +479,11 @@ function PagesTree({
               fontWeight: active ? 600 : 400,
             }}
           >
-            <FileText size={12} />
+            {n.fileType === 'html' ? (
+              <FileCode2 size={12} style={{ color: 'var(--c-accent)' }} />
+            ) : (
+              <FileText size={12} />
+            )}
             <span className="truncate flex-1">{n.name}</span>
             {todoCount > 0 && (
               <span

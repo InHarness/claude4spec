@@ -15,6 +15,7 @@ import { EditorToolbar } from './components/EditorToolbar.js';
 import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
+import { HtmlViewer } from './components/HtmlViewer.js';
 import { EndpointsList } from './entities/endpoint/list-page.js';
 import { DtosList } from './entities/dto/list-page.js';
 import { DatabaseTablesList } from './entities/database-table/list-page.js';
@@ -351,6 +352,15 @@ function PageRoute() {
     }),
     [navigate]
   );
+  // M30: shared /pages/$ route branches by file type — .html renders the read-only viewer,
+  // .md renders the Tiptap editor. HtmlViewer carries its own header (no version history).
+  if (path.toLowerCase().endsWith('.html')) {
+    return (
+      <RoutePane>
+        <HtmlViewer path={path} />
+      </RoutePane>
+    );
+  }
   return (
     <RoutePane>
       <EditorToolbar path={path} />

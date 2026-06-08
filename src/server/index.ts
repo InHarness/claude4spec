@@ -8,6 +8,8 @@ import { readConfig, writeConfig } from './config.js';
 import { openDb, type Db } from './db/index.js';
 import { PagesService } from './services/pages.js';
 import { pagesRouter } from './routes/pages.js';
+import { StaticHtmlService } from './services/static-html.js';
+import { staticRouter } from './routes/static.js';
 import { tagsRouter } from './routes/tags.js';
 import { entitiesRouter } from './core/plugin-host/entities-router.js';
 import { referencesRouter } from './routes/references.js';
@@ -292,6 +294,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const db: Db = openDb(cwd);
   const pages = new PagesService(cwd, pagesDir);
   await pages.ensureRoot();
+  // M30: static file server rooted at the same pagesDir, backing the HTML preview iframe.
+  const staticHtml = new StaticHtmlService(cwd, pagesDir);
   // M21 m02multidir: drugi PagesService dla briefsDir. Wspoldziel z pierwszym
   // zarowno PageVersionService jak i WsGateway, ale ma osobny watcher (debounce
   // independent per katalog) i osobny PageSerializer (constructor-bound do
@@ -724,6 +728,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
   app.use('/api', pluginHostRouter(pluginHost));
   app.use('/api/pages', pagesRouter(pages, watcher, pageVersions));
+  app.use('/api/static', staticRouter(staticHtml));
   app.use('/api/tags', tagsRouter(tagsService, referencesService));
   app.use('/api/references', referencesRouter(referencesService));
   app.use('/api/entities', entitiesRouter(tagsService, versionService, entityStore));

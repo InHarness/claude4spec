@@ -1,10 +1,15 @@
 export type PageNodeType = 'file' | 'folder';
 
+/** M30: discriminator for a `type='file'` node. Missing ⇒ `'markdown'` (backward compatible). */
+export type PageFileType = 'markdown' | 'html';
+
 export interface PageNode {
   type: PageNodeType;
   name: string;
   path: string;
   children?: PageNode[];
+  /** M30: only for `type='file'`. `.html` files are read-only previews, excluded from indexing/versioning. */
+  fileType?: PageFileType;
 }
 
 export interface PageContent {
