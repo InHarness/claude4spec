@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
@@ -7,6 +8,9 @@ import { readConfig } from '../config.js';
 
 export type SkillScope = 'writing-style' | 'contextual';
 
+/** Where a skill was discovered: in-package bundle vs a user `.claude/skills` root. */
+export type SkillSource = 'bundled' | 'user';
+
 export interface SkillMetadata {
   slug: string;
   title: string;
@@ -14,7 +18,18 @@ export interface SkillMetadata {
   version: number;
   language: 'en' | 'pl';
   scope: SkillScope;
+  source: SkillSource;
   path: string;
+}
+
+/**
+ * A root scanned by {@link SkillRegistry.load}. Roots are scanned in array order
+ * (highest precedence first); on a slug collision the first root wins, so callers
+ * pass project before global before bundled. See {@link findSkillsRoots}.
+ */
+export interface SkillRoot {
+  dir: string;
+  source: SkillSource;
 }
 
 export interface ResolvedSkill {
@@ -29,14 +44,35 @@ const FILES_SUBDIRS = ['templates', 'examples', 'workflows'];
 export class SkillRegistry {
   private metadataBySlug = new Map<string, SkillMetadata>();
 
-  static load(skillsDir: string): SkillRegistry {
+  /**
+   * Scan one or more roots once at startup and merge them, deduplicated per slug
+   * by precedence: roots earlier in the array win (project > global > bundled).
+   * A missing or unreadable root is treated as empty — no throw. A malformed
+   * `SKILL.md` is skipped with a warning. Skills declaring `scope: contextual`
+   * found in a `source: 'user'` root are ignored entirely (contextual skills are
+   * package-only); bundled contextual skills are kept.
+   */
+  static load(roots: SkillRoot[]): SkillRegistry {
     const registry = new SkillRegistry();
-    if (!fs.existsSync(skillsDir)) return registry;
-    const entries = fs.readdirSync(skillsDir, { withFileTypes: true });
+    for (const root of roots) registry.scanRoot(root);
+    return registry;
+  }
+
+  private scanRoot(root: SkillRoot): void {
+    let entries: fs.Dirent[];
+    try {
+      if (!fs.existsSync(root.dir)) return;
+      entries = fs.readdirSync(root.dir, { withFileTypes: true });
+    } catch (err) {
+      console.warn(`[skill] root "${root.dir}" unreadable: ${(err as Error).message}, treating as empty`);
+      return;
+    }
     for (const entry of entries) {
       if (!entry.isDirectory()) continue;
       const slug = entry.name;
-      const skillDir = path.join(skillsDir, slug);
+      // Higher-precedence root already claimed this slug.
+      if (this.metadataBySlug.has(slug)) continue;
+      const skillDir = path.join(root.dir, slug);
       const skillFile = path.join(skillDir, 'SKILL.md');
       if (!fs.existsSync(skillFile)) {
         console.warn(`[skill] ${slug}: missing SKILL.md, skipping`);
@@ -45,17 +81,22 @@ export class SkillRegistry {
       try {
         const raw = fs.readFileSync(skillFile, 'utf8');
         const { data } = matter(raw);
-        const metadata = parseFrontmatter(slug, skillDir, data);
+        const metadata = parseFrontmatter(slug, skillDir, root.source, data);
         if (metadata.version > SUPPORTED_VERSION) {
           console.warn(`[skill] ${slug}: version ${metadata.version} > supported ${SUPPORTED_VERSION}, skipping`);
           continue;
         }
-        registry.metadataBySlug.set(slug, metadata);
+        // Contextual skills are package-only: ignore them entirely when dropped
+        // into a user root (not selectable, not used for contextual resolution).
+        if (metadata.scope === 'contextual' && root.source === 'user') {
+          console.warn(`[skill] ${slug}: scope "contextual" in user root, ignored (package-only)`);
+          continue;
+        }
+        this.metadataBySlug.set(slug, metadata);
       } catch (err) {
         console.warn(`[skill] ${slug}: ${(err as Error).message}, skipping`);
       }
     }
-    return registry;
   }
 
   list(): SkillMetadata[] {
@@ -132,7 +173,20 @@ export function findSkillsDir(): string {
   return path.resolve(here, '..', 'skills');
 }
 
-function parseFrontmatter(slug: string, skillPath: string, data: Record<string, unknown>): SkillMetadata {
+/**
+ * Roots to scan for selectable writing styles, highest precedence first:
+ * project `<cwd>/.claude/skills` > global `~/.claude/skills` > in-package bundle.
+ * Project/global are user-authored (`source: 'user'`); the bundle is `'bundled'`.
+ */
+export function findSkillsRoots(cwd: string): SkillRoot[] {
+  return [
+    { dir: path.join(cwd, '.claude', 'skills'), source: 'user' },
+    { dir: path.join(os.homedir(), '.claude', 'skills'), source: 'user' },
+    { dir: findSkillsDir(), source: 'bundled' },
+  ];
+}
+
+function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, data: Record<string, unknown>): SkillMetadata {
   const title = data.title;
   const description = data.description;
   const version = data.version;
@@ -143,7 +197,7 @@ function parseFrontmatter(slug: string, skillPath: string, data: Record<string, 
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) throw new Error("frontmatter 'version' must be a positive integer");
   if (language !== 'en' && language !== 'pl') throw new Error("frontmatter 'language' must be 'en' or 'pl'");
   if (scopeRaw !== 'writing-style' && scopeRaw !== 'contextual') throw new Error("frontmatter 'scope' must be 'writing-style' or 'contextual'");
-  return { slug, title, description, version, language, scope: scopeRaw, path: skillPath };
+  return { slug, title, description, version, language, scope: scopeRaw, source, path: skillPath };
 }
 
 function loadSkillFiles(skillDir: string): Record<string, string> {

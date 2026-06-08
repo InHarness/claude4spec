@@ -14,6 +14,7 @@ import { runDetail } from './c4s/commands/detail.js';
 import { runCatalog } from './c4s/commands/catalog.js';
 import { runListTags } from './c4s/commands/list-tags.js';
 import { runListSlugs } from './c4s/commands/list-slugs.js';
+import { runFindReferences } from './c4s/commands/find-references.js';
 import { runResolve } from './c4s/commands/resolve.js';
 import { runAsk } from './c4s/commands/ask.js';
 
@@ -28,6 +29,9 @@ Tag commands (1:1 with XML tag names):
 
 Detail view (no XML counterpart):
   detail --type <t> --slug <s>
+
+Graph reader (no XML counterpart):
+  find-references --type <t> --slug <s> [--include-tag-matches]
 
 Utility:
   resolve <file.md> [--format inline|json]
@@ -89,6 +93,8 @@ async function main(): Promise<void> {
       return runListTags(args);
     case 'list-slugs':
       return runListSlugs(args);
+    case 'find-references':
+      return runFindReferences(args);
     case 'ask':
       return runAsk(args);
     default:

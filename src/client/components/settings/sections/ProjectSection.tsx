@@ -88,6 +88,7 @@ export function ProjectSection() {
             {writingStyles?.available.map((s) => (
               <option key={s.slug} value={s.slug}>
                 {s.title}
+                {s.source === 'user' ? ' — yours' : ''}
               </option>
             ))}
           </select>

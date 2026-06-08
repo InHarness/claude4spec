@@ -49,7 +49,7 @@ import { EntitiesWatcher } from './fs/entities-watcher.js';
 import { EntityStore } from './services/entity-store.js';
 import { EntityIndexerService } from './services/entity-indexer.js';
 import { createReferenceToolsServer } from './mcp/reference-tools.js';
-import { SkillRegistry, SkillResolver, findSkillsDir } from './services/skill-registry.js';
+import { SkillRegistry, SkillResolver, findSkillsRoots } from './services/skill-registry.js';
 import { chatRouter } from './routes/chat.js';
 import { threadsRouter } from './routes/threads.js';
 import { sectionsRouter } from './routes/sections.js';
@@ -214,7 +214,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
 
-  const skillRegistry = SkillRegistry.load(findSkillsDir());
+  const skillRegistry = SkillRegistry.load(findSkillsRoots(cwd));
   const bootConfig = readConfig(cwd);
   // Effective pagesDir precedence: CLI flag > config.json > hardcoded 'pages'.
   const pagesDir = opts.pagesDir ?? bootConfig.pagesDir ?? 'pages';
@@ -537,6 +537,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         description: s.description,
         version: s.version,
         language: s.language,
+        source: s.source,
       })),
     });
   });
@@ -611,6 +612,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   pluginHost.mountBackend({
     app,
     db: db.handle,
+    cwd,
     ws: gateway,
     tagsService,
     versionService,

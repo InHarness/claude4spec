@@ -1,4 +1,4 @@
-import { createAdapter, createMcpServer, extractText, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { TagsService } from '../services/tags.js';
@@ -10,6 +10,8 @@ import { DomainError } from '../services/tags.js';
 import { pluginHost } from '../core/plugin-host/host.js';
 import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
+import { findReferences as findReferencesCore } from '../../core/references/index.js';
+import { pagesServiceSource } from '../services/references.js';
 import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { PageNode } from '../../shared/types.js';
@@ -229,40 +231,24 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const slug = String(args.slug);
         const includeTagMatches = args.includeTagMatches === true;
 
-        const hits = await deps.referencesService.findReferences(type, slug);
-        const references: Array<{ pagePath: string; tagType: string; line: number; via?: string[] }> =
-          hits.map((h) => ({ pagePath: h.pagePath, tagType: h.tagType, line: h.line }));
-
-        if (includeTagMatches) {
-          if (pluginHost.entityExists(type, slug)) {
-            const entityTagSlugs = deps.tagsService.getEntityTagSlugs(type, slug);
-            const entityTags = new Set(entityTagSlugs);
-            if (entityTags.size > 0) {
-              const tree = await deps.pagesService.listTree();
-              const pagePaths: string[] = [];
-              (function collect(nodes: PageNode[]) {
-                for (const n of nodes) {
-                  if (n.type === 'file') pagePaths.push(n.path);
-                  else if (n.children) collect(n.children);
-                }
-              })(tree);
-
-              for (const p of pagePaths) {
-                const page = await deps.pagesService.read(p);
-                for (const tag of parseXmlTagsExcludingCode(page.body)) {
-                  const via = taggedListVia(tag, type, entityTags);
-                  if (via.length === 0) continue;
-                  references.push({
-                    pagePath: p,
-                    tagType: tag.kind,
-                    line: tag.line,
-                    via,
-                  });
-                }
-              }
-            }
-          }
-        }
+        // Delegate to the serverless core (M19). Project the superset onto the
+        // MCP shape: keep `via`, drop `raw`. Byte-identical to the pre-refactor
+        // output (static rows first, then tag-driven rows).
+        const hits = await findReferencesCore(
+          {
+            pages: pagesServiceSource(deps.pagesService),
+            host: pluginHost,
+            getEntityTagSlugs: (t, s) => deps.tagsService.getEntityTagSlugs(t as EntityType, s),
+          },
+          type,
+          slug,
+          { includeTagMatches },
+        );
+        const references = hits.map((h) =>
+          h.via
+            ? { pagePath: h.pagePath, tagType: h.tagType, line: h.line, via: h.via }
+            : { pagePath: h.pagePath, tagType: h.tagType, line: h.line },
+        );
 
         return ok({ references });
       } catch (err) {
@@ -559,83 +545,6 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     },
   );
 
-  const analyzeAcAgainstEntities = mcpTool(
-    'analyze_ac_against_entities',
-    'LLM-based on-demand semantic check: for each active AC, load its `text` + `verifies[]` + the linked entity snapshots and ask the model whether the AC text matches the shape of those entities. Non-deterministic and expensive — call deliberately, not in a loop. Distinct from `check_consistency` (which is deterministic and structural). Output: { issues: [{ ac_slug, issue_type, details, affected_entity?, confidence, suggested_correction? }] }.',
-    {
-      acSlug: z.string().optional().describe('Limit analysis to a single AC by slug. Omit to analyse all active ACs.'),
-    },
-    async (args) => {
-      try {
-        if (!pluginHost.getEntity('ac')) {
-          throw new DomainError('VALIDATION', 'ac plugin is not active in this project');
-        }
-        const acService = pluginHost.getEntityService('ac') as AcService | undefined;
-        if (!acService) throw new DomainError('INTERNAL', 'ac service not registered');
-
-        const filterSlug = args.acSlug ? String(args.acSlug) : undefined;
-        const allActive = acService.list({ status: 'active' });
-        const targets = filterSlug ? allActive.filter((a) => a.slug === filterSlug) : allActive;
-        if (targets.length === 0) {
-          return ok({ issues: [] });
-        }
-
-        const reader = new RawEntityReader(deps.db);
-        const dossier = targets.map((ac) => {
-          const linked = ac.verifies.map((v) => {
-            if (!isRawEntityType(v.type)) {
-              return { type: v.type, slug: v.slug, status: 'unknown-type' as const };
-            }
-            const entity = reader.getEntity(v.type as RawEntityType, v.slug);
-            if (!entity) {
-              return { type: v.type, slug: v.slug, status: 'missing' as const };
-            }
-            return {
-              type: v.type,
-              slug: v.slug,
-              status: 'active' as const,
-              data: entity.data,
-            };
-          });
-          return { slug: ac.slug, text: ac.text, kind: ac.kind, linked };
-        });
-
-        const prompt = [
-          'You are a specification consistency auditor.',
-          '',
-          'For each Acceptance Criterion (AC) below, decide whether its `text` is semantically consistent with the linked entities (their fields, params, shape).',
-          '',
-          'Return ONLY a JSON object on a single line, no prose, matching:',
-          '{"issues":[{"ac_slug":string,"issue_type":string,"details":string,"affected_entity"?:{"type":string,"slug":string},"confidence":number,"suggested_correction"?:string}]}',
-          '',
-          'Rules:',
-          '- If an AC has no issues, do not emit a row for it.',
-          '- `confidence` is between 0 and 1.',
-          '- `issue_type` is a short kebab-case label (e.g. "field-mismatch", "verb-mismatch", "missing-coverage", "stale-shape").',
-          '- Skip ACs whose linked entities are missing or unknown-type (those are caught by check_consistency rule 9).',
-          '',
-          'Dossier:',
-          JSON.stringify(dossier),
-        ].join('\n');
-
-        const adapter = createAdapter('claude-code');
-        const stream = adapter.execute({
-          prompt,
-          systemPrompt: 'You output only a single JSON object on one line. No commentary, no code fences.',
-          model: 'sonnet-4.6',
-          cwd: deps.cwd,
-          maxTurns: 1,
-        });
-        const text = await extractText(stream);
-
-        const issues = parseIssuesJson(text);
-        return ok({ issues });
-      } catch (err) {
-        return fail(err);
-      }
-    },
-  );
-
   const listSections = mcpTool(
     'list_sections',
     'List sections from the section index. Filter by `anchor` (exact match), `query` (substring match on heading_text/heading_path), or `pagePath` (sections of a single page). Thin proxy over SectionsService — `section_index` is owned by M06.',
@@ -699,59 +608,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
       untagEntity,
       findReferences,
       checkConsistency,
-      analyzeAcAgainstEntities,
       listSections,
     ],
   });
 }
-
-interface AcAnalysisIssue {
-  ac_slug: string;
-  issue_type: string;
-  details: string;
-  affected_entity?: { type: string; slug: string };
-  confidence: number;
-  suggested_correction?: string;
-}
-
-function parseIssuesJson(text: string): AcAnalysisIssue[] {
-  const start = text.indexOf('{');
-  const end = text.lastIndexOf('}');
-  if (start < 0 || end <= start) return [];
-  const slice = text.slice(start, end + 1);
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(slice);
-  } catch {
-    return [];
-  }
-  if (!parsed || typeof parsed !== 'object') return [];
-  const rawIssues = (parsed as Record<string, unknown>).issues;
-  if (!Array.isArray(rawIssues)) return [];
-  const out: AcAnalysisIssue[] = [];
-  for (const raw of rawIssues) {
-    if (!raw || typeof raw !== 'object') continue;
-    const r = raw as Record<string, unknown>;
-    if (typeof r.ac_slug !== 'string' || typeof r.issue_type !== 'string') continue;
-    const details = typeof r.details === 'string' ? r.details : '';
-    const confidence = typeof r.confidence === 'number' ? r.confidence : 0;
-    const issue: AcAnalysisIssue = {
-      ac_slug: r.ac_slug,
-      issue_type: r.issue_type,
-      details,
-      confidence,
-    };
-    if (r.affected_entity && typeof r.affected_entity === 'object') {
-      const ae = r.affected_entity as Record<string, unknown>;
-      if (typeof ae.type === 'string' && typeof ae.slug === 'string') {
-        issue.affected_entity = { type: ae.type, slug: ae.slug };
-      }
-    }
-    if (typeof r.suggested_correction === 'string') {
-      issue.suggested_correction = r.suggested_correction;
-    }
-    out.push(issue);
-  }
-  return out;
-}
-

@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
-import { CheckSquare } from 'lucide-react';
+import { CheckSquare, ScanSearch } from 'lucide-react';
 import { useAcs, useCreateAc } from '../../hooks/useAcs.js';
 import { openPopover, toast } from '../../ui/events.js';
+import { ActionBar } from '../../ui/ActionBar.js';
+import { startSeededThread } from '../../chat/startSeededThread.js';
 import type { AcKind, AcStatus } from '../../../shared/entities.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';
 import { ListPageHeader } from '../_shared/ListPageHeader.js';
@@ -9,6 +11,17 @@ import { TagFilterBar } from '../_shared/TagFilterBar.js';
 import { ListScrollArea } from '../_shared/ListScrollArea.js';
 import { EntityListRow } from '../_shared/EntityListRow.js';
 import { useEntityListQuery } from '../_shared/useEntityListQuery.js';
+
+/**
+ * Seed prompt for the "Analyze consistency" action (brief 0.1.45 §2). Tells the
+ * agent to run the LLM audit over *all* active AC by calling
+ * `analyze_ac_against_entities` with no arguments.
+ */
+const ANALYZE_SEED_PROMPT = [
+  'Run a consistency audit of all active acceptance criteria.',
+  'Call the `analyze_ac_against_entities` tool with no arguments to check every active AC against the entities it verifies.',
+  'Then summarize the issues you find, grouped by confidence (highest first), and suggest corrections.',
+].join(' ');
 
 interface Props {
   search: string;
@@ -34,6 +47,10 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
     extraQuery,
   });
   const { data: acs = [], isLoading } = useAcs(query);
+  // Count of *active* AC, independent of the view's status filter — drives the
+  // Analyze-consistency action (disabled when there is nothing to audit).
+  const { data: activeAcs = [] } = useAcs({ status: 'active' });
+  const activeCount = activeAcs.length;
 
   async function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -157,6 +174,19 @@ export function AcsList({ search, tagFilter, onSearchChange, onTagToggle, onSele
           );
         })}
       </ListScrollArea>
+
+      <ActionBar
+        actions={[
+          {
+            label: 'Analyze consistency',
+            icon: <ScanSearch size={14} />,
+            variant: 'primary',
+            disabled: activeCount === 0,
+            title: activeCount === 0 ? 'No active AC to analyze' : undefined,
+            onClick: () => startSeededThread(ANALYZE_SEED_PROMPT, { autoSubmit: true }),
+          },
+        ]}
+      />
     </ListPageLayout>
   );
 }

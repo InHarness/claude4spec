@@ -9,6 +9,26 @@ import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { EntityStore } from './entity-store.js';
 import { isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
+import { findReferences as findReferencesCore } from '../../core/references/index.js';
+import type { PagesSource, ReferencePage } from '../../core/references/index.js';
+
+/**
+ * Adapt a server-side PagesService into the serverless `PagesSource` the
+ * references core (M19) consumes. The core never imports PagesService directly.
+ */
+export function pagesServiceSource(pages: PagesService): PagesSource {
+  return {
+    async listPages(): Promise<ReferencePage[]> {
+      const files = await pages.listMarkdownFiles();
+      const out: ReferencePage[] = [];
+      for (const rel of files) {
+        const page = await pages.read(rel);
+        out.push({ path: rel, body: page.body });
+      }
+      return out;
+    },
+  };
+}
 
 export class ReferencesService {
   constructor(private pages: PagesService, private watcher: PagesWatcher) {}
@@ -86,15 +106,15 @@ export class ReferencesService {
   }
 
   async findReferences(type: EntityType, slug: string): Promise<ReferenceHit[]> {
-    const hits: ReferenceHit[] = [];
-    await this.walkPages(async (relPath, body) => {
-      for (const tag of parseXmlTagsExcludingCode(body)) {
-        if (tagMatchesEntity(tag, type, slug)) {
-          hits.push({ pagePath: relPath, tagType: tag.kind, line: tag.line, raw: tag.raw });
-        }
-      }
-    });
-    return hits;
+    // Delegate to the serverless core (M19); static-only (no includeTagMatches),
+    // so every superset hit carries `raw`. Project back onto ReferenceHit.
+    const hits = await findReferencesCore({ pages: pagesServiceSource(this.pages) }, type, slug);
+    return hits.map((h) => ({
+      pagePath: h.pagePath,
+      tagType: h.tagType,
+      line: h.line,
+      raw: h.raw ?? '',
+    }));
   }
 
   async findPagesReferencingSlugs(type: EntityType, slugs: Set<string>): Promise<Set<string>> {
@@ -211,18 +231,6 @@ export class ReferencesService {
       await visit(rel, page.body);
     }
   }
-}
-
-function tagMatchesEntity(tag: XmlTag, type: EntityType, slug: string): boolean {
-  if (tag.kind === 'tagged_list_mixed') return false;
-  if (tag.attrs.type !== type) return false;
-  if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
-    return tag.attrs.slug === slug;
-  }
-  if (tag.kind === 'element_list') {
-    return splitCsv(tag.attrs.slugs).includes(slug);
-  }
-  return false;
 }
 
 function entitySlugsInTag(tag: XmlTag): string[] {

@@ -4,6 +4,7 @@ export function StyleOption({
   selected,
   dashed = false,
   compact = false,
+  badge,
   onClick,
   radioName,
   radioValue,
@@ -13,6 +14,7 @@ export function StyleOption({
   selected: boolean;
   dashed?: boolean;
   compact?: boolean;
+  badge?: string;
   onClick: () => void;
   radioName: string;
   radioValue: string;
@@ -35,11 +37,21 @@ export function StyleOption({
         onChange={onClick}
         className="sr-only"
       />
-      <div
-        className={`font-semibold ${compact ? 'text-[12.5px]' : 'text-[14px]'}`}
-        style={{ color: 'var(--c-ink)' }}
-      >
-        {title}
+      <div className="flex items-center gap-2">
+        <span
+          className={`font-semibold ${compact ? 'text-[12.5px]' : 'text-[14px]'}`}
+          style={{ color: 'var(--c-ink)' }}
+        >
+          {title}
+        </span>
+        {badge && (
+          <span
+            className="rounded-full px-1.5 py-0.5 text-[9.5px] uppercase tracking-wider font-mono"
+            style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)', color: 'var(--c-muted)' }}
+          >
+            {badge}
+          </span>
+        )}
       </div>
       <div
         className={`leading-relaxed ${compact ? 'text-[11.5px] mt-0.5' : 'text-[12.5px] mt-1'}`}
