@@ -44,10 +44,15 @@ interface ChatState {
   annotations: Annotation[];
   model: ChatModel;
   thinking: ChatThinking;
+  // One-shot seed dla inputu chatu: ustawiany tuz przed przelaczeniem watku
+  // (np. „Run new thread" na patchu), konsumowany przez draft-restore effect
+  // w ChatOverlay. Transient — nie persystowany, by reload nie re-seedowal.
+  seedPrompt: string | null;
   setChatOpen(open: boolean): void;
   toggleChat(): void;
   setChatWidth(px: number): void;
   setChatThreadId(id: string | null): void;
+  setSeedPrompt(p: string | null): void;
   setModel(m: ChatModel): void;
   setThinking(t: ChatThinking): void;
   addAnnotation(a: Annotation): void;
@@ -65,10 +70,12 @@ export const useChatStore = create<ChatState>()(
       annotations: [],
       model: 'sonnet-4.6',
       thinking: 'medium',
+      seedPrompt: null,
       setChatOpen: (open) => set({ chatOpen: open }),
       toggleChat: () => set((s) => ({ chatOpen: !s.chatOpen })),
       setChatWidth: (px) => set({ chatWidth: Math.max(320, Math.min(900, px)) }),
       setChatThreadId: (id) => set({ chatThreadId: id }),
+      setSeedPrompt: (p) => set({ seedPrompt: p }),
       setModel: (m) =>
         set((s) => ({
           model: m,

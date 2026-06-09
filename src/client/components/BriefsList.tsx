@@ -281,9 +281,13 @@ function PatchRow({ patch }: { patch: PatchListItem }) {
   const createThread = useCreatePatchThread(patch.path);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
+  const setSeedPrompt = useChatStore((s) => s.setSeedPrompt);
 
   const handleNewThread = async () => {
     const result = await createThread.mutateAsync(undefined);
+    // Seed input z predefiniowanym promptem PRZED przelaczeniem watku, by
+    // draft-restore effect w ChatOverlay go podstawil. Nie auto-wysylamy.
+    setSeedPrompt('Please analyze this patch');
     setChatThreadId(result.threadId);
     setChatOpen(true);
   };

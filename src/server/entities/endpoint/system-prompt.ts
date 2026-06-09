@@ -9,5 +9,6 @@ export const endpointSystemPrompt: SystemPromptContribution = {
   },
   mcpToolsLine:
     'endpoint-tools: create_endpoint, get_endpoint, update_endpoint, delete_endpoint, list_endpoints, link_dto, unlink_dto',
-  narrativeBlock: 'REST endpoints (method, path, summary, linked DTOs, tags)',
+  narrativeBlock:
+    'REST endpoints — method, path, summary, linked request/response/error DTOs, tags.',
 };

@@ -157,7 +157,14 @@ export function ChatOverlay() {
     const t = window.setTimeout(() => {
       const handle = inputRef.current;
       if (!handle) return;
-      if (draft) {
+      // One-shot seed (np. „Run new thread" na patchu) ma pierwszenstwo nad
+      // draftem/clear. Czytamy swiezo ze store (nie z closure), konsumujemy raz.
+      const seed = useChatStore.getState().seedPrompt;
+      if (seed) {
+        handle.setMarkdown(seed);
+        setHasInput(!handle.isEmpty());
+        useChatStore.getState().setSeedPrompt(null);
+      } else if (draft) {
         handle.setMarkdown(draft);
         setHasInput(!handle.isEmpty());
       } else {

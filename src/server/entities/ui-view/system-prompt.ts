@@ -1,16 +1,14 @@
 import type { SystemPromptContribution } from '../../../shared/plugin-host/types.js';
 
-/**
- * UI views are intentionally absent from the chat system prompt today (legacy
- * behavior). Empty roleNoun signals opt-out — buildSystemPrompt skips this
- * plugin's contribution.
- */
 export const uiViewSystemPrompt: SystemPromptContribution = {
-  roleNoun: '',
+  roleNoun: 'UI views',
   countStat: {
     placeholder: 'uiViewCount',
     sqlQuery: 'SELECT COUNT(*) AS count FROM ui_view',
     label: 'ui-views',
   },
-  mcpToolsLine: '',
+  mcpToolsLine:
+    'ui-view-tools: create_ui_view, get_ui_view, update_ui_view, delete_ui_view, list_ui_views',
+  narrativeBlock:
+    'UI views (screen-level) — name, url, params (path/query/hash), tags.',
 };

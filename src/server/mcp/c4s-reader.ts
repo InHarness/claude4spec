@@ -245,7 +245,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
 
   const catalog = mcpTool(
     'catalog',
-    'Smoke test: discover active entity types with a row count, serializer version, and one-line description each. Returns { types: { [type]: { count, version, description } }, claude4spec }. Cheap — does not return schemas; call `describe` for the JSON Schema of a specific type.',
+    'Smoke test: discover active entity types with a row count, serializer version, one-line description, role noun, and MCP tools line each. Returns { types: { [type]: { count, version, description, roleNoun, mcpToolsLine } }, claude4spec }. Cheap — does not return schemas; call `describe` for the JSON Schema of a specific type.',
     {},
     async () => {
       const ctx = requireProject();

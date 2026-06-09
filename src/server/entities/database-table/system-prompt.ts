@@ -10,5 +10,5 @@ export const databaseTableSystemPrompt: SystemPromptContribution = {
   mcpToolsLine:
     'database-tools: create_database_table, get_database_table, update_database_table, delete_database_table, list_database_tables',
   narrativeBlock:
-    'Relational tables, dialect-agnostic. Columns: name/type/nullable/unique/pk/fk/default/enumValues. Indexes: columns/unique/name. Linked to DTOs/endpoints via shared tags (tagged_list_mixed) — no direct junction.',
+    'Relational tables (dialect-agnostic) — columns (type, nullable, unique, pk, fk, default, enumValues), indexes, tags.',
 };

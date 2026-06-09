@@ -10,5 +10,5 @@ export const dtoSystemPrompt: SystemPromptContribution = {
   mcpToolsLine:
     'dto-tools: create_dto, get_dto, update_dto, delete_dto, list_dtos',
   narrativeBlock:
-    'Data Transfer Objects (fields with types, validation, linked endpoints)',
+    'Data Transfer Objects — named field schemas (name, type, required, description), examples, linked endpoints, tags.',
 };

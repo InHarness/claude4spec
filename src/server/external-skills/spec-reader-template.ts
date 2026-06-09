@@ -35,7 +35,7 @@ c4s resolve some-page.md --format json   # writes { content, resolved: [...] }
 
 ## Discovery
 
-- \`c4s catalog\` — active entity types with row counts, serializer version, and a one-line description (smoke test).
+- \`c4s catalog\` — active entity types with counts + version + description + roleNoun + mcpToolsLine per type (smoke test).
 - \`c4s describe --type <t> [--view <v>]\` — JSON Schema per view for one type (on-demand).
 - \`c4s list-tags\` — all tags with per-type counts.
 - \`c4s list-slugs --type endpoint\` — all slugs for a given type.

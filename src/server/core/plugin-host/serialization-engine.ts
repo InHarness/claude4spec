@@ -32,6 +32,8 @@ export interface CatalogEntry {
   count: number;
   version: string;
   description: string;
+  roleNoun: string;
+  mcpToolsLine: string;
 }
 
 export interface CatalogResult {
@@ -126,7 +128,9 @@ class SerializationEngineImpl {
 
   /**
    * Lightweight smoke test: per active entity type, a row count, serializer
-   * version, and a one-line description. Deliberately does NOT read
+   * version, a one-line description, and the type's `roleNoun` /
+   * `mcpToolsLine` (all from the per-type system-prompt slot, the same source
+   * the M05 system prompt uses). Deliberately does NOT read
    * `serializer.schema` — use {@link describe} for schemas. Iterates active
    * plugins via `pluginHost.listEntities()` (deactivated plugins absent).
    */
@@ -136,8 +140,10 @@ class SerializationEngineImpl {
       types[m.type] = {
         count: reader.count(m.type as RawEntityType),
         version: m.serializer.version,
-        // Same string the chat agent's system prompt uses (chat-context.ts).
+        // All three read the per-type systemPrompt slot (chat-context.ts).
         description: m.systemPrompt.narrativeBlock ?? m.systemPrompt.roleNoun,
+        roleNoun: m.systemPrompt.roleNoun,
+        mcpToolsLine: m.systemPrompt.mcpToolsLine,
       };
     }
     return { types };

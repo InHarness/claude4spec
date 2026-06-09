@@ -44,7 +44,7 @@ Agent Q&A (requires a running \`npx claude4spec\` server):
     --server <url>    override server discovery (remote / one-off --port)
 
 Discovery:
-  catalog                          counts + version + description per active type (smoke test)
+  catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
   describe --type <t> [--view <v>] JSON Schema per view for one type (on-demand)
   list-tags
   list-slugs --type <t>
