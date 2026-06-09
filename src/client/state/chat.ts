@@ -20,19 +20,26 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'sonnet-4.6' | 'opus-4.8' | 'haiku-4.5';
+export type ChatModel = 'fable-5' | 'sonnet-4.6' | 'opus-4.8' | 'haiku-4.5';
 export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
+// Models that use adaptive thinking + a reasoning-effort knob (claude_effort),
+// and therefore support the 'max' effort level. Mirrors agent-adapters
+// ADAPTIVE_THINKING_ONLY for the claude-code aliases we expose.
+export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['opus-4.8', 'fable-5']);
+export const isAdaptiveModel = (m: ChatModel): boolean => ADAPTIVE_MODELS.has(m);
+
 // Map UI thinking level → adapter architectureConfig.
-// Opus 4.8 supports 'adaptive' thinking only, plus a reasoning-effort knob
-// (claude_effort: low/medium/high/max) — the UI level drives that effort.
-// Other models use a fixed thinking budget; 'max' is opus-only so it clamps to 'high'.
+// Adaptive models (Opus 4.8, Fable 5) support 'adaptive' thinking only, plus a
+// reasoning-effort knob (claude_effort: low/medium/high/max) — the UI level drives
+// that effort. Other models use a fixed thinking budget; 'max' is adaptive-only so
+// it clamps to 'high'.
 export function thinkingToConfig(
   level: ChatThinking,
   model: ChatModel,
 ): Record<string, unknown> | undefined {
   if (level === 'off') return undefined;
-  if (model === 'opus-4.8') return { claude_thinking: 'adaptive', claude_effort: level };
+  if (isAdaptiveModel(model)) return { claude_thinking: 'adaptive', claude_effort: level };
   const budget = { low: 2048, medium: 8192, high: 24000, max: 24000 }[level];
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
@@ -79,8 +86,8 @@ export const useChatStore = create<ChatState>()(
       setModel: (m) =>
         set((s) => ({
           model: m,
-          // 'max' effort is opus-4.8 only — clamp it when leaving Opus.
-          thinking: m !== 'opus-4.8' && s.thinking === 'max' ? 'high' : s.thinking,
+          // 'max' effort is adaptive-models only — clamp it when leaving that class.
+          thinking: !isAdaptiveModel(m) && s.thinking === 'max' ? 'high' : s.thinking,
         })),
       setThinking: (t) => set({ thinking: t }),
       addAnnotation: (a) => set((s) => ({ annotations: [...s.annotations, a], chatOpen: true })),
@@ -101,7 +108,7 @@ export const useChatStore = create<ChatState>()(
         if (version < 2 && (s.model as string) === 'opus-4.7') {
           s.model = 'opus-4.8';
         }
-        if (s.thinking === 'max' && s.model !== 'opus-4.8') {
+        if (s.thinking === 'max' && !isAdaptiveModel(s.model as ChatModel)) {
           s.thinking = 'high';
         }
         return s as ChatState;

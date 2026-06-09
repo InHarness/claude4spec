@@ -8,6 +8,7 @@ import type { ChatModel } from '../state/chat.js';
 // Override per-thread przez `architectureConfig.context_window_override` (konwencja
 // z agent-adapters/src/options.ts — UI-only, adaptery ignorują).
 const CLAUDE_CODE_CONTEXT_WINDOWS: Record<ChatModel, number> = {
+  'fable-5': 1_000_000,
   'sonnet-4.6': 200_000,
   'opus-4.8': 1_000_000,
   'haiku-4.5': 200_000,

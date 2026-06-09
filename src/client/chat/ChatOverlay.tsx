@@ -3,7 +3,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
-import { useChatStore, thinkingToConfig, type ChatModel, type ChatThinking } from '../state/chat.js';
+import { useChatStore, thinkingToConfig, isAdaptiveModel, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
@@ -325,7 +325,13 @@ export function ChatOverlay() {
     [setChatWidth],
   );
 
-  const modelLabel = model === 'sonnet-4.6' ? 'Sonnet 4.6' : model === 'opus-4.8' ? 'Opus 4.8' : 'Haiku 4.5';
+  const MODEL_LABELS: Record<ChatModel, string> = {
+    'fable-5': 'Fable 5',
+    'sonnet-4.6': 'Sonnet 4.6',
+    'opus-4.8': 'Opus 4.8',
+    'haiku-4.5': 'Haiku 4.5',
+  };
+  const modelLabel = MODEL_LABELS[model];
 
   if (!chatOpen) return null;
 
@@ -818,17 +824,18 @@ interface ModelSettingsPopoverProps {
 
 function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
-    { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
+    { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning' },
     { id: 'opus-4.8', label: 'Opus 4.8', sub: 'Deep reasoning · slow' },
+    { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
     { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light' },
   ];
-  // 'Max' reasoning effort is Opus 4.8 only.
+  // 'Max' reasoning effort is adaptive-models only (Opus 4.8, Fable 5).
   const levels: Array<{ id: ChatThinking; label: string }> = [
     { id: 'off', label: 'Off' },
     { id: 'low', label: 'Low' },
     { id: 'medium', label: 'Medium' },
     { id: 'high', label: 'High' },
-    ...(model === 'opus-4.8' ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
+    ...(isAdaptiveModel(model) ? [{ id: 'max' as ChatThinking, label: 'Max' }] : []),
   ];
 
   // M05 session-lock: model + reasoning fields freeze once the thread has a session.
@@ -934,9 +941,9 @@ function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode
           style={{ color: 'var(--c-subtle)' }}
         >
           Thinking level
-          {model === 'opus-4.8' && thinking !== 'off' && (
+          {isAdaptiveModel(model) && thinking !== 'off' && (
             <span className="ml-2 normal-case" style={{ color: 'var(--c-muted)' }}>
-              (opus uses adaptive thinking; level sets reasoning effort)
+              (uses adaptive thinking; level sets reasoning effort)
             </span>
           )}
         </div>
