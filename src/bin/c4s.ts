@@ -12,6 +12,7 @@ import { runTaggedList } from './c4s/commands/tagged-list.js';
 import { runTaggedListMixed } from './c4s/commands/tagged-list-mixed.js';
 import { runDetail } from './c4s/commands/detail.js';
 import { runCatalog } from './c4s/commands/catalog.js';
+import { runDescribe } from './c4s/commands/describe.js';
 import { runListTags } from './c4s/commands/list-tags.js';
 import { runListSlugs } from './c4s/commands/list-slugs.js';
 import { runFindReferences } from './c4s/commands/find-references.js';
@@ -43,7 +44,8 @@ Agent Q&A (requires a running \`npx claude4spec\` server):
     --server <url>    override server discovery (remote / one-off --port)
 
 Discovery:
-  catalog
+  catalog                          counts + version + description per active type (smoke test)
+  describe --type <t> [--view <v>] JSON Schema per view for one type (on-demand)
   list-tags
   list-slugs --type <t>
 
@@ -89,6 +91,8 @@ async function main(): Promise<void> {
       return runResolve(args);
     case 'catalog':
       return runCatalog(args);
+    case 'describe':
+      return runDescribe(args);
     case 'list-tags':
       return runListTags(args);
     case 'list-slugs':
@@ -138,6 +142,7 @@ function codeToExit(code: string): number {
     case 'ENTITY_NOT_FOUND':
       return 3;
     case 'INVALID_TYPE':
+    case 'INVALID_VIEW':
     case 'INVALID_ARGS':
       return 4;
     case 'FILE_NOT_FOUND':

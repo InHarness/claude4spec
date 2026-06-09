@@ -166,8 +166,9 @@ export class EndpointService {
 
       const method = input.method ? this.requireMethod(input.method) : (current.method as HttpMethod);
       const path = input.path ?? current.path;
-      const autoSlug = endpointSlug(method, path);
-      const nextSlug = input.newSlug ?? autoSlug;
+      // Slug jest stabilny: zmiana method/path nie przegenerowuje sluga.
+      // Rename wyłącznie przez jawny newSlug.
+      const nextSlug = input.newSlug?.trim() || current.slug;
 
       if (nextSlug !== slug) {
         const conflict = this.db.prepare(`SELECT 1 FROM endpoint WHERE slug = ?`).get(nextSlug);

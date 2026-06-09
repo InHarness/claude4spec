@@ -61,20 +61,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   // nie populate `ChatMessage.contextSize` — RESTORE branch reducera nie odbuduje
   // wartości z DB. Stąd duplikujemy wzorzec `liveUsage` z dedykowanym fallbackiem.
   const [liveContextSize, setLiveContextSize] = useState<number | null>(null);
-  // EventSource do GET /api/chat/stream/:threadId — auto-resume gdy loadThread wykryje
-  // status='streaming' na ktorymkolwiek rowsie (F5 w trakcie streamu / switch A->B->A).
-  const resumeSourceRef = useRef<EventSource | null>(null);
-  // Wystawiana flaga „resume w toku" — UI uzywa jej zamiennie z state.isStreaming
-  // zeby pokazac „streaming…" badge i Stop button rowniez gdy klient nie startowal
-  // tej tury z biezacej karty (F5 / wrocenie do watku po switchu).
+  // Flaga „join w toku" — true od momentu wykrycia żywej tury (`isLive`) do zamknięcia
+  // resume-streamu (`joinStream` resolve). UI używa jej zamiennie ze `state.isStreaming`
+  // żeby pokazać „streaming…" badge i Stop button także w oknie zanim dotrze `turn_start`
+  // (reducer sam ustawi isStreaming dopiero po `turn_start`).
   const [isResuming, setIsResuming] = useState(false);
-  const closeResumeSource = useCallback(() => {
-    if (resumeSourceRef.current) {
-      resumeSourceRef.current.close();
-      resumeSourceRef.current = null;
-    }
-    setIsResuming(false);
-  }, []);
 
   const onEvent = useCallback(
     (event: WireEvent) => {
@@ -123,7 +114,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     [onThreadCreated, threadId],
   );
 
-  const { startStream, abort: abortStream, disconnect: disconnectStream } = useEventStream({
+  const { startStream, joinStream, abort: abortStream, disconnect: disconnectStream } = useEventStream({
     serverUrl,
     onEvent,
     onError,
@@ -135,8 +126,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       if (state.isStreaming) return;
       if (!prompt.trim() && annotations.length === 0) return;
 
-      // Nowa tura przejmuje stream — zamykamy ewentualny resume-SSE z poprzedniego F5.
-      closeResumeSource();
+      // Nowa tura przejmuje transport — `startStream` sam abortuje ewentualny join z F5.
+      setIsResuming(false);
 
       sendUserMessage(
         prompt.trim() ? prompt : `(${annotations.length} annotation${annotations.length === 1 ? '' : 's'} attached)`,
@@ -164,31 +155,19 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
       await startStream(body);
     },
-    [state.isStreaming, sendUserMessage, startStream, model, thinking, planMode, closeResumeSource],
+    [state.isStreaming, sendUserMessage, startStream, model, thinking, planMode],
   );
 
+  // Stop działa dla obu trybów: `abortStream` (z @inharness-ai/agent-chat) POST-uje
+  // `/api/chat/abort` z `requestId` zapamiętanym z eventu `connected` — zarówno dla
+  // startStream, jak i joinStream. Serwer abortuje adapter → emituje error/done →
+  // join feeduje je do reducera (finalize). Lokalny dispatch ABORTED daje natychmiastowy feedback.
   const abort = useCallback(() => {
     abortStream();
-    closeResumeSource();
+    setIsResuming(false);
     handleWireEvent({ type: 'error', error: 'Request aborted', code: 'ABORTED' });
     setPendingUserInputs([]);
-  }, [abortStream, handleWireEvent, closeResumeSource]);
-
-  // Abort tury, ktora trwa po stronie serwera, ale nie startowala z biezacej karty
-  // (jestesmy podlaczeni przez resume SSE — nie znamy requestId, wiec POST per threadId).
-  // W przeciwienstwie do `abort()` nie dispatchujemy ABORTED do reducera (state.isStreaming
-  // i tak jest false), ani nie pokazujemy toasta — uzytkownik widzi po prostu zatrzymanie
-  // pulsu „streaming…" gdy serwer wysle `done`.
-  const abortResume = useCallback(async () => {
-    const tid = currentThreadIdRef.current;
-    if (!tid) return;
-    try {
-      await fetch(`${serverUrl}/api/chat/abort/${tid}`, { method: 'POST' });
-    } catch {
-      // best-effort — UI i tak zamknie resume po `done`/`error` z SSE
-    }
-    closeResumeSource();
-  }, [serverUrl, closeResumeSource]);
+  }, [abortStream, handleWireEvent]);
 
   const submitUserInput = useCallback(
     async (requestId: string, response: UserInputResponse) => {
@@ -212,97 +191,6 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     [serverUrl],
   );
 
-  // Eventy z SSE nie ida do reducera (messageReducer.updateActiveMessage wymaga
-  // activeAssistantMessageId != null, ale RESTORE ustawia je na null — delty bylyby
-  // ciche odrzucane). Zamiast tego traktujemy ES jako event-driven trigger do refetch-u
-  // z DB (DB jest zrodlem prawdy: kazdy UnifiedEvent persystuje sie w chat_message jeszcze
-  // przed `send(event.type, event)` w handlerze). Debounce minimalizuje I/O podczas
-  // szybkich burst-ow text_delta.
-  const RESUME_EVENT_TYPES = [
-    'text_delta',
-    'thinking',
-    'tool_use',
-    'tool_result',
-    'assistant_message',
-    'subagent_started',
-    'subagent_progress',
-    'subagent_completed',
-    'result',
-    'error',
-    'warning',
-    'user_input_request',
-    'todo_list_updated',
-    'flush',
-  ] as const;
-
-  const refetchThreadFromDb = useCallback(
-    async (tid: string) => {
-      if (currentThreadIdRef.current !== tid) return;
-      try {
-        const res = await fetch(`${serverUrl}/api/threads/${tid}`);
-        if (!res.ok) return;
-        if (currentThreadIdRef.current !== tid) return;
-        const payload = (await res.json()) as {
-          data: ChatThread & { messages: ChatMessageRow[]; subagentTasks: ChatSubagentTask[] };
-        };
-        const thread = payload.data;
-        const messages = rowsToChatMessages(thread.messages, thread.subagentTasks ?? []);
-        restoreMessages(messages, thread.lastSessionId ?? undefined, 'claude-code', model);
-        setCurrentTodoItems(thread.currentTodoItems ?? null);
-        setLiveUsage(thread.usage ?? null);
-        setLiveContextSize(thread.contextSize ?? null);
-        // userPlanModes / userAnnotations nie ruszamy — user nie dopisal nowych wiadomosci
-        // w trakcie resume (POST jest zablokowany 409 dopoki stream nie skonczy).
-      } catch {
-        // silent — kolejny event wywola retry
-      }
-    },
-    [serverUrl, restoreMessages, model],
-  );
-
-  const openResumeStream = useCallback(
-    (tid: string) => {
-      closeResumeSource();
-      const es = new EventSource(`${serverUrl}/api/chat/stream/${tid}`);
-      resumeSourceRef.current = es;
-      setIsResuming(true);
-
-      let refetchTimer: ReturnType<typeof setTimeout> | null = null;
-      const scheduleRefetch = () => {
-        if (refetchTimer) return;
-        refetchTimer = setTimeout(() => {
-          refetchTimer = null;
-          void refetchThreadFromDb(tid);
-        }, 400);
-      };
-      const doFinalRefetch = () => {
-        if (refetchTimer) {
-          clearTimeout(refetchTimer);
-          refetchTimer = null;
-        }
-        void refetchThreadFromDb(tid);
-      };
-
-      for (const t of RESUME_EVENT_TYPES) {
-        es.addEventListener(t, () => {
-          if (t === 'result' || t === 'error') {
-            doFinalRefetch();
-          } else {
-            scheduleRefetch();
-          }
-        });
-      }
-      es.addEventListener('done', () => {
-        doFinalRefetch();
-        closeResumeSource();
-      });
-      es.onerror = () => {
-        closeResumeSource();
-      };
-    },
-    [serverUrl, closeResumeSource, refetchThreadFromDb],
-  );
-
   // Load thread history when threadId changes
   useEffect(() => {
     // Watek dopiero co utworzony przez aktywny stream (threadId: null -> tid).
@@ -314,15 +202,13 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       return;
     }
     // Posprzataj po poprzednim watku zanim cokolwiek zaladujemy:
-    // - disconnectStream() zamyka tylko lokalny SSE (POST do /api/chat/abort NIE leci);
-    //   server-side adapter zyje dalej, persystuje eventy do DB, a powrot na ten watek
-    //   wykryje hasStreaming i podlaczy resume-SSE. Stop button uzywa abortStream() —
-    //   tam celowo zatrzymujemy ture po obu stronach.
-    // - closeResumeSource() zamknie resume-SSE i zresetuje isResuming;
+    // - disconnectStream() zamyka lokalny SSE (POST oraz ewentualny join) BEZ abortu serwera;
+    //   server-side adapter zyje dalej, a powrot na ten watek wznowi go przez joinStream.
+    //   Stop button uzywa abort() — tam celowo zatrzymujemy ture po obu stronach.
     // - clear() zresetuje reducer (state.isStreaming -> false), dzieki czemu staleResponse
     //   przestanie blokowac load nowego watku.
     disconnectStream();
-    closeResumeSource();
+    setIsResuming(false);
     clear();
     setPendingUserInputs([]);
     setCurrentTodoItems(null);
@@ -354,11 +240,17 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         }
         if (staleResponse) return;
         const payload = (await res.json()) as {
-          data: ChatThread & { messages: ChatMessageRow[]; subagentTasks: ChatSubagentTask[] };
+          data: ChatThread & {
+            messages: ChatMessageRow[];
+            subagentTasks: ChatSubagentTask[];
+            isLive?: boolean;
+          };
         };
         const thread = payload.data;
-        const messages = rowsToChatMessages(thread.messages, thread.subagentTasks ?? []);
-        restoreMessages(messages, thread.lastSessionId ?? undefined, 'claude-code', model);
+        const subagentTasks = thread.subagentTasks ?? [];
+        const fullMessages = rowsToChatMessages(thread.messages, subagentTasks);
+        // Per-user metadata z PELNEJ historii — kolejnosc renderowanych user-messages
+        // (sliced + dolozona przez turn_start) odpowiada pelnej liscie.
         setCurrentTodoItems(thread.currentTodoItems ?? null);
         setUserPlanModes(thread.messages.filter((m) => m.role === 'user').map((m) => m.planMode));
         setUserAnnotations(
@@ -369,13 +261,34 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         setLiveUsage(thread.usage ?? null);
         setLiveContextSize(thread.contextSize ?? null);
 
-        // Auto-resume: jesli ktorykolwiek rowek ma status='streaming' w momencie loadThread,
-        // adapter moze nadal zyc po stronie serwera — podlaczamy sie do live streamu
-        // przez GET /api/chat/stream/:threadId. Jesli adapter juz skonczyl, serwer od razu
-        // zwroci `done` i ES sie zamknie — stan koncowy jest juz w restored messages.
-        const hasStreaming = thread.messages.some((m) => m.status === 'streaming');
-        if (hasStreaming && !isStreamingRef.current) {
-          openResumeStream(threadId);
+        // Zywa tura serwerowa, ktorej ta karta nie streamuje → wznow przez joinStream.
+        // Przywracamy historie SPRZED biezacej tury (przed ostatnim user-message); turn_start
+        // + replay z serwera odbuduja biezaca ture na zywo (bez duplikacji user message).
+        if (thread.isLive && !isStreamingRef.current) {
+          const rows = thread.messages;
+          let lastUserIdx = -1;
+          for (let i = rows.length - 1; i >= 0; i--) {
+            if (rows[i]?.role === 'user') {
+              lastUserIdx = i;
+              break;
+            }
+          }
+          const slicedRows = lastUserIdx >= 0 ? rows.slice(0, lastUserIdx) : rows;
+          const slicedMessages = rowsToChatMessages(slicedRows, subagentTasks);
+          restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
+          setIsResuming(true);
+          // Fire-and-forget: fetch+restore konczy sie szybko (zwalnia loadingThreadRef),
+          // a join trwa do konca tury. Kontynuacja po resolve obsluguje wyscig — tura
+          // skonczyla sie zanim dolaczylismy → joinStream zwraca false (404) → pelna historia.
+          void joinStream(threadId).then((joined) => {
+            if (currentThreadIdRef.current !== threadId) return;
+            setIsResuming(false);
+            if (!joined) {
+              restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
+            }
+          });
+        } else {
+          restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
         }
       } catch {
         if (currentThreadIdRef.current === threadId) {
@@ -390,10 +303,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     })();
 
     return () => {
-      closeResumeSource();
+      disconnectStream();
+      setIsResuming(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [threadId, serverUrl, restoreMessages, clear, model, onThreadMissing, closeResumeSource]);
+  }, [threadId, serverUrl, restoreMessages, clear, model, onThreadMissing, joinStream, disconnectStream]);
 
   useEffect(() => {
     setPendingUserInputs([]);
@@ -408,7 +322,6 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     contextSize: liveContextSize ?? state.contextSize,
     sendMessage,
     abort,
-    abortResume,
     pendingUserInputs,
     submitUserInput,
     currentTodoItems,

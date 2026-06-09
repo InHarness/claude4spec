@@ -164,8 +164,9 @@ export class DatabaseTableService {
       if (!current) throw new DomainError('NOT_FOUND', `database table '${slug}' not found`);
 
       const nextName = input.name ?? current.name;
-      const autoSlug = databaseTableSlug(nextName);
-      const nextSlug = input.newSlug?.trim() || autoSlug;
+      // Slug jest stabilny: zmiana name nie przegenerowuje sluga.
+      // Rename wyłącznie przez jawny newSlug.
+      const nextSlug = input.newSlug?.trim() || current.slug;
 
       if (nextSlug !== slug) {
         const conflict = this.db

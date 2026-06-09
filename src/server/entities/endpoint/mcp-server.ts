@@ -68,7 +68,7 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerIns
 
   const updateEndpoint = mcpTool(
     'update_endpoint',
-    'Update endpoint fields (partial update). Only provided fields are changed. Use newSlug for explicit rename; otherwise slug auto-regenerates if method/path change.',
+    'Update endpoint fields (partial update). Only provided fields are changed. The slug is stable: changing method/path never moves it. Rename only via newSlug.',
     {
       slug: z.string(),
       data: z
@@ -79,7 +79,12 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerIns
           description: z.string().nullable().optional(),
         })
         .describe('Partial fields to update'),
-      newSlug: z.string().optional(),
+      newSlug: z
+        .string()
+        .optional()
+        .describe(
+          'Explicit slug rename. The slug is not re-generated automatically when method/path changes.'
+        ),
     },
     async (args) => {
       try {

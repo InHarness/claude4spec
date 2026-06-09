@@ -245,14 +245,43 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
 
   const catalog = mcpTool(
     'catalog',
-    'Discover all entity types, their available views, JSON Schemas per view, and per-type version. Returns { types: { [type]: { version, views, schemas } }, claude4spec }. Use this to learn what get_entity/get_entities can return.',
+    'Smoke test: discover active entity types with a row count, serializer version, and one-line description each. Returns { types: { [type]: { count, version, description } }, claude4spec }. Cheap — does not return schemas; call `describe` for the JSON Schema of a specific type.',
     {},
     async () => {
       const ctx = requireProject();
       if (!ctx.ok) return ctx.response;
-      const result = wrapDb(() => deps.registry.catalog(ctx.reader, ctx.db));
+      const result = wrapDb(() => deps.registry.catalog(ctx.reader));
       if (!result.ok) return result.response;
       return ok({ ...result.value, claude4spec: deps.packageVersion });
+    },
+  );
+
+  const describe = mcpTool(
+    'describe',
+    'Get JSON Schemas for one entity type, per view, on demand. Returns { type, version, views, schemas }. Omit view for all of the type\'s views; pass view to narrow to one. Schemas are custom (from the serializer) or auto-derived from SQLite reflection (flagged "_auto").',
+    {
+      type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
+      view: z
+        .string()
+        .optional()
+        .describe('Narrow to one view; omit for all views of the type'),
+    },
+    async (args) => {
+      const ctx = requireProject();
+      if (!ctx.ok) return ctx.response;
+      const type = normalizeType(String(args.type));
+      if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
+      let view: ViewKind | undefined;
+      if (args.view !== undefined) {
+        if (!VIEW_KINDS.includes(String(args.view) as ViewKind)) {
+          return fail('INVALID_VIEW', `unknown view '${args.view}'`);
+        }
+        view = String(args.view) as ViewKind;
+      }
+      const result = wrapDb(() => deps.registry.describe(type, view, ctx.db));
+      if (!result.ok) return result.response;
+      if (!result.value) return fail('INVALID_TYPE', `entity type '${type}' is not active`);
+      return ok(result.value);
     },
   );
 
@@ -296,7 +325,17 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   return createMcpServer({
     name: 'c4s-reader',
     version: deps.packageVersion,
-    tools: [getEntity, getEntities, findByTag, getSection, resolvePage, catalog, listTags, listSlugs],
+    tools: [
+      getEntity,
+      getEntities,
+      findByTag,
+      getSection,
+      resolvePage,
+      catalog,
+      describe,
+      listTags,
+      listSlugs,
+    ],
   });
 }
 

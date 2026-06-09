@@ -140,9 +140,11 @@ export function chatRouter(deps: AgentTurnDeps): Router {
           clientGone = true;
         }
       };
+      const heartbeat = startHeartbeat(res, () => clientGone);
       // `res.on('close')` (NIE req) — canonical pattern z agent-chat/server/handler.ts.
       res.on('close', () => {
         clientGone = true;
+        clearInterval(heartbeat);
       });
 
       const requestId = nanoid(12);
@@ -183,6 +185,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         // `runAgentTurn` juz wyemitowalo SSE `event: error` — nie propagujemy
         // dalej (response jest SSE; errorHandler probowalby pisac JSON).
       } finally {
+        clearInterval(heartbeat);
         if (!res.writableEnded) {
           try {
             res.end();
@@ -225,11 +228,15 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   });
 
   // GET /api/chat/stream/:threadId — dolaczenie do zywego streamu po F5 / switch watku.
+  // Protokol `useEventStream.joinStream` z @inharness-ai/agent-chat: brak aktywnej tury → 404
+  // (klient pokazuje pelna historie z DB). Aktywna tura → `connected` (z `requestId`, zeby
+  // `abort()` dzialal tez dla wznawiajacego), potem `turn_start` (reducer re-aktywuje wiadomosc
+  // asystenta), replay bufora bieżącej tury, a na koncu nasluch live z emittera.
   router.get('/stream/:threadId', (req, res) => {
     const threadId = req.params.threadId;
-    const thread = deps.chatService.getThreadMeta(threadId);
-    if (!thread) {
-      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
+    const active = activeAdapters.get(threadId);
+    if (!active) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'no active stream for thread' } });
     }
 
     setupSse(res);
@@ -243,26 +250,33 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         clientGone = true;
       }
     };
+    const heartbeat = startHeartbeat(res, () => clientGone);
 
-    const active = activeAdapters.get(threadId);
-    send('connected', { threadId, live: Boolean(active) });
-    if (!active) {
-      send('done', {});
-      return res.end();
+    // Handler jest w pelni synchroniczny (brak await), wiec snapshot bufora + attach
+    // listenera sa atomowe wzgledem petli runu — zaden event nie zginie ani sie nie zdubluje.
+    send('connected', { requestId: active.requestId, threadId, live: true });
+    send('turn_start', active.replay.turnStart);
+    for (const ev of active.replay.events.slice()) {
+      send((ev as { type: string }).type, ev);
     }
 
-    const listener = (event: unknown) => {
+    let listener: (event: unknown) => void = () => {};
+    const cleanup = () => {
+      clearInterval(heartbeat);
+      active.emitter.off('event', listener);
+    };
+    listener = (event: unknown) => {
       try {
         const ev = event as { type: string };
         send(ev.type, ev);
         if (ev.type === 'done') {
-          active.emitter.off('event', listener);
+          cleanup();
           if (!res.writableEnded) {
             try { res.end(); } catch { /* socket gone */ }
           }
         }
       } catch (listenerErr) {
-        active.emitter.off('event', listener);
+        cleanup();
         clientGone = true;
         console.error('[chat] resume listener error', listenerErr);
       }
@@ -270,7 +284,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     active.emitter.on('event', listener);
     res.on('close', () => {
       clientGone = true;
-      active.emitter.off('event', listener);
+      cleanup();
     });
   });
 
@@ -312,4 +326,20 @@ function setupSse(res: Response): void {
   res.setHeader('Connection', 'keep-alive');
   res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
+}
+
+const SSE_HEARTBEAT_MS = 15_000;
+
+/** Periodyczny komentarz SSE (`:\n\n`) — utrzymuje połączenie podczas długiego
+ *  „thinking" bez zdarzeń, żeby proxy/load-balancer nie ubiło bezczynnego socketu.
+ *  Zwraca timer; caller MUSI go wyczyścić w `res.on('close')`/`finally`. */
+function startHeartbeat(res: Response, isGone: () => boolean): ReturnType<typeof setInterval> {
+  return setInterval(() => {
+    if (isGone() || res.writableEnded || res.destroyed) return;
+    try {
+      res.write(':\n\n');
+    } catch {
+      /* socket gone — close handler wyczyści timer */
+    }
+  }, SSE_HEARTBEAT_MS);
 }

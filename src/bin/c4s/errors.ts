@@ -3,6 +3,7 @@ export type CliErrorCode =
   | 'ENTITY_NOT_FOUND'
   | 'SECTION_NOT_FOUND'
   | 'INVALID_TYPE'
+  | 'INVALID_VIEW'
   | 'INVALID_ARGS'
   | 'AMBIGUOUS_SLUGS'
   | 'SCHEMA_OUT_OF_DATE'

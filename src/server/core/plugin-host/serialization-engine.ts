@@ -8,7 +8,12 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import type { RawEntity, RawEntityReader, RawSection } from '../../domain/raw-entity-reader.js';
+import type {
+  RawEntity,
+  RawEntityReader,
+  RawEntityType,
+  RawSection,
+} from '../../domain/raw-entity-reader.js';
 import { fallbackEntity, fallbackSection } from '../../serialization/fallback.js';
 import { autoDerivedSchema } from '../../serialization/auto-schema.js';
 import type {
@@ -24,13 +29,20 @@ import { pluginHost } from './host.js';
 const MAX_DEPTH = 1;
 
 export interface CatalogEntry {
+  count: number;
   version: string;
-  views: string[];
-  schemas: Record<string, JsonSchema>;
+  description: string;
 }
 
 export interface CatalogResult {
   types: Record<string, CatalogEntry>;
+}
+
+export interface DescribeResult {
+  type: string;
+  version: string;
+  views: string[];
+  schemas: Record<string, JsonSchema>;
 }
 
 class SerializationEngineImpl {
@@ -112,32 +124,48 @@ class SerializationEngineImpl {
     return { type: 'object', _auto: true, _note: 'schema unavailable without db handle' };
   }
 
-  catalog(reader: RawEntityReader, db: Database): CatalogResult {
+  /**
+   * Lightweight smoke test: per active entity type, a row count, serializer
+   * version, and a one-line description. Deliberately does NOT read
+   * `serializer.schema` — use {@link describe} for schemas. Iterates active
+   * plugins via `pluginHost.listEntities()` (deactivated plugins absent).
+   */
+  catalog(reader: RawEntityReader): CatalogResult {
     const types: Record<string, CatalogEntry> = {};
-    for (const t of this.listTypes()) {
-      const serializer = this.get(t);
-      if (!serializer) continue;
-      const views: string[] = [];
-      if (serializer.inlineMention) views.push('inline_mention');
-      if (serializer.singleElement) views.push('single_element');
-      if (serializer.elementListItem) views.push('element_list_item');
-      if (serializer.taggedListItem) views.push('tagged_list_item');
-      if (serializer.detail) views.push('detail');
-      const schemas: Record<string, JsonSchema> = {};
-      const viewList: ViewKind[] = [
-        'inline_mention',
-        'single_element',
-        'element_list_item',
-        'tagged_list_item',
-        'detail',
-      ];
-      for (const view of viewList) {
-        schemas[view] = this.getSchema(t, view, db);
-      }
-      types[t] = { version: serializer.version, views, schemas };
+    for (const m of pluginHost.listEntities()) {
+      types[m.type] = {
+        count: reader.count(m.type as RawEntityType),
+        version: m.serializer.version,
+        // Same string the chat agent's system prompt uses (chat-context.ts).
+        description: m.systemPrompt.narrativeBlock ?? m.systemPrompt.roleNoun,
+      };
     }
-    void reader;
     return { types };
+  }
+
+  /**
+   * On-demand schema discovery for one active entity type. Returns null when
+   * the type is unknown or deactivated (caller maps to INVALID_TYPE). When
+   * `view` is given the response is narrowed to that single view; otherwise
+   * all of the type's supported views are returned. Schemas come from
+   * `serializer.schema(view)` or, when absent, SQLite reflection (`_auto`).
+   */
+  describe(type: string, view: ViewKind | undefined, db: Database): DescribeResult | null {
+    const m = pluginHost.listEntities().find((e) => e.type === type);
+    if (!m) return null;
+    const serializer = m.serializer;
+    const views: string[] = [];
+    if (serializer.inlineMention) views.push('inline_mention');
+    if (serializer.singleElement) views.push('single_element');
+    if (serializer.elementListItem) views.push('element_list_item');
+    if (serializer.taggedListItem) views.push('tagged_list_item');
+    if (serializer.detail) views.push('detail');
+    const targetViews: ViewKind[] = view ? [view] : (views as ViewKind[]);
+    const schemas: Record<string, JsonSchema> = {};
+    for (const v of targetViews) {
+      schemas[v] = this.getSchema(type, v, db);
+    }
+    return { type, version: serializer.version, views, schemas };
   }
 }
 

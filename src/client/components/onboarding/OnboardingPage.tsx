@@ -5,6 +5,7 @@ import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
+import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -15,6 +16,10 @@ export function OnboardingPage() {
   const [name, setName] = useState('');
   const [nameError, setNameError] = useState<string | null>(null);
   const [writingStyle, setWritingStyle] = useState<WritingStyleSelection>(undefined);
+  // 0.1.51: optional language dropdowns. Default null (not undefined) so they never
+  // gate [Continue].
+  const [language, setLanguage] = useState<string | null>(null);
+  const [conversationalLanguage, setConversationalLanguage] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -25,6 +30,8 @@ export function OnboardingPage() {
       if (config.writingStyle !== null) {
         setWritingStyle(config.writingStyle);
       }
+      setLanguage(config.language);
+      setConversationalLanguage(config.agent?.conversationalLanguage ?? null);
       setHydrated(true);
     }
   }, [config, hydrated]);
@@ -50,6 +57,8 @@ export function OnboardingPage() {
       await patchConfig.mutateAsync({
         name: name.trim(),
         writingStyle,
+        language,
+        agent: { conversationalLanguage }, // deep-merged server-side; preserves claudeUsePreset
         onboardingCompleted: true,
       });
       toast.success('Setup complete');
@@ -125,6 +134,12 @@ export function OnboardingPage() {
           available={stylesData?.available ?? []}
           selection={writingStyle}
           onSelect={(slug) => setWritingStyle(slug)}
+        />
+
+        <SpecLanguageField value={language} onChange={setLanguage} />
+        <ConversationalLanguageField
+          value={conversationalLanguage}
+          onChange={setConversationalLanguage}
         />
 
         <div className="flex items-center justify-end gap-3 mt-2">

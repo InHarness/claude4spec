@@ -154,8 +154,9 @@ export class DtoService {
       if (!current) throw new DomainError('NOT_FOUND', `dto '${slug}' not found`);
 
       const nextName = input.name ?? current.name;
-      const autoSlug = dtoSlug(nextName);
-      const nextSlug = input.newSlug ?? autoSlug;
+      // Slug jest stabilny: zmiana name nie przegenerowuje sluga.
+      // Rename wyłącznie przez jawny newSlug.
+      const nextSlug = input.newSlug?.trim() || current.slug;
 
       if (nextSlug !== slug) {
         const conflict = this.db.prepare(`SELECT 1 FROM dto WHERE slug = ?`).get(nextSlug);

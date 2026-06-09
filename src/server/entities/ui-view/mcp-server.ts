@@ -93,7 +93,7 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
 
   const updateUiView = mcpTool(
     'update_ui_view',
-    'Update UI view fields (partial update). Only provided fields are changed. Renaming slug auto-propagates XML references in markdown.',
+    'Update UI view fields (partial update). Only provided fields are changed. The slug is stable: changing name never moves it. Rename only via newSlug, which auto-propagates XML references in markdown.',
     {
       slug: z.string(),
       data: z
@@ -104,7 +104,12 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
           params: z.array(paramSchema).optional(),
         })
         .describe('Partial fields to update'),
-      newSlug: z.string().optional(),
+      newSlug: z
+        .string()
+        .optional()
+        .describe(
+          'Explicit slug rename. The slug is not re-generated automatically when name changes.'
+        ),
     },
     async (args) => {
       try {

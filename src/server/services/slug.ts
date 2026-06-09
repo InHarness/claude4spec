@@ -1,6 +1,12 @@
 export function slugify(input: string): string {
   return input
     .toLowerCase()
+    // ł nie ma dekompozycji NFD — mapujemy jawnie przed normalizacją.
+    .replace(/ł/g, 'l')
+    // Transliteracja diakrytyków: NFD + usunięcie znaków łączących
+    // (ó→o, ż→z, ź→z, ę→e, ą→a, ś→s, ć→c, ń→n).
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
 }

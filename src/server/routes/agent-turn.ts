@@ -1,4 +1,5 @@
 import { EventEmitter } from 'node:events';
+import { nanoid } from 'nanoid';
 import {
   createAdapter,
   observeStream,
@@ -66,10 +67,22 @@ interface PendingInput {
   requestIdsForRequest: string;
 }
 
+/** Bufor odtworzeniowy bieżącej tury — pozwala klientowi wznawiającemu (F5 /
+ *  switch wątku) odtworzyć turę przez `useEventStream.joinStream`: serwer wysyła
+ *  `turn_start`, replay `events` (w kolejności), a potem leci na żywo z emittera.
+ *  Reducer `@inharness-ai/agent-chat` po `turn_start` re-aktywuje wiadomość
+ *  asystenta i renderuje delty płynnie. `events` koalescuje kolejne `text_delta`
+ *  z tej samej ramki, więc nie rośnie liniowo z liczbą tokenów. */
+export interface TurnReplay {
+  turnStart: TurnEvent;
+  events: TurnEvent[];
+}
+
 export interface ActiveAdapter {
   requestId: string;
   adapter: RuntimeAdapter;
   emitter: EventEmitter;
+  replay: TurnReplay;
 }
 
 // Wspoldzielone rejestry — keyed by threadId, jeden aktywny adapter per watek.
@@ -144,12 +157,60 @@ export async function runAgentTurn(
 
   const adapter = createAdapter('claude-code');
   const emitter = new EventEmitter();
-  activeAdapters.set(thread.id, { requestId, adapter, emitter });
+  // `turn_start` jest syntetyzowany serwerowo wyłącznie dla wznawiających klientów
+  // (`joinStream` → reducer re-aktywuje wiadomość asystenta). NIE jest wysyłany do
+  // oryginalnego klienta POST — ten ma już aktywną wiadomość z `sendUserMessage`.
+  const turnStart: TurnEvent = {
+    type: 'turn_start',
+    userMessageId: nanoid(12),
+    assistantMessageId: nanoid(12),
+    prompt,
+    timestamp: new Date().toISOString(),
+  };
+  const replay: TurnReplay = { turnStart, events: [] };
+  activeAdapters.set(thread.id, { requestId, adapter, emitter, replay });
+
+  // Zdarzenia istotne dla reducera (replay buduje stan bieżącej tury u joinera).
+  const REPLAY_EVENT_TYPES = new Set([
+    'text_delta',
+    'thinking',
+    'tool_use',
+    'tool_result',
+    'subagent_started',
+    'subagent_progress',
+    'subagent_completed',
+    'todo_list_updated',
+    'user_input_request',
+    'result',
+    'error',
+  ]);
+  const bufferForReplay = (event: TurnEvent) => {
+    if (!REPLAY_EVENT_TYPES.has(event.type)) return;
+    // Koalescuj kolejne `text_delta` z tej samej ramki (main vs subagent) — replay
+    // jednym deltą daje identyczny wynik w reducerze, a bufor nie rośnie z tokenami.
+    if (event.type === 'text_delta') {
+      const last = replay.events[replay.events.length - 1];
+      if (
+        last &&
+        last.type === 'text_delta' &&
+        Boolean(last.isSubagent) === Boolean(event.isSubagent) &&
+        last.subagentTaskId === event.subagentTaskId
+      ) {
+        last.text = String(last.text ?? '') + String(event.text ?? '');
+        return;
+      }
+      // Kopia — kolejne koalescje mutują bufor, nie obiekt już wysłany na żywo.
+      replay.events.push({ ...event });
+      return;
+    }
+    replay.events.push(event);
+  };
 
   // `onEvent` to transport callera; `emitter` zasila GET /api/chat/stream/:threadId.
   const emit = (event: TurnEvent) => {
     input.onEvent(event);
     emitter.emit('event', event);
+    bufferForReplay(event);
   };
   emit({ type: 'connected', requestId, threadId: thread.id });
 
@@ -300,8 +361,12 @@ export async function runAgentTurn(
     }
 
     const pageCount = isBrief ? 0 : countPages(await deps.pagesService.listTree());
+    // 0.1.51: language directives travel the same path as writingStyle — read from
+    // config per-turn here, NOT via architectureConfig. Effective only from the first
+    // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
+    const cfg = readConfig(deps.cwd);
     const systemPrompt = buildSystemPrompt({
-      projectName: readConfig(deps.cwd).name,
+      projectName: cfg.name,
       cwd: deps.cwd,
       pagesDir: deps.pagesDir,
       currentPagePath: currentPage,
@@ -316,6 +381,8 @@ export async function runAgentTurn(
       planToolsAvailable: !isBrief,
       c4sToolsAvailable: !isBrief,
       writingStyle,
+      specLanguage: cfg.language ?? undefined,
+      conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       contextType: thread.contextType,
       brief: briefSnapshot,
       patch: patchSnapshot,
@@ -505,7 +572,9 @@ export async function runAgentTurn(
     } else {
       turnErr = new AgentTurnError('AGENT_ERROR', err instanceof Error ? err.message : String(err));
     }
-    input.onEvent({ type: 'error', code: turnErr.code, error: turnErr.message });
+    // `emit` (nie samo `input.onEvent`) — error musi trafić też do emittera/bufora,
+    // żeby klient wznawiający przez `joinStream` sfinalizował turę (reducer: isStreaming=false).
+    emit({ type: 'error', code: turnErr.code, error: turnErr.message });
     throw turnErr;
   } finally {
     try {

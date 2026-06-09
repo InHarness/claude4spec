@@ -155,6 +155,13 @@ export class RawEntityReader {
     return rows.map((r) => r.slug);
   }
 
+  /** Cheap row count for a type — used by `catalog`. */
+  count(type: RawEntityType): number {
+    const table = ENTITY_TABLES[type];
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
+    return row.c;
+  }
+
   listTags(): RawTag[] {
     const rows = this.db.prepare(`SELECT * FROM tag ORDER BY name`).all() as Array<{
       slug: string;

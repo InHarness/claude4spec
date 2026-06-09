@@ -1,12 +1,20 @@
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 
 interface SettingsCardProps {
   id: string;
   title: string;
   description?: string;
-  badge?: 'hot-reload' | 'restart-required';
+  badge?: 'hot-reload' | 'restart-required' | 'next-new-thread';
   children: ReactNode;
 }
+
+const BADGE_STYLE: Record<NonNullable<SettingsCardProps['badge']>, { label: string; style: CSSProperties }> = {
+  'hot-reload': { label: 'Hot reload', style: { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' } },
+  'restart-required': { label: 'Restart required', style: { background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' } },
+  // 0.1.51: hot-reload, but the change only takes effect from the first turn of the
+  // next NEW thread (the system prompt is rendered once and persisted per-thread).
+  'next-new-thread': { label: 'Next new thread', style: { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' } },
+};
 
 /**
  * Section card shared by all Settings sections. The `id` doubles as the hash
@@ -44,13 +52,9 @@ export function SettingsCard({ id, title, description, badge, children }: Settin
         {badge ? (
           <span
             className="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
-            style={
-              badge === 'hot-reload'
-                ? { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }
-                : { background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }
-            }
+            style={BADGE_STYLE[badge].style}
           >
-            {badge === 'hot-reload' ? 'Hot reload' : 'Restart required'}
+            {BADGE_STYLE[badge].label}
           </span>
         ) : null}
       </header>

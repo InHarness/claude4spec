@@ -84,7 +84,7 @@ export function createDtoToolsServer(deps: DtoToolsDeps): McpServerInstance {
 
   const updateDto = mcpTool(
     'update_dto',
-    'Update DTO fields (partial update). Only provided fields are changed. Use newSlug for explicit rename; otherwise slug auto-regenerates if name changes.',
+    'Update DTO fields (partial update). Only provided fields are changed. The slug is stable: changing name never moves it. Rename only via newSlug.',
     {
       slug: z.string(),
       data: z
@@ -98,7 +98,12 @@ export function createDtoToolsServer(deps: DtoToolsDeps): McpServerInstance {
             .describe('Full replace of examples array (not diff). Omit to leave unchanged.'),
         })
         .describe('Partial fields to update'),
-      newSlug: z.string().optional(),
+      newSlug: z
+        .string()
+        .optional()
+        .describe(
+          'Explicit slug rename. The slug is not re-generated automatically when name changes.'
+        ),
     },
     async (args) => {
       try {

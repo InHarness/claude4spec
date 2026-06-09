@@ -83,6 +83,8 @@ export interface ConfigResponse {
   pagesDir: string;
   mode: 'dev' | 'prod';
   writingStyle: string | null;
+  /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
+  language: string | null;
   onboarding: { completed: boolean };
   /** M21: catalog of brief files. */
   briefsDir: string;
@@ -90,8 +92,8 @@ export interface ConfigResponse {
   patchesDir: string;
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
-  /** M26: hot-reload Claude agent flags. */
-  agent: { claudeUsePreset: boolean };
+  /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage. */
+  agent: { claudeUsePreset: boolean; conversationalLanguage: string | null };
   /** M28: hot-reload git-sync toggles (always resolved; both default false). */
   git: { syncCommitOnRelease: boolean; syncPushOnPush: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
@@ -112,9 +114,12 @@ export interface ConfigPatch {
   patchesDir?: string;
   mode?: 'dev' | 'prod';
   writingStyle?: string | null;
+  /** 0.1.51: spec-authoring language; null or a SUPPORTED_LANGUAGES member. */
+  language?: string | null;
   onboardingCompleted?: boolean;
   entities?: string[];
-  agent?: { claudeUsePreset?: boolean };
+  /** 0.1.51: agent.conversationalLanguage deep-merged server-side (preserves claudeUsePreset). */
+  agent?: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
   /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
   git?: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
   remoteProjectId?: string | null;

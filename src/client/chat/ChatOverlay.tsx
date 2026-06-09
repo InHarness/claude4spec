@@ -44,6 +44,7 @@ export function ChatOverlay() {
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<ChatInputEditorHandle>(null);
+  const stickToBottomRef = useRef(true); // start: przyklejony do dołu
 
   const [hasInput, setHasInput] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
@@ -84,7 +85,6 @@ export function ChatOverlay() {
     isResuming,
     sendMessage,
     abort,
-    abortResume,
     usage,
     contextSize,
     pendingUserInputs,
@@ -224,10 +224,17 @@ export function ChatOverlay() {
 
   const showStreamingBubble = isBusy;
 
+  const handleListScroll = useCallback(() => {
+    const el = listRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 80;
+  }, []);
+
   useEffect(() => {
     const el = listRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [messages.length, isBusy, pendingUserInputs.length]);
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
+  }, [displayMessages, isBusy, pendingUserInputs.length]);
 
   // Idempotency-ref do auto-send: czytamy aktualną liczbę wiadomości w listenerze
   // bez re-rejestracji eventu przy każdej zmianie messages.
@@ -390,6 +397,7 @@ export function ChatOverlay() {
         {/* Message list — swap z <SystemPromptView /> gdy toggle aktywny */}
         <div
           ref={listRef}
+          onScroll={handleListScroll}
           className={`flex-1 overflow-auto nice-scroll ${systemPromptViewOpen ? '' : 'px-3 py-3'}`}
         >
           {systemPromptViewOpen ? (
@@ -621,7 +629,7 @@ export function ChatOverlay() {
               <span className="flex-1" />
               {isBusy ? (
                 <button
-                  onClick={isStreaming ? abort : () => void abortResume()}
+                  onClick={abort}
                   className="rounded-md px-2 py-1 text-[11.5px] inline-flex items-center gap-1"
                   style={{ background: 'var(--c-red-soft)', color: 'var(--c-red)' }}
                   title="Stop"

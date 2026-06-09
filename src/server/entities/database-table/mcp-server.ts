@@ -106,7 +106,7 @@ export function createDatabaseToolsServer(deps: DatabaseToolsDeps): McpServerIns
 
   const updateDatabaseTable = mcpTool(
     'update_database_table',
-    'Update database table fields (partial update). Only provided fields are changed. Renaming slug auto-propagates XML references in markdown and fk.table values in other tables.',
+    'Update database table fields (partial update). Only provided fields are changed. The slug is stable: changing name never moves it. Rename only via newSlug, which auto-propagates XML references in markdown and fk.table values in other tables.',
     {
       slug: z.string(),
       data: z
@@ -117,7 +117,12 @@ export function createDatabaseToolsServer(deps: DatabaseToolsDeps): McpServerIns
           indexes: z.array(indexSchema).optional(),
         })
         .describe('Partial fields to update'),
-      newSlug: z.string().optional(),
+      newSlug: z
+        .string()
+        .optional()
+        .describe(
+          'Explicit slug rename. The slug is not re-generated automatically when name changes.'
+        ),
     },
     async (args) => {
       try {

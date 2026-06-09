@@ -19,6 +19,7 @@ import { ReferencesService } from './services/references.js';
 import { ChatService } from './services/chat.js';
 import { SectionsService } from './services/sections.js';
 import { registerExtensionReferenceType } from '../shared/reference-extensions.js';
+import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../shared/languages.js';
 import { PlanService } from './services/plan.js';
 import { plansRouter } from './routes/plans.js';
 import { BriefService } from './services/brief.js';
@@ -289,6 +290,20 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       `config.json: writingStyle "${initialWritingStyle}" not a selectable writing-style skill. Available: ${available}`,
     );
   }
+  // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so
+  // a bogus display name never reaches the system prompt. PATCH /api/config enforces
+  // the same membership at runtime.
+  if (bootConfig.language !== null && !isSupportedLanguage(bootConfig.language)) {
+    throw new Error(
+      `config.json: language "${bootConfig.language}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}`,
+    );
+  }
+  const initialConvLang = bootConfig.agent?.conversationalLanguage ?? null;
+  if (initialConvLang !== null && !isSupportedLanguage(initialConvLang)) {
+    throw new Error(
+      `config.json: agent.conversationalLanguage "${initialConvLang}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}`,
+    );
+  }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
   const db: Db = openDb(cwd);
@@ -339,11 +354,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       pagesDir: c.pagesDir,
       mode,
       writingStyle: c.writingStyle,
+      language: c.language ?? null,
       onboarding: { completed: c.onboardingCompleted },
       briefsDir: c.briefsDir,
       patchesDir: c.patchesDir,
       entities: c.entities,
-      agent: { claudeUsePreset: c.agent?.claudeUsePreset ?? true },
+      agent: {
+        claudeUsePreset: c.agent?.claudeUsePreset ?? true,
+        conversationalLanguage: c.agent?.conversationalLanguage ?? null,
+      },
       git: {
         syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
         syncPushOnPush: c.git?.syncPushOnPush ?? false,
@@ -371,9 +390,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patchesDir: string;
         mode: 'dev' | 'prod';
         writingStyle: string | null;
+        language: string | null;
         onboardingCompleted: boolean;
         entities: string[];
-        agent: { claudeUsePreset?: boolean };
+        agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
         git: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
         remoteProjectId: string | null;
       }> = {};
@@ -442,6 +462,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         patch.writingStyle = body.writingStyle;
       }
 
+      if ('language' in body) {
+        if (body.language !== null && !isSupportedLanguage(body.language)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: `language "${String(body.language)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
+        }
+        patch.language = body.language;
+      }
+
       if ('onboardingCompleted' in body) {
         if (typeof body.onboardingCompleted !== 'boolean') {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'onboardingCompleted must be boolean' } });
@@ -462,13 +489,21 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent must be an object' } });
         }
         const ar = a as Record<string, unknown>;
-        const next: { claudeUsePreset?: boolean } = {};
+        const next: { claudeUsePreset?: boolean; conversationalLanguage?: string | null } = {};
         if ('claudeUsePreset' in ar) {
           if (typeof ar.claudeUsePreset !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.claudeUsePreset must be boolean' } });
           }
           next.claudeUsePreset = ar.claudeUsePreset;
         }
+        if ('conversationalLanguage' in ar) {
+          if (ar.conversationalLanguage !== null && !isSupportedLanguage(ar.conversationalLanguage)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `agent.conversationalLanguage "${String(ar.conversationalLanguage)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
+          }
+          next.conversationalLanguage = ar.conversationalLanguage;
+        }
+        // Only present subfields are forwarded; writeConfig deep-merges `agent`
+        // so the untouched field (e.g. claudeUsePreset) is preserved.
         patch.agent = next;
       }
 
@@ -512,11 +547,15 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         pagesDir: updated.pagesDir,
         mode,
         writingStyle: updated.writingStyle,
+        language: updated.language ?? null,
         onboarding: { completed: updated.onboardingCompleted },
         briefsDir: updated.briefsDir,
         patchesDir: updated.patchesDir,
         entities: updated.entities,
-        agent: { claudeUsePreset: updated.agent?.claudeUsePreset ?? true },
+        agent: {
+          claudeUsePreset: updated.agent?.claudeUsePreset ?? true,
+          conversationalLanguage: updated.agent?.conversationalLanguage ?? null,
+        },
         git: {
           syncCommitOnRelease: updated.git?.syncCommitOnRelease ?? false,
           syncPushOnPush: updated.git?.syncPushOnPush ?? false,

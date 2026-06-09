@@ -27,6 +27,10 @@ export interface SystemPromptInput {
    *  do not see this server. */
   c4sToolsAvailable?: boolean;
   writingStyle?: { slug: string; title: string } | null;
+  /** 0.1.51: config.language — display name; emits `<spec_language>` (chat/patch only, NOT brief). */
+  specLanguage?: string;
+  /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
+  conversationalLanguage?: string;
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
@@ -324,6 +328,31 @@ function buildProjectSkill(ws: { slug: string; title: string }): string {
 }
 
 /**
+ * 0.1.51: spec-authoring language directive (config.language). Emitted verbatim —
+ * `lang` is a display name from SUPPORTED_LANGUAGES. Chat/patch frames only; NOT the
+ * brief frame (a brief is a separate artifact governed by conversational language).
+ */
+function buildSpecLanguage(lang: string): string {
+  return [
+    `<spec_language>`,
+    `Write all specification content (pages, entity descriptions, briefs) in ${lang}. This governs the artifact, not necessarily your chat replies.`,
+    `</spec_language>`,
+  ].join('\n');
+}
+
+/**
+ * 0.1.51: conversational language directive (config.agent.conversationalLanguage).
+ * Emitted verbatim. Present in chat/patch AND brief frames.
+ */
+function buildConversationalLanguage(lang: string): string {
+  return [
+    `<conversational_language>`,
+    `Always communicate with the user in ${lang}, regardless of the language they write in.`,
+    `</conversational_language>`,
+  ].join('\n');
+}
+
+/**
  * M21 brief-context system prompt. Minimal frame: identity, brief-tools usage,
  * brief-author skill (genre — bundled), writing-style skill (methodology —
  * supplies workflows/brief.md), brief snapshot, optional annotations.
@@ -336,6 +365,7 @@ function buildBriefSystemPrompt(input: {
   brief: Brief | null;
   annotations: Annotation[];
   writingStyle: { slug: string; title: string } | null;
+  conversationalLanguage?: string;
 }): string {
   const parts: string[] = [];
   parts.push(
@@ -393,6 +423,11 @@ function buildBriefSystemPrompt(input: {
     ].join('\n'),
   );
   parts.push(BRIEF_TOOLS_USAGE);
+  // 0.1.51: only `<conversational_language>` in the brief frame — `<spec_language>`
+  // is omitted (it governs spec content; the brief is a separate artifact).
+  if (input.conversationalLanguage) {
+    parts.push(buildConversationalLanguage(input.conversationalLanguage));
+  }
   parts.push(buildProjectSkill({ slug: 'brief-author', title: 'Brief Author' }));
 
   // Writing-style skill supplies methodology-specific brief guidance
@@ -487,7 +522,7 @@ function buildCurrentPatch(patch: PatchResponse): string {
     `This thread exists to resolve the patch below — a coding agent in another`,
     `terminal filed it as feedback while implementing a brief. Read it, then`,
     `apply its findings to the specification (edit the relevant pages/entities).`,
-    `Once the spec reflects the patch, the author marks it \`status: completed\`.`,
+    `Once the spec reflects the patch, the agent marks it \`status: completed\`.`,
     ``,
     patch.content,
     `</current_patch>`,
@@ -511,6 +546,8 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     planToolsAvailable = false,
     c4sToolsAvailable = false,
     writingStyle = null,
+    specLanguage,
+    conversationalLanguage,
     contextType = 'chat',
     brief = null,
     patch = null,
@@ -521,7 +558,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // brief-tools usage, brief-author skill (genre) + writing-style skill
   // (methodology, supplies workflows/brief.md), and the brief snapshot.
   if (contextType === 'brief') {
-    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, writingStyle });
+    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, writingStyle, conversationalLanguage });
   }
 
   const parts: string[] = [];
@@ -558,6 +595,15 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (writingStyle) {
     parts.push(buildProjectSkill(writingStyle));
+  }
+
+  // 0.1.51 step 6a/6b: language directives, right after the project skill and before
+  // the patch/page blocks. Gated on non-null (display name from SUPPORTED_LANGUAGES).
+  if (specLanguage) {
+    parts.push(buildSpecLanguage(specLanguage));
+  }
+  if (conversationalLanguage) {
+    parts.push(buildConversationalLanguage(conversationalLanguage));
   }
 
   // M23: patch-resolution thread. The patch file (a coding agent's feedback

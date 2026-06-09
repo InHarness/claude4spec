@@ -156,8 +156,9 @@ export class UiViewService {
       if (!current) throw new DomainError('NOT_FOUND', `ui view '${slug}' not found`);
 
       const nextName = input.name ?? current.name;
-      const autoSlug = uiViewSlug(nextName);
-      const nextSlug = input.newSlug?.trim() || autoSlug;
+      // Slug jest stabilny: zmiana name nie przegenerowuje sluga.
+      // Rename wyłącznie przez jawny newSlug.
+      const nextSlug = input.newSlug?.trim() || current.slug;
 
       if (nextSlug !== slug) {
         const conflict = this.db.prepare(`SELECT 1 FROM ui_view WHERE slug = ?`).get(nextSlug);

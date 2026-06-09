@@ -8,7 +8,7 @@ import { writeOutput } from '../output.js';
 export function runCatalog(args: ParsedArgs): void {
   const ctx = createContext(args);
   try {
-    const catalog = ctx.registry.catalog(ctx.reader, ctx.db);
+    const catalog = ctx.registry.catalog(ctx.reader);
     writeOutput({ ...catalog, claude4spec: readPackageVersion() }, args);
   } finally {
     ctx.close();

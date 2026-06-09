@@ -118,7 +118,12 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
           tags: z.array(z.string()).optional(),
         })
         .describe('Partial fields to update'),
-      newSlug: z.string().optional(),
+      newSlug: z
+        .string()
+        .optional()
+        .describe(
+          'Explicit slug rename. The slug is not re-generated automatically when text changes.'
+        ),
     },
     async (args) => {
       try {

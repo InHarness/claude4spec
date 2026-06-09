@@ -38,7 +38,17 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
       const offset = req.query.offset ? Math.max(0, Number(req.query.offset)) : undefined;
       const result = chat.getThread(req.params.id, limit, offset);
       if (!result) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
-      res.json({ data: { ...result.thread, messages: result.messages, subagentTasks: result.subagentTasks } });
+      // `isLive`: czy tura serwerowa wciąż trwa — klient decyduje, czy wznawiać przez
+      // `joinStream` (zamiast zgadywać po `status` wierszy, który dla czystej tury
+      // tekstowej nie istnieje aż do flush na granicy).
+      res.json({
+        data: {
+          ...result.thread,
+          messages: result.messages,
+          subagentTasks: result.subagentTasks,
+          isLive: activeAdapters.has(req.params.id),
+        },
+      });
     } catch (err) {
       next(err);
     }

@@ -12,6 +12,7 @@ import { useEndpoints } from './hooks/useEndpoints.js';
 import { useDtos } from './hooks/useDtos.js';
 import { useDatabaseTables } from './hooks/useDatabaseTables.js';
 import { useUiViews } from './hooks/useUiViews.js';
+import { useAcs } from './hooks/useAcs.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
 import { NewDatabaseTablePopover } from './components/NewDatabaseTablePopover.js';
@@ -80,6 +81,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
   const { data: allDtos = [] } = useDtos();
   const { data: allDatabaseTables = [] } = useDatabaseTables();
   const { data: allUiViews = [] } = useUiViews();
+  const { data: allAcs = [] } = useAcs();
   const { data: todoCounts } = useTodosCounts();
   const { data: pageLinkCounts } = usePageLinksCounts();
   const write = useWritePage();
@@ -157,6 +159,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
             dto: allDtos.length,
             'database-table': allDatabaseTables.length,
             'ui-view': allUiViews.length,
+            ac: allAcs.length,
           }}
           todoCount={todoCounts?.total ?? 0}
           todoCountByPath={todoCounts?.byPath ?? {}}

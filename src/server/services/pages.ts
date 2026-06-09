@@ -131,24 +131,38 @@ export class PagesService {
 
   private async walk(dir: string, relPrefix: string): Promise<PageNode[]> {
     const entries = await fs.readdir(dir, { withFileTypes: true });
-    const nodes: PageNode[] = [];
+    // Children sort by frontmatter `order` ascending, then alphabetically by name.
+    // Folders and .html files carry no order (Infinity) — there is no folder-ordering
+    // mechanism and .html files are excluded from indexing.
+    const items: { node: PageNode; order: number }[] = [];
     for (const entry of entries) {
       if (entry.name.startsWith('.')) continue;
       const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         const children = await this.walk(path.join(dir, entry.name), rel);
-        nodes.push({ type: 'folder', name: entry.name, path: rel, children });
+        items.push({ node: { type: 'folder', name: entry.name, path: rel, children }, order: Infinity });
       } else if (entry.isFile() && entry.name.endsWith('.md')) {
-        nodes.push({ type: 'file', name: entry.name, path: rel, fileType: 'markdown' });
+        const order = await this.readOrder(path.join(dir, entry.name));
+        items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'markdown' }, order });
       } else if (entry.isFile() && entry.name.endsWith('.html')) {
         // M30: .html files are read-only previews served via /api/static/*.
-        nodes.push({ type: 'file', name: entry.name, path: rel, fileType: 'html' });
+        items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'html' }, order: Infinity });
       }
     }
-    nodes.sort((a, b) => {
-      if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-      return a.name.localeCompare(b.name);
-    });
-    return nodes;
+    items.sort((a, b) =>
+      a.order !== b.order ? a.order - b.order : a.node.name.localeCompare(b.node.name),
+    );
+    return items.map((i) => i.node);
+  }
+
+  /** Read the numeric `order` frontmatter from a markdown file; Infinity if absent/invalid. */
+  private async readOrder(abs: string): Promise<number> {
+    try {
+      const data = matter(await fs.readFile(abs, 'utf-8')).data as Record<string, unknown>;
+      const o = data?.['order'];
+      return typeof o === 'number' ? o : Infinity;
+    } catch {
+      return Infinity;
+    }
   }
 }

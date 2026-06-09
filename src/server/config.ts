@@ -29,6 +29,14 @@ export interface Config {
   entitiesDir: string;
   mode: 'dev' | 'prod';
   writingStyle: string | null;
+  /**
+   * 0.1.51: language the agent writes SPEC CONTENT in (pages, entity descriptions,
+   * briefs). Display name from `SUPPORTED_LANGUAGES` (src/shared/languages.ts) or
+   * `null` = no language directive (pre-0.1.51 behaviour). Top-level because it
+   * governs the produced artifact, not the conversation. Additive — no
+   * `$schemaVersion` bump; missing field = `null`.
+   */
+  language: string | null;
   onboardingCompleted: boolean;
   /**
    * Whitelist of active entity-plugin types (M13). Absent (undefined) =
@@ -77,6 +85,13 @@ export interface AgentConfig {
   // Brak pola = effective true (handler `POST /api/chat` resolveuje przez `?? true`).
   // Additive — bez bumpu `$schemaVersion`.
   claudeUsePreset?: boolean;
+  /**
+   * 0.1.51: language the agent REPLIES TO THE USER in (chat), regardless of the
+   * question's language. Display name from `SUPPORTED_LANGUAGES` or `null`/absent =
+   * no directive. Nested under `agent` because it governs chat behaviour, not the
+   * artifact. Additive — no `$schemaVersion` bump.
+   */
+  conversationalLanguage?: string | null;
 }
 
 export interface ConfigCliArgs {
@@ -108,6 +123,8 @@ export function defaults(cwd: string): Config {
     entitiesDir: '.claude4spec/entities',
     mode: 'prod',
     writingStyle: null,
+    // 0.1.51: brak dyrektywy jezykowej dla tresci spec (dotychczasowe zachowanie).
+    language: null,
     // Forward compat: brak pola w istniejacym configu = projekt sprzed M16,
     // traktowany jako ukonczony onboarding (zaden retroaktywny redirect).
     // Swiezy bootstrap nadpisuje to na false w loadOrCreateConfig.
@@ -182,6 +199,14 @@ function validate(raw: unknown): Partial<Config> {
     }
     out.writingStyle = r.writingStyle;
   }
+  if ('language' in r) {
+    // Type-only here (mirror writingStyle). Membership in SUPPORTED_LANGUAGES is
+    // enforced at the PATCH /api/config route (returns 400 inline).
+    if (r.language !== null && typeof r.language !== 'string') {
+      throw typeError('language', 'string | null', r.language);
+    }
+    out.language = r.language;
+  }
   if ('onboardingCompleted' in r) {
     if (typeof r.onboardingCompleted !== 'boolean') throw typeError('onboardingCompleted', 'boolean', r.onboardingCompleted);
     out.onboardingCompleted = r.onboardingCompleted;
@@ -231,6 +256,13 @@ function validate(raw: unknown): Partial<Config> {
         throw typeError('agent.claudeUsePreset', 'boolean', ar.claudeUsePreset);
       }
       agent.claudeUsePreset = ar.claudeUsePreset;
+    }
+    if ('conversationalLanguage' in ar) {
+      // Type-only here; membership enforced at PATCH /api/config route.
+      if (ar.conversationalLanguage !== null && typeof ar.conversationalLanguage !== 'string') {
+        throw typeError('agent.conversationalLanguage', 'string | null', ar.conversationalLanguage);
+      }
+      agent.conversationalLanguage = ar.conversationalLanguage;
     }
     out.agent = agent;
   }
@@ -369,6 +401,11 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
   // (shallow spread would replace the whole object and drop the untouched flag).
   if (validated.git) {
     merged.git = { ...current.git, ...validated.git };
+  }
+  // 0.1.51: same deep-merge precedent for `agent` — patching `conversationalLanguage`
+  // alone must preserve `claudeUsePreset` (and vice versa).
+  if (validated.agent) {
+    merged.agent = { ...current.agent, ...validated.agent };
   }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   return merged;
