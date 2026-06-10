@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Braces, Trash } from 'lucide-react';
 import { MethodBadge, METHOD_STYLE, TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
+import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useEndpoint,
   useDeleteEndpoint,
@@ -64,42 +65,14 @@ export function EndpointDetail({
   const { data: allDtos = [] } = useDtos();
   const { data: refs = [] } = useReferences('endpoint', endpoint?.slug ?? null);
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const baselineRef = useRef<string | null>(null);
-  const saveTimer = useRef<number | null>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
 
-  useEffect(() => {
-    if (!endpoint) return;
-    const next = toDraft(endpoint);
-    const snapshot = JSON.stringify(next);
-    if (baselineRef.current === snapshot) return;
-    baselineRef.current = snapshot;
-    setDraft(next);
-  }, [endpoint]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
-
-  const dirty = useMemo(() => {
-    if (!draft || !endpoint) return false;
-    return JSON.stringify(draft) !== baselineRef.current;
-  }, [draft, endpoint]);
-
-  function scheduleAutosave(next: Draft) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
-  }
-
-  async function runSave(current: Draft) {
-    if (!endpoint) return;
-    try {
+  const { draft, dirty, patch } = useEntityDraftEditor({
+    entity: endpoint,
+    toDraft,
+    save: async (current, ep) => {
       const updated = await update.mutateAsync({
-        slug: endpoint.slug,
+        slug: ep.slug,
         input: {
           method: current.method,
           path: current.path,
@@ -108,21 +81,10 @@ export function EndpointDetail({
           tags: current.tags,
         },
       });
-      baselineRef.current = JSON.stringify(toDraft(updated));
-      if (updated.slug !== endpoint.slug) onRenamed(updated.slug);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
-  }
-
-  function patch(partial: Partial<Draft>) {
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, ...partial };
-      scheduleAutosave(next);
-      return next;
-    });
-  }
+      if (updated.slug !== ep.slug) onRenamed(updated.slug);
+      return updated;
+    },
+  });
 
   async function handleDelete() {
     if (!endpoint) return;

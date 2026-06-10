@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Plus, Trash } from 'lucide-react';
 import { Braces } from 'lucide-react';
 import { MethodBadge, TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
+import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useDto, useDeleteDto, useUpdateDto } from '../../hooks/useDtos.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
@@ -49,42 +50,14 @@ export function DtoDetail({
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('dto', dto?.slug ?? null);
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const baselineRef = useRef<string | null>(null);
-  const saveTimer = useRef<number | null>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
 
-  useEffect(() => {
-    if (!dto) return;
-    const next = toDraft(dto);
-    const snapshot = JSON.stringify(next);
-    if (baselineRef.current === snapshot) return;
-    baselineRef.current = snapshot;
-    setDraft(next);
-  }, [dto]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
-
-  const dirty = useMemo(() => {
-    if (!draft || !dto) return false;
-    return JSON.stringify(draft) !== baselineRef.current;
-  }, [draft, dto]);
-
-  function scheduleAutosave(next: Draft) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
-  }
-
-  async function runSave(current: Draft) {
-    if (!dto) return;
-    try {
+  const { draft, dirty, patch } = useEntityDraftEditor({
+    entity: dto,
+    toDraft,
+    save: async (current, d) => {
       const updated = await update.mutateAsync({
-        slug: dto.slug,
+        slug: d.slug,
         input: {
           name: current.name,
           description: current.description || null,
@@ -93,21 +66,10 @@ export function DtoDetail({
           tags: current.tags,
         },
       });
-      baselineRef.current = JSON.stringify(toDraft(updated));
-      if (updated.slug !== dto.slug) onRenamed(updated.slug);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
-  }
-
-  function patch(partial: Partial<Draft>) {
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, ...partial };
-      scheduleAutosave(next);
-      return next;
-    });
-  }
+      if (updated.slug !== d.slug) onRenamed(updated.slug);
+      return updated;
+    },
+  });
 
   async function handleDelete() {
     if (!dto) return;

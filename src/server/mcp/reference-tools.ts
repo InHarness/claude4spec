@@ -14,7 +14,6 @@ import { findReferences as findReferencesCore } from '../../core/references/inde
 import { pagesServiceSource } from '../services/references.js';
 import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
-import type { PageNode } from '../../shared/types.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
 import type { AcService } from '../entities/ac/services.js';
 import type { EntityStore } from '../services/entity-store.js';
@@ -299,14 +298,9 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
           category: string;
         }> = [];
 
-        const tree = await deps.pagesService.listTree();
-        const pagePaths: string[] = [];
-        (function collect(nodes: PageNode[]) {
-          for (const n of nodes) {
-            if (n.type === 'file') pagePaths.push(n.path);
-            else if (n.children) collect(n.children);
-          }
-        })(tree);
+        // M30: only .md pages carry references; .html previews are excluded
+        // here (read() rejects non-.md paths via resolveSafe).
+        const pagePaths = await deps.pagesService.listMarkdownFiles();
 
         const categorise = (type: string): BrokenReferenceRow['category'] | 'active' => {
           if (pluginHost.getEntity(type)) return 'active';

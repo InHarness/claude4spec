@@ -5,9 +5,6 @@ import { useCreateBrief } from '../hooks/useBriefs.js';
 import { useReleases } from '../hooks/useReleases.js';
 import { useChatStore } from '../state/chat.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
-import { requestChatPrefill } from '../chat/chatPrefill.js';
-
-const ADDITIONAL_PROMPT_LS_KEY = 'c4s.briefs.lastAdditionalPrompt';
 
 /**
  * Sentinel value w `<select>` reprezentujacy "initial brief" (from_release = null).
@@ -34,12 +31,10 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   const navigate = useNavigate();
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
+  const setSeedPrompt = useChatStore((s) => s.setSeedPrompt);
 
   // Pusty string = nic nie wybrane; INITIAL_FROM_VALUE = initial brief; inny string = nazwa release.
   const [fromReleaseName, setFromReleaseName] = useState('');
-  const [additionalPrompt, setAdditionalPrompt] = useState(
-    () => localStorage.getItem(ADDITIONAL_PROMPT_LS_KEY) ?? '',
-  );
   const [suffix, setSuffix] = useState('');
   const [error, setError] = useState<string | null>(null);
 
@@ -52,38 +47,30 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
       return;
     }
     setError(null);
-    const ap = additionalPrompt.trim();
-    // Persist preset niezależnie od sukcesu POST — user wpisał wytyczne, chce
-    // żeby były pamiętane przy następnym otwarciu modala.
-    if (ap) {
-      localStorage.setItem(ADDITIONAL_PROMPT_LS_KEY, ap);
-    } else {
-      localStorage.removeItem(ADDITIONAL_PROMPT_LS_KEY);
-    }
     const isInitial = fromReleaseName === INITIAL_FROM_VALUE;
     const apiFromName = isInitial ? null : fromReleaseName;
     try {
       const result = await create.mutateAsync({
         fromReleaseName: apiFromName,
         toReleaseName,
-        additionalPrompt: ap || undefined,
         suffix: suffix.trim() || undefined,
       });
       onClose();
+      // Wypełniamy prompt w czacie bez wysyłki: setSeedPrompt ma priorytet w
+      // restore-draft effekcie ChatOverlay (czytany przy zmianie chatThreadId),
+      // więc nie ma race'a z handle.clear() jak przy requestChatPrefill. User
+      // wybiera model w ModelSettingsPopover (mutowalny, bo wątek bez sesji),
+      // ewentualnie dopisuje wytyczne, i sam wysyła pierwszą wiadomość.
+      const prompt = isInitial
+        ? `Generate an initial brief describing the state of ${toReleaseName} (first release of the project — no predecessor to compare against).`
+        : `Generate a brief for the changes ${fromReleaseName} → ${toReleaseName}.`;
+      setSeedPrompt(prompt);
       navigate({
         to: '/briefs/$path',
         params: { path: encodeBriefPath(result.briefPath) },
       });
       setChatThreadId(result.initialThreadId);
       setChatOpen(true);
-      // Skleć boilerplate z additionalPrompt jako dodatkową sekcją (patrz brief
-      // v0.1.9 → v0.1.10 punkt „For implementers" #7). autoSend=true: ChatOverlay
-      // wyśle wiadomość do agenta od razu, bez czekania na manualny send.
-      const baseLine = isInitial
-        ? `Wygeneruj initial brief opisujacy stan ${toReleaseName} (pierwszy release projektu — bez poprzednika do porownania).`
-        : `Wygeneruj brief dla zmian ${fromReleaseName} → ${toReleaseName}.`;
-      const prompt = ap ? `${baseLine}\n\n## Dodatkowe wytyczne\n${ap}` : baseLine;
-      requestChatPrefill({ prompt, autoSend: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -162,27 +149,6 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
           </label>
 
           <label className="block">
-            <span style={{ color: 'var(--c-muted)' }}>Dodatkowy prompt (opcjonalne)</span>
-            <textarea
-              value={additionalPrompt}
-              onChange={(e) => setAdditionalPrompt(e.target.value)}
-              placeholder="po polsku, dla juniora, ton formalny"
-              rows={3}
-              className="mt-1 w-full rounded-md px-2 py-1.5 text-[12.5px]"
-              style={{
-                background: 'var(--c-card)',
-                border: '1px solid var(--c-hair)',
-                color: 'var(--c-ink)',
-                resize: 'vertical',
-                fontFamily: 'inherit',
-              }}
-            />
-            <span className="mt-1 block text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-              język, audytorium, ton, ad-hoc wytyczne — doklejony do pierwszej wiadomości do agenta. Nie zapisywany w briefie.
-            </span>
-          </label>
-
-          <label className="block">
             <span style={{ color: 'var(--c-muted)' }}>Filename suffix (optional)</span>
             <input
               type="text"
@@ -220,7 +186,7 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
             className="px-3 py-1.5 rounded text-[12.5px]"
             style={{ background: 'var(--c-accent)', color: '#fff', opacity: create.isPending ? 0.6 : 1 }}
           >
-            {create.isPending ? 'Generating…' : 'Generate brief'}
+            {create.isPending ? 'Preparing…' : 'Prepare brief'}
           </button>
         </div>
       </form>

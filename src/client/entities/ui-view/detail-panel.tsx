@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Monitor, Plus, Trash } from 'lucide-react';
 import { TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
+import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDeleteUiView,
   useUiView,
@@ -96,43 +97,15 @@ export function UiViewDetail({
   const { data: allViews = [] } = useUiViews();
   const { data: refs = [] } = useReferences('ui-view', view?.slug ?? null);
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const baselineRef = useRef<string | null>(null);
-  const saveTimer = useRef<number | null>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!view) return;
-    const next = toDraft(view);
-    const snapshot = JSON.stringify(next);
-    if (baselineRef.current === snapshot) return;
-    baselineRef.current = snapshot;
-    setDraft(next);
-  }, [view]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
-
-  const dirty = useMemo(() => {
-    if (!draft || !view) return false;
-    return JSON.stringify(draft) !== baselineRef.current;
-  }, [draft, view]);
-
-  function scheduleAutosave(next: Draft) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
-  }
-
-  async function runSave(current: Draft) {
-    if (!view) return;
-    try {
+  const { draft, dirty, patch } = useEntityDraftEditor({
+    entity: view,
+    toDraft,
+    save: async (current, v) => {
       const updated = await update.mutateAsync({
-        slug: view.slug,
+        slug: v.slug,
         input: {
           name: current.name,
           url: current.url.trim() ? current.url.trim() : null,
@@ -141,22 +114,11 @@ export function UiViewDetail({
           tags: current.tags,
         },
       });
-      baselineRef.current = JSON.stringify(toDraft(updated));
       setWarnings(updated.warnings ?? []);
-      if (updated.slug !== view.slug) onRenamed(updated.slug);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
-  }
-
-  function patch(partial: Partial<Draft>) {
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, ...partial };
-      scheduleAutosave(next);
-      return next;
-    });
-  }
+      if (updated.slug !== v.slug) onRenamed(updated.slug);
+      return updated;
+    },
+  });
 
   async function handleDelete() {
     if (!view) return;

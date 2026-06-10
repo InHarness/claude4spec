@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Database, Key, Plus, Trash } from 'lucide-react';
 import { TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
+import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDatabaseTable,
   useDatabaseTables,
@@ -74,48 +75,15 @@ export function DatabaseTableDetail({
   const { data: allTables = [] } = useDatabaseTables();
   const { data: refs = [] } = useReferences('database-table', dbTable?.slug ?? null);
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const baselineRef = useRef<string | null>(null);
-  const saveTimer = useRef<number | null>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
 
-  useEffect(() => {
-    if (!dbTable) return;
-    const next = toDraft(dbTable);
-    const snapshot = JSON.stringify(next);
-    if (baselineRef.current === snapshot) return;
-    baselineRef.current = snapshot;
-    setDraft(next);
-  }, [dbTable]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
-
-  const dirty = useMemo(() => {
-    if (!draft || !dbTable) return false;
-    return JSON.stringify(draft) !== baselineRef.current;
-  }, [draft, dbTable]);
-
-  const knownTableSlugs = useMemo(
-    () => new Set(allTables.map((t) => t.slug)),
-    [allTables]
-  );
-
-  function scheduleAutosave(next: Draft) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
-  }
-
-  async function runSave(current: Draft) {
-    if (!dbTable) return;
-    try {
+  const { draft, dirty, patch } = useEntityDraftEditor({
+    entity: dbTable,
+    toDraft,
+    save: async (current, table) => {
       const updated = await update.mutateAsync({
-        slug: dbTable.slug,
+        slug: table.slug,
         input: {
           name: current.name,
           description: current.description || null,
@@ -124,22 +92,16 @@ export function DatabaseTableDetail({
           tags: current.tags,
         },
       });
-      baselineRef.current = JSON.stringify(toDraft(updated));
       setWarnings(updated.warnings ?? []);
-      if (updated.slug !== dbTable.slug) onRenamed(updated.slug);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
-  }
+      if (updated.slug !== table.slug) onRenamed(updated.slug);
+      return updated;
+    },
+  });
 
-  function patch(partial: Partial<Draft>) {
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, ...partial };
-      scheduleAutosave(next);
-      return next;
-    });
-  }
+  const knownTableSlugs = useMemo(
+    () => new Set(allTables.map((t) => t.slug)),
+    [allTables]
+  );
 
   async function handleDelete() {
     if (!dbTable) return;

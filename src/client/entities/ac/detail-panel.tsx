@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Trash, CheckSquare, X } from 'lucide-react';
 import { TagChip } from '../../components/atoms.js';
 import { DocEditor } from '../../components/DocEditor.js';
+import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useAc, useDeleteAc, useUpdateAc } from '../../hooks/useAcs.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
@@ -56,50 +57,15 @@ export function AcDetail({
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('ac', ac?.slug ?? null);
 
-  const [draft, setDraft] = useState<Draft | null>(null);
-  const baselineRef = useRef<string | null>(null);
-  const saveTimer = useRef<number | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showTagPicker, setShowTagPicker] = useState(false);
 
-  useLayoutEffect(() => {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${el.scrollHeight}px`;
-  }, [draft?.text]);
-
-  useEffect(() => {
-    if (!ac) return;
-    const next = toDraft(ac);
-    const snapshot = JSON.stringify(next);
-    if (baselineRef.current === snapshot) return;
-    baselineRef.current = snapshot;
-    setDraft(next);
-  }, [ac]);
-
-  useEffect(
-    () => () => {
-      if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    },
-    [],
-  );
-
-  const dirty = useMemo(() => {
-    if (!draft || !ac) return false;
-    return JSON.stringify(draft) !== baselineRef.current;
-  }, [draft, ac]);
-
-  function scheduleAutosave(next: Draft) {
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(() => void runSave(next), 500);
-  }
-
-  async function runSave(current: Draft) {
-    if (!ac) return;
-    try {
+  const { draft, dirty, patch } = useEntityDraftEditor({
+    entity: ac,
+    toDraft,
+    save: async (current, a) => {
       const updated = await update.mutateAsync({
-        slug: ac.slug,
+        slug: a.slug,
         input: {
           text: current.text,
           kind: current.kind,
@@ -109,21 +75,17 @@ export function AcDetail({
           tags: current.tags,
         },
       });
-      baselineRef.current = JSON.stringify(toDraft(updated));
-      if (updated.slug !== ac.slug) onRenamed(updated.slug);
-    } catch (err) {
-      console.error('autosave failed', err);
-    }
-  }
+      if (updated.slug !== a.slug) onRenamed(updated.slug);
+      return updated;
+    },
+  });
 
-  function patch(partial: Partial<Draft>) {
-    setDraft((d) => {
-      if (!d) return d;
-      const next = { ...d, ...partial };
-      scheduleAutosave(next);
-      return next;
-    });
-  }
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft?.text]);
 
   async function handleDelete() {
     if (!ac) return;
