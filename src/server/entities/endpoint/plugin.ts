@@ -1,5 +1,4 @@
-import { pluginHost } from '../../core/plugin-host/host.js';
-import type { BackendModule } from '../../core/plugin-host/types.js';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { endpointSlug } from '../../services/slug.js';
 import { endpointSerializer } from './serializer.js';
@@ -24,7 +23,7 @@ export const endpointBackendModule: BackendModule = {
   backend: {
     mount(ctx) {
       const service = new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
-      ctx.app.use(`/api${endpointBackendModule.pathPrefix}`, endpointsRouter(service, ctx.referencesService));
+      ctx.app.use(`${endpointBackendModule.pathPrefix}`, endpointsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${endpointBackendModule.type}-tools`,
         () => createEndpointToolsServer({
@@ -38,4 +37,7 @@ export const endpointBackendModule: BackendModule = {
   },
 };
 
-pluginHost.registerBackendModule(endpointBackendModule);
+/** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(endpointBackendModule);
+}

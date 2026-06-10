@@ -1,5 +1,6 @@
-import fs from 'node:fs';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
+import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/resolve.js';
 
 /**
  * `runAsk(...)` — single source of truth for the `c4s ask` flow.
@@ -20,6 +21,8 @@ export interface AskParams {
   message: string;
   /** Local path do `.claude4spec/` peera; mutex z `server`. */
   project?: string;
+  /** M31: workspace selector — required when the project is in N workspaces. */
+  workspace?: string;
   /** Override discovery URL serwera peera; gdy podany razem z `project` — `server` wygrywa. */
   server?: string;
   /** Default `'chat'`. Ignorowany gdy podano `threadId`. */
@@ -37,6 +40,8 @@ export interface AskResult {
 
 export type AskErrorCode =
   | 'PROJECT_NOT_FOUND'
+  | 'AMBIGUOUS_WORKSPACE'
+  | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'
   | 'NOT_FOUND'
@@ -60,18 +65,51 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
     throw new AskError('INVALID_ARGS', 'message is required');
   }
 
-  // --- discovery: adres serwera -------------------------------------------
-  // `server` wygrywa nad `project`; oba undefined → walk-up od cwd.
+  // --- discovery: adres serwera + project-id ------------------------------
+  // M31: discovery przez rejestr workspace'ow (`defaultPort`), nie przez
+  // config.json (port wyprowadzil sie z configu w v3). Kazdy URL dostaje
+  // prefiks `/api/projects/<id>` — peer servuje N projektow.
   let baseUrl: string;
+  let projectId: string;
   if (params.server) {
     baseUrl = params.server.replace(/\/+$/, '');
+    // `--server` bez resolvable projektu → wymagaj `--project` (id liczy sie
+    // z absolutnej sciezki projektu, tak jak rejestruje go peer).
+    try {
+      const resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
+      projectId = resolved.projectId;
+    } catch (err) {
+      if (err instanceof WorkspaceResolveError && params.project) {
+        // Sciezka podana wprost, ale nieznana lokalnemu rejestrowi (zdalny
+        // peer) — id wyprowadzamy z samej sciezki.
+        projectId = projectIdForPath(params.project);
+      } else if (err instanceof WorkspaceResolveError) {
+        throw new AskError(
+          'INVALID_ARGS',
+          '--server requires --project <path> when no local workspace owns the current directory',
+          'the project id in the URL prefix derives from the project path',
+        );
+      } else {
+        throw err;
+      }
+    }
   } else {
-    const projectDir = resolveProjectByConfig(params.project);
-    baseUrl = `http://localhost:${readConfigPort(projectDir)}`;
+    let resolved;
+    try {
+      resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
+    } catch (err) {
+      if (err instanceof WorkspaceResolveError) {
+        throw new AskError(err.code, err.message, err.hint);
+      }
+      throw err;
+    }
+    baseUrl = `http://localhost:${resolved.defaultPort}`;
+    projectId = resolved.projectId;
   }
+  const apiBase = `${baseUrl}/api/projects/${projectId}`;
 
   // --- health-check tozsamosci --------------------------------------------
-  await healthCheck(baseUrl);
+  await healthCheck(baseUrl, apiBase);
 
   // --- create-thread (context-specific) — pomijany dla threadId ----------
   let threadId: string;
@@ -97,16 +135,16 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
         throw new AskError('INVALID_ARGS', "contextType='brief' requires briefPath");
       }
       const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
-      const created = await postJson(`${baseUrl}/api/briefs/${encoded}/threads`, {});
+      const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
       threadId = pickThreadId(created);
     } else {
-      const created = await postJson(`${baseUrl}/api/threads`, {});
+      const created = await postJson(`${apiBase}/threads`, {});
       threadId = pickThreadId(created);
     }
   }
 
   // --- run-turn (generyczny po context_type) ------------------------------
-  const result = await postJson(`${baseUrl}/api/threads/${encodeURIComponent(threadId)}/ask`, {
+  const result = await postJson(`${apiBase}/threads/${encodeURIComponent(threadId)}/ask`, {
     message,
   });
   const answer = typeof result.answer === 'string' ? result.answer : '';
@@ -114,65 +152,31 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
   return { threadId: outThreadId, answer };
 }
 
-/** Walk-up do `.claude4spec/config.json`; `ask` nie czyta encji, wystarczy port. */
-function resolveProjectByConfig(override?: string): string {
-  const hasConfig = (dir: string) =>
-    fs.existsSync(path.join(dir, '.claude4spec', 'config.json'));
-  if (override) {
-    const abs = path.resolve(process.cwd(), override);
-    if (!hasConfig(abs)) {
-      throw new AskError(
-        'PROJECT_NOT_FOUND',
-        `no claude4spec project at ${abs}`,
-        'check the path or run `npx claude4spec` there first',
-      );
-    }
-    return abs;
-  }
-  let dir = process.cwd();
-  while (true) {
-    if (hasConfig(dir)) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) {
-      throw new AskError(
-        'PROJECT_NOT_FOUND',
-        'no claude4spec project found in current directory or any parent',
-        'run `npx claude4spec` first or pass project path',
-      );
-    }
-    dir = parent;
-  }
-}
-
-function readConfigPort(projectDir: string): number {
-  const file = path.join(projectDir, '.claude4spec', 'config.json');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (err) {
-    throw new AskError('PROJECT_NOT_FOUND', `cannot read ${file}: ${(err as Error).message}`);
-  }
-  const port = (parsed as { port?: unknown }).port;
-  if (typeof port !== 'number') {
-    throw new AskError('PROJECT_NOT_FOUND', `config.json has no numeric "port" (${file})`);
-  }
-  return port;
+/** M31: project id = sha1(abs path).slice(0,12) — same derivation as the registry. */
+function projectIdForPath(project: string): string {
+  // Lazy import-free copy of projectIdForCwd to keep run-ask dependency-light:
+  // resolveWorkspaceProject already covers the registry path; this branch only
+  // serves `--server` + explicit `--project` for a remote peer.
+  return createHashHex(path.resolve(process.cwd(), project)).slice(0, 12);
 }
 
 /**
- * Health-check tozsamosci: `GET /api/config` musi zwrocic ksztalt configu
- * claude4spec. Trzy rozlaczne wyniki: connection refused → SERVER_NOT_RUNNING;
- * odpowiedz spoza configu → SERVER_NOT_RECOGNIZED; poprawny config → OK.
+ * M31 health-check tozsamosci: `GET /api/projects/<id>/config` musi zwrocic
+ * ksztalt configu claude4spec v3. Cztery rozlaczne wyniki:
+ *   connection refused      → SERVER_NOT_RUNNING
+ *   nie-c4s ksztalt          → SERVER_NOT_RECOGNIZED
+ *   404 z koperta c4s        → PROJECT_NOT_IN_WORKSPACE
+ *   200 config               → OK
  */
-async function healthCheck(baseUrl: string): Promise<void> {
+async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   let res: Response;
   try {
-    res = await fetch(`${baseUrl}/api/config`);
+    res = await fetch(`${apiBase}/config`);
   } catch {
     throw new AskError(
       'SERVER_NOT_RUNNING',
       `no claude4spec server responding at ${baseUrl}`,
-      'start it with `npx claude4spec` in the project',
+      'start it with `npx @inharness-ai/claude4spec` in the project',
     );
   }
   let body: unknown;
@@ -184,22 +188,36 @@ async function healthCheck(baseUrl: string): Promise<void> {
       `process at ${baseUrl} responded but not with a claude4spec config`,
     );
   }
-  if (!isConfigShape(body)) {
+  if (res.status === 404 && isC4sErrorEnvelope(body)) {
+    const err = (body as { error: { code?: string; message?: string } }).error;
+    throw new AskError(
+      'PROJECT_NOT_IN_WORKSPACE',
+      err.message ?? `project not registered in the workspace served at ${baseUrl}`,
+      'register it: POST /api/workspace/projects or run `npx @inharness-ai/claude4spec` in the project',
+    );
+  }
+  if (!res.ok || !isConfigShape(body)) {
     throw new AskError(
       'SERVER_NOT_RECOGNIZED',
-      `process at ${baseUrl} is not a claude4spec server (unexpected GET /api/config shape)`,
+      `process at ${baseUrl} is not a claude4spec server (unexpected GET ${apiBase}/config shape)`,
     );
   }
 }
 
+function isC4sErrorEnvelope(body: unknown): boolean {
+  if (!body || typeof body !== 'object') return false;
+  const e = (body as { error?: unknown }).error;
+  return !!e && typeof e === 'object' && typeof (e as { code?: unknown }).code === 'string';
+}
+
+/** M31 v3 shape — no port/mode anymore; entitiesDir is required. */
 function isConfigShape(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false;
   const c = body as Record<string, unknown>;
   return (
     typeof c.name === 'string' &&
-    typeof c.port === 'number' &&
     typeof c.pagesDir === 'string' &&
-    typeof c.mode === 'string' &&
+    typeof c.entitiesDir === 'string' &&
     'writingStyle' in c &&
     !!c.onboarding &&
     typeof c.onboarding === 'object'
@@ -242,4 +260,8 @@ function pickThreadId(created: Record<string, unknown>): string {
     throw new AskError('AGENT_ERROR', 'create-thread response had no thread id');
   }
   return id;
+}
+
+function createHashHex(input: string): string {
+  return createHash('sha1').update(input).digest('hex');
 }

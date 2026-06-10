@@ -1,8 +1,7 @@
 import type { RawSection } from '../../domain/raw-entity-reader.js';
-import { serializationEngine } from '../../core/plugin-host/serialization-engine.js';
 import type { EntitySerializer } from '../types.js';
 
-const sectionSerializer: EntitySerializer<RawSection> = {
+const serializer: EntitySerializer<RawSection> = {
   type: 'section',
   version: '1.0.0',
 
@@ -26,4 +25,8 @@ const sectionSerializer: EntitySerializer<RawSection> = {
   }),
 };
 
-serializationEngine.attachSectionSerializer(sectionSerializer as EntitySerializer<unknown>);
+/**
+ * M31: exported instead of attached to a singleton — every SerializationEngine
+ * instance (per ProjectContext, per CLI process) receives it via constructor.
+ */
+export const sectionSerializer = serializer as EntitySerializer<unknown>;

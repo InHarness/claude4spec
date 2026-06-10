@@ -1,14 +1,14 @@
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import type { TodoHit } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 
 export class TodosIndexerService {
   private debounceMs = 300;
   private pending = new Map<string, NodeJS.Timeout>();
   private byPath = new Map<string, TodoHit[]>();
 
-  constructor(private pages: PagesService, private ws: WsGateway) {}
+  constructor(private pages: PagesService, private ws: WsEmitter) {}
 
   schedulePage(relPath: string): void {
     const prev = this.pending.get(relPath);

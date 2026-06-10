@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { API_BASE } from '../lib/api-core.js';
 import { ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 import { useHtmlViewerStore } from '../state/htmlViewer.js';
 
@@ -29,7 +30,7 @@ export function HtmlViewer({ path }: Props) {
   }, [path, setExpanded]);
 
   // Encode each path segment so spaces / unicode resolve, while keeping `/` separators.
-  const src = `/api/static/${segments.map(encodeURIComponent).join('/')}`;
+  const src = `${API_BASE}/static/${segments.map(encodeURIComponent).join('/')}`;
 
   const frame = (
     <iframe

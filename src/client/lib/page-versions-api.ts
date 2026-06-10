@@ -1,4 +1,4 @@
-import { handle } from './api-core.js';
+import { handle, apiFetch } from './api-core.js';
 
 export interface PageVersionListItemClient {
   id: number;
@@ -27,12 +27,12 @@ function encodePath(p: string): string {
 
 export const pageVersionsApi = {
   async list(path: string): Promise<PageVersionListItemClient[]> {
-    const res = await fetch(`/api/pages/${encodePath(path)}?versions=true`);
+    const res = await apiFetch(`/api/pages/${encodePath(path)}?versions=true`);
     const data = await handle<{ path: string; versions: PageVersionListItemClient[] }>(res);
     return data.versions;
   },
   async get(path: string, version: number): Promise<PageVersionDetailClient> {
-    const res = await fetch(
+    const res = await apiFetch(
       `/api/pages/${encodePath(path)}?versionDetail=${encodeURIComponent(String(version))}`,
     );
     return handle<PageVersionDetailClient>(res);

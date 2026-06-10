@@ -28,6 +28,7 @@ export function buildC4sToolsServer(): McpServerInstance {
     {
       message: z.string(),
       project: z.string().optional(),
+      workspace: z.string().optional(),
       server: z.string().optional(),
       contextType: z.enum(['chat', 'brief', 'patch']).optional(),
       threadId: z.string().optional(),
@@ -38,6 +39,7 @@ export function buildC4sToolsServer(): McpServerInstance {
         const result = await runAsk({
           message: String(input.message ?? ''),
           project: typeof input.project === 'string' ? input.project : undefined,
+          workspace: typeof input.workspace === 'string' ? input.workspace : undefined,
           server: typeof input.server === 'string' ? input.server : undefined,
           contextType:
             typeof input.contextType === 'string'

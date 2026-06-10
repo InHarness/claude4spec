@@ -17,7 +17,11 @@ export type CliErrorCode =
   | 'AGENT_UNAVAILABLE'
   | 'AGENT_ERROR'
   | 'TIMEOUT'
-  | 'ABORTED';
+  | 'ABORTED'
+  // M31 workspace model — registry-based resolution + per-project URL prefix.
+  | 'AMBIGUOUS_WORKSPACE'
+  | 'INDEX_NOT_MATERIALIZED'
+  | 'PROJECT_NOT_IN_WORKSPACE';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

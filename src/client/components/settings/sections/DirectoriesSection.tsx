@@ -5,28 +5,27 @@ import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 
 interface DraftState {
-  port: string;
   pagesDir: string;
   briefsDir: string;
   patchesDir: string;
+  entitiesDir: string;
 }
 
 function buildDraft(config: ReturnType<typeof useConfig>['data']): DraftState {
   return {
-    port: String(config?.port ?? ''),
     pagesDir: config?.pagesDir ?? '',
     briefsDir: config?.briefsDir ?? '',
     patchesDir: config?.patchesDir ?? '',
+    entitiesDir: config?.entitiesDir ?? '',
   };
 }
 
 /**
- * M26 §1, §2 — restart-required fields. Save builds a single PATCH covering
- * only the fields that diverged from the loaded config. `usePatchConfig`
- * stamps the localStorage marker so the global "Restart required" banner
- * lights up after a successful save.
+ * M31 (was M26 "Server"): project directory layout. Port/mode moved to the
+ * workspace registry; directory changes rebuild the project context on the
+ * next request — no restart, no banner.
  */
-export function ServerSection() {
+export function DirectoriesSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
   const [draft, setDraft] = useState<DraftState>(() => buildDraft(config));
@@ -39,29 +38,24 @@ export function ServerSection() {
     if (!config) return false;
     const baseline = buildDraft(config);
     return (
-      draft.port !== baseline.port ||
       draft.pagesDir !== baseline.pagesDir ||
       draft.briefsDir !== baseline.briefsDir ||
-      draft.patchesDir !== baseline.patchesDir
+      draft.patchesDir !== baseline.patchesDir ||
+      draft.entitiesDir !== baseline.entitiesDir
     );
   })();
 
   async function handleSave() {
     if (!config) return;
     const patchBody: ConfigPatch = {};
-    const portNum = Number(draft.port);
-    if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
-      toast.error('Port must be an integer in [1, 65535]');
-      return;
-    }
-    if (portNum !== config.port) patchBody.port = portNum;
     if (draft.pagesDir !== config.pagesDir) patchBody.pagesDir = draft.pagesDir;
     if (draft.briefsDir !== config.briefsDir) patchBody.briefsDir = draft.briefsDir;
     if (draft.patchesDir !== config.patchesDir) patchBody.patchesDir = draft.patchesDir;
+    if (draft.entitiesDir !== config.entitiesDir) patchBody.entitiesDir = draft.entitiesDir;
     if (Object.keys(patchBody).length === 0) return;
     try {
       await patch.mutateAsync(patchBody);
-      toast.success('Server settings saved — restart to apply');
+      toast.success('Directories saved');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Save failed');
     }
@@ -69,25 +63,11 @@ export function ServerSection() {
 
   return (
     <SettingsCard
-      id="server"
-      title="Server"
-      description="Process-level settings — applied on next server start."
-      badge="restart-required"
+      id="directories"
+      title="Directories"
+      description="Project directory layout — applied immediately (the project context rebuilds on the next request)."
     >
       <div className="flex flex-col gap-4">
-        <Field label="Port">
-          <input
-            type="number"
-            inputMode="numeric"
-            min={1}
-            max={65535}
-            value={draft.port}
-            onChange={(e) => setDraft((d) => ({ ...d, port: e.target.value }))}
-            className="w-full rounded-md px-3 py-1.5 text-[13px]"
-            style={inputStyle}
-          />
-        </Field>
-
         <DirField
           label="Pages directory"
           value={draft.pagesDir}
@@ -102,6 +82,11 @@ export function ServerSection() {
           label="Patches directory"
           value={draft.patchesDir}
           onChange={(v) => setDraft((d) => ({ ...d, patchesDir: v }))}
+        />
+        <DirField
+          label="Entities directory"
+          value={draft.entitiesDir}
+          onChange={(v) => setDraft((d) => ({ ...d, entitiesDir: v }))}
         />
 
         <div className="flex justify-end">

@@ -50,6 +50,7 @@ import { usePageViewStore } from './state/pageView.js';
 import type { EntityType } from '../shared/entities.js';
 import type { PageNode } from '../shared/types.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
+import { PROJECT_ID } from './lib/api-core.js';
 
 /**
  * Resolve a TanStack Router navigate target for an entity type/slug pair via
@@ -301,6 +302,9 @@ export function createAppRouter(queryClient: QueryClient) {
     routeTree,
     context: { queryClient },
     defaultPreload: 'intent',
+    // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
+    // basepath-relative ('/pages/$', '/settings', …).
+    basepath: PROJECT_ID ? `/p/${PROJECT_ID}` : '/',
   });
 }
 

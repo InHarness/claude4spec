@@ -4,7 +4,7 @@ import type {
   AcListQuery,
   AcUpdateInput,
 } from '../../../shared/entities.js';
-import { handle } from '../../lib/api-core.js';
+import { handle, apiFetch } from '../../lib/api-core.js';
 
 export const acsApi = {
   async list(query: AcListQuery = {}): Promise<Ac[]> {
@@ -17,17 +17,17 @@ export const acsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ acs: Ac[] }>(await fetch(`/api/acs${q}`));
+    const data = await handle<{ acs: Ac[] }>(await apiFetch(`/api/acs${q}`));
     return data.acs;
   },
 
   async get(slug: string): Promise<Ac> {
-    return handle<Ac>(await fetch(`/api/acs/${encodeURIComponent(slug)}`));
+    return handle<Ac>(await apiFetch(`/api/acs/${encodeURIComponent(slug)}`));
   },
 
   async create(input: AcCreateInput): Promise<Ac> {
     return handle<Ac>(
-      await fetch('/api/acs', {
+      await apiFetch('/api/acs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -37,7 +37,7 @@ export const acsApi = {
 
   async update(slug: string, input: AcUpdateInput): Promise<Ac> {
     return handle<Ac>(
-      await fetch(`/api/acs/${encodeURIComponent(slug)}`, {
+      await apiFetch(`/api/acs/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -47,7 +47,7 @@ export const acsApi = {
 
   async remove(slug: string): Promise<{ deleted: true }> {
     return handle<{ deleted: true }>(
-      await fetch(`/api/acs/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
+      await apiFetch(`/api/acs/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
     );
   },
 };

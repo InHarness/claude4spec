@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import { findResumeViolations } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import {
-  activeAdapters,
   runAgentTurn,
   AgentTurnError,
   ALLOWED_MODELS,
@@ -14,6 +13,8 @@ import {
 export function threadsRouter(deps: AgentTurnDeps): Router {
   const router = Router();
   const chat = deps.chatService;
+  // M31: per-project adapter registry via agentDeps.
+  const { activeAdapters } = deps;
 
   router.get('/', (_req, res, next) => {
     try {

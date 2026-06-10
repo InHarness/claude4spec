@@ -17,7 +17,7 @@
 import type Database from 'better-sqlite3';
 import type { EntityStore } from './entity-store.js';
 import type { EntitiesWatcher } from '../fs/entities-watcher.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { TagsService } from './tags.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
@@ -43,7 +43,7 @@ export class EntityIndexerService {
     private db: Database.Database,
     private store: EntityStore,
     private watcher: EntitiesWatcher,
-    private ws: WsGateway,
+    private ws: WsEmitter,
     private host: PluginHost,
     private tags: TagsService,
     private reader: RawEntityReader,

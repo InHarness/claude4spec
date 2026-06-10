@@ -58,7 +58,6 @@ export interface BundleConfig {
   $schemaVersion: number;
   name: string;
   pagesDir: string;
-  mode: 'dev' | 'prod';
   writingStyle: string | null;
   onboardingCompleted: boolean;
   entities?: string[];
@@ -127,7 +126,6 @@ export function sanitizeConfigForBundle(config: Config): BundleConfig {
     $schemaVersion: config.$schemaVersion,
     name: config.name,
     pagesDir: config.pagesDir,
-    mode: config.mode,
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,

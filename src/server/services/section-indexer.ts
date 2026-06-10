@@ -5,8 +5,8 @@ import { parseXmlTags, parseXmlTagsExcludingCode } from '../../shared/xml-tags.j
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
-import type { WsGateway } from '../ws/gateway.js';
-import { pluginHost } from '../core/plugin-host/host.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -42,7 +42,8 @@ export class SectionIndexerService {
     private db: Database.Database,
     private pages: PagesService,
     private watcher: PagesWatcher,
-    private ws: WsGateway,
+    private ws: WsEmitter,
+    private host: ProjectPluginHost,
   ) {}
 
   schedulePage(relPath: string): void {
@@ -193,7 +194,7 @@ export class SectionIndexerService {
               seen.add(key);
               // M29: link by slug (sole identity); only persist for entities
               // that actually exist, mirroring the prior id-resolver guard.
-              if (pluginHost.entityExists(type, slug)) linkStmt.run(s.anchor, type, slug);
+              if (this.host.entityExists(type, slug)) linkStmt.run(s.anchor, type, slug);
             }
           }
         }

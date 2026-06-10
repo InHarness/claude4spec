@@ -4,7 +4,7 @@ import type {
   BriefFrontmatterUpdateRequest,
 } from '../../shared/entities.js';
 import { briefsApi, encodeBriefPath } from '../lib/briefs-api.js';
-import { handle } from '../lib/api-core.js';
+import { handle, apiFetch } from '../lib/api-core.js';
 
 const keys = {
   list: (implemented?: boolean) => ['briefs', 'list', implemented ?? null] as const,
@@ -99,7 +99,7 @@ export function useBriefVersions(briefPath: string | null) {
     enabled: !!briefPath,
     queryKey: keys.versions(briefPath ?? ''),
     queryFn: async () => {
-      const res = await fetch(`/api/briefs/${encodeBriefPath(briefPath as string)}/versions`);
+      const res = await apiFetch(`/api/briefs/${encodeBriefPath(briefPath as string)}/versions`);
       const env = await handle<{ data: BriefVersionListItem[] }>(res);
       return env.data;
     },

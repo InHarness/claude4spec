@@ -58,7 +58,7 @@ c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <br
 
 Continue the same thread with \`c4s ask "..." --thread <threadId>\` (the
 \`threadId\` is printed with the answer). This path requires \`c4s\` installed
-*and* a running \`npx claude4spec\` server. When either is unavailable, skip it.
+*and* a running \`npx @inharness-ai/claude4spec\` server. When either is unavailable, skip it.
 
 **Asynchronous (always available).** If you cannot ask synchronously, proceed
 with your best judgement and file a patch afterwards (step 4) so the

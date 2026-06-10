@@ -4,7 +4,6 @@ import path from 'node:path';
 export interface Config {
   $schemaVersion: number;
   name: string;
-  port: number;
   pagesDir: string;
   /**
    * M21: catalog of brief files (relative to cwd, default `.claude4spec/briefs`).
@@ -27,7 +26,6 @@ export interface Config {
    * pre-M29 configs = treated as default. Additive — no `$schemaVersion` bump.
    */
   entitiesDir: string;
-  mode: 'dev' | 'prod';
   writingStyle: string | null;
   /**
    * 0.1.51: language the agent writes SPEC CONTENT in (pages, entity descriptions,
@@ -96,17 +94,21 @@ export interface AgentConfig {
 
 export interface ConfigCliArgs {
   name?: string;
-  port?: number;
   pagesDir?: string;
-  mode?: 'dev' | 'prod';
   /**
-   * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `port`/`name` —
+   * M01 (0.1.36): `--remote-url <url>` maps here. Sticky like `name` —
    * persisted to `config.json` on first bootstrap, then drives M24/M27 base URL.
    */
   remoteApiUrl?: string | null;
 }
 
-export const CURRENT_SCHEMA_VERSION = 2;
+/**
+ * v3 (M31): `port`/`mode` left the project config — they are workspace
+ * settings now (`~/.claude4spec/workspaces.json`). Stale keys in older files
+ * are silently ignored on read (same tolerance as v1→v2) and physically
+ * removed by `migrateConfigToV3` at project activation.
+ */
+export const CURRENT_SCHEMA_VERSION = 3;
 
 export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');
@@ -116,12 +118,10 @@ export function defaults(cwd: string): Config {
   return {
     $schemaVersion: CURRENT_SCHEMA_VERSION,
     name: path.basename(cwd),
-    port: 4500,
     pagesDir: 'pages',
     briefsDir: '.claude4spec/briefs',
     patchesDir: '.claude4spec/patches',
     entitiesDir: '.claude4spec/entities',
-    mode: 'prod',
     writingStyle: null,
     // 0.1.51: brak dyrektywy jezykowej dla tresci spec (dotychczasowe zachowanie).
     language: null,
@@ -167,10 +167,8 @@ function validate(raw: unknown): Partial<Config> {
     if (typeof r.name !== 'string') throw typeError('name', 'string', r.name);
     out.name = r.name;
   }
-  if ('port' in r) {
-    if (typeof r.port !== 'number') throw typeError('port', 'number', r.port);
-    out.port = r.port;
-  }
+  // 'port' / 'mode' (pre-v3) are intentionally NOT validated nor copied —
+  // stale keys are silently ignored, physically removed by migrateConfigToV3.
   if ('pagesDir' in r) {
     if (typeof r.pagesDir !== 'string') throw typeError('pagesDir', 'string', r.pagesDir);
     out.pagesDir = r.pagesDir;
@@ -186,12 +184,6 @@ function validate(raw: unknown): Partial<Config> {
   if ('entitiesDir' in r) {
     if (typeof r.entitiesDir !== 'string') throw typeError('entitiesDir', 'string', r.entitiesDir);
     out.entitiesDir = r.entitiesDir;
-  }
-  if ('mode' in r) {
-    if (r.mode !== 'dev' && r.mode !== 'prod') {
-      throw new Error(`config.json: field 'mode' expected 'dev' | 'prod', got ${JSON.stringify(r.mode)}`);
-    }
-    out.mode = r.mode;
   }
   if ('writingStyle' in r) {
     if (r.writingStyle !== null && typeof r.writingStyle !== 'string') {
@@ -342,10 +334,10 @@ export function readConfig(cwd: string): Config {
     throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
   }
   const loaded = validate(parsed);
-  // Auto-bump v1 → v2 in memory (M13 spec): projects from before plugin host
-  // load with `entities` undefined which means "all plugins active" — same
-  // behaviour, new schema. Persisted on next PATCH /api/config.
-  if (loaded.$schemaVersion === 1) {
+  // Auto-bump older schemas in memory (v1→v2: `entities` undefined = all
+  // plugins active; v2→v3: stale port/mode ignored). Physical rewrite happens
+  // in migrateConfigToV3 (activation hook) or on the next PATCH /api/config.
+  if (loaded.$schemaVersion != null && loaded.$schemaVersion < CURRENT_SCHEMA_VERSION) {
     loaded.$schemaVersion = CURRENT_SCHEMA_VERSION;
   }
   return { ...base, ...loaded };
@@ -375,12 +367,64 @@ export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult 
     throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
   }
   const loaded = validate(parsed);
-  // Auto-bump v1 → v2 in memory — same logic as readConfig.
-  if (loaded.$schemaVersion === 1) {
+  // Auto-bump older schemas in memory — same logic as readConfig.
+  if (loaded.$schemaVersion != null && loaded.$schemaVersion < CURRENT_SCHEMA_VERSION) {
     loaded.$schemaVersion = CURRENT_SCHEMA_VERSION;
   }
   const effective: Config = { ...base, ...loaded, ...cliDefined };
   return { config: effective, created: false, path: file };
+}
+
+export interface MigrateV3Result {
+  config: Config;
+  /** True iff this call rewrote config.json on disk. */
+  migrated: boolean;
+  /** Values harvested from the pre-v3 file — destined for the workspace registry (first-wins). */
+  carried: { defaultPort?: number; mode?: 'dev' | 'prod' };
+}
+
+/**
+ * M31 config v3 migration — runs from the project activation hook (NOT at
+ * process start). Harvests `port`/`mode` from the raw JSON (they move to the
+ * workspace registry), deletes them, bumps `$schemaVersion` to 3 and ensures
+ * `entitiesDir` is materialized. Atomic write; no-op when already v3-shaped.
+ */
+export function migrateConfigToV3(cwd: string): MigrateV3Result {
+  const file = configPath(cwd);
+  const carried: MigrateV3Result['carried'] = {};
+  if (!fs.existsSync(file)) {
+    return { config: readConfig(cwd), migrated: false, carried };
+  }
+  const text = fs.readFileSync(file, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('config.json: expected JSON object at root');
+  }
+  const raw = parsed as Record<string, unknown>;
+
+  const alreadyV3 =
+    typeof raw.$schemaVersion === 'number' &&
+    raw.$schemaVersion >= CURRENT_SCHEMA_VERSION &&
+    !('port' in raw) &&
+    !('mode' in raw) &&
+    typeof raw.entitiesDir === 'string';
+  if (alreadyV3) {
+    return { config: readConfig(cwd), migrated: false, carried };
+  }
+
+  if (typeof raw.port === 'number' && Number.isInteger(raw.port)) carried.defaultPort = raw.port;
+  if (raw.mode === 'dev' || raw.mode === 'prod') carried.mode = raw.mode;
+  delete raw.port;
+  delete raw.mode;
+  raw.$schemaVersion = CURRENT_SCHEMA_VERSION;
+  if (typeof raw.entitiesDir !== 'string') raw.entitiesDir = '.claude4spec/entities';
+  atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
+  return { config: readConfig(cwd), migrated: true, carried };
 }
 
 /**

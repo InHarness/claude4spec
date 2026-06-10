@@ -432,6 +432,17 @@ body {
 .dot-pulse span:nth-child(2) { animation-delay: 0.15s; }
 .dot-pulse span:nth-child(3) { animation-delay: 0.3s; }
 
+/* skeleton loading bars */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+.skeleton {
+  background: var(--c-hair);
+  border-radius: 4px;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+
 /* JSON-view button on tool card bars */
 .tool-json-btn {
   transition: background 0.15s ease, color 0.15s ease;

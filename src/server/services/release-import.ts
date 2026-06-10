@@ -262,14 +262,18 @@ export function rollbackClone(
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
+    /** M31: the workspace DB slot dir — db.sqlite lives there, not in cwd. */
+    dbSlotDir?: string;
   },
 ): void {
   const rm = (p: string): void => fs.rmSync(p, { recursive: true, force: true });
   const claudeDir = path.join(cwd, '.claude4spec');
   // db.sqlite + WAL sidecars — always run-created (the empty-target guard forbids a
-  // pre-existing db.sqlite). Deleted explicitly so the case where .claude4spec/
-  // pre-existed (and so is kept below) is still covered.
-  for (const f of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm']) rm(path.join(claudeDir, f));
+  // pre-existing db.sqlite). M31: the DB lives in the workspace slot; the legacy
+  // cwd location is still cleared for safety.
+  for (const dir of [claudeDir, ...(opts.dbSlotDir ? [opts.dbSlotDir] : [])]) {
+    for (const f of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm']) rm(path.join(dir, f));
+  }
   // pages/ + restored files — ensureBootstrap is skipped for clone, so pages/ is
   // wholly a restore mutation of this run.
   rm(path.join(cwd, opts.pagesDir));

@@ -5,7 +5,7 @@ import type {
   EndpointListQuery,
   EndpointUpdateInput,
 } from '../../../shared/entities.js';
-import { handle } from '../../lib/api-core.js';
+import { handle, apiFetch } from '../../lib/api-core.js';
 
 export const endpointsApi = {
   async list(query: EndpointListQuery = {}): Promise<Endpoint[]> {
@@ -16,17 +16,17 @@ export const endpointsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ endpoints: Endpoint[] }>(await fetch(`/api/endpoints${q}`));
+    const data = await handle<{ endpoints: Endpoint[] }>(await apiFetch(`/api/endpoints${q}`));
     return data.endpoints;
   },
 
   async get(slug: string): Promise<Endpoint> {
-    return handle<Endpoint>(await fetch(`/api/endpoints/${encodeURIComponent(slug)}`));
+    return handle<Endpoint>(await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`));
   },
 
   async create(input: EndpointCreateInput): Promise<Endpoint> {
     return handle<Endpoint>(
-      await fetch('/api/endpoints', {
+      await apiFetch('/api/endpoints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -36,7 +36,7 @@ export const endpointsApi = {
 
   async update(slug: string, input: EndpointUpdateInput): Promise<Endpoint> {
     return handle<Endpoint>(
-      await fetch(`/api/endpoints/${encodeURIComponent(slug)}`, {
+      await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -46,7 +46,7 @@ export const endpointsApi = {
 
   async remove(slug: string): Promise<{ deleted: true }> {
     return handle<{ deleted: true }>(
-      await fetch(`/api/endpoints/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+      await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`, { method: 'DELETE' })
     );
   },
 
@@ -57,7 +57,7 @@ export const endpointsApi = {
     statusCode: number | null = null
   ): Promise<Endpoint> {
     return handle<Endpoint>(
-      await fetch(`/api/endpoints/${encodeURIComponent(slug)}/dtos`, {
+      await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}/dtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ dtoSlug, relation, statusCode }),
@@ -76,6 +76,6 @@ export const endpointsApi = {
       window.location.origin
     );
     if (statusCode !== null) url.searchParams.set('statusCode', String(statusCode));
-    return handle<Endpoint>(await fetch(url.pathname + url.search, { method: 'DELETE' }));
+    return handle<Endpoint>(await apiFetch(url.pathname + url.search, { method: 'DELETE' }));
   },
 };

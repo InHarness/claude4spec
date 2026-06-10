@@ -2,14 +2,14 @@ import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/
 import { z } from 'zod';
 import type { EndpointService } from './services.js';
 import type { ReferencesService } from '../../services/references.js';
-import type { WsGateway } from '../../ws/gateway.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
 import type { EndpointDtoRelation, HttpMethod } from '../../../shared/entities.js';
 
 export interface EndpointToolsDeps {
   endpointService: EndpointService;
   referencesService: ReferencesService;
-  ws: WsGateway;
+  ws: WsEmitter;
 }
 
 export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerInstance {

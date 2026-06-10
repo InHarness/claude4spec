@@ -1,5 +1,4 @@
-import { pluginHost } from '../../core/plugin-host/host.js';
-import type { BackendModule } from '../../core/plugin-host/types.js';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import { acSlug } from '../../services/slug.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { acSerializer } from './serializer.js';
@@ -20,8 +19,8 @@ export const acBackendModule: BackendModule = {
   systemPrompt: acSystemPrompt,
   backend: {
     mount(ctx) {
-      const service = new AcService(ctx.db, ctx.tagsService, ctx.versionService, pluginHost, ctx.entityStore);
-      ctx.app.use(`/api${acBackendModule.pathPrefix}`, acsRouter(service, ctx.referencesService));
+      const service = new AcService(ctx.db, ctx.tagsService, ctx.versionService, ctx.host, ctx.entityStore);
+      ctx.app.use(`${acBackendModule.pathPrefix}`, acsRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${acBackendModule.type}-tools`,
         () => createAcToolsServer({
@@ -30,7 +29,7 @@ export const acBackendModule: BackendModule = {
           ws: ctx.ws,
           db: ctx.db,
           cwd: ctx.cwd,
-          host: pluginHost,
+          host: ctx.host,
         }),
       );
       ctx.registerEntityService(acBackendModule.type, service);
@@ -38,4 +37,7 @@ export const acBackendModule: BackendModule = {
   },
 };
 
-pluginHost.registerBackendModule(acBackendModule);
+/** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(acBackendModule);
+}

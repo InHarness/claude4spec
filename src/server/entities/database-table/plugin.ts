@@ -1,5 +1,4 @@
-import { pluginHost } from '../../core/plugin-host/host.js';
-import type { BackendModule } from '../../core/plugin-host/types.js';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { databaseTableSlug } from '../../services/slug.js';
 import { databaseTableSerializer } from './serializer.js';
@@ -22,7 +21,7 @@ export const databaseTableBackendModule: BackendModule = {
     mount(ctx) {
       const service = new DatabaseTableService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(
-        `/api${databaseTableBackendModule.pathPrefix}`,
+        `${databaseTableBackendModule.pathPrefix}`,
         databaseTablesRouter(service, ctx.referencesService, ctx.ws),
       );
       ctx.registerMcpServer(
@@ -38,4 +37,7 @@ export const databaseTableBackendModule: BackendModule = {
   },
 };
 
-pluginHost.registerBackendModule(databaseTableBackendModule);
+/** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(databaseTableBackendModule);
+}

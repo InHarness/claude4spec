@@ -3,11 +3,9 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import { startServer } from '../server/index.js';
-import { BOOTSTRAP_TEMPLATE } from './bootstrap-template.js';
-import { ensureExternalSkills } from '../server/external-skills/external-skills-service.js';
-import { ensureMcpJson } from '../server/mcp/ensure-mcp-json.js';
-import { loadOrCreateConfig } from '../server/config.js';
-import { ensureGitignore } from './gitignore.js';
+import { migrateConfigToV3 } from '../server/config.js';
+import { WorkspaceRegistry } from '../server/workspace/registry.js';
+import { bootstrapProject } from '../server/workspace/bootstrap.js';
 
 interface CliArgs {
   port?: number;
@@ -15,6 +13,8 @@ interface CliArgs {
   pagesDir?: string;
   mode?: 'dev' | 'prod';
   name?: string;
+  /** M31: workspace selector (`--workspace <name>`); absent = port/default resolution. */
+  workspace?: string;
   noOpen: boolean;
   /** M27: `--clone <slug>` — bootstrap-time clone of a published remote project. */
   clone?: string;
@@ -33,6 +33,7 @@ function parseArgs(argv: string[]): CliArgs {
     pagesDir: undefined,
     mode: undefined,
     name: undefined,
+    workspace: undefined,
     noOpen: false,
     clone: undefined,
     remoteUrl: undefined,
@@ -64,6 +65,10 @@ function parseArgs(argv: string[]): CliArgs {
       args.name = argv[++i];
     } else if (a?.startsWith('--name=')) {
       args.name = a.split('=')[1];
+    } else if (a === '--workspace' && argv[i + 1]) {
+      args.workspace = argv[++i];
+    } else if (a?.startsWith('--workspace=')) {
+      args.workspace = a.split('=')[1];
     } else if (a === '--clone' && argv[i + 1]) {
       args.clone = argv[++i];
     } else if (a?.startsWith('--clone=')) {
@@ -101,16 +106,6 @@ function assertCloneTargetEmpty(cwd: string): void {
   }
 }
 
-function ensureBootstrap(cwd: string, pagesDir: string | undefined): void {
-  const pagesPath = path.join(cwd, pagesDir ?? 'pages');
-  fs.mkdirSync(pagesPath, { recursive: true });
-  const indexPath = path.join(pagesPath, 'index.md');
-  if (fs.existsSync(indexPath)) return;
-  const existing = fs.readdirSync(pagesPath).filter((name) => !name.startsWith('.'));
-  if (existing.length > 0) return;
-  fs.writeFileSync(indexPath, BOOTSTRAP_TEMPLATE, 'utf8');
-}
-
 function openBrowser(url: string): void {
   const { platform } = process;
   const [cmd, ...rest] =
@@ -130,60 +125,65 @@ function openBrowser(url: string): void {
   }
 }
 
-const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl } = parseArgs(process.argv.slice(2));
+const args = parseArgs(process.argv.slice(2));
+const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl } = args;
 fs.mkdirSync(cwd, { recursive: true });
 // M27 step 6a: validate the clone target is empty before any remote call / DB open.
 if (clone) assertCloneTargetEmpty(cwd);
-// M27 (0.1.37): capture pre-bootstrap state for clone rollback — `.claude4spec/`
-// is created lazily by loadOrCreateConfig/openDb, so check existence BEFORE it.
-const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude4spec'));
-const { config: effective, created: configCreated, path: configFilePath } = loadOrCreateConfig(cwd, {
-  name,
-  port,
-  pagesDir,
-  mode,
-  // M01 (0.1.36): `--remote-url` is sticky — persisted on first bootstrap, then
-  // resolved (flag > config.json > prod constant) in startServer.
-  remoteApiUrl: remoteUrl,
+
+// M31: workspace select-or-create. Peek the config-v3 migration FIRST so a
+// pre-v3 `config.json.port` can still select the right workspace when no
+// --port/--workspace flag is given (first-wins carry happens in bootstrap).
+const registry = new WorkspaceRegistry();
+const peeked = migrateConfigToV3(cwd);
+const workspace = registry.selectOrCreate({
+  name: args.workspace,
+  port: port ?? peeked.carried.defaultPort,
+  mode: mode ?? peeked.carried.mode,
 });
-// M27 (0.1.37): capture whether .gitignore pre-existed BEFORE ensureGitignore —
-// ensureGitignore creates it if absent, else only appends. Clone rollback deletes
-// it only when this run created it (never a user's pre-existing .gitignore).
-const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
-ensureGitignore(cwd);
-// When cloning, the restored pages/ populate the project — skip the welcome page
-// (writing index.md first would also violate the empty-target precondition).
-if (!clone) ensureBootstrap(cwd, effective.pagesDir);
-ensureExternalSkills(cwd);
-ensureMcpJson({ projectAbsPath: cwd });
+
+// M31: full per-project activation (config, gitignore, welcome page, skills,
+// mcp.json, registry registration, legacy-db relocation).
+const boot = bootstrapProject(registry, workspace, cwd, {
+  name,
+  pagesDir,
+  remoteApiUrl: remoteUrl,
+  skipWelcome: Boolean(clone),
+});
+
+const effectivePort = port ?? workspace.defaultPort;
+const effectiveMode = mode ?? workspace.mode;
 
 startServer({
   cwd,
-  port: effective.port,
-  pagesDir: effective.pagesDir,
-  mode: effective.mode,
+  workspace,
+  port: effectivePort,
+  pagesDir,
+  mode: effectiveMode,
   // Raw CLI --name only (undefined unless explicitly passed) — consumed solely as
   // the M27 clone name override, where an explicit --name wins over the bundle's
-  // config.name. effective.name (cwd-basename default) must NOT shadow it.
+  // config.name.
   name,
   clone,
   // Resolved flag > config.json > null; startServer applies the prod-constant
   // fallback inside RemoteHttpClient.
-  remoteApiUrl: effective.remoteApiUrl,
+  remoteApiUrl: boot.config.remoteApiUrl,
   // M27 (0.1.37): drive the clone full-rollback — delete config.json / .claude4spec/
-  // only if THIS run created them (step 3 created the dir iff it didn't pre-exist).
-  configCreated,
-  claudeDirCreated: !claudeDirExisted,
-  gitignoreCreated: !gitignoreExisted,
+  // only if THIS run created them.
+  configCreated: boot.configCreated,
+  claudeDirCreated: boot.claudeDirCreated,
+  gitignoreCreated: boot.gitignoreCreated,
 })
   .then((handle) => {
-    console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${handle.url}\x1b[0m`);
+    const projectUrl = `${handle.url}/p/${boot.project.id}/`;
+    console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
+    console.log(`  workspace: ${workspace.name}`);
     console.log(`  cwd: ${cwd}`);
-    console.log(`  pages: ${effective.pagesDir}`);
-    console.log(`  config: ${configFilePath}${configCreated ? ' (created)' : ''}`);
+    console.log(`  pages: ${pagesDir ?? boot.config.pagesDir}`);
+    console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
     console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
 
-    if (!noOpen && effective.mode === 'prod') openBrowser(handle.url);
+    if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
 
     const close = async () => {
       console.log('\n  shutting down…');

@@ -5,6 +5,8 @@ export interface ParsedArgs {
   positional: string[];
   flags: Map<string, string | boolean>;
   project?: string;
+  /** M31: workspace selector — disambiguates a cwd registered in N workspaces. */
+  workspace?: string;
   format: 'json' | 'text';
   compact: boolean;
   sortKeys: boolean;
@@ -66,6 +68,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
   if (result.flags.get('sort-keys') === true) result.sortKeys = true;
   const project = result.flags.get('project');
   if (typeof project === 'string') result.project = project;
+  const workspace = result.flags.get('workspace');
+  if (typeof workspace === 'string') result.workspace = workspace;
 
   return result;
 }

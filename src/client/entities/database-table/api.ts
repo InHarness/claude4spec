@@ -5,7 +5,7 @@ import type {
   DatabaseTableListQuery,
   DatabaseTableUpdateInput,
 } from '../../../shared/entities.js';
-import { handle } from '../../lib/api-core.js';
+import { handle, apiFetch } from '../../lib/api-core.js';
 
 export interface DatabaseTableWithWarnings extends DatabaseTable {
   warnings?: string[];
@@ -21,20 +21,20 @@ export const databaseTablesApi = {
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
     const data = await handle<{ databaseTables: DatabaseTable[] }>(
-      await fetch(`/api/database-tables${q}`)
+      await apiFetch(`/api/database-tables${q}`)
     );
     return data.databaseTables;
   },
 
   async get(slug: string): Promise<DatabaseTable> {
     return handle<DatabaseTable>(
-      await fetch(`/api/database-tables/${encodeURIComponent(slug)}`)
+      await apiFetch(`/api/database-tables/${encodeURIComponent(slug)}`)
     );
   },
 
   async create(input: DatabaseTableCreateInput): Promise<DatabaseTableWithWarnings> {
     return handle<DatabaseTableWithWarnings>(
-      await fetch('/api/database-tables', {
+      await apiFetch('/api/database-tables', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -47,7 +47,7 @@ export const databaseTablesApi = {
     input: DatabaseTableUpdateInput
   ): Promise<DatabaseTableWithWarnings> {
     return handle<DatabaseTableWithWarnings>(
-      await fetch(`/api/database-tables/${encodeURIComponent(slug)}`, {
+      await apiFetch(`/api/database-tables/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -59,7 +59,7 @@ export const databaseTablesApi = {
     slug: string
   ): Promise<{ deleted: true; danglingFks: DatabaseTableDanglingFk[] }> {
     return handle<{ deleted: true; danglingFks: DatabaseTableDanglingFk[] }>(
-      await fetch(`/api/database-tables/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+      await apiFetch(`/api/database-tables/${encodeURIComponent(slug)}`, { method: 'DELETE' })
     );
   },
 };

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
@@ -191,7 +192,7 @@ export function ChatOverlay() {
     if (willOpen && !(chatThreadId in systemPromptCache)) {
       setSystemPromptLoading(true);
       try {
-        const res = await fetch(`/api/threads/${chatThreadId}/system-prompt`);
+        const res = await apiFetch(`/api/threads/${chatThreadId}/system-prompt`);
         if (!res.ok) return;
         const payload = (await res.json()) as { data: { initialSystemPrompt: string | null } };
         setSystemPromptCache((prev) => ({
@@ -211,7 +212,7 @@ export function ChatOverlay() {
       setPlanMode(next);
       if (!chatThreadId) return;
       try {
-        await fetch(`/api/threads/${chatThreadId}`, {
+        await apiFetch(`/api/threads/${chatThreadId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ planMode: next }),

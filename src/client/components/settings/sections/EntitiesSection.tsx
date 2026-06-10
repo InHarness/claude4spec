@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { ApiError, metaApi } from '../../../lib/api.js';
@@ -15,6 +15,7 @@ import { SettingsCard } from '../SettingsCard.js';
 export function EntitiesSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
+  const qc = useQueryClient();
   // The plugin host is populated at module load (via side-effect imports in
   // `core/plugin-host/registerAll`). `listAvailable()` returns a fresh array
   // each call, so we memoize once per mount to keep effect deps stable.
@@ -52,7 +53,18 @@ export function EntitiesSection() {
     if (!isDirty()) return;
     try {
       await patch.mutateAsync({ entities: Array.from(draft) });
-      toast.success('Active entities saved — restart to apply');
+      // M31: the server rebuilds the project context on the next request — no
+      // restart. Re-fetch the activation partition and re-apply it live; if the
+      // live re-apply leaves stale UI, a full reload is the safe fallback.
+      try {
+        const activation = await metaApi.entities();
+        clientPluginHost.applyActivation(activation);
+        qc.invalidateQueries();
+      } catch {
+        window.location.reload();
+        return;
+      }
+      toast.success('Active entities saved');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Save failed');
     }
@@ -62,8 +74,7 @@ export function EntitiesSection() {
     <SettingsCard
       id="entities"
       title="Entities"
-      description="Which entity plugins are active. Disabling a type hides it from the sidebar after a restart."
-      badge="restart-required"
+      description="Which entity plugins are active. Disabling a type hides it from the sidebar immediately."
     >
       <div className="flex flex-col gap-2">
         {available.length === 0 ? (

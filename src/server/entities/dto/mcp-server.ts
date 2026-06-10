@@ -2,14 +2,14 @@ import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/
 import { z } from 'zod';
 import type { DtoService } from './services.js';
 import type { ReferencesService } from '../../services/references.js';
-import type { WsGateway } from '../../ws/gateway.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
 import type { DtoExample, DtoField } from '../../../shared/entities.js';
 
 export interface DtoToolsDeps {
   dtoService: DtoService;
   referencesService: ReferencesService;
-  ws: WsGateway;
+  ws: WsEmitter;
 }
 
 export function createDtoToolsServer(deps: DtoToolsDeps): McpServerInstance {

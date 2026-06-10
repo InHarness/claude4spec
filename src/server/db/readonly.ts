@@ -1,9 +1,12 @@
 import Database from 'better-sqlite3';
 import fs from 'node:fs';
-import path from 'node:path';
 
 export class ReadonlyDbError extends Error {
-  constructor(public code: 'PROJECT_NOT_FOUND' | 'SCHEMA_OUT_OF_DATE', message: string, public hint?: string) {
+  constructor(
+    public code: 'PROJECT_NOT_FOUND' | 'SCHEMA_OUT_OF_DATE' | 'INDEX_NOT_MATERIALIZED',
+    message: string,
+    public hint?: string,
+  ) {
     super(message);
     this.name = 'ReadonlyDbError';
   }
@@ -15,13 +18,17 @@ export interface OpenDbReadonlyResult {
   close: () => void;
 }
 
-export function openDbReadonly(projectDir: string): OpenDbReadonlyResult {
-  const dbPath = path.join(projectDir, '.claude4spec', 'db.sqlite');
+/**
+ * M31: takes the resolved slot DB path (from `resolveWorkspaceProject`), not a
+ * project dir — the derived index lives in `~/.claude4spec/<ws>/<id>/`. A
+ * registered-but-never-served slot has no db.sqlite yet → INDEX_NOT_MATERIALIZED.
+ */
+export function openDbReadonly(dbPath: string): OpenDbReadonlyResult {
   if (!fs.existsSync(dbPath)) {
     throw new ReadonlyDbError(
-      'PROJECT_NOT_FOUND',
-      `no claude4spec project found at ${projectDir}`,
-      'run `npx claude4spec` first or pass `--project <path>`'
+      'INDEX_NOT_MATERIALIZED',
+      `no derived index at ${dbPath}`,
+      'run `npx @inharness-ai/claude4spec` in the project to build the index for this workspace',
     );
   }
   let handle: Database.Database;

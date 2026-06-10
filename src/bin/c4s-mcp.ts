@@ -4,15 +4,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { openDbReadonly, ReadonlyDbError } from '../server/db/readonly.js';
+import { resolveWorkspaceProject, WorkspaceResolveError } from '../core/workspace/resolve.js';
 import { RawEntityReader } from '../server/domain/raw-entity-reader.js';
-import { serializationEngine } from '../server/core/plugin-host/serialization-engine.js';
-import '../server/serialization/registerAll.js';
+import { buildCliSerializationEngine } from './c4s/context.js';
 import { createC4sReaderServer } from '../server/mcp/c4s-reader.js';
-import { resolveProject } from './c4s/project.js';
 import { CliError } from './c4s/errors.js';
 
 interface CliArgs {
   project?: string;
+  /** M31: workspace selector (same cwd may be registered in N workspaces). */
+  workspace?: string;
   help: boolean;
   version: boolean;
 }
@@ -22,9 +23,11 @@ const HELP = `Usage: c4s-mcp [options]
 Standalone stdio MCP server exposing readonly access to a claude4spec project.
 
 Options:
-  --project <path>  Path to the claude4spec project (default: walk-up from cwd)
-  --help            Show this help
-  --version         Print version
+  --project <path>     Path to the claude4spec project (default: walk-up from cwd)
+  --workspace <name>   Workspace to resolve the project's DB slot in (required
+                       when the project is registered in more than one)
+  --help               Show this help
+  --version            Print version
 
 Register in your editor's MCP config (e.g. .mcp.json):
 
@@ -32,7 +35,7 @@ Register in your editor's MCP config (e.g. .mcp.json):
     "mcpServers": {
       "c4s-reader": {
         "command": "c4s-mcp",
-        "args": ["--project", "/path/to/spec"]
+        "args": ["--project", "/path/to/spec", "--workspace", "default"]
       }
     }
   }
@@ -46,6 +49,8 @@ function parseArgs(argv: string[]): CliArgs {
     else if (a === '--version' || a === '-v') args.version = true;
     else if (a === '--project' && argv[i + 1]) args.project = argv[++i];
     else if (a?.startsWith('--project=')) args.project = a.split('=')[1];
+    else if (a === '--workspace' && argv[i + 1]) args.workspace = argv[++i];
+    else if (a?.startsWith('--workspace=')) args.workspace = a.split('=')[1];
   }
   return args;
 }
@@ -88,14 +93,23 @@ async function main(): Promise<void> {
   let close: (() => void) | null = null;
 
   try {
-    projectDir = resolveProject(args.project);
-    const opened = openDbReadonly(projectDir);
+    // M31: registry-based resolution → workspace DB slot. The degraded-start
+    // pattern keeps AMBIGUOUS_WORKSPACE / INDEX_NOT_MATERIALIZED as tool-level
+    // errors instead of failing the MCP handshake.
+    const resolved = resolveWorkspaceProject({ project: args.project, workspace: args.workspace });
+    projectDir = resolved.projectDir;
+    const opened = openDbReadonly(resolved.dbPath);
     db = opened.handle;
     close = opened.close;
     reader = new RawEntityReader(db);
-    process.stderr.write(`c4s-mcp ${version} ready (project: ${projectDir})\n`);
+    process.stderr.write(
+      `c4s-mcp ${version} ready (project: ${projectDir}, workspace: ${resolved.workspaceName})\n`,
+    );
   } catch (err) {
-    const code = err instanceof CliError || err instanceof ReadonlyDbError ? err.code : 'PROJECT_NOT_FOUND';
+    const code =
+      err instanceof CliError || err instanceof ReadonlyDbError || err instanceof WorkspaceResolveError
+        ? err.code
+        : 'PROJECT_NOT_FOUND';
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
       `c4s-mcp ${version} started without a project (${code}: ${message})\n` +
@@ -105,7 +119,7 @@ async function main(): Promise<void> {
 
   const { server } = createC4sReaderServer({
     reader,
-    registry: serializationEngine,
+    registry: buildCliSerializationEngine(),
     db,
     projectDir,
     packageVersion: version,

@@ -6,12 +6,12 @@ import {
   renderSingleElement,
   renderTaggedListMixed,
 } from './inline-renderer.js';
-import { serializationEngine } from '../core/plugin-host/serialization-engine.js';
+import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { SerializeResult } from './types.js';
 
 export interface ResolvePageDeps {
   reader: RawEntityReader;
-  registry: typeof serializationEngine;
+  registry: SerializationEngine;
 }
 
 export interface ResolvedEntry {

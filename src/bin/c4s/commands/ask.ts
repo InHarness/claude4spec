@@ -26,6 +26,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
   const briefPath = optionalString(args, 'brief');
   const server = optionalString(args, 'server');
   const project = args.project;
+  const workspace = args.workspace;
 
   if (project && server) {
     // Mutex `project` vs `server` — gdy oba podane, `server` wygrywa; CLI
@@ -58,6 +59,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
     result = await runAsk({
       message,
       project,
+      workspace,
       server,
       contextType: ct as AskContextType | undefined,
       threadId,

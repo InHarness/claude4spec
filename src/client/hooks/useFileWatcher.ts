@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
+import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 
 /** Map an entity type → its React Query list key (plural). */
@@ -22,7 +23,8 @@ export function useFileWatcher() {
   useEffect(() => {
     const batcher = createInvalidationBatcher(qc, 500);
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const url = `${proto}//${location.host}/ws`;
+    // M31: WS rooms are per-project — the server refuses a missing ?project.
+    const url = `${proto}//${location.host}/ws?project=${encodeURIComponent(PROJECT_ID)}`;
     let ws: WebSocket | null = null;
     let reconnectTimer: number | null = null;
     let closed = false;

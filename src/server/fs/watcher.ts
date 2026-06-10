@@ -1,6 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 
 type EventKind = 'add' | 'change' | 'unlink';
 
@@ -12,7 +12,7 @@ export class PagesWatcher {
   private readonly SUPPRESS_WINDOW_MS = 350;
   private callbacks: PagesWatcherCallback[] = [];
 
-  constructor(private pagesRoot: string, private gateway: WsGateway) {}
+  constructor(private pagesRoot: string, private gateway: WsEmitter) {}
 
   onChange(cb: PagesWatcherCallback): void {
     this.callbacks.push(cb);

@@ -1,5 +1,4 @@
-import { pluginHost } from '../../core/plugin-host/host.js';
-import type { BackendModule } from '../../core/plugin-host/types.js';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { uiViewSlug } from '../../services/slug.js';
 import { uiViewSerializer } from './serializer.js';
@@ -22,7 +21,7 @@ export const uiViewBackendModule: BackendModule = {
     mount(ctx) {
       const service = new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
       ctx.app.use(
-        `/api${uiViewBackendModule.pathPrefix}`,
+        `${uiViewBackendModule.pathPrefix}`,
         uiViewsRouter(service, ctx.referencesService, ctx.ws),
       );
       ctx.registerMcpServer(
@@ -38,4 +37,7 @@ export const uiViewBackendModule: BackendModule = {
   },
 };
 
-pluginHost.registerBackendModule(uiViewBackendModule);
+/** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(uiViewBackendModule);
+}

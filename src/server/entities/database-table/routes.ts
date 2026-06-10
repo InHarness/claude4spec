@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { DatabaseTableService } from './services.js';
 import type { ReferencesService } from '../../services/references.js';
-import type { WsGateway } from '../../ws/gateway.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import { errorHandler } from '../../routes/errors.js';
 import type {
   DatabaseTableCreateInput,
@@ -12,7 +12,7 @@ import type {
 export function databaseTablesRouter(
   service: DatabaseTableService,
   references: ReferencesService,
-  ws: WsGateway
+  ws: WsEmitter
 ): Router {
   const router = Router();
 

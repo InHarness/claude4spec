@@ -8,7 +8,7 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import type { Application, Router } from 'express';
+import type { Router } from 'express';
 import type { McpServerInstance } from '@inharness-ai/agent-adapters';
 import type {
   EntityModuleManifest,
@@ -26,7 +26,7 @@ import type {
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { ReferencesService } from '../../services/references.js';
-import type { WsGateway } from '../../ws/gateway.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { EntityStore } from '../../services/entity-store.js';
 
 export type SqlMigration = {
@@ -51,11 +51,18 @@ export interface RouteRegistration {
  * resolvers without per-plugin special-casing in index.ts.
  */
 export interface MountContext {
-  app: Application;
+  /**
+   * M31: per-project Express Router (NOT the process-level app). Plugins only
+   * call `.use(pathPrefix, …)` — the dispatch middleware mounts the whole
+   * router under `/api/projects/:id`, so prefixes are `/api`-less.
+   */
+  app: Router;
   db: Database;
+  /** M31: the project host being mounted — plugins needing host lookups (e.g. ac) use this, never a singleton. */
+  host: ProjectPluginHost;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
   cwd: string;
-  ws: WsGateway;
+  ws: WsEmitter;
   tagsService: TagsService;
   versionService: VersionService;
   referencesService: ReferencesService;
@@ -102,20 +109,36 @@ export interface BackendModule extends EntityModuleManifest {
   };
 }
 
-export interface PluginHost {
+/**
+ * M31 split: process-immutable plugin catalog. Populated once at process
+ * start via `registerAllPlugins(registry)`; `consolidate` is a PURE factory —
+ * it derives a per-project ProjectPluginHost and mutates nothing here.
+ */
+export interface PluginRegistry {
   /** Register a plugin manifest. Idempotent on `module.type`. */
-  registerBackendModule(module: BackendModule): void;
-
-  /**
-   * Apply config.entities whitelist; updates active/inactive/unknown sets.
-   * Pass undefined / null = all available are active (v1 backward compat).
-   */
-  consolidate(activeWhitelist: string[] | null | undefined): void;
+  registerEntityModule(module: BackendModule): void;
 
   /** All registered modules, regardless of activation. */
   listAvailable(): BackendModule[];
 
-  /** Active modules only (filtered by `consolidate`). */
+  /** Lookup including inactive — used for broken-chip categorisation. */
+  getAvailable(type: string): BackendModule | null;
+
+  /**
+   * Derive a per-project host from config.entities. Pass undefined / null =
+   * all available are active (v1 backward compat). No side effects.
+   */
+  consolidate(activeWhitelist: string[] | null | undefined): ProjectPluginHost;
+}
+
+/** Plugin self-registration hook — exported by each entities/*\/plugin.ts. */
+export type PluginOnRegister = (registry: PluginRegistry) => void;
+
+export interface ProjectPluginHost {
+  /** All registered modules, regardless of activation (delegates to the registry). */
+  listAvailable(): BackendModule[];
+
+  /** Active modules only (filtered by the consolidated whitelist). */
   listEntities(): BackendModule[];
 
   /** Lookup by type — returns null for inactive or unknown. */
@@ -126,8 +149,8 @@ export interface PluginHost {
 
   isActive(type: string): boolean;
 
-  /** Activation snapshot — input for GET /api/_meta/entities. */
-  state(): PluginActivationState;
+  /** Activation snapshot — input for GET /_meta/entities. (Rename of `state()`.) */
+  partition(): PluginActivationState;
 
   /**
    * Mount every active backend module into the supplied Express app + the
@@ -182,4 +205,13 @@ export interface PluginHost {
   restore(type: string, data: SnapshotData, ctx: RestoreContext): RestoreResult;
   /** Plugin-owned diff with default deep-diff fallback. */
   diff(type: string, a: SnapshotData, b: SnapshotData, slug: string): EntityDiff;
+
+  /** M31 dispose: drop per-project MCP factories so a retired context leaks nothing. */
+  clearMcpFactories(): void;
 }
+
+/**
+ * Back-compat alias — pre-M31 consumers typed against the singleton's
+ * interface name. The per-project host is the only host shape now.
+ */
+export type PluginHost = ProjectPluginHost;

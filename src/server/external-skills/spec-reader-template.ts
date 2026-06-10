@@ -56,5 +56,5 @@ c4s ask "<question>" --ct chat
 \`\`\`
 
 Unlike the read-only commands above, \`c4s ask\` requires a running
-\`npx claude4spec\` server (it delegates the turn to the server's agent).
+\`npx @inharness-ai/claude4spec\` server (it delegates the turn to the server's agent).
 `;

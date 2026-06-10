@@ -37,7 +37,7 @@ Graph reader (no XML counterpart):
 Utility:
   resolve <file.md> [--format inline|json]
 
-Agent Q&A (requires a running \`npx claude4spec\` server):
+Agent Q&A (requires a running \`npx @inharness-ai/claude4spec\` server):
   ask "<msg>" --ct chat
   ask "<msg>" --ct brief --brief <path>
   ask "<msg>" --thread <id>
@@ -50,7 +50,8 @@ Discovery:
   list-slugs --type <t>
 
 Global flags:
-  --project <path>    override project dir (default: walk-up to .claude4spec/)
+  --project <path>    override project dir (default: walk-up against the workspace registry)
+  --workspace <name>  pick the workspace when the project is registered in more than one
   --format json|text  output format (default: json; resolve default: inline)
   --compact           minified JSON (for pipelines)
   --sort-keys         deterministic key order in JSON
@@ -149,6 +150,11 @@ function codeToExit(code: string): number {
       return 5;
     case 'SCHEMA_OUT_OF_DATE':
       return 6;
+    case 'AMBIGUOUS_WORKSPACE':
+      return 7;
+    case 'INDEX_NOT_MATERIALIZED':
+      return 8;
+    // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;
   }

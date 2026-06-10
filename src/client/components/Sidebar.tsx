@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { stripBase } from '../lib/api-core.js';
+import { ProjectSwitcher } from './ProjectSwitcher.js';
+import { C4sLogoIcon } from './C4sLogoIcon.js';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import {
   ChevronDown,
@@ -13,7 +16,6 @@ import {
   Plus,
   Search,
   Settings as SettingsIcon,
-  Sparkles,
   StickyNote,
   Tag,
   X,
@@ -27,8 +29,9 @@ import { clientPluginHost } from '../core/plugin-host/host.js';
 
 interface SidebarProps {
   width: number;
-  cwdLabel: string;
+  cwdPath: string;
   projectName: string | null;
+  headerLoading: boolean;
   tree: PageNode[];
   onNewPage: () => void;
   pageCount: number;
@@ -42,8 +45,9 @@ interface SidebarProps {
 
 export function Sidebar({
   width,
-  cwdLabel,
+  cwdPath,
   projectName,
+  headerLoading,
   tree,
   onNewPage,
   pageCount,
@@ -54,7 +58,7 @@ export function Sidebar({
   unresolvedMentionCount,
 }: SidebarProps) {
   const navigate = useNavigate();
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
   const activePagePath = pathname.startsWith('/pages/')
     ? decodeURIComponent(pathname.slice('/pages/'.length))
     : null;
@@ -87,22 +91,17 @@ export function Sidebar({
         className="flex items-center gap-2 px-3.5 pt-3 pb-2"
         style={{ borderBottom: '1px solid var(--c-hair)' }}
       >
-        <div
-          className="rounded-md flex items-center justify-center"
-          style={{ width: 22, height: 22, background: 'var(--c-accent)', color: '#fff' }}
+        <a
+          href="https://claude4spec.inharness.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center"
+          style={{ width: 22, height: 22, flexShrink: 0 }}
+          title="claude4spec.inharness.ai"
         >
-          <Sparkles size={13} />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-semibold tracking-tight truncate">claude4spec</div>
-          <div
-            className="text-[10.5px] -mt-0.5 truncate"
-            style={{ color: 'var(--c-subtle)' }}
-            title={projectName ? `${projectName} · ${cwdLabel}` : cwdLabel}
-          >
-            {projectName ? `${projectName} · ${cwdLabel}` : cwdLabel}
-          </div>
-        </div>
+          <C4sLogoIcon size={22} />
+        </a>
+        <ProjectSwitcher projectName={projectName} cwdPath={cwdPath} loading={headerLoading} />
         <button
           onClick={() => navigate({ to: '/settings' })}
           className="rounded p-1"
@@ -512,7 +511,7 @@ function OthersTrigger({
   linkIssueCount: number;
   brokenLinkCount: number;
 }) {
-  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);

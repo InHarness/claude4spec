@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiFetch, stripBase } from './lib/api-core.js';
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
 import { ResizeHandle } from './components/ResizeHandle.js';
-import { RestartRequiredBanner } from './components/RestartRequiredBanner.js';
 import { Sidebar } from './components/Sidebar.js';
 import { useFileWatcher } from './hooks/useFileWatcher.js';
 import { usePages } from './hooks/usePages.js';
@@ -32,7 +32,7 @@ export function RootLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: config } = useConfig();
-  const isOnboardingPath = location.pathname === '/onboarding';
+  const isOnboardingPath = stripBase(location.pathname) === '/onboarding';
 
   // M16 mount-time guard: jezeli config swiezy (onboardingCompleted=false),
   // przekierowujemy na /onboarding zanim user zobaczy edytor.
@@ -86,7 +86,8 @@ function MainShell({ projectName }: { projectName: string | null }) {
   const { data: pageLinkCounts } = usePageLinksCounts();
   const write = useWritePage();
 
-  const cwdLabel = useCwdLabel();
+  const { cwd: cwdPath, loading: cwdLoading } = useCwdLabel();
+  const headerLoading = projectName === null || cwdLoading;
   const pageCount = countFiles(tree);
 
   const onSidebarDrag = useCallback(
@@ -141,16 +142,15 @@ function MainShell({ projectName }: { projectName: string | null }) {
   return (
     <div
       ref={rootRef}
-      className="h-full w-full flex flex-col"
+      className="h-full w-full flex"
       style={{ color: 'var(--c-ink)' }}
     >
-      <RestartRequiredBanner />
-      <div className="flex-1 min-h-0 flex">
       <div style={{ width: sidebarW, flexShrink: 0 }} className="flex">
         <Sidebar
           width={sidebarW}
-          cwdLabel={cwdLabel}
+          cwdPath={cwdPath}
           projectName={projectName}
+          headerLoading={headerLoading}
           tree={tree}
           onNewPage={handleNewPage}
           pageCount={pageCount}
@@ -173,7 +173,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
-      </div>
       <NewDatabaseTablePopover />
       <NewUiViewPopover />
       <TodoPopover />
@@ -199,16 +198,18 @@ function deriveTitle(filePath: string): string {
   return base.replace(/\.md$/, '').replaceAll('-', ' ');
 }
 
-function useCwdLabel(): string {
-  const [label, setLabel] = useState('workspace');
+function useCwdLabel(): { cwd: string; loading: boolean } {
+  const [cwd, setCwd] = useState('workspace');
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch('/api/meta')
+    apiFetch('/api/meta')
       .then((r) => r.json())
-      .then((d: { cwdName?: string }) => d.cwdName && setLabel(d.cwdName))
+      .then((d: { cwd?: string }) => d.cwd && setCwd(d.cwd))
       .catch(() => {
         /* keep fallback */
-      });
+      })
+      .finally(() => setLoading(false));
   }, []);
-  return label;
+  return { cwd, loading };
 }
 

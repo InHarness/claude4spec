@@ -1,5 +1,4 @@
-import { pluginHost } from '../../core/plugin-host/host.js';
-import type { BackendModule } from '../../core/plugin-host/types.js';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import { dtoSlug } from '../../services/slug.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { dtoSerializer } from './serializer.js';
@@ -21,7 +20,7 @@ export const dtoBackendModule: BackendModule = {
   backend: {
     mount(ctx) {
       const service = new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
-      ctx.app.use(`/api${dtoBackendModule.pathPrefix}`, dtosRouter(service, ctx.referencesService));
+      ctx.app.use(`${dtoBackendModule.pathPrefix}`, dtosRouter(service, ctx.referencesService));
       ctx.registerMcpServer(
         `${dtoBackendModule.type}-tools`,
         () => createDtoToolsServer({
@@ -35,4 +34,7 @@ export const dtoBackendModule: BackendModule = {
   },
 };
 
-pluginHost.registerBackendModule(dtoBackendModule);
+/** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(dtoBackendModule);
+}

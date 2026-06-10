@@ -48,6 +48,11 @@ export interface ConfirmInput {
   confirmLabel?: string;
   cancelLabel?: string;
   danger?: boolean;
+  /**
+   * Type-to-confirm: when set, the modal renders a text input and keeps the
+   * confirm button disabled until the user types this string exactly.
+   */
+  requireText?: string;
 }
 
 export interface ConfirmRequest extends ConfirmInput {

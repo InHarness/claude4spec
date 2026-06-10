@@ -5,6 +5,10 @@
  * from the plugin host's `BackendModule.serializer` slot; the only internal
  * registration is the `section` non-entity serializer, kept here because
  * section is not a plugin (M06 owns it).
+ *
+ * M31: was a singleton bound to the `pluginHost` singleton — now a class
+ * instantiated once per ProjectContext (`ctx.serialization`) and once per CLI
+ * process, bound to that context's ProjectPluginHost.
  */
 
 import type { Database } from 'better-sqlite3';
@@ -24,7 +28,7 @@ import type {
   SerializeResult,
   ViewKind,
 } from '../../serialization/types.js';
-import { pluginHost } from './host.js';
+import type { ProjectPluginHost } from './types.js';
 
 const MAX_DEPTH = 1;
 
@@ -47,26 +51,25 @@ export interface DescribeResult {
   schemas: Record<string, JsonSchema>;
 }
 
-class SerializationEngineImpl {
-  /** Section serializer is registered separately — section is not an entity. */
-  private sectionSerializer: EntitySerializer<unknown> | null = null;
-
-  attachSectionSerializer(serializer: EntitySerializer<unknown>): void {
-    this.sectionSerializer = serializer;
-  }
+export class SerializationEngine {
+  constructor(
+    private readonly host: ProjectPluginHost,
+    /** Section serializer is registered separately — section is not an entity. */
+    private readonly sectionSerializer: EntitySerializer<unknown> | null = null,
+  ) {}
 
   has(type: string): boolean {
     if (type === 'section') return this.sectionSerializer !== null;
-    return pluginHost.getAvailable(type) !== null;
+    return this.host.getAvailable(type) !== null;
   }
 
   get(type: string): EntitySerializer<unknown> | undefined {
     if (type === 'section') return this.sectionSerializer ?? undefined;
-    return pluginHost.getAvailable(type)?.serializer;
+    return this.host.getAvailable(type)?.serializer;
   }
 
   listTypes(): string[] {
-    const types = pluginHost.listAvailable().map((m) => m.type);
+    const types = this.host.listAvailable().map((m) => m.type);
     if (this.sectionSerializer) types.push('section');
     return types.sort();
   }
@@ -122,7 +125,7 @@ class SerializationEngineImpl {
   getSchema(type: string, view: ViewKind, db?: Database): JsonSchema {
     const serializer = this.get(type);
     if (serializer?.schema) return serializer.schema(view);
-    if (db) return autoDerivedSchema(db, type);
+    if (db) return autoDerivedSchema(db, type, this.host);
     return { type: 'object', _auto: true, _note: 'schema unavailable without db handle' };
   }
 
@@ -132,11 +135,11 @@ class SerializationEngineImpl {
    * `mcpToolsLine` (all from the per-type system-prompt slot, the same source
    * the M05 system prompt uses). Deliberately does NOT read
    * `serializer.schema` — use {@link describe} for schemas. Iterates active
-   * plugins via `pluginHost.listEntities()` (deactivated plugins absent).
+   * plugins via `host.listEntities()` (deactivated plugins absent).
    */
   catalog(reader: RawEntityReader): CatalogResult {
     const types: Record<string, CatalogEntry> = {};
-    for (const m of pluginHost.listEntities()) {
+    for (const m of this.host.listEntities()) {
       types[m.type] = {
         count: reader.count(m.type as RawEntityType),
         version: m.serializer.version,
@@ -157,7 +160,7 @@ class SerializationEngineImpl {
    * `serializer.schema(view)` or, when absent, SQLite reflection (`_auto`).
    */
   describe(type: string, view: ViewKind | undefined, db: Database): DescribeResult | null {
-    const m = pluginHost.listEntities().find((e) => e.type === type);
+    const m = this.host.listEntities().find((e) => e.type === type);
     if (!m) return null;
     const serializer = m.serializer;
     const views: string[] = [];
@@ -174,8 +177,6 @@ class SerializationEngineImpl {
     return { type, version: serializer.version, views, schemas };
   }
 }
-
-export const serializationEngine = new SerializationEngineImpl();
 
 function pickMethod(
   serializer: EntitySerializer<unknown>,

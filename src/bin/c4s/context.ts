@@ -1,28 +1,40 @@
 import { openDbReadonly, ReadonlyDbError } from '../../server/db/readonly.js';
 import { RawEntityReader } from '../../server/domain/raw-entity-reader.js';
-import { serializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
-import '../../server/serialization/registerAll.js';
+import type { SerializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
+import { buildCliSerializationEngine } from '../../server/core/plugin-host/cli-engine.js';
+import { resolveWorkspaceProject, WorkspaceResolveError } from '../../core/workspace/resolve.js';
 import { CliError } from './errors.js';
-import { resolveProject } from './project.js';
 import type { ParsedArgs } from './args.js';
 
 export interface CliContext {
   projectDir: string;
   reader: RawEntityReader;
-  registry: typeof serializationEngine;
+  registry: SerializationEngine;
   db: import('better-sqlite3').Database;
   close: () => void;
 }
 
+export { buildCliSerializationEngine };
+
 export function createContext(args: ParsedArgs): CliContext {
-  const projectDir = resolveProject(args.project);
+  let resolved;
   try {
-    const { handle, close } = openDbReadonly(projectDir);
+    // M31: 0/1/N registry resolution BEFORE any db access.
+    resolved = resolveWorkspaceProject({ project: args.project, workspace: args.workspace });
+  } catch (err) {
+    if (err instanceof WorkspaceResolveError) {
+      throw new CliError(err.code, err.message, err.hint);
+    }
+    throw err;
+  }
+  const projectDir = resolved.projectDir;
+  try {
+    const { handle, close } = openDbReadonly(resolved.dbPath);
     const reader = new RawEntityReader(handle);
     return {
       projectDir,
       reader,
-      registry: serializationEngine,
+      registry: buildCliSerializationEngine(),
       db: handle,
       close,
     };

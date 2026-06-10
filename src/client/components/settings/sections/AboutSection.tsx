@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { apiFetch } from '../../../lib/api-core.js';
 import { useConfig } from '../../../hooks/useConfig.js';
 import { SettingsCard } from '../SettingsCard.js';
 
@@ -17,7 +18,7 @@ export function AboutSection() {
   const [meta, setMeta] = useState<MetaResponse | null>(null);
 
   useEffect(() => {
-    fetch('/api/meta')
+    apiFetch('/api/meta')
       .then((r) => r.json())
       .then((d: MetaResponse) => setMeta(d))
       .catch(() => {
@@ -34,7 +35,6 @@ export function AboutSection() {
       <div className="flex flex-col gap-2 text-[12.5px]">
         <Row label="claude4spec version" value={meta?.c4sVersion ?? '—'} />
         <Row label="Config schema" value={config ? `v${config.$schemaVersion}` : '—'} />
-        <Row label="Mode" value={config?.mode ?? '—'} />
         <Row label="Project root" value={meta?.cwd ?? '—'} />
       </div>
     </SettingsCard>

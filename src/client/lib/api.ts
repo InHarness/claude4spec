@@ -24,7 +24,7 @@ import type {
   RemoteProjectInfo,
   UpdateRemoteProjectRequest,
 } from '../../shared/remote-project.js';
-import { ApiError, handle } from './api-core.js';
+import { ApiError, handle, apiFetch } from './api-core.js';
 
 export { ApiError, handle };
 
@@ -40,7 +40,7 @@ export { uiViewsApi, type UiViewWithWarnings } from '../entities/ui-view/api.js'
 
 export const api = {
   async tree(): Promise<PageNode[]> {
-    const res = await fetch('/api/pages');
+    const res = await apiFetch('/api/pages');
     const data = await handle<{ tree: PageNode[] }>(res);
     return data.tree;
   },
@@ -48,18 +48,18 @@ export const api = {
   async search(q: string, limit = 50): Promise<PageSearchHit[]> {
     const params = new URLSearchParams({ q });
     if (limit !== 50) params.set('limit', String(limit));
-    const res = await fetch(`/api/pages/search?${params.toString()}`);
+    const res = await apiFetch(`/api/pages/search?${params.toString()}`);
     const data = await handle<{ hits: PageSearchHit[] }>(res);
     return data.hits;
   },
 
   async read(path: string): Promise<PageContent> {
-    const res = await fetch(`/api/pages/${encodePath(path)}`);
+    const res = await apiFetch(`/api/pages/${encodePath(path)}`);
     return handle<PageContent>(res);
   },
 
   async write(path: string, body: string, frontmatter?: Record<string, unknown>): Promise<PageContent> {
-    const res = await fetch(`/api/pages/${encodePath(path)}`, {
+    const res = await apiFetch(`/api/pages/${encodePath(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body, frontmatter }),
@@ -68,7 +68,7 @@ export const api = {
   },
 
   async remove(path: string): Promise<void> {
-    const res = await fetch(`/api/pages/${encodePath(path)}`, { method: 'DELETE' });
+    const res = await apiFetch(`/api/pages/${encodePath(path)}`, { method: 'DELETE' });
     await handle<{ ok: true }>(res);
   },
 };
@@ -79,9 +79,7 @@ function encodePath(p: string): string {
 
 export interface ConfigResponse {
   name: string;
-  port: number;
   pagesDir: string;
-  mode: 'dev' | 'prod';
   writingStyle: string | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
   language: string | null;
@@ -90,6 +88,8 @@ export interface ConfigResponse {
   briefsDir: string;
   /** M23: catalog of patch files. */
   patchesDir: string;
+  /** M29/M31: committed entity JSON files dir (source of truth; SQLite is derived). */
+  entitiesDir: string;
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
   /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage. */
@@ -100,19 +100,16 @@ export interface ConfigResponse {
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
   remoteApiUrl: string | null;
-  /** M01: config schema version (currently 2). */
+  /** M01: config schema version (currently 3 — M31 moved port/mode to the workspace). */
   $schemaVersion: number;
-  /** M26 §3: ISO 8601 timestamp of the current server boot — runtime-only. */
-  serverStartedAt: string;
 }
 
 export interface ConfigPatch {
   name?: string;
-  port?: number;
   pagesDir?: string;
   briefsDir?: string;
   patchesDir?: string;
-  mode?: 'dev' | 'prod';
+  entitiesDir?: string;
   writingStyle?: string | null;
   /** 0.1.51: spec-authoring language; null or a SUPPORTED_LANGUAGES member. */
   language?: string | null;
@@ -125,34 +122,13 @@ export interface ConfigPatch {
   remoteProjectId?: string | null;
 }
 
-/**
- * M26 §2 — restart-required keys. Mutating any of these via PATCH /api/config
- * stamps `c4s:settings:last-restart-patch-at` in localStorage so the banner can
- * appear. Hot-reload keys (`name`, `writingStyle`, `agent.claudeUsePreset`) do
- * NOT trigger the marker.
- */
-export const RESTART_REQUIRED_CONFIG_FIELDS = [
-  'port',
-  'mode',
-  'pagesDir',
-  'briefsDir',
-  'patchesDir',
-  'entities',
-] as const satisfies readonly (keyof ConfigPatch)[];
-
-export type RestartRequiredConfigField = (typeof RESTART_REQUIRED_CONFIG_FIELDS)[number];
-
-export function patchTouchesRestartRequired(patch: ConfigPatch): boolean {
-  return RESTART_REQUIRED_CONFIG_FIELDS.some((k) => k in patch);
-}
-
 export const configApi = {
   async get(): Promise<ConfigResponse> {
-    return handle<ConfigResponse>(await fetch('/api/config'));
+    return handle<ConfigResponse>(await apiFetch('/api/config'));
   },
   async patch(input: ConfigPatch): Promise<ConfigResponse> {
     return handle<ConfigResponse>(
-      await fetch('/api/config', {
+      await apiFetch('/api/config', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -178,18 +154,18 @@ export interface WritingStylesResponse {
 
 export const writingStylesApi = {
   async get(): Promise<WritingStylesResponse> {
-    return handle<WritingStylesResponse>(await fetch('/api/writing-styles'));
+    return handle<WritingStylesResponse>(await apiFetch('/api/writing-styles'));
   },
 };
 
 export const tagsApi = {
   async list(): Promise<Tag[]> {
-    const data = await handle<{ tags: Tag[] }>(await fetch('/api/tags'));
+    const data = await handle<{ tags: Tag[] }>(await apiFetch('/api/tags'));
     return data.tags;
   },
   async create(input: TagCreateInput): Promise<Tag> {
     return handle<Tag>(
-      await fetch('/api/tags', {
+      await apiFetch('/api/tags', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -198,7 +174,7 @@ export const tagsApi = {
   },
   async update(slug: string, input: TagUpdateInput): Promise<Tag> {
     return handle<Tag>(
-      await fetch(`/api/tags/${encodeURIComponent(slug)}`, {
+      await apiFetch(`/api/tags/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -207,12 +183,12 @@ export const tagsApi = {
   },
   async remove(slug: string): Promise<{ deleted: true; affectedEntities: number }> {
     return handle<{ deleted: true; affectedEntities: number }>(
-      await fetch(`/api/tags/${encodeURIComponent(slug)}`, { method: 'DELETE' })
+      await apiFetch(`/api/tags/${encodeURIComponent(slug)}`, { method: 'DELETE' })
     );
   },
   async assign(type: EntityType, slug: string, tags: string[]): Promise<string[]> {
     const data = await handle<{ tags: string[] }>(
-      await fetch(`/api/entities/${type}/${encodeURIComponent(slug)}/tags`, {
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags }),
@@ -226,7 +202,7 @@ export const referencesApi = {
   async find(type: EntityType, slug: string): Promise<ReferenceHit[]> {
     const params = new URLSearchParams({ type, slug });
     const data = await handle<{ references: ReferenceHit[] }>(
-      await fetch(`/api/references?${params.toString()}`)
+      await apiFetch(`/api/references?${params.toString()}`)
     );
     return data.references;
   },
@@ -234,46 +210,46 @@ export const referencesApi = {
 
 export const pageLinksApi = {
   async list(): Promise<PageLinksListResponse> {
-    return handle<PageLinksListResponse>(await fetch('/api/page-links'));
+    return handle<PageLinksListResponse>(await apiFetch('/api/page-links'));
   },
   async counts(): Promise<PageLinksCounts> {
-    return handle<PageLinksCounts>(await fetch('/api/page-links/counts'));
+    return handle<PageLinksCounts>(await apiFetch('/api/page-links/counts'));
   },
   async autocomplete(q: string, limit = 10): Promise<PageLinksAutocompleteResponse> {
     const params = new URLSearchParams({ q });
     if (limit !== 10) params.set('limit', String(limit));
     return handle<PageLinksAutocompleteResponse>(
-      await fetch(`/api/page-links/autocomplete?${params.toString()}`)
+      await apiFetch(`/api/page-links/autocomplete?${params.toString()}`)
     );
   },
 };
 
 export const todosApi = {
   async list(): Promise<{ todos: TodoHit[]; counts: TodoCounts }> {
-    return handle<{ todos: TodoHit[]; counts: TodoCounts }>(await fetch('/api/todos'));
+    return handle<{ todos: TodoHit[]; counts: TodoCounts }>(await apiFetch('/api/todos'));
   },
   async counts(): Promise<TodoCounts> {
-    return handle<TodoCounts>(await fetch('/api/todos/counts'));
+    return handle<TodoCounts>(await apiFetch('/api/todos/counts'));
   },
 };
 
 export const versionsApi = {
   async list(type: EntityType, slug: string): Promise<VersionListItem[]> {
     const data = await handle<{ versions: VersionListItem[] }>(
-      await fetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions`)
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions`)
     );
     return data.versions;
   },
   async get(type: EntityType, slug: string, version: number): Promise<VersionDetail> {
     return handle<VersionDetail>(
-      await fetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${version}`)
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${version}`)
     );
   },
 };
 
 export const metaApi = {
   async entities(): Promise<PluginActivationState> {
-    return handle<PluginActivationState>(await fetch('/api/_meta/entities'));
+    return handle<PluginActivationState>(await apiFetch('/api/_meta/entities'));
   },
 };
 
@@ -292,7 +268,7 @@ export interface ChatConfigResponse {
 
 export const chatConfigApi = {
   async get(): Promise<ChatConfigResponse> {
-    return handle<ChatConfigResponse>(await fetch('/api/chat/config'));
+    return handle<ChatConfigResponse>(await apiFetch('/api/chat/config'));
   },
 };
 
@@ -302,13 +278,13 @@ export const sectionsApi = {
     if (query.pagePath) params.set('pagePath', query.pagePath);
     if (query.search) params.set('search', query.search);
     const qs = params.toString();
-    const res = await fetch(`/api/sections${qs ? `?${qs}` : ''}`);
+    const res = await apiFetch(`/api/sections${qs ? `?${qs}` : ''}`);
     const data = await handle<{ sections: SectionIndexEntry[] }>(res);
     return data.sections;
   },
 
   async getByAnchor(anchor: string): Promise<SectionIndexEntry | null> {
-    const res = await fetch(`/api/sections/${encodeURIComponent(anchor)}`);
+    const res = await apiFetch(`/api/sections/${encodeURIComponent(anchor)}`);
     if (res.status === 404) return null;
     return handle<SectionIndexEntry>(res);
   },
@@ -318,21 +294,21 @@ export const sectionsApi = {
 // is never present in any of these responses.
 export const remoteAccountApi = {
   async get(): Promise<RemoteAccountResponse> {
-    return handle<RemoteAccountResponse>(await fetch('/api/remote-account'));
+    return handle<RemoteAccountResponse>(await apiFetch('/api/remote-account'));
   },
   async startLogin(): Promise<DeviceLoginStartResponse> {
     return handle<DeviceLoginStartResponse>(
-      await fetch('/api/remote-account/login/start', { method: 'POST' }),
+      await apiFetch('/api/remote-account/login/start', { method: 'POST' }),
     );
   },
   async poll(): Promise<DeviceLoginPollResponse> {
     return handle<DeviceLoginPollResponse>(
-      await fetch('/api/remote-account/login/poll', { method: 'POST' }),
+      await apiFetch('/api/remote-account/login/poll', { method: 'POST' }),
     );
   },
   async logout(): Promise<RemoteAccountResponse> {
     return handle<RemoteAccountResponse>(
-      await fetch('/api/remote-account/logout', { method: 'POST' }),
+      await apiFetch('/api/remote-account/logout', { method: 'POST' }),
     );
   },
 };
@@ -340,11 +316,11 @@ export const remoteAccountApi = {
 // M26 §4 — remote-project proxy (used by Settings → "Remote project" section).
 export const remoteProjectApi = {
   async get(): Promise<RemoteProjectInfo> {
-    return handle<RemoteProjectInfo>(await fetch('/api/remote-project'));
+    return handle<RemoteProjectInfo>(await apiFetch('/api/remote-project'));
   },
   async update(body: UpdateRemoteProjectRequest): Promise<RemoteProjectInfo> {
     return handle<RemoteProjectInfo>(
-      await fetch('/api/remote-project', {
+      await apiFetch('/api/remote-project', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(body),

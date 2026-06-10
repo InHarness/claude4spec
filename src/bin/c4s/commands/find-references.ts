@@ -16,7 +16,7 @@ import type { EntityType } from '../../../shared/entities.js';
 /**
  * Graph reader (M11 owns the command, M19 owns the logic). Readonly: opens
  * SQLite `readonly: true, fileMustExist: true` and walks `pages/` directly — no
- * running `npx claude4spec` server required. Delegates to the references core;
+ * running `npx @inharness-ai/claude4spec` server required. Delegates to the references core;
  * no L9 serializers.
  *
  *   c4s find-references --type <t> --slug <s> [--include-tag-matches] [--format json|text]

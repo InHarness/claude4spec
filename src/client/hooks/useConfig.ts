@@ -1,29 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  configApi,
-  patchTouchesRestartRequired,
-  type ConfigPatch,
-} from '../lib/api.js';
-import { projectKey } from '../state/persisted.js';
+import { configApi, type ConfigPatch } from '../lib/api.js';
 
 /**
- * M26 §2 — write the "last restart patch at" envelope when a restart-required
- * config field is mutated. Bumped on every such PATCH; the banner clears
- * automatically once `config.serverStartedAt > lastRestartPatchAt`. Custom
- * event lets `RestartRequiredBanner` react without polling localStorage.
+ * M31: fields that rebuild the project context server-side (the PATCH handler
+ * invalidates the cached ProjectContext; the next request gets a fresh one).
+ * Every cached query may be stale after such a rebuild — blanket invalidate.
+ * "Restart required" (M26) is gone: nothing needs a process restart anymore.
  */
-const RESTART_MARKER_KEY = projectKey('c4s:settings:last-restart-patch-at');
-const RESTART_MARKER_EVENT = 'c4s:restart-marker-changed';
-
-function writeRestartMarker(): void {
-  try {
-    const env = { v: 1, data: new Date().toISOString() };
-    window.localStorage.setItem(RESTART_MARKER_KEY, JSON.stringify(env));
-    window.dispatchEvent(new CustomEvent(RESTART_MARKER_EVENT));
-  } catch {
-    /* localStorage quota / SSR — ignore */
-  }
-}
+const CONTEXT_DEFINING_FIELDS = [
+  'pagesDir',
+  'briefsDir',
+  'patchesDir',
+  'entitiesDir',
+  'entities',
+] as const satisfies readonly (keyof ConfigPatch)[];
 
 export function useConfig() {
   return useQuery({
@@ -44,8 +34,8 @@ export function usePatchConfig() {
       if ('remoteProjectId' in variables) {
         qc.invalidateQueries({ queryKey: ['remote-project'] });
       }
-      if (patchTouchesRestartRequired(variables)) {
-        writeRestartMarker();
+      if (CONTEXT_DEFINING_FIELDS.some((k) => k in variables)) {
+        qc.invalidateQueries();
       }
     },
   });

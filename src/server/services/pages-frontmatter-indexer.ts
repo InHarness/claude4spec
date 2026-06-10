@@ -14,7 +14,7 @@ import matter from 'gray-matter';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PagesService } from './pages.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { PagesRootDir } from '../../shared/types.js';
 
 export interface FrontmatterRecord {
@@ -38,7 +38,7 @@ export class PagesFrontmatterIndexer {
     private pages: PagesService,
     private briefs: PagesService,
     private patches: PagesService,
-    private ws: WsGateway,
+    private ws: WsEmitter,
   ) {}
 
   private rootFor(rootDir: PagesRootDir): PagesService {

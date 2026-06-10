@@ -8,7 +8,7 @@ import type { Database } from 'better-sqlite3';
 import type { AcService } from './services.js';
 import { AcAnalysisService } from './ac-analysis.service.js';
 import type { ReferencesService } from '../../services/references.js';
-import type { WsGateway } from '../../ws/gateway.js';
+import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import { DomainError } from '../../services/tags.js';
 import type {
@@ -20,7 +20,7 @@ import type {
 export interface AcToolsDeps {
   acService: AcService;
   referencesService: ReferencesService;
-  ws: WsGateway;
+  ws: WsEmitter;
   /** M19→AC: needed to hydrate verified-entity snapshots for the LLM audit. */
   db: Database;
   /** M19→AC: project root for the LLM adapter. */

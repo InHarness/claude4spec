@@ -2,14 +2,34 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
-export function renderMcpJson({ projectAbsPath }: { projectAbsPath: string }): string {
+/**
+ * M31/M12: working form — scoped package via `-p` exposing the `c4s-mcp` bin,
+ * plus `--workspace` so the readonly server resolves the right DB slot when
+ * the same cwd is registered in more than one workspace.
+ */
+export function renderMcpJson({
+  projectAbsPath,
+  workspace,
+}: {
+  projectAbsPath: string;
+  workspace: string;
+}): string {
   return (
     JSON.stringify(
       {
         mcpServers: {
           'c4s-spec-reader': {
             command: 'npx',
-            args: ['-y', 'claude4spec', 'c4s-mcp', '--project', projectAbsPath],
+            args: [
+              '-y',
+              '-p',
+              '@inharness-ai/claude4spec',
+              'c4s-mcp',
+              '--project',
+              projectAbsPath,
+              '--workspace',
+              workspace,
+            ],
           },
         },
       },
@@ -32,7 +52,13 @@ function writeIfChanged(absPath: string, content: string): void {
   fs.writeFileSync(absPath, content, 'utf8');
 }
 
-export function ensureMcpJson({ projectAbsPath }: { projectAbsPath: string }): void {
+export function ensureMcpJson({
+  projectAbsPath,
+  workspace,
+}: {
+  projectAbsPath: string;
+  workspace: string;
+}): void {
   const mcpPath = path.join(projectAbsPath, '.claude4spec', 'mcp.json');
-  writeIfChanged(mcpPath, renderMcpJson({ projectAbsPath }));
+  writeIfChanged(mcpPath, renderMcpJson({ projectAbsPath, workspace }));
 }

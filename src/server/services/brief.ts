@@ -28,7 +28,7 @@ import type {
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { PageVersionService } from './page-version.js';
 import type { PageSerializer } from './page-serializer.js';
 import type { ChatService } from './chat.js';
@@ -46,7 +46,7 @@ export interface BriefServiceDeps {
   chatService: ChatService;
   releaseService: ReleaseService;
   frontmatterIndexer: PagesFrontmatterIndexer;
-  ws: WsGateway;
+  ws: WsEmitter;
 }
 
 export interface BriefCreateOpts {

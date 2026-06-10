@@ -57,7 +57,9 @@ export type WsEvent =
   | { kind: 'briefs:changed'; path?: string; origin?: 'server' | 'external' }
   // M23 Patches
   | { kind: 'patches:changed'; path?: string }
-  | { kind: 'hello'; ts: number };
+  | { kind: 'hello'; ts: number }
+  // M31: sent to a room right before its sockets close (context invalidated/evicted/removed).
+  | { kind: 'project:disposed' };
 
 /** M02 multidir: discriminator dla source-of-truth (pagesDir / briefsDir / patchesDir). */
 export type PagesRootDir = 'pages' | 'briefs' | 'patches';

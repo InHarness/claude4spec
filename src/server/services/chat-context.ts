@@ -5,9 +5,11 @@ import type {
   PatchResponse,
   Plan,
 } from '../../shared/entities.js';
-import { pluginHost } from '../core/plugin-host/host.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 export interface SystemPromptInput {
+  /** M31: per-project host (was the process singleton). */
+  host: ProjectPluginHost;
   projectName: string;
   cwd: string;
   pagesDir: string;
@@ -54,7 +56,7 @@ function selfClose(name: string, attrsStr: string): string {
   return attrsStr ? `<${name} ${attrsStr}/>` : `<${name}/>`;
 }
 
-function buildEntityRows(): string {
+function buildEntityRows(pluginHost: ProjectPluginHost): string {
   // Each active plugin contributes one <entity> row; empty roleNoun = opt-out
   // (legacy ui-view behaviour). Row body uses narrativeBlock when present,
   // otherwise falls back to the plural roleNoun.
@@ -68,7 +70,7 @@ function buildEntityRows(): string {
   return rows.join('\n');
 }
 
-function buildEntityEmbedTypeUnion(): string {
+function buildEntityEmbedTypeUnion(pluginHost: ProjectPluginHost): string {
   // Used inside the entity_embeds section, e.g. "endpoint|dto|database-table".
   // Falls back to a sensible default when no plugins are active.
   const types = pluginHost
@@ -78,9 +80,9 @@ function buildEntityEmbedTypeUnion(): string {
   return types.length > 0 ? types.join('|') : 'entity';
 }
 
-function buildIdentity(projectName: string): string {
-  const entityRows = buildEntityRows();
-  const embedTypeUnion = buildEntityEmbedTypeUnion();
+function buildIdentity(pluginHost: ProjectPluginHost, projectName: string): string {
+  const entityRows = buildEntityRows(pluginHost);
+  const embedTypeUnion = buildEntityEmbedTypeUnion(pluginHost);
   return `<claude4spec_identity>
 You are a specification writing assistant for project "${projectName}". The user is editing a specification that consists of markdown pages (in pages/) and structured entities stored in SQLite. You operate via built-in file tools and MCP servers exposed in \`<tooling/>\`.
 
@@ -287,7 +289,7 @@ plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXE
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, acknowledge and describe what you would do — do not execute.
 </claude4spec_plan_mode>`;
 
-function buildTooling(planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
+function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
     `  <builtin>Read, Write, Edit, MultiEdit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
@@ -531,6 +533,7 @@ function buildCurrentPatch(patch: PatchResponse): string {
 
 export function buildSystemPrompt(input: SystemPromptInput): string {
   const {
+    host,
     projectName,
     cwd,
     pagesDir,
@@ -563,7 +566,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   const parts: string[] = [];
 
-  parts.push(buildIdentity(projectName));
+  parts.push(buildIdentity(host, projectName));
 
   // Project self-close — env metadata (cwd, pagesDir) before counters, then
   // entity attrs in displayOrder, with `tags` last:
@@ -575,7 +578,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     pages: pageCount,
     sections: sectionCount,
   };
-  for (const m of pluginHost.listEntities()) {
+  for (const m of host.listEntities()) {
     if (!m.systemPrompt.roleNoun) continue; // opt-out (legacy ui-view)
     const label = m.systemPrompt.countStat.label;
     projectAttrs[label] = entityCounts[m.type] ?? 0;
@@ -583,7 +586,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   projectAttrs.tags = tagCount;
   parts.push(selfClose('project', attrs(projectAttrs)));
 
-  parts.push(buildTooling(planToolsAvailable, c4sToolsAvailable));
+  parts.push(buildTooling(host, planToolsAvailable, c4sToolsAvailable));
 
   if (planToolsAvailable) {
     parts.push(PLAN_TOOLS_USAGE);

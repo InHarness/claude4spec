@@ -11,8 +11,6 @@ import {
 import { readConfig } from '../config.js';
 import type { Annotation } from '../../shared/entities.js';
 import {
-  activeAdapters,
-  pendingInputs,
   cancelPendingForRequest,
   runAgentTurn,
   ALLOWED_MODELS,
@@ -23,6 +21,8 @@ import {
 
 export function chatRouter(deps: AgentTurnDeps): Router {
   const router = Router();
+  // M31: per-project registries arrive via agentDeps (one pair per context).
+  const { activeAdapters, pendingInputs } = deps;
 
   const consoleObserver: StreamObserver | null = deps.mode === 'dev'
     ? createConsoleObserver({
@@ -211,7 +211,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       }
     }
     if (!found) return res.json({ data: { aborted: false } });
-    cancelPendingForRequest(requestId);
+    cancelPendingForRequest(pendingInputs, requestId);
     found.adapter.abort();
     res.json({ data: { aborted: true } });
   });
@@ -222,7 +222,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     const { threadId } = req.params;
     const active = activeAdapters.get(threadId);
     if (!active) return res.json({ data: { aborted: false } });
-    cancelPendingForRequest(active.requestId);
+    cancelPendingForRequest(pendingInputs, active.requestId);
     active.adapter.abort();
     res.json({ data: { aborted: true } });
   });

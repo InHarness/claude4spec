@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { apiFetch, API_BASE } from '../lib/api-core.js';
 import { useEventStream, useMessageReducer } from '@inharness-ai/agent-chat';
 import type { UsageStats, WireEvent } from '@inharness-ai/agent-chat';
 import type { NormalizedMessage, TodoItem, UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
@@ -25,6 +26,15 @@ export interface UseChatOptions {
   thinking: ChatThinking;
   planMode: boolean;
 }
+
+// M31: stala modulowa — useEventStream memoizuje po tozsamosci
+// endpoints.streamByThread; inline obiekt per render zmienial tozsamosc
+// joinStream i zapetlal efekt ladowania watku (Maximum update depth).
+const CHAT_ENDPOINTS = {
+  chat: `${API_BASE}/chat`,
+  abort: `${API_BASE}/chat/abort`,
+  streamByThread: (tid: string) => `${API_BASE}/chat/stream/${encodeURIComponent(tid)}`,
+};
 
 export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model, thinking, planMode }: UseChatOptions) {
   const { state, sendUserMessage, handleWireEvent, restoreMessages, clear } = useMessageReducer(
@@ -116,6 +126,9 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
   const { startStream, joinStream, abort: abortStream, disconnect: disconnectStream } = useEventStream({
     serverUrl,
+    // M31: local transport targets the project-prefixed API. An explicit peer
+    // serverUrl keeps the library defaults (`${serverUrl}/api/chat…`).
+    ...(serverUrl === '' ? { endpoints: CHAT_ENDPOINTS } : {}),
     onEvent,
     onError,
     onConnected,
@@ -173,7 +186,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     async (requestId: string, response: UserInputResponse) => {
       const threadIdForPost = currentThreadIdRef.current;
       try {
-        const res = await fetch(`${serverUrl}/api/chat/user-input`, {
+        const res = await apiFetch(`${serverUrl}/api/chat/user-input`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ requestId, response, threadId: threadIdForPost }),
@@ -224,7 +237,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
 
     (async () => {
       try {
-        const res = await fetch(`${serverUrl}/api/threads/${threadId}`);
+        const res = await apiFetch(`${serverUrl}/api/threads/${threadId}`);
         // Race-guard: szybki A->B->A albo nowa tura wystartowana w trakcie fetcha.
         // Jezeli ref nie wskazuje juz na ten threadId — nie nadpisuj stanu.
         const staleResponse = currentThreadIdRef.current !== threadId;

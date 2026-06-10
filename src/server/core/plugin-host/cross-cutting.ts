@@ -11,7 +11,7 @@ export function pluginHostRouter(host: PluginHost): Router {
   const router = Router();
 
   router.get('/_meta/entities', (_req, res) => {
-    res.json(host.state());
+    res.json(host.partition());
   });
 
   return router;

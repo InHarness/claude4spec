@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { JsonSchema } from './types.js';
-import { pluginHost } from '../core/plugin-host/host.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 const AUDIT_COLUMNS = new Set(['id', 'created_at', 'updated_at']);
 const JSON_COLUMN_HINTS = new Set(['fields', 'columns', 'indexes']);
@@ -10,15 +10,15 @@ const NON_ENTITY_TABLES: Record<string, string> = {
   section: 'section_index',
 };
 
-function resolveTable(type: string): string | undefined {
+function resolveTable(type: string, host: ProjectPluginHost): string | undefined {
   if (NON_ENTITY_TABLES[type]) return NON_ENTITY_TABLES[type];
-  // Use listAvailable so auto-schema works even when type is registered but
+  // Use getAvailable so auto-schema works even when type is registered but
   // currently inactive (catalog/CLI/MCP enumerate inactive types for diagnostics).
-  return pluginHost.getAvailable(type)?.table;
+  return host.getAvailable(type)?.table;
 }
 
-export function autoDerivedSchema(db: Database.Database, type: string): JsonSchema {
-  const table = resolveTable(type);
+export function autoDerivedSchema(db: Database.Database, type: string, host: ProjectPluginHost): JsonSchema {
+  const table = resolveTable(type, host);
   if (!table) {
     return { type: 'object', _auto: true, _note: `no table mapping for entity type '${type}'` };
   }

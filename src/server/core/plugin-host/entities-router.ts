@@ -6,14 +6,14 @@ import { isRawEntityType } from '../../domain/raw-entity-reader.js';
 import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
-import { pluginHost } from './host.js';
+import type { ProjectPluginHost } from './types.js';
 
 /**
  * M29: assert `(type, slug)` names an existing entity (slug is the sole
  * identity). Throws DomainError('NOT_FOUND') otherwise.
  */
-function assertExists(type: EntityType, slug: string): void {
-  if (!pluginHost.entityExists(type, slug)) {
+function assertExists(host: ProjectPluginHost, type: EntityType, slug: string): void {
+  if (!host.entityExists(type, slug)) {
     throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
   }
 }
@@ -22,9 +22,9 @@ function assertExists(type: EntityType, slug: string): void {
  * Validate that the `type` URL parameter names a known plugin (or the special
  * `section` non-entity type used by versioning). Throws on unknown types.
  */
-function assertType(type: string): EntityType {
+function assertType(host: ProjectPluginHost, type: string): EntityType {
   if (type === 'section') return type;
-  if (pluginHost.getAvailable(type)) return type as EntityType;
+  if (host.getAvailable(type)) return type as EntityType;
   throw new DomainError('VALIDATION', `unsupported entity type '${type}'`);
 }
 
@@ -35,14 +35,14 @@ function assertType(type: string): EntityType {
  * Lives under core/plugin-host/ because the URL spans all plugins; per-plugin
  * routes (CRUD) stay inside their own vertical slice.
  */
-export function entitiesRouter(tags: TagsService, versions: VersionService, store: EntityStore): Router {
+export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore): Router {
   const router = Router();
 
   router.get('/:type/:slug/versions', (req, res, next) => {
     try {
-      const type = assertType(req.params.type);
+      const type = assertType(host, req.params.type);
       const slug = req.params.slug;
-      assertExists(type, slug);
+      assertExists(host, type, slug);
       res.json({ versions: versions.listVersions(type, slug) });
     } catch (err) {
       next(err);
@@ -51,9 +51,9 @@ export function entitiesRouter(tags: TagsService, versions: VersionService, stor
 
   router.get('/:type/:slug/versions/:version', (req, res, next) => {
     try {
-      const type = assertType(req.params.type);
+      const type = assertType(host, req.params.type);
       const slug = req.params.slug;
-      assertExists(type, slug);
+      assertExists(host, type, slug);
       const version = Number(req.params.version);
       const detail = versions.getVersion(type, slug, version);
       if (!detail) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
@@ -65,9 +65,9 @@ export function entitiesRouter(tags: TagsService, versions: VersionService, stor
 
   router.post('/:type/:slug/tags', (req, res, next) => {
     try {
-      const type = assertType(req.params.type);
+      const type = assertType(host, req.params.type);
       const slug = req.params.slug;
-      assertExists(type, slug);
+      assertExists(host, type, slug);
       const body = req.body as { tags?: string[] };
       if (!Array.isArray(body.tags)) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'tags[] required' } });

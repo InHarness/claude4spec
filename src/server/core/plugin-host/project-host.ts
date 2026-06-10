@@ -1,11 +1,7 @@
 /**
- * Server PluginHost — singleton holding registered BackendModule manifests +
- * activation state. M13 spec: this is the *single* abstraction layer for
- * entity types. All consumers (chat-context, serializer registry, MCP, L4
- * routes) ask the host instead of iterating type literals.
- *
- * Phase 0: only registration + lookup. mountBackend is a stub that becomes
- * the unified mount point in Phase 3.
+ * M31: per-project plugin host. All mutable state that used to live in the
+ * `pluginHost` singleton (activation sets, MCP factories, entity services)
+ * is scoped to ONE ProjectContext — N projects in one process never share it.
  */
 
 import type { Database } from 'better-sqlite3';
@@ -13,7 +9,8 @@ import type { McpServerInstance } from '@inharness-ai/agent-adapters';
 import type {
   BackendModule,
   MountContext,
-  PluginHost,
+  PluginRegistry,
+  ProjectPluginHost,
 } from './types.js';
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
 import type {
@@ -25,21 +22,16 @@ import type {
 } from '../../serialization/types.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
 
-class PluginHostImpl implements PluginHost {
-  private modules = new Map<string, BackendModule>();
+export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
   private mcpServerFactories = new Map<string, () => McpServerInstance>();
   private entityServices = new Map<string, unknown>();
 
-  registerBackendModule(module: BackendModule): void {
-    if (!module.type) {
-      throw new Error('plugin-host: module.type is required');
-    }
-    this.modules.set(module.type, module);
-  }
-
-  consolidate(activeWhitelist: string[] | null | undefined): void {
+  constructor(
+    private readonly registry: PluginRegistry,
+    activeWhitelist: string[] | null | undefined,
+  ) {
     if (activeWhitelist == null) {
       this.activeTypes = null;
       this.unknownTypes = [];
@@ -48,7 +40,7 @@ class PluginHostImpl implements PluginHost {
     const active = new Set<string>();
     const unknown: string[] = [];
     for (const type of activeWhitelist) {
-      if (this.modules.has(type)) active.add(type);
+      if (this.registry.getAvailable(type)) active.add(type);
       else unknown.push(type);
     }
     this.activeTypes = active;
@@ -56,9 +48,7 @@ class PluginHostImpl implements PluginHost {
   }
 
   listAvailable(): BackendModule[] {
-    return Array.from(this.modules.values()).sort(
-      (a, b) => a.displayOrder - b.displayOrder
-    );
+    return this.registry.listAvailable();
   }
 
   listEntities(): BackendModule[] {
@@ -67,20 +57,20 @@ class PluginHostImpl implements PluginHost {
 
   getEntity(type: string): BackendModule | null {
     if (!this.isActive(type)) return null;
-    return this.modules.get(type) ?? null;
+    return this.registry.getAvailable(type);
   }
 
   getAvailable(type: string): BackendModule | null {
-    return this.modules.get(type) ?? null;
+    return this.registry.getAvailable(type);
   }
 
   isActive(type: string): boolean {
-    if (!this.modules.has(type)) return false;
+    if (!this.registry.getAvailable(type)) return false;
     if (this.activeTypes == null) return true;
     return this.activeTypes.has(type);
   }
 
-  state(): PluginActivationState {
+  partition(): PluginActivationState {
     const active = this.listEntities().map((m) => m.type);
     const inactive = this.listAvailable()
       .filter((m) => !this.isActive(m.type))
@@ -89,6 +79,8 @@ class PluginHostImpl implements PluginHost {
   }
 
   mountBackend(ctx: MountContext): void {
+    // A throwing plugin mount propagates — M31 turns it into a per-project
+    // build failure (500 PROJECT_BUILD_FAILED), never a process crash.
     for (const m of this.listEntities()) {
       m.backend?.mount?.(ctx);
     }
@@ -103,6 +95,10 @@ class PluginHostImpl implements PluginHost {
       name,
       server: factory(),
     }));
+  }
+
+  clearMcpFactories(): void {
+    this.mcpServerFactories.clear();
   }
 
   entityExists(type: string, slug: string): boolean {
@@ -154,5 +150,3 @@ class PluginHostImpl implements PluginHost {
     return counts;
   }
 }
-
-export const pluginHost: PluginHost = new PluginHostImpl();

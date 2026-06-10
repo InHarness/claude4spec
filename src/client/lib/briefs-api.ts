@@ -16,7 +16,7 @@ import type {
   BriefListItem,
   BriefThreadSummary,
 } from '../../shared/entities.js';
-import { handle } from './api-core.js';
+import { handle, apiFetch } from './api-core.js';
 
 type Envelope<T> = { data: T };
 
@@ -34,13 +34,13 @@ export const briefsApi = {
     const url = opts.implemented === undefined
       ? '/api/briefs'
       : `/api/briefs?implemented=${opts.implemented ? 'true' : 'false'}`;
-    const env = await handle<Envelope<BriefListItem[]>>(await fetch(url));
+    const env = await handle<Envelope<BriefListItem[]>>(await apiFetch(url));
     return env.data;
   },
 
   async create(input: BriefCreateRequest): Promise<BriefCreateResult> {
     const env = await handle<Envelope<BriefCreateResult>>(
-      await fetch('/api/briefs', {
+      await apiFetch('/api/briefs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -51,7 +51,7 @@ export const briefsApi = {
 
   async get(briefPath: string): Promise<BriefDetailResponse> {
     const env = await handle<Envelope<BriefDetailResponse>>(
-      await fetch(`/api/briefs/${encodeBriefPath(briefPath)}`),
+      await apiFetch(`/api/briefs/${encodeBriefPath(briefPath)}`),
     );
     return env.data;
   },
@@ -61,7 +61,7 @@ export const briefsApi = {
     input: { content: string; expectedHash: string; changeSummary?: string },
   ): Promise<BriefContentUpdateResult> {
     const env = await handle<Envelope<BriefContentUpdateResult>>(
-      await fetch(`/api/briefs/${encodeBriefPath(briefPath)}/content`, {
+      await apiFetch(`/api/briefs/${encodeBriefPath(briefPath)}/content`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
@@ -75,7 +75,7 @@ export const briefsApi = {
     patch: BriefFrontmatterUpdateRequest,
   ): Promise<Brief> {
     const env = await handle<Envelope<Brief>>(
-      await fetch(`/api/briefs/${encodeBriefPath(briefPath)}/frontmatter`, {
+      await apiFetch(`/api/briefs/${encodeBriefPath(briefPath)}/frontmatter`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
@@ -86,14 +86,14 @@ export const briefsApi = {
 
   async listThreads(briefPath: string): Promise<BriefThreadSummary[]> {
     const env = await handle<Envelope<BriefThreadSummary[]>>(
-      await fetch(`/api/briefs/${encodeBriefPath(briefPath)}/threads`),
+      await apiFetch(`/api/briefs/${encodeBriefPath(briefPath)}/threads`),
     );
     return env.data;
   },
 
   async createThread(briefPath: string, name?: string): Promise<{ threadId: string }> {
     const env = await handle<Envelope<{ threadId: string }>>(
-      await fetch(`/api/briefs/${encodeBriefPath(briefPath)}/threads`, {
+      await apiFetch(`/api/briefs/${encodeBriefPath(briefPath)}/threads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(name ? { name } : {}),

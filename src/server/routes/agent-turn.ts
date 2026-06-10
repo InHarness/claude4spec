@@ -28,13 +28,24 @@ import type { PatchService } from '../services/patch.js';
 import type { PageVersionService } from '../services/page-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import type { Annotation, Brief, ChatThread, PatchResponse } from '../../shared/entities.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
-import { pluginHost } from '../core/plugin-host/host.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 /** Deps potrzebne do uruchomienia tury agenta. Wspolne dla `POST /api/chat`
  *  (SSE) i `POST /api/threads/:id/ask` (headless). */
 export interface AgentTurnDeps {
+  /** M31: per-project host — MCP factories + entity counts come from here. */
+  pluginHost: ProjectPluginHost;
+  /** M31: per-project adapter registry (was module-global) — keyed by threadId. */
+  activeAdapters: Map<string, ActiveAdapter>;
+  /** M31: per-project pending user-input registry (was module-global). */
+  pendingInputs: Map<string, PendingInput>;
+  /**
+   * M31: pinged in the turn's `finally` — the context cache uses it to retry
+   * disposing retired/evicted contexts once they go idle.
+   */
+  onTurnFinished?: () => void;
   chatService: ChatService;
   pagesService: PagesService;
   tagsService: TagsService;
@@ -45,7 +56,7 @@ export interface AgentTurnDeps {
   pageVersions: PageVersionService;
   skillResolver: SkillResolver;
   skillRegistry: SkillRegistry;
-  ws: WsGateway;
+  ws: WsEmitter;
   cwd: string;
   pagesDir: string;
   mode: 'dev' | 'prod';
@@ -61,7 +72,7 @@ const BRIEF_ALLOWED_PLUGIN_MCP = new Set(['release-tools']);
 export const ALLOWED_MODELS = ['fable-5', 'sonnet-4.6', 'opus-4.8', 'haiku-4.5'] as const;
 export type Model = (typeof ALLOWED_MODELS)[number];
 
-interface PendingInput {
+export interface PendingInput {
   resolve: (response: UserInputResponse) => void;
   reject: (reason: unknown) => void;
   requestIdsForRequest: string;
@@ -85,14 +96,15 @@ export interface ActiveAdapter {
   replay: TurnReplay;
 }
 
-// Wspoldzielone rejestry — keyed by threadId, jeden aktywny adapter per watek.
-// `POST /api/chat` i `POST /api/threads/:id/ask` importuja te same instancje:
-// drugi POST/ask na ten sam watek dostaje 409, a GET /api/chat/stream/:threadId
+// M31: rejestry przeniesione z module-scope do ProjectContext (agentDeps) —
+// keyed by threadId, jeden aktywny adapter per watek. `POST /chat` i
+// `POST /threads/:id/ask` dostaja te same instancje przez wspolne agentDeps:
+// drugi POST/ask na ten sam watek dostaje 409, a GET /chat/stream/:threadId
 // dolacza do zywego streamu niezaleznie od tego, ktory endpoint go uruchomil.
-export const activeAdapters = new Map<string, ActiveAdapter>();
-export const pendingInputs = new Map<string, PendingInput>();
-
-export function cancelPendingForRequest(requestId: string): void {
+export function cancelPendingForRequest(
+  pendingInputs: Map<string, PendingInput>,
+  requestId: string,
+): void {
   for (const [inputId, pending] of pendingInputs) {
     if (pending.requestIdsForRequest === requestId) {
       pending.reject(new Error('stream aborted'));
@@ -168,7 +180,7 @@ export async function runAgentTurn(
     timestamp: new Date().toISOString(),
   };
   const replay: TurnReplay = { turnStart, events: [] };
-  activeAdapters.set(thread.id, { requestId, adapter, emitter, replay });
+  deps.activeAdapters.set(thread.id, { requestId, adapter, emitter, replay });
 
   // Zdarzenia istotne dla reducera (replay buduje stan bieżącej tury u joinera).
   const REPLAY_EVENT_TYPES = new Set([
@@ -366,13 +378,14 @@ export async function runAgentTurn(
     // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
     const cfg = readConfig(deps.cwd);
     const systemPrompt = buildSystemPrompt({
+      host: deps.pluginHost,
       projectName: cfg.name,
       cwd: deps.cwd,
       pagesDir: deps.pagesDir,
       currentPagePath: currentPage,
       currentPageBody,
       pageCount,
-      entityCounts: isBrief ? {} : pluginHost.computeEntityCounts(deps.db.handle),
+      entityCounts: isBrief ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
       tagCount: isBrief ? 0 : deps.tagsService.list().length,
       sectionCount: isBrief ? 0 : deps.sectionsService.count(),
       annotations,
@@ -422,7 +435,7 @@ export async function runAgentTurn(
     // intentionally narrow (brief-tools + read-only release-tools only).
     const c4sTools = isBrief ? null : buildC4sToolsServer();
 
-    const pluginMcpEntries = pluginHost
+    const pluginMcpEntries = deps.pluginHost
       .buildMcpServers()
       .filter(({ name }) => (isBrief ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true))
       .map(({ name, server }) => [name, server.config] as const);
@@ -589,8 +602,9 @@ export async function runAgentTurn(
       console.error('[chat] finalizeStreamingRows failed', finalizeErr);
     }
     emitter.emit('event', { type: 'done' });
-    activeAdapters.delete(thread.id);
-    cancelPendingForRequest(requestId);
+    deps.activeAdapters.delete(thread.id);
+    cancelPendingForRequest(deps.pendingInputs, requestId);
+    deps.onTurnFinished?.();
   }
 
   return { threadId: thread.id, answer: answerBuf.trim() };

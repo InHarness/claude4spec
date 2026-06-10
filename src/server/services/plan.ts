@@ -13,7 +13,7 @@ import type {
   PlanVersionMeta,
 } from '../../shared/entities.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ChatService } from './chat.js';
 import { DomainError } from './tags.js';
 
@@ -68,7 +68,7 @@ export interface PlanUpdateResult {
 export class PlanService {
   constructor(
     private db: Database.Database,
-    private ws: WsGateway,
+    private ws: WsEmitter,
     private chat: ChatService
   ) {}
 

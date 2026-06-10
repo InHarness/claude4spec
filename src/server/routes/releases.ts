@@ -1,11 +1,11 @@
 import { Router } from 'express';
 import type { ReleaseService } from '../services/release.js';
 import type { GitService } from '../services/git.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 
 export function releasesRouter(
   releases: ReleaseService,
-  ws?: WsGateway,
+  ws?: WsEmitter,
   gitService?: GitService,
 ): Router {
   const router = Router();

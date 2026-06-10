@@ -5,9 +5,8 @@ import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { PagesService } from '../services/pages.js';
 import type { SectionsService } from '../services/sections.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import { DomainError } from '../services/tags.js';
-import { pluginHost } from '../core/plugin-host/host.js';
 import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
@@ -17,13 +16,16 @@ import type { EntityType } from '../../shared/entities.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
 import type { AcService } from '../entities/ac/services.js';
 import type { EntityStore } from '../services/entity-store.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 export interface ReferenceToolsDeps {
+  /** M31: per-project host (was the process singleton). */
+  pluginHost: ProjectPluginHost;
   tagsService: TagsService;
   referencesService: ReferencesService;
   pagesService: PagesService;
   sectionsService: SectionsService;
-  ws: WsGateway;
+  ws: WsEmitter;
   db: Database;
   cwd: string;
   /** M29: persist an entity file after a tag_entity/untag_entity mutation. */
@@ -41,6 +43,7 @@ interface BrokenReferenceRow {
 }
 
 export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerInstance {
+  const pluginHost = deps.pluginHost;
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
   });
@@ -372,20 +375,35 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
               }
             }
             // Rule 8 — broken extension reference (e.g. <section_ref/> with unknown anchor).
-            // Validation is delegated to the slot owner via the registered `validate` callback;
-            // M19 does not know section_index. Owners surface a `category` like 'unknown-anchor'.
+            // M31: section_ref anchors validate against THIS context's
+            // SectionsService (the process-global registry can no longer hold a
+            // per-project validate closure — it would leak across workspace
+            // projects). Other extensions keep the registered `validate` slot.
             if (tag.source === 'extension') {
-              const ext = listExtensionReferenceTypes().find((e) => e.tag === tag.kind);
-              if (ext?.validate) {
-                const result = ext.validate(tag.attrs);
-                if (!result.ok) {
+              if (tag.kind === 'section_ref') {
+                const anchor = tag.attrs.anchor ?? '';
+                if (!anchor || !deps.sectionsService.has(anchor)) {
                   brokenExtensionReferences.push({
                     pagePath: p,
                     tagType: tag.kind,
                     attrs: tag.attrs,
                     line: tag.line,
-                    category: result.category,
+                    category: 'unknown-anchor',
                   });
+                }
+              } else {
+                const ext = listExtensionReferenceTypes().find((e) => e.tag === tag.kind);
+                if (ext?.validate) {
+                  const result = ext.validate(tag.attrs);
+                  if (!result.ok) {
+                    brokenExtensionReferences.push({
+                      pagePath: p,
+                      tagType: tag.kind,
+                      attrs: tag.attrs,
+                      line: tag.line,
+                      category: result.category,
+                    });
+                  }
                 }
               }
             }

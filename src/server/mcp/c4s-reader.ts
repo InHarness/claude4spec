@@ -7,7 +7,7 @@ import {
   type RawEntityReader,
   type RawEntityType,
 } from '../domain/raw-entity-reader.js';
-import { serializationEngine } from '../core/plugin-host/serialization-engine.js';
+import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
 import type { SerializeResult, ViewKind } from '../serialization/types.js';
 import fs from 'node:fs';
@@ -15,7 +15,7 @@ import path from 'node:path';
 
 export interface C4sReaderDeps {
   reader: RawEntityReader | null;
-  registry: typeof serializationEngine;
+  registry: SerializationEngine;
   db: Database.Database | null;
   projectDir: string | null;
   packageVersion: string;
@@ -67,7 +67,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       const code = /no such table|no such column/i.test(message) ? 'SCHEMA_OUT_OF_DATE' : 'INTERNAL';
-      const hint = code === 'SCHEMA_OUT_OF_DATE' ? 'run `npx claude4spec` to migrate' : undefined;
+      const hint = code === 'SCHEMA_OUT_OF_DATE' ? 'run `npx @inharness-ai/claude4spec` to migrate' : undefined;
       return { ok: false, response: fail(code, message, hint) };
     }
   };

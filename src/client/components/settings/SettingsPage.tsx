@@ -4,10 +4,11 @@ import { ProjectSection } from './sections/ProjectSection.js';
 import { AppearanceSection } from './sections/AppearanceSection.js';
 import { RemoteProjectSection } from './sections/RemoteProjectSection.js';
 import { GitSection } from './sections/GitSection.js';
-import { ServerSection } from './sections/ServerSection.js';
+import { DirectoriesSection } from './sections/DirectoriesSection.js';
 import { EntitiesSection } from './sections/EntitiesSection.js';
 import { AgentSection } from './sections/AgentSection.js';
 import { AboutSection } from './sections/AboutSection.js';
+import { DangerZoneSection } from './sections/DangerZoneSection.js';
 
 /**
  * M26 — full-page Settings surface mounted at `/settings`. Vertical stack of
@@ -15,8 +16,8 @@ import { AboutSection } from './sections/AboutSection.js';
  * and on `hashchange`.
  *
  * Section ids match the anchors referenced from the rest of the app:
- *   user-section · project · appearance · remote-project · git · server ·
- *   entities · agent · about.
+ *   user-section · project · appearance · remote-project · git · directories ·
+ *   entities · agent · about · danger-zone.
  */
 export function SettingsPage() {
   useEffect(() => {
@@ -46,10 +47,11 @@ export function SettingsPage() {
           <AppearanceSection />
           <RemoteProjectSection />
           <GitSection />
-          <ServerSection />
+          <DirectoriesSection />
           <EntitiesSection />
           <AgentSection />
           <AboutSection />
+          <DangerZoneSection />
         </div>
       </div>
     </div>

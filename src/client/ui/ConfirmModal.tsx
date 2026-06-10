@@ -3,12 +3,19 @@ import { UI_EVENTS, type ConfirmRequest } from './events.js';
 
 export function ModalHost() {
   const [request, setRequest] = useState<ConfirmRequest | null>(null);
+  const [typed, setTyped] = useState('');
   const cancelRef = useRef<HTMLButtonElement>(null);
   const confirmRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Type-to-confirm: the confirm button stays disabled until the input matches.
+  const requireText = request?.requireText;
+  const matches = !requireText || typed.trim() === requireText;
 
   useEffect(() => {
     const handler = (e: Event) => {
       const ce = e as CustomEvent<ConfirmRequest>;
+      setTyped('');
       setRequest(ce.detail);
     };
     window.addEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
@@ -17,7 +24,11 @@ export function ModalHost() {
 
   useEffect(() => {
     if (!request) return;
-    const t = window.setTimeout(() => confirmRef.current?.focus(), 0);
+    // Focus the input for type-to-confirm, otherwise the confirm button.
+    const t = window.setTimeout(
+      () => (request.requireText ? inputRef.current : confirmRef.current)?.focus(),
+      0,
+    );
     return () => window.clearTimeout(t);
   }, [request]);
 
@@ -29,7 +40,9 @@ export function ModalHost() {
         cancel();
         return;
       }
-      if (e.key === 'Tab') {
+      // With a type-to-confirm input present, let Tab move naturally so the
+      // input stays reachable; only trap focus in the plain two-button case.
+      if (e.key === 'Tab' && !request.requireText) {
         e.preventDefault();
         const el = document.activeElement;
         if (el === confirmRef.current) cancelRef.current?.focus();
@@ -49,7 +62,7 @@ export function ModalHost() {
   }
 
   function confirm() {
-    if (!request) return;
+    if (!request || !matches) return;
     const r = request;
     setRequest(null);
     r.resolve(true);
@@ -112,6 +125,30 @@ export function ModalHost() {
         >
           {request.body}
         </div>
+        {requireText ? (
+          <input
+            ref={inputRef}
+            type="text"
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && matches) confirm();
+            }}
+            placeholder={requireText}
+            spellCheck={false}
+            autoComplete="off"
+            style={{
+              width: '100%',
+              fontSize: 13,
+              padding: '7px 10px',
+              borderRadius: 4,
+              marginBottom: 20,
+              background: 'var(--c-bg)',
+              border: '1px solid var(--c-hair-strong)',
+              color: 'var(--c-ink)',
+            }}
+          />
+        ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
           <button
             ref={cancelRef}
@@ -128,13 +165,15 @@ export function ModalHost() {
           <button
             ref={confirmRef}
             onClick={confirm}
+            disabled={!matches}
             style={{
               fontSize: 12,
               padding: '6px 14px',
               borderRadius: 4,
               fontWeight: 500,
-              background: danger ? 'var(--c-red, #c45a3b)' : 'var(--c-accent)',
-              color: '#fff',
+              background: matches ? (danger ? 'var(--c-red, #c45a3b)' : 'var(--c-accent)') : 'var(--c-hair-strong)',
+              color: matches ? '#fff' : 'var(--c-subtle)',
+              cursor: matches ? 'pointer' : 'not-allowed',
             }}
           >
             {confirmLabel}

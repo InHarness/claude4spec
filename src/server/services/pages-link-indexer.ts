@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { PagesService } from './pages.js';
-import type { WsGateway } from '../ws/gateway.js';
+import type { WsEmitter } from '../ws/project-emitter.js';
 import type {
   FileMeta,
   PageLink,
@@ -36,7 +36,7 @@ export class PagesLinkIndexerService {
   private reverseIndex = new Map<string, Set<string>>();
   private unresolved = new Map<string, UnresolvedMention[]>();
 
-  constructor(private pages: PagesService, private ws: WsGateway) {}
+  constructor(private pages: PagesService, private ws: WsEmitter) {}
 
   async indexAll(): Promise<void> {
     const files = await this.pages.listMarkdownFiles();
