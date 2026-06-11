@@ -20,7 +20,10 @@ export interface Db {
 export function openDb(workspace: WorkspaceRecord, cwd: string): Db {
   const dir = slotDirFor(workspace.name, projectIdForCwd(cwd));
   fs.mkdirSync(dir, { recursive: true });
-  const dbPath = path.join(dir, 'db.sqlite');
+  return openDbAt(path.join(dir, 'db.sqlite'));
+}
+
+export function openDbAt(dbPath: string): Db {
   const handle = new Database(dbPath);
   handle.pragma('journal_mode = WAL');
   handle.pragma('foreign_keys = ON');
