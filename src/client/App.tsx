@@ -32,7 +32,11 @@ export function RootLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const { data: config } = useConfig();
-  const isOnboardingPath = stripBase(location.pathname) === '/onboarding';
+  const currentPath = stripBase(location.pathname);
+  const isOnboardingPath = currentPath === '/onboarding';
+  // Decision #11: `/welcome` runs project-less — no config fetch, no project
+  // shell. Rendered in the same minimal container as onboarding.
+  const isWelcomePath = currentPath === '/welcome';
 
   // M16 mount-time guard: jezeli config swiezy (onboardingCompleted=false),
   // przekierowujemy na /onboarding zanim user zobaczy edytor.
@@ -47,9 +51,10 @@ export function RootLayout() {
     document.title = config?.name ? `${config.name} | claude4spec` : 'claude4spec';
   }, [config?.name]);
 
-  // Minimalny shell dla onboardingu (bez sidebara, chatu, watchera). MainShell
-  // nie mountuje sie, wiec useFileWatcher / pages-tree query nie ruszaja.
-  if (isOnboardingPath) {
+  // Minimalny shell dla onboardingu i welcome (bez sidebara, chatu, watchera).
+  // MainShell nie mountuje sie, wiec useFileWatcher / pages-tree query nie
+  // ruszaja — istotne dla `/welcome`, ktore dziala bez aktywnego projektu.
+  if (isOnboardingPath || isWelcomePath) {
     return (
       <div
         className="h-full w-full"

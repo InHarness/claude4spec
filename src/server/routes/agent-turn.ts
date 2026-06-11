@@ -20,7 +20,7 @@ import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
-import { buildSystemPrompt } from '../services/chat-context.js';
+import { buildSystemPrompt, type PeerProject } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
@@ -61,6 +61,18 @@ export interface AgentTurnDeps {
   pagesDir: string;
   mode: 'dev' | 'prod';
   db: Db;
+  /**
+   * 0.1.58: workspace name (registry identity) — the `workspace="…"` attr on the
+   * `<workspace_projects>` prompt block.
+   */
+  workspaceName?: string;
+  /**
+   * 0.1.58: workspace peers (current project excluded) for the
+   * `<workspace_projects>` discovery block. Lazily read from each peer's
+   * `config.json` per turn so peer-config edits surface on the next thread's
+   * first turn. Absent ⇒ no peers (e.g. single-project workspace).
+   */
+  listWorkspacePeers?: () => PeerProject[];
 }
 
 /** M21 m05ctxreg: tools whitelist per context_type. Brief threads get only
@@ -228,9 +240,12 @@ export async function runAgentTurn(
 
   let assistantBuf = '';
   let thinkingBuf = '';
-  // Skolapsowana odpowiedz tury — wszystkie main-agent `text_delta` zlaczone.
-  // Nie resetowane przy flush; zwracane jako `answer` po terminalnym evencie.
-  let answerBuf = '';
+  // 0.1.58: `answer` = treść OSTATNIEJ wiadomości assistant tury (finalne
+  // podsumowanie po terminalnym evencie `result`), NIE konkatenacja wszystkich
+  // bloków. `flushMainBuf` nadpisuje to każdym wypchniętym main-assistant
+  // blokiem; po `result` zostaje wyłącznie końcowy. Pośrednie wpisy nadal lądują
+  // w `chat_message` (źródło prawdy, dostępne przez GET /api/threads/:id).
+  let lastAssistantText = '';
   const subagentBuffers = new Map<string, { text: string; thinking: string }>();
   let lastMainAssistantRowId: number | null = null;
   let lastToolResultRowId: number | null = null;
@@ -278,6 +293,9 @@ export async function runAgentTurn(
         JSON.stringify({ text: assistantBuf }),
       );
       lastMainAssistantRowId = row.id;
+      // 0.1.58: capture the last persisted main-assistant block; the final
+      // flush (on `result`) leaves the turn's closing summary here.
+      lastAssistantText = assistantBuf;
       assistantBuf = '';
     }
     if (thinkingBuf) {
@@ -393,6 +411,10 @@ export async function runAgentTurn(
       currentPlan,
       planToolsAvailable: !isBrief,
       c4sToolsAvailable: !isBrief,
+      // 0.1.58: peer-discovery block. Skip the disk reads for brief frames
+      // (c4sToolsAvailable=false there, so the block would be gated out anyway).
+      workspaceProjects: isBrief ? [] : (deps.listWorkspacePeers?.() ?? []),
+      workspaceName: deps.workspaceName,
       writingStyle,
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
@@ -469,7 +491,6 @@ export async function runAgentTurn(
             getSubBuf(event.subagentTaskId).text += event.text;
           } else if (!event.isSubagent) {
             assistantBuf += event.text;
-            answerBuf += event.text;
           }
           break;
         case 'thinking':
@@ -607,7 +628,7 @@ export async function runAgentTurn(
     deps.onTurnFinished?.();
   }
 
-  return { threadId: thread.id, answer: answerBuf.trim() };
+  return { threadId: thread.id, answer: lastAssistantText.trim() };
 }
 
 export function countPages(tree: Array<{ type: string; children?: unknown[] }>): number {

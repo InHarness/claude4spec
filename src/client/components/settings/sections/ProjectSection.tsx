@@ -23,6 +23,13 @@ export function ProjectSection() {
   const initialName = config?.name ?? '';
   const dirty = name && name !== initialName;
 
+  // 0.1.58 — local "elevator pitch" (0–200). `null` draft = unedited (mirror the
+  // config value); an empty/whitespace submit clears the field (PATCH null).
+  const [descDraft, setDescDraft] = useState<string | null>(null);
+  const baselineDesc = config?.description ?? '';
+  const descValue = descDraft ?? baselineDesc;
+  const descDirty = descDraft !== null && descDraft !== baselineDesc;
+
   async function handleSaveName() {
     if (!dirty) return;
     try {
@@ -30,6 +37,17 @@ export function ProjectSection() {
       toast.success('Project name updated');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Failed to update name');
+    }
+  }
+
+  async function handleSaveDescription() {
+    if (!descDirty) return;
+    try {
+      await patch.mutateAsync({ description: descValue.trim() === '' ? null : descValue });
+      setDescDraft(null);
+      toast.success('Project description updated');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to update description');
     }
   }
 
@@ -90,6 +108,34 @@ export function ProjectSection() {
             </button>
           </div>
           <Hint>1–80 chars, [a-zA-Z0-9._- ].</Hint>
+        </Field>
+
+        <Field label="Description">
+          <textarea
+            value={descValue}
+            onChange={(e) => setDescDraft(e.target.value)}
+            maxLength={200}
+            rows={2}
+            placeholder="One-line elevator pitch for this specification…"
+            className="w-full rounded-md px-3 py-2 text-[13px] resize-none"
+            style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+            title="A short description of this specification, visible to agents of other projects in the workspace (helps them decide whom to consult via `c4s ask`)."
+          />
+          <div className="flex items-center justify-between">
+            <button
+              type="button"
+              disabled={!descDirty || patch.isPending}
+              onClick={handleSaveDescription}
+              className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+              style={{ background: 'var(--c-accent)', color: '#fff' }}
+            >
+              Save
+            </button>
+            <span className="text-[11px] tabular-nums" style={{ color: 'var(--c-subtle)' }}>
+              {descValue.length}/200
+            </span>
+          </div>
+          <Hint>Visible to agents of other workspace projects. Applied from their next new thread.</Hint>
         </Field>
 
         <Field label="Writing style">

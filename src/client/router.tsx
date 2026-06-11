@@ -32,6 +32,7 @@ import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
 import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
+import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { EndpointDetail } from './entities/endpoint/detail-panel.js';
 import { DtoDetail } from './entities/dto/detail-panel.js';
@@ -230,6 +231,13 @@ const onboardingRoute = createRoute({
   component: OnboardingPage,
 });
 
+// Decision #11: project-less route (basepath '/' when no PROJECT_ID is injected).
+const welcomeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/welcome',
+  component: WelcomePage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -289,6 +297,7 @@ const routeTree = rootRoute.addChildren([
   plansIndexRoute,
   planDetailRoute,
   onboardingRoute,
+  welcomeRoute,
   settingsRoute,
   releasesIndexRoute,
   releaseDetailRoute,

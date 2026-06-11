@@ -16,8 +16,6 @@ export interface BootstrapOptions {
   pagesDir?: string;
   /** CLI `--remote-url` (sticky config.remoteApiUrl on first bootstrap). */
   remoteApiUrl?: string | null;
-  /** M27 clone: skip the welcome page (restored pages populate the project). */
-  skipWelcome?: boolean;
 }
 
 export interface BootstrapResult {
@@ -30,7 +28,15 @@ export interface BootstrapResult {
   gitignoreCreated: boolean;
 }
 
-function ensureWelcomePage(cwd: string, pagesDir: string | undefined): void {
+/**
+ * 0.1.56: welcome `pages/index.md` is no longer written at fresh bootstrap — it
+ * is deferred to onboarding close (confirm or skip) so a `pagesDir` change in
+ * onboarding can't orphan an index at the old path. The PATCH /api/config
+ * handler calls this after persisting `onboardingCompleted: true`, on the
+ * effective pagesDir. Idempotent: skips if `index.md` exists or pagesDir is
+ * non-empty (don't clobber restored/cloned pages).
+ */
+export function ensureWelcomePage(cwd: string, pagesDir: string | undefined): void {
   const pagesPath = path.join(cwd, pagesDir ?? 'pages');
   fs.mkdirSync(pagesPath, { recursive: true });
   const indexPath = path.join(pagesPath, 'index.md');
@@ -47,9 +53,10 @@ function ensureWelcomePage(cwd: string, pagesDir: string | undefined): void {
  * existing project changes nothing.
  *
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
- * port/mode to the registry, first-wins) → .gitignore → welcome page →
- * entitiesDir → external skills (M22) → .claude4spec/mcp.json (M12) →
- * registry registration (creates the DB slot) → legacy DB relocation.
+ * port/mode to the registry, first-wins) → .gitignore → entitiesDir → external
+ * skills (M22) → .claude4spec/mcp.json (M12) → registry registration (creates
+ * the DB slot) → legacy DB relocation. (0.1.56: welcome page no longer created
+ * here — deferred to onboarding close.)
  */
 export function bootstrapProject(
   registry: WorkspaceRegistry,
@@ -73,7 +80,7 @@ export function bootstrapProject(
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
   ensureGitignore(cwd);
-  if (!opts.skipWelcome) ensureWelcomePage(cwd, opts.pagesDir ?? config.pagesDir);
+  // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
   fs.mkdirSync(path.resolve(cwd, config.entitiesDir ?? '.claude4spec/entities'), {
     recursive: true,
   });

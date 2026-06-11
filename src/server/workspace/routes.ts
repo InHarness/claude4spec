@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readConfig } from '../config.js';
@@ -70,6 +71,35 @@ export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
         current: w.name === workspace.name,
       })),
     });
+  });
+
+  // Decision #11 (0.1.57): server-side directory browser for the add-project
+  // modal. Lists ONLY subdirectories (files skipped) under `path`; absent
+  // `path` starts at the process CWD; a leading `~` expands to the user's home.
+  // Operates on the host filesystem, hence workspace scope (outside any project
+  // prefix). ENOENT/EACCES (or any read error) → 400 consumed inline by the
+  // modal — the server never crashes on a bad path.
+  router.get('/workspace/fs', (req, res) => {
+    const raw = typeof req.query.path === 'string' ? req.query.path.trim() : '';
+    const expanded =
+      raw === '~' || raw.startsWith('~/') ? path.join(os.homedir(), raw.slice(1)) : raw;
+    const target = expanded === '' ? process.cwd() : path.resolve(expanded);
+    try {
+      const entries = fs
+        .readdirSync(target, { withFileTypes: true })
+        .filter((e) => e.isDirectory())
+        .map((e) => ({ name: e.name, path: path.join(target, e.name) }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const parent = path.dirname(target);
+      res.json({ path: target, parent: parent === target ? null : parent, entries });
+    } catch (err) {
+      res.status(400).json({
+        error: {
+          code: 'VALIDATION',
+          message: err instanceof Error ? err.message : String(err),
+        },
+      });
+    }
   });
 
   router.post('/workspace/projects', async (req, res) => {

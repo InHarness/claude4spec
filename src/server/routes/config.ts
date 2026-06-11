@@ -14,6 +14,13 @@ export interface ConfigRouterDeps {
    * next request rebuilds it. No restart, no banner.
    */
   onContextConfigChanged?: () => void;
+  /**
+   * 0.1.56: fired after a PATCH persists `onboardingCompleted: true` (Continue
+   * or Skip), with the effective post-write `pagesDir`. Wires the deferred,
+   * idempotent welcome `pages/index.md` step so changing `pagesDir` in
+   * onboarding can't leave an orphan index on the old path.
+   */
+  onOnboardingCompleted?: (effectivePagesDir: string) => void;
 }
 
 const CONTEXT_DEFINING_FIELDS = ['pagesDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'entities'] as const;
@@ -29,6 +36,7 @@ function configResponse(c: Config) {
     pagesDir: c.pagesDir,
     writingStyle: c.writingStyle,
     language: c.language ?? null,
+    description: c.description ?? null,
     onboarding: { completed: c.onboardingCompleted },
     briefsDir: c.briefsDir,
     patchesDir: c.patchesDir,
@@ -82,6 +90,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         entitiesDir: string;
         writingStyle: string | null;
         language: string | null;
+        description: string | null;
         onboardingCompleted: boolean;
         entities: string[];
         agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
@@ -151,6 +160,20 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: `language "${String(body.language)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
         }
         patch.language = body.language;
+      }
+
+      // 0.1.58: local "elevator pitch" (0–200). `null` or an empty/whitespace
+      // string clears it; >200 → 400 inline. Distinct from the remote
+      // project.description (different endpoint, no sync).
+      if ('description' in body) {
+        if (body.description !== null && typeof body.description !== 'string') {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'description must be string | null' } });
+        }
+        if (typeof body.description === 'string' && body.description.length > 200) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'description must be at most 200 characters' } });
+        }
+        const trimmed = typeof body.description === 'string' ? body.description.trim() : null;
+        patch.description = trimmed ? body.description : null;
       }
 
       if ('onboardingCompleted' in body) {
@@ -225,6 +248,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       }
 
       const updated = writeConfig(cwd, patch);
+      // 0.1.56: create the deferred welcome page BEFORE invalidating the context,
+      // so the lazy rebuild's indexAll() picks it up. Runs on the effective
+      // post-write pagesDir (a pagesDir change in the same atomic body is already
+      // persisted in `updated`).
+      if (patch.onboardingCompleted === true) {
+        deps.onOnboardingCompleted?.(updated.pagesDir);
+      }
       if (deps.onContextConfigChanged && CONTEXT_DEFINING_FIELDS.some((f) => f in patch)) {
         deps.onContextConfigChanged();
       }

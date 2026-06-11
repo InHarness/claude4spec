@@ -83,6 +83,8 @@ export interface ConfigResponse {
   writingStyle: string | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
   language: string | null;
+  /** 0.1.58: local one-line "elevator pitch" (0–200); surfaced to peer agents. */
+  description: string | null;
   onboarding: { completed: boolean };
   /** M21: catalog of brief files. */
   briefsDir: string;
@@ -113,6 +115,8 @@ export interface ConfigPatch {
   writingStyle?: string | null;
   /** 0.1.51: spec-authoring language; null or a SUPPORTED_LANGUAGES member. */
   language?: string | null;
+  /** 0.1.58: local "elevator pitch" (0–200); null or empty clears it. */
+  description?: string | null;
   onboardingCompleted?: boolean;
   entities?: string[];
   /** 0.1.51: agent.conversationalLanguage deep-merged server-side (preserves claudeUsePreset). */

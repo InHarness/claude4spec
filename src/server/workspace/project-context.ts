@@ -56,6 +56,7 @@ import { todosRouter } from '../routes/todos.js';
 import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
+import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
@@ -63,6 +64,7 @@ import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
 import { projectIdForCwd } from './project-id.js';
+import { ensureWelcomePage } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -480,6 +482,7 @@ async function buildInner(
       cwd,
       skillRegistry,
       onContextConfigChanged: deps.onContextConfigChanged,
+      onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
     }),
   );
 
@@ -489,6 +492,30 @@ async function buildInner(
   router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore));
+  // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
+  // workspace project except this one, build a PeerProject whose `path` is the
+  // registry `cwd` (passed 1:1 as the `project` param to `c4s-tools.ask`); name/
+  // description are lazily read from the peer's config.json (source of truth,
+  // no denormalization). Unreadable config → entry with `path` only. Re-read per
+  // turn so peer-config edits surface on the next thread's first turn.
+  const listWorkspacePeers = (): PeerProject[] => {
+    const ws = registry.getWorkspace(workspace.name);
+    if (!ws) return [];
+    return ws.projects
+      .filter((p) => p.cwd !== cwd)
+      .map((p) => {
+        const peer: PeerProject = { path: p.cwd };
+        try {
+          const peerCfg = readConfig(p.cwd);
+          if (peerCfg.name) peer.name = peerCfg.name;
+          if (peerCfg.description) peer.description = peerCfg.description;
+        } catch {
+          /* unreadable/missing config → path-only entry, not an error */
+        }
+        return peer;
+      });
+  };
+
   // Wspolne deps tury agenta — `threadsRouter` (POST /:id/ask) i `chatRouter`
   // (POST /chat, SSE) dziela ten sam runtime i rejestr `activeAdapters`.
   const agentDeps = {
@@ -511,6 +538,8 @@ async function buildInner(
     pagesDir,
     mode,
     db,
+    workspaceName: workspace.name,
+    listWorkspacePeers,
   };
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService));

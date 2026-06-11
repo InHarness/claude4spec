@@ -7,6 +7,19 @@ import type {
 } from '../../shared/entities.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
+/**
+ * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`. `path` is
+ * the peer's `cwd` from the workspace registry — passed 1:1 as the `project`
+ * param to `ask`. `name`/`description` are read from the peer's `config.json`
+ * (source of truth, no denormalization); both are optional so a peer with an
+ * unreadable config still renders as `<peer path="…"/>`.
+ */
+export interface PeerProject {
+  name?: string;
+  path: string;
+  description?: string;
+}
+
 export interface SystemPromptInput {
   /** M31: per-project host (was the process singleton). */
   host: ProjectPluginHost;
@@ -28,6 +41,11 @@ export interface SystemPromptInput {
    *  Mounted for chat+patch threads; brief threads have a narrow toolset and
    *  do not see this server. */
   c4sToolsAvailable?: boolean;
+  /** 0.1.58: workspace peers (current project excluded) for the
+   *  `<workspace_projects>` discovery block. Gated on `c4sToolsAvailable`. */
+  workspaceProjects?: PeerProject[];
+  /** 0.1.58: workspace name — the `workspace="…"` attr on `<workspace_projects>`. */
+  workspaceName?: string;
   writingStyle?: { slug: string; title: string } | null;
   /** 0.1.51: config.language — display name; emits `<spec_language>` (chat/patch only, NOT brief). */
   specLanguage?: string;
@@ -251,6 +269,7 @@ c4s-tools MCP server consults another claude4spec specification synchronously.
 Use \`project\` (local path to peer .claude4spec/) OR \`server\` (URL override); if both, \`server\` wins.
 Continue an existing peer thread by passing its \`threadId\` (omit \`contextType\` then).
 Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled \`c4s ask\` does not.
+The peers available in this workspace are listed in \`<workspace_projects/>\`.
 </c4s_tools_usage>`;
 
 /**
@@ -313,6 +332,21 @@ function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean
     lines.push(`  <mcp name="c4s-tools">ask</mcp>`);
   }
   lines.push(`</tooling>`);
+  return lines.join('\n');
+}
+
+/**
+ * 0.1.58: discovery block listing workspace peers the agent may consult via
+ * `c4s-tools.ask`. The current project is excluded upstream. `path` is ready to
+ * pass 1:1 as the `project` param; empty `name`/`description` attrs are dropped
+ * by `attrs()`, so a peer with an unreadable config renders as `<peer path="…"/>`.
+ */
+function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): string {
+  const lines = [`<workspace_projects ${attrs({ workspace: workspaceName })}>`];
+  for (const p of peers) {
+    lines.push(`  ${selfClose('peer', attrs({ name: p.name, path: p.path, description: p.description }))}`);
+  }
+  lines.push(`</workspace_projects>`);
   return lines.join('\n');
 }
 
@@ -548,6 +582,8 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     currentPlan = null,
     planToolsAvailable = false,
     c4sToolsAvailable = false,
+    workspaceProjects = [],
+    workspaceName,
     writingStyle = null,
     specLanguage,
     conversationalLanguage,
@@ -594,6 +630,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   if (c4sToolsAvailable) {
     parts.push(C4S_TOOLS_USAGE);
+  }
+
+  // 0.1.58 step 5a: peer-discovery block — right after C4S_TOOLS_USAGE (it
+  // completes the c4s-tools contract), before the project skill. Same gate as
+  // <c4s_tools_usage>; a workspace with no peers (after excluding the current
+  // project) omits the block entirely. Absent in the brief frame (flag false).
+  if (c4sToolsAvailable && workspaceProjects.length > 0) {
+    parts.push(buildWorkspaceProjects(workspaceName ?? '', workspaceProjects));
   }
 
   if (writingStyle) {

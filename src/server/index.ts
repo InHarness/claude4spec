@@ -22,6 +22,14 @@ export interface StartOptions {
   cwd: string;
   /** M31: pre-selected workspace (CLI select-or-create). Absent ⇒ resolved here. */
   workspace?: WorkspaceRecord;
+  /**
+   * Decision #11 (0.1.57): register `cwd` as the initial project at start
+   * (CLI `--create-project` / an implying flag). `false` ⇒ workspace-only
+   * start — nothing is registered/activated, nothing is written to `cwd`, and
+   * the bare command lands on `/welcome`. Defaults to `true` for back-compat
+   * with callers that always meant "create".
+   */
+  createProject?: boolean;
   port?: number;
   mode?: 'dev' | 'prod';
   pagesDir?: string;
@@ -95,23 +103,16 @@ function injectProjectGlobal(html: string, cwd: string, name: string): string {
 
 const PROJECT_ROUTE_RE = /^\/p\/([0-9a-f]{12})(\/|$)/;
 
-const NO_PROJECTS_HTML = `<!doctype html>
-<html><head><meta charset="utf-8"><title>claude4spec</title></head>
-<body style="font-family: ui-sans-serif, system-ui; margin: 4rem auto; max-width: 36rem; line-height: 1.6">
-<h1>No projects in this workspace</h1>
-<p>Run <code>npx @inharness-ai/claude4spec</code> inside a project directory to register it, or
-<code>POST /api/workspace/projects</code> with <code>{"cwd": "/abs/path"}</code>.</p>
-</body></html>`;
-
 type SpaResolution =
   | { kind: 'project'; project: ProjectRecord }
   | { kind: 'redirect'; to: string }
-  | { kind: 'no-projects' };
+  | { kind: 'welcome' };
 
 /**
  * M31 route scheme `/p/<project-id>/…` (assets stay at root — no Vite
- * base changes). `/` → 302 to the last-opened project (else first
- * registered, else a static "no projects" page); unknown id and any other
+ * base changes). Decision #11 (0.1.57): `/` → 302 to the last-opened project
+ * (else first registered, else `/welcome`); `/welcome` serves the SPA with NO
+ * project injected (workspace-scope project list); unknown id and any other
  * non-asset path → redirect `/`.
  */
 function resolveSpaRoute(
@@ -124,9 +125,10 @@ function resolveSpaRoute(
     const project = registry.getProject(workspace, m[1]!);
     return project ? { kind: 'project', project } : { kind: 'redirect', to: '/' };
   }
+  if (urlPath === '/welcome') return { kind: 'welcome' };
   if (urlPath === '/' || urlPath === '') {
     const fresh = registry.getWorkspace(workspace.name) ?? workspace;
-    if (fresh.projects.length === 0) return { kind: 'no-projects' };
+    if (fresh.projects.length === 0) return { kind: 'redirect', to: '/welcome' };
     const byRecency = [...fresh.projects].sort((a, b) =>
       (b.lastOpened ?? b.addedAt).localeCompare(a.lastOpened ?? a.addedAt),
     );
@@ -160,14 +162,16 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       const urlPath = (req.originalUrl ?? '/').split('?')[0]!;
       const resolution = resolveSpaRoute(deps.registry, deps.workspace, urlPath);
       if (resolution.kind === 'redirect') return res.redirect(302, resolution.to);
-      if (resolution.kind === 'no-projects') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(NO_PROJECTS_HTML);
-      }
-      const { project } = resolution;
-      deps.registry.touchLastOpened(deps.workspace.name, project.id);
       const htmlPath = path.join(repoRoot, 'src/client/index.html');
       let html = await fs.promises.readFile(htmlPath, 'utf-8');
       html = await vite.transformIndexHtml(req.originalUrl, html);
+      // `/welcome` runs the SPA project-less: no `window.__C4S_PROJECT__`, so the
+      // client computes PROJECT_ID='' → API_BASE='/api' → router basepath '/'.
+      if (resolution.kind === 'welcome') {
+        return res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
+      }
+      const { project } = resolution;
+      deps.registry.touchLastOpened(deps.workspace.name, project.id);
       html = injectProjectGlobal(html, project.cwd, project.name);
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
@@ -189,12 +193,13 @@ function mountProd(app: Express, deps: SpaDeps) {
       const urlPath = (req.originalUrl ?? '/').split('?')[0]!;
       const resolution = resolveSpaRoute(deps.registry, deps.workspace, urlPath);
       if (resolution.kind === 'redirect') return res.redirect(302, resolution.to);
-      if (resolution.kind === 'no-projects') {
-        return res.status(200).set({ 'Content-Type': 'text/html' }).end(NO_PROJECTS_HTML);
+      const raw = fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8');
+      // `/welcome` runs the SPA project-less (no `window.__C4S_PROJECT__`).
+      if (resolution.kind === 'welcome') {
+        return res.status(200).set({ 'Content-Type': 'text/html' }).end(raw);
       }
       const { project } = resolution;
       deps.registry.touchLastOpened(deps.workspace.name, project.id);
-      const raw = fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8');
       res
         .status(200)
         .set({ 'Content-Type': 'text/html' })
@@ -227,8 +232,12 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const registry = new WorkspaceRegistry();
   const workspace =
     opts.workspace ?? registry.selectOrCreate({ port: opts.port, mode: opts.mode });
-  const initialProject = registry.registerProject(workspace, cwd);
-  migrateLegacyDbIfNeeded(registry, workspace, cwd);
+  // Decision #11: a workspace-only start (`createProject === false`) registers
+  // and activates nothing — `cwd` stays untouched and the bare command lands on
+  // `/welcome`. Default `true` keeps the historic "always create" behavior.
+  const createProject = opts.createProject ?? true;
+  const initialProject = createProject ? registry.registerProject(workspace, cwd) : null;
+  if (createProject) migrateLegacyDbIfNeeded(registry, workspace, cwd);
 
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
@@ -252,7 +261,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M31: lazily-built, cached per-project contexts. The CLI-only overrides
   // (pagesDir flag, --remote-url, clone) apply solely to the initial project.
   const cache: ProjectContextCache = new ProjectContextCache(async (project) => {
-    const isInitial = project.id === initialProject.id;
+    const isInitial = initialProject != null && project.id === initialProject.id;
     const clone = isInitial ? clonePending : undefined;
     if (clone) clonePending = undefined;
     return buildProjectContext({
@@ -280,21 +289,22 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
 
   // Eager warm of the CLI-started project: clone executes before listen and a
-  // broken initial config still fails the boot fast (parity with pre-M31).
-  const initialCtx = await cache.get(initialProject);
+  // broken initial config still fails the boot fast (parity with pre-M31). A
+  // workspace-only start has no initial project to warm.
+  const initialCtx = initialProject ? await cache.get(initialProject) : null;
 
   const spaDeps = { registry, workspace, startCwd: cwd };
   const closeAssets = mode === 'dev' ? await mountDevVite(app, spaDeps) : mountProd(app, spaDeps);
 
   const port = await listenOrExit(httpServer, portRef.current);
   portRef.current = port;
-  registry.touchLastOpened(workspace.name, initialProject.id);
+  if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   const url = `http://localhost:${port}`;
 
   return {
     url,
     port,
-    writingStyle: initialCtx.writingStyle,
+    writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
       await cache.disposeAll();
       await gateway.close();

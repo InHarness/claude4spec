@@ -24,6 +24,14 @@ interface CliArgs {
    * bootstrap so later pushes/clones target the same remote.
    */
   remoteUrl?: string;
+  /**
+   * Decision #11 (0.1.57): `--create-project` — explicit opt-in to register the
+   * CWD as a workspace project. Non-sticky (never written to config.json).
+   * Implied by any per-project flag (`--cwd`/`--name`/`--pages`/`--clone`/
+   * `--remote-url`). Without it the bare command is a workspace-only start that
+   * writes nothing to the CWD and opens `/welcome`.
+   */
+  createProject: boolean;
 }
 
 function parseArgs(argv: string[]): CliArgs {
@@ -37,7 +45,12 @@ function parseArgs(argv: string[]): CliArgs {
     noOpen: false,
     clone: undefined,
     remoteUrl: undefined,
+    createProject: false,
   };
+  // `cwd` always defaults to process.cwd(), so its value can't signal intent —
+  // track whether `--cwd` was passed explicitly to drive the create-project
+  // implication.
+  let cwdExplicit = false;
   const resolveCwd = (raw: string) => path.resolve(process.cwd(), raw);
   const parseMode = (raw: string): 'dev' | 'prod' => {
     if (raw !== 'dev' && raw !== 'prod') throw new Error(`--mode must be 'dev' or 'prod', got '${raw}'`);
@@ -51,8 +64,10 @@ function parseArgs(argv: string[]): CliArgs {
       args.port = Number(a.split('=')[1]);
     } else if (a === '--cwd' && argv[i + 1]) {
       args.cwd = resolveCwd(argv[++i]!);
+      cwdExplicit = true;
     } else if (a?.startsWith('--cwd=')) {
       args.cwd = resolveCwd(a.split('=')[1]!);
+      cwdExplicit = true;
     } else if (a === '--pages' && argv[i + 1]) {
       args.pagesDir = argv[++i];
     } else if (a?.startsWith('--pages=')) {
@@ -77,9 +92,22 @@ function parseArgs(argv: string[]): CliArgs {
       args.remoteUrl = argv[++i];
     } else if (a?.startsWith('--remote-url=')) {
       args.remoteUrl = a.split('=')[1];
+    } else if (a === '--create-project') {
+      args.createProject = true;
     } else if (a === '--no-open') {
       args.noOpen = true;
     }
+  }
+  // Decision #11: per-project flags imply `--create-project` — each acted on the
+  // CWD project in 0.1.56, so their use still registers it (eases migration).
+  if (
+    cwdExplicit ||
+    args.name != null ||
+    args.pagesDir != null ||
+    args.clone != null ||
+    args.remoteUrl != null
+  ) {
+    args.createProject = true;
   }
   return args;
 }
@@ -126,74 +154,111 @@ function openBrowser(url: string): void {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl } = args;
-fs.mkdirSync(cwd, { recursive: true });
-// M27 step 6a: validate the clone target is empty before any remote call / DB open.
-if (clone) assertCloneTargetEmpty(cwd);
+const { port, cwd, pagesDir, mode, name, noOpen, clone, remoteUrl, createProject } = args;
 
-// M31: workspace select-or-create. Peek the config-v3 migration FIRST so a
-// pre-v3 `config.json.port` can still select the right workspace when no
-// --port/--workspace flag is given (first-wins carry happens in bootstrap).
 const registry = new WorkspaceRegistry();
-const peeked = migrateConfigToV3(cwd);
-const workspace = registry.selectOrCreate({
-  name: args.workspace,
-  port: port ?? peeked.carried.defaultPort,
-  mode: mode ?? peeked.carried.mode,
-});
 
-// M31: full per-project activation (config, gitignore, welcome page, skills,
-// mcp.json, registry registration, legacy-db relocation).
-const boot = bootstrapProject(registry, workspace, cwd, {
-  name,
-  pagesDir,
-  remoteApiUrl: remoteUrl,
-  skipWelcome: Boolean(clone),
-});
+if (createProject) {
+  // ── Create-project path (explicit opt-in or an implying flag) ──────────────
+  fs.mkdirSync(cwd, { recursive: true });
+  // M27 step 6a: validate the clone target is empty before any remote call / DB open.
+  if (clone) assertCloneTargetEmpty(cwd);
 
-const effectivePort = port ?? workspace.defaultPort;
-const effectiveMode = mode ?? workspace.mode;
-
-startServer({
-  cwd,
-  workspace,
-  port: effectivePort,
-  pagesDir,
-  mode: effectiveMode,
-  // Raw CLI --name only (undefined unless explicitly passed) — consumed solely as
-  // the M27 clone name override, where an explicit --name wins over the bundle's
-  // config.name.
-  name,
-  clone,
-  // Resolved flag > config.json > null; startServer applies the prod-constant
-  // fallback inside RemoteHttpClient.
-  remoteApiUrl: boot.config.remoteApiUrl,
-  // M27 (0.1.37): drive the clone full-rollback — delete config.json / .claude4spec/
-  // only if THIS run created them.
-  configCreated: boot.configCreated,
-  claudeDirCreated: boot.claudeDirCreated,
-  gitignoreCreated: boot.gitignoreCreated,
-})
-  .then((handle) => {
-    const projectUrl = `${handle.url}/p/${boot.project.id}/`;
-    console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
-    console.log(`  workspace: ${workspace.name}`);
-    console.log(`  cwd: ${cwd}`);
-    console.log(`  pages: ${pagesDir ?? boot.config.pagesDir}`);
-    console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
-    console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
-
-    if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
-
-    const close = async () => {
-      console.log('\n  shutting down…');
-      await handle.shutdown();
-      process.exit(0);
-    };
-    process.on('SIGINT', close);
-    process.on('SIGTERM', close);
-  })
-  .catch((err) => {
-    console.error('failed to start:', err);
-    process.exit(1);
+  // M31: workspace select-or-create. Peek the config-v3 migration FIRST so a
+  // pre-v3 `config.json.port` can still select the right workspace when no
+  // --port/--workspace flag is given (first-wins carry happens in bootstrap).
+  const peeked = migrateConfigToV3(cwd);
+  const workspace = registry.selectOrCreate({
+    name: args.workspace,
+    port: port ?? peeked.carried.defaultPort,
+    mode: mode ?? peeked.carried.mode,
   });
+
+  // M31: full per-project activation (config, gitignore, welcome page, skills,
+  // mcp.json, registry registration, legacy-db relocation).
+  const boot = bootstrapProject(registry, workspace, cwd, {
+    name,
+    pagesDir,
+    remoteApiUrl: remoteUrl,
+  });
+
+  const effectivePort = port ?? workspace.defaultPort;
+  const effectiveMode = mode ?? workspace.mode;
+
+  startServer({
+    cwd,
+    workspace,
+    createProject: true,
+    port: effectivePort,
+    pagesDir,
+    mode: effectiveMode,
+    // Raw CLI --name only (undefined unless explicitly passed) — consumed solely as
+    // the M27 clone name override, where an explicit --name wins over the bundle's
+    // config.name.
+    name,
+    clone,
+    // Resolved flag > config.json > null; startServer applies the prod-constant
+    // fallback inside RemoteHttpClient.
+    remoteApiUrl: boot.config.remoteApiUrl,
+    // M27 (0.1.37): drive the clone full-rollback — delete config.json / .claude4spec/
+    // only if THIS run created them.
+    configCreated: boot.configCreated,
+    claudeDirCreated: boot.claudeDirCreated,
+    gitignoreCreated: boot.gitignoreCreated,
+  })
+    .then((handle) => {
+      const projectUrl = `${handle.url}/p/${boot.project.id}/`;
+      console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${projectUrl}\x1b[0m`);
+      console.log(`  workspace: ${workspace.name}`);
+      console.log(`  cwd: ${cwd}`);
+      console.log(`  pages: ${pagesDir ?? boot.config.pagesDir}`);
+      console.log(`  config: ${boot.configPath}${boot.configCreated ? ' (created)' : ''}`);
+      console.log(`  writing style: ${handle.writingStyle ? `${handle.writingStyle.title} (${handle.writingStyle.slug})` : 'none'}`);
+
+      if (!noOpen && effectiveMode === 'prod') openBrowser(projectUrl);
+      installShutdown(handle);
+    })
+    .catch(failToStart);
+} else {
+  // ── Workspace-only start (decision #11) ────────────────────────────────────
+  // No mkdir, no config-v3 peek (it would rewrite config.json), no bootstrap —
+  // nothing is written to the CWD. Select the workspace from CLI signals only
+  // and open `/welcome`. A project is registered later via /welcome or the
+  // switcher (POST /api/workspace/projects).
+  const workspace = registry.selectOrCreate({ name: args.workspace, port, mode });
+  const effectivePort = port ?? workspace.defaultPort;
+  const effectiveMode = mode ?? workspace.mode;
+
+  startServer({
+    cwd,
+    workspace,
+    createProject: false,
+    port: effectivePort,
+    mode: effectiveMode,
+  })
+    .then((handle) => {
+      const welcomeUrl = `${handle.url}/welcome`;
+      console.log(`\x1b[32m  claude4spec\x1b[0m  ready at \x1b[36m${welcomeUrl}\x1b[0m`);
+      console.log(`  workspace: ${workspace.name} (workspace-only start — no project created)`);
+      console.log(`  hint: pass --create-project to register this directory as a project`);
+
+      if (!noOpen && effectiveMode === 'prod') openBrowser(welcomeUrl);
+      installShutdown(handle);
+    })
+    .catch(failToStart);
+}
+
+function installShutdown(handle: Awaited<ReturnType<typeof startServer>>): void {
+  const close = async () => {
+    console.log('\n  shutting down…');
+    await handle.shutdown();
+    process.exit(0);
+  };
+  process.on('SIGINT', close);
+  process.on('SIGTERM', close);
+}
+
+function failToStart(err: unknown): never {
+  console.error('failed to start:', err);
+  process.exit(1);
+}

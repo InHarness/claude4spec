@@ -6,6 +6,7 @@ import { confirmDestructive, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
 import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
+import { DirectoriesSection, type DirectoriesDraft } from './DirectoriesSection.js';
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -20,6 +21,14 @@ export function OnboardingPage() {
   // gate [Continue].
   const [language, setLanguage] = useState<string | null>(null);
   const [conversationalLanguage, setConversationalLanguage] = useState<string | null>(null);
+  // 0.1.56: optional directory overrides. Pre-filled from config; sent on Continue
+  // (also covers escape-hatch rerun pre-fill). Empty defaults until hydrated.
+  const [dirs, setDirs] = useState<DirectoriesDraft>({
+    pagesDir: '',
+    briefsDir: '',
+    patchesDir: '',
+    entitiesDir: '',
+  });
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -32,6 +41,12 @@ export function OnboardingPage() {
       }
       setLanguage(config.language);
       setConversationalLanguage(config.agent?.conversationalLanguage ?? null);
+      setDirs({
+        pagesDir: config.pagesDir,
+        briefsDir: config.briefsDir,
+        patchesDir: config.patchesDir,
+        entitiesDir: config.entitiesDir,
+      });
       setHydrated(true);
     }
   }, [config, hydrated]);
@@ -59,6 +74,13 @@ export function OnboardingPage() {
         writingStyle,
         language,
         agent: { conversationalLanguage }, // deep-merged server-side; preserves claudeUsePreset
+        // 0.1.56: always send the (pre-filled or edited) directories. Unchanged
+        // values are an accepted no-op rebuild; a changed pagesDir rebuilds the
+        // context and the deferred welcome lands on the new path.
+        pagesDir: dirs.pagesDir,
+        briefsDir: dirs.briefsDir,
+        patchesDir: dirs.patchesDir,
+        entitiesDir: dirs.entitiesDir,
         onboardingCompleted: true,
       });
       toast.success('Setup complete');
@@ -71,7 +93,7 @@ export function OnboardingPage() {
   async function onSkip() {
     const ok = await confirmDestructive({
       title: 'Skip onboarding?',
-      body: 'You can re-enable onboarding by editing .claude4spec/config.json (set onboardingCompleted: false) and restarting the server.',
+      body: 'To re-run onboarding later, set onboardingCompleted: false in .claude4spec/config.json, then re-activate this project in the switcher (or restart the server). Editing the file alone won’t trigger it — claude4spec doesn’t watch .claude4spec/.',
       confirmLabel: 'Skip anyway',
     });
     if (!ok) return;
@@ -91,7 +113,7 @@ export function OnboardingPage() {
 
   return (
     <div
-      className="min-h-full w-full flex items-start justify-center overflow-y-auto"
+      className="h-full w-full flex items-start justify-center overflow-y-auto"
       style={{ background: 'var(--c-bg)' }}
     >
       <div
@@ -140,6 +162,11 @@ export function OnboardingPage() {
         <ConversationalLanguageField
           value={conversationalLanguage}
           onChange={setConversationalLanguage}
+        />
+
+        <DirectoriesSection
+          draft={dirs}
+          onChange={(next) => setDirs((d) => ({ ...d, ...next }))}
         />
 
         <div className="flex items-center justify-end gap-3 mt-2">

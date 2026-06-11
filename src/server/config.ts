@@ -28,6 +28,15 @@ export interface Config {
   entitiesDir: string;
   writingStyle: string | null;
   /**
+   * 0.1.58: one-line "elevator pitch" (0–200 chars) describing this specification.
+   * Surfaced to chat agents of OTHER workspace projects via the
+   * `<workspace_projects>` prompt block, so a peer agent knows what this spec is
+   * before consulting it through `c4s-tools.ask`. Local-only — distinct from the
+   * remote `project.description` (peer-spec, different endpoint, no sync).
+   * Additive — no `$schemaVersion` bump; missing/`null` = no description.
+   */
+  description?: string | null;
+  /**
    * 0.1.51: language the agent writes SPEC CONTENT in (pages, entity descriptions,
    * briefs). Display name from `SUPPORTED_LANGUAGES` (src/shared/languages.ts) or
    * `null` = no language directive (pre-0.1.51 behaviour). Top-level because it
@@ -198,6 +207,14 @@ function validate(raw: unknown): Partial<Config> {
       throw typeError('language', 'string | null', r.language);
     }
     out.language = r.language;
+  }
+  if ('description' in r) {
+    // 0.1.58 type-only here (mirror language). The 0–200 length cap is enforced
+    // at the PATCH /api/config route (returns 400 inline).
+    if (r.description !== null && typeof r.description !== 'string') {
+      throw typeError('description', 'string | null', r.description);
+    }
+    out.description = r.description;
   }
   if ('onboardingCompleted' in r) {
     if (typeof r.onboardingCompleted !== 'boolean') throw typeError('onboardingCompleted', 'boolean', r.onboardingCompleted);

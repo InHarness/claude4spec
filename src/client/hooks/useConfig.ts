@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
+import { PROJECT_ID } from '../lib/api-core.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -19,6 +20,9 @@ export function useConfig() {
   return useQuery({
     queryKey: ['config'],
     queryFn: () => configApi.get(),
+    // Decision #11: `/welcome` runs project-less (PROJECT_ID=''), where there is
+    // no project-scoped `/api/config` to read — skip the doomed request.
+    enabled: !!PROJECT_ID,
   });
 }
 
