@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.16] - 2026-06-11
+
+### Added
+- Project-less welcome page — a new `/welcome` route serves as an entry point when no project is active, letting users view and add projects to their workspace before selecting one. `WelcomePage` pairs with a server-side directory browser in `AddProjectDialog` for picking project directories.
+- Multi-workspace support — projects can now belong to multiple workspaces, resolved through a new workspace registry. A `--workspace` CLI option disambiguates a project registered in more than one workspace, and a `ProjectSwitcher` UI plus `/api/workspace` routes manage workspace membership and project context.
+- `describe` CLI command — returns on-demand JSON Schema for a given entity type or view, with error handling for invalid views, improving schema discovery for agents.
+- Vitest testing framework — test infrastructure (`tsconfig.test.json`, `vitest.config.ts`, `tests/` helpers) plus an AC-coverage script (`scripts/ac-coverage.mjs`) and a broad initial suite of unit and integration tests across CLI, serialization, references, and DB migrations.
+- `fable-5` chat model with adaptive thinking, surfaced across `ChatOverlay`, `UsageBadge`, and chat state.
+- Onboarding configuration fields — a `DirectoriesSection` for specifying directory paths, `LanguageFields` (backed by `shared/languages.ts`), and a local "elevator pitch" project description field.
+- Danger Zone settings section for destructive project actions.
+
+### Changed
+- Major server refactor — `src/server/index.ts` (~1000 lines) decomposed into dedicated `server/workspace/` modules (registry, bootstrap, project-context, context-cache, middleware, db-migration) with project-scoped DB access and a per-project plugin host (`host.ts` → `project-host.ts`).
+- `useEntityDraftEditor` hook standardizes draft management and autosave across all entity detail panels (AC, DTO, endpoint, table, UI view); `CreateBriefDialog` simplified by removing the extra prompt input.
+- `catalog` command enriched with row counts, descriptions, `roleNoun`, and `mcpToolsLine` for better smoke-test output; entity system prompts clarified.
+- `ChatOverlay` now prioritizes a one-shot seed prompt over draft input via a new `seedPrompt` store state, ensuring fresh context when starting seeded threads.
+- Bumped `@inharness-ai/agent-adapters` to 0.6.4.
+
 ## [1.0.15] - 2026-06-09
 
 ### Added
@@ -161,6 +179,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.16]: https://github.com/InHarness/claude4spec/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/InHarness/claude4spec/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/InHarness/claude4spec/compare/v1.0.13...v1.0.14
 [1.0.13]: https://github.com/InHarness/claude4spec/compare/v1.0.12...v1.0.13
