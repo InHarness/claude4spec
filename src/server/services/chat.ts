@@ -8,6 +8,7 @@ import type {
   ChatSubagentTask,
   ChatThread,
   ChatThreadMeta,
+  QueuedMessage,
   TodoItem,
   UsageStats,
 } from '../../shared/entities.js';
@@ -57,6 +58,28 @@ interface ChatSubagentTaskRow {
   created_at: string;
   updated_at: string;
 }
+
+interface ChatQueuedMessageRow {
+  id: number;
+  thread_id: string;
+  position: number;
+  prompt: string;
+  annotations_json: string | null;
+  current_page: string | null;
+  created_at: string;
+}
+
+/** A drained queue row — carries the full enqueue context for dispatch. */
+export interface QueuedMessageRecord {
+  id: string;
+  prompt: string;
+  annotationsJson: string | null;
+  currentPage: string | null;
+  createdAt: string;
+}
+
+/** Hard cap on pending queued messages per thread (→ 400 QUEUE_FULL). */
+export const QUEUE_LIMIT = 20;
 
 export class ChatService {
   constructor(private db: Database.Database) {}
@@ -407,6 +430,92 @@ export class ChatService {
       if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
     }
     return this.getThreadRow(threadId);
+  }
+
+  // --- M05: chat message queue ---------------------------------------------
+  // A row lives from enqueue until delivery (mid-turn push or after-turn merged
+  // dispatch) or cancellation. `position` is monotonic per thread.
+
+  /** Pending queue size for a thread (for the QUEUE_LIMIT check). */
+  countQueued(threadId: string): number {
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS n FROM chat_queued_message WHERE thread_id = ?`)
+      .get(threadId) as { n: number };
+    return row.n;
+  }
+
+  /** Append a message to a thread's queue. `position = MAX(position)+1`. */
+  enqueueQueued(
+    threadId: string,
+    prompt: string,
+    annotationsJson: string | null = null,
+    currentPage: string | null = null,
+  ): QueuedMessage {
+    const info = this.db
+      .prepare(
+        `INSERT INTO chat_queued_message (thread_id, position, prompt, annotations_json, current_page)
+         VALUES (
+           ?,
+           (SELECT COALESCE(MAX(position), -1) + 1 FROM chat_queued_message WHERE thread_id = ?),
+           ?, ?, ?
+         )`,
+      )
+      .run(threadId, threadId, prompt, annotationsJson, currentPage);
+    const row = this.db
+      .prepare(`SELECT * FROM chat_queued_message WHERE id = ?`)
+      .get(info.lastInsertRowid) as ChatQueuedMessageRow;
+    return this.hydrateQueued(row);
+  }
+
+  /** Snapshot of a thread's queue in delivery order (`position ASC`). */
+  listQueued(threadId: string): QueuedMessage[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM chat_queued_message WHERE thread_id = ? ORDER BY position ASC`,
+      )
+      .all(threadId) as ChatQueuedMessageRow[];
+    return rows.map((r) => this.hydrateQueued(r));
+  }
+
+  /** Cancel a single queued message by `(thread_id, id)`. Returns false if gone. */
+  removeQueued(threadId: string, id: string): boolean {
+    const numericId = Number(id);
+    if (!Number.isInteger(numericId)) return false;
+    const info = this.db
+      .prepare(`DELETE FROM chat_queued_message WHERE thread_id = ? AND id = ?`)
+      .run(threadId, numericId);
+    return info.changes > 0;
+  }
+
+  /** Drain the whole queue (FIFO) in one transaction — select then delete. */
+  popAllQueued(threadId: string): QueuedMessageRecord[] {
+    const tx = this.db.transaction(() => {
+      const rows = this.db
+        .prepare(
+          `SELECT * FROM chat_queued_message WHERE thread_id = ? ORDER BY position ASC`,
+        )
+        .all(threadId) as ChatQueuedMessageRow[];
+      if (rows.length > 0) {
+        this.db.prepare(`DELETE FROM chat_queued_message WHERE thread_id = ?`).run(threadId);
+      }
+      return rows;
+    });
+    return tx().map((r) => ({
+      id: String(r.id),
+      prompt: r.prompt,
+      annotationsJson: r.annotations_json,
+      currentPage: r.current_page,
+      createdAt: r.created_at,
+    }));
+  }
+
+  /** Clear the whole queue, returning the dropped texts (`position ASC`). */
+  clearQueued(threadId: string): string[] {
+    return this.popAllQueued(threadId).map((r) => r.prompt);
+  }
+
+  private hydrateQueued(row: ChatQueuedMessageRow): QueuedMessage {
+    return { id: String(row.id), text: row.prompt, createdAt: row.created_at };
   }
 
   private findThread(id: string): ChatThread | null {

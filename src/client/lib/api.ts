@@ -37,6 +37,10 @@ export {
   type DatabaseTableWithWarnings,
 } from '../entities/database-table/api.js';
 export { uiViewsApi, type UiViewWithWarnings } from '../entities/ui-view/api.js';
+export {
+  designSystemsApi,
+  type DesignSystemWithWarnings,
+} from '../entities/design-system/api.js';
 
 export const api = {
   async tree(): Promise<PageNode[]> {

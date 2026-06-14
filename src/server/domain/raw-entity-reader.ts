@@ -1,6 +1,12 @@
 import type Database from 'better-sqlite3';
 
-export type RawEntityType = 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac';
+export type RawEntityType =
+  | 'endpoint'
+  | 'dto'
+  | 'database-table'
+  | 'ui-view'
+  | 'ac'
+  | 'design-system';
 
 export interface RawEntity {
   type: RawEntityType;
@@ -50,9 +56,17 @@ const ENTITY_TABLES: Record<RawEntityType, string> = {
   'database-table': 'database_table',
   'ui-view': 'ui_view',
   ac: 'ac',
+  'design-system': 'design_system',
 };
 
-const ALL_ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
+const ALL_ENTITY_TYPES: RawEntityType[] = [
+  'endpoint',
+  'dto',
+  'database-table',
+  'ui-view',
+  'ac',
+  'design-system',
+];
 
 export function isRawEntityType(value: string): value is RawEntityType {
   return (
@@ -60,7 +74,8 @@ export function isRawEntityType(value: string): value is RawEntityType {
     value === 'dto' ||
     value === 'database-table' ||
     value === 'ui-view' ||
-    value === 'ac'
+    value === 'ac' ||
+    value === 'design-system'
   );
 }
 
@@ -190,7 +205,14 @@ export class RawEntityReader {
       color: r.color,
       description: r.description,
       counts:
-        countMap.get(r.slug) ?? { endpoint: 0, dto: 0, 'database-table': 0, 'ui-view': 0, ac: 0 },
+        countMap.get(r.slug) ?? {
+          endpoint: 0,
+          dto: 0,
+          'database-table': 0,
+          'ui-view': 0,
+          ac: 0,
+          'design-system': 0,
+        },
     }));
   }
 

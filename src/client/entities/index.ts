@@ -4,6 +4,7 @@ import './dto/plugin.js';
 import './database-table/plugin.js';
 import './ui-view/plugin.js';
 import './ac/plugin.js';
+import './design-system/plugin.js';
 
 export { getEntityDef, listEntityDefs, registerEntity } from './registry.js';
 export type {

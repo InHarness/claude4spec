@@ -5,6 +5,7 @@ import { dtosApi, endpointsApi } from '../lib/api.js';
 import { acsApi } from '../entities/ac/api.js';
 import { dispatchNewDatabaseTable } from '../components/NewDatabaseTablePopover.js';
 import { dispatchNewUiView } from '../components/NewUiViewPopover.js';
+import { dispatchNewDesignSystem } from '../components/NewDesignSystemPopover.js';
 import { dispatchTodoPopover } from '../components/TodoPopover.js';
 import { openPopover, toast } from '../ui/events.js';
 
@@ -58,6 +59,9 @@ export async function invokeSlash(
       return;
     case 'ui-view':
       runCreateUiView(editor, deps);
+      return;
+    case 'design-system':
+      runCreateDesignSystem(editor, deps);
       return;
     case 'todo':
       runTodo(editor);
@@ -268,6 +272,23 @@ function runCreateUiView(editor: Editor, deps: SlashInvokeDeps): void {
         .insertContent({ type: 'single_element', attrs: { type: 'ui-view', slug } })
         .run();
       toast.success(`UI view ${slug} created`);
+    },
+  });
+}
+
+function runCreateDesignSystem(editor: Editor, deps: SlashInvokeDeps): void {
+  const { x, y } = coordsAt(editor);
+  dispatchNewDesignSystem({
+    x,
+    y,
+    onCreated: (slug) => {
+      deps.qc.invalidateQueries({ queryKey: ['design-systems'] });
+      editor
+        .chain()
+        .focus()
+        .insertContent({ type: 'single_element', attrs: { type: 'design-system', slug } })
+        .run();
+      toast.success(`Design system ${slug} created`);
     },
   });
 }

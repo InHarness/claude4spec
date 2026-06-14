@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch, API_BASE } from '../lib/api-core.js';
 import { useEventStream, useMessageReducer } from '@inharness-ai/agent-chat';
-import type { UsageStats, WireEvent } from '@inharness-ai/agent-chat';
+import type { QueuedMessage, UsageStats, WireEvent } from '@inharness-ai/agent-chat';
 import type { NormalizedMessage, TodoItem, UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import type {
   Annotation,
@@ -25,6 +25,12 @@ export interface UseChatOptions {
   model: ChatModel;
   thinking: ChatThinking;
   planMode: boolean;
+  /**
+   * M05 (D4): fired when the server clears the thread's queue (Stop/abort or
+   * explicit clear). Carries the cleared texts so the composer can restore them
+   * (the reducer only drops the chips — composer text is component-owned).
+   */
+  onQueueCleared?: (texts: string[]) => void;
 }
 
 // M31: stala modulowa — useEventStream memoizuje po tozsamosci
@@ -34,13 +40,24 @@ const CHAT_ENDPOINTS = {
   chat: `${API_BASE}/chat`,
   abort: `${API_BASE}/chat/abort`,
   streamByThread: (tid: string) => `${API_BASE}/chat/stream/${encodeURIComponent(tid)}`,
+  // M05 queue endpoints (project-prefixed via API_BASE).
+  queue: (tid: string) => `${API_BASE}/chat/queue/${encodeURIComponent(tid)}`,
+  queueItem: (tid: string, mid: string) =>
+    `${API_BASE}/chat/queue/${encodeURIComponent(tid)}/${encodeURIComponent(mid)}`,
+  queueClear: (tid: string) => `${API_BASE}/chat/queue/${encodeURIComponent(tid)}`,
 };
 
-export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model, thinking, planMode }: UseChatOptions) {
+export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMissing, model, thinking, planMode, onQueueCleared }: UseChatOptions) {
   const { state, sendUserMessage, handleWireEvent, restoreMessages, clear } = useMessageReducer(
     'claude-code',
     model,
   );
+
+  // Ref so `onEvent`'s identity stays stable (it feeds useEventStream's memo).
+  const onQueueClearedRef = useRef(onQueueCleared);
+  useEffect(() => {
+    onQueueClearedRef.current = onQueueCleared;
+  }, [onQueueCleared]);
 
   const currentThreadIdRef = useRef<string | null>(threadId);
   const loadingThreadRef = useRef<string | null>(null);
@@ -99,6 +116,13 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         const cs = (ext as { contextSize?: number }).contextSize;
         if (typeof cs === 'number') setLiveContextSize(cs);
       }
+      // M05 (D4): restore cleared queue texts into the composer. Arrives both
+      // from the SSE broadcast and synthesized by useEventStream.abort. The
+      // reducer (below) drops the chips; the composer text is component-owned.
+      if (ext.type === 'queue_cleared') {
+        const texts = (ext as { texts?: string[] }).texts ?? [];
+        if (texts.length > 0) onQueueClearedRef.current?.(texts);
+      }
       handleWireEvent(event);
     },
     [handleWireEvent],
@@ -124,7 +148,15 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     [onThreadCreated, threadId],
   );
 
-  const { startStream, joinStream, abort: abortStream, disconnect: disconnectStream } = useEventStream({
+  const {
+    startStream,
+    joinStream,
+    abort: abortStream,
+    disconnect: disconnectStream,
+    queueMessage: queueMessageRaw,
+    cancelQueued: cancelQueuedRaw,
+    clearQueue: clearQueueRaw,
+  } = useEventStream({
     serverUrl,
     // M31: local transport targets the project-prefixed API. An explicit peer
     // serverUrl keeps the library defaults (`${serverUrl}/api/chat…`).
@@ -181,6 +213,38 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     handleWireEvent({ type: 'error', error: 'Request aborted', code: 'ABORTED' });
     setPendingUserInputs([]);
   }, [abortStream, handleWireEvent]);
+
+  // M05: enqueue a message typed during a live turn. Returns true on success so
+  // the caller can clear the composer; on failure the message stays put.
+  const queueMessage = useCallback(
+    async (prompt: string): Promise<boolean> => {
+      const tid = currentThreadIdRef.current;
+      if (!tid || !prompt.trim()) return false;
+      try {
+        await queueMessageRaw(tid, { prompt });
+        return true;
+      } catch (e) {
+        toast.error(`Failed to queue message: ${(e as Error).message}`);
+        return false;
+      }
+    },
+    [queueMessageRaw],
+  );
+
+  // Cancel a single queued message; the UI updates from the SSE `queue_updated`.
+  const cancelQueued = useCallback(
+    (messageId: string) => {
+      const tid = currentThreadIdRef.current;
+      if (tid) void cancelQueuedRaw(tid, messageId);
+    },
+    [cancelQueuedRaw],
+  );
+
+  // Clear the whole queue; the server broadcasts `queue_cleared` (texts restored).
+  const clearQueue = useCallback(() => {
+    const tid = currentThreadIdRef.current;
+    if (tid) void clearQueueRaw(tid);
+  }, [clearQueueRaw]);
 
   const submitUserInput = useCallback(
     async (requestId: string, response: UserInputResponse) => {
@@ -257,10 +321,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             messages: ChatMessageRow[];
             subagentTasks: ChatSubagentTask[];
             isLive?: boolean;
+            queuedMessages?: QueuedMessage[];
           };
         };
         const thread = payload.data;
         const subagentTasks = thread.subagentTasks ?? [];
+        const queuedMessages = thread.queuedMessages ?? [];
         const fullMessages = rowsToChatMessages(thread.messages, subagentTasks);
         // Per-user metadata z PELNEJ historii — kolejnosc renderowanych user-messages
         // (sliced + dolozona przez turn_start) odpowiada pelnej liscie.
@@ -288,7 +354,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
           }
           const slicedRows = lastUserIdx >= 0 ? rows.slice(0, lastUserIdx) : rows;
           const slicedMessages = rowsToChatMessages(slicedRows, subagentTasks);
-          restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
+          restoreMessages(slicedMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
           setIsResuming(true);
           // Fire-and-forget: fetch+restore konczy sie szybko (zwalnia loadingThreadRef),
           // a join trwa do konca tury. Kontynuacja po resolve obsluguje wyscig — tura
@@ -297,11 +363,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
             if (currentThreadIdRef.current !== threadId) return;
             setIsResuming(false);
             if (!joined) {
-              restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
+              restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
             }
           });
         } else {
-          restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model);
+          restoreMessages(fullMessages, thread.lastSessionId ?? undefined, 'claude-code', model, queuedMessages);
         }
       } catch {
         if (currentThreadIdRef.current === threadId) {
@@ -340,6 +406,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     currentTodoItems,
     userPlanModes,
     userAnnotations,
+    // M05 queue
+    queuedMessages: state.queuedMessages,
+    queueMessage,
+    cancelQueued,
+    clearQueue,
   };
 }
 

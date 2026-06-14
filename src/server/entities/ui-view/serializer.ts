@@ -34,6 +34,11 @@ function readParams(entity: RawEntity): ParamShape[] {
     }));
 }
 
+function readDesignSystemSlug(entity: RawEntity): string | null {
+  const raw = entity.data.design_system_slug ?? entity.data.designSystemSlug;
+  return typeof raw === 'string' && raw ? raw : null;
+}
+
 function baseSingle(entity: RawEntity) {
   return {
     type: 'ui-view',
@@ -42,6 +47,7 @@ function baseSingle(entity: RawEntity) {
     url: (entity.data.url as string | null) ?? null,
     description: (entity.data.description as string | null) ?? null,
     params: readParams(entity),
+    designSystemSlug: readDesignSystemSlug(entity),
     tags: entity.tags,
   };
 }
@@ -83,6 +89,7 @@ const SINGLE_ELEMENT_SCHEMA: JsonSchema = {
     url: { type: ['string', 'null'] },
     description: { type: ['string', 'null'] },
     params: { type: 'array', items: PARAM_OBJECT_SCHEMA },
+    designSystemSlug: { type: ['string', 'null'] },
     tags: { type: 'array', items: { type: 'string' } },
   },
 };
@@ -95,6 +102,8 @@ export interface UiViewSnapshot {
   url: string | null;
   description: string | null;
   params: UiViewParam[];
+  /** v0.1.59 (serializer 1.1.0, additive): referenced design-system slug, or null. */
+  designSystemSlug: string | null;
   tags: string[];
 }
 
@@ -112,6 +121,7 @@ function buildSnapshot(entity: RawEntity): UiViewSnapshot {
       ...(p.default !== undefined ? { default: p.default } : {}),
       ...(p.description !== undefined ? { description: p.description } : {}),
     })),
+    designSystemSlug: readDesignSystemSlug(entity),
     tags: [...entity.tags].sort(),
   };
 }
@@ -124,6 +134,8 @@ function coerceUiView(raw: unknown): UiViewSnapshot {
     url: (r.url as string | null) ?? null,
     description: (r.description as string | null) ?? null,
     params: Array.isArray(r.params) ? (r.params as UiViewParam[]) : [],
+    designSystemSlug:
+      typeof r.designSystemSlug === 'string' && r.designSystemSlug ? r.designSystemSlug : null,
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
   };
 }
@@ -140,6 +152,9 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   if (sa.name !== sb.name) metaChanges.push({ field: 'name', from: sa.name, to: sb.name });
   if (sa.url !== sb.url) metaChanges.push({ field: 'url', from: sa.url, to: sb.url });
   if (sa.description !== sb.description) metaChanges.push({ field: 'description', from: sa.description, to: sb.description });
+  // v0.1.59: null ↔ slug = assigning / detaching a design system (atomic field change).
+  if (sa.designSystemSlug !== sb.designSystemSlug)
+    metaChanges.push({ field: 'designSystemSlug', from: sa.designSystemSlug, to: sb.designSystemSlug });
   if (metaChanges.length) changes.meta_changes = metaChanges;
 
   // Params keyed by name (collect all `in` variants per name to detect in_changed)
@@ -202,7 +217,7 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = data as UiViewSnapshot;
+  const snap = coerceUiView(data);
   const result = ctx.writer.upsertUiView(
     snap.slug,
     {
@@ -210,21 +225,34 @@ function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
       url: snap.url,
       description: snap.description ?? undefined,
       params: snap.params,
+      // v0.1.59: the value is kept verbatim even if the DS is gone (dangling → warn, never null).
+      designSystemSlug: snap.designSystemSlug,
       slug: snap.slug,
     },
     ctx.actor
   );
   ctx.writer.syncTags('ui-view', snap.slug, snap.tags);
+  const warnings = [...(result.warnings ?? [])];
+  // Dangling design-system reference: warn but keep the field (consistent with
+  // "warnings, not errors"). design-system is indexed before ui-view, so a
+  // present DS resolves here; absence means the file is gone / type inactive.
+  if (snap.designSystemSlug && !ctx.reader.getEntity('design-system', snap.designSystemSlug)) {
+    warnings.push(
+      `ui-view '${snap.slug}': designSystemSlug '${snap.designSystemSlug}' does not resolve (dangling)`
+    );
+  }
   return {
     op: result.op,
     entity: result.entity,
-    ...(result.warnings && result.warnings.length ? { warnings: result.warnings } : {}),
+    ...(warnings.length ? { warnings } : {}),
   };
 }
 
 export const uiViewSerializer: EntitySerializer<RawEntity> = {
   type: 'ui-view',
-  version: '1.0.0',
+  // v0.1.59: bumped 1.0.0 → 1.1.0 (additive — designSystemSlug). Forward-compat:
+  // future linked_components[] (ui-component entity) will be 1.2.0 (1.1.0 taken).
+  version: '1.1.0',
 
   inlineMention: (entity) => ({
     type: 'ui-view',

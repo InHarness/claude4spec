@@ -55,6 +55,9 @@ function makeDeps() {
     completeSubagentTask: () => {},
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
+    // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
+    // queue means no extra turns.
+    popAllQueued: () => [],
   };
 
   const deps = {

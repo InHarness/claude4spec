@@ -41,6 +41,13 @@ export function uiViewSlug(name: string): string {
   return slugify(withBoundaries);
 }
 
+export function designSystemSlug(name: string): string {
+  const withBoundaries = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2');
+  return slugify(withBoundaries);
+}
+
 export function acSlug(text: string): string {
   // AC text is sentence-shaped, not PascalCase — slugify pierwsze ~40 znaków.
   // Prefix 'ac-' dla czytelnosci w sciezkach i URL'ach.

@@ -1,6 +1,7 @@
 import { Router, type Response } from 'express';
 import { nanoid } from 'nanoid';
 import {
+  architectureCapabilities,
   createConsoleObserver,
   findResumeViolations,
   getSessionResumeConstraints,
@@ -10,6 +11,7 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import type { Annotation } from '../../shared/entities.js';
+import { QUEUE_LIMIT } from '../services/chat.js';
 import {
   cancelPendingForRequest,
   runAgentTurn,
@@ -23,6 +25,15 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   const router = Router();
   // M31: per-project registries arrive via agentDeps (one pair per context).
   const { activeAdapters, pendingInputs } = deps;
+
+  // Clear a thread's queue and broadcast `queue_cleared` to live-join clients.
+  // The aborting client reads `clearedTexts` from the response (its own SSE is
+  // closing) and restores the texts into the composer (D4).
+  const clearThreadQueue = (active: ActiveAdapter, threadId: string): string[] => {
+    const clearedTexts = deps.chatService.clearQueued(threadId);
+    if (clearedTexts.length > 0) active.emit({ type: 'queue_cleared', texts: clearedTexts });
+    return clearedTexts;
+  };
 
   const consoleObserver: StreamObserver | null = deps.mode === 'dev'
     ? createConsoleObserver({
@@ -204,16 +215,18 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     if (typeof requestId !== 'string') return res.status(400).json({ error: { code: 'VALIDATION', message: 'requestId required' } });
     // activeAdapters jest keyed by threadId, wiec szukamy wartosci z matching requestId.
     let found: ActiveAdapter | null = null;
-    for (const entry of activeAdapters.values()) {
+    let foundThreadId: string | null = null;
+    for (const [tid, entry] of activeAdapters.entries()) {
       if (entry.requestId === requestId) {
         found = entry;
+        foundThreadId = tid;
         break;
       }
     }
-    if (!found) return res.json({ data: { aborted: false } });
+    if (!found || !foundThreadId) return res.json({ data: { aborted: false }, clearedTexts: [] });
     cancelPendingForRequest(pendingInputs, requestId);
     found.adapter.abort();
-    res.json({ data: { aborted: true } });
+    res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(found, foundThreadId) });
   });
 
   // Abort per threadId — uzywany gdy klient podlaczyl sie tylko przez resume SSE
@@ -221,10 +234,81 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   router.post('/abort/:threadId', (req, res) => {
     const { threadId } = req.params;
     const active = activeAdapters.get(threadId);
-    if (!active) return res.json({ data: { aborted: false } });
+    if (!active) return res.json({ data: { aborted: false }, clearedTexts: [] });
     cancelPendingForRequest(pendingInputs, active.requestId);
     active.adapter.abort();
-    res.json({ data: { aborted: true } });
+    res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
+  });
+
+  // --- M05: message queue (composer stays unlocked during a live turn) -------
+  //
+  // Mutations broadcast `queue_updated` / `queue_cleared` via `active.emit`,
+  // which reaches the original POST client AND live-join clients.
+
+  // Enqueue a message typed during a live turn. Tries a mid-turn push when the
+  // architecture supports it; otherwise the row waits for after-turn merged
+  // dispatch (no lost-message window).
+  router.post('/queue/:threadId', (req, res) => {
+    const { threadId } = req.params;
+    const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
+    if (!prompt.trim()) {
+      return res.status(400).json({ error: { code: 'VALIDATION', message: 'prompt required' } });
+    }
+    const annotations = Array.isArray(req.body?.annotations) ? (req.body.annotations as Annotation[]) : null;
+    const currentPage = typeof req.body?.currentPage === 'string' ? req.body.currentPage : null;
+
+    const active = activeAdapters.get(threadId);
+    if (!active) {
+      // Klient użyje wtedy zwykłego POST /api/chat.
+      return res.status(409).json({ error: { code: 'NO_ACTIVE_STREAM', message: 'no active stream for thread' } });
+    }
+    if (deps.chatService.countQueued(threadId) >= QUEUE_LIMIT) {
+      return res.status(400).json({ error: { code: 'QUEUE_FULL', message: `queue is full (max ${QUEUE_LIMIT})` } });
+    }
+
+    const annotationsJson = annotations && annotations.length > 0 ? JSON.stringify(annotations) : null;
+    const row = deps.chatService.enqueueQueued(threadId, prompt, annotationsJson, currentPage);
+
+    // Mid-turn push when supported. On success the adapter emits `user_message`
+    // (persisted + forwarded by the turn loop) → drop the row to avoid double
+    // delivery. On false, leave the row for after-turn merged dispatch.
+    if (architectureCapabilities('claude-code').midTurnPush && active.adapter.pushMessage) {
+      let pushed = false;
+      try {
+        pushed = active.adapter.pushMessage(prompt);
+      } catch {
+        pushed = false;
+      }
+      if (pushed) deps.chatService.removeQueued(threadId, row.id);
+    }
+
+    const queued = deps.chatService.listQueued(threadId);
+    active.emit({ type: 'queue_updated', queued });
+    return res.status(202).json({ queued });
+  });
+
+  // Clear the whole queue for a thread.
+  router.delete('/queue/:threadId', (req, res) => {
+    const { threadId } = req.params;
+    const clearedTexts = deps.chatService.clearQueued(threadId);
+    const active = activeAdapters.get(threadId);
+    if (clearedTexts.length > 0 && active) {
+      active.emit({ type: 'queue_cleared', texts: clearedTexts });
+    }
+    return res.json({ clearedTexts });
+  });
+
+  // Cancel a single queued message by id. 404 when already delivered (tolerated race).
+  router.delete('/queue/:threadId/:messageId', (req, res) => {
+    const { threadId, messageId } = req.params;
+    const removed = deps.chatService.removeQueued(threadId, messageId);
+    if (!removed) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'queued message not found' } });
+    }
+    const queued = deps.chatService.listQueued(threadId);
+    const active = activeAdapters.get(threadId);
+    if (active) active.emit({ type: 'queue_updated', queued });
+    return res.json({ queued });
   });
 
   // GET /api/chat/stream/:threadId — dolaczenie do zywego streamu po F5 / switch watku.
@@ -259,6 +343,8 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     for (const ev of active.replay.events.slice()) {
       send((ev as { type: string }).type, ev);
     }
+    // M05: hydrate the joiner's queue chips with the current snapshot.
+    send('queue_updated', { type: 'queue_updated', queued: deps.chatService.listQueued(threadId) });
 
     let listener: (event: unknown) => void = () => {};
     const cleanup = () => {

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { nanoid } from 'nanoid';
 import {
+  architectureCapabilities,
   createAdapter,
   observeStream,
   AdapterAbortError,
@@ -106,6 +107,13 @@ export interface ActiveAdapter {
   adapter: RuntimeAdapter;
   emitter: EventEmitter;
   replay: TurnReplay;
+  /**
+   * M05 queue: fan-out for events originating OUTSIDE the turn's stream loop
+   * (queue mutations from `POST/DELETE /api/chat/queue/...`). Reaches the
+   * original POST client (via the turn's `onEvent`) AND live-join clients (via
+   * the emitter) — the same closure the turn uses for its own events.
+   */
+  emit: (event: TurnEvent) => void;
 }
 
 // M31: rejestry przeniesione z module-scope do ProjectContext (agentDeps) —
@@ -192,7 +200,6 @@ export async function runAgentTurn(
     timestamp: new Date().toISOString(),
   };
   const replay: TurnReplay = { turnStart, events: [] };
-  deps.activeAdapters.set(thread.id, { requestId, adapter, emitter, replay });
 
   // Zdarzenia istotne dla reducera (replay buduje stan bieżącej tury u joinera).
   const REPLAY_EVENT_TYPES = new Set([
@@ -236,6 +243,9 @@ export async function runAgentTurn(
     emitter.emit('event', event);
     bufferForReplay(event);
   };
+  // Rejestracja PO zdefiniowaniu `emit` — kolejka (out-of-band `POST/DELETE
+  // /api/chat/queue/...`) używa go do broadcastu `queue_updated`/`queue_cleared`.
+  deps.activeAdapters.set(thread.id, { requestId, adapter, emitter, replay, emit });
   emit({ type: 'connected', requestId, threadId: thread.id });
 
   let assistantBuf = '';
@@ -466,127 +476,210 @@ export async function runAgentTurn(
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;
     if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
 
-    const effectivePrompt = stalePlanReminder ? `${stalePlanReminder}\n\n${prompt}` : prompt;
-    const stream = adapter.execute({
-      prompt: effectivePrompt,
+    // M05 queue: streaming-input keeps the SDK input channel open across turns so
+    // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).
+    // Opt-in per architecture capability; one-shot path unchanged for the rest.
+    const streamingInput = architectureCapabilities('claude-code').midTurnPush;
+    const baseExecuteArgs = {
       systemPrompt,
       model: input.model,
       cwd: deps.cwd,
       mcpServers,
       skills: inlineSkills,
-      resumeSessionId: thread.lastSessionId ?? undefined,
       architectureConfig: input.architectureConfig,
       planMode,
       onUserInput: input.onUserInput,
-    });
-    const observed = input.consoleObserver
-      ? observeStream(stream, [input.consoleObserver])
-      : stream;
-    for await (const event of observed) {
-      emit(event as unknown as TurnEvent);
+      ...(streamingInput ? { streamingInput: true } : {}),
+    };
+    // Resume anchor threaded across turns of THIS request (merged dispatch resumes
+    // the just-finished session). `setLastSessionId` only writes the DB, so we
+    // track the latest id in-memory too.
+    let currentSessionId: string | undefined = thread.lastSessionId ?? undefined;
 
-      switch (event.type) {
-        case 'text_delta':
-          if (event.isSubagent && event.subagentTaskId) {
-            getSubBuf(event.subagentTaskId).text += event.text;
-          } else if (!event.isSubagent) {
-            assistantBuf += event.text;
-          }
-          break;
-        case 'thinking':
-          if (event.isSubagent && event.subagentTaskId) {
-            getSubBuf(event.subagentTaskId).thinking += event.text;
-          } else if (!event.isSubagent) {
-            thinkingBuf += event.text;
-          }
-          break;
-        case 'assistant_message': {
-          if (!event.message.subagentTaskId && event.message.usage) {
-            lastTurnUsage = event.message.usage;
-            deps.chatService.setLastUsage(thread.id, event.message.usage);
-          }
-          break;
+    const consume = async (execPrompt: string): Promise<void> => {
+      const stream = adapter.execute({
+        ...baseExecuteArgs,
+        prompt: execPrompt,
+        resumeSessionId: currentSessionId,
+      });
+      const observed = input.consoleObserver
+        ? observeStream(stream, [input.consoleObserver])
+        : stream;
+      for await (const event of observed) {
+        // Mid-turn `user_message` carries an epoch-ms `timestamp` (number); map to
+        // ISO on the wire so it matches `turn_start.timestamp`.
+        if (event.type === 'user_message') {
+          emit({
+            type: 'user_message',
+            text: event.text,
+            timestamp: new Date(event.timestamp).toISOString(),
+          });
+        } else {
+          emit(event as unknown as TurnEvent);
         }
-        case 'tool_use': {
-          const taskId = event.subagentTaskId ?? null;
-          if (taskId) flushSubBuf(taskId);
-          else flushMainBuf();
-          deps.chatService.addMessage(
-            thread.id,
-            'tool_use',
-            JSON.stringify({ input: event.input }),
-            event.toolName,
-            event.toolUseId,
-            taskId,
-            planMode,
-            'streaming',
-          );
-          break;
-        }
-        case 'tool_result': {
-          const taskId = event.subagentTaskId ?? null;
-          deps.chatService.markToolUseComplete(thread.id, event.toolUseId);
-          const row = deps.chatService.addMessage(
-            thread.id,
-            'tool_result',
-            JSON.stringify({ summary: event.summary, isError: event.isError }),
-            null,
-            event.toolUseId,
-            taskId,
-          );
-          if (taskId === null) lastToolResultRowId = row.id;
-          break;
-        }
-        case 'subagent_started':
-          flushMainBuf();
-          deps.chatService.startSubagentTask(
-            thread.id,
-            event.taskId,
-            event.description,
-            event.toolUseId ?? null,
-          );
-          break;
-        case 'subagent_progress':
-          deps.chatService.updateSubagentTaskProgress(thread.id, event.taskId, event.description);
-          break;
-        case 'subagent_completed':
-          flushSubBuf(event.taskId);
-          deps.chatService.completeSubagentTask(
-            thread.id,
-            event.taskId,
-            event.status,
-            event.summary ?? null,
-          );
-          break;
-        case 'result': {
-          flushMainBuf();
-          for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
-          if (event.sessionId) deps.chatService.setLastSessionId(thread.id, event.sessionId);
-          const turnAnchor = lastMainAssistantRowId ?? lastToolResultRowId;
-          if (lastTurnUsage) {
-            deps.chatService.setLastUsage(thread.id, lastTurnUsage);
-            if (turnAnchor !== null) {
-              deps.chatService.attachTurnUsage(thread.id, turnAnchor, lastTurnUsage);
+
+        switch (event.type) {
+          case 'text_delta':
+            if (event.isSubagent && event.subagentTaskId) {
+              getSubBuf(event.subagentTaskId).text += event.text;
+            } else if (!event.isSubagent) {
+              assistantBuf += event.text;
             }
-          }
-          if (typeof event.contextSize === 'number') {
-            deps.chatService.setLastContextSize(thread.id, event.contextSize);
-            if (turnAnchor !== null) {
-              deps.chatService.attachTurnContextSize(thread.id, turnAnchor, event.contextSize);
+            break;
+          case 'thinking':
+            if (event.isSubagent && event.subagentTaskId) {
+              getSubBuf(event.subagentTaskId).thinking += event.text;
+            } else if (!event.isSubagent) {
+              thinkingBuf += event.text;
             }
+            break;
+          case 'user_message': {
+            // A queued message was pushed into the live session. Close the current
+            // assistant segment and persist the injected user message; subsequent
+            // `text_delta`s start a fresh assistant block. The row was already
+            // removed from the queue by the enqueue handler on a successful push.
+            flushMainBuf();
+            deps.chatService.addMessage(
+              thread.id,
+              'user',
+              JSON.stringify({ text: event.text }),
+              null,
+              null,
+              null,
+              planMode,
+            );
+            break;
           }
-          break;
+          case 'assistant_message': {
+            if (!event.message.subagentTaskId && event.message.usage) {
+              lastTurnUsage = event.message.usage;
+              deps.chatService.setLastUsage(thread.id, event.message.usage);
+            }
+            break;
+          }
+          case 'tool_use': {
+            const taskId = event.subagentTaskId ?? null;
+            if (taskId) flushSubBuf(taskId);
+            else flushMainBuf();
+            deps.chatService.addMessage(
+              thread.id,
+              'tool_use',
+              JSON.stringify({ input: event.input }),
+              event.toolName,
+              event.toolUseId,
+              taskId,
+              planMode,
+              'streaming',
+            );
+            break;
+          }
+          case 'tool_result': {
+            const taskId = event.subagentTaskId ?? null;
+            deps.chatService.markToolUseComplete(thread.id, event.toolUseId);
+            const row = deps.chatService.addMessage(
+              thread.id,
+              'tool_result',
+              JSON.stringify({ summary: event.summary, isError: event.isError }),
+              null,
+              event.toolUseId,
+              taskId,
+            );
+            if (taskId === null) lastToolResultRowId = row.id;
+            break;
+          }
+          case 'subagent_started':
+            flushMainBuf();
+            deps.chatService.startSubagentTask(
+              thread.id,
+              event.taskId,
+              event.description,
+              event.toolUseId ?? null,
+            );
+            break;
+          case 'subagent_progress':
+            deps.chatService.updateSubagentTaskProgress(thread.id, event.taskId, event.description);
+            break;
+          case 'subagent_completed':
+            flushSubBuf(event.taskId);
+            deps.chatService.completeSubagentTask(
+              thread.id,
+              event.taskId,
+              event.status,
+              event.summary ?? null,
+            );
+            break;
+          case 'result': {
+            flushMainBuf();
+            for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
+            if (event.sessionId) {
+              currentSessionId = event.sessionId;
+              deps.chatService.setLastSessionId(thread.id, event.sessionId);
+            }
+            const turnAnchor = lastMainAssistantRowId ?? lastToolResultRowId;
+            if (lastTurnUsage) {
+              deps.chatService.setLastUsage(thread.id, lastTurnUsage);
+              if (turnAnchor !== null) {
+                deps.chatService.attachTurnUsage(thread.id, turnAnchor, lastTurnUsage);
+              }
+            }
+            if (typeof event.contextSize === 'number') {
+              deps.chatService.setLastContextSize(thread.id, event.contextSize);
+              if (turnAnchor !== null) {
+                deps.chatService.attachTurnContextSize(thread.id, turnAnchor, event.contextSize);
+              }
+            }
+            break;
+          }
+          case 'todo_list_updated':
+            if (!event.isSubagent) {
+              deps.chatService.updateCurrentTodoItems(thread.id, event.items);
+            }
+            break;
+          case 'warning':
+            console.warn('[agent warning]', event.message);
+            break;
         }
-        case 'todo_list_updated':
-          if (!event.isSubagent) {
-            deps.chatService.updateCurrentTodoItems(thread.id, event.items);
-          }
-          break;
-        case 'warning':
-          console.warn('[agent warning]', event.message);
-          break;
       }
+    };
+
+    const effectivePrompt = stalePlanReminder ? `${stalePlanReminder}\n\n${prompt}` : prompt;
+    await consume(effectivePrompt);
+
+    // After-turn merged dispatch: whatever piled up in the queue while the turn
+    // ran (push declined, or a non-streaming architecture) is delivered now as a
+    // single merged turn that resumes the just-finished session — same SSE
+    // response. Loop until the queue drains.
+    let batch = deps.chatService.popAllQueued(thread.id);
+    while (batch.length > 0) {
+      emit({ type: 'queue_updated', queued: [] });
+      const merged = batch.map((b) => b.prompt).join('\n\n---\n\n');
+      // Persist the merged user message and re-seed the replay so a late joiner
+      // sees the current turn (not the original prompt).
+      deps.chatService.addMessage(
+        thread.id,
+        'user',
+        JSON.stringify({ text: merged }),
+        null,
+        null,
+        null,
+        planMode,
+      );
+      const mergedTurnStart: TurnEvent = {
+        type: 'turn_start',
+        userMessageId: nanoid(12),
+        assistantMessageId: nanoid(12),
+        prompt: merged,
+        timestamp: new Date().toISOString(),
+      };
+      replay.turnStart = mergedTurnStart;
+      replay.events = [];
+      emit(mergedTurnStart);
+      // Stale-plan reminder is applied at DISPATCH (here), not at enqueue.
+      const mergedReminder = isBrief ? null : deps.planService.getStalePlanReminder(thread.id);
+      await consume(mergedReminder ? `${mergedReminder}\n\n${merged}` : merged);
+      batch = deps.chatService.popAllQueued(thread.id);
     }
+
     // Terminal `done`/`error` ida tylko transportem callera (`onEvent`).
     // Emitter dla GET /stream/:threadId dostaje `done` raz, w `finally`.
     input.onEvent({ type: 'done' });

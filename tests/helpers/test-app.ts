@@ -27,6 +27,8 @@ export interface TestApp {
   db: Database.Database;
   host: ProjectPluginHost;
   rawReader: RawEntityReader;
+  referencesService: ReferencesService;
+  entityStore: EntityStore;
   cwd: string;
   cleanup: () => void;
 }
@@ -60,6 +62,9 @@ export async function createTestApp(): Promise<TestApp> {
   await pages.ensureRoot();
   const watcher = new PagesWatcher(pages.root, ws);
   const referencesService = new ReferencesService(pages, watcher);
+  // M29: wire the entity-file deps so slug-rename propagation (e.g. design-system
+  // → ui-view designSystemSlug) runs as it does in production.
+  referencesService.setEntityDeps(db, entityStore);
 
   const router = Router();
   host.mountBackend({
@@ -89,6 +94,8 @@ export async function createTestApp(): Promise<TestApp> {
     db,
     host,
     rawReader,
+    referencesService,
+    entityStore,
     cwd,
     cleanup: () => {
       db.close();

@@ -9,6 +9,7 @@ import {
   useUiViews,
   useUpdateUiView,
 } from '../../hooks/useUiViews.js';
+import { useDesignSystems } from '../../hooks/useDesignSystems.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
 import { confirmDestructive, openPopover, toast } from '../../ui/events.js';
@@ -32,6 +33,7 @@ interface Draft {
   url: string;
   description: string;
   params: UiViewParam[];
+  designSystemSlug: string | null;
   tags: string[];
 }
 
@@ -59,6 +61,7 @@ function toDraft(v: UiView): Draft {
     url: v.url ?? '',
     description: v.description ?? '',
     params: v.params,
+    designSystemSlug: v.designSystemSlug,
     tags: v.tags,
   };
 }
@@ -95,6 +98,7 @@ export function UiViewDetail({
   const remove = useDeleteUiView();
   const { data: allTags = [] } = useTags();
   const { data: allViews = [] } = useUiViews();
+  const { data: designSystems = [] } = useDesignSystems();
   const { data: refs = [] } = useReferences('ui-view', view?.slug ?? null);
 
   const [showTagPicker, setShowTagPicker] = useState(false);
@@ -111,6 +115,7 @@ export function UiViewDetail({
           url: current.url.trim() ? current.url.trim() : null,
           description: current.description || null,
           params: current.params,
+          designSystemSlug: current.designSystemSlug,
           tags: current.tags,
         },
       });
@@ -270,6 +275,21 @@ export function UiViewDetail({
             spellCheck={false}
             className="flex-1 font-mono text-[13.5px] bg-transparent outline-none px-2 py-1 rounded"
             style={{ color: 'var(--c-ink)', border: '1px solid var(--c-hair)' }}
+          />
+        </div>
+
+        <div className="flex items-center gap-2 mt-2">
+          <span
+            className="text-[10.5px] uppercase font-mono tracking-wider"
+            style={{ color: 'var(--c-subtle)' }}
+          >
+            Design System
+          </span>
+          <DesignSystemSelect
+            value={draft.designSystemSlug}
+            options={designSystems.map((d) => ({ slug: d.slug, name: d.name }))}
+            onChange={(next) => patch({ designSystemSlug: next })}
+            onOpen={onOpenEntity ? (s) => onOpenEntity('design-system', s) : undefined}
           />
         </div>
 
@@ -561,6 +581,79 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
       style={{ color: 'var(--c-subtle)' }}
     >
       {children}
+    </div>
+  );
+}
+
+/**
+ * Single-select for the ui-view → design-system relation. Shows "None" + the
+ * available systems. A value that no longer resolves renders as a red broken
+ * chip with a clear action (the column is kept on the server; clearing is opt-in).
+ */
+function DesignSystemSelect({
+  value,
+  options,
+  onChange,
+  onOpen,
+}: {
+  value: string | null;
+  options: Array<{ slug: string; name: string }>;
+  onChange: (next: string | null) => void;
+  onOpen?: (slug: string) => void;
+}) {
+  const resolved = value ? options.find((o) => o.slug === value) : null;
+  const dangling = Boolean(value) && !resolved;
+  return (
+    <div className="flex items-center gap-2">
+      <select
+        value={dangling ? '' : value ?? ''}
+        onChange={(e) => onChange(e.target.value || null)}
+        className="font-mono text-[12.5px] bg-transparent outline-none px-2 py-1 rounded"
+        style={{ color: 'var(--c-ink)', border: '1px solid var(--c-hair)' }}
+      >
+        <option value="">None</option>
+        {options.map((o) => (
+          <option key={o.slug} value={o.slug}>
+            {o.name}
+          </option>
+        ))}
+        {dangling && (
+          <option value={value as string} disabled>
+            {value} (missing)
+          </option>
+        )}
+      </select>
+      {resolved && onOpen && (
+        <button
+          onClick={() => onOpen(resolved.slug)}
+          className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px]"
+          style={{ border: '1px solid var(--c-hair)', background: 'var(--c-card)', color: 'var(--c-ink)' }}
+          title="Open design system"
+        >
+          <span
+            className="font-mono text-[9.5px] px-1 rounded uppercase"
+            style={{ background: 'var(--c-panel)', color: 'var(--c-accent)' }}
+          >
+            DS
+          </span>
+          {resolved.name}
+        </button>
+      )}
+      {dangling && (
+        <span
+          className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
+          style={{
+            background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
+            color: 'var(--c-red, #c45a3b)',
+            border: '1px solid var(--c-red, #c45a3b)',
+          }}
+        >
+          ⚠ {value}
+          <button onClick={() => onChange(null)} title="Clear broken reference" style={{ color: 'inherit' }}>
+            ×
+          </button>
+        </span>
+      )}
     </div>
   );
 }

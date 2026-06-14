@@ -16,6 +16,8 @@ import type {
   ChangedBy,
   DatabaseTable,
   DatabaseTableCreateInput,
+  DesignSystem,
+  DesignSystemCreateInput,
   Dto,
   DtoCreateInput,
   Endpoint,
@@ -38,6 +40,7 @@ export interface EntityWriter {
   upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable>;
   upsertUiView(slug: string, input: UiViewCreateInput, actor: ChangedBy): UpsertResult<UiView>;
   upsertAc(slug: string, input: AcCreateInput, actor: ChangedBy): UpsertResult<Ac>;
+  upsertDesignSystem(slug: string, input: DesignSystemCreateInput, actor: ChangedBy): UpsertResult<DesignSystem>;
 
   /** Sync endpoint↔dto junction to a target list. Idempotent: link missing, unlink extra. */
   syncEndpointDtos(

@@ -22,6 +22,7 @@ interface UiViewRow {
   url: string | null;
   description: string | null;
   params: string;
+  design_system_slug: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -59,6 +60,7 @@ export class UiViewService {
 
     const params = input.params ?? [];
     const url = normaliseUrl(input.url);
+    const designSystemSlug = normaliseSlugRef(input.designSystemSlug);
 
     const tx = this.db.transaction(() => {
       const conflict = this.db.prepare(`SELECT 1 FROM ui_view WHERE slug = ?`).get(slug);
@@ -67,14 +69,14 @@ export class UiViewService {
 
       this.db
         .prepare(
-          `INSERT INTO ui_view (slug, name, url, description, params)
-           VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO ui_view (slug, name, url, description, params, design_system_slug)
+           VALUES (?, ?, ?, ?, ?, ?)`
         )
-        .run(slug, input.name, url, input.description ?? null, JSON.stringify(params));
+        .run(slug, input.name, url, input.description ?? null, JSON.stringify(params), designSystemSlug);
       if (input.tags?.length) this.tags.assignTags('ui-view', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', slug, 'create', actor, 'Created', '1.0.0');
+        this.versions.captureEntitySnapshot('ui-view', slug, 'create', actor, 'Created', '1.1.0');
       }
       const warnings = computeWarnings(url, params);
       return { uiView: created, warnings };
@@ -170,12 +172,17 @@ export class UiViewService {
         input.params !== undefined ? JSON.stringify(input.params) : current.params;
       const nextUrl =
         input.url !== undefined ? normaliseUrl(input.url) : current.url;
+      // undefined = unchanged; null = clear; string = set (dangling allowed, no FK).
+      const nextDesignSystemSlug =
+        input.designSystemSlug !== undefined
+          ? normaliseSlugRef(input.designSystemSlug)
+          : current.design_system_slug;
 
       this.db
         .prepare(
           `UPDATE ui_view
              SET slug = ?, name = ?, url = ?, description = ?, params = ?,
-                 updated_at = datetime('now')
+                 design_system_slug = ?, updated_at = datetime('now')
            WHERE slug = ?`
         )
         .run(
@@ -184,6 +191,7 @@ export class UiViewService {
           nextUrl,
           input.description !== undefined ? input.description : current.description,
           nextParams,
+          nextDesignSystemSlug,
           slug
         );
 
@@ -200,7 +208,7 @@ export class UiViewService {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', nextSlug, 'update', actor, summary, '1.0.0');
+        this.versions.captureEntitySnapshot('ui-view', nextSlug, 'update', actor, summary, '1.1.0');
       }
       const warnings = computeWarnings(updated.url, updated.params);
       return { uiView: updated, previousSlug: slug, warnings };
@@ -234,6 +242,8 @@ export class UiViewService {
       url: input.url,
       description: input.description,
       params: input.params,
+      // Restore writes the snapshot value verbatim (dangling kept — not nulled).
+      designSystemSlug: input.designSystemSlug ?? null,
       tags: input.tags,
     }, actor, opts);
     return { uiView: result.uiView, op: 'updated', warnings: result.warnings };
@@ -253,7 +263,7 @@ export class UiViewService {
 
       // M17: capture snapshot BEFORE delete.
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', slug, 'delete', actor, 'Deleted', '1.0.0');
+        this.versions.captureEntitySnapshot('ui-view', slug, 'delete', actor, 'Deleted', '1.1.0');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ui-view' AND entity_slug = ?`)
@@ -281,6 +291,7 @@ export class UiViewService {
       url: row.url,
       description: row.description,
       params: parseParams(row.params),
+      designSystemSlug: row.design_system_slug ?? null,
       tags: this.tags.getEntityTagSlugs('ui-view', row.slug),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
@@ -289,6 +300,12 @@ export class UiViewService {
 }
 
 function normaliseUrl(value: string | null | undefined): string | null {
+  if (value === undefined || value === null) return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function normaliseSlugRef(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const trimmed = value.trim();
   return trimmed === '' ? null : trimmed;

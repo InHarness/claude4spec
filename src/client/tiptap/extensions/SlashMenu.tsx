@@ -13,6 +13,7 @@ export interface SlashCommand {
     | 'database-table'
     | 'ui-view'
     | 'ac'
+    | 'design-system'
     | 'todo'
     | 'diagram'
     | 'section';

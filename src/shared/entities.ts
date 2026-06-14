@@ -2,7 +2,14 @@ import type { TodoItem, UsageStats } from '@inharness-ai/agent-adapters';
 
 export type { TodoItem, UsageStats };
 
-export type EntityType = 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac' | 'section';
+export type EntityType =
+  | 'endpoint'
+  | 'dto'
+  | 'database-table'
+  | 'ui-view'
+  | 'ac'
+  | 'design-system'
+  | 'section';
 export type ChangedBy = 'user' | 'agent';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -229,6 +236,8 @@ export interface UiView {
   url: string | null;
   description: string | null;
   params: UiViewParam[];
+  /** v0.1.59: structural (non-tag) relation to a design-system. NULL = none. Slug, no FK. */
+  designSystemSlug: string | null;
   tags: string[];
   createdAt: string;
   updatedAt: string;
@@ -239,6 +248,8 @@ export interface UiViewCreateInput {
   url?: string | null;
   description?: string;
   params?: UiViewParam[];
+  /** v0.1.59: slug of the referenced design-system (no FK). undefined/null = none. */
+  designSystemSlug?: string | null;
   slug?: string;
   tags?: string[];
 }
@@ -248,6 +259,8 @@ export interface UiViewUpdateInput {
   url?: string | null;
   description?: string | null;
   params?: UiViewParam[];
+  /** v0.1.59: undefined = unchanged; null = clear; string = set (dangling allowed). */
+  designSystemSlug?: string | null;
   tags?: string[];
   newSlug?: string;
 }
@@ -264,6 +277,126 @@ export interface UiViewDeleteResult {
   deleted: true;
   brokenReferences: BrokenReference[];
 }
+
+// --- v0.1.59: Design System ---
+
+export type TokenTier = 'primitive' | 'semantic';
+
+/** Best-effort vocabulary — the linter warns but never hard-validates `type`. */
+export type TokenType =
+  | 'color'
+  | 'dimension'
+  | 'fontFamily'
+  | 'fontWeight'
+  | 'fontSize'
+  | 'lineHeight'
+  | 'letterSpacing'
+  | 'duration'
+  | 'easing'
+  | 'shadow'
+  | 'opacity'
+  | 'zIndex'
+  | 'number'
+  | 'string'
+  | 'typography';
+
+/** Token types whose `value` is a composite object (each field literal or `{alias}`). */
+export const COMPOSITE_TOKEN_TYPES = ['typography', 'shadow'] as const;
+
+/** Literal/alias string, or a composite object (typography/shadow). */
+export type TokenValue = string | Record<string, string>;
+
+export interface DesignToken {
+  name: string;
+  /** TokenType vocabulary, but typed loosely — linter is best-effort. */
+  type: string;
+  value: TokenValue;
+  description?: string;
+}
+
+export interface TokenGroup {
+  name: string;
+  tier: TokenTier;
+  tokens: DesignToken[];
+}
+
+export interface DesignModeOverride {
+  token: string;
+  value: TokenValue;
+}
+
+export interface DesignMode {
+  name: string;
+  overrides: DesignModeOverride[];
+}
+
+export interface DesignSystem {
+  slug: string;
+  name: string;
+  description: string | null;
+  groups: TokenGroup[];
+  modes: DesignMode[];
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DesignSystemCreateInput {
+  name: string;
+  description?: string;
+  groups?: TokenGroup[];
+  modes?: DesignMode[];
+  /** Optional explicit slug — used by M17 restore to preserve identity. */
+  slug?: string;
+  tags?: string[];
+}
+
+export interface DesignSystemUpdateInput {
+  name?: string;
+  description?: string | null;
+  /** Full replace of the array (not per-token patch). */
+  groups?: TokenGroup[];
+  /** Full replace of the array (not per-mode patch). */
+  modes?: DesignMode[];
+  tags?: string[];
+  newSlug?: string;
+}
+
+export interface DesignSystemListQuery {
+  tags?: string[];
+  tagFilter?: 'and' | 'or';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+/** Trimmed list row — counts computed server-side without the full token payload. */
+export interface DesignSystemListItem {
+  slug: string;
+  name: string;
+  description: string | null;
+  groupCount: number;
+  tokenCount: number;
+  modeCount: number;
+  tags: string[];
+}
+
+export interface DesignSystemDanglingUiView {
+  slug: string;
+}
+
+export interface DesignSystemDeleteResult {
+  deleted: true;
+  brokenReferences: BrokenReference[];
+  /** UI views whose `designSystemSlug` pointed at the deleted record (now dangling). */
+  danglingUiViews: DesignSystemDanglingUiView[];
+}
+
+/** Resolved token value: literal string, resolved composite object, or the `unresolved` sentinel. */
+export type ResolvedTokenValue = string | Record<string, string>;
+
+/** Sentinel for an alias that cannot be resolved (cycle / missing target). Preview never crashes. */
+export const UNRESOLVED_TOKEN = 'unresolved';
 
 export interface Tag {
   slug: string;
@@ -591,6 +724,40 @@ export interface Annotation {
   comment: string;
   page: string;
   range?: { from: number; to: number };
+}
+
+// --- M05: chat message queue (composer stays unlocked during a live turn) ---
+
+/**
+ * A message waiting in a thread's queue. **Frozen wire contract** — the field
+ * names must match `@inharness-ai/agent-chat`'s `QueuedMessage`, because the
+ * client hydrates queue chips from them. Derived from a `chat_queued_message`
+ * row: `id → String(id)`, `text = prompt`, `createdAt = created_at`.
+ */
+export interface QueuedMessage {
+  /** `String(chat_queued_message.id)` — key for cancel/chip. */
+  id: string;
+  /** `chat_queued_message.prompt`; restored to the composer on abort/clear. */
+  text: string;
+  /** ISO timestamp of when the message was enqueued. */
+  createdAt: string;
+}
+
+/** Body of `POST /api/chat/queue/:threadId` — same context as `POST /api/chat`. */
+export interface QueueMessageRequest {
+  prompt: string;
+  annotations?: Annotation[];
+  currentPage?: string | null;
+}
+
+/** Full queue snapshot after a mutation (enqueue/cancel) and carried by SSE `queue_updated`. */
+export interface QueueSnapshotResponse {
+  queued: QueuedMessage[];
+}
+
+/** Returned by `DELETE /api/chat/queue/:threadId` and attached to abort responses. */
+export interface ClearedQueueResponse {
+  clearedTexts: string[];
 }
 
 // --- M10: Plans ---

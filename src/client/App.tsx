@@ -17,6 +17,7 @@ import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
 import { NewDatabaseTablePopover } from './components/NewDatabaseTablePopover.js';
 import { NewUiViewPopover } from './components/NewUiViewPopover.js';
+import { NewDesignSystemPopover } from './components/NewDesignSystemPopover.js';
 import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ConfirmModal.js';
@@ -180,6 +181,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
       <ChatOverlay />
       <NewDatabaseTablePopover />
       <NewUiViewPopover />
+      <NewDesignSystemPopover />
       <TodoPopover />
       <PopoverHost />
       <PageRefPopoverHost />

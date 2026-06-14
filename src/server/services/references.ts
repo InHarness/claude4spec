@@ -72,6 +72,26 @@ export class ReferencesService {
       }
     }
 
+    // design-system rename → ui-view files' scalar `designSystemSlug` (v0.1.59).
+    // Pattern mirrors database-table → fk.table: repoint the column in the index,
+    // then re-persist each affected ui-view file (atomic-write + suppress + reindex).
+    if (type === 'design-system') {
+      const views = db
+        .prepare(`SELECT slug FROM ui_view WHERE design_system_slug = ?`)
+        .all(oldSlug) as Array<{ slug: string }>;
+      if (views.length) {
+        const upd = db.prepare(`UPDATE ui_view SET design_system_slug = ? WHERE slug = ?`);
+        for (const v of views) {
+          upd.run(newSlug, v.slug);
+          try {
+            store.persist('ui-view', v.slug);
+          } catch {
+            /* skip */
+          }
+        }
+      }
+    }
+
     // any rename → ac verifies[] ({type, slug} soft refs)
     if (isRawEntityType(type)) {
       const acs = db

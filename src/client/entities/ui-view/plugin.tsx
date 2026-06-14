@@ -136,6 +136,21 @@ function UiViewCard({ slug, entity, onOpen }: EntityCardProps<UiView>) {
             {entity.url}
           </span>
         )}
+        {entity.designSystemSlug && (
+          <span
+            className="inline-flex items-center gap-1 font-mono text-[11px] px-1.5 py-0.5 rounded"
+            style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+            title={`design system: ${entity.designSystemSlug}`}
+          >
+            <span
+              className="text-[9px] px-1 rounded uppercase"
+              style={{ background: 'var(--c-card)', color: 'var(--c-accent)' }}
+            >
+              DS
+            </span>
+            {entity.designSystemSlug}
+          </span>
+        )}
         <span className="flex-1" />
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)' }} />
       </div>

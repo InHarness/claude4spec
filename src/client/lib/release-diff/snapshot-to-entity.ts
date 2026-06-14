@@ -83,6 +83,8 @@ function snapshotToUiView(s: Record<string, unknown>): UiView {
     url: (s.url as string | null) ?? null,
     description: (s.description as string | null) ?? null,
     params: Array.isArray(s.params) ? (s.params as UiView['params']) : [],
+    designSystemSlug:
+      typeof s.designSystemSlug === 'string' && s.designSystemSlug ? s.designSystemSlug : null,
     tags: Array.isArray(s.tags) ? (s.tags as string[]) : [],
     createdAt: '',
     updatedAt: '',

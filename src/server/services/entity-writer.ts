@@ -24,6 +24,7 @@ import type { DtoService } from '../entities/dto/services.js';
 import type { DatabaseTableService } from '../entities/database-table/services.js';
 import type { UiViewService } from '../entities/ui-view/services.js';
 import type { AcService } from '../entities/ac/services.js';
+import type { DesignSystemService } from '../entities/design-system/services.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 
@@ -70,6 +71,12 @@ export class HostEntityWriter implements EntityWriter {
     const service = this.requireService<AcService>('ac');
     const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.ac, op: result.op };
+  }
+
+  upsertDesignSystem(slug: string, input: Parameters<DesignSystemService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DesignSystemService['upsert']>['designSystem']> {
+    const service = this.requireService<DesignSystemService>('design-system');
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
+    return { entity: result.designSystem, op: result.op, warnings: result.warnings };
   }
 
   syncEndpointDtos(
@@ -149,6 +156,12 @@ export class HostEntityWriter implements EntityWriter {
       }
       case 'ac': {
         const service = this.requireService<AcService>('ac');
+        if (!service.getBySlug(slug)) return { deleted: false };
+        service.remove(slug, actor);
+        return { deleted: true };
+      }
+      case 'design-system': {
+        const service = this.requireService<DesignSystemService>('design-system');
         if (!service.getBySlug(slug)) return { deleted: false };
         service.remove(slug, actor);
         return { deleted: true };

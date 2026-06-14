@@ -24,8 +24,20 @@ import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader
 import type { RestoreContext } from '../serialization/types.js';
 import { HostEntityWriter } from './entity-writer.js';
 
-/** dto/table/ui-view/ac before endpoint (endpoint_dto FK needs dto rows first). */
-const DEP_ORDER: RawEntityType[] = ['dto', 'database-table', 'ui-view', 'ac', 'endpoint'];
+/**
+ * dto/table/design-system/ui-view/ac before endpoint (endpoint_dto FK needs dto
+ * rows first). design-system is indexed BEFORE ui-view because ui-view's
+ * `designSystemSlug` points at it (dangling is only a warning, but the order is
+ * declared).
+ */
+const DEP_ORDER: RawEntityType[] = [
+  'dto',
+  'database-table',
+  'design-system',
+  'ui-view',
+  'ac',
+  'endpoint',
+];
 
 const ENTITY_TABLE: Record<RawEntityType, string> = {
   endpoint: 'endpoint',
@@ -33,6 +45,7 @@ const ENTITY_TABLE: Record<RawEntityType, string> = {
   'database-table': 'database_table',
   'ui-view': 'ui_view',
   ac: 'ac',
+  'design-system': 'design_system',
 };
 
 export class EntityIndexerService {
@@ -76,6 +89,7 @@ export class EntityIndexerService {
            DELETE FROM database_table;
            DELETE FROM ui_view;
            DELETE FROM ac;
+           DELETE FROM design_system;
            DELETE FROM tag;`,
         );
       })();

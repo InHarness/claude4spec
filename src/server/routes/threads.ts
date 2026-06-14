@@ -48,6 +48,8 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           messages: result.messages,
           subagentTasks: result.subagentTasks,
           isLive: activeAdapters.has(req.params.id),
+          // M05: pending queue (position ASC) — restores chips after F5/restart.
+          queuedMessages: chat.listQueued(req.params.id),
         },
       });
     } catch (err) {

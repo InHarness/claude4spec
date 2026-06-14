@@ -21,6 +21,7 @@ export function runTaggedListMixed(args: ParsedArgs): void {
       'database-tables': [],
       'ui-views': [],
       acs: [],
+      'design-systems': [],
     };
     const bucket: Record<RawEntityType, keyof typeof grouped> = {
       endpoint: 'endpoints',
@@ -28,6 +29,7 @@ export function runTaggedListMixed(args: ParsedArgs): void {
       'database-table': 'database-tables',
       'ui-view': 'ui-views',
       ac: 'acs',
+      'design-system': 'design-systems',
     };
     for (const entity of entities) {
       const result = ctx.registry.serializeEntity(

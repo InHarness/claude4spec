@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList } from 'lucide-react';
+import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, isAdaptiveModel, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
@@ -80,6 +80,17 @@ export function ChatOverlay() {
     setChatThreadId(null);
   }, [setChatThreadId]);
 
+  // M05 (D4): when the queue is cleared (Stop/abort/clear), restore the texts
+  // into the composer. `@path.md` mentions re-parse via PageRefNode input rules.
+  const handleQueueCleared = useCallback((texts: string[]) => {
+    const handle = inputRef.current;
+    if (!handle) return;
+    const existing = handle.getMarkdown().trim();
+    const restored = [...texts, existing].filter(Boolean).join('\n\n');
+    handle.setMarkdown(restored);
+    setHasInput(!handle.isEmpty());
+  }, []);
+
   const {
     messages,
     isStreaming,
@@ -93,6 +104,9 @@ export function ChatOverlay() {
     currentTodoItems,
     userPlanModes,
     userAnnotations,
+    queuedMessages,
+    queueMessage,
+    cancelQueued,
   } = useChat({
     threadId: chatThreadId,
     onThreadCreated,
@@ -100,6 +114,7 @@ export function ChatOverlay() {
     model,
     thinking,
     planMode,
+    onQueueCleared: handleQueueCleared,
   });
 
   // `isBusy` = aktywna tura w tym watku (lokalna lub server-side, do ktorej jestesmy podlaczeni
@@ -288,28 +303,47 @@ export function ChatOverlay() {
   const handleSend = useCallback(async () => {
     const handle = inputRef.current;
     const text = handle?.getMarkdown().trim() ?? '';
+
+    // Wyczysc draft dla biezacego watku — robimy to PRZED sendMessage, bo `onThreadCreated`
+    // moze przelaczyc `chatThreadId` zanim handler wroci, a chcemy zlapac stary klucz.
+    const clearDraft = () => {
+      if (draftSaveTimer.current) {
+        window.clearTimeout(draftSaveTimer.current);
+        draftSaveTimer.current = null;
+      }
+      const draftKey = chatThreadId ?? NEW_THREAD_DRAFT_KEY;
+      const currentDrafts = draftsRef.current;
+      if (draftKey in currentDrafts) {
+        const next = { ...currentDrafts };
+        delete next[draftKey];
+        setDrafts(next);
+      }
+    };
+
+    // M05: during a live turn the composer stays unlocked; Send/↵ enqueues the
+    // message (mid-turn push or after-turn merged dispatch) instead of starting
+    // a new stream. Annotations are for fresh turns only.
+    if (isBusy) {
+      if (!text) return;
+      const ok = await queueMessage(text);
+      if (ok) {
+        handle?.clear();
+        setHasInput(false);
+        clearDraft();
+      }
+      return;
+    }
+
     if (!text && annotations.length === 0) return;
     const annotationsSnapshot = annotations;
     handle?.clear();
     setHasInput(false);
     clearAnnotations();
     setSystemPromptViewOpen(false);
-    // Wyczysc draft dla biezacego watku — robimy to PRZED sendMessage, bo `onThreadCreated`
-    // moze przelaczyc `chatThreadId` zanim handler wroci, a chcemy zlapac stary klucz.
-    if (draftSaveTimer.current) {
-      window.clearTimeout(draftSaveTimer.current);
-      draftSaveTimer.current = null;
-    }
-    const draftKey = chatThreadId ?? NEW_THREAD_DRAFT_KEY;
-    const currentDrafts = draftsRef.current;
-    if (draftKey in currentDrafts) {
-      const next = { ...currentDrafts };
-      delete next[draftKey];
-      setDrafts(next);
-    }
+    clearDraft();
     await sendMessage(text, annotationsSnapshot, currentPage);
     await threadList.refresh();
-  }, [sendMessage, annotations, currentPage, clearAnnotations, threadList, chatThreadId, setDrafts]);
+  }, [sendMessage, annotations, currentPage, clearAnnotations, threadList, chatThreadId, setDrafts, isBusy, queueMessage]);
 
   const handleCreateThread = useCallback(async () => {
     const t = await threadList.createThread();
@@ -582,14 +616,50 @@ export function ChatOverlay() {
                 </span>
               </div>
             )}
+            {/* M05: queued-message chips — pending delivery during the live turn */}
+            {queuedMessages.length > 0 && (
+              <div className="flex items-center gap-1.5 px-2 pt-1.5 flex-wrap">
+                {queuedMessages.map((q) => (
+                  <span
+                    key={q.id}
+                    className="inline-flex items-center gap-1 rounded-md pl-1.5 pr-1 py-0.5 text-[10.5px]"
+                    style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
+                    title={q.text}
+                  >
+                    <Clock size={10} />
+                    <span className="truncate" style={{ maxWidth: 220 }}>
+                      {q.text}
+                    </span>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded ml-0.5 hover:opacity-100"
+                      style={{
+                        width: 14,
+                        height: 14,
+                        color: 'var(--c-muted)',
+                        background: 'transparent',
+                        opacity: 0.7,
+                      }}
+                      onClick={() => cancelQueued(q.id)}
+                      title="Cancel queued message"
+                      aria-label="Cancel queued message"
+                    >
+                      <X size={10} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="chat-input-wrap px-2.5 pt-1.5 pb-1" style={{ color: 'var(--c-ink)' }}>
               <ChatInputEditor
                 ref={inputRef}
-                disabled={isBusy}
+                // M05: composer stays unlocked during a live turn — Send/↵ queues.
                 placeholder={
-                  annotations.length > 0
-                    ? 'Message (optional — annotations provide context)…'
-                    : 'Message claude4spec…'
+                  isBusy
+                    ? 'Queue a message…'
+                    : annotations.length > 0
+                      ? 'Message (optional — annotations provide context)…'
+                      : 'Message claude4spec…'
                 }
                 onSubmit={() => void handleSend()}
                 onChange={(hasContent) => {
@@ -641,7 +711,8 @@ export function ChatOverlay() {
                 <ChevronDown size={10} />
               </button>
               <span className="flex-1" />
-              {isBusy ? (
+              {/* M05: during a live turn show Stop + a queueing Send (↵ also queues). */}
+              {isBusy && (
                 <button
                   onClick={abort}
                   className="rounded-md px-2 py-1 text-[11.5px] inline-flex items-center gap-1"
@@ -650,17 +721,16 @@ export function ChatOverlay() {
                 >
                   <Square size={11} /> Stop
                 </button>
-              ) : (
-                <button
-                  onClick={() => void handleSend()}
-                  disabled={!hasInput && annotations.length === 0}
-                  className="rounded-md p-1.5 disabled:opacity-40"
-                  style={{ background: 'var(--c-accent)', color: '#fff' }}
-                  title="Send (↵)"
-                >
-                  <Send size={12} />
-                </button>
               )}
+              <button
+                onClick={() => void handleSend()}
+                disabled={isBusy ? !hasInput : !hasInput && annotations.length === 0}
+                className="rounded-md p-1.5 disabled:opacity-40"
+                style={{ background: 'var(--c-accent)', color: '#fff' }}
+                title={isBusy ? 'Queue (↵)' : 'Send (↵)'}
+              >
+                <Send size={12} />
+              </button>
             </div>
           </div>
           {settingsOpen && (

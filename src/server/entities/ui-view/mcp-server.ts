@@ -46,6 +46,11 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
         .describe('Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.'),
       description: z.string().optional(),
       params: z.array(paramSchema).optional(),
+      designSystemSlug: z
+        .string()
+        .nullable()
+        .optional()
+        .describe('Slug of a design-system this view uses (no FK; dangling allowed). Null = none.'),
       slug: z.string().optional(),
       tags: z.array(z.string()).optional(),
     },
@@ -57,6 +62,7 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
             url: args.url as string | null | undefined,
             description: args.description as string | undefined,
             params: (args.params as UiViewParam[] | undefined) ?? [],
+            designSystemSlug: args.designSystemSlug as string | null | undefined,
             slug: args.slug as string | undefined,
             tags: args.tags as string[] | undefined,
           },
@@ -102,6 +108,11 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
           url: z.string().nullable().optional(),
           description: z.string().nullable().optional(),
           params: z.array(paramSchema).optional(),
+          designSystemSlug: z
+            .string()
+            .nullable()
+            .optional()
+            .describe('Set/clear the design-system reference. Null = detach. Omit = unchanged.'),
         })
         .describe('Partial fields to update'),
       newSlug: z
@@ -121,6 +132,10 @@ export function createUiViewToolsServer(deps: UiViewToolsDeps): McpServerInstanc
             url: data.url as string | null | undefined,
             description: data.description as string | null | undefined,
             params: data.params as UiViewParam[] | undefined,
+            designSystemSlug:
+              'designSystemSlug' in data
+                ? (data.designSystemSlug as string | null | undefined)
+                : undefined,
             newSlug: args.newSlug as string | undefined,
           },
           'agent'
