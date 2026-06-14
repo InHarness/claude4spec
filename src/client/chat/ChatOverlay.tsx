@@ -9,7 +9,7 @@ import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
 import { useThreadList } from './useThreadList.js';
-import { BlockRenderer } from './BlockRenderer.js';
+import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -107,6 +107,7 @@ export function ChatOverlay() {
     queuedMessages,
     queueMessage,
     cancelQueued,
+    clearQueue,
   } = useChat({
     threadId: chatThreadId,
     onThreadCreated,
@@ -504,6 +505,11 @@ export function ChatOverlay() {
               {pendingUserInputs.map((req) => (
                 <UserInputRequestCard key={req.requestId} request={req} onSubmit={submitUserInput} />
               ))}
+              {/* M05: queued messages as grey "ghost" bubbles — pending delivery
+                  (mid-turn push or after-turn merge). Distinct from sent (solid) bubbles. */}
+              {queuedMessages.map((q) => (
+                <QueuedMessageBubble key={q.id} text={q.text} onCancel={() => cancelQueued(q.id)} />
+              ))}
             </>
           )}
         </div>
@@ -616,38 +622,38 @@ export function ChatOverlay() {
                 </span>
               </div>
             )}
-            {/* M05: queued-message chips — pending delivery during the live turn */}
+            {/* M05: compact queue counter — full pending messages render as grey
+                ghost bubbles in the conversation; this is a count + clear-all. */}
             {queuedMessages.length > 0 && (
               <div className="flex items-center gap-1.5 px-2 pt-1.5 flex-wrap">
-                {queuedMessages.map((q) => (
-                  <span
-                    key={q.id}
-                    className="inline-flex items-center gap-1 rounded-md pl-1.5 pr-1 py-0.5 text-[10.5px]"
-                    style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
-                    title={q.text}
+                <span
+                  className="inline-flex items-center gap-1 rounded-md pl-1.5 pr-1 py-0.5 text-[10.5px] font-mono"
+                  style={{
+                    background: 'var(--c-panel)',
+                    border: '1px dashed var(--c-hair-strong)',
+                    color: 'var(--c-muted)',
+                  }}
+                  title={`${queuedMessages.length} message${queuedMessages.length === 1 ? '' : 's'} queued`}
+                >
+                  <Clock size={10} />
+                  <span>{queuedMessages.length} queued</span>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-center rounded ml-0.5 hover:opacity-100"
+                    style={{
+                      width: 14,
+                      height: 14,
+                      color: 'var(--c-muted)',
+                      background: 'transparent',
+                      opacity: 0.7,
+                    }}
+                    onClick={() => clearQueue()}
+                    title="Clear queue"
+                    aria-label="Clear queue"
                   >
-                    <Clock size={10} />
-                    <span className="truncate" style={{ maxWidth: 220 }}>
-                      {q.text}
-                    </span>
-                    <button
-                      type="button"
-                      className="inline-flex items-center justify-center rounded ml-0.5 hover:opacity-100"
-                      style={{
-                        width: 14,
-                        height: 14,
-                        color: 'var(--c-muted)',
-                        background: 'transparent',
-                        opacity: 0.7,
-                      }}
-                      onClick={() => cancelQueued(q.id)}
-                      title="Cancel queued message"
-                      aria-label="Cancel queued message"
-                    >
-                      <X size={10} />
-                    </button>
-                  </span>
-                ))}
+                    <X size={10} />
+                  </button>
+                </span>
               </div>
             )}
             <div className="chat-input-wrap px-2.5 pt-1.5 pb-1" style={{ color: 'var(--c-ink)' }}>

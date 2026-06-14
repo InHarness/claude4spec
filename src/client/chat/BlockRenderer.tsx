@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList } from 'lucide-react';
+import { ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList, Clock, X } from 'lucide-react';
 import type { UIContentBlock } from '@inharness-ai/agent-chat';
 import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import { SubagentPanel } from './SubagentPanel.js';
@@ -131,6 +131,54 @@ function UserText({ text, annotations, planMode }: UserTextProps) {
         <div
           className="rounded-xl rounded-tr-sm px-3 py-2 text-[13.5px] break-words"
           style={{ background: 'var(--c-accent)', color: '#fff' }}
+        >
+          <UserTextMarkdown text={text} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Queued (pending) user message ---
+//
+// M05: a message typed during a live turn that is waiting in the queue (mid-turn
+// push or after-turn merged dispatch). Mirrors the sent `UserText` bubble shape
+// but rendered as a dimmed/dashed "ghost" so the contrast with delivered
+// (solid) messages is immediate. Replaced by a solid bubble once delivered.
+
+interface QueuedMessageBubbleProps {
+  text: string;
+  onCancel: () => void;
+}
+
+export function QueuedMessageBubble({ text, onCancel }: QueuedMessageBubbleProps) {
+  return (
+    <div className="msg-enter flex justify-end mb-4">
+      <div className="max-w-[85%]">
+        <div
+          className="flex items-center gap-1 justify-end mb-1 text-[10.5px] font-mono uppercase tracking-wider"
+          style={{ color: 'var(--c-muted)' }}
+        >
+          <Clock size={10} />
+          <span>queued</span>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="inline-flex items-center justify-center rounded ml-0.5 hover:opacity-100"
+            style={{ width: 14, height: 14, color: 'var(--c-muted)', background: 'transparent', opacity: 0.7 }}
+            title="Cancel queued message"
+            aria-label="Cancel queued message"
+          >
+            <X size={10} />
+          </button>
+        </div>
+        <div
+          className="rounded-xl rounded-tr-sm px-3 py-2 text-[13.5px] break-words"
+          style={{
+            background: 'var(--c-panel)',
+            border: '1px dashed var(--c-hair-strong)',
+            color: 'var(--c-muted)',
+          }}
         >
           <UserTextMarkdown text={text} />
         </div>
