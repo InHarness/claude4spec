@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.17] - 2026-06-14
+
+### Added
+- Design system entity — a complete new module for creating, listing, and managing design systems through a dedicated UI (`NewDesignSystemPopover`, list page, and a full detail panel), backed by client/server plugins, REST routes, services, a `design-system` MCP server, and migrations `036`–`038`. UI views can now reference a design system by slug.
+- Mid-turn chat message queuing — messages typed during a live turn are queued and delivered mid-turn (or merged after the turn). Queued messages render inline in the conversation as dimmed, dashed "ghost" bubbles that become solid once delivered, with a compact "N queued" counter and a clear-all action in the input area. Backed by migration `038_chat_queued_message` and queue state in `useChat`.
+
 ## [1.0.16] - 2026-06-11
 
 ### Added
@@ -179,6 +185,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.17]: https://github.com/InHarness/claude4spec/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/InHarness/claude4spec/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/InHarness/claude4spec/compare/v1.0.14...v1.0.15
 [1.0.14]: https://github.com/InHarness/claude4spec/compare/v1.0.13...v1.0.14
