@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.18] - 2026-06-16
+
+### Added
+- User-supplied ANTHROPIC API key management — a new `agent_credential` table stores the user's API key encrypted at-rest, with `GET`/`PUT`/`DELETE` `/api/agent/credentials` endpoints that never return the key in plaintext. The `AgentSection` component lets users enter and manage their key with success/error feedback, and `ChatService` injects the key into the environment for agent turns so users can run chat on their own credentials.
+
+### Changed
+- Bumped `@inharness-ai/agent-adapters` to 0.8.1.
+
 ## [1.0.17] - 2026-06-14
 
 ### Added
@@ -185,6 +193,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.18]: https://github.com/InHarness/claude4spec/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/InHarness/claude4spec/compare/v1.0.16...v1.0.17
 [1.0.16]: https://github.com/InHarness/claude4spec/compare/v1.0.15...v1.0.16
 [1.0.15]: https://github.com/InHarness/claude4spec/compare/v1.0.14...v1.0.15
