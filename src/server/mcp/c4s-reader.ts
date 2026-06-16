@@ -174,6 +174,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
         'ui-views': [],
         acs: [],
         'design-systems': [],
+        diagrams: [],
       };
       const bucket: Record<RawEntityType, string> = {
         endpoint: 'endpoints',
@@ -182,6 +183,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
         'ui-view': 'ui-views',
         ac: 'acs',
         'design-system': 'design-systems',
+        diagram: 'diagrams',
       };
       for (const entity of lookup.value) {
         const item = {

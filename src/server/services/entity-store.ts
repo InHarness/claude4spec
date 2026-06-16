@@ -26,7 +26,15 @@ import { canonicalize } from '../serialization/snapshot.js';
 import { DomainError } from './tags.js';
 import type { EntitiesWatcher } from '../fs/entities-watcher.js';
 
-const ENTITY_TYPE_DIRS: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
+const ENTITY_TYPE_DIRS: RawEntityType[] = [
+  'endpoint',
+  'dto',
+  'database-table',
+  'ui-view',
+  'ac',
+  'design-system',
+  'diagram',
+];
 const TAGS_FILE = 'tags.json';
 const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 

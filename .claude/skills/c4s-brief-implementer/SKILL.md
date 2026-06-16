@@ -59,6 +59,17 @@ Continue the same thread with `c4s ask "..." --thread <threadId>` (the
 `threadId` is printed with the answer). This path requires `c4s` installed
 *and* a running `npx claude4spec` server. When either is unavailable, skip it.
 
+If `c4s ask` returns `PROJECT_NOT_FOUND` despite a running server, your cwd is
+probably reached through a **symlink** (common for `.claude/skills/<name>`
+projects): `c4s` resolves `process.cwd()` to the real path, which is NOT the one
+registered in `~/.claude4spec/workspaces.json`. Pass the registered (symlink) path
+explicitly — `--project` is run through `path.resolve`, which does NOT canonicalize
+symlinks, so it matches the registry:
+
+```bash
+c4s ask "Brief nie precyzuje X — ..." --ct brief --brief <brief-slug>.md --project /abs/path/to/registered/skill-dir
+```
+
 **Asynchronous (always available).** If you cannot ask synchronously, proceed
 with your best judgement and file a patch afterwards (step 4) so the
 spec-author can fold the clarification into the next brief.

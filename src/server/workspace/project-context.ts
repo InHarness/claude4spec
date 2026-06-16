@@ -80,6 +80,16 @@ registerExtensionReferenceType({
   attrOrder: ['anchor'],
 });
 
+// v0.1.64 registers <diagram/> as the 7th XML reference type via the M19
+// extension slot. `caption` is a per-reference attribute (not stored on the
+// entity); `slug` identifies the diagram entity. No validate closure — broken
+// diagram references surface through the generic entity-reference matching
+// (tagMatchesEntity) like any other static reference.
+registerExtensionReferenceType({
+  tag: 'diagram',
+  attrOrder: ['slug', 'caption'],
+});
+
 /**
  * M29: one-time best-effort backup of the derived SQLite before a DB→text
  * export / divergent-rebuild, so the prior index is recoverable. Idempotent —

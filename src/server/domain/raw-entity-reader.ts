@@ -6,7 +6,8 @@ export type RawEntityType =
   | 'database-table'
   | 'ui-view'
   | 'ac'
-  | 'design-system';
+  | 'design-system'
+  | 'diagram';
 
 export interface RawEntity {
   type: RawEntityType;
@@ -57,6 +58,7 @@ const ENTITY_TABLES: Record<RawEntityType, string> = {
   'ui-view': 'ui_view',
   ac: 'ac',
   'design-system': 'design_system',
+  diagram: 'diagram',
 };
 
 const ALL_ENTITY_TYPES: RawEntityType[] = [
@@ -66,6 +68,7 @@ const ALL_ENTITY_TYPES: RawEntityType[] = [
   'ui-view',
   'ac',
   'design-system',
+  'diagram',
 ];
 
 export function isRawEntityType(value: string): value is RawEntityType {
@@ -75,7 +78,8 @@ export function isRawEntityType(value: string): value is RawEntityType {
     value === 'database-table' ||
     value === 'ui-view' ||
     value === 'ac' ||
-    value === 'design-system'
+    value === 'design-system' ||
+    value === 'diagram'
   );
 }
 
@@ -212,6 +216,7 @@ export class RawEntityReader {
           'ui-view': 0,
           ac: 0,
           'design-system': 0,
+          diagram: 0,
         },
     }));
   }

@@ -37,6 +37,8 @@ const DEP_ORDER: RawEntityType[] = [
   'ui-view',
   'ac',
   'endpoint',
+  // Graph leaf: references no other entity, so order is irrelevant.
+  'diagram',
 ];
 
 const ENTITY_TABLE: Record<RawEntityType, string> = {
@@ -46,6 +48,7 @@ const ENTITY_TABLE: Record<RawEntityType, string> = {
   'ui-view': 'ui_view',
   ac: 'ac',
   'design-system': 'design_system',
+  diagram: 'diagram',
 };
 
 export class EntityIndexerService {
@@ -90,6 +93,7 @@ export class EntityIndexerService {
            DELETE FROM ui_view;
            DELETE FROM ac;
            DELETE FROM design_system;
+           DELETE FROM diagram;
            DELETE FROM tag;`,
         );
       })();

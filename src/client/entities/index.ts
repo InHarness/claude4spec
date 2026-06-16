@@ -5,6 +5,7 @@ import './database-table/plugin.js';
 import './ui-view/plugin.js';
 import './ac/plugin.js';
 import './design-system/plugin.js';
+import './diagram/plugin.js';
 
 export { getEntityDef, listEntityDefs, registerEntity } from './registry.js';
 export type {

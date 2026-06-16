@@ -1,0 +1,56 @@
+import { nanoid } from 'nanoid';
+import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
+import type { EntitySerializer } from '../../serialization/types.js';
+import { slugify } from '../../services/slug.js';
+import { diagramSerializer } from './serializer.js';
+import { diagramSystemPrompt } from './system-prompt.js';
+import { diagramsRouter } from './routes.js';
+import { DiagramService } from './services.js';
+import { createDiagramToolsServer } from './mcp-server.js';
+
+export const diagramBackendModule: BackendModule = {
+  type: 'diagram',
+  table: 'diagram',
+  label: 'Diagram',
+  labelPlural: 'Diagrams',
+  // After design-system (60) — diagrams sit at the end of ELEMENTS.
+  displayOrder: 70,
+  pathPrefix: '/diagrams',
+  // Decyzja #1: explicit slug | slugify(caption) | diagram-<nanoid(8)>.
+  // The service does the authoritative generation (with collision suffixing);
+  // this manifest helper mirrors the fallback for generic callers.
+  slugFrom: (data) => {
+    const d = (data ?? {}) as { slug?: string; caption?: string };
+    return d.slug?.trim() || (d.caption ? slugify(d.caption) : `diagram-${nanoid(8)}`);
+  },
+  serializer: diagramSerializer as EntitySerializer<unknown>,
+  systemPrompt: diagramSystemPrompt,
+  backend: {
+    mount(ctx) {
+      const service = new DiagramService(
+        ctx.db,
+        ctx.tagsService,
+        ctx.versionService,
+        ctx.entityStore
+      );
+      ctx.app.use(
+        `${diagramBackendModule.pathPrefix}`,
+        diagramsRouter(service, ctx.referencesService, ctx.ws)
+      );
+      ctx.registerMcpServer(
+        `${diagramBackendModule.type}-tools`,
+        () =>
+          createDiagramToolsServer({
+            diagramService: service,
+            referencesService: ctx.referencesService,
+            ws: ctx.ws,
+          })
+      );
+      ctx.registerEntityService(diagramBackendModule.type, service);
+    },
+  },
+};
+
+export function onRegister(registry: PluginRegistry): void {
+  registry.registerEntityModule(diagramBackendModule);
+}

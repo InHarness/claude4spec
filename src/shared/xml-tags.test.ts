@@ -4,6 +4,8 @@ import {
   parseXmlTagsExcludingCode,
   serializeXmlTag,
   taggedListVia,
+  tagMatchesEntity,
+  extractSlugs,
 } from './xml-tags.js';
 import { registerExtensionReferenceType } from './reference-extensions.js';
 
@@ -87,6 +89,32 @@ describe('extension reference types', () => {
     expect(serializeXmlTag('section_ref', { anchor: 'abc123de' })).toBe(
       '<section_ref anchor="abc123de"/>',
     );
+  });
+});
+
+describe('diagram reference (v0.1.64 — 7th extension type)', () => {
+  it('parses and roundtrip-serializes a self-closing <diagram/> reference', () => {
+    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'] });
+
+    const md = 'see <diagram slug="auth-flow" caption="Auth flow"/> below';
+    const tags = parseXmlTags(md);
+    expect(tags).toHaveLength(1);
+    expect(tags[0]!.kind).toBe('diagram');
+    expect(tags[0]!.source).toBe('extension');
+    expect(tags[0]!.attrs).toEqual({ slug: 'auth-flow', caption: 'Auth flow' });
+
+    expect(serializeXmlTag('diagram', { slug: 'auth-flow', caption: 'Auth flow' })).toBe(
+      '<diagram slug="auth-flow" caption="Auth flow"/>',
+    );
+  });
+
+  it('matches the diagram entity by slug (type encoded in the tag name, no type attr)', () => {
+    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'] });
+    const [tag] = parseXmlTags('<diagram slug="auth-flow" caption="x"/>');
+    expect(tagMatchesEntity(tag!, 'diagram', 'auth-flow')).toBe(true);
+    expect(tagMatchesEntity(tag!, 'diagram', 'other')).toBe(false);
+    expect(tagMatchesEntity(tag!, 'dto', 'auth-flow')).toBe(false);
+    expect(extractSlugs(tag!)).toEqual(['auth-flow']);
   });
 });
 

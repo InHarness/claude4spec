@@ -3,6 +3,8 @@ import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
 import { dtosApi, endpointsApi } from '../lib/api.js';
 import { acsApi } from '../entities/ac/api.js';
+import { diagramsApi } from '../entities/diagram/api.js';
+import type { DiagramFormat } from '../../shared/entities.js';
 import { dispatchNewDatabaseTable } from '../components/NewDatabaseTablePopover.js';
 import { dispatchNewUiView } from '../components/NewUiViewPopover.js';
 import { dispatchNewDesignSystem } from '../components/NewDesignSystemPopover.js';
@@ -67,7 +69,7 @@ export async function invokeSlash(
       runTodo(editor);
       return;
     case 'diagram':
-      await runDiagram(editor);
+      await runDiagram(editor, deps);
       return;
     case 'section':
       await runSection(editor);
@@ -93,19 +95,30 @@ function coordsAt(editor: Editor): { x: number; y: number } {
   return { x: coords.left, y: coords.bottom + 6 };
 }
 
-async function runDiagram(editor: Editor): Promise<void> {
+async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
   const coords = coordsAt(editor);
   const result = await openPopover('diagram', coords, { mode: 'create' });
   if (!result) return;
   if ('__action' in result) return;
-  editor
-    .chain()
-    .focus()
-    .insertContent({
-      type: 'diagram',
-      attrs: { format: result.format, caption: result.caption, source: result.source },
-    })
-    .run();
+  try {
+    // v0.1.64: the DSL `source` is the truth — create the diagram entity, then
+    // insert a self-closing `<diagram slug caption/>` reference on the page.
+    // `caption` seeds the slug (slugify) but is NOT persisted on the entity.
+    const diagram = await diagramsApi.create({
+      source: result.source,
+      format: result.format as DiagramFormat,
+      caption: result.caption,
+    });
+    deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: 'diagram', attrs: { slug: diagram.slug, caption: result.caption } })
+      .run();
+    if (diagram.warnings?.length) toast.error(diagram.warnings[0]!);
+  } catch (err) {
+    toast.error((err as Error).message);
+  }
 }
 
 function runTodo(editor: Editor): void {
