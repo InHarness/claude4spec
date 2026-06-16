@@ -4,7 +4,7 @@ import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
-import { useChatStore, thinkingToConfig, isAdaptiveModel, type ChatModel, type ChatThinking } from '../state/chat.js';
+import { useChatStore, thinkingToConfig, configToThinking, isAdaptiveModel, isChatModel, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
@@ -144,6 +144,18 @@ export function ChatOverlay() {
   useEffect(() => {
     setPlanMode(activeThread?.planMode ?? false);
   }, [activeThread?.id, activeThread?.planMode]);
+
+  // M05 0.1.61: a session-locked thread shows ITS OWN turn-1 config, not the global store's
+  // leftover from another thread. Mirrors the planMode restore above. Fresh threads (no
+  // snapshot) are left alone, so they inherit the current global choice. setModel runs first
+  // so its max→high clamp can't override the snapshot-derived thinking level.
+  useEffect(() => {
+    const snap = activeThread?.initialArchitectureConfig;
+    if (activeThread?.lastSessionId != null && snap) {
+      if (isChatModel(snap.model)) setModel(snap.model);
+      setThinking(configToThinking(snap.architectureConfig));
+    }
+  }, [activeThread?.id, activeThread?.lastSessionId, activeThread?.initialArchitectureConfig, setModel, setThinking]);
 
   // Reset trybu podgladu i cache przy switchu watku — snapshot jest per-thread,
   // wiec po zmianie threadId stary cache jest niewazny i toggle musi sie zamknac.

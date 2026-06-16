@@ -15,7 +15,11 @@ import { toast } from '../ui/events.js';
 type WireEventExtended =
   | WireEvent
   | { type: 'user_input_request'; request: UserInputRequest }
-  | { type: 'todo_list_updated'; items: TodoItem[]; isSubagent: boolean };
+  | { type: 'todo_list_updated'; items: TodoItem[]; isSubagent: boolean }
+  // Runtime shape of SSE `error` events is looser than the library's WireEvent:
+  // adapter pass-through (agent-turn.ts) yields `{ error: <object>, phase }` with
+  // NO `code`, while the server catch-block yields `{ error: string, code }`.
+  | { type: 'error'; error: unknown; code?: string; phase?: string };
 
 export interface UseChatOptions {
   serverUrl?: string;
@@ -122,6 +126,14 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       if (ext.type === 'queue_cleared') {
         const texts = (ext as { texts?: string[] }).texts ?? [];
         if (texts.length > 0) onQueueClearedRef.current?.(texts);
+      }
+      // Surface SSE `error` events as a toast. Without this, adapter pass-through
+      // errors (e.g. AdapterInitError, phase:'init') only set the reducer's
+      // `state.error` — which nothing renders — so the turn dies silently.
+      // The network-failure toast lives in `onError`; this is its SSE-event peer.
+      // Skip ABORTED (user pressed Stop) to avoid noise on intentional cancels.
+      if (ext.type === 'error' && ext.code !== 'ABORTED') {
+        toast.error(formatStreamError(ext));
       }
       handleWireEvent(event);
     },
@@ -412,6 +424,55 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     cancelQueued,
     clearQueue,
   };
+}
+
+// --- Format SSE `error` events into a human-readable toast message ---
+
+// Adapter error class name → friendly prefix (from @inharness-ai/agent-adapters).
+const ERROR_NAME_LABEL: Record<string, string> = {
+  AdapterInitError: 'Failed to start agent',
+  AdapterTimeoutError: 'Agent timed out',
+  AdapterAbortError: 'Agent aborted',
+  AdapterError: 'Agent error',
+};
+
+// Node syscall error codes (error.cause.code) → friendly reason.
+const CAUSE_CODE_LABEL: Record<string, string> = {
+  EEXIST: 'resource already exists',
+  ENOENT: 'not found',
+  EACCES: 'permission denied',
+};
+
+/**
+ * Build a toast message from an SSE `error` event. Handles both wire shapes:
+ *  - catch-block: `{ error: string, code }` → use the string as-is.
+ *  - adapter pass-through: `{ error: { name, adapter, cause }, phase }` →
+ *    compose from the known fields. Always returns something readable — never
+ *    `"[object Object]"`.
+ */
+function formatStreamError(event: { error?: unknown }): string {
+  const raw = event.error;
+
+  // 1) String payload (server catch-block path), e.g. the AGENT_UNAVAILABLE hint.
+  if (typeof raw === 'string' && raw.trim()) return raw;
+
+  // 2) Object payload (adapter pass-through).
+  if (raw && typeof raw === 'object') {
+    const err = raw as { name?: string; adapter?: string; message?: string; cause?: unknown };
+    let msg = err.name ? ERROR_NAME_LABEL[err.name] ?? 'Agent error' : 'Agent error';
+    if (err.adapter) msg += ` (${err.adapter})`;
+
+    const cause = err.cause as { code?: string } | undefined;
+    if (cause && typeof cause === 'object' && typeof cause.code === 'string') {
+      msg += `: ${CAUSE_CODE_LABEL[cause.code] ?? cause.code}`;
+    } else if (err.message) {
+      msg += `: ${err.message}`;
+    }
+    return msg;
+  }
+
+  // 3) Hard fallback.
+  return 'Agent error';
 }
 
 // --- Convert persisted chat_message rows into UI ChatMessage[] ---

@@ -101,6 +101,17 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         ...clientArchitectureConfig,
         claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
       };
+      // M05 0.1.62: own ANTHROPIC API key — same injection as `POST /api/chat`. When set,
+      // decrypt and inject per-turn into `custom_env`; the SDK prefers it over the local
+      // OAuth. No row ⇒ local Claude Code login (unchanged). Not in RESUME_CONFIG_LOCKED.
+      const credential = await deps.agentCredentialService.getDecrypted();
+      if (credential) {
+        const existingEnv =
+          clientArchitectureConfig.custom_env && typeof clientArchitectureConfig.custom_env === 'object'
+            ? (clientArchitectureConfig.custom_env as Record<string, unknown>)
+            : {};
+        architectureConfig.custom_env = { ...existingEnv, ANTHROPIC_API_KEY: credential.apiKey };
+      }
 
       // M05 session-lock: ten sam invariant co `POST /api/chat`. Defensywny backstop dla
       // nie-UI konsumentow (`c4s ask`, skrypty) — resume z innym modelem/reasoningiem = 409.

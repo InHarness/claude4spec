@@ -14,6 +14,7 @@ import { TagsService, DomainError } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
 import { ReferencesService } from '../services/references.js';
 import { ChatService } from '../services/chat.js';
+import { AgentCredentialService } from '../services/agent-credential.js';
 import { SectionsService } from '../services/sections.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
@@ -26,6 +27,7 @@ import { patchesRouter } from '../routes/patches.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
 import { RemoteHttpClient, assertRemoteApiReachable } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
+import { agentRouter } from '../routes/agent-credential.js';
 import { remoteProjectRouter } from '../routes/remote-project.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { SectionIndexerService } from '../services/section-indexer.js';
@@ -299,6 +301,8 @@ async function buildInner(
   const remoteHttpClient = new RemoteHttpClient(remoteApiUrl);
   const remoteAuthService = new RemoteAuthService(db.handle, remoteHttpClient);
   const chatService = new ChatService(db.handle);
+  // M05 0.1.62: user's own ANTHROPIC API key (single-row, encrypted at-rest).
+  const agentCredentialService = new AgentCredentialService(db.handle);
   // Orphan cleanup: rowsy chat_message.status='streaming' pozostale po crashu poprzedniego
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
@@ -524,6 +528,7 @@ async function buildInner(
     pendingInputs,
     onTurnFinished: deps.onTurnFinished,
     chatService,
+    agentCredentialService,
     pagesService: pages,
     tagsService,
     sectionsService,
@@ -551,6 +556,7 @@ async function buildInner(
   router.use('/git', gitRouter(gitService));
   router.use('/briefs', briefsRouter(briefService, pageVersions));
   router.use('/patches', patchesRouter(patchService));
+  router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
   router.use('/remote-project', remoteProjectRouter(remoteAuthService, cwd));
   router.use('/chat', chatRouter(agentDeps));

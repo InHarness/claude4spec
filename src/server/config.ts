@@ -89,6 +89,11 @@ export interface ConsistencyConfig {
 }
 
 export interface AgentConfig {
+  // 0.1.62: the agent's own ANTHROPIC API key is intentionally NOT a config field.
+  // It is a per-user secret (precedent: `remote_session.access_token`) kept in the
+  // gitignored `agent_credential` table (M05), encrypted at-rest — never in this
+  // team-shared / committed `config.json`. No `anthropicApiKey` field, no `$schemaVersion` bump.
+  //
   // Brak pola = effective true (handler `POST /api/chat` resolveuje przez `?? true`).
   // Additive — bez bumpu `$schemaVersion`.
   claudeUsePreset?: boolean;

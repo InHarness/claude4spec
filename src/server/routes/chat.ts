@@ -86,6 +86,19 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         ...clientArchitectureConfig,
         claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
       };
+      // M05 0.1.62: own ANTHROPIC API key. When set, decrypt and inject per-turn into
+      // `custom_env` — the SDK gives `ANTHROPIC_API_KEY` precedence over the local OAuth,
+      // so no toggle is needed. No row ⇒ no injection ⇒ local Claude Code login (unchanged).
+      // Per-turn, no `process.env` mutation. `custom_env` is NOT in RESUME_CONFIG_LOCKED,
+      // so it also applies on resumed turns.
+      const credential = await deps.agentCredentialService.getDecrypted();
+      if (credential) {
+        const existingEnv =
+          clientArchitectureConfig.custom_env && typeof clientArchitectureConfig.custom_env === 'object'
+            ? (clientArchitectureConfig.custom_env as Record<string, unknown>)
+            : {};
+        architectureConfig.custom_env = { ...existingEnv, ANTHROPIC_API_KEY: credential.apiKey };
+      }
       const planModeArg =
         typeof req.body?.planMode === 'boolean' ? (req.body.planMode as boolean) : undefined;
 

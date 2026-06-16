@@ -24,6 +24,10 @@ import type {
   RemoteProjectInfo,
   UpdateRemoteProjectRequest,
 } from '../../shared/remote-project.js';
+import type {
+  AgentCredentialResponse,
+  SetAgentCredentialRequest,
+} from '../../shared/agent-credential.js';
 import { ApiError, handle, apiFetch } from './api-core.js';
 
 export { ApiError, handle };
@@ -141,6 +145,31 @@ export const configApi = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(input),
       }),
+    );
+  },
+};
+
+/**
+ * M05 0.1.62 — the agent's own ANTHROPIC API key. Write-only: GET/PUT/DELETE all
+ * return only `{ isSet, last4 }`; the raw key is never echoed. TanStack query key
+ * `["agent-credentials"]`.
+ */
+export const agentCredentialsApi = {
+  async get(): Promise<AgentCredentialResponse> {
+    return handle<AgentCredentialResponse>(await apiFetch('/api/agent/credentials'));
+  },
+  async set(body: SetAgentCredentialRequest): Promise<AgentCredentialResponse> {
+    return handle<AgentCredentialResponse>(
+      await apiFetch('/api/agent/credentials', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
+    );
+  },
+  async remove(): Promise<AgentCredentialResponse> {
+    return handle<AgentCredentialResponse>(
+      await apiFetch('/api/agent/credentials', { method: 'DELETE' }),
     );
   },
 };

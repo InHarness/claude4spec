@@ -44,6 +44,28 @@ export function thinkingToConfig(
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
 
+const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-4.6', 'opus-4.8', 'haiku-4.5'];
+export const isChatModel = (m: unknown): m is ChatModel =>
+  typeof m === 'string' && (CHAT_MODELS as readonly string[]).includes(m);
+
+// M05 0.1.61: inverse of thinkingToConfig — derive the UI thinking level from a stored
+// turn-1 architectureConfig snapshot, so a session-locked thread displays its own value.
+// 'enabled'+24000 → 'high' (non-adaptive never stores 'max'; setModel clamps it on switch).
+export function configToThinking(cfg: Record<string, unknown>): ChatThinking {
+  const t = cfg.claude_thinking;
+  if (t === 'adaptive') {
+    const e = cfg.claude_effort;
+    return e === 'low' || e === 'medium' || e === 'high' || e === 'max' ? e : 'medium';
+  }
+  if (t === 'enabled') {
+    const b = cfg.claude_thinking_budget;
+    if (b === 2048) return 'low';
+    if (b === 8192) return 'medium';
+    return 'high';
+  }
+  return 'off';
+}
+
 interface ChatState {
   chatOpen: boolean;
   chatWidth: number;

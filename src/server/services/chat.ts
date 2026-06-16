@@ -19,6 +19,7 @@ interface ChatThreadRow {
   title: string | null;
   last_session_id: string | null;
   initial_system_prompt: string | null;
+  initial_architecture_config_json: string | null;
   current_todo_items: string | null;
   plan_mode: number;
   last_usage_json: string | null;
@@ -548,6 +549,7 @@ export class ChatService {
       id: row.id,
       title: row.title,
       lastSessionId: row.last_session_id,
+      initialArchitectureConfig: parseInitialArchitectureConfig(row.initial_architecture_config_json),
       currentTodoItems: parseTodoItems(row.current_todo_items),
       planMode: row.plan_mode === 1,
       usage,
@@ -614,6 +616,34 @@ function parseUsage(raw: string | null): UsageStats | null {
   try {
     const parsed = JSON.parse(raw);
     if (parsed && typeof parsed === 'object') return parsed as UsageStats;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * M05 0.1.61: defensywne parsowanie snapshotu tury-1 dla domyslnej projekcji.
+ * Kazdy blad parsowania / niepoprawny ksztalt → null (jak `parseUsage`).
+ */
+function parseInitialArchitectureConfig(
+  raw: string | null,
+): { model: string; architectureConfig: Record<string, unknown> } | null {
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      parsed &&
+      typeof parsed === 'object' &&
+      typeof parsed.model === 'string' &&
+      parsed.architectureConfig &&
+      typeof parsed.architectureConfig === 'object'
+    ) {
+      return {
+        model: parsed.model,
+        architectureConfig: parsed.architectureConfig as Record<string, unknown>,
+      };
+    }
     return null;
   } catch {
     return null;

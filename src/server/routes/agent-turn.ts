@@ -15,6 +15,7 @@ import {
   type McpServerConfig,
 } from '@inharness-ai/agent-adapters';
 import type { ChatService } from '../services/chat.js';
+import type { AgentCredentialService } from '../services/agent-credential.js';
 import type { PagesService } from '../services/pages.js';
 import type { TagsService } from '../services/tags.js';
 import type { SectionsService } from '../services/sections.js';
@@ -48,6 +49,8 @@ export interface AgentTurnDeps {
    */
   onTurnFinished?: () => void;
   chatService: ChatService;
+  /** M05 0.1.62: user's own ANTHROPIC API key, injected per-turn into custom_env. */
+  agentCredentialService: AgentCredentialService;
   pagesService: PagesService;
   tagsService: TagsService;
   sectionsService: SectionsService;
@@ -439,9 +442,13 @@ export async function runAgentTurn(
 
     // M05 session-lock: snapshot { model, architectureConfig } pierwszej tury — punkt
     // odniesienia dla guarda RESUME_CONFIG_LOCKED w routes. Idempotentny (no-op na 2.+ turze).
+    // 0.1.62: `custom_env` jest wyłączane ze snapshotu — niesie odszyfrowany ANTHROPIC_API_KEY,
+    // który nie może trafić do plaintextowego `db.sqlite` (to obeszłoby szyfrowanie at-rest);
+    // nie jest też polem RESUME_CONFIG_LOCKED, więc snapshot go nie potrzebuje.
+    const { custom_env: _customEnv, ...snapshotArchitectureConfig } = input.architectureConfig;
     deps.chatService.setInitialArchitectureConfig(thread.id, {
       model: input.model,
-      architectureConfig: input.architectureConfig,
+      architectureConfig: snapshotArchitectureConfig,
     });
 
     if (isFirstTurn && currentPlan) {

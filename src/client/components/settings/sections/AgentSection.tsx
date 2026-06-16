@@ -1,9 +1,20 @@
 import { useState } from 'react';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
+import {
+  useAgentCredentials,
+  useSetAgentCredential,
+  useRemoveAgentCredential,
+} from '../../../hooks/useAgentCredentials.js';
 import { ApiError } from '../../../lib/api.js';
-import { toast } from '../../../ui/events.js';
+import { confirmDestructive, toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 import { SUPPORTED_LANGUAGES } from '../../../../shared/languages.js';
+
+const inputStyle: React.CSSProperties = {
+  background: 'var(--c-bg)',
+  border: '1px solid var(--c-hair)',
+  color: 'var(--c-ink)',
+};
 
 /**
  * M26 §1, §2 — Agent section. `claudeUsePreset` is per-query hot-reload (the next
@@ -95,7 +106,147 @@ export function AgentSection() {
             </span>
           )}
         </label>
+
+        <ApiKeyField />
       </div>
     </SettingsCard>
+  );
+}
+
+/**
+ * M05 0.1.62 — "Anthropic API key" group. No toggle: a stored key always wins over
+ * the local Claude Code login; removing it restores the local login. The key is
+ * write-only server-side — we only ever see `{ isSet, last4 }`.
+ */
+function ApiKeyField() {
+  const { data: credential } = useAgentCredentials();
+  const setKey = useSetAgentCredential();
+  const removeKey = useRemoveAgentCredential();
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const isSet = credential?.isSet ?? false;
+  const busy = setKey.isPending || removeKey.isPending;
+
+  async function handleSave() {
+    setError(null);
+    try {
+      await setKey.mutateAsync(draft);
+      setDraft('');
+      setEditing(false);
+      toast.success('Anthropic API key saved');
+    } catch (err) {
+      // 400 VALIDATION (empty / missing sk-ant- prefix) surfaces inline under the field.
+      setError(err instanceof ApiError ? err.message : 'Failed to save the key');
+    }
+  }
+
+  async function handleRemove() {
+    const ok = await confirmDestructive({
+      title: 'Remove Anthropic API key?',
+      body: 'The stored key will be deleted and the agent will fall back to your local Claude Code login.',
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    setError(null);
+    try {
+      await removeKey.mutateAsync();
+      setEditing(false);
+      setDraft('');
+      toast.success('Anthropic API key removed');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Failed to remove the key');
+    }
+  }
+
+  const showInput = !isSet || editing;
+
+  return (
+    <label className="flex flex-col gap-1.5">
+      <span className="text-[11.5px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-muted)' }}>
+        Anthropic API key
+      </span>
+
+      {isSet && !editing ? (
+        <div className="flex items-center gap-2">
+          <code className="text-[13px]" style={{ color: 'var(--c-ink)' }}>
+            sk-ant-…••••{credential?.last4}
+          </code>
+          <button
+            type="button"
+            onClick={() => {
+              setError(null);
+              setDraft('');
+              setEditing(true);
+            }}
+            disabled={busy}
+            className="rounded-md px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
+            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRemove()}
+            disabled={busy}
+            className="rounded-md px-2.5 py-1 text-[12px] font-medium disabled:opacity-50"
+            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-red, #c45a3b)' }}
+          >
+            Remove
+          </button>
+        </div>
+      ) : null}
+
+      {showInput ? (
+        <div className="flex items-center gap-2">
+          <input
+            type="password"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            disabled={busy}
+            placeholder="sk-ant-..."
+            autoComplete="off"
+            className="flex-1 rounded-md px-3 py-1.5 text-[13px]"
+            style={inputStyle}
+          />
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={busy || draft.trim() === ''}
+            className="rounded-md px-3 py-1.5 text-[12px] font-medium disabled:opacity-50"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            {setKey.isPending ? 'Saving…' : 'Save'}
+          </button>
+          {isSet && editing ? (
+            <button
+              type="button"
+              onClick={() => {
+                setEditing(false);
+                setDraft('');
+                setError(null);
+              }}
+              disabled={busy}
+              className="rounded-md px-2.5 py-1.5 text-[12px] font-medium disabled:opacity-50"
+              style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+            >
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {error ? (
+        <span className="text-[11.5px]" style={{ color: '#a83232' }}>
+          {error}
+        </span>
+      ) : (
+        <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+          If you set a key, the agent always uses it instead of the local Claude Code login. The key is
+          encrypted and stored locally (not in <code>config.json</code>, not in the repo).
+        </span>
+      )}
+    </label>
   );
 }

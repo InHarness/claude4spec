@@ -59,6 +59,44 @@ describe('ChatService queue methods', () => {
   });
 });
 
+// --- initialArchitectureConfig projection (M05 0.1.61) ---------------------
+
+describe('ChatService initialArchitectureConfig projection', () => {
+  let db: Database.Database;
+  let chat: ChatService;
+  let threadId: string;
+
+  beforeEach(() => {
+    db = createTestDb();
+    chat = new ChatService(db);
+    threadId = chat.createThread().id;
+  });
+  afterEach(() => db.close());
+
+  it('is null for a fresh thread (no turn-1 snapshot)', () => {
+    expect(chat.getThread(threadId)!.thread.initialArchitectureConfig).toBeNull();
+  });
+
+  it('round-trips the turn-1 snapshot', () => {
+    chat.setInitialArchitectureConfig(threadId, {
+      model: 'opus-4.8',
+      architectureConfig: { claude_thinking: 'adaptive', claude_effort: 'high' },
+    });
+    expect(chat.getThread(threadId)!.thread.initialArchitectureConfig).toEqual({
+      model: 'opus-4.8',
+      architectureConfig: { claude_thinking: 'adaptive', claude_effort: 'high' },
+    });
+  });
+
+  it('defensively yields null when the stored JSON is corrupt', () => {
+    db.prepare(`UPDATE chat_thread SET initial_architecture_config_json = ? WHERE id = ?`).run(
+      '{not json',
+      threadId,
+    );
+    expect(chat.getThread(threadId)!.thread.initialArchitectureConfig).toBeNull();
+  });
+});
+
 // --- Queue HTTP endpoints + abort (M05) ------------------------------------
 
 interface Harness {

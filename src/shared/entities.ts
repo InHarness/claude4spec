@@ -671,6 +671,9 @@ export interface ChatThread {
   id: string;
   title: string | null;
   lastSessionId: string | null;
+  /** M05 0.1.61: turn-1 architecture snapshot (model + reasoning config). null until the
+   *  thread has a session; controls hydrate from this when session-locked. */
+  initialArchitectureConfig: { model: string; architectureConfig: Record<string, unknown> } | null;
   currentTodoItems: TodoItem[] | null;
   planMode: boolean;
   usage: UsageStats | null;
