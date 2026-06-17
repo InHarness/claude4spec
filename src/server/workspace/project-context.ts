@@ -25,7 +25,7 @@ import { briefsRouter } from '../routes/briefs.js';
 import { PatchService } from '../services/patch.js';
 import { patchesRouter } from '../routes/patches.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
-import { RemoteHttpClient, assertRemoteApiReachable } from '../services/remote-http-client.js';
+import { RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
 import { agentRouter } from '../routes/agent-credential.js';
 import { remoteProjectRouter } from '../routes/remote-project.js';
@@ -246,13 +246,11 @@ async function buildInner(
   // M01 (0.1.36): resolve the remote base URL with precedence
   // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant
   // fallback lives in RemoteHttpClient; here `null` means "use prod".
+  // M24 (0.1.65): an explicit remoteApiUrl override (flag or config.json) is only
+  // syntax-validated at config load; the client bootstrap is cold — no network probe
+  // here. An unreachable-but-valid host lets the project build succeed; the
+  // reachability error surfaces at the first remote action as a graceful failure.
   const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
-  // M24: an explicit remoteApiUrl override (flag or config.json) must be a valid,
-  // reachable host — hard error at build, no fallback to the production constant.
-  // M31: failure is a per-project build failure (500), not a boot failure.
-  if (remoteApiUrl != null && remoteApiUrl.trim() !== '') {
-    await assertRemoteApiReachable(remoteApiUrl);
-  }
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(bootConfig.entities);
   const hostState = pluginHost.partition();
   console.log(

@@ -45,3 +45,64 @@ describe('config — description field (0.1.58)', () => {
     expect(readConfig(dir).description).toBeUndefined();
   });
 });
+
+// 0.1.65: the M24 remote client bootstrap is "cold". `validate()` checks only URL
+// *syntax* — parsable via `new URL()` + an `http(s)://` scheme — never reachability.
+// A syntactically-valid but unreachable host must NOT block config load / boot; its
+// reachability error surfaces only at the first remote action.
+describe('config — remoteApiUrl syntax-only validation (0.1.65)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, name: 'X', ...cfg }));
+  };
+
+  const INVALID_URL = "config.json: field 'remoteApiUrl': invalid URL";
+
+  it('accepts a syntactically-valid http(s) URL', () => {
+    write({ remoteApiUrl: 'http://localhost:3000' });
+    expect(readConfig(dir).remoteApiUrl).toBe('http://localhost:3000');
+    write({ remoteApiUrl: 'https://api.example.com' });
+    expect(readConfig(dir).remoteApiUrl).toBe('https://api.example.com');
+  });
+
+  it('accepts a syntactically-valid but unreachable host (no boot-time probe)', () => {
+    // Reachability is deferred to the first remote action — config load must succeed.
+    write({ remoteApiUrl: 'https://nope.invalid:9999' });
+    expect(readConfig(dir).remoteApiUrl).toBe('https://nope.invalid:9999');
+  });
+
+  it('rejects an unparsable URL with the shortened message (no "unreachable host")', () => {
+    write({ remoteApiUrl: 'not-a-url' });
+    expect(() => readConfig(dir)).toThrow(INVALID_URL);
+  });
+
+  it('rejects a URL without an http(s) scheme', () => {
+    // `new URL('localhost:3000')` parses (protocol 'localhost:'); the scheme check rejects it.
+    write({ remoteApiUrl: 'localhost:3000' });
+    expect(() => readConfig(dir)).toThrow(INVALID_URL);
+    write({ remoteApiUrl: 'ftp://example.com' });
+    expect(() => readConfig(dir)).toThrow(INVALID_URL);
+  });
+
+  it('rejects a non-string, non-null remoteApiUrl with a typed error', () => {
+    write({ remoteApiUrl: 42 });
+    expect(() => readConfig(dir)).toThrow(
+      "config.json: field 'remoteApiUrl' expected string | null, got number",
+    );
+  });
+
+  it('accepts a null remoteApiUrl (use prod default)', () => {
+    write({ remoteApiUrl: null });
+    expect(readConfig(dir).remoteApiUrl).toBeNull();
+  });
+});

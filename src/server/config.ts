@@ -284,14 +284,20 @@ function validate(raw: unknown): Partial<Config> {
     if (r.remoteApiUrl !== null && typeof r.remoteApiUrl !== 'string') {
       throw typeError('remoteApiUrl', 'string | null', r.remoteApiUrl);
     }
-    // Syntactic URL check here (sync). Reachability (HEAD ping) is enforced at
-    // server boot in startServer() — both failures share the same message:
-    // `config.json: field 'remoteApiUrl': invalid URL or unreachable host`.
+    // Syntactic-only check here (sync): parsable via `new URL()` + an `http(s)://`
+    // scheme. Reachability is NOT probed at boot (0.1.65) — the client bootstrap is
+    // cold; an unreachable-but-syntactically-valid host lets the process start, and
+    // the reachability error surfaces only at the first remote action (login M24,
+    // push M25, clone M27) as a graceful per-action failure.
     if (typeof r.remoteApiUrl === 'string' && r.remoteApiUrl.trim() !== '') {
+      let parsed: URL;
       try {
-        void new URL(r.remoteApiUrl);
+        parsed = new URL(r.remoteApiUrl);
       } catch {
-        throw new Error(`config.json: field 'remoteApiUrl': invalid URL or unreachable host`);
+        throw new Error(`config.json: field 'remoteApiUrl': invalid URL`);
+      }
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`config.json: field 'remoteApiUrl': invalid URL`);
       }
     }
     out.remoteApiUrl = r.remoteApiUrl;

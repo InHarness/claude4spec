@@ -425,19 +425,3 @@ export class RemoteHttpClient {
     }
   }
 }
-
-/**
- * Startup reachability check for an explicit `config.remoteApiUrl` override.
- * "Reachable" = the host answers at all (any HTTP status); only a transport
- * failure / timeout counts as unreachable. No fallback to PROD_REMOTE_URL — an
- * explicit override must be honoured or reported (brief §1). Throws with the
- * exact contract message.
- */
-export async function assertRemoteApiReachable(remoteApiUrl: string, timeoutMs = 3000): Promise<void> {
-  const base = remoteApiUrl.replace(/\/+$/, '');
-  try {
-    await fetch(`${base}/v1/health`, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
-  } catch {
-    throw new Error(`config.json: field 'remoteApiUrl': invalid URL or unreachable host`);
-  }
-}
