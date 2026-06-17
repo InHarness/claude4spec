@@ -160,6 +160,10 @@ export class ReferencesService {
 
     await this.walkPages(async (relPath, body) => {
       const rewritten = rewriteTagsInBody(body, (tag) => {
+        if (tag.kind === 'diagram') {
+          if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
+          return { ...tag.attrs, slug: newSlug };
+        }
         if (tag.attrs.type !== type) return null;
         if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
           if (tag.attrs.slug !== oldSlug) return null;
@@ -181,6 +185,10 @@ export class ReferencesService {
       for (const [relPath, originalBody] of backups) {
         const current = await this.pages.read(relPath);
         const newBody = rewriteTagsInBody(current.body, (tag) => {
+          if (tag.kind === 'diagram') {
+            if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
+            return { ...tag.attrs, slug: newSlug };
+          }
           if (tag.attrs.type !== type) return null;
           if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
             if (tag.attrs.slug !== oldSlug) return null;

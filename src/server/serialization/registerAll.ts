@@ -5,6 +5,7 @@ import { onRegister as registerDatabaseTable } from '../entities/database-table/
 import { onRegister as registerUiView } from '../entities/ui-view/plugin.js';
 import { onRegister as registerAc } from '../entities/ac/plugin.js';
 import { onRegister as registerDesignSystem } from '../entities/design-system/plugin.js';
+import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
 
 /**
  * M31: replaces the side-effect import chain that populated the `pluginHost`
@@ -18,4 +19,5 @@ export function registerAllPlugins(registry: PluginRegistry): void {
   registerUiView(registry);
   registerAc(registry);
   registerDesignSystem(registry);
+  registerDiagram(registry);
 }

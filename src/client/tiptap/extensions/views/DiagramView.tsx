@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { Share2, Maximize2 } from 'lucide-react';
 import { renderDiagram, hashSource, sanitizeRenderId, isSupportedFormat } from '../diagramRender.js';
-import { openPopover } from '../../../ui/events.js';
+import { openPopover, toast } from '../../../ui/events.js';
 import { DiagramFullscreen } from '../../../components/DiagramFullscreen.js';
+import { useDiagram, useUpdateDiagram } from '../../../hooks/useDiagrams.js';
+import type { DiagramFormat } from '../../../../shared/entities.js';
 
 type ViewState =
   | { status: 'idle' }
@@ -12,13 +14,18 @@ type ViewState =
   | { status: 'error'; message: string; line?: number };
 
 export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProps) {
-  const format = String(node.attrs.format || 'mermaid');
+  const slug = String(node.attrs.slug ?? '');
   const caption = String(node.attrs.caption ?? '');
-  const source = String(node.attrs.source ?? '');
 
-  const [state, setState] = useState<ViewState>(
-    source ? { status: 'loading' } : { status: 'idle' },
-  );
+  // v0.1.64: source/format are the diagram entity's truth, fetched by slug.
+  const { data: diagram, isLoading } = useDiagram(slug || null);
+  const updateDiagram = useUpdateDiagram();
+
+  const format = diagram?.format ?? 'mermaid';
+  const source = diagram?.source ?? '';
+  const missing = Boolean(slug) && !isLoading && !diagram;
+
+  const [state, setState] = useState<ViewState>({ status: 'loading' });
   const [fullscreen, setFullscreen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const renderId = useMemo(
@@ -28,15 +35,16 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
 
   useEffect(() => {
     let cancelled = false;
+    if (isLoading) {
+      setState({ status: 'loading' });
+      return;
+    }
     if (!source.trim()) {
       setState({ status: 'idle' });
       return;
     }
     if (!isSupportedFormat(format)) {
-      setState({
-        status: 'error',
-        message: `Unsupported format: ${format}. Supported: mermaid`,
-      });
+      setState({ status: 'error', message: `Unsupported format: ${format}. Supported: mermaid` });
       return;
     }
     setState({ status: 'loading' });
@@ -51,7 +59,7 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
     return () => {
       cancelled = true;
     };
-  }, [format, source, renderId]);
+  }, [format, source, renderId, isLoading]);
 
   async function openEditPopover(e?: React.MouseEvent) {
     const rect = wrapperRef.current?.getBoundingClientRect();
@@ -63,15 +71,19 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
     });
     if (!result) return;
     if ('__action' in result && result.__action === 'remove') {
+      // Removes only this reference — the shared diagram entity is left intact.
       deleteNode();
       return;
     }
     if (!('__action' in result)) {
-      updateAttributes({
-        format: result.format,
-        caption: result.caption,
-        source: result.source,
-      });
+      // Caption is per-reference (lives on the node); source/format update the entity.
+      if (result.caption !== caption) updateAttributes({ caption: result.caption });
+      if (slug && (result.source !== source || result.format !== format)) {
+        updateDiagram.mutate(
+          { slug, input: { source: result.source, format: result.format as DiagramFormat } },
+          { onError: (err) => toast.error((err as Error).message) },
+        );
+      }
     }
   }
 
@@ -99,7 +111,23 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
       onClick={handleClick}
       onDoubleClick={handleDoubleClick}
     >
-      {state.status === 'idle' && (
+      {missing && (
+        <div
+          className="rounded px-3 py-2"
+          style={{
+            background: 'var(--c-red-soft, #f7dcd3)',
+            color: 'var(--c-red, #c45a3b)',
+            border: '1px solid var(--c-red, #c45a3b)',
+            fontSize: 12.5,
+            fontFamily: 'var(--font-mono)',
+          }}
+          title="The referenced diagram entity no longer exists"
+        >
+          ⚠ broken diagram reference: <strong>{slug}</strong>
+        </div>
+      )}
+
+      {!missing && state.status === 'idle' && (
         <div
           className="flex items-center justify-center gap-2 rounded cursor-pointer py-6"
           style={{
@@ -115,7 +143,7 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
         </div>
       )}
 
-      {state.status === 'loading' && (
+      {!missing && state.status === 'loading' && (
         <div
           className="rounded py-8 text-center"
           style={{
@@ -130,7 +158,7 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
         </div>
       )}
 
-      {state.status === 'rendered' && (
+      {!missing && state.status === 'rendered' && (
         <figure style={{ margin: 0, position: 'relative' }}>
           <button
             type="button"
@@ -194,16 +222,12 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
             </figcaption>
           )}
           {fullscreen && (
-            <DiagramFullscreen
-              svg={state.svg}
-              caption={caption}
-              onClose={() => setFullscreen(false)}
-            />
+            <DiagramFullscreen svg={state.svg} caption={caption} onClose={() => setFullscreen(false)} />
           )}
         </figure>
       )}
 
-      {state.status === 'error' && (
+      {!missing && state.status === 'error' && (
         <div style={{ cursor: 'pointer' }} title="Click to fix">
           <div
             className="rounded px-3 py-2"

@@ -151,6 +151,14 @@ registerEditorExtension({
   markdownIt: { kind: 'inline', pattern: /^<todo(\s[^>]*?)?\/?\s*>/ },
 });
 
+// v0.1.64 — `<diagram/>` 7th XML reference type via the M19 extension slot.
+// `slug` identifies the diagram entity (source of truth); `caption` is per-
+// reference prose. Mirrors the server registration in project-context.ts.
+registerExtensionReferenceType({
+  tag: 'diagram',
+  attrOrder: ['slug', 'caption'],
+});
+
 registerEditorExtension({
   name: 'diagram',
   extension: DiagramNode,
@@ -159,10 +167,10 @@ registerEditorExtension({
   slashCommand: {
     id: 'diagram',
     label: '/diagram',
-    description: 'Insert a Mermaid diagram block',
+    description: 'Insert a Mermaid diagram',
     hint: 'mermaid DSL',
   },
-  markdownIt: { kind: 'block_content', pattern: /^<diagram(\s[^>]*?)?>\s*$/ },
+  markdownIt: { kind: 'block', pattern: /^<diagram(\s[^>]*?)?\/?\s*>\s*$/ },
 });
 
 registerEditorExtension({

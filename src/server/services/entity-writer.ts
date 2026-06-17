@@ -25,6 +25,7 @@ import type { DatabaseTableService } from '../entities/database-table/services.j
 import type { UiViewService } from '../entities/ui-view/services.js';
 import type { AcService } from '../entities/ac/services.js';
 import type { DesignSystemService } from '../entities/design-system/services.js';
+import type { DiagramService } from '../entities/diagram/services.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 
@@ -77,6 +78,12 @@ export class HostEntityWriter implements EntityWriter {
     const service = this.requireService<DesignSystemService>('design-system');
     const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.designSystem, op: result.op, warnings: result.warnings };
+  }
+
+  upsertDiagram(slug: string, input: Parameters<DiagramService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DiagramService['upsert']>['diagram']> {
+    const service = this.requireService<DiagramService>('diagram');
+    const result = service.upsert(slug, input, actor, this.mutateOpts);
+    return { entity: result.diagram, op: result.op };
   }
 
   syncEndpointDtos(
@@ -162,6 +169,12 @@ export class HostEntityWriter implements EntityWriter {
       }
       case 'design-system': {
         const service = this.requireService<DesignSystemService>('design-system');
+        if (!service.getBySlug(slug)) return { deleted: false };
+        service.remove(slug, actor);
+        return { deleted: true };
+      }
+      case 'diagram': {
+        const service = this.requireService<DiagramService>('diagram');
         if (!service.getBySlug(slug)) return { deleted: false };
         service.remove(slug, actor);
         return { deleted: true };

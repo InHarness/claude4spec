@@ -126,7 +126,9 @@ function escapeAttr(v: string | null | undefined): string {
 }
 
 export function extractSlugs(tag: XmlTag): string[] {
-  if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
+  // `diagram` is a self-closing entity reference whose tag name IS the type;
+  // its `slug` attr points at the diagram entity (`caption` is per-reference prose).
+  if (tag.kind === 'inline_mention' || tag.kind === 'single_element' || tag.kind === 'diagram') {
     return tag.attrs.slug ? [tag.attrs.slug] : [];
   }
   if (tag.kind === 'element_list') {
@@ -149,14 +151,18 @@ export function extractTags(tag: XmlTag): string[] {
 }
 
 /**
- * True when a static XML tag (inline_mention / single_element / element_list) explicitly
- * references the entity `(entityType, slug)`. tagged_list / tagged_list_mixed never match
- * here — those are dynamic, tag-driven refs resolved via `taggedListVia`.
+ * True when a static XML tag (inline_mention / single_element / element_list / diagram)
+ * explicitly references the entity `(entityType, slug)`. tagged_list / tagged_list_mixed
+ * never match here — those are dynamic, tag-driven refs resolved via `taggedListVia`.
  * Single source of truth for static reference matching — used by the references core
  * (M19) and ReferencesService.
  */
 export function tagMatchesEntity(tag: XmlTag, entityType: string, slug: string): boolean {
   if (tag.kind === 'tagged_list_mixed') return false;
+  // `diagram` encodes the type as the tag name (no `type` attr) — match by slug.
+  if (tag.kind === 'diagram') {
+    return entityType === 'diagram' && tag.attrs.slug === slug;
+  }
   if (tag.attrs.type !== entityType) return false;
   if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
     return tag.attrs.slug === slug;

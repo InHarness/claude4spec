@@ -57,4 +57,18 @@ c4s ask "<question>" --ct chat
 
 Unlike the read-only commands above, \`c4s ask\` requires a running
 \`npx @inharness-ai/claude4spec\` server (it delegates the turn to the server's agent).
+
+### \`PROJECT_NOT_FOUND\` when the project dir is a symlink
+
+If \`c4s ask\` (or any \`c4s\` command) returns \`PROJECT_NOT_FOUND\` even though a
+server is running, your cwd is most likely reached through a **symlink** (common
+for \`.claude/skills/<name>\` that points elsewhere). \`c4s\` resolves \`process.cwd()\`
+through the symlink to the real path, which is NOT the path registered in
+\`~/.claude4spec/workspaces.json\`. Pass the registered (symlink) path explicitly —
+\`--project\` is run through \`path.resolve\`, which does NOT canonicalize symlinks, so
+it matches the registry exactly:
+
+\`\`\`sh
+c4s ask "<question>" --ct chat --project /abs/path/to/registered/project-dir
+\`\`\`
 `;

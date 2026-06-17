@@ -9,6 +9,7 @@ export type EntityType =
   | 'ui-view'
   | 'ac'
   | 'design-system'
+  | 'diagram'
   | 'section';
 export type ChangedBy = 'user' | 'agent';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -390,6 +391,56 @@ export interface DesignSystemDeleteResult {
   brokenReferences: BrokenReference[];
   /** UI views whose `designSystemSlug` pointed at the deleted record (now dangling). */
   danglingUiViews: DesignSystemDanglingUiView[];
+}
+
+// ─── Diagram (v0.1.64 — seventh entity type) ─────────────────────────────────
+
+/** Diagram DSL language. `d2` is a reserved slot — only `mermaid` is implemented. */
+export type DiagramFormat = 'mermaid' | 'd2';
+
+export interface Diagram {
+  slug: string;
+  format: DiagramFormat;
+  /** Literal DSL body (no trim). May be empty — a legal placeholder state. */
+  source: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DiagramCreateInput {
+  /** DSL body (mermaid). Optional/empty = placeholder. */
+  source?: string;
+  format?: DiagramFormat;
+  /**
+   * Transient caption — used ONLY to seed the slug (`slugify(caption)`) when no
+   * explicit `slug` is given. Never persisted on the entity (no column / file
+   * field); on a page it lives solely as the `<diagram caption="…"/>` attribute.
+   */
+  caption?: string;
+  /** Optional explicit slug — also used by M17 restore to preserve identity. */
+  slug?: string;
+  tags?: string[];
+}
+
+export interface DiagramUpdateInput {
+  source?: string;
+  format?: DiagramFormat;
+  tags?: string[];
+  newSlug?: string;
+}
+
+export interface DiagramListQuery {
+  tags?: string[];
+  tagFilter?: 'and' | 'or';
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface DiagramDeleteResult {
+  deleted: true;
+  brokenReferences: BrokenReference[];
 }
 
 /** Resolved token value: literal string, resolved composite object, or the `unresolved` sentinel. */

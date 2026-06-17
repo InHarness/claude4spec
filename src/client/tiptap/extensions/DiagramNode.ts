@@ -1,12 +1,15 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
-import { unescapeDiagramSource } from '../../../shared/diagram-source-escape.js';
+import { serializeXmlTag } from '../../../shared/xml-tags.js';
 import { DiagramView } from './views/DiagramView.js';
+import { setupXmlMarkdownRules } from './xmlNodes.js';
 
-function escapeAttrValue(v: string): string {
-  return v.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
-}
-
+/**
+ * v0.1.64 — `<diagram/>` is now a self-closing ENTITY REFERENCE (M19 extension
+ * slot), not a content-bearing block. The mermaid `source` lives in the diagram
+ * entity; the page only carries `slug` (which diagram) and `caption` (per-
+ * reference prose). DiagramView fetches the source by slug and renders it.
+ */
 export const DiagramNode = Node.create({
   name: 'diagram',
   group: 'block',
@@ -15,9 +18,8 @@ export const DiagramNode = Node.create({
   draggable: true,
   addAttributes() {
     return {
-      format: { default: 'mermaid' },
+      slug: { default: '' },
       caption: { default: '' },
-      source: { default: '' },
     };
   },
   parseHTML() {
@@ -27,9 +29,8 @@ export const DiagramNode = Node.create({
         getAttrs: (node) => {
           const el = node as HTMLElement;
           return {
-            format: el.getAttribute('format') ?? 'mermaid',
+            slug: el.getAttribute('slug') ?? '',
             caption: el.getAttribute('caption') ?? '',
-            source: unescapeDiagramSource(el.getAttribute('source') ?? ''),
           };
         },
       },
@@ -45,15 +46,12 @@ export const DiagramNode = Node.create({
     return {
       markdown: {
         serialize(state: any, node: any) {
-          const format = String(node.attrs.format || 'mermaid');
-          const caption = String(node.attrs.caption ?? '');
-          const source = String(node.attrs.source ?? '');
-          const parts = [`format="${escapeAttrValue(format)}"`];
-          if (caption) parts.push(`caption="${escapeAttrValue(caption)}"`);
-          state.write(`<diagram ${parts.join(' ')}>\n${source}\n</diagram>`);
+          state.write(serializeXmlTag('diagram', { slug: node.attrs.slug, caption: node.attrs.caption }));
           state.closeBlock(node);
         },
-        parse: {},
+        parse: {
+          setup: setupXmlMarkdownRules,
+        },
       },
     };
   },

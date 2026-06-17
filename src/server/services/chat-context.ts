@@ -213,23 +213,13 @@ Use tags for **dynamic, cross-cutting groupings** (feature slices). Use FK colum
 Lightweight inline TODO marker. Lives only in markdown — never persisted to SQLite, never an entity. To survey open TODOs, Grep pages/ for \`<todo comment=\`.
 </todo_markers>
 
-<diagram_blocks>
-  <diagram format="mermaid" caption="...">
-  ...mermaid DSL...
-  </diagram>
-Block-level Mermaid diagram. The body between the opening and closing tag is raw Mermaid source — NOT escaped in markdown (escaping only applies to the HTML \`source\` attribute roundtrip). \`format\` defaults to \`mermaid\`; \`caption\` is optional. Tiptap renders this as a live diagram with a fallback \`<pre>\` block on parse error. Use when a flow, sequence, or architecture diagram materially clarifies the prose; do not paste a diagram in lieu of explanation.
+<diagram_references>
+  <diagram slug="..." caption="..."/>
+Self-closing reference to a \`diagram\` entity (the 7th entity type). The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries only \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Manage diagrams with the \`diagram-tools\` MCP server (create_diagram / update_diagram / delete_diagram); \`create_diagram\` takes an optional transient \`caption\` used only to seed the slug. Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in page and plan editors.
 
 Example:
-  <diagram format="mermaid" caption="Auth flow">
-  flowchart TD
-    A[User] --> B[Login form]
-    B --> C{Valid creds?}
-    C -- yes --> D[Issue JWT]
-    C -- no --> E[Show error]
-  </diagram>
-
-Insertable via slash command \`/diagram\` in page and plan editors.
-</diagram_blocks>
+  <diagram slug="auth-flow" caption="Auth flow"/>
+</diagram_references>
 
 <sections_and_anchors>
 Sections (counted in \`<project sections=...>\`) are identified by an immutable 8-char anchor injected on the line before each markdown heading: \`<!-- anchor: xxxxxxxx -->\`. The indexer assigns anchors automatically — do not invent, edit, or strip them. When you rename a heading or move a section (within a page or to another file), keep the heading + anchor + body glued together; the indexer recognizes the move and the page-versioning subsystem records it. Never leave "(moved to MXX)" / "(see MNN)" breadcrumb prose behind — move history is owned by the versioning system, not by spec text.

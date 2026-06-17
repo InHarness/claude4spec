@@ -1,7 +1,6 @@
 import { Node, mergeAttributes } from '@tiptap/core';
 import { ReactNodeViewRenderer } from '@tiptap/react';
 import { serializeXmlTag, type XmlTagKind } from '../../../shared/xml-tags.js';
-import { escapeDiagramSource } from '../../../shared/diagram-source-escape.js';
 import { InlineMentionView } from './views/InlineMentionView.js';
 import { SingleElementView } from './views/SingleElementView.js';
 import { ElementListView } from './views/ElementListView.js';
@@ -18,14 +17,14 @@ import { DiagramNode } from './DiagramNode.js';
 // recognise our 5 XML tag kinds explicitly AND emit them as PAIRED tags
 // (`<foo attr="…"></foo>`) so the DOM parser treats them as empty elements.
 
+// `diagram` is a self-closing block reference (v0.1.64) — it joins the block
+// tags here. The former content-bearing `<diagram>…DSL…</diagram>` rule
+// (`xml_block_content`) was removed: the DSL body now lives in the diagram entity.
 const BLOCK_TAGS_RE =
-  /^<(single_element|element_list|tagged_list|tagged_list_mixed|todo)(\s[^>]*?)?\/?\s*>\s*$/;
+  /^<(single_element|element_list|tagged_list|tagged_list_mixed|todo|diagram)(\s[^>]*?)?\/?\s*>\s*$/;
 
 const INLINE_TAG_RE =
   /^<(inline_mention|single_element|element_list|tagged_list|tagged_list_mixed|todo)(\s[^>]*?)?\/?\s*>/;
-
-const CONTENT_BLOCK_OPEN_RE = /^<(diagram)(\s[^>]*?)?>\s*$/;
-const CONTENT_BLOCK_CLOSE_RE = /^<\/(diagram)>\s*$/;
 
 function toPairedHtml(kind: string | undefined, attrs: string | undefined): string {
   const cleanAttrs = (attrs ?? '').replace(/\/\s*$/, '').trimEnd();
@@ -33,51 +32,9 @@ function toPairedHtml(kind: string | undefined, attrs: string | undefined): stri
   return `<${kind ?? ''}${attrPart}></${kind ?? ''}>`;
 }
 
-function toContentBlockHtml(kind: string, attrs: string | undefined, body: string): string {
-  const cleanAttrs = (attrs ?? '').trim();
-  const attrPart = cleanAttrs ? ` ${cleanAttrs}` : '';
-  const sourceAttr = ` source="${escapeDiagramSource(body)}"`;
-  return `<${kind}${attrPart}${sourceAttr}></${kind}>`;
-}
-
 function setupXmlMarkdownRules(md: any) {
   if (md.__claude4specXmlRules) return;
   md.__claude4specXmlRules = true;
-
-  md.block.ruler.before(
-    'html_block',
-    'xml_block_content',
-    (state: any, startLine: number, endLine: number, silent: boolean) => {
-      const openPos = state.bMarks[startLine] + state.tShift[startLine];
-      const openMax = state.eMarks[startLine];
-      const openLine = state.src.slice(openPos, openMax);
-      const openMatch = CONTENT_BLOCK_OPEN_RE.exec(openLine);
-      if (!openMatch) return false;
-      const kind = openMatch[1]!;
-      let closeLine = -1;
-      for (let i = startLine + 1; i < endLine; i++) {
-        const linePos = state.bMarks[i] + state.tShift[i];
-        const lineMax = state.eMarks[i];
-        const ln = state.src.slice(linePos, lineMax);
-        const closeMatch = CONTENT_BLOCK_CLOSE_RE.exec(ln);
-        if (closeMatch && closeMatch[1] === kind) {
-          closeLine = i;
-          break;
-        }
-      }
-      if (closeLine === -1) return false;
-      if (silent) return true;
-      const bodyStart = state.bMarks[startLine + 1] ?? state.eMarks[startLine] + 1;
-      const bodyEnd = state.bMarks[closeLine];
-      let rawBody = state.src.slice(bodyStart, bodyEnd);
-      if (rawBody.endsWith('\n')) rawBody = rawBody.slice(0, -1);
-      const token = state.push('html_block', '', 0);
-      token.content = toContentBlockHtml(kind, openMatch[2], rawBody);
-      token.map = [startLine, closeLine + 1];
-      state.line = closeLine + 1;
-      return true;
-    },
-  );
 
   md.block.ruler.before(
     'html_block',
