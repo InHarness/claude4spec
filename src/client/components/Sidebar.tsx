@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  FileCode,
   FileCode2,
   FileText,
   Folder,
@@ -22,6 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { PageNode, PageSearchHit } from '../../shared/types.js';
+import { markdownExtension } from '../../shared/page-files.js';
 import { usePagesSearch } from '../hooks/usePages.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
@@ -480,6 +482,8 @@ function PagesTree({
           >
             {n.fileType === 'html' ? (
               <FileCode2 size={12} style={{ color: 'var(--c-accent)' }} />
+            ) : markdownExtension(n.name) === 'mdx' ? (
+              <FileCode size={12} style={{ color: 'var(--c-accent)' }} />
             ) : (
               <FileText size={12} />
             )}

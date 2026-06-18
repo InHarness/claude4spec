@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type { PageContent, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
+import { isMarkdownPath } from '../../shared/page-files.js';
 
 export class PagesService {
   readonly root: string;
@@ -105,7 +106,7 @@ export class PagesService {
 
   private resolveSafe(relPath: string): string {
     if (!relPath || relPath.includes('\0')) throw new Error('invalid path');
-    if (!relPath.endsWith('.md')) throw new Error('only .md paths allowed');
+    if (!isMarkdownPath(relPath)) throw new Error('only .md / .mdx paths allowed');
     const abs = path.resolve(this.root, relPath);
     const rel = path.relative(this.root, abs);
     if (rel.startsWith('..') || path.isAbsolute(rel)) {
@@ -122,7 +123,7 @@ export class PagesService {
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         out.push(...(await this.collectMd(path.join(dir, entry.name), rel)));
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
         out.push(rel);
       }
     }
@@ -141,7 +142,7 @@ export class PagesService {
       if (entry.isDirectory()) {
         const children = await this.walk(path.join(dir, entry.name), rel);
         items.push({ node: { type: 'folder', name: entry.name, path: rel, children }, order: Infinity });
-      } else if (entry.isFile() && entry.name.endsWith('.md')) {
+      } else if (entry.isFile() && isMarkdownPath(entry.name)) {
         const order = await this.readOrder(path.join(dir, entry.name));
         items.push({ node: { type: 'file', name: entry.name, path: rel, fileType: 'markdown' }, order });
       } else if (entry.isFile() && entry.name.endsWith('.html')) {

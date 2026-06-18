@@ -46,6 +46,17 @@ describe('parseXmlTagsExcludingCode', () => {
     const tags = parseXmlTagsExcludingCode(md);
     expect(tags.map((t) => t.attrs.slug)).toEqual(['kept', 'also-kept']);
   });
+
+  it('drops refs nested inside an unknown JSX component block (rename-corruption guard)', () => {
+    const md =
+      '<inline_mention type="dto" slug="outside"/>\n' +
+      '<Callout type="info">\n' +
+      '  see <inline_mention type="dto" slug="inside-jsx"/>\n' +
+      '</Callout>\n' +
+      '<single_element type="ac" slug="also-outside"/>';
+    const tags = parseXmlTagsExcludingCode(md);
+    expect(tags.map((t) => t.attrs.slug)).toEqual(['outside', 'also-outside']);
+  });
 });
 
 describe('serializeXmlTag', () => {

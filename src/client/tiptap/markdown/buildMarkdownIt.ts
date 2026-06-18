@@ -3,6 +3,7 @@ import { setupXmlMarkdownRules } from '../extensions/xmlNodes.js';
 import { setupAnchorMarkerRule } from '../extensions/AnchorMarker.js';
 import { setupPageRefRules } from '../extensions/PageRefNode.js';
 import { setupSectionRefMarkdownRule } from '../extensions/SectionRefNode/index.js';
+import { setupRawJsxRules } from '../extensions/RawJsxNode.js';
 import type { FileMeta } from '../../../shared/page-links.js';
 
 export interface BuildMarkdownItOptions {
@@ -32,6 +33,7 @@ export function buildMarkdownIt(options: BuildMarkdownItOptions = {}): MarkdownI
   setupAnchorMarkerRule(md);
   setupPageRefRules(md);
   setupSectionRefMarkdownRule(md);
+  setupRawJsxRules(md);
   if (options.pagesIndex) {
     (md as unknown as { __c4sPagesIndex: ReadonlyMap<string, FileMeta> }).__c4sPagesIndex =
       options.pagesIndex;

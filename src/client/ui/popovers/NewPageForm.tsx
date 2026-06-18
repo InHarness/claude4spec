@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
+import { isMarkdownPath } from '../../../shared/page-files.js';
 import {
   FieldLabel,
   InlineError,
@@ -28,8 +29,8 @@ export function NewPageForm({ request, onClose }: PopoverFormProps<'new-page'>) 
       setError('Path is required');
       return;
     }
-    if (!trimmed.endsWith('.md')) {
-      setError('Page name must end with .md');
+    if (!isMarkdownPath(trimmed)) {
+      setError('Page name must end with .md or .mdx');
       return;
     }
     onClose({ path: trimmed });

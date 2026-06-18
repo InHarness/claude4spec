@@ -2,18 +2,10 @@ import {
   getExtensionReferenceType,
   listExtensionReferenceTypes,
 } from './reference-extensions.js';
-import { computeCodeRanges, intersectsCode } from './code-ranges.js';
+import { computeExcludedRanges, intersectsCode } from './code-ranges.js';
+import { XML_TAG_KINDS, type XmlTagKind } from './xml-tag-kinds.js';
 
-export const XML_TAG_KINDS = [
-  'inline_mention',
-  'single_element',
-  'element_list',
-  'tagged_list',
-  'tagged_list_mixed',
-  'todo',
-] as const;
-
-export type XmlTagKind = (typeof XML_TAG_KINDS)[number];
+export { XML_TAG_KINDS, type XmlTagKind };
 
 export interface XmlTag {
   kind: XmlTagKind | string;
@@ -98,7 +90,11 @@ export function parseXmlTags(md: string): XmlTag[] {
 export function parseXmlTagsExcludingCode(md: string): XmlTag[] {
   const tags = parseXmlTags(md);
   if (tags.length === 0) return tags;
-  const ranges = computeCodeRanges(md);
+  // Exclude fenced/inline code AND unknown-JSX regions (`.mdx` component tags →
+  // raw code node in the editor M20). Without the JSX exclusion a registered ref
+  // nested inside `<Callout>…<inline_mention/>…</Callout>` would look live and a
+  // slug rename would byte-rewrite it, corrupting the JSX block. See code-ranges.ts.
+  const ranges = computeExcludedRanges(md);
   return tags.filter((t) => !intersectsCode(t.start, t.end, ranges));
 }
 

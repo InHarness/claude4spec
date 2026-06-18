@@ -13,6 +13,8 @@
  * them, so the editor render path diverges here; closeable later if needed.
  */
 
+import { findUnknownJsxRanges } from './jsx-passthrough.js';
+
 export type CodeRange = [start: number, end: number]; // half-open [start, end)
 
 export interface InlineCodeSpan {
@@ -116,6 +118,25 @@ export function computeCodeRanges(text: string): CodeRange[] {
   for (const span of findInlineCodeSpans(text, gaps)) ranges.push([span.start, span.end]);
   ranges.sort((a, b) => a[0] - b[0]);
   return ranges;
+}
+
+/**
+ * Char ranges that reference operations must treat as "not a live reference":
+ * code (fenced + inline) PLUS unknown-JSX component regions (`.mdx` tags ∉
+ * dispatch allowlist — M20 raw code node). The JSX scan skips matches already
+ * inside code ranges. Returned sorted by start.
+ *
+ * `parseXmlTagsExcludingCode` filters against this so a registered ref nested
+ * inside `<Callout>…</Callout>` is ignored — without it, slug rename would
+ * byte-rewrite that ref and corrupt the JSX block (M19 `ykze87pl`). Editor
+ * render (`computeCodeRanges`) is intentionally left untouched: the editor
+ * handles unknown JSX via its own markdown-it rules, not via code ranges.
+ */
+export function computeExcludedRanges(text: string): CodeRange[] {
+  const codeRanges = computeCodeRanges(text);
+  const jsxRanges = findUnknownJsxRanges(text, codeRanges);
+  if (jsxRanges.length === 0) return codeRanges;
+  return [...codeRanges, ...jsxRanges].sort((a, b) => a[0] - b[0]);
 }
 
 /** True when [start, end) overlaps any of the (sorted) code ranges. */

@@ -1,6 +1,7 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import { isMarkdownPath } from '../../shared/page-files.js';
 
 type EventKind = 'add' | 'change' | 'unlink';
 
@@ -45,8 +46,9 @@ export class PagesWatcher {
   }
 
   private emit(kind: EventKind, absPath: string): void {
-    const isMd = absPath.endsWith('.md');
-    // M30: watch .html too (so the preview iframe can refresh), but only .md drives indexing.
+    const isMd = isMarkdownPath(absPath);
+    // M30: watch .html too (so the preview iframe can refresh), but only markdown
+    // (.md / .mdx) drives indexing.
     const isHtml = absPath.endsWith('.html');
     if (!isMd && !isHtml) return;
     const relPath = path.relative(this.pagesRoot, absPath).replaceAll(path.sep, '/');

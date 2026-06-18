@@ -8,6 +8,7 @@ import {
   TodoNode,
 } from './extensions/xmlNodes.js';
 import { DiagramNode } from './extensions/DiagramNode.js';
+import { RawJsxInlineNode, RawJsxBlockNode } from './extensions/RawJsxNode.js';
 import { AnchorMarker } from './extensions/AnchorMarker.js';
 import { AnnotationHighlight } from './extensions/AnnotationHighlight.js';
 import { SlashCommands } from './extensions/SlashCommands.js';
@@ -171,6 +172,27 @@ registerEditorExtension({
     hint: 'mermaid DSL',
   },
   markdownIt: { kind: 'block', pattern: /^<diagram(\s[^>]*?)?\/?\s*>\s*$/ },
+});
+
+// M20 — unknown `.mdx` JSX component tags (name ∉ dispatch allowlist) → raw code
+// node, preserved byte-perfect and serialized verbatim (no fence). Reactivates the
+// L8 `block_content` contract for paired `<Tag>…</Tag>`; the inline node covers
+// self-closing and mid-prose paired tags. The `markdownIt` field is declarative —
+// the real rules are wired via buildMarkdownIt → setupRawJsxRules.
+registerEditorExtension({
+  name: 'raw_jsx_block',
+  extension: RawJsxBlockNode,
+  priority: 695,
+  availableIn: ['page', 'plan'],
+  markdownIt: { kind: 'block_content', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?>\s*$/ },
+});
+
+registerEditorExtension({
+  name: 'raw_jsx_inline',
+  extension: RawJsxInlineNode,
+  priority: 696,
+  availableIn: ['page', 'plan'],
+  markdownIt: { kind: 'inline', pattern: /^<[A-Z][\w.-]*(\s[^>]*?)?\/?\s*>/ },
 });
 
 registerEditorExtension({

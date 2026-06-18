@@ -8,6 +8,7 @@ import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import { findReferences } from '../../../core/references/index.js';
 import type { ReferencePage } from '../../../core/references/index.js';
+import { isMarkdownPath } from '../../../shared/page-files.js';
 import { TagsService } from '../../../server/services/tags.js';
 import { readConfig } from '../../../server/config.js';
 import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
@@ -79,7 +80,7 @@ async function collectPages(pagesDir: string): Promise<ReferencePage[]> {
       const childAbs = path.join(absDir, e.name);
       if (e.isDirectory()) {
         await walk(childAbs, childRel);
-      } else if (e.isFile() && e.name.endsWith('.md')) {
+      } else if (e.isFile() && isMarkdownPath(e.name)) {
         const raw = await fs.readFile(childAbs, 'utf-8');
         out.push({ path: childRel, body: matter(raw).content });
       }
