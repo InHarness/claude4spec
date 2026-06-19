@@ -94,7 +94,7 @@ export class PlanService {
 
   threadCount(planId: number): number {
     const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM chat_thread WHERE plan_id = ?`)
+      .prepare(`SELECT COUNT(*) AS n FROM chat_thread WHERE plan_id = ? AND parent_thread_id IS NULL`)
       .get(planId) as { n: number };
     return row.n;
   }
@@ -125,11 +125,11 @@ export class PlanService {
         `SELECT p.*,
                 COUNT(t.id) AS thread_count,
                 (SELECT id FROM chat_thread
-                  WHERE plan_id = p.id
+                  WHERE plan_id = p.id AND parent_thread_id IS NULL
                   ORDER BY updated_at DESC
                   LIMIT 1) AS last_thread_id
            FROM plan p
-           LEFT JOIN chat_thread t ON t.plan_id = p.id
+           LEFT JOIN chat_thread t ON t.plan_id = p.id AND t.parent_thread_id IS NULL
            ${where}
           GROUP BY p.id
           ORDER BY p.updated_at DESC
@@ -170,7 +170,7 @@ export class PlanService {
     const row = this.db
       .prepare(
         `SELECT id FROM chat_thread
-          WHERE plan_id = ?
+          WHERE plan_id = ? AND parent_thread_id IS NULL
           ORDER BY updated_at DESC
           LIMIT 1`
       )

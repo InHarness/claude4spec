@@ -27,6 +27,9 @@ import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
+import type { ReleaseService } from '../services/release.js';
+import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
+import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { PageVersionService } from '../services/page-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import type { Annotation, Brief, ChatThread, PatchResponse } from '../../shared/entities.js';
@@ -57,6 +60,8 @@ export interface AgentTurnDeps {
   planService: PlanService;
   briefService: BriefService;
   patchService: PatchService;
+  /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
+  releaseService: ReleaseService;
   pageVersions: PageVersionService;
   skillResolver: SkillResolver;
   skillRegistry: SkillRegistry;
@@ -110,6 +115,12 @@ export interface ActiveAdapter {
   adapter: RuntimeAdapter;
   emitter: EventEmitter;
   replay: TurnReplay;
+  /**
+   * 0.1.69 Transagents: parent thread id of a child banka turn (NULL/undefined
+   * for top-level turns). The abort cascade in routes/chat.ts uses this to find
+   * and abort children when their parent is consciously aborted.
+   */
+  parentThreadId?: string | null;
   /**
    * M05 queue: fan-out for events originating OUTSIDE the turn's stream loop
    * (queue mutations from `POST/DELETE /api/chat/queue/...`). Reaches the
@@ -215,6 +226,10 @@ export async function runAgentTurn(
     'subagent_completed',
     'todo_list_updated',
     'user_input_request',
+    // 0.1.69 Transagents: bracket markers so reload/joiners reconstruct the
+    // nested child panel.
+    'transagent_started',
+    'transagent_completed',
     'result',
     'error',
   ]);
@@ -248,8 +263,34 @@ export async function runAgentTurn(
   };
   // Rejestracja PO zdefiniowaniu `emit` — kolejka (out-of-band `POST/DELETE
   // /api/chat/queue/...`) używa go do broadcastu `queue_updated`/`queue_cleared`.
-  deps.activeAdapters.set(thread.id, { requestId, adapter, emitter, replay, emit });
+  deps.activeAdapters.set(thread.id, {
+    requestId,
+    adapter,
+    emitter,
+    replay,
+    emit,
+    // 0.1.69 Transagents: lets the abort cascade find this turn's children (when
+    // this turn IS a child, parentThreadId is set from the row).
+    parentThreadId: thread.parentThreadId,
+  });
   emit({ type: 'connected', requestId, threadId: thread.id });
+
+  // 0.1.69 Transagents: race-free correlation between the SDK's
+  // `tool_use(runTransagent)` id and the dispatcher. The loop pushes the id when
+  // it observes the tool_use event; the dispatcher (invoked from the MCP handler)
+  // takes it. Queue + waiter handles either interleaving.
+  const transagentToolUseQueue: string[] = [];
+  const transagentWaiters: Array<(id: string) => void> = [];
+  const pushTransagentToolUse = (id: string) => {
+    const waiter = transagentWaiters.shift();
+    if (waiter) waiter(id);
+    else transagentToolUseQueue.push(id);
+  };
+  const takeTransagentToolUse = (): Promise<string> => {
+    const queued = transagentToolUseQueue.shift();
+    if (queued !== undefined) return Promise.resolve(queued);
+    return new Promise<string>((resolve) => transagentWaiters.push(resolve));
+  };
 
   let assistantBuf = '';
   let thinkingBuf = '';
@@ -474,6 +515,23 @@ export async function runAgentTurn(
     // intentionally narrow (brief-tools + read-only release-tools only).
     const c4sTools = isBrief ? null : buildC4sToolsServer();
 
+    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
+    //   - context whitelist: chat + patch only (never brief — mirror c4sTools).
+    //   - recursion depth 1: never inside a child banka (parentThreadId != null),
+    //     so a banka cannot spawn a banka.
+    const isChildBanka = thread.parentThreadId != null;
+    const transagentTools = !isBrief && !isChildBanka
+      ? buildTransagentToolsServer({
+          parentThreadId: thread.id,
+          dispatcher: new TransagentDispatcher(deps, {
+            model: input.model,
+            architectureConfig: input.architectureConfig,
+            takeToolUseId: takeTransagentToolUse,
+            runTurn: (childInput) => runAgentTurn(deps, childInput),
+          }),
+        })
+      : null;
+
     const pluginMcpEntries = deps.pluginHost
       .buildMcpServers()
       .filter(({ name }) => (isBrief ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true))
@@ -482,6 +540,7 @@ export async function runAgentTurn(
     if (planTools) mcpServers['plan-tools'] = planTools.config;
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;
     if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
+    if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
 
     // M05 queue: streaming-input keeps the SDK input channel open across turns so
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).
@@ -571,6 +630,11 @@ export async function runAgentTurn(
             const taskId = event.subagentTaskId ?? null;
             if (taskId) flushSubBuf(taskId);
             else flushMainBuf();
+            // 0.1.69 Transagents: feed the dispatcher the real tool_use id so the
+            // child stores it as spawned_by_tool_use_id (F5 reconstruction key).
+            if (event.toolName === TRANSAGENT_TOOL_FULL_NAME && event.toolUseId) {
+              pushTransagentToolUse(event.toolUseId);
+            }
             deps.chatService.addMessage(
               thread.id,
               'tool_use',

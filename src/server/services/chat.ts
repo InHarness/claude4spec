@@ -30,6 +30,8 @@ interface ChatThreadRow {
   context_type: string;
   brief_path: string | null;
   patch_path: string | null;
+  parent_thread_id: string | null;
+  spawned_by_tool_use_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -91,12 +93,17 @@ export class ChatService {
       contextType?: ChatContextType;
       briefPath?: string | null;
       patchPath?: string | null;
+      /** 0.1.69 Transagents: set to mark this thread as a hidden child banka. */
+      parentThreadId?: string | null;
+      spawnedByToolUseId?: string | null;
     } = {},
   ): ChatThread {
     const id = nanoid(12);
     const contextType: ChatContextType = opts.contextType ?? 'chat';
     const briefPath = opts.briefPath ?? null;
     const patchPath = opts.patchPath ?? null;
+    const parentThreadId = opts.parentThreadId ?? null;
+    const spawnedByToolUseId = opts.spawnedByToolUseId ?? null;
     // Invariant L2: context_type='brief' ⇒ brief_path IS NOT NULL.
     if (contextType === 'brief' && !briefPath) {
       throw new DomainError('VALIDATION', "context_type='brief' requires brief_path");
@@ -107,10 +114,10 @@ export class ChatService {
     }
     this.db
       .prepare(
-        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO chat_thread (id, title, context_type, brief_path, patch_path, parent_thread_id, spawned_by_tool_use_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, title, contextType, briefPath, patchPath);
+      .run(id, title, contextType, briefPath, patchPath, parentThreadId, spawnedByToolUseId);
     return this.getThreadRow(id);
   }
 
@@ -124,6 +131,7 @@ export class ChatService {
            FROM chat_thread t
            LEFT JOIN chat_message m ON m.thread_id = t.id
           WHERE t.brief_path = ? AND t.context_type = 'brief'
+            AND t.parent_thread_id IS NULL
           GROUP BY t.id
           ORDER BY t.updated_at DESC`,
       )
@@ -144,6 +152,7 @@ export class ChatService {
            FROM chat_thread t
            LEFT JOIN chat_message m ON m.thread_id = t.id
           WHERE t.patch_path = ? AND t.context_type = 'patch'
+            AND t.parent_thread_id IS NULL
           GROUP BY t.id
           ORDER BY t.updated_at DESC`,
       )
@@ -158,10 +167,39 @@ export class ChatService {
   threadCountForPatch(patchPath: string): number {
     const row = this.db
       .prepare(
-        `SELECT COUNT(*) AS n FROM chat_thread WHERE patch_path = ? AND context_type = 'patch'`,
+        `SELECT COUNT(*) AS n FROM chat_thread WHERE patch_path = ? AND context_type = 'patch' AND parent_thread_id IS NULL`,
       )
       .get(patchPath) as { n: number };
     return row.n;
+  }
+
+  /** 0.1.69 B4: count top-level (non-banka) threads for a brief (list UI). */
+  threadCountForBrief(briefPath: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM chat_thread WHERE brief_path = ? AND context_type = 'brief' AND parent_thread_id IS NULL`,
+      )
+      .get(briefPath) as { n: number };
+    return row.n;
+  }
+
+  /**
+   * 0.1.69 Transagents (F5 reconstruction): resolve a child banka from the
+   * parent's stored `tool_use(runTransagent)` row via (parent_thread_id,
+   * spawned_by_tool_use_id). Returns the most recent match, or null.
+   */
+  findChildThread(parentThreadId: string, spawnedByToolUseId: string): ChatThread | null {
+    const row = this.db
+      .prepare(
+        `SELECT t.*,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+           FROM chat_thread t
+          WHERE t.parent_thread_id = ? AND t.spawned_by_tool_use_id = ?
+          ORDER BY t.created_at DESC
+          LIMIT 1`,
+      )
+      .get(parentThreadId, spawnedByToolUseId) as ChatThreadRow | undefined;
+    return row ? this.hydrateThread(row) : null;
   }
 
   listThreads(): ChatThreadMeta[] {
@@ -172,6 +210,7 @@ export class ChatService {
                 (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
            FROM chat_thread t
            LEFT JOIN chat_message m ON m.thread_id = t.id
+          WHERE t.parent_thread_id IS NULL
           GROUP BY t.id
           ORDER BY t.updated_at DESC`
       )
@@ -560,6 +599,8 @@ export class ChatService {
       contextType: hydrateContextType(row.context_type),
       briefPath: row.brief_path,
       patchPath: row.patch_path,
+      parentThreadId: row.parent_thread_id ?? null,
+      spawnedByToolUseId: row.spawned_by_tool_use_id ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

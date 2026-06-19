@@ -10,6 +10,7 @@ import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
 import { useThreadList } from './useThreadList.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
+import { TransagentPanel } from './TransagentPanel.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -108,6 +109,7 @@ export function ChatOverlay() {
     queueMessage,
     cancelQueued,
     clearQueue,
+    transagents,
   } = useChat({
     threadId: chatThreadId,
     onThreadCreated,
@@ -496,6 +498,10 @@ export function ChatOverlay() {
                   );
                 });
               })()}
+              {/* 0.1.69 Transagents: nested child panels (live-join or persisted). */}
+              {transagents.map((t) => (
+                <TransagentPanel key={t.toolUseId} entry={t} model={model} />
+              ))}
               {showStreamingBubble && (
                 <div className="msg-enter mb-3 flex">
                   <div

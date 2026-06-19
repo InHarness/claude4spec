@@ -736,6 +736,15 @@ export interface ChatThread {
   briefPath: string | null;
   /** M23: FS path (relative to patchesDir) — set iff contextType='patch'. */
   patchPath: string | null;
+  /**
+   * 0.1.69 Transagents: parent thread id. NULL = top-level thread (appears in
+   * navigation / counters); NOT NULL = child "banka" spawned via runTransagent
+   * (hidden — filtered out of every thread listing and counter).
+   */
+  parentThreadId: string | null;
+  /** 0.1.69 Transagents: the parent's tool_use id that spawned this child (F5
+   *  reconstruction key together with parent_thread_id). NULL for top-level. */
+  spawnedByToolUseId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -890,17 +899,31 @@ export type BriefChangedBy = 'user' | 'agent' | 'filesystem';
 /** Reserved frontmatter keys agent cannot mutate via update_brief. */
 export const BRIEF_IMMUTABLE_FRONTMATTER_KEYS = [
   'type',
+  'source',
   'from_release',
   'to_release',
   'generated_at',
   'generator_version',
 ] as const;
 
+/**
+ * 0.1.69 brief provenance.
+ *   - `release-diff` (default / legacy): self-contained brief grounded in a
+ *     release diff (`from_release` → `to_release`).
+ *   - `analysis`: non-self-contained brief whose grounding comes from a parent
+ *     thread's analysis (passed via runTransagent(message)) rather than a
+ *     release diff. Always has `to_release = null` (state relative to HEAD).
+ */
+export type BriefSource = 'release-diff' | 'analysis';
+
 export interface BriefFrontmatter {
   type: 'brief';
+  /** 0.1.69: brief provenance. Absent in legacy briefs ⇒ defaults to 'release-diff' at parse time. */
+  source: BriefSource;
   /** `null` = initial brief (no previous release; `to_release` opisuje stan startowy projektu). */
   from_release: string | null;
-  to_release: string;
+  /** `null` = analysis brief — state relative to HEAD, no target release. */
+  to_release: string | null;
   generated_at: string;
   generator_version: string;
   implemented?: boolean;
@@ -921,12 +944,17 @@ export interface Brief {
 export interface BriefListItem {
   path: string;
   title: string | null;
+  /** 0.1.69: brief provenance ('release-diff' | 'analysis'). */
+  source: string;
   /** `null` = initial brief. */
   fromRelease: string | null;
-  toRelease: string;
+  /** `null` = analysis brief (no target release; state relative to HEAD). */
+  toRelease: string | null;
   implemented: boolean;
   generatedAt: string;
   lastModifiedAt: string | null;
+  /** 0.1.69 B4: count of top-level (non-banka) brief threads for this brief. */
+  threadCount: number;
 }
 
 export interface BriefCreateRequest {

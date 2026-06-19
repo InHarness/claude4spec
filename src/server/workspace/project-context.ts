@@ -543,6 +543,7 @@ async function buildInner(
     planService,
     briefService,
     patchService,
+    releaseService,
     pageVersions,
     skillResolver,
     skillRegistry,

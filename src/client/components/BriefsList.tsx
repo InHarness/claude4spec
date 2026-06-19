@@ -52,15 +52,21 @@ export function BriefsList() {
   }, [releases]);
 
   const sortedBriefs = useMemo(() => {
-    const rankOf = (name: string) =>
-      releaseRank.has(name) ? releaseRank.get(name)! : Number.POSITIVE_INFINITY;
+    // 0.1.69: analysis briefs carry `toRelease === null` (no target release) —
+    // they sort to the top (rank -1), ahead of any released target.
+    const rankOf = (name: string | null) =>
+      name === null
+        ? -1
+        : releaseRank.has(name)
+          ? releaseRank.get(name)!
+          : Number.POSITIVE_INFINITY;
     return briefs.slice().sort((a, b) => {
       const ra = rankOf(a.toRelease);
       const rb = rankOf(b.toRelease);
       if (ra !== rb) return ra - rb; // canonical release order, newest first
       // same target release (or both unknown): existing name/path tiebreakers.
       return (
-        b.toRelease.localeCompare(a.toRelease, undefined, { numeric: true }) ||
+        (b.toRelease ?? '').localeCompare(a.toRelease ?? '', undefined, { numeric: true }) ||
         a.path.localeCompare(b.path)
       );
     });
@@ -242,13 +248,19 @@ function BriefRow({
           >
             {brief.path}
           </Link>
+          <SourceBadge source={brief.source} />
           {brief.fromRelease === null ? (
             <InitialBadge />
           ) : (
             <ReleaseBadge label={brief.fromRelease} />
           )}
           <span style={{ color: 'var(--c-subtle)', fontSize: 11 }}>→</span>
-          <ReleaseBadge label={brief.toRelease} />
+          {/* 0.1.69: analysis briefs have no target release — state is relative to HEAD. */}
+          {brief.toRelease === null ? (
+            <UnreleasedBadge />
+          ) : (
+            <ReleaseBadge label={brief.toRelease} />
+          )}
           <ImplementedBadge implemented={brief.implemented} />
         </div>
         <div
@@ -385,6 +397,45 @@ function ImplementedBadge({ implemented }: { implemented: boolean }) {
       title="Brief pending — not yet implemented"
     >
       pending
+    </span>
+  );
+}
+
+/** 0.1.69: brief provenance badge — release-diff (self-contained) vs analysis. */
+function SourceBadge({ source }: { source: string }) {
+  const isAnalysis = source === 'analysis';
+  return (
+    <span
+      className="font-mono text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
+      style={
+        isAnalysis
+          ? { background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }
+          : { background: 'var(--c-hair)', color: 'var(--c-muted)' }
+      }
+      title={
+        isAnalysis
+          ? 'Analysis brief — grounded in a parent thread analysis (state relative to HEAD)'
+          : 'Release-diff brief — self-contained, grounded in a release diff'
+      }
+    >
+      {isAnalysis ? 'analysis' : 'release-diff'}
+    </span>
+  );
+}
+
+/** 0.1.69: target for an analysis brief — no release, state relative to HEAD. */
+function UnreleasedBadge() {
+  return (
+    <span
+      className="font-mono text-[11px] px-1.5 py-0.5 rounded"
+      style={{
+        background: 'transparent',
+        color: 'var(--c-muted)',
+        border: '1px dashed var(--c-hair-strong)',
+      }}
+      title="Analysis brief — no target release (state relative to current HEAD)"
+    >
+      (unreleased)
     </span>
   );
 }

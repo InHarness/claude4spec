@@ -16,10 +16,26 @@ type WireEventExtended =
   | WireEvent
   | { type: 'user_input_request'; request: UserInputRequest }
   | { type: 'todo_list_updated'; items: TodoItem[]; isSubagent: boolean }
+  // 0.1.69 Transagents: bracket markers for a hidden child banka turn. The panel
+  // nested-live-joins GET /api/chat/stream/:childThreadId between these.
+  | { type: 'transagent_started'; childThreadId: string; toolUseId: string; contextType: string }
+  | { type: 'transagent_completed'; childThreadId: string; toolUseId: string; status?: string }
   // Runtime shape of SSE `error` events is looser than the library's WireEvent:
   // adapter pass-through (agent-turn.ts) yields `{ error: <object>, phase }` with
   // NO `code`, while the server catch-block yields `{ error: string, code }`.
   | { type: 'error'; error: unknown; code?: string; phase?: string };
+
+/**
+ * 0.1.69 Transagents: a child banka surfaced in the parent panel. Keyed by the
+ * parent's `tool_use(runTransagent)` id; `childThreadId` drives the nested
+ * live-join. `status` flips to 'completed'/'error' on `transagent_completed`.
+ */
+export interface TransagentEntry {
+  toolUseId: string;
+  childThreadId: string;
+  contextType: string;
+  status: 'running' | 'completed' | 'error';
+}
 
 export interface UseChatOptions {
   serverUrl?: string;
@@ -40,7 +56,7 @@ export interface UseChatOptions {
 // M31: stala modulowa — useEventStream memoizuje po tozsamosci
 // endpoints.streamByThread; inline obiekt per render zmienial tozsamosc
 // joinStream i zapetlal efekt ladowania watku (Maximum update depth).
-const CHAT_ENDPOINTS = {
+export const CHAT_ENDPOINTS = {
   chat: `${API_BASE}/chat`,
   abort: `${API_BASE}/chat/abort`,
   streamByThread: (tid: string) => `${API_BASE}/chat/stream/${encodeURIComponent(tid)}`,
@@ -97,10 +113,29 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   // żeby pokazać „streaming…" badge i Stop button także w oknie zanim dotrze `turn_start`
   // (reducer sam ustawi isStreaming dopiero po `turn_start`).
   const [isResuming, setIsResuming] = useState(false);
+  // 0.1.69 Transagents: child banki surfaced in this panel (keyed by tool_use id).
+  const [transagents, setTransagents] = useState<TransagentEntry[]>([]);
 
   const onEvent = useCallback(
     (event: WireEvent) => {
       const ext = event as WireEventExtended;
+      if (ext.type === 'transagent_started') {
+        const { toolUseId, childThreadId, contextType } = ext;
+        setTransagents((prev) =>
+          prev.some((t) => t.toolUseId === toolUseId)
+            ? prev.map((t) => (t.toolUseId === toolUseId ? { ...t, childThreadId, status: 'running' } : t))
+            : [...prev, { toolUseId, childThreadId, contextType, status: 'running' }],
+        );
+        return;
+      }
+      if (ext.type === 'transagent_completed') {
+        const { toolUseId } = ext;
+        const status: TransagentEntry['status'] = ext.status === 'error' ? 'error' : 'completed';
+        setTransagents((prev) =>
+          prev.map((t) => (t.toolUseId === toolUseId ? { ...t, status } : t)),
+        );
+        return;
+      }
       if (ext.type === 'user_input_request') {
         setPendingUserInputs((prev) =>
           prev.some((r) => r.requestId === ext.request.requestId) ? prev : [...prev, ext.request],
@@ -305,6 +340,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setUserAnnotations([]);
     setLiveUsage(null);
     setLiveContextSize(null);
+    setTransagents([]);
 
     currentThreadIdRef.current = threadId;
     if (!threadId) return;
@@ -351,6 +387,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         );
         setLiveUsage(thread.usage ?? null);
         setLiveContextSize(thread.contextSize ?? null);
+        // 0.1.69 Transagents (F5): rebuild COMPLETED child panels from persisted
+        // runTransagent tool_use+tool_result rows. In-flight children are not
+        // reconstructed here — the live join replays `transagent_started` which
+        // re-adds them via onEvent.
+        setTransagents(reconstructTransagents(thread.messages));
 
         // Zywa tura serwerowa, ktorej ta karta nie streamuje → wznow przez joinStream.
         // Przywracamy historie SPRZED biezacej tury (przed ostatnim user-message); turn_start
@@ -423,7 +464,55 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     queueMessage,
     cancelQueued,
     clearQueue,
+    // 0.1.69 Transagents
+    transagents,
   };
+}
+
+/** 0.1.69: name of the runTransagent tool as persisted in tool_use rows. */
+const TRANSAGENT_TOOL_NAME = 'mcp__transagent-tools__runTransagent';
+
+/**
+ * 0.1.69: rebuild COMPLETED transagent entries from persisted chat rows. Each
+ * `runTransagent` tool_use is paired with its tool_result; the result content is
+ * `{ threadId, summary }` (success) or `{ error }` (failure). Entries without a
+ * tool_result are in-flight and left to the live `transagent_started` replay.
+ */
+function reconstructTransagents(rows: ChatMessageRow[]): TransagentEntry[] {
+  const out: TransagentEntry[] = [];
+  for (const row of rows) {
+    if (row.role !== 'tool_use' || row.toolName !== TRANSAGENT_TOOL_NAME || !row.toolId) continue;
+    const result = rows.find((r) => r.role === 'tool_result' && r.toolId === row.toolId);
+    if (!result) continue; // in-flight — handled by live replay
+    let childThreadId: string | null = null;
+    let isError = false;
+    try {
+      const parsed = JSON.parse(result.content) as { summary?: unknown; isError?: boolean };
+      isError = parsed.isError === true;
+      // tool_result summary is the JSON string the MCP tool returned.
+      const inner = typeof parsed.summary === 'string' ? JSON.parse(parsed.summary) : parsed.summary;
+      if (inner && typeof inner === 'object' && typeof (inner as { threadId?: unknown }).threadId === 'string') {
+        childThreadId = (inner as { threadId: string }).threadId;
+      }
+    } catch {
+      childThreadId = null;
+    }
+    if (!childThreadId) continue;
+    let contextType = 'chat';
+    try {
+      const input = JSON.parse(row.content) as { input?: { contextType?: unknown } };
+      if (typeof input.input?.contextType === 'string') contextType = input.input.contextType;
+    } catch {
+      /* leave default */
+    }
+    out.push({
+      toolUseId: row.toolId,
+      childThreadId,
+      contextType,
+      status: isError ? 'error' : 'completed',
+    });
+  }
+  return out;
 }
 
 // --- Format SSE `error` events into a human-readable toast message ---
@@ -504,7 +593,7 @@ function parseRaw(raw: string): unknown {
   }
 }
 
-function rowsToChatMessages(
+export function rowsToChatMessages(
   rows: ChatMessageRow[],
   subagentTasks: ChatSubagentTask[],
 ): import('@inharness-ai/agent-chat').ChatMessageType[] {

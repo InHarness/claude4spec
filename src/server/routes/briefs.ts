@@ -31,13 +31,21 @@ export function briefsRouter(
           'toReleaseName is required (string); fromReleaseName must be string or null',
         );
       }
-      const result = await briefs.createBrief({
+      // 0.1.69: file-only createBrief + createThreadForBrief — the UI "New brief"
+      // action still gets its initial editorial thread. `additionalPrompt` is a
+      // client concern (appended to the first user message after redirect), not
+      // persisted server-side.
+      const { briefPath } = await briefs.createBrief({
         fromReleaseName: body.fromReleaseName ?? null,
         toReleaseName: body.toReleaseName,
-        additionalPrompt: typeof body.additionalPrompt === 'string' ? body.additionalPrompt : undefined,
         suffix: typeof body.suffix === 'string' ? body.suffix : undefined,
       });
-      res.json({ data: result });
+      const fromName = body.fromReleaseName ?? null;
+      const threadTitle = fromName === null
+        ? `Initial brief: ${body.toReleaseName}`
+        : `Brief: ${fromName} → ${body.toReleaseName}`;
+      const { threadId } = briefs.createThreadForBrief({ path: briefPath, name: threadTitle });
+      res.json({ data: { briefPath, initialThreadId: threadId } });
     } catch (err) {
       next(err);
     }
@@ -99,7 +107,7 @@ export function briefsRouter(
     try {
       const briefPath = extractPath(req.params);
       const body = (req.body ?? {}) as { name?: string };
-      const result = briefs.createThreadForBrief(briefPath, body.name ?? null);
+      const result = briefs.createThreadForBrief({ path: briefPath, name: body.name ?? null });
       res.json({ data: result });
     } catch (err) {
       next(err);

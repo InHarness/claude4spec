@@ -35,6 +35,23 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     return clearedTexts;
   };
 
+  // 0.1.69 Transagents: a CONSCIOUS abort cascades to children. After aborting a
+  // target thread, abort every active turn whose `parentThreadId` is that thread
+  // (a banka cannot outlive a deliberate Stop of its parent). The child raises
+  // AdapterAbortError → its streaming rows finalize. A plain disconnect (F5 /
+  // thread switch) does NOT call this — it goes through res.on('close'), leaving
+  // children running so the parent re-attaches via nested live-join.
+  const cascadeAbortChildren = (abortedThreadId: string): void => {
+    for (const [tid, entry] of activeAdapters.entries()) {
+      if (entry.parentThreadId === abortedThreadId) {
+        cancelPendingForRequest(pendingInputs, entry.requestId);
+        entry.adapter.abort();
+        // Children can themselves have children — cascade transitively.
+        cascadeAbortChildren(tid);
+      }
+    }
+  };
+
   const consoleObserver: StreamObserver | null = deps.mode === 'dev'
     ? createConsoleObserver({
         thinking: true,
@@ -239,6 +256,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     if (!found || !foundThreadId) return res.json({ data: { aborted: false }, clearedTexts: [] });
     cancelPendingForRequest(pendingInputs, requestId);
     found.adapter.abort();
+    cascadeAbortChildren(foundThreadId);
     res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(found, foundThreadId) });
   });
 
@@ -250,6 +268,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     if (!active) return res.json({ data: { aborted: false }, clearedTexts: [] });
     cancelPendingForRequest(pendingInputs, active.requestId);
     active.adapter.abort();
+    cascadeAbortChildren(threadId);
     res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
   });
 

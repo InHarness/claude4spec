@@ -23,6 +23,7 @@ import type {
   BriefChangedBy,
   BriefFrontmatter,
   BriefListItem,
+  BriefSource,
   BriefThreadSummary,
 } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
@@ -50,16 +51,27 @@ export interface BriefServiceDeps {
 }
 
 export interface BriefCreateOpts {
+  /** 0.1.69: brief provenance. Defaults to 'release-diff' when absent. */
+  source?: BriefSource;
   /** `null` = initial brief — pomijamy walidacje `fromRelease` i frontmatter trzyma `from_release: null`. */
   fromReleaseName: string | null;
-  toReleaseName: string;
+  /** `null` = analysis brief (state relative to HEAD; no target release). */
+  toReleaseName: string | null;
   /**
-   * Ulotny prompt sterujący stylem/językiem/audytorium briefa. NIE jest
-   * zapisywany ani do frontmatter, ani do SQLite — klient dokleja go do
-   * pierwszej user-message w initial-thread po redirect.
+   * 0.1.69: pre-synthesized brief body (analysis briefs synthesize it from the
+   * parent thread's `message`). Absent ⇒ the generated stub body is used.
    */
-  additionalPrompt?: string;
+  content?: string;
   suffix?: string;
+}
+
+/** 0.1.69: extended createThreadForBrief signature — supports child banki. */
+export interface BriefThreadForBriefOpts {
+  path: string;
+  name?: string | null;
+  /** 0.1.69 Transagents: mark the created thread as a hidden child banka. */
+  parentThreadId?: string | null;
+  spawnedByToolUseId?: string | null;
 }
 
 export interface BriefUpdateContentOpts {
@@ -99,6 +111,9 @@ export class BriefService {
         `file '${path}' is not a brief (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
       );
     }
+    // 0.1.69: legacy briefs predate `source` — default to 'release-diff' at parse
+    // time so the field is always present downstream (DTO, immutability diffing).
+    if (frontmatter.source !== 'analysis') frontmatter.source = 'release-diff';
     return {
       path,
       frontmatter,
@@ -119,11 +134,15 @@ export class BriefService {
       out.push({
         path: rec.path,
         title: typeof fm.title === 'string' ? (fm.title as string) : null,
+        // 0.1.69: legacy briefs predate `source` — default to 'release-diff'.
+        source: fm.source === 'analysis' ? 'analysis' : 'release-diff',
         fromRelease: typeof fm.from_release === 'string' ? fm.from_release : null,
-        toRelease: String(fm.to_release ?? ''),
+        // 0.1.69: analysis briefs carry `to_release: null` → toRelease stays null.
+        toRelease: typeof fm.to_release === 'string' ? fm.to_release : null,
         implemented,
         generatedAt: String(fm.generated_at ?? ''),
         lastModifiedAt: lastVersion?.createdAt ?? null,
+        threadCount: this.deps.chatService.threadCountForBrief(rec.path),
       });
     }
     return out;
@@ -140,37 +159,61 @@ export class BriefService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
-  async createBrief(opts: BriefCreateOpts): Promise<{ briefPath: string; initialThreadId: string }> {
+  /**
+   * 0.1.69: file-only brief creation (writes file + page_version + index, NO
+   * thread). Callers pair this with {@link createThreadForBrief}. `content`
+   * carries a pre-synthesized body for analysis briefs; else a generated stub.
+   *
+   * Validation matrix (from, to):
+   *   - (null, set)  → initial brief
+   *   - (set,  set)  → release-diff brief
+   *   - (set,  null) → analysis brief (state relative to HEAD)
+   *   - (null, null) → 400 VALIDATION
+   * When `to=null` (analysis) the BRIEF_SAME_RELEASE guard and the
+   * `getRelease(toName)` existence check are skipped.
+   */
+  async createBrief(opts: BriefCreateOpts): Promise<{ briefPath: string }> {
+    const source: BriefSource = opts.source ?? 'release-diff';
     const fromName = opts.fromReleaseName === null ? null : opts.fromReleaseName.trim();
-    const toName = opts.toReleaseName.trim();
-    if (!toName) {
-      throw new DomainError('VALIDATION', 'toReleaseName is required');
+    const toName = opts.toReleaseName === null ? null : opts.toReleaseName.trim();
+    if (fromName === null && toName === null) {
+      throw new DomainError('VALIDATION', 'at least one of fromReleaseName / toReleaseName is required');
     }
     if (fromName !== null && fromName.length === 0) {
       throw new DomainError('VALIDATION', 'fromReleaseName must be non-empty (or null for initial brief)');
     }
-    if (fromName !== null && fromName === toName) {
-      throw new DomainError('BRIEF_SAME_RELEASE', 'from_release must differ from to_release');
+    if (toName !== null && toName.length === 0) {
+      throw new DomainError('VALIDATION', 'toReleaseName must be non-empty (or null for analysis brief)');
     }
-    // Validate releases exist (throws NOT_FOUND if missing). `fromName === null`
-    // ⇒ initial brief, brak `fromRelease` do walidacji.
+    // 0.1.69: analysis briefs (to=null) compare against HEAD — skip same-release
+    // guard and the target-release existence check.
+    if (toName !== null) {
+      if (fromName !== null && fromName === toName) {
+        throw new DomainError('BRIEF_SAME_RELEASE', 'from_release must differ from to_release');
+      }
+      this.deps.releaseService.getRelease(toName);
+    }
+    // Validate the source release exists (throws NOT_FOUND if missing). `fromName
+    // === null` ⇒ initial brief, no fromRelease to validate.
     if (fromName !== null) this.deps.releaseService.getRelease(fromName);
-    this.deps.releaseService.getRelease(toName);
 
     const briefPath = await this.allocatePath(fromName, toName, opts.suffix);
-    // opts.additionalPrompt is intentionally not persisted — klient dokleja go
-    // do pierwszej user-message w initial-thread po redirect.
     const frontmatter: BriefFrontmatter = {
       type: 'brief',
+      source,
       from_release: fromName,
       to_release: toName,
       generated_at: new Date().toISOString(),
       generator_version: GENERATOR_VERSION,
       implemented: false,
     };
-    const body = fromName === null
-      ? `# Initial brief: ${toName}\n`
-      : `# Brief: ${fromName} → ${toName}\n`;
+    const body =
+      opts.content ??
+      (toName === null
+        ? `# Analysis brief: ${fromName} → (next)\n`
+        : fromName === null
+          ? `# Initial brief: ${toName}\n`
+          : `# Brief: ${fromName} → ${toName}\n`);
     const fullContent = matter.stringify(body, frontmatter as Record<string, unknown>);
 
     const abs = this.absPath(briefPath);
@@ -189,14 +232,7 @@ export class BriefService {
     // the new brief should appear in `/briefs` list right after POST returns).
     await this.deps.frontmatterIndexer.indexPage('briefs', briefPath);
 
-    const threadTitle = fromName === null
-      ? `Initial brief: ${toName}`
-      : `Brief: ${fromName} → ${toName}`;
-    const initialThread = this.deps.chatService.createThread(threadTitle, {
-      contextType: 'brief',
-      briefPath,
-    });
-    return { briefPath, initialThreadId: initialThread.id };
+    return { briefPath };
   }
 
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
@@ -276,10 +312,12 @@ export class BriefService {
     return this.getBrief(opts.path);
   }
 
-  createThreadForBrief(briefPath: string, name?: string | null): { threadId: string } {
-    const thread = this.deps.chatService.createThread(name ?? `Brief edit: ${briefPath}`, {
+  createThreadForBrief(opts: BriefThreadForBriefOpts): { threadId: string } {
+    const thread = this.deps.chatService.createThread(opts.name ?? `Brief edit: ${opts.path}`, {
       contextType: 'brief',
-      briefPath,
+      briefPath: opts.path,
+      parentThreadId: opts.parentThreadId ?? null,
+      spawnedByToolUseId: opts.spawnedByToolUseId ?? null,
     });
     return { threadId: thread.id };
   }
@@ -290,10 +328,14 @@ export class BriefService {
     return path.join(this.deps.briefsPages.root, relPath);
   }
 
-  private async allocatePath(fromName: string | null, toName: string, suffix?: string): Promise<string> {
-    const base = fromName === null
-      ? `initial-${slugify(toName)}${suffix ? `-${slugify(suffix)}` : ''}`
-      : `${slugify(fromName)}-to-${slugify(toName)}${suffix ? `-${slugify(suffix)}` : ''}`;
+  private async allocatePath(fromName: string | null, toName: string | null, suffix?: string): Promise<string> {
+    const suf = suffix ? `-${slugify(suffix)}` : '';
+    // 0.1.69: analysis brief (to=null) — `{from-slug}-to-next[-{suffix}].md`.
+    const base = toName === null
+      ? `${slugify(fromName ?? 'head')}-to-next${suf}`
+      : fromName === null
+        ? `initial-${slugify(toName)}${suf}`
+        : `${slugify(fromName)}-to-${slugify(toName)}${suf}`;
     let candidate = `${base}.md`;
     let n = 2;
     while (await this.deps.briefsPages.exists(candidate)) {
