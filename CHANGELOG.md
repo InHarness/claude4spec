@@ -5,7 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.0.19] - 2026-06-17
+## [1.0.20] - 2026-06-19
+
+### Added
+- Raw JSX passthrough in pages — a new `RawJsxNode` TipTap extension (with `RawJsxView`) lets pages carry raw JSX/MDX expressions through the markdown pipeline untouched. Backed by shared `jsx-passthrough`, `raw-jsx-escape`, `xml-tag-kinds`, `code-ranges`, and `page-files` modules with full round-trip serialization, so authored JSX survives parse → store → render.
+
+### Changed
+- Subagent panel reworked — `SubagentPanel` now renders richer subagent activity (expanded tool/turn detail and styling), supported by new chat-context service helpers and a `theme.css` palette refresh.
+- `remoteApiUrl` validation hardened in `config` — validation moved into config resolution (with project-context plumbing), removing the duplicated check in the remote HTTP client.
+- Bumped `@inharness-ai/agent-adapters` to `^0.8.4`.
+
+
 
 ### Added
 - Diagram is now a full entity type (the 7th). A mermaid diagram's `source` lives in a `diagram` entity (`.claude4spec/entities/diagram/<slug>.json` + a derived `diagram` SQLite table, migration `040`), and pages reference it with a self-closing `<diagram slug="…" caption="…"/>` tag. `caption` is per-reference prose and is never stored on the entity. The slice mirrors the design-system module: serializer, services, REST routes, a `diagram-tools` MCP server (create/get/update/delete/list), system prompt, and client/server plugins. `source` is validated best-effort via `mermaid.parse()` (warnings only, never blocking). On the client, `<diagram/>` is a self-closing reference: `DiagramView` fetches `source` by slug and renders mermaid, `/diagram` authors source then creates the entity and inserts the reference, and editing PATCHes the entity while the caption stays per-reference.
@@ -204,6 +214,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.20]: https://github.com/InHarness/claude4spec/compare/v1.0.19...v1.0.20
 [1.0.19]: https://github.com/InHarness/claude4spec/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/InHarness/claude4spec/compare/v1.0.17...v1.0.18
 [1.0.17]: https://github.com/InHarness/claude4spec/compare/v1.0.16...v1.0.17
