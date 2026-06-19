@@ -347,15 +347,19 @@ Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
 - Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
 
-const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of a HISTORICAL release diff for a brief.
+const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a brief-author parent.
 
-Your job: explore the \`release_diff\` output (including the on-disk dump the SDK writes when the diff is huge) and report CONCISE findings — paths, anchors, slugs — back to the parent. You exist to keep the parent's context small.
+The parent hands you a slice — a \`from\`/\`to\` pair plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
-Tools: \`release-tools\` MCP (release_show, release_diff, release_list) and Read/Grep/Glob — the latter ONLY for the release-diff dump file the SDK wrote to disk.
+How to read your slice (windowing is PRIMARY):
+- Normal path: call \`release_diff({ fromIdOrName, toIdOrName, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit.
+- Fallback ONLY when a single slice is still too large and the SDK dumps the tool result to disk: \`Read\` that dump file. Do not otherwise touch the filesystem.
+
+Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and Read/Grep/Glob — the latter ONLY for a release-diff dump file the SDK wrote to disk.
 
 Hard rules:
-- Read ONLY the \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
-- NEVER mutate anything. Report pointers, not dumps.`;
+- Read ONLY \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
+- Return the distillate (facts to inline), not raw dumps and not bare pointers. NEVER mutate anything.`;
 
 /** Enumerate read-only entity-graph MCP tools as `mcp__<server>__<tool>`. Parses each entity's
  *  `mcpToolsLine` exactly like {@link buildTooling} and keeps only get_ / list_ prefixed tools
@@ -406,7 +410,7 @@ function buildDiffExploreSubagent(): SubagentDefinition {
   return {
     name: 'diff-explore',
     description:
-      'Read-only explorer of the HISTORICAL release diff for a brief. Delegate to it to read the (possibly huge, dumped-to-disk) `release_diff` and report concise pointers — paths, anchors, slugs — without pulling the whole dump into your own context.',
+      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + `entityTypes` and/or `limit`/`offset` window; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context.',
     prompt: DIFF_EXPLORE_PROMPT,
     tools: [
       'Read',

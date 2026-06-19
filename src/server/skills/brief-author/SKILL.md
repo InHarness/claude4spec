@@ -21,15 +21,17 @@ The system prompt already binds you to the **self-contained invariant**: the bri
 **Available tools:**
 - `get_brief` — read the current brief state. Returns `{ frontmatter, body, content, hash }`. Use `hash` as `expectedHash` for the next `update_brief` to detect concurrent edits.
 - `update_brief` — edit the body via `replace`, `append`, or `insert_after_section`. You CANNOT modify frontmatter (immutable: `type`, `from_release`, `to_release`, `generated_at`, `generator_version`).
-- `release-tools` (read-only) — `release_list`, `release_show`, and `release_diff(fromIdOrName, toIdOrName, include?, entityTypes?)` returning a self-contained `MCPReleaseDiff`. Use `release_diff(brief.frontmatter.from_release, brief.frontmatter.to_release)` to obtain the `MCPReleaseDiff` that grounds your narrative — one round-trip is all you need.
+- `release-tools` (read-only) — `release_diff(fromIdOrName, toIdOrName, include?, entityTypes?, summaryOnly?, limit?, offset?)` is the spec tool you call (`release_list` / `release_show` exist but are NOT needed for authoring). It projects to a self-contained `MCPReleaseDiff` in **two modes**:
+  - `summaryOnly: true` → a light **delta-map**: `total` + identifier lists `{ type, slug, name, op }` / `{ path, op }` (incl. `op:'delete'`), with NO `before`/`after`/`content`. Lists are FULL — the window does not trim the map.
+  - default heavy mode → full `before`/`after` snapshots, but **paginated**: `limit` (default **5**, no upper bound) and `offset` (default 0) apply independently to `entities[]` and `pages[]`; `total` reports the full count after filters, before the window. A bare `release_diff(from, to)` therefore returns only the first 5 of each — windowing is mandatory at scale.
+- `Task` — spawn a parallel **`diff-explore`** subagent (read-only `release-tools` + `Read`) to absorb the heavy bulk of one diff slice and return a concise distillate, keeping YOUR context small.
 
-**`release-tools` is the ONLY plugin MCP available in this thread.** There is no `get_endpoint` / `get_dto` / `get_database-table` / `get_ui-view` / `get_ac`, no `Read pages/...`, no `Grep`, no filesystem. The `MCPReleaseDiff` payload is your entire ground truth — every snapshot you need is carried inside it.
+**`release-tools` is the ONLY plugin MCP in this thread.** There is no `get_endpoint` / `get_dto` / `get_database-table` / `get_ui-view` / `get_ac`, and you do NOT reach for current spec state (`Read pages/...`, the entity graph) — by convention, so the brief stays reproducible from the diff alone. The `release_diff` output is your entire ground truth: the `summaryOnly` map for orchestration, and the full per-slice snapshots which `diff-explore` subagents read on your behalf. **Self-containment ≠ one round-trip** — you make ≥2 calls (a `summaryOnly` probe, then per-slice diffs), and the heavy bulk lives in subagents, never in your context.
 
 **You cannot:**
-- Read or write any file on disk (no `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`).
 - Mutate any entity, page, plan, or release. Briefs are write-side only.
 - Modify brief frontmatter (immutable to agents — only the user can toggle `archived` via the UI Settings popover).
-- Drill down into entities or pages on demand. The diff is self-contained by design (see "Self-containment" below).
+- Reach for current spec state (`Read pages/...`, `get_<type>`, entity graph) to ground the brief — that returns HEAD and breaks the brief's historical self-containment. Drill-down over a release slice happens inside a `diff-explore` subagent, against the historical diff/dump only — never current state.
 
 ---
 
@@ -39,24 +41,30 @@ The system prompt already binds you to the **self-contained invariant**: the bri
 
 Triggered when `get_brief` returns a brief whose body contains only the H1 heading (or is otherwise empty).
 
-**Initial brief detection:** if `frontmatter.from_release === null`, this is an *initial brief* — there is no previous release. Skip the two-release diff; instead call `release-tools.release_diff({ fromIdOrName: null, toIdOrName: <to_release> })` to obtain an `MCPReleaseDiff` where every entry is `op: 'create'` with `before` omitted (synthetic empty `from` snapshot). Frame the narrative as *"the project starts here — this is the initial state of `<to_release>`"*, not as a delta. The H1 should be `# Initial brief: <to_release>` (already pre-filled by the system).
+**Initial brief detection:** if `frontmatter.from_release === null`, this is an *initial brief* — there is no previous release. The probe is `release_diff({ fromIdOrName: null, toIdOrName: <to_release>, summaryOnly: true })`: every entry is `op: 'create'`. Frame the narrative as *"the project starts here — this is the initial state of `<to_release>`"*, not as a delta. The H1 should be `# Initial brief: <to_release>` (already pre-filled by the system).
+
+**The authoring loop is map → fan-out → compose.** You orchestrate; you never pull the whole diff into your own context.
 
 1. Call `get_brief` to confirm `frontmatter.from_release` and `frontmatter.to_release` and capture `hash`.
-2. Call `release-tools.release_diff({ fromIdOrName, toIdOrName })` to obtain the `MCPReleaseDiff`. This is your single source of truth — full `before`/`after` snapshots per entity and full `before`/`after` raw markdown per modified section travel in the payload. Default filters (`include: ['pages','entities']`, all entity types) cover everything; pass narrower filters only if you have a clear context-budget reason.
-3. **Filter the diff using the active writing style's `workflows/brief.md`.** It defines what counts as feature substance (keep, translate, inline) vs. spec-format convention (drop) vs. editorial noise (drop) for this methodology.
-4. **Mine the kept entries** for inlinable content — entity shapes, code/SQL fragments, file paths — per the writing style's inlining patterns.
-5. **For each entity with `op: 'update'`**: compare `MCPEntityDelta.before` vs `MCPEntityDelta.after` directly — both are full snapshots produced by the plugin's serializer. Describe the diff in prose. **Do NOT call any drill-down tool — there is none available in this thread.** Slugs, field shapes, every value you need is in the snapshot.
-6. **For each entity with `op: 'create'`**: read `MCPEntityDelta.after` for any inline content needed in prose. You MAY insert `<inline_mention type="<type>" slug="<slug>"/>` in the narrative for the claude4spec UI audience — it renders as a live entity view. The second-audience terminal sees the literal tag; treat such mentions as supplements, never as substitutes for inlined content.
-7. **For each entity with `op: 'delete'`**: only `before` is present. Frame the deletion in prose; the second-audience reader needs to know what disappeared, not what replaced it (often nothing).
-8. **For each `MCPPageDelta.sections[i]`**: use `before` / `after` raw markdown directly. NEVER consume `line_diff` — there is none in this payload. For `op: 'move'`, both fields are absent (content unchanged, only position shifted) — usually drop from the brief unless ordering itself is the user-visible change.
-9. **`MCPPageDelta.frontmatter` / `MCPPageDelta.xmlRefs`**: present iff changed. Read `before`/`after` only when relevant to narrative (e.g. `pageType: module → layer`). Default: ignore — metadata, not content.
-10. Compose a narrative that:
+2. **Probe — the delta-map.** Call `release_diff({ fromIdOrName, toIdOrName, summaryOnly: true })`. You get `total` + the full identifier lists (`{ type, slug, name, op }` / `{ path, op }`, including `op:'delete'`) — *what* changed, with zero bulk. This map is your orchestration plan. **Do NOT use `release_show` for it** — it has no `from`, so it would silently miss deletes.
+3. **Partition.** Split the map into **disjoint slices** that together cover EVERY slug and path (including deletes) — this completeness is on you; a missed slice is a silently incomplete brief. Slice by `entityTypes` and/or by `limit`/`offset` windows. Narrow with `include`/`entityTypes` if the brief is topically scoped (e.g. only endpoints).
+4. **Fan out.** For each slice, spawn a `diff-explore` subagent **in parallel** via `Task`. Tell it the `from`/`to` and its exact slice (`entityTypes` and/or `limit`/`offset`); it calls heavy `release_diff` for that slice, absorbs the `before`/`after`/`content`, and returns a concise **distillate** — the facts to inline (signatures, field shapes, SQL, paths), not the raw dump. The bulk stays in the subagent; you keep the map + distillates. *(A tiny diff that comfortably fits may instead be read directly with one heavy windowed call.)*
+5. **Filter through the active writing style's `workflows/brief.md`** — what counts as feature substance (keep, translate, inline) vs. spec-format convention (drop) vs. editorial noise (drop) for this methodology — and mine the distillates for inlinable content.
+
+When you (or a delegated `diff-explore`) read a heavy slice, interpret its entries by `op` — these are the rules each distillate must honour:
+- **`op: 'update'`**: compare `MCPEntityDelta.before` vs `after` directly — both are full serializer snapshots. Describe the diff in prose; every slug/field/value you need is in the snapshot (no drill-down against current state).
+- **`op: 'create'`**: read `MCPEntityDelta.after` for inline content. You MAY insert `<inline_mention type="<type>" slug="<slug>"/>` for the claude4spec UI audience — it renders as a live entity view. The second-audience terminal sees the literal tag; treat mentions as supplements, never substitutes for inlined content.
+- **`op: 'delete'`**: only `before` is present. Frame the deletion in prose; the reader needs to know what disappeared, not what replaced it (often nothing).
+- **`MCPPageDelta.sections[i]`**: use `before` / `after` raw markdown directly. NEVER consume `line_diff` — there is none in this payload. For `op: 'move'`, both fields are absent (content unchanged, position shifted) — usually drop unless ordering itself is the user-visible change.
+- **`MCPPageDelta.frontmatter` / `xmlRefs`**: present iff changed. Read only when relevant (e.g. `pageType: module → layer`). Default: ignore — metadata, not content.
+
+6. Compose a narrative that:
     - Opens with a short summary (2–4 sentences) describing the *intent* of the release. The reader should learn *why* in the first paragraph.
     - Groups changes by user-visible theme (new capabilities, breaking changes, internal refactors), not by entity type or by spec page.
     - For each theme: state what the system now does in plain prose and **inline the change content** per the writing style's patterns.
     - Closes with a **For implementers** section — concrete edit targets per the writing style's structure.
-11. **Język/styl/audytorium** wynika z pierwszej user-message w threadzie — klient dokleja `additionalPrompt` z modala „Generate brief from this release" (np. *„po polsku, dla juniora, ton formalny"*). Jeśli pierwsza wiadomość zawiera takie wytyczne, uszanuj je. Domyślnie pisz w angielskim, krótkimi deklaratywnymi zdaniami.
-12. Submit via `update_brief({ action: 'replace', content: <full markdown body>, expectedHash: <hash from step 1>, changeSummary: 'initial generation' })`.
+7. **Język/styl/audytorium** wynika z pierwszej user-message w threadzie — klient dokleja `additionalPrompt` z modala „Generate brief from this release" (np. *„po polsku, dla juniora, ton formalny"*). Jeśli pierwsza wiadomość zawiera takie wytyczne, uszanuj je. Domyślnie pisz w angielskim, krótkimi deklaratywnymi zdaniami.
+8. Submit via `update_brief({ action: 'replace', content: <full markdown body>, expectedHash: <hash from step 1>, changeSummary: 'initial generation' })`.
 
 ### Branch B — Editorial (body already exists)
 
@@ -77,7 +85,7 @@ Triggered when `get_brief` returns a brief with non-trivial body content.
 
 Two rules sit above any methodology-specific guidance:
 
-1. **The `MCPReleaseDiff` payload is your only source.** There is no fetch-on-demand path in this thread — no `get_<type>`, no `Read pages/...`. Every snapshot you need is already in the payload (`MCPEntityDelta.before/after`, `MCPSectionDelta.before/after`). Whenever a change involves a concrete artefact — DTO field, endpoint signature, SQL, view URL, code snippet — paste it into the brief. The reader cannot fetch it on demand. Phrases like *"see the release diff"*, *"per the spec page"*, or *"as defined elsewhere"* are failures.
+1. **`release_diff` is your only source — never current state.** There is no fetch-on-demand path against HEAD in this thread — no `get_<type>`, no `Read pages/...`. Everything comes from `release_diff`: the `summaryOnly` map for orchestration, and the full `before`/`after` snapshots inside each slice (read by you for a tiny diff, or distilled by a `diff-explore` subagent at scale). Whenever a change involves a concrete artefact — DTO field, endpoint signature, SQL, view URL, code snippet — paste it into the brief (carry it through the subagent's distillate when you fan out). The reader cannot fetch it on demand. Phrases like *"see the release diff"*, *"per the spec page"*, or *"as defined elsewhere"* are failures.
 2. **Describe the SYSTEM, not the spec edits.** The brief is about how the specified system behaves now vs. before — not about which markdown files gained/lost sections. Editorial mechanics (anchor injection, section reorder without content change, typo, prose smoothing, comment edit, heading rename without semantic shift) belong in version history, not in the brief. *Drop them.*
 
    - GOOD: *"Brief threads whitelist their toolset — only `brief-tools` and `release-tools` are mounted; plan/entity MCPs are silently omitted to keep the editorial agent on its lane."*
@@ -111,6 +119,7 @@ If after filtering nothing substantive remains in a release, say so explicitly: 
 | `VERSION_NOT_FOUND` | The version number you passed does not exist. List versions first. |
 | `INVALID_INCLUDE_FILTER` | `release_diff` / `release_show` rejected an empty `include` array. Drop the arg to fall back to defaults (`['pages','entities']`). |
 | `INVALID_ENTITY_TYPES_FILTER` | Empty `entityTypes` array. Drop the arg to fall back to defaults (all 5 types). |
+| `INVALID_PAGINATION` | Negative `limit`/`offset` on `release_diff`. Use `>= 0` (or omit — defaults are `limit: 5`, `offset: 0`). |
 | `CONFLICTING_FILTERS` | You passed `entityTypes` without `'entities'` in `include`. Either add `'entities'` to `include` or drop `entityTypes`. |
 
 If `release-tools.release_diff` returns an empty diff (both `entities` and `pages` empty — e.g. `from === to`), report that to the user — do not fabricate changes.

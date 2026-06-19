@@ -14,8 +14,35 @@ export type EntitySnapshot = Record<string, unknown>;
 export interface MCPReleaseDiff {
   from: { id: number; name: string } | null;
   to: { id: number; name: string };
-  entities?: MCPEntityDelta[];
-  pages?: MCPPageDelta[];
+  /**
+   * Totals AFTER include/entityTypes filters, BEFORE limit/offset. Keys stay in
+   * lock-step with `include` (mirrors `MCPSpecSnapshot.total`). Always present so
+   * a paginating consumer — or the brief-author probe-map (`summaryOnly: true`) —
+   * knows the full cardinality of each filtered dimension.
+   */
+  total?: { entities?: number; pages?: number };
+  /**
+   * Heavy variant (`summaryOnly !== true`): full `MCPEntityDelta` with
+   * `before`/`after`, windowed by `limit`/`offset`.
+   * Light variant (`summaryOnly === true`): `MCPEntityDeltaLight` identifiers
+   * only (full list, window ignored).
+   */
+  entities?: MCPEntityDelta[] | MCPEntityDeltaLight[];
+  pages?: MCPPageDelta[] | MCPPageDeltaLight[];
+}
+
+/** Light delta-map entry (`summaryOnly: true`) — identifier + op, no `before`/`after`. */
+export interface MCPEntityDeltaLight {
+  type: 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac';
+  slug: string;
+  name: string;
+  op: 'create' | 'update' | 'delete';
+}
+
+/** Light delta-map entry (`summaryOnly: true`) — path + op, no `sections`/`content`. */
+export interface MCPPageDeltaLight {
+  path: string;
+  op: 'create' | 'update' | 'delete';
 }
 
 export interface MCPEntityDelta {
@@ -68,6 +95,12 @@ export interface MCPSpecSnapshot {
     created_by: string;
     created_at: string;
   };
+  /**
+   * Totals BEFORE limit/offset, AFTER include/entityTypes filters. Keys stay in
+   * lock-step with `include`: `entities`/`pages` key omitted when its dimension
+   * is excluded. Lets a paginating consumer know how many items exist in total.
+   */
+  total: { entities?: number; pages?: number };
   entities?: { type: string; slug: string; name: string }[];
   pages?: { path: string }[];
 }

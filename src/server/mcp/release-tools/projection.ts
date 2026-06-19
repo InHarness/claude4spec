@@ -19,7 +19,9 @@ import type {
   EntitySnapshot,
   EntityTypeFilter,
   MCPEntityDelta,
+  MCPEntityDeltaLight,
   MCPPageDelta,
+  MCPPageDeltaLight,
   MCPReleaseDiff,
   MCPSectionDelta,
   MCPSpecSnapshot,
@@ -43,16 +45,37 @@ export function projectReleaseDiff(
   fromSnap: SpecSnapshot | null,
   toSnap: SpecSnapshot,
   opts: ProjectionOpts,
+  options?: { summaryOnly?: boolean; limit?: number; offset?: number },
 ): MCPReleaseDiff {
-  const out: MCPReleaseDiff = { from: raw.from, to: raw.to };
+  const summaryOnly = options?.summaryOnly ?? false;
+  const limit = options?.limit ?? DEFAULT_PAGE_LIMIT;
+  const offset = options?.offset ?? 0;
+  const out: MCPReleaseDiff = { from: raw.from, to: raw.to, total: {} };
 
+  // Compute the FULL filtered delta first, record `total` on it, THEN branch:
+  // light (`summaryOnly`) strips to identifiers and ignores the window; heavy
+  // slices `entities[]`/`pages[]` independently by the same `limit`/`offset`.
   if (opts.include.includes('entities')) {
-    out.entities = projectEntities(raw.entities, fromSnap, toSnap, opts.entityTypes);
+    const full = projectEntities(raw.entities, fromSnap, toSnap, opts.entityTypes);
+    out.total!.entities = full.length;
+    out.entities = summaryOnly ? full.map(toEntityLight) : full.slice(offset, offset + limit);
   }
   if (opts.include.includes('pages')) {
-    out.pages = projectPages(raw.pages, fromSnap, toSnap);
+    const full = projectPages(raw.pages, fromSnap, toSnap);
+    out.total!.pages = full.length;
+    out.pages = summaryOnly ? full.map(toPageLight) : full.slice(offset, offset + limit);
   }
   return out;
+}
+
+/** Strip a heavy entity delta to its light identifier form (`summaryOnly: true`). */
+function toEntityLight(e: MCPEntityDelta): MCPEntityDeltaLight {
+  return { type: e.type, slug: e.slug, name: e.name, op: e.op };
+}
+
+/** Strip a heavy page delta to its light identifier form (`summaryOnly: true`). */
+function toPageLight(p: MCPPageDelta): MCPPageDeltaLight {
+  return { path: p.path, op: p.op };
 }
 
 function projectEntities(
@@ -181,7 +204,16 @@ function projectPages(
   return out;
 }
 
-export function projectSpecSnapshot(raw: SpecSnapshot, opts: ProjectionOpts): MCPSpecSnapshot {
+/** MCP-only default window size for `release_show` / `release_list` (M17). */
+export const DEFAULT_PAGE_LIMIT = 5;
+
+export function projectSpecSnapshot(
+  raw: SpecSnapshot,
+  opts: ProjectionOpts,
+  pagination?: { limit?: number; offset?: number },
+): MCPSpecSnapshot {
+  const limit = pagination?.limit ?? DEFAULT_PAGE_LIMIT;
+  const offset = pagination?.offset ?? 0;
   const out: MCPSpecSnapshot = {
     release: {
       id: raw.release.id,
@@ -190,9 +222,12 @@ export function projectSpecSnapshot(raw: SpecSnapshot, opts: ProjectionOpts): MC
       created_by: raw.release.createdBy,
       created_at: raw.release.createdAt,
     },
+    total: {},
   };
+  // limit/offset apply independently to each list; `total` is the full count
+  // after include/entityTypes filtering but before the window is sliced.
   if (opts.include.includes('entities')) {
-    out.entities = raw.entities
+    const entities = raw.entities
       .filter((e) => e.op !== 'delete')
       .filter((e) => !opts.entityTypes || opts.entityTypes.includes(e.type as EntityTypeFilter))
       .map((e) => ({
@@ -200,9 +235,13 @@ export function projectSpecSnapshot(raw: SpecSnapshot, opts: ProjectionOpts): MC
         slug: e.slug,
         name: extractEntityName(e.data as EntitySnapshot, e.slug),
       }));
+    out.total.entities = entities.length;
+    out.entities = entities.slice(offset, offset + limit);
   }
   if (opts.include.includes('pages')) {
-    out.pages = raw.pages.filter((p) => p.op !== 'delete').map((p) => ({ path: p.path }));
+    const pages = raw.pages.filter((p) => p.op !== 'delete').map((p) => ({ path: p.path }));
+    out.total.pages = pages.length;
+    out.pages = pages.slice(offset, offset + limit);
   }
   return out;
 }

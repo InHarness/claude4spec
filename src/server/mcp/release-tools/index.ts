@@ -18,7 +18,7 @@ import type { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { DomainError } from '../../services/tags.js';
-import { projectReleaseDiff, projectSpecSnapshot } from './projection.js';
+import { DEFAULT_PAGE_LIMIT, projectReleaseDiff, projectSpecSnapshot } from './projection.js';
 import type {
   EntityTypeFilter,
   IncludeFilter,
@@ -75,9 +75,26 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
   const releaseList = mcpTool(
     'release_list',
-    'List all releases newest-first. Returns id, name, description, createdBy, createdAt per release.',
-    {},
-    async () => ok({ releases: deps.releaseService.listReleases() }),
+    'List releases newest-first (paginated). Returns `{ releases, total }` where `total` is the full count before limit/offset. Per release: id, name, description, createdBy, createdAt.',
+    {
+      limit: z
+        .number()
+        .optional()
+        .describe('Window size. Default 5, no upper limit. Negative → 400 INVALID_PAGINATION.'),
+      offset: z
+        .number()
+        .optional()
+        .describe('Window offset into the newest-first list. Default 0. Negative → 400 INVALID_PAGINATION.'),
+    },
+    async (args) => {
+      try {
+        const { limit, offset } = resolvePagination(args.limit, args.offset);
+        const all = deps.releaseService.listReleases();
+        return ok({ releases: all.slice(offset, offset + limit), total: all.length });
+      } catch (err) {
+        return fail(err);
+      }
+    },
   );
 
   const releaseShow = mcpTool(
@@ -97,15 +114,28 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         .describe(
           "Filter entity types. Default all 5 types. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
         ),
+      limit: z
+        .number()
+        .optional()
+        .describe(
+          'Window size applied independently to entities[] and pages[]. Default 5, no upper limit. Negative → 400 INVALID_PAGINATION.',
+        ),
+      offset: z
+        .number()
+        .optional()
+        .describe('Window offset applied independently to entities[] and pages[]. Default 0. Negative → 400 INVALID_PAGINATION.'),
     },
     async (args) => {
       try {
         const include = (args.include as IncludeFilter[] | undefined) ?? DEFAULT_INCLUDE;
         const entityTypes = args.entityTypes as EntityTypeFilter[] | undefined;
         validateFilters(args.include as IncludeFilter[] | undefined, entityTypes);
+        const { limit, offset } = resolvePagination(args.limit, args.offset);
 
         const raw = deps.releaseService.getReleaseSnapshot(args.idOrName as number | string);
-        return ok(projectSpecSnapshot(raw, { include, entityTypes }) satisfies MCPSpecSnapshot);
+        return ok(
+          projectSpecSnapshot(raw, { include, entityTypes }, { limit, offset }) satisfies MCPSpecSnapshot,
+        );
       } catch (err) {
         return fail(err);
       }
@@ -114,7 +144,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
   const releaseDiff = mcpTool(
     'release_diff',
-    "Compute a SELF-CONTAINED structured diff between two releases. Each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. There is NO `line_diff` and NO drill-down tool (`get_<type>` / `Read pages/...` are not available in this thread) — this single round-trip is everything you need to ground a brief. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. Filters: `include` (defaults ['pages','entities']) and `entityTypes` (defaults all 5) trim the payload to manage context budget.",
+    "Compute a SELF-CONTAINED structured diff between two releases. Heavy mode (default): each entity carries full `before`/`after` snapshots (per plugin's serializer); each modified section carries full `before`/`after` raw markdown. `entities[]`/`pages[]` are paginated independently by `limit`/`offset` (default 5), and `total: { entities?, pages? }` reports the full count after `include`/`entityTypes` filters, before the window. Light mode (`summaryOnly: true`): returns a delta MAP — `total` + identifiers `{ type, slug, name, op }` per entity and `{ path, op }` per page (incl. `op:'delete'`), WITHOUT `before`/`after`/`content`; the map is FULL and ignores `limit`/`offset`. Intended use: probe with `summaryOnly: true` to learn what changed, then fan out the heavy slices (`entityTypes` and/or `limit`/`offset`) to subagents. Pass `from: null` for the initial brief (synthetic empty `from`; all entries become `op:'create'` with `before` omitted). `from === to` returns an empty diff. There is NO `line_diff`.",
     {
       fromIdOrName: z
         .union([z.string(), z.number(), z.null()])
@@ -134,12 +164,34 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         .describe(
           "Filter entity types. Default all 5 types. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
         ),
+      summaryOnly: z
+        .boolean()
+        .optional()
+        .describe(
+          'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ path, op }` (incl. deletes), no before/after/content. Full lists — ignores limit/offset.',
+        ),
+      limit: z
+        .number()
+        .optional()
+        .describe(
+          'Window size applied independently to entities[] and pages[] (heavy mode only). Default 5, no upper limit. Negative → 400 INVALID_PAGINATION.',
+        ),
+      offset: z
+        .number()
+        .optional()
+        .describe(
+          'Window offset applied independently to entities[] and pages[] (heavy mode only). Default 0. Beyond total → empty list + total. Negative → 400 INVALID_PAGINATION.',
+        ),
     },
     async (args) => {
       try {
         const include = (args.include as IncludeFilter[] | undefined) ?? DEFAULT_INCLUDE;
         const entityTypes = args.entityTypes as EntityTypeFilter[] | undefined;
         validateFilters(args.include as IncludeFilter[] | undefined, entityTypes);
+        // Validate pagination BEFORE the summaryOnly branch — negative limit/offset
+        // is a 400 even though `summaryOnly: true` later ignores the window.
+        const { limit, offset } = resolvePagination(args.limit, args.offset);
+        const summaryOnly = args.summaryOnly === true;
 
         const fromIdOrName = args.fromIdOrName as number | string | null;
         const toIdOrName = args.toIdOrName as number | string;
@@ -150,7 +202,11 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
           fromIdOrName === null ? null : deps.releaseService.getReleaseSnapshot(fromIdOrName);
 
         return ok(
-          projectReleaseDiff(raw, fromSnap, toSnap, { include, entityTypes }) satisfies MCPReleaseDiff,
+          projectReleaseDiff(raw, fromSnap, toSnap, { include, entityTypes }, {
+            summaryOnly,
+            limit,
+            offset,
+          }) satisfies MCPReleaseDiff,
         );
       } catch (err) {
         return fail(err);
@@ -192,6 +248,24 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
     name: 'release-tools',
     tools: [releaseCreate, releaseList, releaseShow, releaseDiff, releaseUpdate],
   });
+}
+
+const DEFAULT_OFFSET = 0;
+
+/**
+ * Resolve `limit`/`offset` for the MCP-only pagination of `release_list` /
+ * `release_show` / `release_diff`. Negative values are a loud 400 `INVALID_PAGINATION` (no
+ * silent clamp), consistent with the rest of M17's jaskrawe błędy. Zod keeps
+ * these loose (`z.number()`) so negatives reach this check rather than failing
+ * as a generic Zod error.
+ */
+export function resolvePagination(limit: unknown, offset: unknown): { limit: number; offset: number } {
+  const l = typeof limit === 'number' ? limit : DEFAULT_PAGE_LIMIT;
+  const o = typeof offset === 'number' ? offset : DEFAULT_OFFSET;
+  if (l < 0 || o < 0) {
+    throw new DomainError('INVALID_PAGINATION', 'limit and offset must be >= 0');
+  }
+  return { limit: l, offset: o };
 }
 
 function validateFilters(
