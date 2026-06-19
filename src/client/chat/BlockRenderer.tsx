@@ -244,7 +244,7 @@ function ThinkingBlock({ text, streaming }: ThinkingBlockProps) {
     <div className="mb-3">
       <button
         onClick={() => setOpen(!open)}
-        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11.5px]"
+        className="w-full flex items-center gap-1.5 pr-2.5 py-1.5 text-[11.5px]"
         style={{ color: 'var(--c-muted)' }}
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
@@ -253,7 +253,7 @@ function ThinkingBlock({ text, streaming }: ThinkingBlockProps) {
       </button>
       {open && (
         <div
-          className="px-3 pb-2 font-serif italic text-[12.5px]"
+          className="pb-2 font-serif italic text-[12.5px]"
           style={{ color: 'var(--c-muted)' }}
         >
           {text}

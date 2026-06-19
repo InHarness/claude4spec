@@ -27,7 +27,19 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
       : status === 'failed'
         ? 'var(--c-red, #c45a3b)'
         : 'var(--c-green, #4a9860)';
-  const nestedCount = block.messages?.length ?? 0;
+  // Number of tool calls the subagent made — a meaningful "how much work" badge.
+  // (block.messages.length is always 1: the hydrator nests every block into one
+  // container message.) Blocks are already batched, so count toolBatch items too.
+  const stepCount = (block.messages ?? []).reduce(
+    (n, m) =>
+      n +
+      m.blocks.reduce(
+        (k, b) => k + (b.type === 'toolBatch' ? b.items.length : b.type === 'toolUse' ? 1 : 0),
+        0,
+      ),
+    0,
+  );
+  const hasNested = (block.messages ?? []).some((m) => m.blocks.length > 0);
   const [promptOpen, setPromptOpen] = useState(false);
   const [jsonOpen, setJsonOpen] = useState(false);
   // The real answer is the Task tool_result; `block.summary` is only the SDK's
@@ -73,13 +85,13 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
           {taskDescription}
         </span>
         <span className="flex-1" />
-        {nestedCount > 0 && (
+        {stepCount > 0 && (
           <span
             className="font-mono text-[10.5px]"
             style={{ color: 'var(--c-subtle)' }}
-            title={`${nestedCount} internal message${nestedCount === 1 ? '' : 's'}`}
+            title={`${stepCount} tool call${stepCount === 1 ? '' : 's'}`}
           >
-            {nestedCount}
+            {stepCount}
           </span>
         )}
         {status === 'running' ? (
@@ -162,7 +174,7 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
               )}
             </div>
           )}
-          {nestedCount === 0 && (
+          {!hasNested && (
             <div className="text-[11.5px] italic" style={{ color: 'var(--c-subtle)' }}>
               {status === 'running' ? 'Running…' : 'No nested output.'}
             </div>
