@@ -6,6 +6,7 @@ import type {
   Plan,
 } from '../../shared/entities.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 
 /**
  * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`. `path` is
@@ -323,6 +324,113 @@ function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean
   }
   lines.push(`</tooling>`);
   return lines.join('\n');
+}
+
+/* ─────────────────────────── 0.1.67 m05ctxreg: wbudowane subagenty ───────────────────────────
+ * Czwarty wymiar rejestru `context_type`: który read-only subagent jest wstrzykiwany do
+ * `adapter.execute({ subagents })`. Subagent przejmuje „bulk" eksploracji w swoim kontekście i
+ * oddaje rodzicowi zwięzłe findings (ścieżki / anchory / slugi), zamiast całego zrzutu.
+ *
+ * Uwaga implementacyjna (drift vs brief): adapter NIE ma pola `mcp` per-subagent — dostęp do MCP
+ * nadaje się przez nazwy `mcp__<server>__<tool>` w `tools` (subagent dziedziczy serwery MCP
+ * zamontowane dla rodzica, a `tools` jest allow-listą). Read-only i brak zagnieżdżania
+ * (Agent/Task) są wymuszone konstrukcją `tools` — zero narzędzi mutujących. */
+
+/** English per "English UI/API messages": agent-facing instruction, same register as system prompt. */
+const SPEC_EXPLORE_PROMPT = `You are a read-only explorer of the CURRENT specification (pages + entities + sections).
+
+Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
+
+Tools: Read/Grep/Glob over the project, plus read-only entity-graph MCP (get_*/list_*, find_references, check_consistency, list_sections).
+
+Hard rules:
+- NEVER mutate anything (no create/update/delete; you have no such tools).
+- Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
+
+const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of a HISTORICAL release diff for a brief.
+
+Your job: explore the \`release_diff\` output (including the on-disk dump the SDK writes when the diff is huge) and report CONCISE findings — paths, anchors, slugs — back to the parent. You exist to keep the parent's context small.
+
+Tools: \`release-tools\` MCP (release_show, release_diff, release_list) and Read/Grep/Glob — the latter ONLY for the release-diff dump file the SDK wrote to disk.
+
+Hard rules:
+- Read ONLY the \`release_diff\` output / release artifacts. NEVER read \`pages/*.md\` (current spec state) and NEVER touch the entity graph (get_*/find_references) — those return HEAD and would break the brief's historical self-containment.
+- NEVER mutate anything. Report pointers, not dumps.`;
+
+/** Enumerate read-only entity-graph MCP tools as `mcp__<server>__<tool>`. Parses each entity's
+ *  `mcpToolsLine` exactly like {@link buildTooling} and keeps only get_ / list_ prefixed tools
+ *  (drops mutating create_ / update_ / delete_ / link_ tools). Realizes the brief's get_/list_
+ *  wildcards. */
+function entityReadMcpTools(pluginHost: ProjectPluginHost): string[] {
+  const tools: string[] = [];
+  for (const m of pluginHost.listEntities()) {
+    if (!m.systemPrompt.mcpToolsLine) continue;
+    const colonIdx = m.systemPrompt.mcpToolsLine.indexOf(':');
+    if (colonIdx === -1) continue;
+    const serverName = m.systemPrompt.mcpToolsLine.slice(0, colonIdx).trim();
+    const toolList = m.systemPrompt.mcpToolsLine.slice(colonIdx + 1).trim();
+    for (const raw of toolList.split(',')) {
+      const tool = raw.trim();
+      if (/^(get|list)_/.test(tool)) tools.push(`mcp__${serverName}__${tool}`);
+    }
+  }
+  return tools;
+}
+
+/** `spec-explore`: read-only exploration of the current spec (entity graph). Built per-turn
+ *  because the entity-graph toolset depends on which entity plugins are mounted. */
+function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefinition {
+  return {
+    name: 'spec-explore',
+    description:
+      'Read-only explorer of the CURRENT spec (pages, entities, sections). Delegate to it to LOCATE things — paths, section anchors, entity slugs — without pulling bulk into your own context. Returns concise pointers, not full dumps.',
+    prompt: SPEC_EXPLORE_PROMPT,
+    tools: [
+      'Read',
+      'Grep',
+      'Glob',
+      ...entityReadMcpTools(pluginHost),
+      // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
+      // — mirrors the hardcode in buildTooling().
+      'mcp__reference-tools__find_references',
+      'mcp__reference-tools__check_consistency',
+      'mcp__reference-tools__list_sections',
+    ],
+    model: 'haiku',
+  };
+}
+
+/** `diff-explore`: read-only exploration of a historical `release_diff`. Deliberately WITHOUT the
+ *  entity graph (it returns HEAD) — only release-scoped `release-tools` + Read for the on-disk dump. */
+function buildDiffExploreSubagent(): SubagentDefinition {
+  return {
+    name: 'diff-explore',
+    description:
+      'Read-only explorer of the HISTORICAL release diff for a brief. Delegate to it to read the (possibly huge, dumped-to-disk) `release_diff` and report concise pointers — paths, anchors, slugs — without pulling the whole dump into your own context.',
+    prompt: DIFF_EXPLORE_PROMPT,
+    tools: [
+      'Read',
+      'Grep',
+      'Glob',
+      'mcp__release-tools__release_show',
+      'mcp__release-tools__release_diff',
+      'mcp__release-tools__release_list',
+    ],
+    model: 'haiku',
+  };
+}
+
+/**
+ * 0.1.67: fourth dimension of the `context_type` registry — which built-in read-only subagent is
+ * injected into `adapter.execute({ subagents })`. `chat`/`patch` get `spec-explore` (current
+ * entity graph); `brief` gets `diff-explore` (release-scoped, no entity graph).
+ */
+export function subagentsFor(
+  contextType: ChatContextType,
+  pluginHost: ProjectPluginHost,
+): SubagentDefinition[] {
+  if (contextType === 'brief') return [buildDiffExploreSubagent()];
+  return [buildSpecExploreSubagent(pluginHost)];
 }
 
 /**

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildSystemPrompt, type SystemPromptInput, type PeerProject } from './chat-context.js';
+import { buildSystemPrompt, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 // buildSystemPrompt only calls host.listEntities() (no active plugins needed for
@@ -73,5 +73,61 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
       brief: null,
     });
     expect(out).not.toContain('<workspace_projects workspace=');
+  });
+});
+
+// 0.1.67 m05ctxreg: czwarty wymiar rejestru context_type — wbudowany subagent.
+const entityHost = {
+  listEntities: () => [
+    {
+      systemPrompt: {
+        mcpToolsLine:
+          'endpoint-tools: create_endpoint, get_endpoint, update_endpoint, delete_endpoint, list_endpoints, link_dto, unlink_dto',
+      },
+    },
+    { systemPrompt: { mcpToolsLine: 'dto-tools: create_dto, get_dto, update_dto, delete_dto, list_dtos' } },
+  ],
+} as unknown as ProjectPluginHost;
+
+describe('subagentsFor (0.1.67)', () => {
+  it('brief → diff-explore: release-tools, no entity graph', () => {
+    const subs = subagentsFor('brief', entityHost);
+    expect(subs.map((s) => s.name)).toEqual(['diff-explore']);
+    const tools = subs[0].tools ?? [];
+    expect(tools).toEqual([
+      'Read',
+      'Grep',
+      'Glob',
+      'mcp__release-tools__release_show',
+      'mcp__release-tools__release_diff',
+      'mcp__release-tools__release_list',
+    ]);
+    expect(tools.some((t) => t.includes('get_') || t.includes('find_references'))).toBe(false);
+    expect(subs[0].model).toBe('haiku');
+  });
+
+  it('chat/patch → spec-explore: read-only entity graph + reference reads', () => {
+    for (const ct of ['chat', 'patch'] as const) {
+      const subs = subagentsFor(ct, entityHost);
+      expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
+      const tools = subs[0].tools ?? [];
+      // get_/list_ tools are enumerated; mutating tools are dropped.
+      expect(tools).toContain('mcp__endpoint-tools__get_endpoint');
+      expect(tools).toContain('mcp__endpoint-tools__list_endpoints');
+      expect(tools).toContain('mcp__dto-tools__get_dto');
+      expect(tools).toContain('mcp__reference-tools__find_references');
+      expect(tools).toContain('mcp__reference-tools__check_consistency');
+      expect(tools).toContain('mcp__reference-tools__list_sections');
+      expect(tools.some((t) => /create_|update_|delete_|link_/.test(t))).toBe(false);
+      expect(subs[0].model).toBe('haiku');
+    }
+  });
+
+  it('no subagent can nest (no Agent/Task in tools)', () => {
+    for (const ct of ['chat', 'brief', 'patch'] as const) {
+      const tools = subagentsFor(ct, entityHost)[0].tools ?? [];
+      expect(tools).not.toContain('Agent');
+      expect(tools).not.toContain('Task');
+    }
   });
 });

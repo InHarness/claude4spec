@@ -22,7 +22,7 @@ import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
-import { buildSystemPrompt, type PeerProject } from '../services/chat-context.js';
+import { buildSystemPrompt, subagentsFor, type PeerProject } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
@@ -493,6 +493,9 @@ export async function runAgentTurn(
       cwd: deps.cwd,
       mcpServers,
       skills: inlineSkills,
+      // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
+      // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
+      subagents: subagentsFor(thread.contextType, deps.pluginHost),
       architectureConfig: input.architectureConfig,
       planMode,
       onUserInput: input.onUserInput,

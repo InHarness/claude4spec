@@ -29,6 +29,11 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
     case 'thinking':
       return <ThinkingBlock text={block.text} streaming={block.isStreaming} />;
     case 'toolUse': {
+      // Subagent-linked Task call: the standalone tool card is absorbed into the
+      // sibling <SubagentPanel /> (its name/description/prompt live there now).
+      if (siblings.some((b) => b.type === 'subagent' && b.toolUseId === block.toolUseId)) {
+        return null;
+      }
       const paired = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
       const result = paired && paired.type === 'toolResult' ? paired : null;
       if (block.toolName === USER_INPUT_TOOL_NAME) {
@@ -51,8 +56,28 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
       return null;
     case 'image':
       return null;
-    case 'subagent':
-      return <SubagentPanel block={block} />;
+    case 'subagent': {
+      // Pull the merged Task tool-call's input (the agent name + the prompt sent
+      // to it) off the sibling toolUse block sharing this toolUseId. The subagent's
+      // real answer is the sibling toolResult — `block.summary` is only the SDK's
+      // task-notification blurb, not the returned output.
+      const task = siblings.find((b) => b.type === 'toolUse' && b.toolUseId === block.toolUseId);
+      const input = (task && task.type === 'toolUse' ? task.input : null) as
+        | { subagent_type?: string; prompt?: string }
+        | null;
+      const res = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
+      const result =
+        res && res.type === 'toolResult' ? { content: res.content, isError: res.isError } : null;
+      return (
+        <SubagentPanel
+          block={block}
+          agentName={input?.subagent_type}
+          prompt={input?.prompt}
+          invocation={input ?? undefined}
+          result={result}
+        />
+      );
+    }
     case 'toolBatch': {
       if (block.items.every((i) => i.toolName === USER_INPUT_TOOL_NAME)) {
         return (
@@ -216,10 +241,7 @@ interface ThinkingBlockProps {
 function ThinkingBlock({ text, streaming }: ThinkingBlockProps) {
   const [open, setOpen] = useState(false);
   return (
-    <div
-      className="mb-3 rounded-md"
-      style={{ background: 'var(--c-panel)', border: '1px dashed var(--c-hair-strong)' }}
-    >
+    <div className="mb-3">
       <button
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11.5px]"
@@ -227,7 +249,7 @@ function ThinkingBlock({ text, streaming }: ThinkingBlockProps) {
       >
         {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         <Cpu size={11} />
-        <span className="font-mono uppercase tracking-wider">thinking{streaming ? ' · streaming' : ''}</span>
+        <span className="font-mono tracking-wider">Thinking{streaming ? ' · streaming' : ''}</span>
       </button>
       {open && (
         <div
