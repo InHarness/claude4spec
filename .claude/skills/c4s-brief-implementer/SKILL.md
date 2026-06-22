@@ -49,26 +49,19 @@ If the brief is unclear — a missing detail, an ambiguous wording, a decision
 you'd otherwise have to guess — you have two paths:
 
 **Synchronous (preferred when available).** Ask the specification agent in the
-same terminal and continue once you have an answer:
+same terminal and continue once you have an answer.
+
+**Specyfikacja CLAUDE 4 SPEC leży w `.claude/skills/specyfikacja` (symlink), nie
+w katalogu głównym repo — zawsze wskazuj ją flagą `--project`; NIE rób `cd` do
+tego katalogu, bo `c4s` zgłosi `PROJECT_NOT_FOUND`.**
 
 ```bash
-c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md
+c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md --project .claude/skills/specyfikacja
 ```
 
 Continue the same thread with `c4s ask "..." --thread <threadId>` (the
 `threadId` is printed with the answer). This path requires `c4s` installed
 *and* a running `npx claude4spec` server. When either is unavailable, skip it.
-
-If `c4s ask` returns `PROJECT_NOT_FOUND` despite a running server, your cwd is
-probably reached through a **symlink** (common for `.claude/skills/<name>`
-projects): `c4s` resolves `process.cwd()` to the real path, which is NOT the one
-registered in `~/.claude4spec/workspaces.json`. Pass the registered (symlink) path
-explicitly — `--project` is run through `path.resolve`, which does NOT canonicalize
-symlinks, so it matches the registry:
-
-```bash
-c4s ask "Brief nie precyzuje X — ..." --ct brief --brief <brief-slug>.md --project /abs/path/to/registered/skill-dir
-```
 
 **Asynchronous (always available).** If you cannot ask synchronously, proceed
 with your best judgement and file a patch afterwards (step 4) so the
