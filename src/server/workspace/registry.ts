@@ -5,7 +5,10 @@ import { projectIdForCwd } from './project-id.js';
 import type { ProjectRecord, WorkspaceRecord, WorkspacesFile } from './types.js';
 
 // v2 (M33): WorkspaceRecord gains optional `plugins[]`. Legacy v1 records lack
-// the field and read as predefined-only — no rewrite needed on read.
+// the field and read as predefined-only — no rewrite needed on read. NOTE: any
+// mutation by a >=0.1.73 binary rewrites `$schemaVersion` to 2, after which an
+// OLDER binary (max schema 1) refuses to open the file (read() forward-compat
+// guard). Mixed-version use against one `~/.claude4spec/` is a one-way upgrade.
 export const WORKSPACES_SCHEMA_VERSION = 2;
 export const DEFAULT_WORKSPACE_PORT = 4500;
 const DEFAULT_WORKSPACE_NAME = 'default';

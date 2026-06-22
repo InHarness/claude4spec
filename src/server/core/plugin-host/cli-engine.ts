@@ -10,22 +10,10 @@ import { loadWorkspacePlugins } from './loader.js';
  * pre-split singleton, whose `consolidate` was never invoked in CLI
  * processes — all plugins active).
  *
- * This sync form registers the in-host built-ins only. Use
- * {@link buildCliSerializationEngineAsync} when a resolved workspace may carry
- * plugin packages, so the CLI sees plugin-borne entity types exactly as the
- * server does (no separate CLI registration path).
- */
-export function buildCliSerializationEngine(): SerializationEngine {
-  const pluginRegistry = new PluginRegistryImpl();
-  registerAllPlugins(pluginRegistry);
-  return new SerializationEngine(pluginRegistry.consolidate(undefined), sectionSerializer);
-}
-
-/**
- * M33: build the CLI engine after running the shared bootstrap loader, so
+ * Build the engine after running the shared bootstrap loader, so
  * workspace-declared plugin packages contribute their entity types to L9
- * serialization identically to the server. `packageNames` empty ⇒ built-ins
- * only (identical output to the sync form).
+ * serialization identically to the server (no separate CLI registration path).
+ * `packageNames` empty ⇒ built-ins only.
  */
 export async function buildCliSerializationEngineAsync(
   packageNames: string[],

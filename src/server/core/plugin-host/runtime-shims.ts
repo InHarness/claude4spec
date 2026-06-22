@@ -14,7 +14,10 @@
  * explicitly.
  */
 
-import { SHARED_PEER_SPECIFIERS } from '../../../shared/plugin-host/frontend-manifest.js';
+import {
+  SHARED_PEER_SPECIFIERS,
+  PLUGIN_RUNTIME_EXPORT_NAMES,
+} from '../../../shared/plugin-host/frontend-manifest.js';
 import type { SharedPeerSpecifier } from '../../../shared/plugin-host/frontend-manifest.js';
 
 /** Bare specifier → URL slug used in `/api/plugins/runtime/<slug>.js`. */
@@ -31,14 +34,12 @@ const SLUG_PEER: Record<string, SharedPeerSpecifier> = Object.fromEntries(
   SHARED_PEER_SPECIFIERS.map((spec) => [PEER_SLUG[spec], spec]),
 ) as Record<string, SharedPeerSpecifier>;
 
-/** The named exports of `@c4s/plugin-runtime` — our own fixed client surface. */
-const PLUGIN_RUNTIME_EXPORTS = [
-  'clientPluginHost',
-  'queryClient',
-  'editorBridge',
-  'registerExtensionReferenceType',
-  'registerFrontendModule',
-];
+/**
+ * The named exports of `@c4s/plugin-runtime` — our own client surface, which the
+ * server can't introspect (it's a browser module). Single source of truth lives
+ * in shared; a parity test (plugin-runtime.test.ts) guards it against drift.
+ */
+const PLUGIN_RUNTIME_EXPORTS: readonly string[] = PLUGIN_RUNTIME_EXPORT_NAMES;
 
 /** Build the import map injected into the page. Bare specifier → shim URL. */
 export function buildImportMap(): Record<string, string> {
@@ -82,7 +83,7 @@ export async function getRuntimeShim(slug: string): Promise<string | null> {
 
   let names: string[];
   if (specifier === '@c4s/plugin-runtime') {
-    names = PLUGIN_RUNTIME_EXPORTS;
+    names = [...PLUGIN_RUNTIME_EXPORTS];
   } else {
     try {
       const ns = (await import(specifier)) as Record<string, unknown>;

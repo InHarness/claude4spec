@@ -26,26 +26,24 @@ metaApi
     clientPluginHost.applyActivation(null);
   });
 
-async function bootstrap(): Promise<void> {
-  // M33: load runtime plugins (import map already injected server-side) and pin
-  // their editor extensions before the first editor is built. Non-fatal — phase
-  // 1 ships no plugins, so this resolves immediately.
-  await bootFrontendPlugins();
-
-  const router = createAppRouter(queryClient);
-
-  const rootEl = document.getElementById('root');
-  if (!rootEl) throw new Error('#root missing from index.html');
-
-  ReactDOM.createRoot(rootEl).render(
-    <React.StrictMode>
-      <QueryClientProvider client={queryClient}>
-        <RouterProvider router={router} />
-      </QueryClientProvider>
-    </React.StrictMode>
-  );
-}
-
-void bootstrap().catch((err) => {
-  console.error('[bootstrap] fatal error during startup', err);
+// M33: load runtime plugins WITHOUT blocking first paint (parity with the
+// activation seeding above — the import map is already injected server-side, and
+// the editor isn't mounted on first paint, so pinning extensions need not gate
+// the shell). Phase 1 ships no plugins, so this resolves immediately;
+// mountFrontend runs as soon as the manifest resolves.
+void bootFrontendPlugins().catch((err) => {
+  console.warn('[plugin-host] plugin boot failed', err);
 });
+
+const router = createAppRouter(queryClient);
+
+const rootEl = document.getElementById('root');
+if (!rootEl) throw new Error('#root missing from index.html');
+
+ReactDOM.createRoot(rootEl).render(
+  <React.StrictMode>
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  </React.StrictMode>
+);

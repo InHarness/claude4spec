@@ -30,8 +30,12 @@ export class PluginRegistryImpl implements PluginRegistry {
     if (manifest.contributes == null || typeof manifest.contributes !== 'object') {
       throw new PluginManifestError(`plugin "${manifest.name}" — contributes must be an object`);
     }
-    for (const contribution of manifest.contributes.entities ?? []) {
-      this.registerEntityModule(lowerEntityContribution(contribution));
+    // Two-pass for atomicity: lower (validate) every contribution first, so a
+    // throw on a later entity never leaves earlier entities registered under a
+    // manifest the loader then reports as failed.
+    const modules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
+    for (const module of modules) {
+      this.registerEntityModule(module);
     }
     // contributes.writingStyles is declared but ignored until phase 2.
   }

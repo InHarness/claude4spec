@@ -11,10 +11,10 @@
  *   4. Registration        — `registry.registerPlugin(manifest)`.
  */
 
+import semver from 'semver';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import type { PluginRegistry } from './types.js';
-import { satisfiesHostApi } from './host-api-range.js';
 
 export type PluginLoadStatus = 'loaded' | 'skipped' | 'failed';
 
@@ -62,7 +62,7 @@ function extractManifest(mod: unknown): PluginManifest | null {
 function enginesSatisfied(manifest: PluginManifest): boolean {
   const node = manifest.engines?.node;
   if (!node) return true;
-  return satisfiesHostApi(process.versions.node, node);
+  return semver.satisfies(process.versions.node, node);
 }
 
 /**
@@ -102,7 +102,7 @@ export async function loadWorkspacePlugins(
       manifestVersion: manifest.version,
     };
 
-    if (!satisfiesHostApi(HOST_API_VERSION, manifest.hostApiVersion)) {
+    if (!semver.satisfies(HOST_API_VERSION, manifest.hostApiVersion)) {
       const reason = `host API ${HOST_API_VERSION} does not satisfy plugin requirement "${manifest.hostApiVersion}"`;
       console.warn(`[plugin-loader] PLUGIN_HOST_API_MISMATCH ${pkg}: ${reason}`);
       records.push({ ...base, status: 'skipped', code: 'PLUGIN_HOST_API_MISMATCH', reason });

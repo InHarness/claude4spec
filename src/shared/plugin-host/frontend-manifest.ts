@@ -48,3 +48,19 @@ export const SHARED_PEER_SPECIFIERS = [
 ] as const;
 
 export type SharedPeerSpecifier = (typeof SHARED_PEER_SPECIFIERS)[number];
+
+/**
+ * The value exports of `@c4s/plugin-runtime` (frontend facade), the one peer the
+ * server can't introspect by importing (it's a browser module). The runtime
+ * shim generator emits these names; a parity test asserts they match the actual
+ * module so this list can't silently drift. Keep in sync with
+ * `src/client/runtime/plugin-runtime.ts` value exports.
+ */
+export const PLUGIN_RUNTIME_EXPORT_NAMES = [
+  'clientPluginHost',
+  'registerFrontendModule',
+  'queryClient',
+  'editorBridge',
+  'registerExtensionReferenceType',
+  'HOST_API_VERSION',
+] as const;

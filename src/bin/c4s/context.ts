@@ -1,10 +1,7 @@
 import { openDbReadonly, ReadonlyDbError } from '../../server/db/readonly.js';
 import { RawEntityReader } from '../../server/domain/raw-entity-reader.js';
 import type { SerializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
-import {
-  buildCliSerializationEngine,
-  buildCliSerializationEngineAsync,
-} from '../../server/core/plugin-host/cli-engine.js';
+import { buildCliSerializationEngineAsync } from '../../server/core/plugin-host/cli-engine.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../../core/workspace/resolve.js';
 import { CliError } from './errors.js';
 import type { ParsedArgs } from './args.js';
@@ -17,7 +14,7 @@ export interface CliContext {
   close: () => void;
 }
 
-export { buildCliSerializationEngine, buildCliSerializationEngineAsync };
+export { buildCliSerializationEngineAsync };
 
 export async function createContext(args: ParsedArgs): Promise<CliContext> {
   let resolved;

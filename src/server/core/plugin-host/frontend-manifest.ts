@@ -22,6 +22,10 @@ export function buildFrontendManifest(_registry: PluginRegistry): FrontendManife
   // entry: '/api/plugins/<name>/frontend.js', css }` here.
   const plugins: PluginFrontendEntry[] = [];
 
+  // `importMap` is informational here (diagnostics / future non-head consumers).
+  // The AUTHORITATIVE copy the browser uses is injected server-side into the SPA
+  // `<head>` (see `injectImportMap` in server/index.ts) — both derive from the
+  // same `buildImportMap()`, so the two channels cannot diverge.
   return {
     hostApiVersion: HOST_API_VERSION,
     importMap: buildImportMap(),
