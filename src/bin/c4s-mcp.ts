@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { openDbReadonly, ReadonlyDbError } from '../server/db/readonly.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../core/workspace/resolve.js';
 import { RawEntityReader } from '../server/domain/raw-entity-reader.js';
-import { buildCliSerializationEngine } from './c4s/context.js';
+import { buildCliSerializationEngineAsync } from './c4s/context.js';
 import { createC4sReaderServer } from '../server/mcp/c4s-reader.js';
 import { CliError } from './c4s/errors.js';
 
@@ -91,6 +91,9 @@ async function main(): Promise<void> {
   let reader: RawEntityReader | null = null;
   let db: import('better-sqlite3').Database | null = null;
   let close: (() => void) | null = null;
+  // M33: workspace plugin packages resolved alongside the project (empty on a
+  // degraded start → the engine carries the in-host built-ins only).
+  let pluginPackages: string[] = [];
 
   try {
     // M31: registry-based resolution → workspace DB slot. The degraded-start
@@ -98,6 +101,7 @@ async function main(): Promise<void> {
     // errors instead of failing the MCP handshake.
     const resolved = resolveWorkspaceProject({ project: args.project, workspace: args.workspace });
     projectDir = resolved.projectDir;
+    pluginPackages = resolved.pluginPackages;
     const opened = openDbReadonly(resolved.dbPath);
     db = opened.handle;
     close = opened.close;
@@ -119,7 +123,7 @@ async function main(): Promise<void> {
 
   const { server } = createC4sReaderServer({
     reader,
-    registry: buildCliSerializationEngine(),
+    registry: await buildCliSerializationEngineAsync(pluginPackages),
     db,
     projectDir,
     packageVersion: version,

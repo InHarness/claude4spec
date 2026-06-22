@@ -1,7 +1,10 @@
 import { openDbReadonly, ReadonlyDbError } from '../../server/db/readonly.js';
 import { RawEntityReader } from '../../server/domain/raw-entity-reader.js';
 import type { SerializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
-import { buildCliSerializationEngine } from '../../server/core/plugin-host/cli-engine.js';
+import {
+  buildCliSerializationEngine,
+  buildCliSerializationEngineAsync,
+} from '../../server/core/plugin-host/cli-engine.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../../core/workspace/resolve.js';
 import { CliError } from './errors.js';
 import type { ParsedArgs } from './args.js';
@@ -14,9 +17,9 @@ export interface CliContext {
   close: () => void;
 }
 
-export { buildCliSerializationEngine };
+export { buildCliSerializationEngine, buildCliSerializationEngineAsync };
 
-export function createContext(args: ParsedArgs): CliContext {
+export async function createContext(args: ParsedArgs): Promise<CliContext> {
   let resolved;
   try {
     // M31: 0/1/N registry resolution BEFORE any db access.
@@ -31,10 +34,13 @@ export function createContext(args: ParsedArgs): CliContext {
   try {
     const { handle, close } = openDbReadonly(resolved.dbPath);
     const reader = new RawEntityReader(handle);
+    // M33: run the shared bootstrap loader so plugin-borne entity types appear
+    // in CLI serialization exactly as on the server (phase 1: usually empty).
+    const registry = await buildCliSerializationEngineAsync(resolved.pluginPackages);
     return {
       projectDir,
       reader,
-      registry: buildCliSerializationEngine(),
+      registry,
       db: handle,
       close,
     };

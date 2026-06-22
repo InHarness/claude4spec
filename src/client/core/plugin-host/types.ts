@@ -20,6 +20,7 @@ import type {
   EntityRowProps,
   EntityDetailProps,
 } from '../../entities/registry.js';
+import type { EditorExtensionRegistration } from '../../tiptap/registry.js';
 
 export interface SidebarTabSlot {
   icon: ComponentType<{ className?: string; size?: number | string }>;
@@ -63,7 +64,15 @@ export interface FrontendModule extends EntityModuleManifest {
   /** L5 — sidebar tab descriptor. Optional (some plugins omit a tab). */
   sidebarTab?: SidebarTabSlot;
 
-  // routes, stateSlice, editorExtensions: filled per-entity in Phase 3.
+  /**
+   * L8 — editor extensions (custom NodeViews, slash commands `/<type>`, mention
+   * sources) the host pins onto its single Tiptap instance via `mountFrontend`.
+   * Optional; built-in modules register theirs directly, runtime plugins ship
+   * them here.
+   */
+  editorExtensions?: EditorExtensionRegistration[];
+
+  // routes, stateSlice: filled per-entity in Phase 3.
 }
 
 export interface ClientPluginHost {

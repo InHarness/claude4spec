@@ -15,6 +15,10 @@ import { workspaceRouter } from './workspace/routes.js';
 import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './serialization/registerAll.js';
+import { loadWorkspacePlugins } from './core/plugin-host/loader.js';
+import { resolvePluginPackages } from './workspace/registry.js';
+import { pluginsRouter } from './routes/plugins.js';
+import { buildImportMap } from './core/plugin-host/runtime-shims.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -101,6 +105,16 @@ function injectProjectGlobal(html: string, cwd: string, name: string): string {
   return html.replace('<head>', `<head><script>window.__C4S_PROJECT__=${payload};</script>`);
 }
 
+// M33 "Option B": inject the plugin import map into <head> statically (before any
+// module script resolves), so a runtime plugin's bare imports (`react`, …) resolve
+// to the host's singleton shims. Applied to every SPA page (welcome + project).
+const IMPORT_MAP_SCRIPT = `<script type="importmap">${JSON.stringify({
+  imports: buildImportMap(),
+}).replace(/</g, '\\u003c')}</script>`;
+function injectImportMap(html: string): string {
+  return html.replace('<head>', `<head>${IMPORT_MAP_SCRIPT}`);
+}
+
 const PROJECT_ROUTE_RE = /^\/p\/([0-9a-f]{12})(\/|$)/;
 
 type SpaResolution =
@@ -165,6 +179,7 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       const htmlPath = path.join(repoRoot, 'src/client/index.html');
       let html = await fs.promises.readFile(htmlPath, 'utf-8');
       html = await vite.transformIndexHtml(req.originalUrl, html);
+      html = injectImportMap(html);
       // `/welcome` runs the SPA project-less: no `window.__C4S_PROJECT__`, so the
       // client computes PROJECT_ID='' → API_BASE='/api' → router basepath '/'.
       if (resolution.kind === 'welcome') {
@@ -193,7 +208,7 @@ function mountProd(app: Express, deps: SpaDeps) {
       const urlPath = (req.originalUrl ?? '/').split('?')[0]!;
       const resolution = resolveSpaRoute(deps.registry, deps.workspace, urlPath);
       if (resolution.kind === 'redirect') return res.redirect(302, resolution.to);
-      const raw = fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8');
+      const raw = injectImportMap(fs.readFileSync(path.join(clientDist, 'index.html'), 'utf-8'));
       // `/welcome` runs the SPA project-less (no `window.__C4S_PROJECT__`).
       if (resolution.kind === 'welcome') {
         return res.status(200).set({ 'Content-Type': 'text/html' }).end(raw);
@@ -258,6 +273,10 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
+  // M33: load workspace-declared npm plugin packages onto the same catalog,
+  // before any ProjectContext consolidates against it. Per-package failures are
+  // isolated (skipped/failed records) — one bad plugin never crashes bootstrap.
+  const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
 
   const httpServer = createHttpServer(app);
   const gateway = new WsGateway(httpServer);
@@ -302,6 +321,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
+  // M33: process-level plugin endpoints (frontend manifest, runtime shims,
+  // loader diagnostics) — before the project dispatch so they stay prefix-free.
+  app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: pluginLoad.records }));
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
 
   // Eager warm of the CLI-started project: clone executes before listen and a

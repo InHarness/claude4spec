@@ -31,7 +31,7 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
   const itm = args.flags.get('include-tag-matches');
   const includeTagMatches = itm === true || itm === 'true';
 
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const tags = new TagsService(ctx.db);
     // Honor the project's configured pagesDir (CLI flag > config.json > 'pages');

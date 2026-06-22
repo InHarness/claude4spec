@@ -6,7 +6,7 @@ import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { resolvePageContent } from '../../../server/serialization/resolve-page.js';
 
-export function runResolve(args: ParsedArgs): void {
+export async function runResolve(args: ParsedArgs): Promise<void> {
   const filePath = args.positional[0];
   if (!filePath) {
     throw new CliError('INVALID_ARGS', 'resolve requires a file path', 'usage: c4s resolve <file.md>');
@@ -22,7 +22,7 @@ export function runResolve(args: ParsedArgs): void {
   }
 
   const md = fs.readFileSync(abs, 'utf8');
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const { resolved, inlineContent } = resolvePageContent(md, {
       reader: ctx.reader,

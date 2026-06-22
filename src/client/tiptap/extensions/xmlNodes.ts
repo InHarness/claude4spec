@@ -26,6 +26,35 @@ const BLOCK_TAGS_RE =
 const INLINE_TAG_RE =
   /^<(inline_mention|single_element|element_list|tagged_list|tagged_list_mixed|todo)(\s[^>]*?)?\/?\s*>/;
 
+// M33: plugin-contributed entity types auto-register their own XML embed tag
+// (like the built-in `diagram`) so they parse as native embeds in prose with no
+// edits here. Empty in phase 1 (no plugin packages) → behavior is unchanged.
+const PLUGIN_INLINE_TAGS = new Set<string>();
+const PLUGIN_BLOCK_TAGS = new Set<string>();
+
+const ANY_INLINE_TAG_RE = /^<([A-Za-z][A-Za-z0-9_-]*)(\s[^>]*?)?\/?\s*>/;
+const ANY_BLOCK_TAG_RE = /^<([A-Za-z][A-Za-z0-9_-]*)(\s[^>]*?)?\/?\s*>\s*$/;
+
+/**
+ * Allow a plugin entity-type name as an inline and/or block XML embed tag in the
+ * markdown-it parser. Called by `mountFrontend` once per active plugin module.
+ */
+export function registerXmlEntityType(
+  name: string,
+  opts: { inline?: boolean; block?: boolean } = {},
+): void {
+  const { inline = true, block = true } = opts;
+  if (inline) PLUGIN_INLINE_TAGS.add(name);
+  if (block) PLUGIN_BLOCK_TAGS.add(name);
+}
+
+/** Match a registered plugin tag (returns the match only when the name is allowed). */
+function matchRegisteredTag(line: string, re: RegExp, set: Set<string>): RegExpExecArray | null {
+  if (set.size === 0) return null;
+  const m = re.exec(line);
+  return m && set.has(m[1]!) ? m : null;
+}
+
 function toPairedHtml(kind: string | undefined, attrs: string | undefined): string {
   const cleanAttrs = (attrs ?? '').replace(/\/\s*$/, '').trimEnd();
   const attrPart = cleanAttrs ? ` ${cleanAttrs.trim()}` : '';
@@ -43,7 +72,7 @@ function setupXmlMarkdownRules(md: any) {
       const pos = state.bMarks[startLine] + state.tShift[startLine];
       const max = state.eMarks[startLine];
       const line = state.src.slice(pos, max);
-      const match = BLOCK_TAGS_RE.exec(line);
+      const match = BLOCK_TAGS_RE.exec(line) ?? matchRegisteredTag(line, ANY_BLOCK_TAG_RE, PLUGIN_BLOCK_TAGS);
       if (!match) return false;
       if (silent) return true;
       const token = state.push('html_block', '', 0);
@@ -57,7 +86,7 @@ function setupXmlMarkdownRules(md: any) {
   md.inline.ruler.before('html_inline', 'xml_inline', (state: any, silent: boolean) => {
     if (state.src.charCodeAt(state.pos) !== 0x3c /* < */) return false;
     const tail = state.src.slice(state.pos);
-    const match = INLINE_TAG_RE.exec(tail);
+    const match = INLINE_TAG_RE.exec(tail) ?? matchRegisteredTag(tail, ANY_INLINE_TAG_RE, PLUGIN_INLINE_TAGS);
     if (!match) return false;
     if (!silent) {
       const token = state.push('html_inline', '', 0);

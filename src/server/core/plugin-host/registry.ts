@@ -6,7 +6,9 @@
  */
 
 import type { BackendModule, PluginRegistry, ProjectPluginHost } from './types.js';
+import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
+import { PluginManifestError, lowerEntityContribution } from './manifest-adapter.js';
 
 export class PluginRegistryImpl implements PluginRegistry {
   private modules = new Map<string, BackendModule>();
@@ -16,6 +18,22 @@ export class PluginRegistryImpl implements PluginRegistry {
       throw new Error('plugin-registry: module.type is required');
     }
     this.modules.set(module.type, module);
+  }
+
+  registerPlugin(manifest: PluginManifest): void {
+    if (!manifest || typeof manifest !== 'object') {
+      throw new PluginManifestError('plugin manifest must be an object');
+    }
+    if (typeof manifest.name !== 'string' || typeof manifest.version !== 'string') {
+      throw new PluginManifestError('plugin manifest requires string name + version');
+    }
+    if (manifest.contributes == null || typeof manifest.contributes !== 'object') {
+      throw new PluginManifestError(`plugin "${manifest.name}" — contributes must be an object`);
+    }
+    for (const contribution of manifest.contributes.entities ?? []) {
+      this.registerEntityModule(lowerEntityContribution(contribution));
+    }
+    // contributes.writingStyles is declared but ignored until phase 2.
   }
 
   listAvailable(): BackendModule[] {

@@ -25,6 +25,13 @@ export interface WorkspaceRecord {
   /** ISO timestamp of the last server start for this workspace. */
   lastOpened: string;
   projects: ProjectRecord[];
+  /**
+   * M33: npm plugin package names loaded at process bootstrap, workspace-global
+   * (orthogonal to per-project `config.entities` activation). User-added entries
+   * only — predefined core packages are merged in at resolve time, not persisted.
+   * Absent on legacy records (schema < 2) = predefined-only.
+   */
+  plugins?: string[];
 }
 
 export interface WorkspacesFile {
