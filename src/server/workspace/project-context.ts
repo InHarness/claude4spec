@@ -503,7 +503,7 @@ async function buildInner(
   router.use('/static', staticRouter(staticHtml));
   router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService));
-  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore));
+  router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
   // workspace project except this one, build a PeerProject whose `path` is the
   // registry `cwd` (passed 1:1 as the `project` param to `c4s-tools.ask`); name/

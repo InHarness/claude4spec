@@ -2,7 +2,8 @@ import { Router } from 'express';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
-import { isRawEntityType } from '../../domain/raw-entity-reader.js';
+import { isRawEntityType, type RawEntityReader } from '../../domain/raw-entity-reader.js';
+import type { EntityCountsResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
@@ -35,8 +36,22 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
  * Lives under core/plugin-host/ because the URL spans all plugins; per-plugin
  * routes (CRUD) stay inside their own vertical slice.
  */
-export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore): Router {
+export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore, reader: RawEntityReader): Router {
   const router = Router();
+
+  // Aggregate per-type entity counts (cheap COUNT(*) per table). One round-trip
+  // feeds the sidebar ELEMENTS badges, so a plain page view no longer pulls full
+  // entity lists just to read their `.length`. Static `/counts` segment, declared
+  // before `/:type/...` so it can never be captured as a `:type` param.
+  router.get('/counts', (_req, res, next) => {
+    try {
+      const counts: EntityCountsResponse = {};
+      for (const type of reader.listTypes()) counts[type] = reader.count(type);
+      res.json(counts);
+    } catch (err) {
+      next(err);
+    }
+  });
 
   router.get('/:type/:slug/versions', (req, res, next) => {
     try {

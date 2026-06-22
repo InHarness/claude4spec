@@ -3,16 +3,13 @@ import { apiFetch, stripBase } from './lib/api-core.js';
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
+import { ThreadListProvider } from './chat/ThreadListContext.js';
 import { ResizeHandle } from './components/ResizeHandle.js';
 import { Sidebar } from './components/Sidebar.js';
 import { useFileWatcher } from './hooks/useFileWatcher.js';
 import { usePages } from './hooks/usePages.js';
 import { useWritePage } from './hooks/usePage.js';
-import { useEndpoints } from './hooks/useEndpoints.js';
-import { useDtos } from './hooks/useDtos.js';
-import { useDatabaseTables } from './hooks/useDatabaseTables.js';
-import { useUiViews } from './hooks/useUiViews.js';
-import { useAcs } from './hooks/useAcs.js';
+import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
 import { NewDatabaseTablePopover } from './components/NewDatabaseTablePopover.js';
@@ -83,11 +80,8 @@ function MainShell({ projectName }: { projectName: string | null }) {
   useFileWatcher();
 
   const { data: tree = [] } = usePages();
-  const { data: allEndpoints = [] } = useEndpoints();
-  const { data: allDtos = [] } = useDtos();
-  const { data: allDatabaseTables = [] } = useDatabaseTables();
-  const { data: allUiViews = [] } = useUiViews();
-  const { data: allAcs = [] } = useAcs();
+  // Sidebar ELEMENTS badges: one light aggregate instead of five full entity lists.
+  const { data: entityCounts } = useEntityCounts();
   const { data: todoCounts } = useTodosCounts();
   const { data: pageLinkCounts } = usePageLinksCounts();
   const write = useWritePage();
@@ -146,6 +140,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
   }, []);
 
   return (
+    <ThreadListProvider>
     <div
       ref={rootRef}
       className="h-full w-full flex"
@@ -160,13 +155,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
           tree={tree}
           onNewPage={handleNewPage}
           pageCount={pageCount}
-          entityCounts={{
-            endpoint: allEndpoints.length,
-            dto: allDtos.length,
-            'database-table': allDatabaseTables.length,
-            'ui-view': allUiViews.length,
-            ac: allAcs.length,
-          }}
+          entityCounts={entityCounts ?? {}}
           todoCount={todoCounts?.total ?? 0}
           todoCountByPath={todoCounts?.byPath ?? {}}
           brokenLinkCount={pageLinkCounts?.brokenLinkCount ?? 0}
@@ -188,6 +177,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
       <ModalHost />
       <ToastHost />
     </div>
+    </ThreadListProvider>
   );
 }
 

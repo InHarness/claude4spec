@@ -94,6 +94,19 @@ export function plansRouter(plan: PlanService): Router {
     }
   });
 
+  router.get('/:planId/threads', (req, res, next) => {
+    try {
+      const planId = Number(req.params.planId);
+      if (!Number.isInteger(planId)) {
+        throw new DomainError('VALIDATION', 'planId must be an integer');
+      }
+      plan.getById(planId); // 404 if the plan does not exist
+      res.json({ data: plan.listThreadsForPlan(planId) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get('/:planId/last-thread', (req, res, next) => {
     try {
       const planId = Number(req.params.planId);

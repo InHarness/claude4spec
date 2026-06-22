@@ -115,6 +115,10 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const [isResuming, setIsResuming] = useState(false);
   // 0.1.69 Transagents: child banki surfaced in this panel (keyed by tool_use id).
   const [transagents, setTransagents] = useState<TransagentEntry[]>([]);
+  // Active thread metadata sourced from GET /api/threads/:id (the same fetch that
+  // loads messages below). The header/model-lock controls read it from here instead
+  // of the paginated thread list, so they stay correct for threads beyond page 1.
+  const [activeThreadMeta, setActiveThreadMeta] = useState<ChatThread | null>(null);
 
   const onEvent = useCallback(
     (event: WireEvent) => {
@@ -341,6 +345,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveUsage(null);
     setLiveContextSize(null);
     setTransagents([]);
+    setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;
     if (!threadId) return;
@@ -373,6 +378,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
           };
         };
         const thread = payload.data;
+        setActiveThreadMeta(thread);
         const subagentTasks = thread.subagentTasks ?? [];
         const queuedMessages = thread.queuedMessages ?? [];
         const fullMessages = rowsToChatMessages(thread.messages, subagentTasks);
@@ -466,6 +472,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     clearQueue,
     // 0.1.69 Transagents
     transagents,
+    // P2: active thread metadata (from GET /api/threads/:id), list-independent.
+    activeThreadMeta,
   };
 }
 

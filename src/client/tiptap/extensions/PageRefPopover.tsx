@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileText } from 'lucide-react';
 import {
   FieldLabel,
@@ -8,7 +8,7 @@ import {
   SelectInput,
   TextInput,
 } from '../../ui/Popover.js';
-import { usePageAutocomplete, usePageLinks } from '../../hooks/usePageLinks.js';
+import { usePageAutocomplete } from '../../hooks/usePageLinks.js';
 import type { PageRefSyntax } from './PageRefNode.js';
 
 const PAGE_REF_POPOVER_EVENT = 'c4s:page-ref-popover-open';
@@ -88,12 +88,9 @@ function PageRefPopoverForm({
 
   const autocomplete = usePageAutocomplete(path, 8);
   const suggestions = autocomplete.data?.suggestions ?? [];
-  const pageLinks = usePageLinks();
 
-  const anchorsForPath = useMemo(() => {
-    // Anchor list is not yet exposed through /api/page-links; fall back to empty list (free-form input).
-    return [] as string[];
-  }, [pageLinks.data, path]);
+  // Anchor list is not yet exposed through /api/page-links — free-form input only.
+  const anchorsForPath: string[] = [];
 
   useEffect(() => {
     const t = window.setTimeout(() => firstRef.current?.focus(), 0);

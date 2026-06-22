@@ -6,6 +6,7 @@ import type {
   PlanExecuteMode,
   PlanExecuteResult,
   PlanListItem,
+  PlanThreadItem,
   PlanVersion,
   PlanVersionMeta,
 } from '../../shared/entities.js';
@@ -16,6 +17,7 @@ const keys = {
   list: (opts: { search?: string; limit?: number; offset?: number } | undefined) =>
     ['plans-list', opts ?? {}] as const,
   byThread: (threadId: string) => ['plan', 'by-thread', threadId] as const,
+  threads: (planId: number) => ['plan', 'threads', planId] as const,
   detail: (planId: number) => ['plan', 'detail', planId] as const,
   versions: (planId: number) => ['plan', 'versions', planId] as const,
   version: (planId: number, version: number) =>
@@ -69,6 +71,24 @@ export function usePlan(planId: number | null) {
     queryFn: async () => {
       const body = await fetchJson<Envelope<PlanDetailResponse>>(
         `/api/plans/${planId}`,
+      );
+      return body.data;
+    },
+    enabled: planId !== null,
+  });
+}
+
+/**
+ * P2: a plan's attached threads via the dedicated `GET /api/plans/:planId/threads`
+ * projection — independent of the paginated `GET /api/threads` list, so PlanPage's
+ * "Used by N threads" dropdown shows every attached thread regardless of pagination.
+ */
+export function usePlanThreads(planId: number | null) {
+  return useQuery({
+    queryKey: planId === null ? ['plan', 'threads', 'none'] : keys.threads(planId),
+    queryFn: async () => {
+      const body = await fetchJson<Envelope<PlanThreadItem[]>>(
+        `/api/plans/${planId}/threads`,
       );
       return body.data;
     },
@@ -200,6 +220,7 @@ export function useCreateThreadFromPlan() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.planId) });
+      qc.invalidateQueries({ queryKey: keys.threads(vars.planId) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
       qc.invalidateQueries({ queryKey: ['threads'] });
     },
@@ -226,6 +247,7 @@ export function useExecutePlan() {
     },
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.planId) });
+      qc.invalidateQueries({ queryKey: keys.threads(vars.planId) });
       qc.invalidateQueries({ queryKey: ['threads'] });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },

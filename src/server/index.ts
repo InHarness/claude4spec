@@ -228,6 +228,22 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const app = express();
   app.use(express.json({ limit: '2mb' }));
 
+  // DIAGNOSTIC (perf): true server-side handler duration per /api request. In dev
+  // the app and Vite share one origin/event loop, so DevTools "Time" conflates
+  // server time with browser connection-queue/stall — this log shows the real
+  // handler ms. Gated on C4S_TIMING=1 so it's silent unless explicitly enabled.
+  if (process.env.C4S_TIMING === '1') {
+    app.use((req, res, next) => {
+      if (!req.originalUrl.startsWith('/api')) return next();
+      const startedAt = performance.now();
+      res.on('finish', () => {
+        const ms = Math.round(performance.now() - startedAt);
+        console.log(`[timing] ${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms`);
+      });
+      next();
+    });
+  }
+
   // M31: workspace registry — DB lives in the workspace slot, not the project dir.
   const registry = new WorkspaceRegistry();
   const workspace =

@@ -9,6 +9,7 @@ import type {
   PlanExecuteMode,
   PlanExecuteResult,
   PlanListItem,
+  PlanThreadItem,
   PlanVersion,
   PlanVersionMeta,
 } from '../../shared/entities.js';
@@ -176,6 +177,22 @@ export class PlanService {
       )
       .get(planId) as { id: string } | undefined;
     return row?.id ?? null;
+  }
+
+  /**
+   * P2: dedicated projection of a plan's threads for PlanPage. Bounded by the
+   * threads attached to ONE plan (small), so no pagination — and independent of
+   * the paginated `GET /api/threads` list, which PlanPage no longer filters.
+   */
+  listThreadsForPlan(planId: number): PlanThreadItem[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, title, updated_at FROM chat_thread
+          WHERE plan_id = ? AND parent_thread_id IS NULL
+          ORDER BY updated_at DESC`
+      )
+      .all(planId) as Array<{ id: string; title: string | null; updated_at: string }>;
+    return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
   }
 
   updatePlanTitle(planId: number, title: string | null): Plan {

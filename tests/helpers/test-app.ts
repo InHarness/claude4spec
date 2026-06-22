@@ -80,7 +80,7 @@ export async function createTestApp(): Promise<TestApp> {
     registerMcpServer: (name, server) => host.registerMcpServer(name, server),
     registerEntityService: (type, service) => host.registerEntityService(type, service),
   });
-  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore));
+  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader));
   const planService = new PlanService(db, ws, new ChatService(db));
   router.use('/plans', plansRouter(planService));
   router.use(errorHandler);

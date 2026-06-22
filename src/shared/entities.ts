@@ -14,6 +14,13 @@ export type EntityType =
 export type ChangedBy = 'user' | 'agent';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/**
+ * Response of `GET /api/entities/counts` (spec DTO `entity-counts-response`):
+ * a map of entity type → row count, feeding the sidebar ELEMENTS badges so a
+ * page view doesn't fetch full entity lists just to read their length.
+ */
+export type EntityCountsResponse = Record<string, number>;
+
 export type EndpointDtoRelation = 'request' | 'response' | 'error';
 
 export interface EndpointDtoLink {
@@ -849,6 +856,18 @@ export interface PlanListItem {
   currentVersion: number;
   threadCount: number;
   lastThreadId: string | null;
+  updatedAt: string;
+}
+
+/**
+ * Lightweight projection of a thread attached to a plan, served by
+ * `GET /api/plans/:planId/threads`. PlanPage uses this dedicated projection
+ * (not the paginated `GET /api/threads` list) so its "Used by N threads"
+ * dropdown is unaffected by thread-list pagination.
+ */
+export interface PlanThreadItem {
+  id: string;
+  title: string | null;
   updatedAt: string;
 }
 

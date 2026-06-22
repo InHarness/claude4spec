@@ -16,9 +16,16 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
   // M31: per-project adapter registry via agentDeps.
   const { activeAdapters } = deps;
 
-  router.get('/', (_req, res, next) => {
+  router.get('/', (req, res, next) => {
     try {
-      res.json({ data: chat.listThreads() });
+      // P2: default-limited list (last 20, updated_at DESC). The client paginates
+      // via offset and infers "more" from `data.length === limit`. Default limit
+      // applies even when the param is omitted, so the endpoint never dumps all rows.
+      const limitRaw = Number(req.query.limit);
+      const offsetRaw = Number(req.query.offset);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 20;
+      const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.floor(offsetRaw) : 0;
+      res.json({ data: chat.listThreads(limit, offset) });
     } catch (err) {
       next(err);
     }

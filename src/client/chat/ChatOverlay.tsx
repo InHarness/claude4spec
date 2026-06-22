@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from 'react';
 import { apiFetch } from '../lib/api-core.js';
 import { useMatches, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock } from 'lucide-react';
+import { Send, Square, X, Plus, MessageSquare, ChevronDown, FileText, FileWarning, Cpu, Trash2, ClipboardList, Clock, Loader2 } from 'lucide-react';
 import { batchToolBlocks } from '@inharness-ai/agent-chat';
 import { useChatStore, thinkingToConfig, configToThinking, isAdaptiveModel, isChatModel, type ChatModel, type ChatThinking } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { ResizeHandle } from '../components/ResizeHandle.js';
 import { useChat } from './useChat.js';
-import { useThreadList } from './useThreadList.js';
+import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
 import { TransagentPanel } from './TransagentPanel.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
@@ -110,6 +110,7 @@ export function ChatOverlay() {
     cancelQueued,
     clearQueue,
     transagents,
+    activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
     onThreadCreated,
@@ -124,8 +125,13 @@ export function ChatOverlay() {
   // przez resume SSE). Steruje widocznoscia „streaming…" badge, Stop buttona i disabled inputu.
   const isBusy = isStreaming || isResuming;
 
-  const threadList = useThreadList();
-  const activeThread = threadList.threads.find((t) => t.id === chatThreadId) ?? null;
+  const threadList = useThreadListContext();
+  // Prefer the thread from the (paginated) list when it's loaded — it stays reactive to
+  // renames — but fall back to the meta fetched by GET /api/threads/:id so the header and
+  // model-lock controls work for active threads beyond page 1 (which aren't in the list).
+  const activeThread =
+    threadList.threads.find((t) => t.id === chatThreadId) ??
+    (activeThreadMeta?.id === chatThreadId ? activeThreadMeta : null);
   // M05 session-lock: which fields freeze once a thread has a session. Declared by the
   // adapter package, served via GET /api/chat/config (not hardcoded in the UI).
   const { data: chatConfig } = useQuery({ queryKey: ['chat-config'], queryFn: () => chatConfigApi.get() });
@@ -443,6 +449,8 @@ export function ChatOverlay() {
             <ThreadDropdown
               threads={threadList.threads}
               activeId={chatThreadId}
+              hasMore={threadList.hasMore}
+              loadingMore={threadList.loadingMore}
               onSelect={(id) => {
                 setChatThreadId(id);
                 setThreadsOpen(false);
@@ -452,6 +460,7 @@ export function ChatOverlay() {
                 await threadList.deleteThread(id);
                 if (id === chatThreadId) setChatThreadId(null);
               }}
+              onLoadMore={threadList.loadMore}
               onClose={() => setThreadsOpen(false)}
             />
           )}
@@ -806,13 +815,16 @@ function IconBtn({
 interface ThreadDropdownProps {
   threads: import('../../shared/entities.js').ChatThreadMeta[];
   activeId: string | null;
+  hasMore: boolean;
+  loadingMore: boolean;
   onSelect(id: string): void;
   onCreate(): void;
   onDelete(id: string): void;
+  onLoadMore(): void;
   onClose(): void;
 }
 
-function ThreadDropdown({ threads, activeId, onSelect, onCreate, onDelete, onClose }: ThreadDropdownProps) {
+function ThreadDropdown({ threads, activeId, hasMore, loadingMore, onSelect, onCreate, onDelete, onLoadMore, onClose }: ThreadDropdownProps) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -821,6 +833,14 @@ function ThreadDropdown({ threads, activeId, onSelect, onCreate, onDelete, onClo
     window.addEventListener('mousedown', onDown);
     return () => window.removeEventListener('mousedown', onDown);
   }, [onClose]);
+
+  // Infinite scroll: fetch the next page when scrolled near the bottom. useThreadList
+  // serializes/guards loadMore, so firing on every qualifying scroll event is safe.
+  const onScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!hasMore) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) onLoadMore();
+  };
 
   return (
     <div
@@ -846,7 +866,7 @@ function ThreadDropdown({ threads, activeId, onSelect, onCreate, onDelete, onClo
           <Plus size={12} /> New conversation
         </button>
       </div>
-      <div className="max-h-80 overflow-auto nice-scroll py-1">
+      <div className="max-h-80 overflow-auto nice-scroll py-1" onScroll={onScroll}>
         {threads.length === 0 && (
           <div className="px-3 py-3 text-[12px]" style={{ color: 'var(--c-muted)' }}>
             No previous conversations.
@@ -895,6 +915,15 @@ function ThreadDropdown({ threads, activeId, onSelect, onCreate, onDelete, onClo
             </div>
           );
         })}
+        {loadingMore && (
+          <div
+            className="flex items-center justify-center gap-2 px-3 py-2 text-[11px]"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            <Loader2 size={12} className="animate-spin" />
+            Loading more…
+          </div>
+        )}
       </div>
     </div>
   );

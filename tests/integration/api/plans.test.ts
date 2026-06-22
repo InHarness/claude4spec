@@ -65,3 +65,34 @@ describe('GET /api/plans', () => {
     expect(plans[1].lastThreadId).toBeNull();
   });
 });
+
+describe('GET /api/plans/:planId/threads', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('returns the plan threads (PlanThreadItem) DESC by updated_at, excluding child threads', async () => {
+    const planId = seedPlan(t.db, 'P2 plan', 'body');
+    t.db
+      .prepare(
+        `INSERT INTO chat_thread (id, title, plan_id, parent_thread_id, created_at, updated_at)
+         VALUES ('th-old',   'old',   ?, NULL,      datetime('now','-2 hour'), datetime('now','-2 hour')),
+                ('th-new',   'new',   ?, NULL,      datetime('now'),           datetime('now')),
+                ('th-child', 'child', ?, 'th-new',  datetime('now'),           datetime('now'))`,
+      )
+      .run(planId, planId, planId);
+
+    const res = await request(t.app).get(`/api/plans/${planId}/threads`);
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((x: { id: string }) => x.id)).toEqual(['th-new', 'th-old']);
+    expect(res.body.data[0]).toEqual({ id: 'th-new', title: 'new', updatedAt: expect.any(String) });
+  });
+
+  it('404s for a missing plan', async () => {
+    const res = await request(t.app).get('/api/plans/9999/threads');
+    expect(res.status).toBe(404);
+  });
+});

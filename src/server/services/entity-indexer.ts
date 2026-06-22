@@ -79,9 +79,16 @@ export class EntityIndexerService {
   // ─── boot full rebuild ────────────────────────────────────────────────────
 
   async indexAll(): Promise<void> {
-    // Clear the derived entity/tag/junction tables (children before parents),
-    // then rebuild from the files. entity_version (the log) and
-    // section_entity_link (derived from pages) are NOT cleared.
+    const startedAt = performance.now();
+    let count = 0;
+    // ONE transaction for the whole rebuild: clear the derived entity/tag/junction
+    // tables (children before parents), then rebuild from the files. The inner
+    // per-entity `db.transaction()` (service upserts, indexTagsFile) nest as
+    // SAVEPOINTs, so a bad file still rolls back just its own savepoint (M29 edge
+    // m29edge1: skip + warn, the rest continues) while everything else commits with a
+    // SINGLE WAL fsync instead of one per entity — the dominant cost of the build.
+    // entity_version (the log) and section_entity_link (derived from pages) are NOT
+    // cleared. The whole restore chain is synchronous, so it fits in one transaction.
     this.db
       .transaction(() => {
         this.db.exec(
@@ -96,17 +103,16 @@ export class EntityIndexerService {
            DELETE FROM diagram;
            DELETE FROM tag;`,
         );
+        this.indexTagsFile(); // tags first — so entity tag refs resolve to real rows
+        for (const type of DEP_ORDER) {
+          if (!this.host.getEntity(type)) continue; // inactive type → files kept, not indexed
+          for (const slug of this.store.listType(type)) {
+            if (this.indexEntity(type, slug, false)) count += 1;
+          }
+        }
       })();
-
-    this.indexTagsFile(); // tags first — so entity tag refs resolve to real rows
-    let count = 0;
-    for (const type of DEP_ORDER) {
-      if (!this.host.getEntity(type)) continue; // inactive type → files kept, not indexed
-      for (const slug of this.store.listType(type)) {
-        if (this.indexEntity(type, slug, false)) count += 1;
-      }
-    }
-    console.log(`[entity-indexer] indexed ${count} entities from ${this.store.root}`);
+    const ms = Math.round(performance.now() - startedAt);
+    console.log(`[entity-indexer] indexed ${count} entities from ${this.store.root} in ${ms}ms`);
   }
 
   // ─── incremental (file-watch) ─────────────────────────────────────────────

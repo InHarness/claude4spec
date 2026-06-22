@@ -84,6 +84,20 @@ export interface QueuedMessageRecord {
 /** Hard cap on pending queued messages per thread (→ 400 QUEUE_FULL). */
 export const QUEUE_LIMIT = 20;
 
+/**
+ * Column list for thread *list* projections (ChatThreadMeta). Deliberately omits
+ * the potentially-large `initial_system_prompt` blob (up to ~85 KB/row, ~10 MB
+ * across this DB) — a list only needs the boolean `has_system_prompt`; the full
+ * prompt is fetched on demand elsewhere. Mirrors exactly the fields
+ * `hydrateThread()` reads, so the `as ChatThreadRow` cast stays sound.
+ */
+const THREAD_META_COLUMNS = `t.id, t.title, t.last_session_id,
+        t.initial_architecture_config_json, t.current_todo_items, t.plan_mode,
+        t.last_usage_json, t.last_context_size, t.plan_id, t.last_seen_plan_version,
+        t.context_type, t.brief_path, t.patch_path, t.parent_thread_id,
+        t.spawned_by_tool_use_id, t.created_at, t.updated_at,
+        (t.initial_system_prompt IS NOT NULL) AS has_system_prompt`;
+
 export class ChatService {
   constructor(private db: Database.Database) {}
 
@@ -125,14 +139,11 @@ export class ChatService {
   listThreadsForBrief(briefPath: string): ChatThreadMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT t.*,
-                COUNT(m.id) AS message_count,
-                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+        `SELECT ${THREAD_META_COLUMNS},
+                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
            FROM chat_thread t
-           LEFT JOIN chat_message m ON m.thread_id = t.id
           WHERE t.brief_path = ? AND t.context_type = 'brief'
             AND t.parent_thread_id IS NULL
-          GROUP BY t.id
           ORDER BY t.updated_at DESC`,
       )
       .all(briefPath) as Array<ChatThreadRow & { message_count: number }>;
@@ -146,14 +157,11 @@ export class ChatService {
   listThreadsForPatch(patchPath: string): ChatThreadMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT t.*,
-                COUNT(m.id) AS message_count,
-                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+        `SELECT ${THREAD_META_COLUMNS},
+                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
            FROM chat_thread t
-           LEFT JOIN chat_message m ON m.thread_id = t.id
           WHERE t.patch_path = ? AND t.context_type = 'patch'
             AND t.parent_thread_id IS NULL
-          GROUP BY t.id
           ORDER BY t.updated_at DESC`,
       )
       .all(patchPath) as Array<ChatThreadRow & { message_count: number }>;
@@ -202,19 +210,17 @@ export class ChatService {
     return row ? this.hydrateThread(row) : null;
   }
 
-  listThreads(): ChatThreadMeta[] {
+  listThreads(limit = 20, offset = 0): ChatThreadMeta[] {
     const rows = this.db
       .prepare(
-        `SELECT t.*,
-                COUNT(m.id) AS message_count,
-                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt
+        `SELECT ${THREAD_META_COLUMNS},
+                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
            FROM chat_thread t
-           LEFT JOIN chat_message m ON m.thread_id = t.id
           WHERE t.parent_thread_id IS NULL
-          GROUP BY t.id
-          ORDER BY t.updated_at DESC`
+          ORDER BY t.updated_at DESC
+          LIMIT ? OFFSET ?`
       )
-      .all() as Array<ChatThreadRow & { message_count: number }>;
+      .all(limit, offset) as Array<ChatThreadRow & { message_count: number }>;
     return rows.map((r) => ({
       ...this.hydrateThread(r),
       messageCount: r.message_count,

@@ -3,10 +3,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { MessageSquare, Pencil, Users } from 'lucide-react';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
-import { useThreadList } from '../chat/useThreadList.js';
 import {
   usePlan,
   usePlanBlame,
+  usePlanThreads,
   useSavePlan,
   useExecutePlan,
   useUpdatePlanTitle,
@@ -32,19 +32,13 @@ export function PlanPage({ planId }: Props) {
   const savePlan = useSavePlan();
   const executePlan = useExecutePlan();
   const updateTitle = useUpdatePlanTitle();
-  const threadList = useThreadList();
+  // P2: a plan's threads come from the dedicated GET /api/plans/:planId/threads
+  // projection, not from filtering the paginated GET /api/threads list.
+  const { data: attachedThreads = [] } = usePlanThreads(planId);
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const activeChatThreadId = useChatStore((s) => s.chatThreadId);
-
-  const attachedThreads = useMemo(
-    () =>
-      plan
-        ? threadList.threads.filter((t) => t.planId === plan.id)
-        : [],
-    [threadList.threads, plan],
-  );
 
   // Mode='continue' uses currently-open chat thread if it references THIS plan,
   // else falls back to the most recent attached thread.
@@ -101,7 +95,7 @@ export function PlanPage({ planId }: Props) {
           threadId: threadIdForContinue,
         });
         setError(null);
-        await threadList.refresh();
+        // The thread list / plan-threads queries are invalidated by useExecutePlan.
 
         if (result.mode === 'new-session') {
           setChatThreadId(result.newThreadId);
@@ -123,7 +117,6 @@ export function PlanPage({ planId }: Props) {
     [
       plan,
       executePlan,
-      threadList,
       setChatThreadId,
       setChatOpen,
       navigate,
