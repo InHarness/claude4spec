@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.21] - 2026-06-22
+
+### Added
+- Transagents — agents can now delegate work to nested child threads. A new `TransagentDispatcher` and `transagent-tools` MCP server manage parent→child thread relationships (migration `041`), and the client renders child activity in a dedicated `TransagentPanel` inside `ChatOverlay`, with `useChat` tracking child-thread start/complete state.
+- Pagination and summary options for the `release-tools` MCP server — `release_list` and `release_show` accept `limit`/`offset`, and `release_diff` gains a `summaryOnly` mode that returns a light delta map (identifiers + operation types only, no full snapshots).
+
+### Changed
+- `c4s-brief-implementer` skill now documents pointing `c4s ask` at the symlinked spec dir via `--project .claude/skills/specyfikacja` (and warns against `cd`-ing into it, which resolves to the real path → `PROJECT_NOT_FOUND`).
+
+### Fixed
+- Chat thread-list over-fetch and frontend refetch storm. Server-side, `listThreads`/`forBrief`/`forPatch` drop the `LEFT JOIN chat_message + GROUP BY` (which aggregated `COUNT` over the full message table before `LIMIT`) for a correlated indexed `COUNT` subquery and a shared column list that omits the large `initial_system_prompt` blob — ~1962ms → ~10ms on a 506-thread/37k-message DB. `entity-indexer.indexAll` now rebuilds inside one transaction (~2s → ~117ms). Frontend uses a single shared `ThreadListProvider` with an in-flight guard, pagination, and a light `/entities/counts` aggregate replacing five full entity-list fetches.
+
 ## [1.0.20] - 2026-06-19
 
 ### Added
@@ -214,6 +226,7 @@ Initial public release.
 - Acceptance Criteria entity and tooling.
 - Briefs and patches workflow for spec-driven implementation.
 
+[1.0.21]: https://github.com/InHarness/claude4spec/compare/v1.0.20...v1.0.21
 [1.0.20]: https://github.com/InHarness/claude4spec/compare/v1.0.19...v1.0.20
 [1.0.19]: https://github.com/InHarness/claude4spec/compare/v1.0.18...v1.0.19
 [1.0.18]: https://github.com/InHarness/claude4spec/compare/v1.0.17...v1.0.18
