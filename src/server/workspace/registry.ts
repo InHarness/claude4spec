@@ -209,6 +209,30 @@ export class WorkspaceRegistry {
   }
 
   /**
+   * M33 phase 2: read the machine-local plugin-trust decision for one project.
+   * `undefined` = undecided (the loader shows a trust prompt on first open).
+   */
+  getProjectTrust(ws: WorkspaceRecord, id: string): boolean | undefined {
+    return this.getProject(ws, id)?.trustProjectPlugins;
+  }
+
+  /**
+   * M33 phase 2: persist the plugin-trust decision per `(workspace × project)`.
+   * Lives in `~/.claude4spec/workspaces.json`, NEVER in the repo. The caller is
+   * expected to trigger a `ProjectContext` rebuild so the overlay (un)loads
+   * without a process restart.
+   */
+  setProjectTrust(ws: WorkspaceRecord, id: string, value: boolean): void {
+    this.withLock((data) => {
+      const target = data.workspaces.find((w) => w.name === ws.name);
+      if (!target) return null;
+      const p = target.projects.find((x) => x.id === id);
+      if (p) p.trustProjectPlugins = value;
+      return null;
+    });
+  }
+
+  /**
    * Carry of config-v3 harvested values — first-wins: only fills the workspace
    * when registry creation predated knowing them. A dropped port logs a warn.
    */

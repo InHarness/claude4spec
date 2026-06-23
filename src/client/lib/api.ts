@@ -285,9 +285,46 @@ export const versionsApi = {
   },
 };
 
+/** One package row in the per-project `/_meta/plugins` diagnostics (M33 phase 2). */
+export interface PluginPackageRecord {
+  package: string;
+  status: 'loaded' | 'skipped' | 'failed';
+  code?: string;
+  reason?: string;
+  manifestName?: string;
+  manifestVersion?: string;
+  contributedTypes?: string[];
+  layer?: 'base' | 'overlay';
+  trust?: 'trusted' | 'untrusted';
+  origin?: string;
+}
+
+/** Per-project plugin diagnostics: base ∪ overlay packages + trust + shadow report. */
+export interface ProjectPluginsMeta {
+  hostApiVersion: string;
+  localPluginsPresent: boolean;
+  trust: boolean | undefined;
+  packages: PluginPackageRecord[];
+  shadowed: { type: string; overlayOrigin: string; baseOrigin: string }[];
+}
+
 export const metaApi = {
   async entities(): Promise<PluginActivationState> {
     return handle<PluginActivationState>(await apiFetch('/api/_meta/entities'));
+  },
+  /** M33 phase 2: per-project plugin pool (base/overlay), trust, shadowed types. */
+  async plugins(): Promise<ProjectPluginsMeta> {
+    return handle<ProjectPluginsMeta>(await apiFetch('/api/_meta/plugins'));
+  },
+  /** M33 phase 2: persist the project-local plugin trust decision (rebuilds the context). */
+  async setTrustPlugins(trust: boolean): Promise<{ trust: boolean }> {
+    return handle<{ trust: boolean }>(
+      await apiFetch('/api/trust-plugins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trust }),
+      }),
+    );
   },
 };
 

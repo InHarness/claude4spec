@@ -302,6 +302,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     return buildProjectContext({
       registry,
       pluginRegistry,
+      pluginRecords: pluginLoad.records,
       workspace,
       cwd: project.cwd,
       gateway,

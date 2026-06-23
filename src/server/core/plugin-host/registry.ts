@@ -5,7 +5,12 @@
  * producing one ProjectPluginHost per project context.
  */
 
-import type { BackendModule, PluginRegistry, ProjectPluginHost } from './types.js';
+import type {
+  BackendModule,
+  PluginRegistry,
+  ProjectPluginHost,
+  ProjectPluginOverlay,
+} from './types.js';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
 import { PluginManifestError, lowerEntityContribution } from './manifest-adapter.js';
@@ -50,7 +55,10 @@ export class PluginRegistryImpl implements PluginRegistry {
     return this.modules.get(type) ?? null;
   }
 
-  consolidate(activeWhitelist: string[] | null | undefined): ProjectPluginHost {
-    return new ProjectPluginHostImpl(this, activeWhitelist);
+  consolidate(
+    config: { entities?: string[] } | null | undefined,
+    overlay?: ProjectPluginOverlay,
+  ): ProjectPluginHost {
+    return new ProjectPluginHostImpl(this, config?.entities, overlay);
   }
 }

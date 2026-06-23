@@ -21,5 +21,6 @@ export async function buildCliSerializationEngineAsync(
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
   await loadWorkspacePlugins(pluginRegistry, packageNames);
-  return new SerializationEngine(pluginRegistry.consolidate(undefined), sectionSerializer);
+  // CLI applies no whitelist and no project-local overlay (read-only parity).
+  return new SerializationEngine(pluginRegistry.consolidate({}), sectionSerializer);
 }

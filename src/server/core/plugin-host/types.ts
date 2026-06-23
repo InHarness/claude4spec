@@ -111,6 +111,28 @@ export interface BackendModule extends EntityModuleManifest {
 }
 
 /**
+ * M33 phase 2: per-`ProjectContext` overlay of project-local plugins loaded
+ * from `<cwd>/.claude4spec/plugins/` (behind the `trustProjectPlugins` gate).
+ * The overlay is relative to the project — two projects in one process carry
+ * different overlays. `listLocal()` returns already-validated, trust-gated
+ * modules; `origin(type)` maps a type back to its source path under
+ * `.claude4spec/plugins/` for diagnostics (shadow report).
+ */
+export interface ProjectPluginOverlay {
+  /** Project-local modules of THIS project (post validation + trust gate). */
+  listLocal(): BackendModule[];
+  /** Source path under `<cwd>/.claude4spec/plugins/` for the given type. */
+  origin(type: string): string;
+}
+
+/** One overlay type that shadows a same-named base type (cross-layer collision). */
+export interface ShadowedType {
+  type: string;
+  /** Source path of the overlay module that won. */
+  overlayOrigin: string;
+}
+
+/**
  * M31 split: process-immutable plugin catalog. Populated once at process
  * start via `registerAllPlugins(registry)`; `consolidate` is a PURE factory —
  * it derives a per-project ProjectPluginHost and mutates nothing here.
@@ -135,10 +157,16 @@ export interface PluginRegistry {
   getAvailable(type: string): BackendModule | null;
 
   /**
-   * Derive a per-project host from config.entities. Pass undefined / null =
-   * all available are active (v1 backward compat). No side effects.
+   * Derive a per-project host. The effective pool is `base ∪ overlay`
+   * (phase 2); the `config.entities` whitelist is applied to that merged pool,
+   * not to the base alone. `config.entities === undefined` ⇒ all available
+   * active (v1 backward compat). `overlay === undefined` ⇒ effective pool =
+   * base (parity with phase 1). No side effects.
    */
-  consolidate(activeWhitelist: string[] | null | undefined): ProjectPluginHost;
+  consolidate(
+    config: { entities?: string[] } | null | undefined,
+    overlay?: ProjectPluginOverlay,
+  ): ProjectPluginHost;
 }
 
 /** Plugin self-registration hook — exported by each entities/*\/plugin.ts. */
@@ -161,6 +189,13 @@ export interface ProjectPluginHost {
 
   /** Activation snapshot — input for GET /_meta/entities. (Rename of `state()`.) */
   partition(): PluginActivationState;
+
+  /**
+   * M33 phase 2: overlay types that shadow a same-named base type. Empty when
+   * there is no overlay or no cross-layer collision. Feeds the per-project
+   * `/_meta/plugins` shadow report and the M19 consistency check.
+   */
+  shadowReport(): ShadowedType[];
 
   /**
    * Mount every active backend module into the supplied Express app + the
