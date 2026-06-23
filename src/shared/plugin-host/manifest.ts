@@ -1,5 +1,5 @@
 /**
- * M33 — runtime plugin manifest contract (phase 1).
+ * M33 — runtime plugin manifest contract.
  *
  * A plugin is an npm package that default-exports (or named-exports as
  * `manifest`) a {@link PluginManifest}. The host loader (`loadWorkspacePlugins`)
@@ -24,16 +24,15 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * skipped with a warning (never crashed over) — on the backend during load and
  * independently on the frontend during manifest consumption.
  *
- * Phase 3 (`2.0.0`): MAJOR bump. `onUnregister` is now a REQUIRED manifest slot
- * (the hot-reload pipeline calls it to tear the old version down before
- * re-registering the new one) — making a slot required is a breaking shape
- * change, hence the major. A plugin built against `^1.x` no longer satisfies
- * `2.0.0` and is reported `incompatible` with a migration descriptor (vs the
- * environment-level `skipped` for an `engines` miss). Additive same-major slots
- * (`contributes.settings`, `contributes.commands`) would have been a minor bump
- * on their own.
+ * `1.0.0` is the initial baseline: no major has been crossed yet, so the Host
+ * API changelog (see `host-api.ts`) is empty. Versioning rule going forward —
+ * additive same-major slots (`contributes.settings`, `contributes.commands`)
+ * are a minor bump; a breaking slot-shape change is a major bump WITH a
+ * descriptor in the changelog. A plugin built against a different major is
+ * reported `incompatible` with a migration descriptor (vs the environment-level
+ * `skipped` for an `engines` miss).
  */
-export const HOST_API_VERSION = '2.0.0';
+export const HOST_API_VERSION = '1.0.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {
@@ -99,7 +98,7 @@ export interface WritingStyleContribution {
 }
 
 /**
- * M33 phase 3 — one settings field a plugin renders in its own Settings section
+ * M33 — one settings field a plugin renders in its own Settings section
  * (panel M26), values stored under `config.plugins[<manifest.name>][key]`.
  * `kind` drives the reload classification on write:
  *   - `hot-reload` → only `invalidateQueries(['config'])`, no context rebuild
@@ -126,7 +125,7 @@ export interface PluginSettingField {
 export type PluginSettingsModule = PluginSettingField[];
 
 /**
- * M33 phase 3 — declarative editor slash-command contributed by a plugin
+ * M33 — declarative editor slash-command contributed by a plugin
  * (typically an entity-less one). The loader normalizes each entry into an
  * `EditorExtensionRegistration.slashCommand` and routes it through
  * `registerEditorExtension(...)` — the SAME path as entity-borne extensions.
@@ -150,35 +149,35 @@ export interface PluginCommandContribution {
 
 /**
  * The default export of a plugin package. `contributes` is the capability
- * bundle: `contributes.entities` (phase 1), `contributes.writingStyles`
- * (phase 2 — pushed into the SkillRegistry as `source: "plugin"`), and
- * `contributes.settings` / `contributes.commands` (phase 3).
+ * bundle: `contributes.entities`, `contributes.writingStyles` (pushed into the
+ * SkillRegistry as `source: "plugin"`), and
+ * `contributes.settings` / `contributes.commands`.
  */
 export interface PluginManifest {
   /** npm package name. */
   name: string;
   /** plugin semver. */
   version: string;
-  /** semver range — which Host API the plugin targets, e.g. "^2.0.0". */
+  /** semver range — which Host API the plugin targets, e.g. "^1.0.0". */
   hostApiVersion: string;
   /** node/host engine constraints. */
   engines?: PluginEngines;
   /**
-   * M33 phase 3 — REQUIRED teardown hook, symmetric to backend mount. The
-   * hot-reload pipeline calls it on the OLD version before registering the new
-   * one; without it a reload would leave duplicated slots (MCP server, Express
-   * routes, editor extensions, zustand slice). Must be idempotent and
-   * non-throwing — a thrown error is logged as a warning and never blocks the
-   * reload.
+   * REQUIRED teardown hook, symmetric to backend mount — a required slot from
+   * the `1.0.0` baseline. The hot-reload pipeline calls it on the OLD version
+   * before registering the new one; without it a reload would leave duplicated
+   * slots (MCP server, Express routes, editor extensions, zustand slice). Must
+   * be idempotent and non-throwing — a thrown error is logged as a warning and
+   * never blocks the reload.
    */
   onUnregister(): void;
   contributes: {
     entities?: EntityContribution[];
-    /** M15 phase 2 — writing styles contributed by this plugin. */
+    /** M15 — writing styles contributed by this plugin. */
     writingStyles?: WritingStyleContribution[];
-    /** M33 phase 3 — settings fields rendered per-plugin in Settings (M26). */
+    /** M33 — settings fields rendered per-plugin in Settings (M26). */
     settings?: PluginSettingsModule;
-    /** M33 phase 3 — declarative editor slash-commands (entity-less plugins). */
+    /** M33 — declarative editor slash-commands (entity-less plugins). */
     commands?: PluginCommandContribution[];
   };
 }

@@ -26,7 +26,7 @@ export interface FrontendManifestResponse {
   hostApiVersion: string;
   /** Bare specifier → ESM URL. Externalizes shared peers to host bundle URLs. */
   importMap: Record<string, string>;
-  /** Active plugins to load. Empty in phase 1 (no plugin packages yet). */
+  /** Active plugins to load. Empty (no plugin packages shipped yet). */
   plugins: PluginFrontendEntry[];
   /** Optional host-level precompiled CSS URLs to inject (order preserved). */
   css?: string[];

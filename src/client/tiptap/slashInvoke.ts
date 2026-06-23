@@ -26,7 +26,7 @@ function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
   return [];
 }
 
-/** M33 phase 3: window event a delivered plugin frontend listens for to run its popover. */
+/** M33: window event a delivered plugin frontend listens for to run its popover. */
 export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
 
 export async function invokeSlash(
@@ -34,7 +34,7 @@ export async function invokeSlash(
   command: SlashCommand,
   deps: SlashInvokeDeps,
 ): Promise<void> {
-  // M33 phase 3: a declarative plugin command is executed by the editor
+  // M33: a declarative plugin command is executed by the editor
   // framework dispatching its popover kind — NOT by plugin logic here. The
   // plugin's frontend (delivered separately) listens for this event.
   if (command.pluginPopoverKind) {

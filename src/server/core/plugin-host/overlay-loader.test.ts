@@ -32,7 +32,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@local/c4s-plugin',
     version: '1.0.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^1.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
@@ -136,7 +136,7 @@ describe('overlay-loader', () => {
       fakeImporter({ [url]: { manifest: manifest({ hostApiVersion: '^99.0.0' }) } }),
     );
     expect(res.records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
+    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('1.0.0');
     expect(res.overlay).toBeUndefined();
   });
 

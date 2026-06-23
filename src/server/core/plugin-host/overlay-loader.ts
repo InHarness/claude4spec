@@ -1,5 +1,5 @@
 /**
- * M33 phase 2 — project-local plugin overlay loader.
+ * M33 — project-local plugin overlay loader.
  *
  * The second of the two M33 tracks (the first being the process-global
  * `loadWorkspacePlugins`). This one loads plugins committed into a repo at
@@ -45,7 +45,7 @@ export interface ProjectOverlayResult {
   overlay: ProjectPluginOverlay | undefined;
   /** Per-package diagnostics for the per-project `/_meta/plugins` route. */
   records: PluginLoadRecord[];
-  /** M15 phase 2: trusted project-local writing styles, pushed into SkillRegistry. */
+  /** M15: trusted project-local writing styles, pushed into SkillRegistry. */
   writingStyles: WritingStyleContribution[];
   /** Best-effort detach of imported project-local modules (see dispose note). */
   dispose: () => void;
@@ -139,7 +139,7 @@ export async function loadProjectOverlay(
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
   const writingStyles: WritingStyleContribution[] = [];
-  // M33 phase 3: non-entity capabilities of trusted project-local plugins. An
+  // M33: non-entity capabilities of trusted project-local plugins. An
   // entity-less plugin (commands/settings only) still produces these.
   const settingsSections: PluginSettingsSection[] = [];
   const commands: PluginCommandContribution[] = [];
@@ -219,7 +219,7 @@ export async function loadProjectOverlay(
       originByType.set(m.type, origin);
     }
     writingStyles.push(...styles);
-    // M33 phase 3: capture non-entity capabilities + teardown of this trusted plugin.
+    // M33: capture non-entity capabilities + teardown of this trusted plugin.
     if ((manifest.contributes?.settings ?? []).length > 0) {
       settingsSections.push({
         name: manifest.name,
@@ -245,7 +245,7 @@ export async function loadProjectOverlay(
   }
 
   // Node's ESM registry caches modules by URL — a true unload is not possible.
-  // dispose() runs each plugin's `onUnregister` (M33 phase 3 teardown) then
+  // dispose() runs each plugin's `onUnregister` (M33 teardown) then
   // drops the host-side references (mirrors clearMcpFactories); a rebuild
   // re-imports (cached) fresh manifests. Stateful native handles, if a plugin
   // opens any, are the plugin's own teardown responsibility.
@@ -263,7 +263,7 @@ export async function loadProjectOverlay(
 
   // No capabilities at all ⇒ no overlay host layer, but a plugin may still have
   // contributed writing styles — return those so the caller can push them.
-  // M33 phase 3: an entity-less plugin with only settings/commands DOES produce
+  // M33: an entity-less plugin with only settings/commands DOES produce
   // an overlay so the host surfaces those capabilities (axis B).
   if (modules.size === 0 && settingsSections.length === 0 && commands.length === 0) {
     return { overlay: undefined, records, writingStyles, dispose };

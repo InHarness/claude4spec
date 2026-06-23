@@ -1,5 +1,5 @@
 /**
- * M33 phase 3 — Host API versioning surface: the per-major changelog and the
+ * M33 — Host API versioning surface: the per-major changelog and the
  * migration descriptors a plugin author needs when their package was built
  * against an incompatible major.
  *
@@ -35,19 +35,10 @@ export interface PluginMigrationInfo {
 
 /**
  * The Host API changelog, one entry per breaking change at a major boundary.
- * 2.0.0 made `onUnregister` required (hot-reload teardown) — a `slot-required`
- * change, which has no compat-shim (the author must implement the slot).
+ * Empty at the `1.0.0` baseline — no major has been crossed yet. The first
+ * breaking slot-shape change will add an entry here (and bump the major).
  */
-const HOST_API_CHANGELOG: HostApiMigration[] = [
-  {
-    fromMajor: 1,
-    toMajor: 2,
-    slot: 'onUnregister',
-    kind: 'slot-required',
-    summary:
-      'onUnregister is now a required manifest slot (idempotent, non-throwing) — the hot-reload pipeline calls it to tear the old version down before registering the new one.',
-  },
-];
+const HOST_API_CHANGELOG: HostApiMigration[] = [];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */
 export function rangeMajor(range: string): number | null {
@@ -76,7 +67,8 @@ export function buildMigrationInfo(pluginRange: string): PluginMigrationInfo | n
   return {
     targetHostApiVersion: HOST_API_VERSION,
     migrations,
-    // A slot becoming required cannot be shimmed — the author must implement it.
+    // No shim without descriptors, and a slot becoming required can never be
+    // shimmed (the author must implement it). Empty changelog ⇒ false.
     shimAvailable: migrations.length > 0 && migrations.every((m) => m.kind !== 'slot-required'),
   };
 }

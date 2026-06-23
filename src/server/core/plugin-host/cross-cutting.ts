@@ -1,6 +1,6 @@
 /**
  * Cross-cutting routes owned by the plugin host (M13), mounted on the PER-PROJECT
- * router (so paths resolve under `/api/projects/:id`). Phase 2 adds overlay-aware
+ * router (so paths resolve under `/api/projects/:id`). Provides overlay-aware
  * diagnostics + the machine-local trust gate:
  *
  *   GET  /_meta/entities  → activation partition (active/inactive/unknown)
@@ -66,7 +66,7 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     res.json(host.partition());
   });
 
-  // M33 phase 3: settings/commands of all loaded+trusted plugins in the
+  // M33: settings/commands of all loaded+trusted plugins in the
   // effective pool — axis B, deliberately NOT filtered by `config.entities`
   // (so a plugin's Settings section + slash-commands survive deactivation of
   // its entity types). The Settings panel renders one section per plugin under
@@ -98,7 +98,7 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     res.json(response);
   });
 
-  // M33 phase 2 trust gate. Persists the decision per (workspace × project) in
+  // M33 trust gate. Persists the decision per (workspace × project) in
   // `~/.claude4spec/` (never the repo) and rebuilds the context so the overlay
   // (un)loads without a process restart. The client refetches activation after.
   router.post('/trust-plugins', (req, res) => {

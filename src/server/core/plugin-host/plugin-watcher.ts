@@ -1,5 +1,5 @@
 /**
- * M33 phase 3 — plugin-pool hot-reload watcher.
+ * M33 — plugin-pool hot-reload watcher.
  *
  * The main `PagesWatcher` is rooted OUTSIDE `.claude4spec/`, so plugin sources
  * are watched by this dedicated watcher instead. It is the *mechanism only* —

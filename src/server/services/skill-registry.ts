@@ -11,7 +11,7 @@ export type SkillScope = 'writing-style' | 'contextual';
 
 /**
  * Where a skill was discovered: in-package bundle, a user `.claude/skills` root,
- * or a plugin contribution (M15 phase 2). Selection precedence is
+ * or a plugin contribution (M15). Selection precedence is
  * `project > global > plugin > bundled` — project/global are both `user`
  * (ordered by root scan), `plugin` outranks `bundled` but loses to `user`.
  */
@@ -49,7 +49,7 @@ const FILES_SUBDIRS = ['templates', 'examples', 'workflows'];
 
 export class SkillRegistry {
   private metadataBySlug = new Map<string, SkillMetadata>();
-  // M15 phase 2: plugin-contributed styles carry their body inline (no FS path),
+  // M15: plugin-contributed styles carry their body inline (no FS path),
   // so `resolve()` reads them from here instead of disk.
   private pluginResolved = new Map<string, ResolvedSkill>();
   // Slugs found on disk but dropped during scan (version too high, contextual in a
@@ -122,7 +122,7 @@ export class SkillRegistry {
   }
 
   /**
-   * M15 phase 2: push a plugin-contributed writing style. Precedence
+   * M15: push a plugin-contributed writing style. Precedence
    * `project > global > plugin > bundled`: a `user` style (project/global)
    * already claiming this slug wins and the plugin style is dropped; otherwise
    * the plugin style is registered, overriding any same-slug `bundled` style.

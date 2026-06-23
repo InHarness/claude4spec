@@ -36,8 +36,8 @@ function overlayOf(modules: BackendModule[]): ProjectPluginOverlay {
   };
 }
 
-describe('consolidate — phase-2 overlay', () => {
-  it('overlay undefined ⇒ effective pool = base (phase-1 parity)', () => {
+describe('consolidate — overlay', () => {
+  it('overlay undefined ⇒ effective pool = base', () => {
     const host = baseRegistry('endpoint', 'dto').consolidate({});
     expect(host.listAvailable().map((m) => m.type).sort()).toEqual(['dto', 'endpoint']);
     expect(host.shadowReport()).toEqual([]);

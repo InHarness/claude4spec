@@ -1,5 +1,5 @@
 /**
- * M33 phase 3 — server-free plugin diagnostics for the `c4s plugins` CLI.
+ * M33 — server-free plugin diagnostics for the `c4s plugins` CLI.
  *
  * Runs the SAME bootstrap loader as the server (base packages) + the project's
  * trusted overlay, so `c4s plugins list|status|doctor` report the identical

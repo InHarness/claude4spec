@@ -9,7 +9,7 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@c4s/plugin-with-entity',
     version: '1.0.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^1.0.0',
     onUnregister: () => {},
     contributes: {
       entities: [
@@ -34,7 +34,7 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   };
 }
 
-describe('M33 phase 3 — registry capability records', () => {
+describe('M33 — registry capability records', () => {
   it('retains settings + commands per plugin in listPluginRecords', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
@@ -103,7 +103,7 @@ describe('M33 phase 3 — registry capability records', () => {
   });
 });
 
-describe('M33 phase 3 — host.listSettings / listCommands ignore config.entities', () => {
+describe('M33 — host.listSettings / listCommands ignore config.entities', () => {
   it('surfaces base-plugin settings + commands even when the entity whitelist is empty', () => {
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
@@ -136,7 +136,7 @@ describe('M33 phase 3 — host.listSettings / listCommands ignore config.entitie
     registry.registerPlugin({
       name: '@c4s/no-settings',
       version: '1.0.0',
-      hostApiVersion: '^2.0.0',
+      hostApiVersion: '^1.0.0',
       onUnregister: () => {},
       contributes: {},
     });

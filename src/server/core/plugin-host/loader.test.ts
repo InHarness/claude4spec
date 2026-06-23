@@ -25,7 +25,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@acme/c4s-plugin-glossary',
     version: '1.0.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^1.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
@@ -65,9 +65,9 @@ describe('loadWorkspacePlugins', () => {
 
   it('skips a same-major hostApiVersion that the host cannot satisfy (no migration path)', async () => {
     const registry = new PluginRegistryImpl();
-    // `^2.5.0` needs a newer minor than the 2.0.0 host — unsatisfiable but SAME
+    // `^1.5.0` needs a newer minor than the 1.0.0 host — unsatisfiable but SAME
     // major, so it is `skipped` (not `incompatible`) with no migration descriptor.
-    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^2.5.0' }) } });
+    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^1.5.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-b'], importer);
 
@@ -78,15 +78,16 @@ describe('loadWorkspacePlugins', () => {
 
   it('flags an incompatible MAJOR hostApiVersion as `incompatible` with a migration descriptor', async () => {
     const registry = new PluginRegistryImpl();
-    // `^1.0.0` targets the previous major — incompatible under 2.0.0.
-    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^1.0.0' }) } });
+    // `^2.0.0` targets a different major — incompatible under 1.0.0.
+    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^2.0.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
 
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
-    expect(records[0]?.migration?.migrations.length).toBeGreaterThan(0);
-    expect(records[0]?.migration?.shimAvailable).toBe(false); // onUnregister is slot-required
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('1.0.0');
+    // Empty changelog at the 1.0.0 baseline ⇒ no descriptors and no shim.
+    expect(records[0]?.migration?.migrations).toHaveLength(0);
+    expect(records[0]?.migration?.shimAvailable).toBe(false);
     expect(registry.getAvailable('glossary')).toBeNull();
   });
 

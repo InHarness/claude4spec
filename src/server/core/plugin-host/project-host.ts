@@ -33,8 +33,8 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   private unknownTypes: string[] = [];
   private mcpServerFactories = new Map<string, () => McpServerInstance>();
   private entityServices = new Map<string, unknown>();
-  // Phase 2: project-local modules of THIS context, keyed by type. Empty when
-  // `overlay === undefined` (parity with phase 1).
+  // Project-local modules of THIS context, keyed by type. Empty when
+  // `overlay === undefined` (parity with the base-only case).
   private readonly overlayModules = new Map<string, BackendModule>();
 
   constructor(

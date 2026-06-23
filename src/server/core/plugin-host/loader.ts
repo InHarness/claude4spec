@@ -21,7 +21,7 @@ import { entryCacheBust } from './cache-bust.js';
 import type { PluginRegistry } from './types.js';
 
 /**
- * `incompatible` (M33 phase 3) is distinct from `skipped`: it means the package
+ * `incompatible` (M33) is distinct from `skipped`: it means the package
  * was built against an incompatible MAJOR Host API and carries a `migration`
  * descriptor (a repair path), whereas `skipped` is an environment problem (an
  * `engines` miss) with no migration path.
@@ -33,7 +33,7 @@ export type PluginLoadCode =
   | 'PLUGIN_ENGINE_UNSATISFIED'
   | 'PLUGIN_IMPORT_FAILED'
   | 'PLUGIN_INVALID_MANIFEST'
-  // Phase 2 (overlay layer):
+  // Overlay layer:
   | 'PLUGIN_TYPE_CONFLICT'
   | 'PLUGIN_PROJECT_UNTRUSTED';
 
@@ -41,9 +41,9 @@ export type PluginLoadCode =
 export type PluginLayer = 'base' | 'overlay';
 
 /**
- * Per-package outcome. Phase 2 adds `layer` (base/overlay), `trust`, `origin`
+ * Per-package outcome. Adds `layer` (base/overlay), `trust`, `origin`
  * (project-local source path), and `shadows`/`shadowedTypes` — all optional so
- * phase-1 base records keep their shape.
+ * base records keep their shape.
  */
 export interface PluginLoadRecord {
   /** Source identifier: the npm package name, or a synthetic id for built-ins. */
@@ -57,14 +57,14 @@ export interface PluginLoadRecord {
   manifestVersion?: string;
   /** Entity types this package contributed (only when `loaded`). */
   contributedTypes?: string[];
-  /** Phase 2: which layer this record came from. */
+  /** Which layer this record came from (base/overlay). */
   layer?: PluginLayer;
-  /** Phase 2: trust state of the project-local layer (overlay only). */
+  /** Trust state of the project-local layer (overlay only). */
   trust?: 'trusted' | 'untrusted';
-  /** Phase 2: source path under `<cwd>/.claude4spec/plugins/` (overlay only). */
+  /** Source path under `<cwd>/.claude4spec/plugins/` (overlay only). */
   origin?: string;
   /**
-   * M33 phase 3: present on `incompatible` records — the repair path (target
+   * M33: present on `incompatible` records — the repair path (target
    * Host API version, applicable migration descriptors, shim availability).
    */
   migration?: PluginMigrationInfo;
@@ -229,7 +229,7 @@ export interface ReloadPluginOptions {
 }
 
 /**
- * M33 phase 3 — hot-reload pipeline for ONE base (workspace/npm) package.
+ * M33 — hot-reload pipeline for ONE base (workspace/npm) package.
  *
  * Atomicity: the failure modes the brief names "old stays" — import failure,
  * missing manifest export, incompatible major — are all checked BEFORE any

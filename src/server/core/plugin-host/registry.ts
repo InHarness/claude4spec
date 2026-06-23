@@ -4,7 +4,7 @@
  * runs at process start, and `consolidate(config.entities)` is a pure factory
  * producing one ProjectPluginHost per project context.
  *
- * M33 phase 3: the base layer is no longer process-immutable — the hot-reload
+ * M33: the base layer is no longer process-immutable — the hot-reload
  * pipeline mutates it via `registerPlugin` / `unregisterPlugin` and then
  * invalidates dependent `ProjectContext`s (axis B). The registry additionally
  * retains a per-plugin {@link RegisteredPluginRecord} so the host can surface
@@ -47,7 +47,7 @@ interface LoweredPlugin {
 
 export class PluginRegistryImpl implements PluginRegistry {
   private modules = new Map<string, BackendModule>();
-  // M33 phase 3: base-layer plugins by name, in registration order. The source
+  // M33: base-layer plugins by name, in registration order. The source
   // of truth for `listWritingStyles` / `listPluginRecords` so a hot-reload that
   // calls `unregisterPlugin` cleanly drops the old version's styles too.
   private plugins = new Map<string, InternalPluginRecord>();
@@ -81,9 +81,9 @@ export class PluginRegistryImpl implements PluginRegistry {
     const entityModules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
     const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
 
-    // M33 phase 3: `onUnregister` is a required slot (HOST_API 2.0.0). A runtime
-    // manifest missing it is not crashed over — warn (parity with L8 slot
-    // validation) and substitute a no-op so the reload pipeline still works.
+    // `onUnregister` is a required slot from the HOST_API 1.0.0 baseline. A
+    // runtime manifest missing it is not crashed over — warn (parity with L8
+    // slot validation) and substitute a no-op so the reload pipeline still works.
     let onUnregister: () => void;
     if (typeof manifest.onUnregister === 'function') {
       onUnregister = () => manifest.onUnregister();
