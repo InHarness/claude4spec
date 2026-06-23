@@ -32,7 +32,8 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@local/c4s-plugin',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
+    onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
   };

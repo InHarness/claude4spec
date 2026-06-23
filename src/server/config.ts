@@ -72,6 +72,18 @@ export interface Config {
    * `$schemaVersion` bump. Read per-action (hot-reload).
    */
   git?: GitSyncConfig;
+  /**
+   * M33 phase 3: namespace for settings contributed by plugins
+   * (`contributes.settings`). Each loaded plugin with settings gets its own
+   * sub-object keyed by `manifest.name` (e.g. `"@c4s/plugin-foo"`), isolated
+   * from core fields (`entities` / `agent` / `git` / paths). Absent/missing ⇒
+   * `{}`. Additive — no `$schemaVersion` bump; projects without
+   * settings-bearing plugins keep prior behaviour. PATCH deep-merges per
+   * `plugins[<name>]` (precedent: `agent` / `git`), so writing one field
+   * preserves the plugin's other fields and other namespaces. Values persist
+   * even when the plugin is absent/inactive (user data preserved).
+   */
+  plugins?: Record<string, Record<string, unknown>>;
 }
 
 export interface GitSyncConfig {
@@ -329,6 +341,23 @@ function validate(raw: unknown): Partial<Config> {
     }
     out.git = git;
   }
+  // M33 phase 3: `plugins` is a namespace of opaque per-plugin sub-objects. We
+  // validate only the shape (object-of-objects); the field semantics belong to
+  // each plugin's `contributes.settings` descriptor, not core config.
+  if ('plugins' in r) {
+    const p = r.plugins;
+    if (p === null || typeof p !== 'object' || Array.isArray(p)) {
+      throw typeError('plugins', 'object', p);
+    }
+    const plugins: Record<string, Record<string, unknown>> = {};
+    for (const [name, sub] of Object.entries(p as Record<string, unknown>)) {
+      if (sub === null || typeof sub !== 'object' || Array.isArray(sub)) {
+        throw typeError(`plugins.${name}`, 'object', sub);
+      }
+      plugins[name] = sub as Record<string, unknown>;
+    }
+    out.plugins = plugins;
+  }
   return out;
 }
 
@@ -478,6 +507,15 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
   // alone must preserve `claudeUsePreset` (and vice versa).
   if (validated.agent) {
     merged.agent = { ...current.agent, ...validated.agent };
+  }
+  // M33 phase 3: nested deep-merge per `plugins[<name>]` — writing one field of
+  // one plugin preserves that plugin's other fields AND other plugins'
+  // namespaces (extends the agent/git deep-merge precedent one level deeper).
+  if (validated.plugins) {
+    merged.plugins = { ...current.plugins };
+    for (const [name, fields] of Object.entries(validated.plugins)) {
+      merged.plugins[name] = { ...current.plugins?.[name], ...fields };
+    }
   }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   return merged;

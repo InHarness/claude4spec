@@ -23,8 +23,17 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * A plugin whose `hostApiVersion` range does not satisfy this version is
  * skipped with a warning (never crashed over) — on the backend during load and
  * independently on the frontend during manifest consumption.
+ *
+ * Phase 3 (`2.0.0`): MAJOR bump. `onUnregister` is now a REQUIRED manifest slot
+ * (the hot-reload pipeline calls it to tear the old version down before
+ * re-registering the new one) — making a slot required is a breaking shape
+ * change, hence the major. A plugin built against `^1.x` no longer satisfies
+ * `2.0.0` and is reported `incompatible` with a migration descriptor (vs the
+ * environment-level `skipped` for an `engines` miss). Additive same-major slots
+ * (`contributes.settings`, `contributes.commands`) would have been a minor bump
+ * on their own.
  */
-export const HOST_API_VERSION = '1.4.0';
+export const HOST_API_VERSION = '2.0.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {
@@ -90,24 +99,96 @@ export interface WritingStyleContribution {
 }
 
 /**
+ * M33 phase 3 — one settings field a plugin renders in its own Settings section
+ * (panel M26), values stored under `config.plugins[<manifest.name>][key]`.
+ * `kind` drives the reload classification on write:
+ *   - `hot-reload` → only `invalidateQueries(['config'])`, no context rebuild
+ *     (parity with `writingStyle` / `language`; takes effect next turn/thread).
+ *   - `executive` → invalidates the `ProjectContext` (rebuild, no banner, no
+ *     restart).
+ */
+export interface PluginSettingField {
+  /** Stable field key inside the plugin's config namespace. */
+  key: string;
+  /** Human label shown in the Settings panel. */
+  label: string;
+  control: 'toggle' | 'text' | 'select' | 'multiselect';
+  kind: 'hot-reload' | 'executive';
+  /** Default applied when `config.plugins[<name>][key]` is absent. */
+  default: unknown;
+  /** Choices for `select` / `multiselect` controls. */
+  options?: { value: string; label: string }[];
+  /** Optional help/description text. */
+  help?: string;
+}
+
+/** A plugin's settings module = an ordered list of fields. */
+export type PluginSettingsModule = PluginSettingField[];
+
+/**
+ * M33 phase 3 — declarative editor slash-command contributed by a plugin
+ * (typically an entity-less one). The loader normalizes each entry into an
+ * `EditorExtensionRegistration.slashCommand` and routes it through
+ * `registerEditorExtension(...)` — the SAME path as entity-borne extensions.
+ * Declarative, not imperative: the plugin declares the trigger + popover to
+ * open; execution is the editor framework's popover dispatch, not plugin code.
+ * Kept as a dep-free subset here (the full `EditorExtensionRegistration` lives
+ * client-side); `popoverKind` is narrowed against the client `PopoverMap`.
+ */
+export interface PluginCommandContribution {
+  /** Stable registration name (unique within the editor extension registry). */
+  name: string;
+  /** Slash trigger token, e.g. "mychart". */
+  trigger: string;
+  /** Menu label shown in the slash palette. */
+  label: string;
+  /** Popover kind dispatched on invoke (client `PopoverKind`). */
+  popoverKind: string;
+  /** Editor contexts the command is available in. Omitted = all contexts. */
+  availableIn?: string[];
+}
+
+/**
  * The default export of a plugin package. `contributes` is the capability
- * bundle: `contributes.entities` (phase 1) and `contributes.writingStyles`
- * (phase 2 — pushed into the SkillRegistry as `source: "plugin"`).
+ * bundle: `contributes.entities` (phase 1), `contributes.writingStyles`
+ * (phase 2 — pushed into the SkillRegistry as `source: "plugin"`), and
+ * `contributes.settings` / `contributes.commands` (phase 3).
  */
 export interface PluginManifest {
   /** npm package name. */
   name: string;
   /** plugin semver. */
   version: string;
-  /** semver range — which Host API the plugin targets, e.g. "^1.4.0". */
+  /** semver range — which Host API the plugin targets, e.g. "^2.0.0". */
   hostApiVersion: string;
   /** node/host engine constraints. */
   engines?: PluginEngines;
+  /**
+   * M33 phase 3 — REQUIRED teardown hook, symmetric to backend mount. The
+   * hot-reload pipeline calls it on the OLD version before registering the new
+   * one; without it a reload would leave duplicated slots (MCP server, Express
+   * routes, editor extensions, zustand slice). Must be idempotent and
+   * non-throwing — a thrown error is logged as a warning and never blocks the
+   * reload.
+   */
+  onUnregister(): void;
   contributes: {
     entities?: EntityContribution[];
     /** M15 phase 2 — writing styles contributed by this plugin. */
     writingStyles?: WritingStyleContribution[];
+    /** M33 phase 3 — settings fields rendered per-plugin in Settings (M26). */
+    settings?: PluginSettingsModule;
+    /** M33 phase 3 — declarative editor slash-commands (entity-less plugins). */
+    commands?: PluginCommandContribution[];
   };
+}
+
+/** One plugin's Settings section, as returned by `ProjectPluginHost.listSettings()`. */
+export interface PluginSettingsSection {
+  /** Plugin package name — also the `config.plugins` namespace key. */
+  name: string;
+  version: string;
+  fields: PluginSettingsModule;
 }
 
 /**

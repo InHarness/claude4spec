@@ -25,7 +25,8 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@acme/c4s-plugin-glossary',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
+    onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
   };
@@ -64,7 +65,8 @@ describe('loadWorkspacePlugins', () => {
 
   it('skips a plugin whose hostApiVersion does not satisfy the host', async () => {
     const registry = new PluginRegistryImpl();
-    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^2.0.0' }) } });
+    // `^1.0.0` no longer satisfies the 2.0.0 host (Phase 3 major bump).
+    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^1.0.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-b'], importer);
 

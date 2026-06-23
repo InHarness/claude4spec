@@ -16,7 +16,9 @@ import type {
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
 import type {
+  PluginCommandContribution,
   PluginManifest,
+  PluginSettingsSection,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import type {
@@ -126,6 +128,30 @@ export interface ProjectPluginOverlay {
   listLocal(): BackendModule[];
   /** Source path under `<cwd>/.claude4spec/plugins/` for the given type. */
   origin(type: string): string;
+  /**
+   * M33 phase 3 — Settings sections contributed by trusted project-local
+   * plugins (one per plugin with `contributes.settings`). Trust is implicit:
+   * the overlay is built only on the trusted path.
+   */
+  listSettings(): PluginSettingsSection[];
+  /** M33 phase 3 — declarative editor commands from trusted project-local plugins. */
+  listCommands(): PluginCommandContribution[];
+}
+
+/**
+ * M33 phase 3 — a registered base-layer plugin, retained by the registry so the
+ * host can surface its non-entity capabilities (settings/commands) and the
+ * hot-reload pipeline can tear it down via `onUnregister` before re-registering.
+ */
+export interface RegisteredPluginRecord {
+  name: string;
+  version: string;
+  /** Entity types this plugin contributed (for unregister + diagnostics). */
+  contributedTypes: string[];
+  settings: PluginSettingsSection['fields'];
+  commands: PluginCommandContribution[];
+  /** Required teardown hook (idempotent, non-throwing by contract). */
+  onUnregister: () => void;
 }
 
 /** One overlay type that shadows a same-named base type (cross-layer collision). */
@@ -152,6 +178,18 @@ export interface PluginRegistry {
    * NOT gate on hostApiVersion/engines (that is the loader's job).
    */
   registerPlugin(manifest: PluginManifest): void;
+
+  /**
+   * M33 phase 3 — tear down a previously-registered base plugin by name: call
+   * its `onUnregister` (idempotent, non-throwing) and drop its entity modules +
+   * retained capability record. The hot-reload pipeline calls this on the OLD
+   * version before re-`registerPlugin`-ing the fresh module. No-op for an
+   * unknown name.
+   */
+  unregisterPlugin(name: string): void;
+
+  /** M33 phase 3 — retained base-layer plugin records (for capabilities + reload). */
+  listPluginRecords(): RegisteredPluginRecord[];
 
   /** All registered modules, regardless of activation. */
   listAvailable(): BackendModule[];
@@ -189,6 +227,23 @@ export interface ProjectPluginHost {
 
   /** Active modules only (filtered by the consolidated whitelist). */
   listEntities(): BackendModule[];
+
+  /**
+   * M33 phase 3 — Settings sections of ALL loaded + trusted plugins in the
+   * effective pool (base ∪ trusted overlay), one per plugin with
+   * `contributes.settings`. Deliberately does NOT filter by `config.entities`
+   * (contrast with `listEntities()`): a plugin's settings survive deactivation
+   * of its entity types — the user needs the panel to re-enable them. This is
+   * axis B (pool + trust), not axis A (entity whitelist).
+   */
+  listSettings(): PluginSettingsSection[];
+
+  /**
+   * M33 phase 3 — declarative editor slash-commands of ALL loaded + trusted
+   * plugins, independent of `config.entities` (same two-axis rationale as
+   * `listSettings()`). Routed into the editor via `registerEditorExtension`.
+   */
+  listCommands(): PluginCommandContribution[];
 
   /** Lookup by type — returns null for inactive or unknown. */
   getEntity(type: string): BackendModule | null;

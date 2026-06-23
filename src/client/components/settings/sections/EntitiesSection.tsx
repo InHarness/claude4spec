@@ -34,7 +34,6 @@ export function EntitiesSection() {
     });
   }, [activation]);
   const poolKey = poolTypes.join('|');
-  const unknownTypes = activation?.unknown ?? [];
 
   const [draft, setDraft] = useState<Set<string>>(() => initialSelection(config, poolTypes));
 
@@ -135,30 +134,9 @@ export function EntitiesSection() {
           })
         )}
 
-        {unknownTypes.map((type) => (
-          <label
-            key={type}
-            className="flex items-center gap-3 rounded-md px-3 py-2 opacity-60"
-            style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', cursor: 'not-allowed' }}
-            title="Unknown entity type — present in config.json but no plugin is registered for it."
-          >
-            <input type="checkbox" checked disabled className="h-4 w-4" />
-            <span className="flex-1 min-w-0">
-              <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
-                {type}
-              </span>
-              <span className="block text-[11px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-                {type}
-              </span>
-            </span>
-            <span
-              className="text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5"
-              style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
-            >
-              unknown
-            </span>
-          </label>
-        ))}
+        {/* M33 phase 3: unknown-slug rendering removed (ac-patch-api-config-entities-z-2
+            withdrawn). M01 still logs "unknown entity in config" and GET
+            /api/_meta/entities still reports `unknown` — only this UI render is gone. */}
 
         <div className="flex justify-end">
           <button
