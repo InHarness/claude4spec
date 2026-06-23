@@ -7,6 +7,7 @@ import { GitSection } from './sections/GitSection.js';
 import { DirectoriesSection } from './sections/DirectoriesSection.js';
 import { EntitiesSection } from './sections/EntitiesSection.js';
 import { PluginPoolSection } from './sections/PluginPoolSection.js';
+import { PluginSettingsSection } from './sections/PluginSettingsSection.js';
 import { AgentSection } from './sections/AgentSection.js';
 import { AboutSection } from './sections/AboutSection.js';
 import { DangerZoneSection } from './sections/DangerZoneSection.js';
@@ -51,6 +52,7 @@ export function SettingsPage() {
           <DirectoriesSection />
           <EntitiesSection />
           <PluginPoolSection />
+          <PluginSettingsSection />
           <AgentSection />
           <AboutSection />
           <DangerZoneSection />

@@ -66,6 +66,20 @@ export function pluginHostRouter(deps: PluginHostRouterDeps): Router {
     res.json(host.partition());
   });
 
+  // M33 phase 3: settings/commands of all loaded+trusted plugins in the
+  // effective pool — axis B, deliberately NOT filtered by `config.entities`
+  // (so a plugin's Settings section + slash-commands survive deactivation of
+  // its entity types). The Settings panel renders one section per plugin under
+  // `config.plugins[<name>]`; the editor registers each command as a slash
+  // extension.
+  router.get('/_meta/plugin-settings', (_req, res) => {
+    res.json({ sections: host.listSettings() });
+  });
+
+  router.get('/_meta/plugin-commands', (_req, res) => {
+    res.json({ commands: host.listCommands() });
+  });
+
   router.get('/_meta/plugins', (_req, res) => {
     const baseOriginForType = (type: string): string =>
       basePackages.find((p) => p.contributedTypes?.includes(type))?.package ?? '@c4s/builtin';

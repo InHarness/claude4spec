@@ -2,6 +2,10 @@ import type { PageContent, PageNode, PageSearchHit, TodoCounts, TodoHit } from '
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
+  PluginCommandContribution,
+  PluginSettingsSection,
+} from '../../shared/plugin-host/manifest.js';
+import type {
   PageLinksAutocompleteResponse,
   PageLinksCounts,
   PageLinksListResponse,
@@ -111,6 +115,8 @@ export interface ConfigResponse {
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
   remoteApiUrl: string | null;
+  /** M33 phase 3: per-plugin settings namespace (absent ⇒ {}). */
+  plugins: Record<string, Record<string, unknown>>;
   /** M01: config schema version (currently 3 — M31 moved port/mode to the workspace). */
   $schemaVersion: number;
 }
@@ -132,6 +138,8 @@ export interface ConfigPatch {
   agent?: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
   /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
   git?: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+  /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */
+  plugins?: Record<string, Record<string, unknown>>;
   remoteProjectId?: string | null;
 }
 
@@ -318,6 +326,14 @@ export const metaApi = {
   /** M33 phase 2: per-project plugin pool (base/overlay), trust, shadowed types. */
   async plugins(): Promise<ProjectPluginsMeta> {
     return handle<ProjectPluginsMeta>(await apiFetch('/api/_meta/plugins'));
+  },
+  /** M33 phase 3: Settings sections of loaded+trusted plugins (one per plugin). */
+  async pluginSettings(): Promise<{ sections: PluginSettingsSection[] }> {
+    return handle<{ sections: PluginSettingsSection[] }>(await apiFetch('/api/_meta/plugin-settings'));
+  },
+  /** M33 phase 3: declarative editor slash-commands of loaded+trusted plugins. */
+  async pluginCommands(): Promise<{ commands: PluginCommandContribution[] }> {
+    return handle<{ commands: PluginCommandContribution[] }>(await apiFetch('/api/_meta/plugin-commands'));
   },
   /** M33 phase 2: persist the project-local plugin trust decision (rebuilds the context). */
   async setTrustPlugins(trust: boolean): Promise<{ trust: boolean }> {
