@@ -18,9 +18,16 @@ import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
+import { buildMigrationInfo, type PluginMigrationInfo } from '../../../shared/plugin-host/host-api.js';
 import type { PluginRegistry } from './types.js';
 
-export type PluginLoadStatus = 'loaded' | 'skipped' | 'failed';
+/**
+ * `incompatible` (M33 phase 3) is distinct from `skipped`: it means the package
+ * was built against an incompatible MAJOR Host API and carries a `migration`
+ * descriptor (a repair path), whereas `skipped` is an environment problem (an
+ * `engines` miss) with no migration path.
+ */
+export type PluginLoadStatus = 'loaded' | 'skipped' | 'incompatible' | 'failed';
 
 export type PluginLoadCode =
   | 'PLUGIN_HOST_API_MISMATCH'
@@ -57,6 +64,11 @@ export interface PluginLoadRecord {
   trust?: 'trusted' | 'untrusted';
   /** Phase 2: source path under `<cwd>/.claude4spec/plugins/` (overlay only). */
   origin?: string;
+  /**
+   * M33 phase 3: present on `incompatible` records — the repair path (target
+   * Host API version, applicable migration descriptors, shim availability).
+   */
+  migration?: PluginMigrationInfo;
 }
 
 export interface PluginLoadResult {
@@ -94,18 +106,37 @@ function enginesSatisfied(manifest: PluginManifest): boolean {
 }
 
 /**
- * Compatibility gate shared by both layers: hostApiVersion range + engines.node.
- * Returns `null` when the manifest may register; otherwise the skip code/reason.
+ * Outcome of the compatibility gate. `status` lets the caller record an
+ * `incompatible` (major Host API mismatch — carries a `migration` repair path)
+ * distinctly from a `skipped` (host-api same-major miss, or an `engines` miss —
+ * environment problems with no migration path).
  */
-export function gateManifest(manifest: PluginManifest): { code: PluginLoadCode; reason: string } | null {
+export interface GateResult {
+  status: 'skipped' | 'incompatible';
+  code: PluginLoadCode;
+  reason: string;
+  migration?: PluginMigrationInfo;
+}
+
+/**
+ * Compatibility gate shared by all layers: hostApiVersion range + engines.node.
+ * Returns `null` when the manifest may register; otherwise the gate result.
+ * A MAJOR Host API mismatch → `incompatible` + a migration descriptor; an
+ * `engines` miss (or a same-major host-api miss) → `skipped`.
+ */
+export function gateManifest(manifest: PluginManifest): GateResult | null {
   if (!semver.satisfies(HOST_API_VERSION, manifest.hostApiVersion)) {
+    const migration = buildMigrationInfo(manifest.hostApiVersion);
     return {
+      status: migration ? 'incompatible' : 'skipped',
       code: 'PLUGIN_HOST_API_MISMATCH',
       reason: `host API ${HOST_API_VERSION} does not satisfy plugin requirement "${manifest.hostApiVersion}"`,
+      migration: migration ?? undefined,
     };
   }
   if (!enginesSatisfied(manifest)) {
     return {
+      status: 'skipped',
       code: 'PLUGIN_ENGINE_UNSATISFIED',
       reason: `node ${process.versions.node} does not satisfy engines.node "${manifest.engines?.node}"`,
     };
@@ -154,7 +185,13 @@ export async function loadWorkspacePlugins(
     const gate = gateManifest(manifest);
     if (gate) {
       console.warn(`[plugin-loader] ${gate.code} ${pkg}: ${gate.reason}`);
-      records.push({ ...base, status: 'skipped', code: gate.code, reason: gate.reason });
+      records.push({
+        ...base,
+        status: gate.status,
+        code: gate.code,
+        reason: gate.reason,
+        migration: gate.migration,
+      });
       continue;
     }
 
@@ -247,7 +284,7 @@ export async function reloadPlugin(
   const gate = gateManifest(manifest);
   if (gate) {
     console.warn(`[plugin-loader] reload ${gate.code} ${pkg}: ${gate.reason} (old version retained)`);
-    return { ...named, status: 'skipped', code: gate.code, reason: gate.reason };
+    return { ...named, status: gate.status, code: gate.code, reason: gate.reason, migration: gate.migration };
   }
 
   // Fresh + compatible: tear the old version down, then register the new one.

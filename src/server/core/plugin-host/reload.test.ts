@@ -85,7 +85,8 @@ describe('M33 phase 3 — reloadPlugin (base hot-reload pipeline)', () => {
     const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^1.0.0' };
     const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: incompatible }));
 
-    expect(rec).toMatchObject({ status: 'skipped', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(rec).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(rec.migration?.targetHostApiVersion).toBe('2.0.0');
     expect(oldTeardown).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
     warn.mockRestore();

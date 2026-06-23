@@ -129,13 +129,14 @@ describe('overlay-loader', () => {
     expect(res.overlay?.listLocal().map((m) => m.type)).toEqual(['glossary']);
   });
 
-  it('skips an incompatible hostApiVersion', async () => {
+  it('reports an incompatible-major hostApiVersion as `incompatible` with a migration descriptor', async () => {
     const url = makePkg('future-pkg');
     const res = await loadProjectOverlay(
       cwd,
       fakeImporter({ [url]: { manifest: manifest({ hostApiVersion: '^99.0.0' }) } }),
     );
-    expect(res.records[0]).toMatchObject({ status: 'skipped', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(res.records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
     expect(res.overlay).toBeUndefined();
   });
 
