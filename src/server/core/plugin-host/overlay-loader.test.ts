@@ -72,6 +72,23 @@ describe('overlay-loader', () => {
     expect(res.records).toEqual([]);
   });
 
+  it('resolves an entry from conditional exports (no top-level main/module)', async () => {
+    const dir = path.join(cwd, '.claude4spec', 'plugins', 'exports-pkg');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'package.json'),
+      JSON.stringify({ name: 'exports-pkg', type: 'module', exports: { '.': { import: './lib/entry.mjs' } } }),
+    );
+    fs.mkdirSync(path.join(dir, 'lib'), { recursive: true });
+    const entry = path.join(dir, 'lib', 'entry.mjs');
+    fs.writeFileSync(entry, '// fixture');
+    const url = pathToFileURL(entry).href;
+
+    const res = await loadProjectOverlay(cwd, fakeImporter({ [url]: { manifest: manifest() } }));
+    expect(res.records[0]).toMatchObject({ package: 'exports-pkg', status: 'loaded' });
+    expect(res.overlay?.listLocal().map((m) => m.type)).toEqual(['glossary']);
+  });
+
   it('loads a valid project-local plugin as a trusted overlay', async () => {
     const url = makePkg('glossary-pkg');
     expect(enumerateOverlayPackages(cwd)).toEqual(['glossary-pkg']);

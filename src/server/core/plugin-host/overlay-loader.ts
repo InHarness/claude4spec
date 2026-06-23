@@ -70,6 +70,28 @@ export function hasProjectPlugins(cwd: string): boolean {
   return enumerateOverlayPackages(cwd).length > 0;
 }
 
+/**
+ * Resolve a package.json `exports` field to a relative entry path. Handles the
+ * common shapes: a bare string, the `"."` subpath, and a conditions object
+ * (`{ import, default, require, node }`) at either the top level or under `"."`.
+ * Returns the first string match (preferring ESM `import`/`default`), or
+ * undefined if no string entry is reachable (caller falls back to module/main).
+ */
+function resolveExportsEntry(exp: unknown): string | undefined {
+  if (typeof exp === 'string') return exp;
+  if (!exp || typeof exp !== 'object') return undefined;
+  const obj = exp as Record<string, unknown>;
+  // Subpath map: drill into "." first, then treat the whole object as conditions.
+  const dot = obj['.'];
+  if (typeof dot === 'string') return dot;
+  const conditions = (dot && typeof dot === 'object' ? (dot as Record<string, unknown>) : obj);
+  for (const key of ['import', 'module', 'default', 'node', 'require']) {
+    const v = conditions[key];
+    if (typeof v === 'string') return v;
+  }
+  return undefined;
+}
+
 /** Resolve the ESM entry file of a package directory. Returns null if none found. */
 function resolveEntry(pkgDir: string): string | null {
   const pkgJsonPath = path.join(pkgDir, 'package.json');
@@ -80,15 +102,7 @@ function resolveEntry(pkgDir: string): string | null {
         module?: string;
         exports?: unknown;
       };
-      const exp = pkg.exports;
-      const fromExports =
-        typeof exp === 'string'
-          ? exp
-          : exp && typeof exp === 'object'
-            ? ((exp as Record<string, unknown>)['.'] ?? (exp as Record<string, unknown>)['import'])
-            : undefined;
-      const rel =
-        (typeof fromExports === 'string' ? fromExports : undefined) ?? pkg.module ?? pkg.main;
+      const rel = resolveExportsEntry(pkg.exports) ?? pkg.module ?? pkg.main;
       if (rel) {
         const abs = path.resolve(pkgDir, rel);
         if (fs.existsSync(abs)) return abs;
