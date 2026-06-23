@@ -66,8 +66,10 @@ import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
 import {
   enumerateOverlayPackages,
   loadProjectOverlay,
+  projectPluginsDir,
   type ProjectOverlayResult,
 } from '../core/plugin-host/overlay-loader.js';
+import { PluginWatcher } from '../core/plugin-host/plugin-watcher.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -111,6 +113,22 @@ function backupDbBeforeMigration(slotDir: string): void {
   } catch (err) {
     console.warn('[m29] db backup failed:', (err as Error).message);
   }
+}
+
+/**
+ * M33 phase 3: map changed overlay paths back to the package dir name(s) under
+ * `<cwd>/.claude4spec/plugins/`. A change anywhere inside `plugins/<pkg>/...`
+ * (or to the dir itself) attributes to `<pkg>`.
+ */
+function affectedOverlayPackages(pluginsDir: string, changedPaths: string[]): string[] {
+  const pkgs = new Set<string>();
+  for (const p of changedPaths) {
+    const rel = path.relative(pluginsDir, p);
+    if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) continue;
+    const seg = rel.split(path.sep)[0];
+    if (seg) pkgs.add(seg);
+  }
+  return [...pkgs];
 }
 
 export interface ProjectContextDeps {
@@ -378,6 +396,32 @@ async function buildInner(
   // watcher owns `<entitiesDir>` exclusively.
   const entitiesWatcher = new EntitiesWatcher(entitiesAbs);
   cleanup.push(() => entitiesWatcher.close());
+  // M33 phase 3: hot-reload watcher for the project-local plugin overlay
+  // (axis B — pool composition). Mounted ONLY behind the trust gate, so an
+  // untrusted/undecided repo never reloads project-committed plugin code
+  // without consent. On a debounced change it invalidates THIS context (the
+  // next build re-imports with a fresh content-hash cache-bust → new pool) and
+  // broadcasts `plugin:reloaded` so the editor remounts extensions without a
+  // document reset. In-flight turns finish on the captured (old) context.
+  const overlayVersionByPkg = new Map(
+    overlayRecords.filter((r) => r.manifestVersion).map((r) => [r.package, r.manifestVersion!]),
+  );
+  const pluginOverlayWatcher = new PluginWatcher(
+    trust === true ? [projectPluginsDir(cwd)] : [],
+    (changedPaths) => {
+      const pkgs = affectedOverlayPackages(projectPluginsDir(cwd), changedPaths);
+      deps.onContextConfigChanged?.();
+      for (const pkg of pkgs.length ? pkgs : ['']) {
+        ws.broadcast({
+          kind: 'plugin:reloaded',
+          name: pkg,
+          version: overlayVersionByPkg.get(pkg) ?? '',
+          tier: 'overlay',
+        });
+      }
+    },
+  );
+  cleanup.push(() => pluginOverlayWatcher.close());
   const entityStore = new EntityStore(cwd, entitiesDir, entitiesWatcher, rawReader, pluginHost);
   entityStore.ensureRoot();
   const entityIndexer = new EntityIndexerService(
@@ -817,6 +861,7 @@ async function buildInner(
   // Start the entities watcher only after the boot export/rebuild, so bulk
   // self-writes during export never race a live reindex.
   entitiesWatcher.start();
+  pluginOverlayWatcher.start();
 
   const writingStyle = initialWritingStyle
     ? { slug: initialWritingStyle, title: skillRegistry.resolve(initialWritingStyle).metadata.title }
@@ -841,6 +886,7 @@ async function buildInner(
       await briefsWatcher.close();
       await patchesWatcher.close();
       await entitiesWatcher.close();
+      await pluginOverlayWatcher.close();
       pluginHost.clearMcpFactories();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.

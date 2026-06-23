@@ -99,6 +99,21 @@ export class ProjectContextCache {
   }
 
   /**
+   * M33 phase 3: invalidate every cached context — used when the process-global
+   * base plugin pool changes (the base catalog is shared, so a base reload
+   * invalidates ALL dependent contexts). Same fire-and-forget semantics as
+   * `invalidate`; in-flight turns finish on their captured (old) context.
+   */
+  invalidateAll(): void {
+    for (const id of [...this.entries.keys()]) this.invalidate(id);
+  }
+
+  /** Project ids with a cached (ready/building/failed) entry — for targeted WS broadcasts. */
+  liveProjectIds(): string[] {
+    return [...this.entries.keys()];
+  }
+
+  /**
    * Purge path: drop the entry and AWAIT its dispose (unlike fire-and-forget
    * `invalidate`) so the db handle is closed before the caller `fs.rm`s the
    * slot dir. The caller guarantees no in-flight turn (409 otherwise).

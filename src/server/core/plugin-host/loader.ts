@@ -11,6 +11,10 @@
  *   4. Registration        — `registry.registerPlugin(manifest)`.
  */
 
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
@@ -170,4 +174,94 @@ export async function loadWorkspacePlugins(
   }
 
   return { records };
+}
+
+/** Resolve a base package's main entry to an absolute path (cache-bust + watch). */
+function resolveBaseEntry(pkg: string): string | null {
+  try {
+    return createRequire(import.meta.url).resolve(pkg);
+  } catch {
+    return null;
+  }
+}
+
+/** Cache-bust suffix from the entry bytes (see overlay-loader for the rationale). */
+function entryCacheBust(entry: string): string {
+  try {
+    const hash = crypto.createHash('sha1').update(fs.readFileSync(entry)).digest('hex').slice(0, 12);
+    return `?v=${hash}`;
+  } catch {
+    return '';
+  }
+}
+
+/** Seams for `reloadPlugin` — overridable in tests. */
+export interface ReloadPluginOptions {
+  importer?: PluginImporter;
+  resolveEntry?: (pkg: string) => string | null;
+  cacheBust?: (entry: string) => string;
+}
+
+/**
+ * M33 phase 3 — hot-reload pipeline for ONE base (workspace/npm) package.
+ *
+ * Atomicity: the failure modes the brief names "old stays" — import failure,
+ * missing manifest export, incompatible major — are all checked BEFORE any
+ * teardown, so the previously-registered version remains registered and the
+ * caller surfaces a warning. Only once a fresh, compatible manifest is in hand
+ * do we tear the old version down (`unregisterPlugin` → its `onUnregister`) and
+ * register the new one — the brief's "onUnregister old, then register new".
+ *
+ * Returns the per-package record (`loaded` / `skipped` / `failed`). Never throws.
+ */
+export async function reloadPlugin(
+  registry: PluginRegistry,
+  pkg: string,
+  opts: ReloadPluginOptions = {},
+): Promise<PluginLoadRecord> {
+  const importer = opts.importer ?? defaultImporter;
+  const resolveEntry = opts.resolveEntry ?? resolveBaseEntry;
+  const cacheBust = opts.cacheBust ?? entryCacheBust;
+  const base: PluginLoadRecord = { package: pkg, status: 'loaded', layer: 'base' };
+
+  const entry = resolveEntry(pkg);
+  const specifier = entry ? pathToFileURL(entry).href + cacheBust(entry) : pkg;
+
+  let mod: unknown;
+  try {
+    mod = await importer(specifier);
+  } catch (err) {
+    const reason = (err as Error).message;
+    console.warn(`[plugin-loader] reload PLUGIN_IMPORT_FAILED ${pkg}: ${reason} (old version retained)`);
+    return { ...base, status: 'failed', code: 'PLUGIN_IMPORT_FAILED', reason };
+  }
+
+  const manifest = extractManifest(mod);
+  if (!isValidManifestShape(manifest)) {
+    const reason = 'package does not export a valid PluginManifest (manifest/default)';
+    console.warn(`[plugin-loader] reload PLUGIN_INVALID_MANIFEST ${pkg}: ${reason} (old version retained)`);
+    return { ...base, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason };
+  }
+
+  const named = { ...base, manifestName: manifest.name, manifestVersion: manifest.version };
+  const gate = gateManifest(manifest);
+  if (gate) {
+    console.warn(`[plugin-loader] reload ${gate.code} ${pkg}: ${gate.reason} (old version retained)`);
+    return { ...named, status: 'skipped', code: gate.code, reason: gate.reason };
+  }
+
+  // Fresh + compatible: tear the old version down, then register the new one.
+  try {
+    registry.unregisterPlugin(manifest.name);
+    registry.registerPlugin(manifest);
+  } catch (err) {
+    const reason = (err as Error).message;
+    console.warn(`[plugin-loader] reload PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
+    return { ...named, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason };
+  }
+
+  return {
+    ...named,
+    contributedTypes: (manifest.contributes.entities ?? []).map((e) => e.type),
+  };
 }
