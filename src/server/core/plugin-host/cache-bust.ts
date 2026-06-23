@@ -1,5 +1,5 @@
 /**
- * M33 phase 3 — shared dynamic-import cache-bust suffix.
+ * M33 — shared dynamic-import cache-bust suffix.
  *
  * Node caches ESM modules per-URL, so re-importing the same `file://` href after
  * an edit returns the STALE module. A `?v=<contentHash>` query yields a fresh URL

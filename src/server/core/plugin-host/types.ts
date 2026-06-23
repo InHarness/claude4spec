@@ -116,7 +116,7 @@ export interface BackendModule extends EntityModuleManifest {
 }
 
 /**
- * M33 phase 2: per-`ProjectContext` overlay of project-local plugins loaded
+ * M33: per-`ProjectContext` overlay of project-local plugins loaded
  * from `<cwd>/.claude4spec/plugins/` (behind the `trustProjectPlugins` gate).
  * The overlay is relative to the project — two projects in one process carry
  * different overlays. `listLocal()` returns already-validated, trust-gated
@@ -129,17 +129,17 @@ export interface ProjectPluginOverlay {
   /** Source path under `<cwd>/.claude4spec/plugins/` for the given type. */
   origin(type: string): string;
   /**
-   * M33 phase 3 — Settings sections contributed by trusted project-local
+   * M33 — Settings sections contributed by trusted project-local
    * plugins (one per plugin with `contributes.settings`). Trust is implicit:
    * the overlay is built only on the trusted path.
    */
   listSettings(): PluginSettingsSection[];
-  /** M33 phase 3 — declarative editor commands from trusted project-local plugins. */
+  /** M33 — declarative editor commands from trusted project-local plugins. */
   listCommands(): PluginCommandContribution[];
 }
 
 /**
- * M33 phase 3 — a registered base-layer plugin, retained by the registry so the
+ * M33 — a registered base-layer plugin, retained by the registry so the
  * host can surface its non-entity capabilities (settings/commands) and the
  * hot-reload pipeline can tear it down via `onUnregister` before re-registering.
  */
@@ -180,7 +180,7 @@ export interface PluginRegistry {
   registerPlugin(manifest: PluginManifest): void;
 
   /**
-   * M33 phase 3 — validate a manifest's shape + lower all its contributions
+   * M33 — validate a manifest's shape + lower all its contributions
    * WITHOUT mutating the registry; throws on a structural problem. The reload
    * pipeline calls this before `unregisterPlugin` so a structurally-broken new
    * version never leaves the pool missing a type (atomic "old stays").
@@ -188,7 +188,7 @@ export interface PluginRegistry {
   validatePlugin(manifest: PluginManifest): void;
 
   /**
-   * M33 phase 3 — tear down a previously-registered base plugin by name: call
+   * M33 — tear down a previously-registered base plugin by name: call
    * its `onUnregister` (idempotent, non-throwing) and drop its entity modules +
    * retained capability record. The hot-reload pipeline calls this on the OLD
    * version before re-`registerPlugin`-ing the fresh module. No-op for an
@@ -196,7 +196,7 @@ export interface PluginRegistry {
    */
   unregisterPlugin(name: string): void;
 
-  /** M33 phase 3 — retained base-layer plugin records (for capabilities + reload). */
+  /** M33 — retained base-layer plugin records (for capabilities + reload). */
   listPluginRecords(): RegisteredPluginRecord[];
 
   /** All registered modules, regardless of activation. */
@@ -206,7 +206,7 @@ export interface PluginRegistry {
   getAvailable(type: string): BackendModule | null;
 
   /**
-   * M15 phase 2: writing styles contributed by base-layer (workspace/npm)
+   * M15: writing styles contributed by base-layer (workspace/npm)
    * plugins, collected during `registerPlugin`. Pushed into each project's
    * SkillRegistry as `source: "plugin"` at context build (project-local overlay
    * styles are pushed separately, behind the trust gate).
@@ -215,10 +215,10 @@ export interface PluginRegistry {
 
   /**
    * Derive a per-project host. The effective pool is `base ∪ overlay`
-   * (phase 2); the `config.entities` whitelist is applied to that merged pool,
-   * not to the base alone. `config.entities === undefined` ⇒ all available
+   * (base ∪ overlay); the `config.entities` whitelist is applied to that merged
+   * pool, not to the base alone. `config.entities === undefined` ⇒ all available
    * active (v1 backward compat). `overlay === undefined` ⇒ effective pool =
-   * base (parity with phase 1). No side effects.
+   * base (parity with the base-only case). No side effects.
    */
   consolidate(
     config: { entities?: string[] } | null | undefined,
@@ -237,7 +237,7 @@ export interface ProjectPluginHost {
   listEntities(): BackendModule[];
 
   /**
-   * M33 phase 3 — Settings sections of ALL loaded + trusted plugins in the
+   * M33 — Settings sections of ALL loaded + trusted plugins in the
    * effective pool (base ∪ trusted overlay), one per plugin with
    * `contributes.settings`. Deliberately does NOT filter by `config.entities`
    * (contrast with `listEntities()`): a plugin's settings survive deactivation
@@ -247,7 +247,7 @@ export interface ProjectPluginHost {
   listSettings(): PluginSettingsSection[];
 
   /**
-   * M33 phase 3 — declarative editor slash-commands of ALL loaded + trusted
+   * M33 — declarative editor slash-commands of ALL loaded + trusted
    * plugins, independent of `config.entities` (same two-axis rationale as
    * `listSettings()`). Routed into the editor via `registerEditorExtension`.
    */
@@ -265,7 +265,7 @@ export interface ProjectPluginHost {
   partition(): PluginActivationState;
 
   /**
-   * M33 phase 2: overlay types that shadow a same-named base type. Empty when
+   * M33: overlay types that shadow a same-named base type. Empty when
    * there is no overlay or no cross-layer collision. Feeds the per-project
    * `/_meta/plugins` shadow report and the M19 consistency check.
    */

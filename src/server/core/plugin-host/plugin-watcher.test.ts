@@ -14,7 +14,7 @@ async function until(cond: () => boolean, timeoutMs = 3000, stepMs = 25): Promis
   return cond();
 }
 
-describe('M33 phase 3 — PluginWatcher', () => {
+describe('M33 — PluginWatcher', () => {
   let dir: string;
   let watcher: PluginWatcher | null = null;
 

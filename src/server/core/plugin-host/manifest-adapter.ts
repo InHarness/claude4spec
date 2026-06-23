@@ -28,7 +28,7 @@ export class PluginManifestError extends Error {
 }
 
 /**
- * Validate one writing-style contribution (M15 phase 2). Mirrors the SKILL.md
+ * Validate one writing-style contribution (M15). Mirrors the SKILL.md
  * frontmatter checks in skill-registry so a plugin style is held to the same
  * shape as a file-authored one. Throws `PluginManifestError` (caught per-package
  * by the loader) on any structural problem.

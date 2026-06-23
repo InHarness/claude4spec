@@ -1,5 +1,5 @@
 /**
- * M33 phase 3 — normalize declarative `contributes.commands` into editor slash
+ * M33 — normalize declarative `contributes.commands` into editor slash
  * extensions. Each entry is routed through `registerEditorExtension(...)` — the
  * SAME registry path as entity-borne extensions — carrying only a `slashCommand`
  * (no schema extension): a declarative command contributes a trigger + popover,

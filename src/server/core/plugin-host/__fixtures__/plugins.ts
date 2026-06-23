@@ -1,9 +1,9 @@
 /**
- * M33 phase 3 — reusable plugin manifest fixtures for tests and the local smoke
+ * M33 — reusable plugin manifest fixtures for tests and the local smoke
  * test. `plugin-foo` is an entity-less plugin exercising `contributes.settings`
  * + `contributes.commands` + the required `onUnregister`; `plugin-legacy`
- * targets the old `^1.4.0` Host API so it is reported `incompatible` under the
- * current `2.0.0` host (drives the `c4s plugins doctor` / `/_meta/plugins`
+ * targets a different major Host API (`^2.0.0`) so it is reported `incompatible`
+ * under the current `1.0.0` host (drives the `c4s plugins doctor` / `/_meta/plugins`
  * paths). Kept dep-free so they double as the body of a real ESM overlay
  * package when emitted to `.claude4spec/plugins/<pkg>/`.
  */
@@ -15,7 +15,7 @@ export function fooManifest(onUnregister: () => void = () => {}): PluginManifest
   return {
     name: '@c4s/plugin-foo',
     version: '0.1.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^1.0.0',
     onUnregister,
     contributes: {
       settings: [
@@ -47,12 +47,12 @@ export function fooManifest(onUnregister: () => void = () => {}): PluginManifest
   };
 }
 
-/** Plugin built against the previous major Host API (`^1.4.0`) — incompatible under 2.0.0. */
+/** Plugin built against a different major Host API (`^2.0.0`) — incompatible under 1.0.0. */
 export function legacyManifest(onUnregister: () => void = () => {}): PluginManifest {
   return {
     name: '@c4s/plugin-legacy',
     version: '0.9.0',
-    hostApiVersion: '^1.4.0',
+    hostApiVersion: '^2.0.0',
     onUnregister,
     contributes: {},
   };

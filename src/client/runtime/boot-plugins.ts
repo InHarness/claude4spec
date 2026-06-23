@@ -12,7 +12,7 @@
  *   4. calls `mountFrontend` to pin editor extensions + XML embeds.
  *
  * A per-plugin host-API gate (mirror of the backend skip) is added once
- * `PluginFrontendEntry` carries a version. Phase 1 ships no plugin packages, so
+ * `PluginFrontendEntry` carries a version. No plugin packages ship yet, so
  * the manifest's `plugins` is empty and every step is a no-op — but the full
  * path is exercised end-to-end.
  */
@@ -81,7 +81,7 @@ export async function bootFrontendPlugins(): Promise<void> {
 }
 
 /**
- * M33 phase 3 — react to a `plugin:reloaded` WS event WITHOUT a page reload.
+ * M33 — react to a `plugin:reloaded` WS event WITHOUT a page reload.
  * Refetch the frontend-manifest, re-import each entry with a cache-bust, re-pin
  * editor extensions, and re-register declarative commands. Crucially this NEVER
  * touches ProseMirror document state (no `setContent`), so an open/unsaved

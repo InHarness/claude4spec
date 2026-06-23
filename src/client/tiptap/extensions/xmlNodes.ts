@@ -28,7 +28,7 @@ const INLINE_TAG_RE =
 
 // M33: plugin-contributed entity types auto-register their own XML embed tag
 // (like the built-in `diagram`) so they parse as native embeds in prose with no
-// edits here. Empty in phase 1 (no plugin packages) → behavior is unchanged.
+// edits here. Empty (no plugin packages shipped yet) → behavior is unchanged.
 const PLUGIN_INLINE_TAGS = new Set<string>();
 const PLUGIN_BLOCK_TAGS = new Set<string>();
 

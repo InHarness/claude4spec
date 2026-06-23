@@ -8,7 +8,7 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
   return {
     name: '@c4s/reloadable',
     version,
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^1.0.0',
     onUnregister,
     contributes: {
       entities: [
@@ -41,7 +41,7 @@ function seams(mod: unknown) {
   };
 }
 
-describe('M33 phase 3 — reloadPlugin (base hot-reload pipeline)', () => {
+describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
   it('tears down the old version (onUnregister) then registers the new one', async () => {
     const registry = new PluginRegistryImpl();
     const oldTeardown = vi.fn();
@@ -103,11 +103,11 @@ describe('M33 phase 3 — reloadPlugin (base hot-reload pipeline)', () => {
     registry.registerPlugin(pluginV('1.0.0', oldTeardown));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^1.0.0' };
+    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^2.0.0' };
     const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: incompatible }));
 
     expect(rec).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(rec.migration?.targetHostApiVersion).toBe('2.0.0');
+    expect(rec.migration?.targetHostApiVersion).toBe('1.0.0');
     expect(oldTeardown).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
     warn.mockRestore();

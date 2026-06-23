@@ -23,7 +23,7 @@ beforeAll(() => {
   g.window = { dispatchEvent: (e: { type: string; detail: unknown }) => dispatched.push(e) };
 });
 
-describe('M33 phase 3 — plugin command routing', () => {
+describe('M33 — plugin command routing', () => {
   it('registers a declarative command as a slash entry carrying pluginPopoverKind', () => {
     registerPluginCommands([{ name: 'foo-insert', trigger: 'foo', label: 'Insert Foo', popoverKind: 'foo' }]);
     const cmd = getRegisteredSlashCommands().find((c) => c.id === 'foo-insert');

@@ -17,14 +17,14 @@ export interface SlashCommand {
     | 'todo'
     | 'diagram'
     | 'section'
-    // M33 phase 3: plugin-contributed command id (any string) — kept assignable
+    // M33: plugin-contributed command id (any string) — kept assignable
     // while preserving autocompletion of the known literals above.
     | (string & {});
   label: string;
   description: string;
   hint: string;
   /**
-   * M33 phase 3: when set, this is a declarative plugin command — invoking it
+   * M33: when set, this is a declarative plugin command — invoking it
    * dispatches this popover kind generically (the editor framework owns
    * execution) instead of routing through the built-in `id` switch.
    */

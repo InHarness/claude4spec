@@ -10,7 +10,7 @@
  *
  * Must run BEFORE the first editor is created (Tiptap freezes its schema at
  * `create`). A module whose slots fail validation is skipped with a warning.
- * Phase 1 ships no plugin modules, so this is a no-op.
+ * No plugin modules ship yet, so this is a no-op.
  */
 
 import { registerEditorExtension, ALL_EDITOR_CONTEXTS } from './registry.js';
