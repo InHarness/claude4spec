@@ -7,30 +7,40 @@ import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 
 /**
- * M26 §6 — Entities section. Multi-select of registered entity plugins
- * (M13). `entities === undefined` in the config means "all active" — when the
- * user makes any explicit choice, we persist an explicit array (potentially
- * empty: zero plugins / markdown-only project).
+ * M26 §6 — Entities section, axis A (activation per project). Multi-select of the
+ * effective entity pool `base ∪ overlay` (M33 phase 2), sourced from
+ * GET /api/_meta/entities so project-local overlay types appear here even before
+ * a client frontend module exists for them. `entities === undefined` in config
+ * means "all active" — any explicit choice persists an explicit array (possibly
+ * empty: zero plugins / markdown-only project). PATCH rebuilds the context with
+ * no restart and no banner; this axis edits activation only, never the pool.
  */
 export function EntitiesSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
   const qc = useQueryClient();
-  // The plugin host is populated at module load (via side-effect imports in
-  // `core/plugin-host/registerAll`). `listAvailable()` returns a fresh array
-  // each call, so we memoize once per mount to keep effect deps stable.
-  const available = useMemo(() => clientPluginHost.listAvailable(), []);
-  const availableTypes = useMemo(() => available.map((m) => m.type).join('|'), [available]);
-  const [draft, setDraft] = useState<Set<string>>(() => initialSelection(config, available.map((m) => m.type)));
-  // M26 §2 — slugs persisted in `config.json` that match no registered plugin are
-  // reported by GET /api/_meta/entities under `unknown`. Surface them read-only so the
-  // user can see (but not toggle) an unrecognised entity type after refetch.
+  // Activation partition from the server is the authoritative effective pool:
+  // active ∪ inactive = every registered type (base + trusted overlay); unknown
+  // = slugs in config.json with no registered plugin (surfaced read-only).
   const { data: activation } = useQuery({ queryKey: ['meta-entities'], queryFn: () => metaApi.entities() });
+  const poolTypes = useMemo(() => {
+    if (!activation) return [];
+    const all = [...activation.active, ...activation.inactive];
+    // Stable display order: client-known displayOrder first, then by type.
+    return all.sort((a, b) => {
+      const oa = clientPluginHost.getAvailable(a)?.displayOrder ?? 9999;
+      const ob = clientPluginHost.getAvailable(b)?.displayOrder ?? 9999;
+      return oa - ob || a.localeCompare(b);
+    });
+  }, [activation]);
+  const poolKey = poolTypes.join('|');
   const unknownTypes = activation?.unknown ?? [];
 
+  const [draft, setDraft] = useState<Set<string>>(() => initialSelection(config, poolTypes));
+
   useEffect(() => {
-    setDraft(initialSelection(config, availableTypes ? availableTypes.split('|') : []));
-  }, [config, availableTypes]);
+    setDraft(initialSelection(config, poolKey ? poolKey.split('|') : []));
+  }, [config, poolKey]);
 
   function toggle(type: string) {
     setDraft((prev) => {
@@ -43,7 +53,7 @@ export function EntitiesSection() {
 
   function isDirty(): boolean {
     if (!config) return false;
-    const baseline = initialSelection(config, available.map((m) => m.type));
+    const baseline = initialSelection(config, poolTypes);
     if (baseline.size !== draft.size) return true;
     for (const k of baseline) if (!draft.has(k)) return true;
     return false;
@@ -57,8 +67,8 @@ export function EntitiesSection() {
       // restart. Re-fetch the activation partition and re-apply it live; if the
       // live re-apply leaves stale UI, a full reload is the safe fallback.
       try {
-        const activation = await metaApi.entities();
-        clientPluginHost.applyActivation(activation);
+        const next = await metaApi.entities();
+        clientPluginHost.applyActivation(next);
         qc.invalidateQueries();
       } catch {
         window.location.reload();
@@ -70,40 +80,56 @@ export function EntitiesSection() {
     }
   }
 
+  function labelFor(type: string): string {
+    const m = clientPluginHost.getAvailable(type);
+    return m?.labelPlural ?? m?.label ?? type;
+  }
+
   return (
     <SettingsCard
       id="entities"
       title="Entities"
-      description="Which entity plugins are active. Disabling a type hides it from the sidebar immediately."
+      description="Which entity types are active in this project. Disabling a type hides it from the sidebar immediately (no restart). This edits activation only — see Plugin pool below for what's available."
+      badge="hot-reload"
     >
       <div className="flex flex-col gap-2">
-        {available.length === 0 ? (
+        {poolTypes.length === 0 ? (
           <p className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
-            No entity plugins are registered in this build.
+            No entity types are available in this project.
           </p>
         ) : (
-          available.map((m) => {
-            const checked = draft.has(m.type);
+          poolTypes.map((type) => {
+            const checked = draft.has(type);
+            const isOverlayOnly = clientPluginHost.getAvailable(type) == null;
             return (
               <label
-                key={m.type}
+                key={type}
                 className="flex items-center gap-3 rounded-md px-3 py-2"
                 style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
               >
                 <input
                   type="checkbox"
                   checked={checked}
-                  onChange={() => toggle(m.type)}
+                  onChange={() => toggle(type)}
                   className="h-4 w-4"
                 />
                 <span className="flex-1 min-w-0">
                   <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
-                    {m.labelPlural ?? m.label ?? m.type}
+                    {labelFor(type)}
                   </span>
                   <span className="block text-[11px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-                    {m.type}
+                    {type}
                   </span>
                 </span>
+                {isOverlayOnly ? (
+                  <span
+                    className="text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5"
+                    style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }}
+                    title="Contributed by a project-local plugin (no bundled frontend module)."
+                  >
+                    overlay
+                  </span>
+                ) : null}
               </label>
             );
           })
@@ -152,11 +178,11 @@ export function EntitiesSection() {
 
 function initialSelection(
   config: ReturnType<typeof useConfig>['data'],
-  availableTypes: string[],
+  poolTypes: string[],
 ): Set<string> {
   if (config?.entities === undefined) {
     // undefined === all active (backward compat with $schemaVersion: 1 projects).
-    return new Set(availableTypes);
+    return new Set(poolTypes);
   }
   return new Set(config.entities);
 }
