@@ -400,7 +400,7 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefini
       'mcp__reference-tools__check_consistency',
       'mcp__reference-tools__list_sections',
     ],
-    model: 'haiku',
+    model: 'sonnet-4.7',
   };
 }
 
@@ -420,7 +420,7 @@ function buildDiffExploreSubagent(): SubagentDefinition {
       'mcp__release-tools__release_diff',
       'mcp__release-tools__release_list',
     ],
-    model: 'haiku',
+    model: 'sonnet-4.7',
   };
 }
 
