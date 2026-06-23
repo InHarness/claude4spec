@@ -19,6 +19,7 @@ import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ConfirmModal.js';
 import { ToastHost } from './ui/ToastHost.js';
+import { TrustPluginsModal } from './components/TrustPluginsModal.js';
 import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
 import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
@@ -174,6 +175,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
       <TodoPopover />
       <PopoverHost />
       <PageRefPopoverHost />
+      <TrustPluginsModal />
       <ModalHost />
       <ToastHost />
     </div>

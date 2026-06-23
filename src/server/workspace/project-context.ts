@@ -59,10 +59,17 @@ import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
 import type { PeerProject } from '../services/chat-context.js';
-import type { PluginRegistry, ProjectPluginHost } from '../core/plugin-host/types.js';
+import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
+import {
+  enumerateOverlayPackages,
+  loadProjectOverlay,
+  type ProjectOverlayResult,
+} from '../core/plugin-host/overlay-loader.js';
+import { buildBasePluginPackages } from '../routes/plugins.js';
+import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
 import { projectIdForCwd } from './project-id.js';
@@ -110,6 +117,8 @@ export interface ProjectContextDeps {
   registry: WorkspaceRegistry;
   /** Process-immutable plugin catalog — consolidated per context. */
   pluginRegistry: PluginRegistry;
+  /** M33: base-layer (workspace/npm) loader records, for per-project /_meta/plugins. */
+  pluginRecords: PluginLoadRecord[];
   workspace: WorkspaceRecord;
   cwd: string;
   gateway: WsGateway;
@@ -251,7 +260,38 @@ async function buildInner(
   // here. An unreachable-but-valid host lets the project build succeed; the
   // reachability error surfaces at the first remote action as a graceful failure.
   const remoteApiUrl = deps.remoteApiUrl ?? bootConfig.remoteApiUrl;
-  const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(bootConfig.entities);
+
+  // M33 phase 2: project-local plugin overlay, behind the machine-local
+  // `trustProjectPlugins` gate. Untrusted/undecided ⇒ no overlay is built and no
+  // project-committed code runs; its types stay out of the effective pool and are
+  // reported as `untrusted` in /_meta/plugins. The trust prompt surfaces on the
+  // client when `localPluginsPresent && trust === undefined`.
+  const localPackages = enumerateOverlayPackages(cwd);
+  const localPluginsPresent = localPackages.length > 0;
+  const trust = registry.getProjectTrust(workspace, projectId);
+  let overlay: ProjectPluginOverlay | undefined;
+  let overlayRecords: PluginLoadRecord[] = [];
+  let overlayResult: ProjectOverlayResult | undefined;
+  if (localPluginsPresent && trust === true) {
+    overlayResult = await loadProjectOverlay(cwd);
+    overlay = overlayResult.overlay;
+    overlayRecords = overlayResult.records;
+  } else if (localPluginsPresent) {
+    overlayRecords = localPackages.map((pkg) => ({
+      package: pkg,
+      status: 'skipped' as const,
+      code: 'PLUGIN_PROJECT_UNTRUSTED' as const,
+      reason: 'project plugins not trusted on this machine (trustProjectPlugins)',
+      layer: 'overlay' as const,
+      trust: 'untrusted' as const,
+      origin: path.join('.claude4spec', 'plugins', pkg),
+    }));
+  }
+
+  const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
+    { entities: bootConfig.entities },
+    overlay,
+  );
   const hostState = pluginHost.partition();
   console.log(
     `[plugin-host] active: [${hostState.active.join(', ') || '∅'}]` +
@@ -498,7 +538,19 @@ async function buildInner(
     }),
   );
 
-  router.use(pluginHostRouter(pluginHost));
+  router.use(
+    pluginHostRouter({
+      host: pluginHost,
+      registry,
+      workspace,
+      projectId,
+      basePackages: buildBasePluginPackages(deps.pluginRegistry, deps.pluginRecords),
+      overlayRecords,
+      localPluginsPresent,
+      trust,
+      onContextConfigChanged: deps.onContextConfigChanged,
+    }),
+  );
   router.use('/pages', pagesRouter(pages, watcher, pageVersions));
   router.use('/static', staticRouter(staticHtml));
   router.use('/tags', tagsRouter(tagsService, referencesService));
@@ -782,6 +834,9 @@ async function buildInner(
       await patchesWatcher.close();
       await entitiesWatcher.close();
       pluginHost.clearMcpFactories();
+      // M33 phase 2: drop references to dynamically imported project-local
+      // modules (next rebuild re-imports), alongside the MCP factory release.
+      overlayResult?.dispose();
       gateway.closeRoom(projectId);
       db.close();
     },

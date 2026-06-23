@@ -22,11 +22,18 @@ export type PluginLoadCode =
   | 'PLUGIN_HOST_API_MISMATCH'
   | 'PLUGIN_ENGINE_UNSATISFIED'
   | 'PLUGIN_IMPORT_FAILED'
-  | 'PLUGIN_INVALID_MANIFEST';
+  | 'PLUGIN_INVALID_MANIFEST'
+  // Phase 2 (overlay layer):
+  | 'PLUGIN_TYPE_CONFLICT'
+  | 'PLUGIN_PROJECT_UNTRUSTED';
+
+/** Which layer a record belongs to — base (workspace/npm) vs overlay (project-local). */
+export type PluginLayer = 'base' | 'overlay';
 
 /**
- * Per-package outcome. Shape is an extensible record so phase 2 can add
- * `layer` (base/overlay), `trust`, and `shadowed` without breaking consumers.
+ * Per-package outcome. Phase 2 adds `layer` (base/overlay), `trust`, `origin`
+ * (project-local source path), and `shadows`/`shadowedTypes` — all optional so
+ * phase-1 base records keep their shape.
  */
 export interface PluginLoadRecord {
   /** Source identifier: the npm package name, or a synthetic id for built-ins. */
@@ -40,6 +47,12 @@ export interface PluginLoadRecord {
   manifestVersion?: string;
   /** Entity types this package contributed (only when `loaded`). */
   contributedTypes?: string[];
+  /** Phase 2: which layer this record came from. */
+  layer?: PluginLayer;
+  /** Phase 2: trust state of the project-local layer (overlay only). */
+  trust?: 'trusted' | 'untrusted';
+  /** Phase 2: source path under `<cwd>/.claude4spec/plugins/` (overlay only). */
+  origin?: string;
 }
 
 export interface PluginLoadResult {
@@ -50,7 +63,9 @@ export interface PluginLoadResult {
 export type PluginImporter = (specifier: string) => Promise<unknown>;
 const defaultImporter: PluginImporter = (specifier) => import(specifier);
 
-function extractManifest(mod: unknown): PluginManifest | null {
+/** Pull the `PluginManifest` off a freshly-imported module namespace. Shared by
+ * the workspace loader and the project-local overlay loader. */
+export function extractManifest(mod: unknown): PluginManifest | null {
   if (mod == null || typeof mod !== 'object') return null;
   const ns = mod as Record<string, unknown>;
   const candidate = (ns.manifest ?? ns.default) as PluginManifest | undefined;
@@ -58,11 +73,40 @@ function extractManifest(mod: unknown): PluginManifest | null {
   return candidate;
 }
 
+/** A structurally-valid manifest carries at least string `name` + `hostApiVersion`. */
+export function isValidManifestShape(manifest: PluginManifest | null): manifest is PluginManifest {
+  return (
+    manifest != null &&
+    typeof manifest.name === 'string' &&
+    typeof manifest.hostApiVersion === 'string'
+  );
+}
+
 /** engines.node satisfied by the running node? Missing constraint = satisfied. */
 function enginesSatisfied(manifest: PluginManifest): boolean {
   const node = manifest.engines?.node;
   if (!node) return true;
   return semver.satisfies(process.versions.node, node);
+}
+
+/**
+ * Compatibility gate shared by both layers: hostApiVersion range + engines.node.
+ * Returns `null` when the manifest may register; otherwise the skip code/reason.
+ */
+export function gateManifest(manifest: PluginManifest): { code: PluginLoadCode; reason: string } | null {
+  if (!semver.satisfies(HOST_API_VERSION, manifest.hostApiVersion)) {
+    return {
+      code: 'PLUGIN_HOST_API_MISMATCH',
+      reason: `host API ${HOST_API_VERSION} does not satisfy plugin requirement "${manifest.hostApiVersion}"`,
+    };
+  }
+  if (!enginesSatisfied(manifest)) {
+    return {
+      code: 'PLUGIN_ENGINE_UNSATISFIED',
+      reason: `node ${process.versions.node} does not satisfy engines.node "${manifest.engines?.node}"`,
+    };
+  }
+  return null;
 }
 
 /**
@@ -88,7 +132,7 @@ export async function loadWorkspacePlugins(
     }
 
     const manifest = extractManifest(mod);
-    if (!manifest || typeof manifest.name !== 'string' || typeof manifest.hostApiVersion !== 'string') {
+    if (!isValidManifestShape(manifest)) {
       const reason = 'package does not export a valid PluginManifest (manifest/default)';
       console.warn(`[plugin-loader] PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
       records.push({ package: pkg, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason });
@@ -98,21 +142,15 @@ export async function loadWorkspacePlugins(
     const base: PluginLoadRecord = {
       package: pkg,
       status: 'loaded',
+      layer: 'base',
       manifestName: manifest.name,
       manifestVersion: manifest.version,
     };
 
-    if (!semver.satisfies(HOST_API_VERSION, manifest.hostApiVersion)) {
-      const reason = `host API ${HOST_API_VERSION} does not satisfy plugin requirement "${manifest.hostApiVersion}"`;
-      console.warn(`[plugin-loader] PLUGIN_HOST_API_MISMATCH ${pkg}: ${reason}`);
-      records.push({ ...base, status: 'skipped', code: 'PLUGIN_HOST_API_MISMATCH', reason });
-      continue;
-    }
-
-    if (!enginesSatisfied(manifest)) {
-      const reason = `node ${process.versions.node} does not satisfy engines.node "${manifest.engines?.node}"`;
-      console.warn(`[plugin-loader] PLUGIN_ENGINE_UNSATISFIED ${pkg}: ${reason}`);
-      records.push({ ...base, status: 'skipped', code: 'PLUGIN_ENGINE_UNSATISFIED', reason });
+    const gate = gateManifest(manifest);
+    if (gate) {
+      console.warn(`[plugin-loader] ${gate.code} ${pkg}: ${gate.reason}`);
+      records.push({ ...base, status: 'skipped', code: gate.code, reason: gate.reason });
       continue;
     }
 

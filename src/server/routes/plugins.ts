@@ -30,6 +30,33 @@ export interface PluginsMetaResponse {
 
 const SYNTHETIC_BUILTIN_PACKAGE = '@c4s/builtin';
 
+/**
+ * Base-layer (`layer: 'base'`) package records: a synthetic `@c4s/builtin`
+ * record for the in-host built-in types, followed by the workspace/npm loader
+ * records. Shared by the process-global `/api/_meta/plugins` and the per-project
+ * overlay-aware variant. `pluginRegistry` here is the BASE registry — never a
+ * per-project host — so built-in detection excludes overlay types.
+ */
+export function buildBasePluginPackages(
+  pluginRegistry: PluginRegistry,
+  pluginRecords: PluginLoadRecord[],
+): PluginLoadRecord[] {
+  const loadedTypes = new Set(
+    pluginRecords.flatMap((r) => (r.status === 'loaded' ? (r.contributedTypes ?? []) : [])),
+  );
+  const builtinTypes = pluginRegistry
+    .listAvailable()
+    .map((m) => m.type)
+    .filter((t) => !loadedTypes.has(t));
+  const builtinRecord: PluginLoadRecord = {
+    package: SYNTHETIC_BUILTIN_PACKAGE,
+    status: 'loaded',
+    layer: 'base',
+    contributedTypes: builtinTypes,
+  };
+  return [builtinRecord, ...pluginRecords.map((r) => ({ ...r, layer: r.layer ?? 'base' }))];
+}
+
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
   const { pluginRegistry, pluginRecords } = deps;
   const router = Router();
@@ -65,23 +92,9 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
   });
 
   router.get('/_meta/plugins', (_req, res) => {
-    const loadedTypes = new Set(
-      pluginRecords.flatMap((r) => (r.status === 'loaded' ? r.contributedTypes ?? [] : [])),
-    );
-    const builtinTypes = pluginRegistry
-      .listAvailable()
-      .map((m) => m.type)
-      .filter((t) => !loadedTypes.has(t));
-
-    const builtinRecord: PluginLoadRecord = {
-      package: SYNTHETIC_BUILTIN_PACKAGE,
-      status: 'loaded',
-      contributedTypes: builtinTypes,
-    };
-
     const response: PluginsMetaResponse = {
       hostApiVersion: HOST_API_VERSION,
-      packages: [builtinRecord, ...pluginRecords],
+      packages: buildBasePluginPackages(pluginRegistry, pluginRecords),
     };
     res.json(response);
   });

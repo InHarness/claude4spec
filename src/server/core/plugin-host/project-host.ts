@@ -11,6 +11,8 @@ import type {
   MountContext,
   PluginRegistry,
   ProjectPluginHost,
+  ProjectPluginOverlay,
+  ShadowedType,
 } from './types.js';
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
 import type {
@@ -27,20 +29,31 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   private unknownTypes: string[] = [];
   private mcpServerFactories = new Map<string, () => McpServerInstance>();
   private entityServices = new Map<string, unknown>();
+  // Phase 2: project-local modules of THIS context, keyed by type. Empty when
+  // `overlay === undefined` (parity with phase 1).
+  private readonly overlayModules = new Map<string, BackendModule>();
 
   constructor(
     private readonly registry: PluginRegistry,
     activeWhitelist: string[] | null | undefined,
+    private readonly overlay?: ProjectPluginOverlay,
   ) {
+    // Effective pool = base ∪ overlay. Overlay wins on cross-layer collision
+    // (shadow) — `getAvailable`/`listAvailable` consult the overlay first.
+    for (const m of overlay?.listLocal() ?? []) {
+      this.overlayModules.set(m.type, m);
+    }
     if (activeWhitelist == null) {
       this.activeTypes = null;
       this.unknownTypes = [];
       return;
     }
+    // The whitelist is applied to the merged pool, not the base alone — an
+    // overlay type is activatable exactly like a base type.
     const active = new Set<string>();
     const unknown: string[] = [];
     for (const type of activeWhitelist) {
-      if (this.registry.getAvailable(type)) active.add(type);
+      if (this.getAvailable(type)) active.add(type);
       else unknown.push(type);
     }
     this.activeTypes = active;
@@ -48,7 +61,11 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   }
 
   listAvailable(): BackendModule[] {
-    return this.registry.listAvailable();
+    // Merge base + overlay; overlay shadows a same-typed base module.
+    const merged = new Map<string, BackendModule>();
+    for (const m of this.registry.listAvailable()) merged.set(m.type, m);
+    for (const [type, m] of this.overlayModules) merged.set(type, m);
+    return Array.from(merged.values()).sort((a, b) => a.displayOrder - b.displayOrder);
   }
 
   listEntities(): BackendModule[] {
@@ -57,15 +74,16 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   getEntity(type: string): BackendModule | null {
     if (!this.isActive(type)) return null;
-    return this.registry.getAvailable(type);
+    return this.getAvailable(type);
   }
 
   getAvailable(type: string): BackendModule | null {
-    return this.registry.getAvailable(type);
+    // Overlay shadows base on cross-layer collision.
+    return this.overlayModules.get(type) ?? this.registry.getAvailable(type) ?? null;
   }
 
   isActive(type: string): boolean {
-    if (!this.registry.getAvailable(type)) return false;
+    if (!this.getAvailable(type)) return false;
     if (this.activeTypes == null) return true;
     return this.activeTypes.has(type);
   }
@@ -76,6 +94,17 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
       .filter((m) => !this.isActive(m.type))
       .map((m) => m.type);
     return { active, inactive, unknown: [...this.unknownTypes] };
+  }
+
+  shadowReport(): ShadowedType[] {
+    const out: ShadowedType[] = [];
+    for (const type of this.overlayModules.keys()) {
+      // Cross-layer collision: the overlay type also exists in the base layer.
+      if (this.registry.getAvailable(type)) {
+        out.push({ type, overlayOrigin: this.overlay?.origin(type) ?? '' });
+      }
+    }
+    return out;
   }
 
   mountBackend(ctx: MountContext): void {

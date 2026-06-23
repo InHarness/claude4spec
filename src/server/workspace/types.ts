@@ -14,6 +14,14 @@ export interface ProjectRecord {
   addedAt: string;
   /** ISO timestamp of the last SPA open / activation. */
   lastOpened?: string;
+  /**
+   * M33 phase 2: machine-local trust decision for this project's committed
+   * `.claude4spec/plugins/` overlay, per `(workspace × project)`. Deliberately
+   * lives ONLY in `~/.claude4spec/`, NEVER in the repo — a cloned repo cannot
+   * self-authorize. `undefined` = undecided (prompt on first open); `true` =
+   * overlay loads; `false` = overlay refused.
+   */
+  trustProjectPlugins?: boolean;
 }
 
 export interface WorkspaceRecord {
