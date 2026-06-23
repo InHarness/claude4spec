@@ -66,6 +66,15 @@ class ClientPluginHostImpl implements ClientPluginHost {
 export const clientPluginHost: ClientPluginHost = new ClientPluginHostImpl();
 
 /**
+ * Free-function form of `clientPluginHost.registerFrontendModule`, re-exported
+ * through `@c4s/plugin-runtime` so a runtime plugin can hand its frontend slots
+ * to the host without reaching into the singleton directly.
+ */
+export function registerFrontendModule(module: FrontendModule): void {
+  clientPluginHost.registerFrontendModule(module);
+}
+
+/**
  * Categorise a chip's broken state. Returns null when the type is active
  * (caller should render normal chip and treat missing entity row as
  * 'broken-reference' separately).

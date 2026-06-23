@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { WorkspaceRegistry } from '../../server/workspace/registry.js';
+import { WorkspaceRegistry, resolvePluginPackages } from '../../server/workspace/registry.js';
 import { projectIdForCwd } from '../../server/workspace/project-id.js';
 import type { WorkspaceRecord } from '../../server/workspace/types.js';
 
@@ -10,6 +10,8 @@ export interface ResolvedWorkspaceProject {
   projectDir: string;
   /** `~/.claude4spec/<ws>/<id>/db.sqlite` — may not exist yet (fresh slot). */
   dbPath: string;
+  /** M33: workspace plugin packages (predefined ∪ user-added) for the loader. */
+  pluginPackages: string[];
 }
 
 export type WorkspaceResolveErrorCode = 'PROJECT_NOT_FOUND' | 'AMBIGUOUS_WORKSPACE';
@@ -103,5 +105,6 @@ export function resolveWorkspaceProject(
     projectId,
     projectDir,
     dbPath: path.join(registry.slotDir(workspace, projectId), 'db.sqlite'),
+    pluginPackages: resolvePluginPackages(workspace),
   };
 }

@@ -4,11 +4,11 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
 
-export function runDescribe(args: ParsedArgs): void {
+export async function runDescribe(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const viewFlag = optionalString(args, 'view');
   const view = viewFlag ? normalizeViewKind(viewFlag) : undefined;
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const result = ctx.registry.describe(type, view, ctx.db);
     if (!result) {

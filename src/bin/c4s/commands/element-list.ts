@@ -6,10 +6,10 @@ import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import { withMeta } from './_meta.js';
 
-export function runElementList(args: ParsedArgs): void {
+export async function runElementList(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const slugs = requireStringList(args, 'slugs');
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const { items: entities, missing } = ctx.reader.getEntities(type, slugs);
     if (entities.length === 0) {

@@ -5,8 +5,8 @@ import type { ParsedArgs } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 
-export function runCatalog(args: ParsedArgs): void {
-  const ctx = createContext(args);
+export async function runCatalog(args: ParsedArgs): Promise<void> {
+  const ctx = await createContext(args);
   try {
     const catalog = ctx.registry.catalog(ctx.reader);
     writeOutput({ ...catalog, claude4spec: readPackageVersion() }, args);

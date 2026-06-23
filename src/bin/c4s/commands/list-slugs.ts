@@ -4,9 +4,9 @@ import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 
-export function runListSlugs(args: ParsedArgs): void {
+export async function runListSlugs(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const slugs = ctx.reader.listSlugs(type);
     writeOutput({ type, slugs }, args);

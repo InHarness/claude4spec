@@ -4,10 +4,39 @@ import path from 'node:path';
 import { projectIdForCwd } from './project-id.js';
 import type { ProjectRecord, WorkspaceRecord, WorkspacesFile } from './types.js';
 
-export const WORKSPACES_SCHEMA_VERSION = 1;
+// v2 (M33): WorkspaceRecord gains optional `plugins[]`. Legacy v1 records lack
+// the field and read as predefined-only — no rewrite needed on read. NOTE: any
+// mutation by a >=0.1.73 binary rewrites `$schemaVersion` to 2, after which an
+// OLDER binary (max schema 1) refuses to open the file (read() forward-compat
+// guard). Mixed-version use against one `~/.claude4spec/` is a one-way upgrade.
+export const WORKSPACES_SCHEMA_VERSION = 2;
 export const DEFAULT_WORKSPACE_PORT = 4500;
 const DEFAULT_WORKSPACE_NAME = 'default';
 const LOCK_STALE_MS = 5_000;
+
+/**
+ * M33: plugin packages built into claude4spec core deps — always present in
+ * every workspace regardless of the persisted `plugins[]`. Phase 1 ships none
+ * (the 7 entity types are still in-host built-ins registered via
+ * `registerAllPlugins`); the mechanism is what matters for forward-compat.
+ */
+export const PREDEFINED_PLUGINS: readonly string[] = [];
+
+/**
+ * Effective workspace plugin package set = predefined ∪ user-added, deduped,
+ * predefined first. This is what the M33 loader dynamic-imports at bootstrap.
+ */
+export function resolvePluginPackages(ws: Pick<WorkspaceRecord, 'plugins'>): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const pkg of [...PREDEFINED_PLUGINS, ...(ws.plugins ?? [])]) {
+    if (!seen.has(pkg)) {
+      seen.add(pkg);
+      out.push(pkg);
+    }
+  }
+  return out;
+}
 
 /**
  * Global registry root. `C4S_HOME` override exists for dev/E2E so a test run

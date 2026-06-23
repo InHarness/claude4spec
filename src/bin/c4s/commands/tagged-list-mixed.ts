@@ -6,13 +6,13 @@ import { writeOutput } from '../output.js';
 import { withMeta } from './_meta.js';
 import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
 
-export function runTaggedListMixed(args: ParsedArgs): void {
+export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   const tags = requireStringList(args, 'tags');
   const filterRaw = optionalString(args, 'filter') ?? 'or';
   if (filterRaw !== 'and' && filterRaw !== 'or') {
     throw new CliError('INVALID_ARGS', `--filter must be 'and' or 'or', got '${filterRaw}'`);
   }
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const entities = ctx.reader.findByTag({ tags, filter: filterRaw });
     const grouped: Record<string, unknown[]> = {

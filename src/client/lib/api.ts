@@ -1,5 +1,6 @@
 import type { PageContent, PageNode, PageSearchHit, TodoCounts, TodoHit } from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
+import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
   PageLinksAutocompleteResponse,
   PageLinksCounts,
@@ -287,6 +288,15 @@ export const versionsApi = {
 export const metaApi = {
   async entities(): Promise<PluginActivationState> {
     return handle<PluginActivationState>(await apiFetch('/api/_meta/entities'));
+  },
+};
+
+// M33: process-level plugin endpoints. These live on the workspace router (not
+// per-project), so they use plain `fetch` — `apiFetch` would wrongly prepend the
+// `/api/projects/<id>` prefix.
+export const pluginsApi = {
+  async frontendManifest(): Promise<FrontendManifestResponse> {
+    return handle<FrontendManifestResponse>(await fetch('/api/plugins/frontend-manifest'));
   },
 };
 

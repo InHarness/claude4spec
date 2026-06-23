@@ -15,6 +15,7 @@ import type {
   PluginActivationState,
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
+import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import type {
   EntityDiff,
   EntitySerializer,
@@ -117,6 +118,15 @@ export interface BackendModule extends EntityModuleManifest {
 export interface PluginRegistry {
   /** Register a plugin manifest. Idempotent on `module.type`. */
   registerEntityModule(module: BackendModule): void;
+
+  /**
+   * M33: register a runtime plugin manifest. Validates the manifest shape and
+   * fans `contributes.entities[]` out to `registerEntityModule(...)` (each
+   * lowered from its authoring shape). Throws `PluginManifestError` on a
+   * structurally invalid manifest — the loader catches this per-package. Does
+   * NOT gate on hostApiVersion/engines (that is the loader's job).
+   */
+  registerPlugin(manifest: PluginManifest): void;
 
   /** All registered modules, regardless of activation. */
   listAvailable(): BackendModule[];

@@ -6,10 +6,10 @@ import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import { withMeta } from './_meta.js';
 
-export function runSingleElement(args: ParsedArgs): void {
+export async function runSingleElement(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const slug = requireString(args, 'slug');
-  const ctx = createContext(args);
+  const ctx = await createContext(args);
   try {
     const entity = ctx.reader.getEntity(type, slug);
     if (!entity) throw new CliError('ENTITY_NOT_FOUND', `${type}/${slug}`);
