@@ -26,11 +26,25 @@ function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
   return [];
 }
 
+/** M33 phase 3: window event a delivered plugin frontend listens for to run its popover. */
+export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
+
 export async function invokeSlash(
   editor: Editor,
   command: SlashCommand,
   deps: SlashInvokeDeps,
 ): Promise<void> {
+  // M33 phase 3: a declarative plugin command is executed by the editor
+  // framework dispatching its popover kind — NOT by plugin logic here. The
+  // plugin's frontend (delivered separately) listens for this event.
+  if (command.pluginPopoverKind) {
+    window.dispatchEvent(
+      new CustomEvent(PLUGIN_COMMAND_EVENT, {
+        detail: { popoverKind: command.pluginPopoverKind, commandId: command.id, editor },
+      }),
+    );
+    return;
+  }
   switch (command.id) {
     case 'mention':
       await runMention(editor);

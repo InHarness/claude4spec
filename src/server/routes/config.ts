@@ -4,6 +4,7 @@ import { readConfig, writeConfig, type Config } from '../config.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
+import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -21,6 +22,13 @@ export interface ConfigRouterDeps {
    * onboarding can't leave an orphan index on the old path.
    */
   onOnboardingCompleted?: (effectivePagesDir: string) => void;
+  /**
+   * M33 phase 3: current plugin Settings sections (host.listSettings()). Used to
+   * classify a `plugins` PATCH per field `kind` — if any written field is
+   * `executive`, the context is invalidated (rebuild); `hot-reload` fields are
+   * not (parity with writingStyle/language).
+   */
+  pluginSettingsSections?: () => PluginSettingsSection[];
 }
 
 const CONTEXT_DEFINING_FIELDS = ['pagesDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'entities'] as const;
@@ -277,7 +285,25 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       if (patch.onboardingCompleted === true) {
         deps.onOnboardingCompleted?.(updated.pagesDir);
       }
-      if (deps.onContextConfigChanged && CONTEXT_DEFINING_FIELDS.some((f) => f in patch)) {
+      // M33 phase 3: a `plugins` write invalidates the context only when at
+      // least one written field is `executive`; `hot-reload`-only writes take
+      // effect on the next turn/thread without a rebuild.
+      const pluginsPatchIsExecutive = (): boolean => {
+        if (!patch.plugins || !deps.pluginSettingsSections) return false;
+        const sections = deps.pluginSettingsSections();
+        for (const [name, fields] of Object.entries(patch.plugins)) {
+          const section = sections.find((s) => s.name === name);
+          if (!section) continue;
+          for (const key of Object.keys(fields)) {
+            if (section.fields.find((f) => f.key === key)?.kind === 'executive') return true;
+          }
+        }
+        return false;
+      };
+      if (
+        deps.onContextConfigChanged &&
+        (CONTEXT_DEFINING_FIELDS.some((f) => f in patch) || pluginsPatchIsExecutive())
+      ) {
         deps.onContextConfigChanged();
       }
       res.json(configResponse(updated));

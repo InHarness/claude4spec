@@ -587,6 +587,10 @@ async function buildInner(
       skillRegistry,
       onContextConfigChanged: deps.onContextConfigChanged,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
+      // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
+      // field's `kind` — an `executive` field invalidates the context (rebuild),
+      // a `hot-reload` field does not (parity with writingStyle/language).
+      pluginSettingsSections: () => pluginHost.listSettings(),
     }),
   );
 

@@ -4,6 +4,10 @@ import type { WsEvent } from '../../shared/types.js';
 import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
+import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
+
+/** M33 phase 3: window event a live editor listens for to re-apply extensions (no setContent). */
+export const PLUGINS_RELOADED_EVENT = 'c4s:plugins-reloaded';
 
 /** Map an entity type → its React Query list key (plural). */
 const ENTITY_LIST_KEY: Record<string, string> = {
@@ -69,6 +73,20 @@ export function useFileWatcher() {
             batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
+          } else if (data.kind === 'plugin:reloaded') {
+            // M33 phase 3: a plugin in the pool was installed/removed/edited.
+            // Re-import its frontend (cache-bust), re-pin editor extensions +
+            // commands, then invalidate the plugin-derived caches. NO setContent
+            // — an open document survives. A live editor re-applies extensions
+            // on the dispatched window event.
+            void reloadFrontendPlugins().finally(() => {
+              window.dispatchEvent(new CustomEvent(PLUGINS_RELOADED_EVENT, { detail: data }));
+            });
+            batcher.queue(['plugins-meta']);
+            batcher.queue(['plugin-settings']);
+            batcher.queue(['meta-entities']);
+            batcher.queue(['config']);
+            batcher.queue(['entities']);
           } else if (data.kind === 'briefs:changed') {
             batcher.queue(['briefs', 'list']);
             if (data.path) {

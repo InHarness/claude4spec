@@ -16,10 +16,19 @@ export interface SlashCommand {
     | 'design-system'
     | 'todo'
     | 'diagram'
-    | 'section';
+    | 'section'
+    // M33 phase 3: plugin-contributed command id (any string) — kept assignable
+    // while preserving autocompletion of the known literals above.
+    | (string & {});
   label: string;
   description: string;
   hint: string;
+  /**
+   * M33 phase 3: when set, this is a declarative plugin command — invoking it
+   * dispatches this popover kind generically (the editor framework owns
+   * execution) instead of routing through the built-in `id` switch.
+   */
+  pluginPopoverKind?: string;
 }
 
 export interface SlashMenuHandle {
