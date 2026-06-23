@@ -70,9 +70,29 @@ export interface EntityContribution extends EntityModuleManifest {
 }
 
 /**
+ * Authoring shape for one contributed writing style (M15). A plugin carries the
+ * style inline (body + optional attached files) rather than dropping a SKILL.md
+ * dir on disk — discovery is by push at load time (the loader fans these into
+ * the per-project SkillRegistry as `source: "plugin"`), not by FS scan.
+ */
+export interface WritingStyleContribution {
+  /** Stable identifier; also the dedup key against bundled/user styles. */
+  slug: string;
+  title: string;
+  description: string;
+  /** Positive integer; mirrors SKILL.md frontmatter `version`. */
+  version: number;
+  language: 'en' | 'pl';
+  /** The skill body markdown (the SKILL.md content without frontmatter). */
+  content: string;
+  /** Optional attached files (templates/examples/workflows), keyed by rel path. */
+  files?: Record<string, string>;
+}
+
+/**
  * The default export of a plugin package. `contributes` is the capability
- * bundle; phase 1 consumes `contributes.entities`. `writingStyles` is declared
- * but unused until phase 2 — the loader ignores it for now.
+ * bundle: `contributes.entities` (phase 1) and `contributes.writingStyles`
+ * (phase 2 — pushed into the SkillRegistry as `source: "plugin"`).
  */
 export interface PluginManifest {
   /** npm package name. */
@@ -85,8 +105,8 @@ export interface PluginManifest {
   engines?: PluginEngines;
   contributes: {
     entities?: EntityContribution[];
-    /** Reserved for phase 2 (writing-style plugins). Ignored in phase 1. */
-    writingStyles?: unknown[];
+    /** M15 phase 2 — writing styles contributed by this plugin. */
+    writingStyles?: WritingStyleContribution[];
   };
 }
 

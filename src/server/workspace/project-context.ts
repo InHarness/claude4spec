@@ -288,6 +288,14 @@ async function buildInner(
     }));
   }
 
+  // M15 phase 2: fan plugin-contributed writing styles into this project's
+  // SkillRegistry as `source: "plugin"` (precedence project > global > plugin >
+  // bundled). Base (workspace/npm) styles always; project-local overlay styles
+  // only on the trusted path (overlayResult is set only when trust === true),
+  // so an untrusted plugin contributes no style — exactly as for its entities.
+  for (const style of deps.pluginRegistry.listWritingStyles()) skillRegistry.addPluginStyle(style);
+  for (const style of overlayResult?.writingStyles ?? []) skillRegistry.addPluginStyle(style);
+
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
     { entities: bootConfig.entities },
     overlay,

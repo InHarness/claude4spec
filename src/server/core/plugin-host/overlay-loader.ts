@@ -27,8 +27,9 @@ import {
   isValidManifestShape,
   type PluginLoadRecord,
 } from './loader.js';
-import { lowerEntityContribution } from './manifest-adapter.js';
+import { lowerEntityContribution, validateWritingStyle } from './manifest-adapter.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
+import type { WritingStyleContribution } from '../../../shared/plugin-host/manifest.js';
 
 /** Importer seam — overridable in tests; defaults to native dynamic import. */
 export type PluginImporter = (specifier: string) => Promise<unknown>;
@@ -39,6 +40,8 @@ export interface ProjectOverlayResult {
   overlay: ProjectPluginOverlay | undefined;
   /** Per-package diagnostics for the per-project `/_meta/plugins` route. */
   records: PluginLoadRecord[];
+  /** M15 phase 2: trusted project-local writing styles, pushed into SkillRegistry. */
+  writingStyles: WritingStyleContribution[];
   /** Best-effort detach of imported project-local modules (see dispose note). */
   dispose: () => void;
 }
@@ -130,6 +133,7 @@ export async function loadProjectOverlay(
   const records: PluginLoadRecord[] = [];
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
+  const writingStyles: WritingStyleContribution[] = [];
 
   for (const pkg of enumerateOverlayPackages(cwd)) {
     const pkgDir = path.join(projectPluginsDir(cwd), pkg);
@@ -176,10 +180,13 @@ export async function loadProjectOverlay(
       continue;
     }
 
-    // Lower contributions + enforce within-overlay (same-layer) type uniqueness.
+    // Lower contributions (entities + styles) before committing — a throw on
+    // either fails the whole plugin atomically.
     let lowered: BackendModule[];
+    let styles: WritingStyleContribution[];
     try {
       lowered = (manifest.contributes?.entities ?? []).map(lowerEntityContribution);
+      styles = (manifest.contributes?.writingStyles ?? []).map(validateWritingStyle);
     } catch (err) {
       const reason = (err as Error).message;
       console.warn(`[overlay-loader] PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
@@ -187,6 +194,7 @@ export async function loadProjectOverlay(
       continue;
     }
 
+    // Enforce within-overlay (same-layer) type uniqueness.
     const conflict = lowered.find((m) => modules.has(m.type));
     if (conflict) {
       const reason = `type "${conflict.type}" already provided by another project-local plugin (origin ${originByType.get(conflict.type)})`;
@@ -199,6 +207,7 @@ export async function loadProjectOverlay(
       modules.set(m.type, m);
       originByType.set(m.type, origin);
     }
+    writingStyles.push(...styles);
     records.push({
       ...base,
       manifestName: manifest.name,
@@ -207,8 +216,10 @@ export async function loadProjectOverlay(
     });
   }
 
+  // No entity modules ⇒ no overlay host layer, but a plugin may still have
+  // contributed writing styles — return those so the caller can push them.
   if (modules.size === 0) {
-    return { overlay: undefined, records, dispose: () => {} };
+    return { overlay: undefined, records, writingStyles, dispose: () => {} };
   }
 
   const overlay: ProjectPluginOverlay = {
@@ -225,5 +236,5 @@ export async function loadProjectOverlay(
     originByType.clear();
   };
 
-  return { overlay, records, dispose };
+  return { overlay, records, writingStyles, dispose };
 }
