@@ -18,12 +18,18 @@ function style(over: Partial<WritingStyleContribution> = {}): WritingStyleContri
 }
 
 /** Write a SKILL.md skill dir under `root` and return the root spec. */
-function writeSkill(root: string, slug: string, source: SkillRoot['source'], title: string): SkillRoot {
+function writeSkill(
+  root: string,
+  slug: string,
+  source: SkillRoot['source'],
+  title: string,
+  scope: 'writing-style' | 'contextual' = 'writing-style',
+): SkillRoot {
   const dir = path.join(root, slug);
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(
     path.join(dir, 'SKILL.md'),
-    `---\ntitle: ${title}\ndescription: from ${source}\nversion: 1\nlanguage: en\nscope: writing-style\n---\nbody from ${source}\n`,
+    `---\ntitle: ${title}\ndescription: from ${source}\nversion: 1\nlanguage: en\nscope: ${scope}\n---\nbody from ${source}\n`,
   );
   return { dir: root, source };
 }
@@ -88,5 +94,19 @@ describe('SkillRegistry — plugin writing styles (M15 phase 2)', () => {
     const registry = SkillRegistry.load([]);
     registry.addPluginStyle(style());
     expect(registry.isSelectable('terse')).toBe(true);
+  });
+
+  it('does not clobber a same-slug bundled contextual skill', () => {
+    // A bundled contextual skill is kept (only user-root contextual skills drop).
+    const bundledRoot = writeSkill(path.join(tmp, 'bundled'), 'terse', 'bundled', 'Ctx', 'contextual');
+    const registry = SkillRegistry.load([bundledRoot]);
+    registry.addPluginStyle(style({ title: 'Plugin Terse' }));
+
+    const meta = registry.list().find((s) => s.slug === 'terse');
+    // The contextual skill survives — not flipped to a selectable writing-style.
+    expect(meta?.scope).toBe('contextual');
+    expect(meta?.source).toBe('bundled');
+    expect(registry.isSelectable('terse')).toBe(false);
+    expect(registry.listSelectable().some((s) => s.slug === 'terse')).toBe(false);
   });
 });

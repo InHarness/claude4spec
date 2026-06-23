@@ -114,12 +114,19 @@ export class SkillRegistry {
    * already claiming this slug wins and the plugin style is dropped; otherwise
    * the plugin style is registered, overriding any same-slug `bundled` style.
    * First plugin wins among plugins (a later plugin never displaces an earlier
-   * one). Loading is the caller's trust decision — untrusted project-local
-   * plugins are never pushed here.
+   * one). A plugin never displaces a non-writing-style skill (e.g. a bundled
+   * `contextual` skill sharing the slug), so contextual resolution is preserved.
+   * Loading is the caller's trust decision — untrusted project-local plugins are
+   * never pushed here.
    */
   addPluginStyle(c: WritingStyleContribution): void {
     const existing = this.metadataBySlug.get(c.slug);
-    if (existing && (existing.source === 'user' || existing.source === 'plugin')) return;
+    if (
+      existing &&
+      (existing.source === 'user' || existing.source === 'plugin' || existing.scope !== 'writing-style')
+    ) {
+      return;
+    }
     const metadata: SkillMetadata = {
       slug: c.slug,
       title: c.title,
