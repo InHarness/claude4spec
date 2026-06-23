@@ -326,9 +326,8 @@ async function buildInner(
   );
   const initialWritingStyle = bootConfig.writingStyle;
   if (initialWritingStyle !== null && !skillRegistry.isSelectable(initialWritingStyle)) {
-    const available = skillRegistry.listSelectable().map((s) => s.slug).join(', ') || '(none)';
     throw new Error(
-      `config.json: writingStyle "${initialWritingStyle}" not a selectable writing-style skill. Available: ${available}`,
+      `config.json: writingStyle "${initialWritingStyle}" ${skillRegistry.unselectableReason(initialWritingStyle)}`,
     );
   }
   // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so

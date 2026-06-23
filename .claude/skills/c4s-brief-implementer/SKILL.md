@@ -81,6 +81,28 @@ cd .worktrees/<brief-slug>
 - If `origin` is not configured, branch from local `main`: `git checkout main &&
   git pull`, then `git worktree add .worktrees/<brief-slug> -b brief/<brief-slug> main`.
 
+**Copy the spec into the worktree.** The smoke test (step 5) runs the dev server
+against the CLAUDE 4 SPEC spec, but `.claude/skills/specyfikacja` is a **symlink**
+to a *separate* repo and is git-ignored — a fresh worktree checkout doesn't contain
+it at all. Pointing the dev server at the real symlinked dir also risks **mutating
+the canonical docs/db**. So make a disposable copy inside the worktree, dereferencing
+the symlink:
+
+```bash
+# -L follows the symlink so the worktree gets REAL files, not a dangling relative
+# link (a verbatim copy would point outside the worktree and break). The dest path
+# is git-ignored, so the copy stays out of `git status` and `git worktree remove`
+# discards it together with the worktree.
+mkdir -p .claude/skills
+cp -RL ../../.claude/skills/specyfikacja .claude/skills/specyfikacja
+```
+
+- `../../` from the worktree root (`.worktrees/<brief-slug>`) reaches the main repo
+  root, where the live symlink lives.
+- If the source symlink is absent (no private spec repo checked out locally), skip
+  this copy and the synchronous smoke test, and rely on unit tests — same as the
+  "skip when unavailable" rule for `c4s ask` in step 2.
+
 ### 4. Implement
 
 Standard code flow: read existing code, plan, edit, test. Stay focused on what
@@ -99,6 +121,9 @@ green unit tests alone.
 npx tsx src/bin/claude4spec.ts --mode dev --cwd .claude/skills/specyfikacja --pages . --port 5555
 ```
 
+- `--cwd .claude/skills/specyfikacja` points at the **worktree's local copy** made
+  in step 3 — *not* the symlinked source. So a crash or db write during the smoke
+  test can never damage the real specification.
 - **Port 5555 is our test convention.** If it's taken (`EADDRINUSE`), increment —
   `--port 5556`, `5557`, … — until one is free.
 - Open the printed URL, verify the brief's behaviour, then stop the server

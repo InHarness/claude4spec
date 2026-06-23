@@ -160,8 +160,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'writingStyle must be string | null' } });
         }
         if (typeof body.writingStyle === 'string' && !skillRegistry.isSelectable(body.writingStyle)) {
-          const available = skillRegistry.listSelectable().map((s) => s.slug).join(', ') || '(none)';
-          return res.status(400).json({ error: { code: 'VALIDATION', message: `writingStyle "${body.writingStyle}" not a selectable writing-style skill. Available: ${available}` } });
+          return res.status(400).json({ error: { code: 'VALIDATION', message: `writingStyle "${body.writingStyle}" ${skillRegistry.unselectableReason(body.writingStyle)}` } });
         }
         patch.writingStyle = body.writingStyle;
       }

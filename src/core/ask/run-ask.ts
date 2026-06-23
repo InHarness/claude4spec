@@ -44,6 +44,7 @@ export type AskErrorCode =
   | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'
+  | 'PROJECT_BUILD_FAILED'
   | 'NOT_FOUND'
   | 'STREAM_IN_PROGRESS'
   | 'AGENT_UNAVAILABLE'
@@ -162,11 +163,12 @@ function projectIdForPath(project: string): string {
 
 /**
  * M31 health-check tozsamosci: `GET /api/projects/<id>/config` musi zwrocic
- * ksztalt configu claude4spec v3. Cztery rozlaczne wyniki:
- *   connection refused      → SERVER_NOT_RUNNING
- *   nie-c4s ksztalt          → SERVER_NOT_RECOGNIZED
- *   404 z koperta c4s        → PROJECT_NOT_IN_WORKSPACE
- *   200 config               → OK
+ * ksztalt configu claude4spec v3. Piec rozlacznych wynikow:
+ *   connection refused           → SERVER_NOT_RUNNING
+ *   nie-c4s ksztalt               → SERVER_NOT_RECOGNIZED
+ *   404 z koperta c4s             → PROJECT_NOT_IN_WORKSPACE
+ *   inny nie-2xx z koperta c4s    → kod z koperty (np. PROJECT_BUILD_FAILED)
+ *   200 config                    → OK
  */
 async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   let res: Response;
@@ -194,6 +196,18 @@ async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
       'PROJECT_NOT_IN_WORKSPACE',
       err.message ?? `project not registered in the workspace served at ${baseUrl}`,
       'register it: POST /api/workspace/projects or run `npx @inharness-ai/claude4spec` in the project',
+    );
+  }
+  // A non-2xx carrying a c4s error envelope means the server IS claude4spec but
+  // this project failed to build (e.g. 500 PROJECT_BUILD_FAILED). Surface its own
+  // code/message instead of masking it as "not a claude4spec server" — otherwise a
+  // bad config.json (e.g. an unselectable writingStyle) looks like a missing server.
+  if (!res.ok && isC4sErrorEnvelope(body)) {
+    const err = (body as { error: { code?: string; message?: string; hint?: string } }).error;
+    throw new AskError(
+      (err.code as AskErrorCode) ?? 'PROJECT_BUILD_FAILED',
+      err.message ?? `project at ${baseUrl} failed to build`,
+      err.hint,
     );
   }
   if (!res.ok || !isConfigShape(body)) {

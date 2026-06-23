@@ -71,4 +71,18 @@ it matches the registry exactly:
 \`\`\`sh
 c4s ask "<question>" --ct chat --project /abs/path/to/registered/project-dir
 \`\`\`
+
+### \`SERVER_NOT_RECOGNIZED\` / \`PROJECT_BUILD_FAILED\` — the project failed to build
+
+If \`c4s ask\` reports the server is "not a claude4spec server", or
+\`GET /api/projects/<id>/config\` returns \`PROJECT_BUILD_FAILED\`, the server IS
+running but **that project failed to build**. A common cause is the configured
+\`writingStyle\` skill failing to load: a skill under \`.claude/skills/\` whose
+frontmatter \`version\` exceeds the supported version is skipped at scan time, so
+the style is "not a selectable writing-style skill".
+
+\`c4s ask\` surfaces the real \`PROJECT_BUILD_FAILED\` message, which names the cause
+(e.g. \`writingStyle "X" was found on disk but skipped: version 2 > supported 1\`).
+Fix the skill's frontmatter (\`version\` is a format-compat gate — keep it \`1\`, don't
+use it as a content counter) and restart the server.
 `;

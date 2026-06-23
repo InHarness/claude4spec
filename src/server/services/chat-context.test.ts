@@ -103,7 +103,7 @@ describe('subagentsFor (0.1.67)', () => {
       'mcp__release-tools__release_list',
     ]);
     expect(tools.some((t) => t.includes('get_') || t.includes('find_references'))).toBe(false);
-    expect(subs[0].model).toBe('sonnet-4.7');
+    expect(subs[0].model).toBe('sonnet');
   });
 
   it('chat/patch → spec-explore: read-only entity graph + reference reads', () => {
@@ -119,7 +119,7 @@ describe('subagentsFor (0.1.67)', () => {
       expect(tools).toContain('mcp__reference-tools__check_consistency');
       expect(tools).toContain('mcp__reference-tools__list_sections');
       expect(tools.some((t) => /create_|update_|delete_|link_/.test(t))).toBe(false);
-      expect(subs[0].model).toBe('sonnet-4.7');
+      expect(subs[0].model).toBe('sonnet');
     }
   });
 

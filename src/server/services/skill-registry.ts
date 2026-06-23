@@ -52,6 +52,11 @@ export class SkillRegistry {
   // M15 phase 2: plugin-contributed styles carry their body inline (no FS path),
   // so `resolve()` reads them from here instead of disk.
   private pluginResolved = new Map<string, ResolvedSkill>();
+  // Slugs found on disk but dropped during scan (version too high, contextual in a
+  // user root, missing/malformed SKILL.md), mapped to a human reason. Lets
+  // `unselectableReason()` explain *why* an authored skill isn't selectable instead
+  // of just listing what is — see the skip branches in `scanRoot`.
+  private skips = new Map<string, string>();
 
   /**
    * Scan one or more roots once at startup and merge them, deduplicated per slug
@@ -85,6 +90,7 @@ export class SkillRegistry {
       const skillFile = path.join(skillDir, 'SKILL.md');
       if (!fs.existsSync(skillFile)) {
         console.warn(`[skill] ${slug}: missing SKILL.md, skipping`);
+        this.recordSkip(slug, 'missing SKILL.md');
         continue;
       }
       try {
@@ -92,18 +98,25 @@ export class SkillRegistry {
         const { data } = matter(raw);
         const metadata = parseFrontmatter(slug, skillDir, root.source, data);
         if (metadata.version > SUPPORTED_VERSION) {
-          console.warn(`[skill] ${slug}: version ${metadata.version} > supported ${SUPPORTED_VERSION}, skipping`);
+          const reason = `version ${metadata.version} > supported ${SUPPORTED_VERSION}`;
+          console.warn(`[skill] ${slug}: ${reason}, skipping`);
+          this.recordSkip(slug, reason);
           continue;
         }
         // Contextual skills are package-only: ignore them entirely when dropped
         // into a user root (not selectable, not used for contextual resolution).
         if (metadata.scope === 'contextual' && root.source === 'user') {
           console.warn(`[skill] ${slug}: scope "contextual" in user root, ignored (package-only)`);
+          this.recordSkip(slug, 'scope "contextual" in a user root (contextual skills are package-only)');
           continue;
         }
         this.metadataBySlug.set(slug, metadata);
+        // A later, lower-precedence root supplied a valid skill for a slug an earlier
+        // root had skipped — it's no longer unselectable, so drop the stale reason.
+        this.skips.delete(slug);
       } catch (err) {
         console.warn(`[skill] ${slug}: ${(err as Error).message}, skipping`);
+        this.recordSkip(slug, (err as Error).message);
       }
     }
   }
@@ -147,6 +160,25 @@ export class SkillRegistry {
 
   listSelectable(): SkillMetadata[] {
     return this.list().filter((m) => m.scope === 'writing-style');
+  }
+
+  private recordSkip(slug: string, reason: string): void {
+    // First reason wins (matches root precedence — `scanRoot` visits highest first).
+    if (!this.skips.has(slug)) this.skips.set(slug, reason);
+  }
+
+  /**
+   * Explain why `slug` can't be selected as the writing style, for boot/PATCH
+   * validation messages. If the slug was found on disk but dropped during scan
+   * (version too high, contextual in a user root, malformed), name that reason so
+   * the author can fix the skill; otherwise fall back to listing what *is*
+   * selectable. Returns a fragment meant to follow `writingStyle "<slug>" `.
+   */
+  unselectableReason(slug: string): string {
+    const skip = this.skips.get(slug);
+    if (skip !== undefined) return `was found on disk but skipped: ${skip}`;
+    const available = this.listSelectable().map((s) => s.slug).join(', ') || '(none)';
+    return `not a selectable writing-style skill. Available: ${available}`;
   }
 
   has(slug: string): boolean {
