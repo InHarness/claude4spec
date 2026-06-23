@@ -59,7 +59,14 @@ export type WsEvent =
   | { kind: 'patches:changed'; path?: string }
   | { kind: 'hello'; ts: number }
   // M31: sent to a room right before its sockets close (context invalidated/evicted/removed).
-  | { kind: 'project:disposed' };
+  | { kind: 'project:disposed' }
+  // M33 phase 3: a plugin in the effective pool was installed/removed/edited on
+  // disk and hot-reloaded (no process restart). The client invalidates the
+  // plugin's React Query keys, refetches the frontend-manifest + import-map, and
+  // remounts the plugin's frontend (editor extensions) WITHOUT resetting the
+  // open document. `tier` distinguishes a base (workspace/npm) reload from a
+  // project-local overlay reload.
+  | { kind: 'plugin:reloaded'; name: string; version: string; tier: 'base' | 'overlay' };
 
 /** M02 multidir: discriminator dla source-of-truth (pagesDir / briefsDir / patchesDir). */
 export type PagesRootDir = 'pages' | 'briefs' | 'patches';

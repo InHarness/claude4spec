@@ -58,10 +58,11 @@ describe('overlay-loader', () => {
     return pathToFileURL(entry).href;
   }
 
-  /** Fake importer keyed by resolved file URL href. */
+  /** Fake importer keyed by resolved file URL href (ignores the `?v=` cache-bust). */
   function fakeImporter(modules: Record<string, unknown>) {
     return vi.fn(async (href: string) => {
-      if (href in modules) return modules[href];
+      const key = href.split('?')[0];
+      if (key in modules) return modules[key];
       throw new Error(`import failed: ${href}`);
     });
   }

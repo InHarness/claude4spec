@@ -15,7 +15,9 @@ import { workspaceRouter } from './workspace/routes.js';
 import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './serialization/registerAll.js';
-import { loadWorkspacePlugins } from './core/plugin-host/loader.js';
+import { loadWorkspacePlugins, reloadPlugin } from './core/plugin-host/loader.js';
+import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
+import { createRequire } from 'node:module';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
@@ -315,6 +317,40 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     });
   });
 
+  // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
+  // The base catalog is shared across projects, so a reload mutates the shared
+  // `pluginRegistry` (unregister old → register new) and invalidates ALL cached
+  // contexts; each live project room is told to remount. Resolves each package
+  // to its install dir; an unresolvable package is simply not watched.
+  const baseDirByPkg = new Map<string, string>();
+  for (const pkg of resolvePluginPackages(workspace)) {
+    try {
+      baseDirByPkg.set(pkg, path.dirname(createRequire(import.meta.url).resolve(pkg)));
+    } catch {
+      /* unresolvable (not installed) — nothing to watch */
+    }
+  }
+  const basePluginWatcher = new PluginWatcher([...baseDirByPkg.values()], (changedPaths) => {
+    const affected = [...baseDirByPkg.entries()]
+      .filter(([, dir]) => changedPaths.some((p) => p === dir || p.startsWith(dir + path.sep)))
+      .map(([pkg]) => pkg);
+    void (async () => {
+      for (const pkg of affected) {
+        const rec = await reloadPlugin(pluginRegistry, pkg);
+        cache.invalidateAll();
+        for (const id of cache.liveProjectIds()) {
+          gateway.broadcast(id, {
+            kind: 'plugin:reloaded',
+            name: rec.manifestName ?? pkg,
+            version: rec.manifestVersion ?? '',
+            tier: 'base',
+          });
+        }
+      }
+    })();
+  });
+  basePluginWatcher.start();
+
   // Per-project activation — POST /api/workspace/projects runs the SAME full
   // bootstrap as a CLI start (M01/M12/M22 hooks + registration + db migration).
   const activateProject = async (projectCwd: string) => {
@@ -345,6 +381,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     port,
     writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
+      await basePluginWatcher.close();
       await cache.disposeAll();
       await gateway.close();
       await closeAssets();
