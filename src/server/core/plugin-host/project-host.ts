@@ -16,6 +16,10 @@ import type {
 } from './types.js';
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
 import type {
+  PluginCommandContribution,
+  PluginSettingsSection,
+} from '../../../shared/plugin-host/manifest.js';
+import type {
   EntityDiff,
   RestoreContext,
   RestoreResult,
@@ -70,6 +74,29 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   listEntities(): BackendModule[] {
     return this.listAvailable().filter((m) => this.isActive(m.type));
+  }
+
+  listSettings(): PluginSettingsSection[] {
+    // Axis B (pool + trust), NOT axis A: deliberately unfiltered by
+    // `config.entities`. Base records are always loaded+trusted; the overlay is
+    // only constructed on the trusted path, so its sections are trusted too.
+    // Overlay shadows base on a name collision (parity with type shadowing).
+    const byName = new Map<string, PluginSettingsSection>();
+    for (const r of this.registry.listPluginRecords()) {
+      if (r.settings.length > 0) {
+        byName.set(r.name, { name: r.name, version: r.version, fields: r.settings });
+      }
+    }
+    for (const section of this.overlay?.listSettings() ?? []) {
+      byName.set(section.name, section);
+    }
+    return Array.from(byName.values());
+  }
+
+  listCommands(): PluginCommandContribution[] {
+    // Same two-axis rationale as listSettings(): pool + trust, not entities.
+    const base = this.registry.listPluginRecords().flatMap((r) => r.commands);
+    return [...base, ...(this.overlay?.listCommands() ?? [])];
   }
 
   getEntity(type: string): BackendModule | null {

@@ -29,7 +29,11 @@ import {
 } from './loader.js';
 import { lowerEntityContribution, validateWritingStyle } from './manifest-adapter.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
-import type { WritingStyleContribution } from '../../../shared/plugin-host/manifest.js';
+import type {
+  PluginCommandContribution,
+  PluginSettingsSection,
+  WritingStyleContribution,
+} from '../../../shared/plugin-host/manifest.js';
 
 /** Importer seam — overridable in tests; defaults to native dynamic import. */
 export type PluginImporter = (specifier: string) => Promise<unknown>;
@@ -134,6 +138,11 @@ export async function loadProjectOverlay(
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
   const writingStyles: WritingStyleContribution[] = [];
+  // M33 phase 3: non-entity capabilities of trusted project-local plugins. An
+  // entity-less plugin (commands/settings only) still produces these.
+  const settingsSections: PluginSettingsSection[] = [];
+  const commands: PluginCommandContribution[] = [];
+  const teardowns: Array<() => void> = [];
 
   for (const pkg of enumerateOverlayPackages(cwd)) {
     const pkgDir = path.join(projectPluginsDir(cwd), pkg);
@@ -208,6 +217,23 @@ export async function loadProjectOverlay(
       originByType.set(m.type, origin);
     }
     writingStyles.push(...styles);
+    // M33 phase 3: capture non-entity capabilities + teardown of this trusted plugin.
+    if ((manifest.contributes?.settings ?? []).length > 0) {
+      settingsSections.push({
+        name: manifest.name,
+        version: manifest.version,
+        fields: manifest.contributes!.settings!,
+      });
+    }
+    commands.push(...(manifest.contributes?.commands ?? []));
+    if (typeof manifest.onUnregister === 'function') {
+      const fn = manifest.onUnregister.bind(manifest);
+      teardowns.push(fn);
+    } else {
+      console.warn(
+        `[overlay-loader] plugin "${manifest.name}" — required slot onUnregister is missing; using a no-op teardown`,
+      );
+    }
     records.push({
       ...base,
       manifestName: manifest.name,
@@ -216,24 +242,36 @@ export async function loadProjectOverlay(
     });
   }
 
-  // No entity modules ⇒ no overlay host layer, but a plugin may still have
+  // Node's ESM registry caches modules by URL — a true unload is not possible.
+  // dispose() runs each plugin's `onUnregister` (M33 phase 3 teardown) then
+  // drops the host-side references (mirrors clearMcpFactories); a rebuild
+  // re-imports (cached) fresh manifests. Stateful native handles, if a plugin
+  // opens any, are the plugin's own teardown responsibility.
+  const dispose = () => {
+    for (const teardown of teardowns) {
+      try {
+        teardown();
+      } catch (err) {
+        console.warn(`[overlay-loader] onUnregister threw during dispose: ${(err as Error).message}`);
+      }
+    }
+    modules.clear();
+    originByType.clear();
+  };
+
+  // No capabilities at all ⇒ no overlay host layer, but a plugin may still have
   // contributed writing styles — return those so the caller can push them.
-  if (modules.size === 0) {
-    return { overlay: undefined, records, writingStyles, dispose: () => {} };
+  // M33 phase 3: an entity-less plugin with only settings/commands DOES produce
+  // an overlay so the host surfaces those capabilities (axis B).
+  if (modules.size === 0 && settingsSections.length === 0 && commands.length === 0) {
+    return { overlay: undefined, records, writingStyles, dispose };
   }
 
   const overlay: ProjectPluginOverlay = {
     listLocal: () => Array.from(modules.values()),
     origin: (type) => originByType.get(type) ?? '',
-  };
-
-  // Node's ESM registry caches modules by URL — a true unload is not possible.
-  // dispose() drops the host-side references (mirrors clearMcpFactories); a
-  // rebuild re-imports (cached) fresh manifests. Stateful native handles, if a
-  // plugin opens any, are the plugin's own teardown responsibility.
-  const dispose = () => {
-    modules.clear();
-    originByType.clear();
+    listSettings: () => settingsSections,
+    listCommands: () => commands,
   };
 
   return { overlay, records, writingStyles, dispose };

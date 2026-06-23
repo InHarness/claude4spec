@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readConfig, configPath } from './config.js';
+import { readConfig, writeConfig, configPath } from './config.js';
 
 // 0.1.58: additive `description` field (string | null, 0–200). Type validation
 // lives in config.ts `validate()` (mirrors `language`); the 0–200 length cap is
@@ -104,5 +104,59 @@ describe('config — remoteApiUrl syntax-only validation (0.1.65)', () => {
   it('accepts a null remoteApiUrl (use prod default)', () => {
     write({ remoteApiUrl: null });
     expect(readConfig(dir).remoteApiUrl).toBeNull();
+  });
+});
+
+// M33 phase 3: additive top-level `plugins` namespace (Record<string, object>),
+// PATCH deep-merges per `plugins[<name>]` (precedent: agent/git), one level deeper.
+describe('config — plugins namespace (M33 phase 3)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, name: 'X', ...cfg }));
+  };
+
+  it('treats a missing plugins field as absent', () => {
+    write({});
+    expect(readConfig(dir).plugins).toBeUndefined();
+  });
+
+  it('reads a plugins namespace of per-plugin objects', () => {
+    write({ plugins: { '@c4s/foo': { a: 1, b: 2 } } });
+    expect(readConfig(dir).plugins).toEqual({ '@c4s/foo': { a: 1, b: 2 } });
+  });
+
+  it('rejects a non-object plugins field', () => {
+    write({ plugins: 42 });
+    expect(() => readConfig(dir)).toThrow(/plugins.*expected object/);
+  });
+
+  it('rejects a non-object plugin sub-value', () => {
+    write({ plugins: { '@c4s/foo': 'nope' } });
+    expect(() => readConfig(dir)).toThrow(/plugins\.@c4s\/foo.*expected object/);
+  });
+
+  it('deep-merges plugins[name]: one-field write preserves the other fields and other namespaces', () => {
+    write({ plugins: { '@c4s/foo': { a: 1, b: 2 }, '@c4s/bar': { x: true } } });
+    const merged = writeConfig(dir, { plugins: { '@c4s/foo': { a: 9 } } });
+    expect(merged.plugins).toEqual({
+      '@c4s/foo': { a: 9, b: 2 },
+      '@c4s/bar': { x: true },
+    });
+  });
+
+  it('creates the namespace when none existed before', () => {
+    write({});
+    const merged = writeConfig(dir, { plugins: { '@c4s/foo': { a: 1 } } });
+    expect(merged.plugins).toEqual({ '@c4s/foo': { a: 1 } });
   });
 });

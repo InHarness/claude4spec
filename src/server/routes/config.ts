@@ -50,6 +50,8 @@ function configResponse(c: Config) {
       syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
       syncPushOnPush: c.git?.syncPushOnPush ?? false,
     },
+    // M33 phase 3: persisted plugin settings namespace (absent ⇒ {}).
+    plugins: c.plugins ?? {},
     remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
@@ -95,6 +97,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         entities: string[];
         agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
         git: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+        plugins: Record<string, Record<string, unknown>>;
         remoteProjectId: string | null;
       }> = {};
 
@@ -236,6 +239,25 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           next.syncPushOnPush = gr.syncPushOnPush;
         }
         patch.git = next;
+      }
+
+      // M33 phase 3: plugin settings namespace. Validate shape only (object of
+      // per-plugin objects); writeConfig deep-merges each `plugins[<name>]` so a
+      // single-field write preserves the plugin's other fields and other
+      // namespaces. Field semantics live in each plugin's settings descriptor.
+      if ('plugins' in body) {
+        const p = body.plugins;
+        if (p === null || typeof p !== 'object' || Array.isArray(p)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'plugins must be an object' } });
+        }
+        const next: Record<string, Record<string, unknown>> = {};
+        for (const [name, sub] of Object.entries(p as Record<string, unknown>)) {
+          if (sub === null || typeof sub !== 'object' || Array.isArray(sub)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: `plugins.${name} must be an object` } });
+          }
+          next[name] = sub as Record<string, unknown>;
+        }
+        patch.plugins = next;
       }
 
       // M25: allow manual clear/override of remoteProjectId (e.g. UI "clear" after
