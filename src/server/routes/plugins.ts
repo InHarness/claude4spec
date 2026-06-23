@@ -15,6 +15,11 @@ import type { PluginRegistry } from '../core/plugin-host/types.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
+// M33 phase 3: base-package assembly lives in a shared, express-free module so
+// the `c4s plugins` CLI reuses the SAME logic (no divergence). Re-exported here
+// for the existing `../routes/plugins.js` import sites (e.g. project-context).
+import { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
+export { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
 
 export interface PluginRoutesDeps {
   pluginRegistry: PluginRegistry;
@@ -26,35 +31,6 @@ export interface PluginRoutesDeps {
 export interface PluginsMetaResponse {
   hostApiVersion: string;
   packages: PluginLoadRecord[];
-}
-
-const SYNTHETIC_BUILTIN_PACKAGE = '@c4s/builtin';
-
-/**
- * Base-layer (`layer: 'base'`) package records: a synthetic `@c4s/builtin`
- * record for the in-host built-in types, followed by the workspace/npm loader
- * records. Shared by the process-global `/api/_meta/plugins` and the per-project
- * overlay-aware variant. `pluginRegistry` here is the BASE registry — never a
- * per-project host — so built-in detection excludes overlay types.
- */
-export function buildBasePluginPackages(
-  pluginRegistry: PluginRegistry,
-  pluginRecords: PluginLoadRecord[],
-): PluginLoadRecord[] {
-  const loadedTypes = new Set(
-    pluginRecords.flatMap((r) => (r.status === 'loaded' ? (r.contributedTypes ?? []) : [])),
-  );
-  const builtinTypes = pluginRegistry
-    .listAvailable()
-    .map((m) => m.type)
-    .filter((t) => !loadedTypes.has(t));
-  const builtinRecord: PluginLoadRecord = {
-    package: SYNTHETIC_BUILTIN_PACKAGE,
-    status: 'loaded',
-    layer: 'base',
-    contributedTypes: builtinTypes,
-  };
-  return [builtinRecord, ...pluginRecords.map((r) => ({ ...r, layer: r.layer ?? 'base' }))];
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {

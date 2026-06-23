@@ -32,9 +32,17 @@ import {
   validateWritingStyle,
 } from './manifest-adapter.js';
 
-/** Internal record: the public one plus the styles, so unregister can drop them. */
+/** Internal record: the public one plus the styles + the registered module
+ *  instances, so unregister can drop styles and delete ONLY the modules this
+ *  plugin still owns (identity check). */
 interface InternalPluginRecord extends RegisteredPluginRecord {
   styles: WritingStyleContribution[];
+  entityModules: BackendModule[];
+}
+
+/** Outcome of validating + lowering a manifest, ready to commit to the registry. */
+interface LoweredPlugin {
+  record: InternalPluginRecord;
 }
 
 export class PluginRegistryImpl implements PluginRegistry {
@@ -51,7 +59,14 @@ export class PluginRegistryImpl implements PluginRegistry {
     this.modules.set(module.type, module);
   }
 
-  registerPlugin(manifest: PluginManifest): void {
+  /**
+   * Validate a manifest's shape and lower every contribution WITHOUT mutating
+   * the registry. Throws `PluginManifestError` on any structural problem (the
+   * loader/reload pipeline catches it). The hot-reload pipeline calls this
+   * BEFORE tearing the old version down, so a structurally-broken new version
+   * never leaves the pool missing a type ("old stays").
+   */
+  private validateAndLower(manifest: PluginManifest): LoweredPlugin {
     if (!manifest || typeof manifest !== 'object') {
       throw new PluginManifestError('plugin manifest must be an object');
     }
@@ -62,9 +77,8 @@ export class PluginRegistryImpl implements PluginRegistry {
       throw new PluginManifestError(`plugin "${manifest.name}" — contributes must be an object`);
     }
     // Two-pass for atomicity: lower (validate) every contribution first, so a
-    // throw on a later entity/style never leaves earlier ones registered under a
-    // manifest the loader then reports as failed.
-    const modules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
+    // throw on a later entity/style never leaves earlier ones registered.
+    const entityModules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
     const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
 
     // M33 phase 3: `onUnregister` is a required slot (HOST_API 2.0.0). A runtime
@@ -80,23 +94,34 @@ export class PluginRegistryImpl implements PluginRegistry {
       onUnregister = () => {};
     }
 
-    for (const module of modules) {
-      this.registerEntityModule(module);
-    }
-
     const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
+    return {
+      record: {
+        name: manifest.name,
+        version: manifest.version,
+        contributedTypes: entityModules.map((m) => m.type),
+        settings,
+        commands,
+        styles,
+        entityModules,
+        onUnregister,
+      },
+    };
+  }
+
+  validatePlugin(manifest: PluginManifest): void {
+    this.validateAndLower(manifest);
+  }
+
+  registerPlugin(manifest: PluginManifest): void {
+    const { record } = this.validateAndLower(manifest);
+    for (const module of record.entityModules) {
+      this.registerEntityModule(module);
+    }
     // Re-registration (hot-reload) overwrites the prior record; Map keeps the
     // first-seen insertion order, which is what we want for stable section order.
-    this.plugins.set(manifest.name, {
-      name: manifest.name,
-      version: manifest.version,
-      contributedTypes: modules.map((m) => m.type),
-      settings,
-      commands,
-      styles,
-      onUnregister,
-    });
+    this.plugins.set(record.name, record);
   }
 
   unregisterPlugin(name: string): void {
@@ -108,10 +133,13 @@ export class PluginRegistryImpl implements PluginRegistry {
       // Idempotent + non-throwing by contract — a throw is a warning, never a block.
       console.warn(`[plugin-registry] onUnregister of "${name}" threw: ${(err as Error).message}`);
     }
-    for (const type of record.contributedTypes) {
-      // Only drop the module if it is still the one this plugin contributed —
-      // a later same-typed registration would have overwritten the map slot.
-      this.modules.delete(type);
+    for (const module of record.entityModules) {
+      // Only drop the module if it is STILL the one this plugin contributed — a
+      // later same-typed registration (another base plugin contributing the same
+      // type) would have overwritten the slot, and must not be clobbered here.
+      if (this.modules.get(module.type) === module) {
+        this.modules.delete(module.type);
+      }
     }
     this.plugins.delete(name);
   }

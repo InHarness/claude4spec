@@ -11,14 +11,13 @@
  *   4. Registration        — `registry.registerPlugin(manifest)`.
  */
 
-import crypto from 'node:crypto';
-import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import semver from 'semver';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import { buildMigrationInfo, type PluginMigrationInfo } from '../../../shared/plugin-host/host-api.js';
+import { entryCacheBust } from './cache-bust.js';
 import type { PluginRegistry } from './types.js';
 
 /**
@@ -222,16 +221,6 @@ function resolveBaseEntry(pkg: string): string | null {
   }
 }
 
-/** Cache-bust suffix from the entry bytes (see overlay-loader for the rationale). */
-function entryCacheBust(entry: string): string {
-  try {
-    const hash = crypto.createHash('sha1').update(fs.readFileSync(entry)).digest('hex').slice(0, 12);
-    return `?v=${hash}`;
-  } catch {
-    return '';
-  }
-}
-
 /** Seams for `reloadPlugin` — overridable in tests. */
 export interface ReloadPluginOptions {
   importer?: PluginImporter;
@@ -287,15 +276,19 @@ export async function reloadPlugin(
     return { ...named, status: gate.status, code: gate.code, reason: gate.reason, migration: gate.migration };
   }
 
-  // Fresh + compatible: tear the old version down, then register the new one.
+  // Atomicity: validate + lower the NEW manifest BEFORE tearing the old one
+  // down, so a structurally-broken new version leaves the old one in place
+  // (parity with the import/gate failures above — "old stays").
   try {
-    registry.unregisterPlugin(manifest.name);
-    registry.registerPlugin(manifest);
+    registry.validatePlugin(manifest);
   } catch (err) {
     const reason = (err as Error).message;
-    console.warn(`[plugin-loader] reload PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
+    console.warn(`[plugin-loader] reload PLUGIN_INVALID_MANIFEST ${pkg}: ${reason} (old version retained)`);
     return { ...named, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason };
   }
+  // Fresh, compatible, valid: tear the old version down, then register the new.
+  registry.unregisterPlugin(manifest.name);
+  registry.registerPlugin(manifest);
 
   return {
     ...named,

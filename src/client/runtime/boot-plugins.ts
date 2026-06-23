@@ -32,18 +32,24 @@ function injectCssOnce(href: string): void {
 }
 
 /**
- * Import every active plugin entry + pin its editor slots. `cacheBust` appends a
- * `?v=` token so a hot-reload (M33 phase 3) re-imports a fresh module instead of
- * the URL-cached one. Returns nothing — slots land on `clientPluginHost` via
- * `@c4s/plugin-runtime`, then `mountFrontend` pins them into the shared registry.
+ * Import every active plugin entry + pin its editor slots. On reload (`bust`),
+ * append the entry's own `version` as the cache-bust token rather than a
+ * timestamp: this re-imports a fresh module when the plugin version changes
+ * (the overlay loader re-reads `manifest.version` on rebuild) while staying
+ * BOUNDED — repeated reloads of the same version reuse one module URL instead
+ * of leaking a new one each time. (A content hash in the server-served entry
+ * URL is the ideal long-term key, once project-local frontend delivery lands.)
+ * Returns nothing — slots land on `clientPluginHost` via `@c4s/plugin-runtime`,
+ * then `mountFrontend` pins them into the shared registry.
  */
-async function loadManifestPlugins(manifest: FrontendManifestResponse, cacheBust = ''): Promise<void> {
+async function loadManifestPlugins(manifest: FrontendManifestResponse, bust = false): Promise<void> {
   for (const href of manifest.css ?? []) injectCssOnce(href);
   for (const plugin of manifest.plugins) {
     if (plugin.css) injectCssOnce(plugin.css);
+    const suffix = bust ? `?v=${encodeURIComponent(plugin.version)}` : '';
     try {
       // @vite-ignore — runtime URL, must not be analyzed/bundled by Vite.
-      await import(/* @vite-ignore */ plugin.entry + cacheBust);
+      await import(/* @vite-ignore */ plugin.entry + suffix);
     } catch (err) {
       console.warn(`[plugin-host] failed to import plugin "${plugin.name}" (${plugin.entry})`, err);
     }
@@ -90,6 +96,6 @@ export async function reloadFrontendPlugins(): Promise<void> {
     console.warn('[plugin-host] plugin reload — manifest refetch failed', err);
     return;
   }
-  await loadManifestPlugins(manifest, `?v=${Date.now()}`);
+  await loadManifestPlugins(manifest, true);
   await registerProjectPluginCommands();
 }

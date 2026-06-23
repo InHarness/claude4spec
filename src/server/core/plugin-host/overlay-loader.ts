@@ -18,10 +18,10 @@
  *      type uniqueness (second duplicate → PLUGIN_TYPE_CONFLICT, rejected).
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { entryCacheBust } from './cache-bust.js';
 import {
   extractManifest,
   gateManifest,
@@ -39,22 +39,6 @@ import type {
 /** Importer seam — overridable in tests; defaults to native dynamic import. */
 export type PluginImporter = (specifier: string) => Promise<unknown>;
 const defaultImporter: PluginImporter = (specifier) => import(specifier);
-
-/**
- * M33 phase 3 — cache-bust suffix for a dynamic ESM import. Node caches modules
- * per-URL, so re-importing the same `file://` href after an edit returns the
- * STALE module. A `?v=<contentHash>` query yields a fresh URL exactly when the
- * bytes change (and the cached one when they don't) — making a post-invalidation
- * context rebuild pick up an edited project-local plugin without a restart.
- */
-function entryCacheBust(entry: string): string {
-  try {
-    const hash = crypto.createHash('sha1').update(fs.readFileSync(entry)).digest('hex').slice(0, 12);
-    return `?v=${hash}`;
-  } catch {
-    return '';
-  }
-}
 
 export interface ProjectOverlayResult {
   /** The overlay, or `undefined` when no loadable project-local module exists. */

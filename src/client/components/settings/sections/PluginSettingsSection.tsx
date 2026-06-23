@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { PluginSettingField } from '../../../../shared/plugin-host/manifest.js';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { ApiError, metaApi } from '../../../lib/api.js';
@@ -54,12 +54,17 @@ function PluginCard({
     }
   }
 
+  // Only label the whole card "Hot reload" when EVERY field is hot-reload;
+  // if any field is `executive` the card badge is dropped (the per-field
+  // KindBadge disambiguates) so the card never mislabels a rebuild field.
+  const allHotReload = fields.every((f) => f.kind === 'hot-reload');
+
   return (
     <SettingsCard
       id={`plugin-${name}`}
       title={name}
       description={`Settings contributed by ${name} v${version}.`}
-      badge="hot-reload"
+      badge={allHotReload ? 'hot-reload' : undefined}
     >
       <div className="flex flex-col gap-4">
         {fields.map((field) => (
@@ -121,7 +126,12 @@ function FieldControl({
   onSave: (value: unknown) => void;
 }) {
   // Local buffer for free-text so we save on blur/Enter rather than per-keystroke.
-  const [text, setText] = useState(typeof value === 'string' ? value : '');
+  // Coerce via String() so a non-string default (number/boolean) round-trips
+  // instead of being clobbered to '' on an untouched blur; re-sync when the
+  // value prop changes (after a save or a plugin:reloaded refetch).
+  const current = value == null ? '' : String(value);
+  const [text, setText] = useState(current);
+  useEffect(() => setText(current), [current]);
 
   if (field.control === 'toggle') {
     return (
@@ -186,7 +196,7 @@ function FieldControl({
       disabled={disabled}
       onChange={(e) => setText(e.target.value)}
       onBlur={() => {
-        if (text !== value) onSave(text);
+        if (text !== current) onSave(text);
       }}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
