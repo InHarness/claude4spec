@@ -63,14 +63,30 @@ describe('loadWorkspacePlugins', () => {
     expect(records[0]?.status).toBe('loaded');
   });
 
-  it('skips a plugin whose hostApiVersion does not satisfy the host', async () => {
+  it('skips a same-major hostApiVersion that the host cannot satisfy (no migration path)', async () => {
     const registry = new PluginRegistryImpl();
-    // `^1.0.0` no longer satisfies the 2.0.0 host (Phase 3 major bump).
-    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^1.0.0' }) } });
+    // `^2.5.0` needs a newer minor than the 2.0.0 host — unsatisfiable but SAME
+    // major, so it is `skipped` (not `incompatible`) with no migration descriptor.
+    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^2.5.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-b'], importer);
 
     expect(records[0]).toMatchObject({ status: 'skipped', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(records[0]?.migration).toBeUndefined();
+    expect(registry.getAvailable('glossary')).toBeNull();
+  });
+
+  it('flags an incompatible MAJOR hostApiVersion as `incompatible` with a migration descriptor', async () => {
+    const registry = new PluginRegistryImpl();
+    // `^1.0.0` targets the previous major — incompatible under 2.0.0.
+    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^1.0.0' }) } });
+
+    const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
+
+    expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
+    expect(records[0]?.migration?.migrations.length).toBeGreaterThan(0);
+    expect(records[0]?.migration?.shimAvailable).toBe(false); // onUnregister is slot-required
     expect(registry.getAvailable('glossary')).toBeNull();
   });
 

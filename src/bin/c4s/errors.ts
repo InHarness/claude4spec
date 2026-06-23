@@ -21,7 +21,10 @@ export type CliErrorCode =
   // M31 workspace model — registry-based resolution + per-project URL prefix.
   | 'AMBIGUOUS_WORKSPACE'
   | 'INDEX_NOT_MATERIALIZED'
-  | 'PROJECT_NOT_IN_WORKSPACE';
+  | 'PROJECT_NOT_IN_WORKSPACE'
+  // M33 phase 3 — `c4s plugins doctor` exits with this when a pool package was
+  // built against an incompatible MAJOR Host API (the only non-zero plugins exit).
+  | 'HOST_API_INCOMPATIBLE';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

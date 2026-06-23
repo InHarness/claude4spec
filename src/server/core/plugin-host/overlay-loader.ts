@@ -197,9 +197,10 @@ export async function loadProjectOverlay(
       console.warn(`[overlay-loader] ${gate.code} ${pkg}: ${gate.reason}`);
       records.push({
         ...base,
-        status: 'skipped',
+        status: gate.status,
         code: gate.code,
         reason: gate.reason,
+        migration: gate.migration,
         manifestName: manifest.name,
         manifestVersion: manifest.version,
       });

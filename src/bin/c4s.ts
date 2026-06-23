@@ -18,6 +18,7 @@ import { runListSlugs } from './c4s/commands/list-slugs.js';
 import { runFindReferences } from './c4s/commands/find-references.js';
 import { runResolve } from './c4s/commands/resolve.js';
 import { runAsk } from './c4s/commands/ask.js';
+import { runPlugins } from './c4s/commands/plugins.js';
 
 const HELP = `Usage: c4s <command> [options]
 
@@ -48,6 +49,11 @@ Discovery:
   describe --type <t> [--view <v>] JSON Schema per view for one type (on-demand)
   list-tags
   list-slugs --type <t>
+
+Plugins (M33 — reads loader state, no running server):
+  plugins list                     pool packages: tier, version, contributed types (exit 0)
+  plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
+  plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
 
 Global flags:
   --project <path>    override project dir (default: walk-up against the workspace registry)
@@ -102,6 +108,8 @@ async function main(): Promise<void> {
       return runFindReferences(args);
     case 'ask':
       return runAsk(args);
+    case 'plugins':
+      return runPlugins(args);
     default:
       throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
@@ -154,6 +162,8 @@ function codeToExit(code: string): number {
       return 7;
     case 'INDEX_NOT_MATERIALIZED':
       return 8;
+    case 'HOST_API_INCOMPATIBLE':
+      return 9;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;
