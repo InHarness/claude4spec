@@ -4,12 +4,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import matter from 'gray-matter';
 import type { InlineSkill } from '@inharness-ai/agent-adapters';
+import type { WritingStyleContribution } from '../../shared/plugin-host/manifest.js';
 import { readConfig } from '../config.js';
 
 export type SkillScope = 'writing-style' | 'contextual';
 
-/** Where a skill was discovered: in-package bundle vs a user `.claude/skills` root. */
-export type SkillSource = 'bundled' | 'user';
+/**
+ * Where a skill was discovered: in-package bundle, a user `.claude/skills` root,
+ * or a plugin contribution (M15 phase 2). Selection precedence is
+ * `project > global > plugin > bundled` — project/global are both `user`
+ * (ordered by root scan), `plugin` outranks `bundled` but loses to `user`.
+ */
+export type SkillSource = 'bundled' | 'user' | 'plugin';
 
 export interface SkillMetadata {
   slug: string;
@@ -43,6 +49,9 @@ const FILES_SUBDIRS = ['templates', 'examples', 'workflows'];
 
 export class SkillRegistry {
   private metadataBySlug = new Map<string, SkillMetadata>();
+  // M15 phase 2: plugin-contributed styles carry their body inline (no FS path),
+  // so `resolve()` reads them from here instead of disk.
+  private pluginResolved = new Map<string, ResolvedSkill>();
 
   /**
    * Scan one or more roots once at startup and merge them, deduplicated per slug
@@ -99,6 +108,32 @@ export class SkillRegistry {
     }
   }
 
+  /**
+   * M15 phase 2: push a plugin-contributed writing style. Precedence
+   * `project > global > plugin > bundled`: a `user` style (project/global)
+   * already claiming this slug wins and the plugin style is dropped; otherwise
+   * the plugin style is registered, overriding any same-slug `bundled` style.
+   * First plugin wins among plugins (a later plugin never displaces an earlier
+   * one). Loading is the caller's trust decision — untrusted project-local
+   * plugins are never pushed here.
+   */
+  addPluginStyle(c: WritingStyleContribution): void {
+    const existing = this.metadataBySlug.get(c.slug);
+    if (existing && (existing.source === 'user' || existing.source === 'plugin')) return;
+    const metadata: SkillMetadata = {
+      slug: c.slug,
+      title: c.title,
+      description: c.description,
+      version: c.version,
+      language: c.language,
+      scope: 'writing-style',
+      source: 'plugin',
+      path: '',
+    };
+    this.metadataBySlug.set(c.slug, metadata);
+    this.pluginResolved.set(c.slug, { metadata, content: c.content.trimStart(), files: c.files ?? {} });
+  }
+
   list(): SkillMetadata[] {
     return Array.from(this.metadataBySlug.values());
   }
@@ -119,6 +154,12 @@ export class SkillRegistry {
   resolve(slug: string): ResolvedSkill {
     const metadata = this.metadataBySlug.get(slug);
     if (!metadata) throw new Error(`SkillRegistry.resolve: unknown slug "${slug}"`);
+    // Plugin styles carry their body inline — no SKILL.md on disk.
+    if (metadata.source === 'plugin') {
+      const resolved = this.pluginResolved.get(slug);
+      if (!resolved) throw new Error(`SkillRegistry.resolve: plugin style "${slug}" has no body`);
+      return resolved;
+    }
     const skillFile = path.join(metadata.path, 'SKILL.md');
     const raw = fs.readFileSync(skillFile, 'utf8');
     const { content } = matter(raw);

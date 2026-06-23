@@ -12,7 +12,10 @@
  */
 
 import type { Router } from 'express';
-import type { EntityContribution } from '../../../shared/plugin-host/manifest.js';
+import type {
+  EntityContribution,
+  WritingStyleContribution,
+} from '../../../shared/plugin-host/manifest.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import type { BackendModule, MountContext, PluginMountFn, SqlMigration } from './types.js';
 
@@ -22,6 +25,37 @@ export class PluginManifestError extends Error {
     super(message);
     this.name = 'PluginManifestError';
   }
+}
+
+/**
+ * Validate one writing-style contribution (M15 phase 2). Mirrors the SKILL.md
+ * frontmatter checks in skill-registry so a plugin style is held to the same
+ * shape as a file-authored one. Throws `PluginManifestError` (caught per-package
+ * by the loader) on any structural problem.
+ */
+export function validateWritingStyle(c: WritingStyleContribution): WritingStyleContribution {
+  if (!c || typeof c !== 'object') {
+    throw new PluginManifestError('writingStyle contribution must be an object');
+  }
+  if (typeof c.slug !== 'string' || c.slug.length === 0) {
+    throw new PluginManifestError('writingStyle — slug must be a non-empty string');
+  }
+  if (typeof c.title !== 'string' || c.title.length === 0) {
+    throw new PluginManifestError(`writingStyle "${c.slug}" — title must be a non-empty string`);
+  }
+  if (typeof c.description !== 'string' || c.description.length === 0) {
+    throw new PluginManifestError(`writingStyle "${c.slug}" — description must be a non-empty string`);
+  }
+  if (typeof c.version !== 'number' || !Number.isInteger(c.version) || c.version < 1) {
+    throw new PluginManifestError(`writingStyle "${c.slug}" — version must be a positive integer`);
+  }
+  if (c.language !== 'en' && c.language !== 'pl') {
+    throw new PluginManifestError(`writingStyle "${c.slug}" — language must be 'en' or 'pl'`);
+  }
+  if (typeof c.content !== 'string') {
+    throw new PluginManifestError(`writingStyle "${c.slug}" — content must be a string`);
+  }
+  return c;
 }
 
 const MANIFEST_FIELDS = [

@@ -15,7 +15,10 @@ import type {
   PluginActivationState,
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
-import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
+import type {
+  PluginManifest,
+  WritingStyleContribution,
+} from '../../../shared/plugin-host/manifest.js';
 import type {
   EntityDiff,
   EntitySerializer,
@@ -155,6 +158,14 @@ export interface PluginRegistry {
 
   /** Lookup including inactive — used for broken-chip categorisation. */
   getAvailable(type: string): BackendModule | null;
+
+  /**
+   * M15 phase 2: writing styles contributed by base-layer (workspace/npm)
+   * plugins, collected during `registerPlugin`. Pushed into each project's
+   * SkillRegistry as `source: "plugin"` at context build (project-local overlay
+   * styles are pushed separately, behind the trust gate).
+   */
+  listWritingStyles(): WritingStyleContribution[];
 
   /**
    * Derive a per-project host. The effective pool is `base ∪ overlay`

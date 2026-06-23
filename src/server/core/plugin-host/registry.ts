@@ -11,12 +11,21 @@ import type {
   ProjectPluginHost,
   ProjectPluginOverlay,
 } from './types.js';
-import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
+import type {
+  PluginManifest,
+  WritingStyleContribution,
+} from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
-import { PluginManifestError, lowerEntityContribution } from './manifest-adapter.js';
+import {
+  PluginManifestError,
+  lowerEntityContribution,
+  validateWritingStyle,
+} from './manifest-adapter.js';
 
 export class PluginRegistryImpl implements PluginRegistry {
   private modules = new Map<string, BackendModule>();
+  // M15 phase 2: base-layer plugin writing styles, in registration order.
+  private writingStyles: WritingStyleContribution[] = [];
 
   registerEntityModule(module: BackendModule): void {
     if (!module.type) {
@@ -36,13 +45,19 @@ export class PluginRegistryImpl implements PluginRegistry {
       throw new PluginManifestError(`plugin "${manifest.name}" — contributes must be an object`);
     }
     // Two-pass for atomicity: lower (validate) every contribution first, so a
-    // throw on a later entity never leaves earlier entities registered under a
+    // throw on a later entity/style never leaves earlier ones registered under a
     // manifest the loader then reports as failed.
     const modules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
+    const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
     for (const module of modules) {
       this.registerEntityModule(module);
     }
-    // contributes.writingStyles is declared but ignored until phase 2.
+    // M15 phase 2: collect styles to push into each project's SkillRegistry.
+    this.writingStyles.push(...styles);
+  }
+
+  listWritingStyles(): WritingStyleContribution[] {
+    return [...this.writingStyles];
   }
 
   listAvailable(): BackendModule[] {
