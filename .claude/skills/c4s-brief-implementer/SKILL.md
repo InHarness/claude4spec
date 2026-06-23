@@ -10,10 +10,10 @@ This skill describes how to implement a release brief in **your code repository*
 `.claude4spec/briefs/` that captures everything you need to ship the change:
 entity snapshots, section diffs, narrative, acceptance criteria.
 
-**This skill does NOT assume the `c4s` CLI is installed.** Briefs are designed
-to be self-contained — you do not need to read the main specification or query
-the entity database. If the brief references something you cannot find in its
-body, treat that as drift and file a patch (step 4 below).
+Briefs are self-contained, so you do **not** need the `c4s` CLI installed, and
+you do **not** read the main specification or query the entity database. If a
+brief references something you cannot find in its body, treat that as drift and
+file a patch (step 6).
 
 ## Workflow
 
@@ -25,9 +25,9 @@ cat .claude4spec/briefs/<slug>.md
 ```
 
 If `.claude4spec/` is not in your current directory, walk up the directory tree
-until you find it (similar to how git finds `.git/`).
+until you find it (like git finds `.git/`).
 
-### 2. Read the brief as self-contained input
+### 2. Read the brief
 
 Every brief has YAML frontmatter:
 
@@ -41,54 +41,80 @@ implemented: false
 ---
 ```
 
-The body contains everything you need — entity snapshots, section diffs, the
-narrative of what changes, and acceptance criteria. **Do not read the main
-specification.**
+The body has everything you need — entity snapshots, section diffs, narrative,
+and acceptance criteria.
 
-If the brief is unclear — a missing detail, an ambiguous wording, a decision
-you'd otherwise have to guess — you have two paths:
+If the brief is unclear (missing detail, ambiguous wording, a decision you'd
+otherwise guess), you have two paths:
 
-**Synchronous (preferred when available).** Ask the specification agent in the
-same terminal and continue once you have an answer.
-
-**Specyfikacja CLAUDE 4 SPEC leży w `.claude/skills/specyfikacja` (symlink), nie
-w katalogu głównym repo — zawsze wskazuj ją flagą `--project`; NIE rób `cd` do
-tego katalogu, bo `c4s` zgłosi `PROJECT_NOT_FOUND`.**
+**Synchronous (preferred when available).** Ask the spec agent and continue once
+you have an answer. The CLAUDE 4 SPEC spec lives at `.claude/skills/specyfikacja`
+(a symlink), not at the repo root — always point to it with `--project`; do
+**not** `cd` into it, or `c4s` reports `PROJECT_NOT_FOUND`.
 
 ```bash
-c4s ask "Brief nie precyzuje X — czy chodzi o A czy B?" --ct brief --brief <brief-slug>.md --project .claude/skills/specyfikacja
+c4s ask "Brief doesn't specify X — is it A or B?" --ct brief --brief <brief-slug>.md --project .claude/skills/specyfikacja
 ```
 
 Continue the same thread with `c4s ask "..." --thread <threadId>` (the
-`threadId` is printed with the answer). This path requires `c4s` installed
-*and* a running `npx claude4spec` server. When either is unavailable, skip it.
+`threadId` is printed with the answer). This requires `c4s` installed *and* a
+running `npx claude4spec` server; skip it when either is unavailable.
 
 **Asynchronous (always available).** If you cannot ask synchronously, proceed
-with your best judgement and file a patch afterwards (step 4) so the
-spec-author can fold the clarification into the next brief.
+with your best judgement and file a patch afterwards (step 6) so the spec-author
+can fold the clarification into the next brief.
 
-### 3. Implement
+### 3. Isolate work (worktree + fresh branch)
 
-Standard code flow in your target repository: read existing code, plan, edit,
-test. Stay focused on what the brief specifies.
+Never implement a brief on top of your current checkout. Branch from a **fresh
+`main`** and work in a dedicated git worktree under **`./.worktrees/<brief-slug>`**
+(that directory is git-ignored, so the nested checkout never shows up in the
+main repo's `git status`):
 
-### 4. Feedback loop (patches)
-
-When you discover that the brief diverges from reality — a missing detail, an
-incorrect assumption, an edge case not covered, or anything else the
-spec-author should know — write a patch file:
-
-```sh
-mkdir -p .claude4spec/patches
+```bash
+git fetch origin
+git worktree add .worktrees/<brief-slug> -b brief/<brief-slug> origin/main
+cd .worktrees/<brief-slug>
 ```
 
-Create `.claude4spec/patches/<brief-slug>-<short-desc>.md` with this format:
+- Branch name `brief/<brief-slug>` mirrors the repo's `feat/…` convention.
+- If `origin` is not configured, branch from local `main`: `git checkout main &&
+  git pull`, then `git worktree add .worktrees/<brief-slug> -b brief/<brief-slug> main`.
+
+### 4. Implement
+
+Standard code flow: read existing code, plan, edit, test. Stay focused on what
+the brief specifies. Commit your work on the `brief/<brief-slug>` branch.
+
+### 5. Smoke-test locally
+
+Before opening the PR, launch the app and exercise the change — don't hand off on
+green unit tests alone.
+
+```bash
+# Run the CLI via `npx tsx` (NOT `npm run dev:sandbox`, which uses `tsx watch`).
+# In a worktree whose node_modules symlinks OUTSIDE the worktree, `tsx watch`
+# follows the symlink, sees Vite's .vite-temp/*.timestamp churn, and restarts in
+# an infinite loop. Plain `npx tsx` (no watch) avoids it.
+npx tsx src/bin/claude4spec.ts --mode dev --cwd .claude/skills/specyfikacja --pages . --port 5555
+```
+
+- **Port 5555 is our test convention.** If it's taken (`EADDRINUSE`), increment —
+  `--port 5556`, `5557`, … — until one is free.
+- Open the printed URL, verify the brief's behaviour, then stop the server
+  (Ctrl-C). If the smoke test reveals drift, file a patch (step 6).
+
+### 6. Feedback loop (patches)
+
+When the brief diverges from reality — a missing detail, an incorrect assumption,
+an edge case not covered, or anything else the spec-author should know — write a
+patch file `.claude4spec/patches/<brief-slug>-<short-desc>.md`:
 
 ```markdown
 ---
 type: patch
 brief: v0-1-16-to-v0-1-17.md      # path relative to briefs/
-patch_kind: drift                  # drift | missing | incorrect | clarification
+patch_kind: drift
 created_at: 2026-05-11T17:32:00Z
 created_by: claude-code            # or "cursor", "aider", ...
 ---
@@ -104,40 +130,56 @@ created_by: claude-code            # or "cursor", "aider", ...
 …what the spec-author should consider in a follow-up brief or entity edits…
 ```
 
-Patch-kind values:
+`patch_kind` values:
 
 - `drift` — the brief described behavior X, but the codebase already does Y.
 - `missing` — the brief is silent on a detail you had to decide yourself.
 - `incorrect` — the brief is factually wrong about existing code.
 - `clarification` — the brief is ambiguous; you guessed but it should be made
-  explicit for next time.
+  explicit next time.
 
-The `.claude4spec/patches/` directory is created **lazily** — only when you
-file your first patch. The claude4spec server does NOT create it.
+Create `.claude4spec/patches/` lazily — only when you file your first patch
+(`mkdir -p .claude4spec/patches`). The claude4spec server does NOT create it.
 
-### 5. Mark brief as implemented
+### 7. Open a draft PR and STOP
 
-When the implementation is genuinely finished — code committed, tests green,
-merged to main / accepted by the user — flip the brief's frontmatter to
-`implemented: true`:
+Push the branch and open a **draft** PR against `main`, then hand off:
 
 ```bash
-# Option A — Edit tool: change the line `implemented: false` → `implemented: true`.
-# Option B — yq (idempotent; adds the field to legacy briefs that never had it):
+git push -u origin brief/<brief-slug>
+gh pr create --draft --base main \
+  --title "<brief-slug>: <short title>" \
+  --body "Implements brief .claude4spec/briefs/<brief-slug>.md
+
+<one-paragraph summary of what changed + how it was tested>"
+```
+
+**Do NOT run `gh pr merge`.** Review and merge are the human's call. Stop here and
+report the PR URL.
+
+### 8. Mark brief as implemented
+
+`implemented: true` is a **declaration**, set ONLY after the draft PR is reviewed
+and merged to main (or otherwise accepted) — never at PR-open time, never
+proactively, and a later revert on main does NOT roll it back. When implementation
+is genuinely done (code merged, tests green), flip the frontmatter:
+
+```bash
+# Option A — Edit tool: change `implemented: false` → `implemented: true`.
+# Option B — yq (idempotent; adds the field to legacy briefs that lack it):
 yq -i '.implemented = true' .claude4spec/briefs/<brief-slug>.md
 ```
 
-`implemented: true` is a **declaration**, not a computed fact derived from git.
-A revert on main does NOT roll the flag back. Set it ONLY when implementation
-is realistically done — never proactively or "just in case".
+### 9. Hand-off
 
-### 6. Hand-off
-
-The spec-author reads patches manually (`ls .claude4spec/patches/`, `cat`)
-and folds them into the next brief or entity edits. There is no UI listing in
-this release — patches are raw markdown.
+The spec-author reads patches manually (`ls .claude4spec/patches/`, `cat`) and
+folds them into the next brief or entity edits. There is no UI listing in this
+release — patches are raw markdown.
 
 ## Notes
 
-This file is **fully managed** by claude4spec — it is overwritten on every
-server start when its rendered content changes. Do not edit it by hand.
+This is a **base skill** generated by claude4spec, customized for this project.
+The base copy covers reading briefs and asking the c4s agent questions; this copy
+under `.claude/skills/` additionally pins our git/PR flow (worktree → fresh branch
+→ draft PR → stop). It is **yours to edit** — nothing overwrites it. (The
+`.claude4spec/skills/` copy *is* refreshed on server start; this one is not.)

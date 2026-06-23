@@ -40,3 +40,5 @@ CLAUDE.md
 
 # claude4spec (auto-added)
 *.deprecated
+c4s-cpanel/app.cjs
+c4s-cpanel/package.json
