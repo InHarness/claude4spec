@@ -330,24 +330,33 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       /* unresolvable (not installed) — nothing to watch */
     }
   }
+  // Serialize reload runs so overlapping watcher flushes never interleave
+  // unregister/register on the shared registry.
+  let baseReloadChain: Promise<void> = Promise.resolve();
   const basePluginWatcher = new PluginWatcher([...baseDirByPkg.values()], (changedPaths) => {
     const affected = [...baseDirByPkg.entries()]
       .filter(([, dir]) => changedPaths.some((p) => p === dir || p.startsWith(dir + path.sep)))
       .map(([pkg]) => pkg);
-    void (async () => {
-      for (const pkg of affected) {
-        const rec = await reloadPlugin(pluginRegistry, pkg);
-        cache.invalidateAll();
-        for (const id of cache.liveProjectIds()) {
-          gateway.broadcast(id, {
-            kind: 'plugin:reloaded',
-            name: rec.manifestName ?? pkg,
-            version: rec.manifestVersion ?? '',
-            tier: 'base',
-          });
+    if (affected.length === 0) return;
+    baseReloadChain = baseReloadChain
+      .then(async () => {
+        const reloaded = [];
+        for (const pkg of affected) {
+          const rec = await reloadPlugin(pluginRegistry, pkg);
+          reloaded.push({ name: rec.manifestName ?? pkg, version: rec.manifestVersion ?? '' });
         }
-      }
-    })();
+        // Snapshot the rooms BEFORE invalidating: invalidateAll() empties the
+        // cache, after which liveProjectIds() would return [] and no client
+        // would ever be told to remount. Then invalidate once (not per-package).
+        const rooms = cache.liveProjectIds();
+        cache.invalidateAll();
+        for (const id of rooms) {
+          for (const r of reloaded) {
+            gateway.broadcast(id, { kind: 'plugin:reloaded', name: r.name, version: r.version, tier: 'base' });
+          }
+        }
+      })
+      .catch((err) => console.warn('[plugin-loader] base reload failed:', err));
   });
   basePluginWatcher.start();
 

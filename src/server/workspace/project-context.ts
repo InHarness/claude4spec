@@ -410,8 +410,15 @@ async function buildInner(
     trust === true ? [projectPluginsDir(cwd)] : [],
     (changedPaths) => {
       const pkgs = affectedOverlayPackages(projectPluginsDir(cwd), changedPaths);
+      // Invalidating THIS context retires it; the rebuilt context mounts its own
+      // fresh watcher. Stop this one now so a retired-but-not-yet-disposed
+      // context (in-flight turn) can't keep re-invalidating the projectId that
+      // the new context now owns.
+      void pluginOverlayWatcher.close();
       deps.onContextConfigChanged?.();
-      for (const pkg of pkgs.length ? pkgs : ['']) {
+      // Broadcast only for changes attributable to a package — no empty-name
+      // event when a change doesn't map to a plugin dir.
+      for (const pkg of pkgs) {
         ws.broadcast({
           kind: 'plugin:reloaded',
           name: pkg,

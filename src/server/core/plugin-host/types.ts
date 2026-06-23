@@ -180,6 +180,14 @@ export interface PluginRegistry {
   registerPlugin(manifest: PluginManifest): void;
 
   /**
+   * M33 phase 3 — validate a manifest's shape + lower all its contributions
+   * WITHOUT mutating the registry; throws on a structural problem. The reload
+   * pipeline calls this before `unregisterPlugin` so a structurally-broken new
+   * version never leaves the pool missing a type (atomic "old stays").
+   */
+  validatePlugin(manifest: PluginManifest): void;
+
+  /**
    * M33 phase 3 — tear down a previously-registered base plugin by name: call
    * its `onUnregister` (idempotent, non-throwing) and drop its entity modules +
    * retained capability record. The hot-reload pipeline calls this on the OLD

@@ -76,6 +76,27 @@ describe('M33 phase 3 — reloadPlugin (base hot-reload pipeline)', () => {
     warn.mockRestore();
   });
 
+  it('retains the old version when the new manifest passes the gate but fails to lower (atomicity)', async () => {
+    const registry = new PluginRegistryImpl();
+    const oldTeardown = vi.fn();
+    registry.registerPlugin(pluginV('1.0.0', oldTeardown));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // Compatible host API + valid shape, but a structurally-broken entity
+    // contribution (missing required fields) → lowering throws.
+    const broken = {
+      ...pluginV('2.0.0'),
+      contributes: { entities: [{ type: 'thing' } as unknown] },
+    } as PluginManifest;
+    const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: broken }));
+
+    expect(rec).toMatchObject({ status: 'failed', code: 'PLUGIN_INVALID_MANIFEST' });
+    expect(oldTeardown).not.toHaveBeenCalled(); // old not torn down
+    expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0'); // old stays
+    expect(registry.getAvailable('thing')).not.toBeNull(); // type still present
+    warn.mockRestore();
+  });
+
   it('retains the old version on an incompatible major (no teardown)', async () => {
     const registry = new PluginRegistryImpl();
     const oldTeardown = vi.fn();

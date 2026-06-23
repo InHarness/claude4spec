@@ -62,6 +62,20 @@ describe('M33 phase 3 — registry capability records', () => {
     expect(() => registry.unregisterPlugin('@c4s/nope')).not.toThrow();
   });
 
+  it('unregisterPlugin does NOT delete a type now owned by a later same-typed plugin', () => {
+    const registry = new PluginRegistryImpl();
+    // Two base plugins both contribute type 'widget' (base layer allows it — the
+    // second overwrites the module slot).
+    registry.registerPlugin(entityManifest({ name: '@c4s/plugin-a' }));
+    registry.registerPlugin(entityManifest({ name: '@c4s/plugin-b' }));
+    const moduleB = registry.getAvailable('widget');
+
+    // Unregistering A must leave B's 'widget' module intact (identity check).
+    registry.unregisterPlugin('@c4s/plugin-a');
+    expect(registry.getAvailable('widget')).toBe(moduleB);
+    expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@c4s/plugin-b']);
+  });
+
   it('swallows a throwing onUnregister (idempotent, non-blocking contract)', () => {
     const registry = new PluginRegistryImpl();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
