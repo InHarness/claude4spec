@@ -3,6 +3,7 @@ import type { EntityType } from '../../shared/entities.js';
 import { legacyRegisterClientEntity } from '../core/plugin-host/legacy-adapter.js';
 
 export interface EntityRowProps<T> {
+  slug: string;
   entity: T;
   active?: boolean;
   onOpen?: () => void;

@@ -83,5 +83,5 @@ function Row({ type, slug, onOpen }: { type: string; slug: string; onOpen: () =>
     );
   }
   const RowComp = def.renderRow;
-  return <RowComp entity={data} onOpen={onOpen} />;
+  return <RowComp slug={slug} entity={data} onOpen={onOpen} />;
 }

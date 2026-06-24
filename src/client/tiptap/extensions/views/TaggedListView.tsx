@@ -87,6 +87,7 @@ export function TaggedListView(props: NodeViewProps) {
             return (
               <li key={slug}>
                 <RowComp
+                  slug={slug}
                   entity={entity as any}
                   onOpen={() => bridge?.openEntity(type as EntityType, slug)}
                 />

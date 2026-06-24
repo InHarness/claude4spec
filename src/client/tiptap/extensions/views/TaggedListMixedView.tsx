@@ -92,6 +92,7 @@ export function TaggedListMixedView(props: NodeViewProps) {
                     return (
                       <li key={slug}>
                         <RowComp
+                          slug={slug}
                           entity={entity as never}
                           onOpen={() => bridge?.openEntity(mod.type as EntityType, slug)}
                         />

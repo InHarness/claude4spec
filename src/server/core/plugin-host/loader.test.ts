@@ -84,7 +84,7 @@ describe('loadWorkspacePlugins', () => {
     const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
 
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(records[0]?.migration?.targetHostApiVersion).toBe('1.1.0');
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('1.0.0');
     // Empty changelog at the 1.x baseline ⇒ no descriptors and no shim.
     expect(records[0]?.migration?.migrations).toHaveLength(0);
     expect(records[0]?.migration?.shimAvailable).toBe(false);

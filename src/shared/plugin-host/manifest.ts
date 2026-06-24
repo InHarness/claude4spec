@@ -18,9 +18,9 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * The Host API version this build advertises. Bumped on a breaking change to
  * any surface counted into the contract: the manifest / EntityModule
  * signatures, the `mountBackend(app, mcpHost, db, cwd)` mount-context shape,
- * the chip/card/row prop shapes, the L8 editor registration contract, and —
- * since `1.1.0` — the prop contracts of the `stable` Host UI Kit components
- * (M34/L12; `@c4s/plugin-runtime/ui`). See `UI_KIT_STABLE_COMPONENTS` in
+ * the chip/card/row prop shapes, the L8 editor registration contract, and the
+ * prop contracts of the `stable` Host UI Kit components (M34/L12;
+ * `@c4s/plugin-runtime/ui`). See `UI_KIT_STABLE_COMPONENTS` in
  * `ui-kit-surface.ts`; `experimental` kit components are deliberately NOT part
  * of this surface.
  *
@@ -28,18 +28,18 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * skipped with a warning (never crashed over) — on the backend during load and
  * independently on the frontend during manifest consumption.
  *
- * Versioning rule — additive same-major slots (`contributes.settings`,
- * `contributes.commands`, and an ADDITIVE expansion of the UI Kit surface) are a
- * minor bump; a breaking slot-shape change is a major bump WITH a descriptor in
- * the changelog (see `host-api.ts`). A plugin built against a different major is
+ * Versioning rule — only a breaking slot-shape change bumps the version, and it
+ * bumps the MAJOR (with a descriptor in the changelog — see `host-api.ts`); the
+ * loader gate compares majors only. A plugin built against a different major is
  * reported `incompatible` with a migration descriptor (vs the environment-level
  * `skipped` for an `engines` miss).
  *
- * `1.1.0` — additive: exposes the Host UI Kit catalog + `stable` prop contracts
- * via `@c4s/plugin-runtime/ui`. No major crossed yet, so the changelog stays
- * empty; existing `^1.0.0` plugin ranges still satisfy `1.1.0`.
+ * `1.0.0` baseline — the Host UI Kit catalog + `stable` prop contracts
+ * (`@c4s/plugin-runtime/ui`, M34/L12) shipped WITHIN this major, so they are
+ * folded into the `1.0.0` versioned surface rather than bumping it; no major has
+ * been crossed, so the changelog stays empty.
  */
-export const HOST_API_VERSION = '1.1.0';
+export const HOST_API_VERSION = '1.0.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {

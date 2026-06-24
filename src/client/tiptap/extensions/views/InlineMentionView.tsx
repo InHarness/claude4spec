@@ -1,5 +1,6 @@
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { getEntityDef } from '../../../entities/registry.js';
+import { ChipResolver } from '../../../entities/ChipResolver.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useEditorBridge } from '../../EditorContext.js';
 import type { EntityType } from '../../../../shared/entities.js';
@@ -39,29 +40,4 @@ export function InlineMentionView(props: NodeViewProps) {
       <ChipResolver type={type} slug={slug} onOpen={open} />
     </NodeViewWrapper>
   );
-}
-
-function ChipResolver({
-  type,
-  slug,
-  onOpen,
-}: {
-  type: string;
-  slug: string;
-  onOpen: () => void;
-}) {
-  const def = getEntityDef(type)!;
-  const { data, isLoading } = def.useGetBySlug(slug);
-  if (isLoading && data === undefined) {
-    return (
-      <span
-        className="inline-flex items-center gap-1 rounded px-1.5 py-[1px] text-[11px]"
-        style={{ background: 'var(--c-panel)', color: 'var(--c-subtle)' }}
-      >
-        {slug}…
-      </span>
-    );
-  }
-  const Chip = def.renderChip;
-  return <Chip slug={slug} entity={data ?? null} onOpen={onOpen} />;
 }
