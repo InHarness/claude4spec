@@ -16,6 +16,7 @@ import * as ReactDOMClient from 'react-dom/client';
 import * as TiptapCore from '@tiptap/core';
 import * as ReactQuery from '@tanstack/react-query';
 import * as PluginRuntime from './plugin-runtime.js';
+import * as PluginRuntimeUi from './plugin-runtime-ui.js';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -29,4 +30,5 @@ globalThis.__c4s_shared = {
   '@tiptap/core': TiptapCore,
   '@tanstack/react-query': ReactQuery,
   '@c4s/plugin-runtime': PluginRuntime,
+  '@c4s/plugin-runtime/ui': PluginRuntimeUi,
 };

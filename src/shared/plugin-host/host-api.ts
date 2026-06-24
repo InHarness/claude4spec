@@ -8,17 +8,39 @@
  * and a deprecation window (a slot deprecated in major N may be removed only in
  * N+1). `incompatible` (major mismatch) is distinct from `skipped` (an `engines`
  * miss — an environment problem with no migration path).
+ *
+ * The surface now also covers the `stable` Host UI Kit components (M34/L12); a
+ * breaking prop-shape change there is a major bump with a `ui-prop-reshape`
+ * descriptor (see {@link VERSIONED_UI_KIT_COMPONENTS}).
  */
 
 import { HOST_API_VERSION, parseMajor } from './manifest.js';
+import { UI_KIT_STABLE_COMPONENTS } from './ui-kit-surface.js';
+
+/**
+ * The component prop contracts counted into the versioned `hostApiVersion`
+ * surface from the Host UI Kit (M34/L12): the `stable` (Core) tier ONLY. A
+ * breaking prop-shape change to one of these is a major bump carrying a
+ * `ui-prop-reshape` descriptor below (AC3). `experimental` kit components are
+ * exposed by `@c4s/plugin-runtime/ui` but excluded here — their props may change
+ * without a major and they are NOT gated at plugin load (AC4). Promoting an
+ * `experimental` component to `stable` adds it to {@link UI_KIT_STABLE_COMPONENTS}
+ * and thereby to this surface (AC5).
+ */
+export const VERSIONED_UI_KIT_COMPONENTS = UI_KIT_STABLE_COMPONENTS;
 
 /** One versioned change to the Host API contract between two adjacent majors. */
 export interface HostApiMigration {
   fromMajor: number;
   toMajor: number;
-  /** The affected slot / surface, e.g. "onUnregister". */
+  /** The affected slot / surface, e.g. "onUnregister" or a `stable` kit component. */
   slot: string;
-  kind: 'slot-required' | 'field-rename' | 'contributes-reshape';
+  /**
+   * `ui-prop-reshape` — a breaking prop-shape change to a `stable` Host UI Kit
+   * component (M34/L12). The others cover the manifest/contributes/editor
+   * surfaces.
+   */
+  kind: 'slot-required' | 'field-rename' | 'contributes-reshape' | 'ui-prop-reshape';
   /** Human-readable migration instruction. */
   summary: string;
 }

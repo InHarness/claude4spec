@@ -1,4 +1,5 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { ActionButton, type ActionButtonVariant } from '../host-ui-kit/actions/ActionButton.js';
 
 /**
  * L5-B layout primitive (brief 0.1.45 §2). A sticky bottom action bar for a
@@ -6,9 +7,12 @@ import type { CSSProperties, ReactNode } from 'react';
  * 1..N action buttons that act on the whole view, plus optional left-side
  * status text. Not floating, no scrim — it sits *below* the interaction
  * primitives (Toast 1300, ConfirmModal 1200, Popover 1100) at zIndex 900.
+ *
+ * The buttons delegate to the Host UI Kit's `ActionButton` (M34/L12,
+ * `experimental`); this owns only the sticky-bar layout + status slot.
  */
 
-export type ActionBarVariant = 'primary' | 'secondary' | 'ghost';
+export type ActionBarVariant = ActionButtonVariant;
 
 export interface ActionBarAction {
   /** Stable React key; defaults to the label. */
@@ -28,16 +32,6 @@ export interface ActionBarProps {
   /** Right-aligned action buttons. */
   actions: ActionBarAction[];
 }
-
-const VARIANT_STYLE: Record<ActionBarVariant, CSSProperties> = {
-  primary: { background: 'var(--c-accent)', color: '#fff', border: '1px solid transparent' },
-  secondary: {
-    background: 'var(--c-panel)',
-    color: 'var(--c-ink)',
-    border: '1px solid var(--c-hair)',
-  },
-  ghost: { background: 'transparent', color: 'var(--c-muted)', border: '1px solid transparent' },
-};
 
 export function ActionBar({ status, actions }: ActionBarProps) {
   return (
@@ -59,27 +53,17 @@ export function ActionBar({ status, actions }: ActionBarProps) {
         </span>
       )}
       <div className="ml-auto flex items-center gap-2">
-        {actions.map((action) => {
-          const variant = action.variant ?? 'secondary';
-          return (
-            <button
-              key={action.key ?? action.label}
-              type="button"
-              onClick={action.onClick}
-              disabled={action.disabled}
-              title={action.title}
-              className="inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[12.5px] font-medium"
-              style={{
-                ...VARIANT_STYLE[variant],
-                opacity: action.disabled ? 0.4 : 1,
-                cursor: action.disabled ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {action.icon}
-              <span>{action.label}</span>
-            </button>
-          );
-        })}
+        {actions.map((action) => (
+          <ActionButton
+            key={action.key ?? action.label}
+            label={action.label}
+            icon={action.icon}
+            onClick={action.onClick}
+            variant={action.variant ?? 'secondary'}
+            disabled={action.disabled}
+            title={action.title}
+          />
+        ))}
       </div>
     </div>
   );

@@ -29,4 +29,14 @@ describe('runtime-shims', () => {
     expect(src).toContain('export const editorBridge =');
     expect(src).toContain('export const registerExtensionReferenceType =');
   });
+
+  it('emits the @c4s/plugin-runtime/ui (Host UI Kit) surface from one host bundle', async () => {
+    const src = await getRuntimeShim(PEER_SLUG['@c4s/plugin-runtime/ui']);
+    // Re-exports from the single shared singleton — one host UI bundle, not a copy.
+    expect(src).toContain("globalThis.__c4s_shared[\"@c4s/plugin-runtime/ui\"]");
+    // Catalog components + token bridge are re-exported.
+    expect(src).toContain('export const EntityListHeader =');
+    expect(src).toContain('export const DetailPanelShell =');
+    expect(src).toContain('export const useHostTokens =');
+  });
 });
