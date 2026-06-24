@@ -22,7 +22,12 @@ import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
-import { buildSystemPrompt, subagentsFor, type PeerProject } from '../services/chat-context.js';
+import {
+  buildSystemPrompt,
+  subagentsFor,
+  CONTEXT_TYPE_REGISTRY,
+  type PeerProject,
+} from '../services/chat-context.js';
 import { readConfig } from '../config.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
@@ -209,11 +214,14 @@ export async function runAgentTurn(
   // 0.1.79: snapshot the highest message id BEFORE this turn inserts anything, so
   // we can slice exactly this turn's messages at the end (for `output: 'full'`).
   const turnStartMessageId = deps.chatService.latestMessageId(thread.id);
-  // 0.1.79 ctxreg builtin posture: an `ask` (peer-consult) thread is read-only
-  // EVERY turn — force plan-mode regardless of the thread's stored plan_mode flag
-  // (→ READONLY_BUILTINS + disallowedTools = MUTATING_BUILTINS). One site, so it
-  // covers both POST /api/threads/:id/ask and POST /api/chat.
-  const planMode = thread.contextType === 'ask' ? true : thread.planMode;
+  // M05 m05ctxreg: the context-type registry is the single source of truth for this
+  // thread's five dispatch dimensions (skill / MCP set / chrome / subagent / posture).
+  const ctx = CONTEXT_TYPE_REGISTRY[thread.contextType];
+  // Builtin posture (dim 5): `force-plan` pins read-only plan-mode EVERY turn regardless
+  // of the thread's stored plan_mode flag (→ READONLY_BUILTINS + disallowedTools =
+  // MUTATING_BUILTINS). One site, so it covers both POST /api/threads/:id/ask and
+  // POST /api/chat. (Today only `ask` forces; the rest follow the thread flag.)
+  const planMode = ctx.builtinPosture === 'force-plan' ? true : thread.planMode;
 
   const adapter = createAdapter('claude-code');
   const emitter = new EventEmitter();
@@ -391,19 +399,16 @@ export async function runAgentTurn(
       deps.chatService.updateTitle(thread.id, title || '(annotations only)');
     }
 
-    const isBrief = thread.contextType === 'brief';
-    // M23: patch threads keep the FULL spec-editing toolset (isBrief stays
-    // false) — their job is to edit the spec. Only the system prompt differs.
-    const isPatch = thread.contextType === 'patch';
-    // 0.1.79: `ask` peer-consult — full chat toolset MINUS c4s-tools and
-    // transagent-tools (recursion guards: a consulted peer cannot consult or
-    // delegate). Read-only is enforced via forced plan-mode, not tool filtering.
-    const isAsk = thread.contextType === 'ask';
+    // M05 m05ctxreg: the brief frame (uiChrome='brief-detail') is the only one with a
+    // narrow toolset + reduced prompt — it skips entity counters, plan tools, pages, and
+    // the current-page block. Every brief-frame cheap-skip below reads this one flag.
+    const isBriefFrame = ctx.uiChrome === 'brief-detail';
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
     // i wkladamy do system promptu. Skip kosztownych obliczen pageCount/entityCounts.
+    // Gated on the registry's brief-tools dimension (brief is the only briefTools row).
     let briefSnapshot: Brief | null = null;
-    if (isBrief && thread.briefPath) {
+    if (ctx.mcp.briefTools && thread.briefPath) {
       try {
         briefSnapshot = await deps.briefService.getBrief(thread.briefPath);
       } catch (err) {
@@ -411,9 +416,11 @@ export async function runAgentTurn(
       }
     }
 
-    // M23: dla patch context czytamy snapshot patcha i wkladamy do system promptu.
+    // M23: patch threads keep the FULL spec-editing toolset — their job is to edit the
+    // spec; only the system prompt differs (the patch snapshot is injected). `patch_path`
+    // is set iff context_type='patch' (chat.ts invariant), so its presence IS the gate.
     let patchSnapshot: PatchResponse | null = null;
-    if (isPatch && thread.patchPath) {
+    if (thread.patchPath) {
       try {
         patchSnapshot = await deps.patchService.getPatch(thread.patchPath);
       } catch (err) {
@@ -422,7 +429,7 @@ export async function runAgentTurn(
     }
 
     let currentPageBody: string | null = null;
-    if (!isBrief && currentPage) {
+    if (!isBriefFrame && currentPage) {
       try {
         const page = await deps.pagesService.read(currentPage);
         currentPageBody = page.body;
@@ -434,8 +441,8 @@ export async function runAgentTurn(
     // Stale-plan reminder MUSI byc sprawdzony PRZED markPlanSeenByThread —
     // ten ostatni bumpuje last_seen_plan_version i zapodaje sygnal "synced".
     const isFirstTurn = !thread.hasSystemPrompt;
-    const stalePlanReminder = isBrief ? null : deps.planService.getStalePlanReminder(thread.id);
-    const currentPlan = isBrief ? null : deps.planService.getByThread(thread.id);
+    const stalePlanReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
+    const currentPlan = isBriefFrame ? null : deps.planService.getByThread(thread.id);
 
     // Skill resolution: writing-style (config.writingStyle, M15) ladowany
     // niezaleznie od kontekstu. Dla brief context dokladamy bundled `brief-author`.
@@ -446,8 +453,10 @@ export async function runAgentTurn(
           title: String(writingStyleSkills[0].metadata?.title ?? writingStyleSkills[0].name),
         }
       : null;
+    // M05 m05ctxreg dim 1: the registry's bundled skill (beyond config.writingStyle).
+    // Only the brief row carries `brief-author`; chat/patch/ask carry null.
     const inlineSkills = [...writingStyleSkills];
-    if (isBrief && deps.skillRegistry.has('brief-author')) {
+    if (ctx.bundledSkill === 'brief-author' && deps.skillRegistry.has('brief-author')) {
       const skill = deps.skillRegistry.resolve('brief-author');
       inlineSkills.push({
         name: skill.metadata.slug,
@@ -462,7 +471,7 @@ export async function runAgentTurn(
       });
     }
 
-    const pageCount = isBrief ? 0 : countPages(await deps.pagesService.listTree());
+    const pageCount = isBriefFrame ? 0 : countPages(await deps.pagesService.listTree());
     // 0.1.51: language directives travel the same path as writingStyle — read from
     // config per-turn here, NOT via architectureConfig. Effective only from the first
     // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
@@ -475,19 +484,22 @@ export async function runAgentTurn(
       currentPagePath: currentPage,
       currentPageBody,
       pageCount,
-      entityCounts: isBrief ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
-      tagCount: isBrief ? 0 : deps.tagsService.list().length,
-      sectionCount: isBrief ? 0 : deps.sectionsService.count(),
+      entityCounts: isBriefFrame ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
+      tagCount: isBriefFrame ? 0 : deps.tagsService.list().length,
+      sectionCount: isBriefFrame ? 0 : deps.sectionsService.count(),
       annotations,
       planMode,
       currentPlan,
-      planToolsAvailable: !isBrief,
-      // 0.1.79: c4s-tools excluded for `ask` (recursion guard) — drop the
-      // <c4s_tools_usage> + peer-discovery prompt blocks too.
-      c4sToolsAvailable: !isBrief && !isAsk,
-      // 0.1.58: peer-discovery block. Skip the disk reads for brief frames
-      // (c4sToolsAvailable=false there, so the block would be gated out anyway).
-      workspaceProjects: isBrief || isAsk ? [] : (deps.listWorkspacePeers?.() ?? []),
+      // M05 m05ctxreg dim 2: prompt-side tooling flags mirror the registry's MCP set
+      // (the <tooling>/usage blocks must match what is actually mounted below).
+      planToolsAvailable: ctx.mcp.planTools,
+      // c4s-tools excluded for brief (narrow toolset) and `ask` (recursion guard) — the
+      // registry encodes this; dropping it also drops the <c4s_tools_usage> +
+      // peer-discovery prompt blocks.
+      c4sToolsAvailable: ctx.mcp.c4sTools,
+      // 0.1.58: peer-discovery block. Gated on the same c4s-tools dimension; skip the
+      // disk reads when c4s-tools is absent (the block would be gated out anyway).
+      workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
       writingStyle,
       specLanguage: cfg.language ?? undefined,
@@ -516,14 +528,15 @@ export async function runAgentTurn(
       deps.planService.markPlanSeenByThread(thread.id);
     }
 
-    // M21 m05ctxreg: per-thread MCP servers depend on context_type.
-    const planTools = isBrief
-      ? null
-      : buildPlanToolsServer({
+    // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
+    // `mcp` descriptor — each server mounts iff its registry flag is set.
+    const planTools = ctx.mcp.planTools
+      ? buildPlanToolsServer({
           threadId: thread.id,
           planService: deps.planService,
-        });
-    const briefTools = isBrief && thread.briefPath
+        })
+      : null;
+    const briefTools = ctx.mcp.briefTools && thread.briefPath
       ? buildBriefToolsServer({
           threadId: thread.id,
           briefPath: thread.briefPath,
@@ -531,18 +544,17 @@ export async function runAgentTurn(
         })
       : null;
     // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Stateless,
-    // fresh factory per request. Whitelist: chat + patch contexts; brief is
-    // intentionally narrow (brief-tools + read-only release-tools only). 0.1.79:
-    // also excluded for `ask` — a consulted peer cannot consult another peer.
-    const c4sTools = isBrief || isAsk ? null : buildC4sToolsServer();
+    // fresh factory per request. Registry-gated: chat + patch only (brief is
+    // intentionally narrow; `ask` is excluded — a consulted peer cannot consult another).
+    const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer() : null;
 
-    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Guards:
-    //   - context whitelist: chat + patch only (never brief — mirror c4sTools;
-    //     never `ask` — a consulted peer cannot delegate, 0.1.79).
-    //   - recursion depth 1: never inside a child banka (parentThreadId != null),
-    //     so a banka cannot spawn a banka.
+    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
+    //   - registry dimension `transagentTools` (chat + patch only — never brief/`ask`).
+    //   - recursion depth 1: never inside a child banka (parentThreadId != null), so a
+    //     banka cannot spawn a banka. This guard is orthogonal to the registry (it depends
+    //     on the thread's lineage, not its context_type), so it stays at the call site.
     const isChildBanka = thread.parentThreadId != null;
-    const transagentTools = !isBrief && !isAsk && !isChildBanka
+    const transagentTools = ctx.mcp.transagentTools && !isChildBanka
       ? buildTransagentToolsServer({
           parentThreadId: thread.id,
           dispatcher: new TransagentDispatcher(deps, {
@@ -554,9 +566,13 @@ export async function runAgentTurn(
         })
       : null;
 
+    // Registry `pluginServers`: 'all' mounts every entity-plugin server; 'release-only'
+    // narrows to the BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
     const pluginMcpEntries = deps.pluginHost
       .buildMcpServers()
-      .filter(({ name }) => (isBrief ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true))
+      .filter(({ name }) =>
+        ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
+      )
       .map(({ name, server }) => [name, server.config] as const);
     const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
     if (planTools) mcpServers['plan-tools'] = planTools.config;
@@ -771,7 +787,7 @@ export async function runAgentTurn(
       replay.events = [];
       emit(mergedTurnStart);
       // Stale-plan reminder is applied at DISPATCH (here), not at enqueue.
-      const mergedReminder = isBrief ? null : deps.planService.getStalePlanReminder(thread.id);
+      const mergedReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
       await consume(mergedReminder ? `${mergedReminder}\n\n${merged}` : merged);
       batch = deps.chatService.popAllQueued(thread.id);
     }

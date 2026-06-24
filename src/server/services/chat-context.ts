@@ -8,6 +8,82 @@ import type {
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 
+/* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
+ * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
+ * per-thread dimensions. This is the ONE source of truth: `buildSystemPrompt`/`subagentsFor`
+ * (here), the dispatcher (`routes/agent-turn.ts`), and the enum validator (`services/chat.ts`)
+ * only CONSUME it. Adding a context_type = one row here + extending the `ChatContextType` union
+ * in `shared/entities.ts` — no edits to dispatch logic. NOT a SQLite table: the values are code
+ * artifacts (bundled skills, MCP servers, React chrome, SubagentDefinition). */
+
+/** Which built-in MCP servers a context_type mounts. The dispatcher resolves this descriptor to
+ *  the real server set; `transagentTools` stays AND-gated by the recursion-depth guard
+ *  (`!isChildBanka`) at the call site. */
+export interface McpServerSet {
+  /** `'all'` = full entity-plugin servers + tag/reference; `'release-only'` = whitelist
+   *  (`BRIEF_ALLOWED_PLUGIN_MCP`, i.e. read-only release-tools) for the narrow brief toolset. */
+  pluginServers: 'all' | 'release-only';
+  planTools: boolean;
+  briefTools: boolean;
+  c4sTools: boolean;
+  transagentTools: boolean;
+}
+
+/** One registry row — the five dimensions spec `m05ctxreg` dispatches per thread. */
+export interface ContextTypeEntry {
+  /** Dim 1 — bundled skill (M15) added to `inlineSkills` on top of `config.writingStyle`.
+   *  `'brief-author'` for brief; `null` for chat/patch/ask (writing-style only). */
+  bundledSkill: 'brief-author' | null;
+  /** Dim 2 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
+  mcp: McpServerSet;
+  /** Dim 3 — chat-overlay chrome. Declarative marker only: the frontend `ChatOverlay.tsx`
+   *  switches on `contextType` directly; this records the dimension, no backend consumer. */
+  uiChrome: 'overlay' | 'brief-detail';
+  /** Dim 4 — read-only `SubagentDefinition` injected into `adapter.execute({ subagents })`. */
+  subagent: 'spec-explore' | 'diff-explore';
+  /** Dim 5 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
+   *  `plan_mode` flag (read-only peer); `'follow-thread'` tracks the flag. */
+  builtinPosture: 'follow-thread' | 'force-plan';
+}
+
+/**
+ * The registry. Rows reproduce the spec `m05ctxreg` table 1:1; this refactor is
+ * behavior-preserving, so each row dispatches exactly what the prior scattered
+ * `isBrief`/`isPatch`/`isAsk` conditionals did.
+ */
+export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = {
+  chat: {
+    bundledSkill: null,
+    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
+    uiChrome: 'overlay',
+    subagent: 'spec-explore',
+    builtinPosture: 'follow-thread',
+  },
+  brief: {
+    bundledSkill: 'brief-author',
+    mcp: { pluginServers: 'release-only', planTools: false, briefTools: true, c4sTools: false, transagentTools: false },
+    uiChrome: 'brief-detail',
+    subagent: 'diff-explore',
+    builtinPosture: 'follow-thread',
+  },
+  patch: {
+    bundledSkill: null,
+    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
+    uiChrome: 'overlay',
+    subagent: 'spec-explore',
+    builtinPosture: 'follow-thread',
+  },
+  ask: {
+    // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
+    // peer cannot consult/delegate to another peer). Read-only enforced via forced plan-mode.
+    bundledSkill: null,
+    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: false, transagentTools: false },
+    uiChrome: 'overlay',
+    subagent: 'spec-explore',
+    builtinPosture: 'force-plan',
+  },
+};
+
 /**
  * 0.1.58: a workspace peer the agent may consult via `c4s-tools.ask`. `path` is
  * the peer's `cwd` from the workspace registry — passed 1:1 as the `project`
@@ -435,8 +511,10 @@ export function subagentsFor(
   contextType: ChatContextType,
   pluginHost: ProjectPluginHost,
 ): SubagentDefinition[] {
-  if (contextType === 'brief') return [buildDiffExploreSubagent()];
-  return [buildSpecExploreSubagent(pluginHost)];
+  const { subagent } = CONTEXT_TYPE_REGISTRY[contextType];
+  return subagent === 'diff-explore'
+    ? [buildDiffExploreSubagent()]
+    : [buildSpecExploreSubagent(pluginHost)];
 }
 
 /**
@@ -696,11 +774,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     patch = null,
   } = input;
 
-  // M21 m05ctxreg: brief context uses a completely different prompt frame —
-  // no plugin tooling, no entity counters, no plan tools. Just identity,
-  // brief-tools usage, brief-author skill (genre) + writing-style skill
-  // (methodology, supplies workflows/brief.md), and the brief snapshot.
-  if (contextType === 'brief') {
+  // M05 m05ctxreg: the brief context (uiChrome='brief-detail' in the registry) uses a
+  // completely different prompt frame — no plugin tooling, no entity counters, no plan
+  // tools. Just identity, brief-tools usage, brief-author skill (genre) + writing-style
+  // skill (methodology, supplies workflows/brief.md), and the brief snapshot.
+  if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
     return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, writingStyle, conversationalLanguage });
   }
 
