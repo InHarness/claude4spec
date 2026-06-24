@@ -13,6 +13,7 @@ import type {
   UsageStats,
 } from '../../shared/entities.js';
 import { DomainError } from './tags.js';
+import { CONTEXT_TYPE_REGISTRY } from './chat-context.js';
 
 interface ChatThreadRow {
   id: string;
@@ -655,9 +656,13 @@ export class ChatService {
   }
 }
 
-/** Map the raw `context_type` column to the typed discriminator. */
+/** Map the raw `context_type` column to the typed discriminator. The allowed values are
+ *  derived from the context-type registry keys (single source of truth, M05 m05ctxreg) —
+ *  adding a context_type row there extends validation here automatically. Unknown → 'chat'. */
 function hydrateContextType(raw: string): ChatContextType {
-  return raw === 'brief' || raw === 'patch' || raw === 'ask' ? raw : 'chat';
+  return Object.prototype.hasOwnProperty.call(CONTEXT_TYPE_REGISTRY, raw)
+    ? (raw as ChatContextType)
+    : 'chat';
 }
 
 function parseTodoItems(raw: string | null): TodoItem[] | null {
