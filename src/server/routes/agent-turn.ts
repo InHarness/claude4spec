@@ -32,7 +32,7 @@ import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { PageVersionService } from '../services/page-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
-import type { Annotation, Brief, ChatThread, PatchResponse } from '../../shared/entities.js';
+import type { Annotation, Brief, ChatMessage, ChatThread, PatchResponse } from '../../shared/entities.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -180,6 +180,13 @@ export interface AgentTurnInput {
 export interface AgentTurnResult {
   threadId: string;
   answer: string;
+  /**
+   * 0.1.79: every chat_message persisted during THIS turn (user + assistant +
+   * reasoning + tool rows), in id order. Sliced from `chat_message`, returned in
+   * one batch after the turn. Feeds `runAgent({ output: 'full' })` / `c4s agent`;
+   * `output: 'final'` callers ignore it.
+   */
+  messages: ChatMessage[];
 }
 
 /**
@@ -199,7 +206,14 @@ export async function runAgentTurn(
   const { thread, prompt, requestId } = input;
   const annotations = input.annotations ?? [];
   const currentPage = input.currentPage ?? null;
-  const planMode = thread.planMode;
+  // 0.1.79: snapshot the highest message id BEFORE this turn inserts anything, so
+  // we can slice exactly this turn's messages at the end (for `output: 'full'`).
+  const turnStartMessageId = deps.chatService.latestMessageId(thread.id);
+  // 0.1.79 ctxreg builtin posture: an `ask` (peer-consult) thread is read-only
+  // EVERY turn — force plan-mode regardless of the thread's stored plan_mode flag
+  // (→ READONLY_BUILTINS + disallowedTools = MUTATING_BUILTINS). One site, so it
+  // covers both POST /api/threads/:id/ask and POST /api/chat.
+  const planMode = thread.contextType === 'ask' ? true : thread.planMode;
 
   const adapter = createAdapter('claude-code');
   const emitter = new EventEmitter();
@@ -381,6 +395,10 @@ export async function runAgentTurn(
     // M23: patch threads keep the FULL spec-editing toolset (isBrief stays
     // false) — their job is to edit the spec. Only the system prompt differs.
     const isPatch = thread.contextType === 'patch';
+    // 0.1.79: `ask` peer-consult — full chat toolset MINUS c4s-tools and
+    // transagent-tools (recursion guards: a consulted peer cannot consult or
+    // delegate). Read-only is enforced via forced plan-mode, not tool filtering.
+    const isAsk = thread.contextType === 'ask';
 
     // M21: dla brief context czytamy aktualny snapshot brief'u (frontmatter+body+hash)
     // i wkladamy do system promptu. Skip kosztownych obliczen pageCount/entityCounts.
@@ -464,10 +482,12 @@ export async function runAgentTurn(
       planMode,
       currentPlan,
       planToolsAvailable: !isBrief,
-      c4sToolsAvailable: !isBrief,
+      // 0.1.79: c4s-tools excluded for `ask` (recursion guard) — drop the
+      // <c4s_tools_usage> + peer-discovery prompt blocks too.
+      c4sToolsAvailable: !isBrief && !isAsk,
       // 0.1.58: peer-discovery block. Skip the disk reads for brief frames
       // (c4sToolsAvailable=false there, so the block would be gated out anyway).
-      workspaceProjects: isBrief ? [] : (deps.listWorkspacePeers?.() ?? []),
+      workspaceProjects: isBrief || isAsk ? [] : (deps.listWorkspacePeers?.() ?? []),
       workspaceName: deps.workspaceName,
       writingStyle,
       specLanguage: cfg.language ?? undefined,
@@ -510,17 +530,19 @@ export async function runAgentTurn(
           briefService: deps.briefService,
         })
       : null;
-    // M24 c4s-tools: cross-cutting MCP exposing `c4s ask` flow. Stateless,
+    // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Stateless,
     // fresh factory per request. Whitelist: chat + patch contexts; brief is
-    // intentionally narrow (brief-tools + read-only release-tools only).
-    const c4sTools = isBrief ? null : buildC4sToolsServer();
+    // intentionally narrow (brief-tools + read-only release-tools only). 0.1.79:
+    // also excluded for `ask` — a consulted peer cannot consult another peer.
+    const c4sTools = isBrief || isAsk ? null : buildC4sToolsServer();
 
-    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
-    //   - context whitelist: chat + patch only (never brief — mirror c4sTools).
+    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Guards:
+    //   - context whitelist: chat + patch only (never brief — mirror c4sTools;
+    //     never `ask` — a consulted peer cannot delegate, 0.1.79).
     //   - recursion depth 1: never inside a child banka (parentThreadId != null),
     //     so a banka cannot spawn a banka.
     const isChildBanka = thread.parentThreadId != null;
-    const transagentTools = !isBrief && !isChildBanka
+    const transagentTools = !isBrief && !isAsk && !isChildBanka
       ? buildTransagentToolsServer({
           parentThreadId: thread.id,
           dispatcher: new TransagentDispatcher(deps, {
@@ -795,7 +817,11 @@ export async function runAgentTurn(
     deps.onTurnFinished?.();
   }
 
-  return { threadId: thread.id, answer: lastAssistantText.trim() };
+  // 0.1.79: slice the messages this turn persisted (id > pre-turn snapshot).
+  const messages = deps.chatService
+    .getMessages(thread.id)
+    .filter((m) => m.id > turnStartMessageId);
+  return { threadId: thread.id, answer: lastAssistantText.trim(), messages };
 }
 
 export function countPages(tree: Array<{ type: string; children?: unknown[] }>): number {

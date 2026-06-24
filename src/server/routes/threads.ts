@@ -34,7 +34,23 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
   router.post('/', (req, res, next) => {
     try {
       const title = typeof req.body?.title === 'string' ? req.body.title : null;
-      res.status(201).json({ data: chat.createThread(title) });
+      // 0.1.79: optional context_type. Only 'chat' (default) and 'ask' are
+      // accepted on THIS generic path; 'brief'/'patch' have dedicated
+      // create-thread endpoints (POST /briefs/:path/threads, /patches/...).
+      const rawCt = req.body?.context_type;
+      let contextType: 'chat' | 'ask' = 'chat';
+      if (rawCt !== undefined) {
+        if (rawCt !== 'chat' && rawCt !== 'ask') {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION',
+              message: `context_type '${rawCt}' requires a dedicated create-thread endpoint`,
+            },
+          });
+        }
+        contextType = rawCt;
+      }
+      res.status(201).json({ data: chat.createThread(title, { contextType }) });
     } catch (err) {
       next(err);
     }
@@ -79,8 +95,10 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
 
   // M05 `m05ask`: headless synchroniczna tura agenta. W odroznieniu od
   // `POST /api/chat` (SSE) blokuje zadanie do konca tury i zwraca skolapsowany
-  // kontrakt `{ threadId, answer }`. Generyczny po `context_type` — runtime
-  // budowany tym samym `runAgentTurn`, ktory zasila `POST /api/chat`.
+  // kontrakt `{ threadId, answer, messages }` (0.1.79: `messages` to wszystkie
+  // wiadomosci tury w jednym batchu — `runAgent({ output: 'full' })` je czyta,
+  // `'final'` ignoruje). Generyczny po `context_type` — runtime budowany tym
+  // samym `runAgentTurn`, ktory zasila `POST /api/chat`.
   router.post('/:id/ask', async (req, res, next) => {
     try {
       const message = typeof req.body?.message === 'string' ? req.body.message : '';

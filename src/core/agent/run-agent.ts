@@ -3,21 +3,25 @@ import { createHash } from 'node:crypto';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/resolve.js';
 
 /**
- * `runAsk(...)` — single source of truth for the `c4s ask` flow.
+ * `runAgent(...)` — single source of truth for the headless turn flow.
  *
- * Wolany przez dwa transporty: CLI binarke (`src/bin/c4s/commands/ask.ts`)
- * i in-process MCP server (`src/server/mcp/c4s-tools.ts`). Cztery
- * deterministyczne kroki: resolve project → health-check tozsamosci serwera →
- * create-thread (context-specific) → run-turn.
+ * Wolany przez dwa transporty: CLI binarke (`src/bin/c4s/commands/agent.ts`
+ * + jej alias `ask.ts`) i in-process MCP server (`src/server/mcp/c4s-tools.ts`).
+ * Cztery deterministyczne kroki: resolve project → health-check tozsamosci
+ * serwera → create-thread (context-specific) → run-turn.
  *
- *   await runAsk({ message: '...', contextType: 'chat' })
- *   await runAsk({ message: '...', server: 'http://other:4501', threadId: '...' })
- *   await runAsk({ message: '...', contextType: 'brief', briefPath: '...' })
+ *   await runAgent({ message: '...', contextType: 'chat' })
+ *   await runAgent({ message: '...', contextType: 'ask' })          // read-only peer consult
+ *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
+ *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })
  */
 
-export type AskContextType = 'chat' | 'brief' | 'patch';
+export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
 
-export interface AskParams {
+/** Default model resolved here so every transport shares one source of truth. */
+const DEFAULT_MODEL = 'opus-4.8';
+
+export interface AgentParams {
   message: string;
   /** Local path do `.claude4spec/` peera; mutex z `server`. */
   project?: string;
@@ -26,19 +30,41 @@ export interface AskParams {
   /** Override discovery URL serwera peera; gdy podany razem z `project` — `server` wygrywa. */
   server?: string;
   /** Default `'chat'`. Ignorowany gdy podano `threadId`. */
-  contextType?: AskContextType;
+  contextType?: AgentContextType;
   /** Kontynuacja istniejacego watku u peera; pomija create-thread. */
   threadId?: string;
   /** Wymagane dla `contextType='brief'` (gdy brak `threadId`). */
   briefPath?: string;
+  /** Model tury; domyslnie `'opus-4.8'` (rozwiazywany tutaj). */
+  model?: string;
+  /**
+   * `'final'` (default) → terse `{ threadId, answer }` (ostatnia wiadomosc asystenta).
+   * `'full'` → dodatkowo `messages: AgentMessage[]` — wszystkie wiadomosci tury
+   * (+ reasoning), zebrane w jednym batchu PO turze (nie live; ten sam
+   * niestreamingowy endpoint `/ask`).
+   */
+  output?: 'final' | 'full';
 }
 
-export interface AskResult {
+/**
+ * Pojedyncza wiadomosc tury — strukturalny podzbior `chat_message` zwracanego
+ * przez `POST /api/threads/:id/ask`. Wypelniany tylko dla `output: 'full'`.
+ */
+export interface AgentMessage {
+  role: string;
+  content: string;
+  toolName?: string | null;
+  subagentTaskId?: string | null;
+}
+
+export interface AgentResult {
   threadId: string;
   answer: string;
+  /** Populated only when `output === 'full'`. */
+  messages?: AgentMessage[];
 }
 
-export type AskErrorCode =
+export type AgentErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'AMBIGUOUS_WORKSPACE'
   | 'PROJECT_NOT_IN_WORKSPACE'
@@ -53,18 +79,20 @@ export type AskErrorCode =
   | 'ABORTED'
   | 'INVALID_ARGS';
 
-export class AskError extends Error {
-  constructor(public code: AskErrorCode, message: string, public hint?: string) {
+export class AgentError extends Error {
+  constructor(public code: AgentErrorCode, message: string, public hint?: string) {
     super(message);
-    this.name = 'AskError';
+    this.name = 'AgentError';
   }
 }
 
-export async function runAsk(params: AskParams): Promise<AskResult> {
+export async function runAgent(params: AgentParams): Promise<AgentResult> {
   const message = params.message;
   if (!message || !message.trim()) {
-    throw new AskError('INVALID_ARGS', 'message is required');
+    throw new AgentError('INVALID_ARGS', 'message is required');
   }
+  const model = params.model ?? DEFAULT_MODEL;
+  const output: 'final' | 'full' = params.output ?? 'final';
 
   // --- discovery: adres serwera + project-id ------------------------------
   // M31: discovery przez rejestr workspace'ow (`defaultPort`), nie przez
@@ -85,7 +113,7 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
         // peer) — id wyprowadzamy z samej sciezki.
         projectId = projectIdForPath(params.project);
       } else if (err instanceof WorkspaceResolveError) {
-        throw new AskError(
+        throw new AgentError(
           'INVALID_ARGS',
           '--server requires --project <path> when no local workspace owns the current directory',
           'the project id in the URL prefix derives from the project path',
@@ -100,7 +128,7 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
       resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
     } catch (err) {
       if (err instanceof WorkspaceResolveError) {
-        throw new AskError(err.code, err.message, err.hint);
+        throw new AgentError(err.code, err.message, err.hint);
       }
       throw err;
     }
@@ -117,29 +145,31 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
   if (params.threadId) {
     threadId = params.threadId;
   } else {
-    const ct: AskContextType = params.contextType ?? 'chat';
-    if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch') {
-      throw new AskError(
+    const ct: AgentContextType = params.contextType ?? 'chat';
+    if (ct !== 'chat' && ct !== 'brief' && ct !== 'patch' && ct !== 'ask') {
+      throw new AgentError(
         'INVALID_ARGS',
-        `contextType must be chat|brief|patch (got '${ct}')`,
+        `contextType must be chat|brief|patch|ask (got '${ct}')`,
       );
     }
     if (ct === 'patch') {
       // Watki patch nie maja route create-thread — tylko kontynuacja.
-      throw new AskError(
+      throw new AgentError(
         'INVALID_ARGS',
-        'cannot create a patch thread via ask; pass threadId to continue one',
+        'cannot create a patch thread via agent; pass threadId to continue one',
       );
     }
     if (ct === 'brief') {
       if (!params.briefPath) {
-        throw new AskError('INVALID_ARGS', "contextType='brief' requires briefPath");
+        throw new AgentError('INVALID_ARGS', "contextType='brief' requires briefPath");
       }
       const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
       const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
       threadId = pickThreadId(created);
     } else {
-      const created = await postJson(`${apiBase}/threads`, {});
+      // 'chat' + 'ask' share the generic create-thread route; the server
+      // validates `context_type` (only 'chat'/'ask' accepted on this path).
+      const created = await postJson(`${apiBase}/threads`, { context_type: ct });
       threadId = pickThreadId(created);
     }
   }
@@ -147,15 +177,20 @@ export async function runAsk(params: AskParams): Promise<AskResult> {
   // --- run-turn (generyczny po context_type) ------------------------------
   const result = await postJson(`${apiBase}/threads/${encodeURIComponent(threadId)}/ask`, {
     message,
+    model,
   });
   const answer = typeof result.answer === 'string' ? result.answer : '';
   const outThreadId = typeof result.threadId === 'string' ? result.threadId : threadId;
-  return { threadId: outThreadId, answer };
+  const out: AgentResult = { threadId: outThreadId, answer };
+  if (output === 'full') {
+    out.messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
+  }
+  return out;
 }
 
 /** M31: project id = sha1(abs path).slice(0,12) — same derivation as the registry. */
 function projectIdForPath(project: string): string {
-  // Lazy import-free copy of projectIdForCwd to keep run-ask dependency-light:
+  // Lazy import-free copy of projectIdForCwd to keep run-agent dependency-light:
   // resolveWorkspaceProject already covers the registry path; this branch only
   // serves `--server` + explicit `--project` for a remote peer.
   return createHashHex(path.resolve(process.cwd(), project)).slice(0, 12);
@@ -175,7 +210,7 @@ async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   try {
     res = await fetch(`${apiBase}/config`);
   } catch {
-    throw new AskError(
+    throw new AgentError(
       'SERVER_NOT_RUNNING',
       `no claude4spec server responding at ${baseUrl}`,
       'start it with `npx @inharness-ai/claude4spec` in the project',
@@ -185,14 +220,14 @@ async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   try {
     body = await res.json();
   } catch {
-    throw new AskError(
+    throw new AgentError(
       'SERVER_NOT_RECOGNIZED',
       `process at ${baseUrl} responded but not with a claude4spec config`,
     );
   }
   if (res.status === 404 && isC4sErrorEnvelope(body)) {
     const err = (body as { error: { code?: string; message?: string } }).error;
-    throw new AskError(
+    throw new AgentError(
       'PROJECT_NOT_IN_WORKSPACE',
       err.message ?? `project not registered in the workspace served at ${baseUrl}`,
       'register it: POST /api/workspace/projects or run `npx @inharness-ai/claude4spec` in the project',
@@ -204,14 +239,14 @@ async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   // bad config.json (e.g. an unselectable writingStyle) looks like a missing server.
   if (!res.ok && isC4sErrorEnvelope(body)) {
     const err = (body as { error: { code?: string; message?: string; hint?: string } }).error;
-    throw new AskError(
-      (err.code as AskErrorCode) ?? 'PROJECT_BUILD_FAILED',
+    throw new AgentError(
+      (err.code as AgentErrorCode) ?? 'PROJECT_BUILD_FAILED',
       err.message ?? `project at ${baseUrl} failed to build`,
       err.hint,
     );
   }
   if (!res.ok || !isConfigShape(body)) {
-    throw new AskError(
+    throw new AgentError(
       'SERVER_NOT_RECOGNIZED',
       `process at ${baseUrl} is not a claude4spec server (unexpected GET ${apiBase}/config shape)`,
     );
@@ -248,7 +283,7 @@ async function postJson(url: string, payload: unknown): Promise<Record<string, u
       body: JSON.stringify(payload),
     });
   } catch {
-    throw new AskError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
+    throw new AgentError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
   }
   let body: Record<string, unknown> = {};
   try {
@@ -258,8 +293,8 @@ async function postJson(url: string, payload: unknown): Promise<Record<string, u
   }
   if (!res.ok) {
     const err = (body.error ?? {}) as { code?: string; message?: string; hint?: string };
-    throw new AskError(
-      (err.code as AskErrorCode) ?? 'AGENT_ERROR',
+    throw new AgentError(
+      (err.code as AgentErrorCode) ?? 'AGENT_ERROR',
       err.message ?? `request to ${url} failed with HTTP ${res.status}`,
       err.hint,
     );
@@ -271,7 +306,7 @@ function pickThreadId(created: Record<string, unknown>): string {
   // `POST /api/threads` → `{ id }`; `POST /api/briefs/.../threads` → `{ threadId }`.
   const id = created.threadId ?? created.id;
   if (typeof id !== 'string' || !id) {
-    throw new AskError('AGENT_ERROR', 'create-thread response had no thread id');
+    throw new AgentError('AGENT_ERROR', 'create-thread response had no thread id');
   }
   return id;
 }

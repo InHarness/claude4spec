@@ -17,6 +17,7 @@ import { runListTags } from './c4s/commands/list-tags.js';
 import { runListSlugs } from './c4s/commands/list-slugs.js';
 import { runFindReferences } from './c4s/commands/find-references.js';
 import { runResolve } from './c4s/commands/resolve.js';
+import { runAgentCmd } from './c4s/commands/agent.js';
 import { runAsk } from './c4s/commands/ask.js';
 import { runPlugins } from './c4s/commands/plugins.js';
 
@@ -38,10 +39,12 @@ Graph reader (no XML counterpart):
 Utility:
   resolve <file.md> [--format inline|json]
 
-Agent Q&A (requires a running \`npx @inharness-ai/claude4spec\` server):
-  ask "<msg>" --ct chat
-  ask "<msg>" --ct brief --brief <path>
-  ask "<msg>" --thread <id>
+Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
+  agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
+  agent "<msg>" --ct brief --brief <path>
+  agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
+  ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
+  ask "<msg>" --thread <id>                   continue an existing ask thread
     --server <url>    override server discovery (remote / one-off --port)
 
 Discovery:
@@ -106,6 +109,8 @@ async function main(): Promise<void> {
       return runListSlugs(args);
     case 'find-references':
       return runFindReferences(args);
+    case 'agent':
+      return runAgentCmd(args);
     case 'ask':
       return runAsk(args);
     case 'plugins':

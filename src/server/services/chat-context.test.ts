@@ -130,4 +130,31 @@ describe('subagentsFor (0.1.67)', () => {
       expect(tools).not.toContain('Task');
     }
   });
+
+  it('ask → spec-explore (reuses the read-only current-spec explorer)', () => {
+    const subs = subagentsFor('ask', entityHost);
+    expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
+  });
+});
+
+// 0.1.79: ask peer-consult prompt frame.
+describe('buildSystemPrompt — ask context (0.1.79)', () => {
+  it('emits the chat-frame with <spec_language> + PLAN MODE and NO <current_*> block', () => {
+    const out = build({
+      contextType: 'ask',
+      planMode: true,
+      specLanguage: 'English',
+      // Even if a page is somehow supplied, the ask frame must not render it.
+      currentPagePath: 'pages/intro.md',
+      currentPageBody: 'body',
+    });
+    expect(out).toContain('<spec_language>');
+    expect(out).toContain('<claude4spec_plan_mode>');
+    // The current-page DATA block (which would inline the supplied path) is absent.
+    // (The static <current_page_handling> instruction block is part of the frame.)
+    expect(out).not.toContain('pages/intro.md');
+    expect(out).not.toContain('<current_page path=');
+    // Standard chat-frame identity (not the brief frame).
+    expect(out).not.toContain('<claude4spec_brief_identity>');
+  });
 });

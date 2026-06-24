@@ -252,13 +252,15 @@ plan-tools are NOT subject to plan_mode read-only restrictions — the plan is a
  * M24 c4s-tools: usage contract for cross-spec synchronous consultation.
  * Surfaces the same flow as the `c4s ask` CLI (M11) but via MCP, so it works
  * in plan_mode (Bash is filtered, MCP is not). Mounted for chat + patch
- * contexts; brief threads do not see it (narrow editorial toolset).
+ * contexts; brief threads do not see it (narrow editorial toolset), and 0.1.79
+ * `ask` threads do not either (recursion guard: a peer cannot consult a peer).
  */
 const C4S_TOOLS_USAGE = `<c4s_tools_usage>
-c4s-tools MCP server consults another claude4spec specification synchronously.
-  - ask({ message, project? | server?, contextType?, threadId?, brief? }) — returns { threadId, answer }
+c4s-tools MCP server consults another claude4spec specification synchronously (READ-ONLY peer).
+  - ask({ message, project? | server?, threadId?, model? }) — returns { threadId, answer }
 Use \`project\` (local path to peer .claude4spec/) OR \`server\` (URL override); if both, \`server\` wins.
-Continue an existing peer thread by passing its \`threadId\` (omit \`contextType\` then).
+The peer answers without ever mutating its own spec (Write/Edit/Bash banned; entity/page edits soft-blocked).
+Continue an existing peer thread by passing its \`threadId\`.
 Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled \`c4s ask\` does not.
 The peers available in this workspace are listed in \`<workspace_projects/>\`.
 </c4s_tools_usage>`;
@@ -763,7 +765,10 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildCurrentPatch(patch));
   }
 
-  if (currentPagePath) {
+  // 0.1.79: `ask` (peer-consult) emits NO <current_*> block — it explores the
+  // peer's spec headlessly, with no "current page" anchor. (In practice the
+  // headless turn passes no page anyway; this guard makes the contract explicit.)
+  if (contextType !== 'ask' && currentPagePath) {
     parts.push(buildCurrentPage(currentPagePath, currentPageBody));
   }
 

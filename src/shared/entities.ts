@@ -722,8 +722,11 @@ export type ChatRole =
  * M23 'patch' = patch resolution thread — applies a patch's findings to the
  * spec. Full spec-editing toolset; patch_path points to FS file under
  * patchesDir; the patch content is injected into the system prompt.
+ * 0.1.79 'ask' = read-only peer-consult thread. Forced plan-mode every turn
+ * (READONLY_BUILTINS); answers without ever mutating its own spec. No
+ * brief_path/patch_path; created via POST /api/threads with context_type='ask'.
  */
-export type ChatContextType = 'chat' | 'brief' | 'patch';
+export type ChatContextType = 'chat' | 'brief' | 'patch' | 'ask';
 
 export interface ChatThread {
   id: string;
