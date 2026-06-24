@@ -1,9 +1,10 @@
 import type { CSSProperties } from 'react';
+import { LoadingState } from '../host-ui-kit/actions/LoadingState.js';
 
 /**
- * Skeleton-loader primitive — a pulsing placeholder bar. Thin wrapper over the
- * `.skeleton` class (keyframe `skeleton-pulse` lives in styles/theme.css), so
- * the animation stays in one place and callers only declare dimensions.
+ * Skeleton-loader primitive — a pulsing placeholder bar. Delegates to the Host
+ * UI Kit's `LoadingState` (M34/L12, `experimental`), which owns the same
+ * `.skeleton` wrapper. The external prop API and rendered output are unchanged.
  */
 export interface SkeletonProps {
   /** number → px; string used verbatim (e.g. '60%'). Defaults to '100%'. */
@@ -18,18 +19,6 @@ export interface SkeletonProps {
   style?: CSSProperties;
 }
 
-const dim = (v: number | string) => (typeof v === 'number' ? `${v}px` : v);
-
-export function Skeleton({ width = '100%', height = 12, radius, circle, className, style }: SkeletonProps) {
-  return (
-    <span
-      className={`skeleton block${className ? ` ${className}` : ''}`}
-      style={{
-        width: dim(width),
-        height: dim(height),
-        ...(circle ? { borderRadius: 999 } : radius != null ? { borderRadius: dim(radius) } : null),
-        ...style,
-      }}
-    />
-  );
+export function Skeleton(props: SkeletonProps) {
+  return <LoadingState {...props} />;
 }

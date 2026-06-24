@@ -1,4 +1,5 @@
 import type { HttpMethod, Tag } from '../../shared/entities.js';
+import { Badge } from '../host-ui-kit/actions/Badge.js';
 
 export const METHOD_STYLE: Record<
   HttpMethod,
@@ -31,39 +32,20 @@ interface TagChipProps {
   onRemove?: () => void;
 }
 
+/**
+ * Tag chip. Delegates to the Host UI Kit's `Badge` (M34/L12, `experimental`):
+ * `Badge` owns the pill styling; this binds the host's `Tag` shape to it. The
+ * external prop API and rendered output are unchanged.
+ */
 export function TagChip({ tag, active, small, onClick, onRemove }: TagChipProps) {
-  const color = tag.color ?? 'var(--c-muted)';
   return (
-    <span
+    <Badge
+      label={tag.name}
+      color={tag.color ?? undefined}
+      active={active}
+      small={small}
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full chip-hover transition"
-      style={{
-        padding: small ? '1px 7px' : '2px 8px',
-        fontSize: small ? 10.5 : 11.5,
-        background: active ? color : 'var(--c-panel)',
-        color: active ? '#fff' : 'var(--c-ink)',
-        border: `1px solid ${active ? color : 'var(--c-hair)'}`,
-        cursor: onClick ? 'pointer' : 'default',
-      }}
-    >
-      <span
-        className="rounded-full"
-        style={{ width: 6, height: 6, background: active ? '#fff' : color }}
-      />
-      {tag.name}
-      {onRemove && (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onRemove();
-          }}
-          className="opacity-70 hover:opacity-100"
-          style={{ marginLeft: 2 }}
-          aria-label={`remove tag ${tag.name}`}
-        >
-          ×
-        </button>
-      )}
-    </span>
+      onRemove={onRemove}
+    />
   );
 }

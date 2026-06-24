@@ -45,6 +45,7 @@ export const SHARED_PEER_SPECIFIERS = [
   '@tiptap/core',
   '@tanstack/react-query',
   '@c4s/plugin-runtime',
+  '@c4s/plugin-runtime/ui',
 ] as const;
 
 export type SharedPeerSpecifier = (typeof SHARED_PEER_SPECIFIERS)[number];
@@ -63,4 +64,38 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'editorBridge',
   'registerExtensionReferenceType',
   'HOST_API_VERSION',
+] as const;
+
+/**
+ * The VALUE exports of `@c4s/plugin-runtime/ui` (Host UI Kit catalog, M34/L12) —
+ * a browser module the server can't introspect, same as the main facade above.
+ * The runtime shim emits these names; a parity test asserts they match the
+ * actual module so this list can't silently drift. Keep in sync with
+ * `src/client/runtime/plugin-runtime-ui.ts` (→ `client/host-ui-kit/index.ts`)
+ * value exports. Type-only exports are erased at runtime and excluded here.
+ */
+export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
+  // Core (stable)
+  'EntityListHeader',
+  'DetailPanelShell',
+  'FieldRow',
+  'FieldGrid',
+  // List (experimental)
+  'EntityListLayout',
+  'Pagination',
+  'EmptyState',
+  // Actions & states (experimental)
+  'ActionButton',
+  'Badge',
+  'LoadingState',
+  // Form (experimental)
+  'FormField',
+  'InlineEditField',
+  // Token bridge
+  'useHostTokens',
+  'HOST_TOKEN_NAMES',
+  'readHostTokens',
+  // Stability metadata
+  'UI_KIT_CATALOG',
+  'STABLE_UI_KIT_COMPONENTS',
 ] as const;

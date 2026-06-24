@@ -1,4 +1,5 @@
-import { Plus, Search, type LucideIcon } from 'lucide-react';
+import { Plus, type LucideIcon } from 'lucide-react';
+import { EntityListHeader } from '../../host-ui-kit/core/EntityListHeader.js';
 
 interface Props {
   icon: LucideIcon;
@@ -11,8 +12,14 @@ interface Props {
   onCreate: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
+/**
+ * M13 list-page header. Delegates to the Host UI Kit's `EntityListHeader`
+ * (M34/L12, `stable`, contributed by M19), supplying the create button via the
+ * action slot — so the host's own list views consume the shared catalog
+ * component. The external prop API and rendered output are unchanged.
+ */
 export function ListPageHeader({
-  icon: Icon,
+  icon,
   title,
   count,
   search,
@@ -22,38 +29,22 @@ export function ListPageHeader({
   onCreate,
 }: Props) {
   return (
-    <div
-      className="flex items-center gap-3 px-8 py-4"
-      style={{ borderBottom: '1px solid var(--c-hair)' }}
-    >
-      <Icon size={18} style={{ color: 'var(--c-accent)' }} />
-      <h2 className="text-[18px] font-semibold tracking-tight" style={{ color: 'var(--c-ink)' }}>
-        {title}
-      </h2>
-      <span className="font-mono text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-        {count} {count === 1 ? 'result' : 'results'}
-      </span>
-      <span className="flex-1" />
-      <div
-        className="flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
-        style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)', width: 280 }}
-      >
-        <Search size={13} style={{ color: 'var(--c-subtle)' }} />
-        <input
-          value={search}
-          onChange={(e) => onSearchChange(e.target.value)}
-          className="bg-transparent flex-1 text-[13px] outline-none"
-          placeholder={searchPlaceholder}
-          style={{ color: 'var(--c-ink)' }}
-        />
-      </div>
-      <button
-        onClick={onCreate}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium"
-        style={{ background: 'var(--c-accent)', color: '#fff' }}
-      >
-        <Plus size={13} /> {createLabel}
-      </button>
-    </div>
+    <EntityListHeader
+      icon={icon}
+      title={title}
+      count={count}
+      search={search}
+      onSearchChange={onSearchChange}
+      searchPlaceholder={searchPlaceholder}
+      actions={
+        <button
+          onClick={onCreate}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12.5px] font-medium"
+          style={{ background: 'var(--c-accent)', color: '#fff' }}
+        >
+          <Plus size={13} /> {createLabel}
+        </button>
+      }
+    />
   );
 }

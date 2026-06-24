@@ -136,7 +136,7 @@ describe('overlay-loader', () => {
       fakeImporter({ [url]: { manifest: manifest({ hostApiVersion: '^99.0.0' }) } }),
     );
     expect(res.records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('1.0.0');
+    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('1.1.0');
     expect(res.overlay).toBeUndefined();
   });
 
