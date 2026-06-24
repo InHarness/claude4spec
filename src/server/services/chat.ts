@@ -352,6 +352,18 @@ export class ChatService {
     return rows.map((r) => this.hydrateMessage(r));
   }
 
+  /**
+   * 0.1.79: highest `chat_message.id` for a thread (0 if none). Snapshotted
+   * before a turn so the turn's own messages can be sliced afterwards
+   * (`output: 'full'` peer-consult / `c4s agent` verbose surface).
+   */
+  latestMessageId(threadId: string): number {
+    const row = this.db
+      .prepare(`SELECT MAX(id) AS maxId FROM chat_message WHERE thread_id = ?`)
+      .get(threadId) as { maxId: number | null };
+    return row.maxId ?? 0;
+  }
+
   updateTitle(threadId: string, title: string): void {
     const info = this.db
       .prepare(`UPDATE chat_thread SET title = ?, updated_at = datetime('now') WHERE id = ?`)
@@ -645,7 +657,7 @@ export class ChatService {
 
 /** Map the raw `context_type` column to the typed discriminator. */
 function hydrateContextType(raw: string): ChatContextType {
-  return raw === 'brief' || raw === 'patch' ? raw : 'chat';
+  return raw === 'brief' || raw === 'patch' || raw === 'ask' ? raw : 'chat';
 }
 
 function parseTodoItems(raw: string | null): TodoItem[] | null {

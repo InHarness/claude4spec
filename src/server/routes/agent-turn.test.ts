@@ -4,7 +4,10 @@ import { describe, it, expect, vi } from 'vitest';
 // after the terminal `result`), not a concatenation of intermediate texts
 // between tool calls. We drive the real runAgentTurn with a scripted event
 // stream by mocking the adapter factory; everything else is a thin fake.
-const hoisted = vi.hoisted(() => ({ events: [] as Array<Record<string, unknown>> }));
+const hoisted = vi.hoisted(() => ({
+  events: [] as Array<Record<string, unknown>>,
+  lastExecute: null as Record<string, unknown> | null,
+}));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@inharness-ai/agent-adapters')>();
@@ -12,7 +15,8 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
     ...actual,
     createAdapter: () => ({
       // eslint-disable-next-line require-yield
-      execute: async function* execute() {
+      execute: async function* execute(opts: Record<string, unknown>) {
+        hoisted.lastExecute = opts;
         for (const e of hoisted.events) yield e;
       },
     }),
@@ -29,6 +33,13 @@ interface Recorded {
 
 function makeDeps() {
   const messages: Recorded[] = [];
+  const rows: Array<{
+    id: number;
+    role: string;
+    content: string;
+    toolName: string | null;
+    subagentTaskId: string | null;
+  }> = [];
   let nextId = 1;
   const chatService = {
     addMessage: (_threadId: string, role: string, content: string, toolName: string | null = null) => {
@@ -39,8 +50,13 @@ function makeDeps() {
         text = null;
       }
       messages.push({ role, text, toolName });
-      return { id: nextId++ };
+      const id = nextId++;
+      rows.push({ id, role, content, toolName: toolName ?? null, subagentTaskId: null });
+      return { id };
     },
+    // 0.1.79: turn-message slicing for `output: 'full'`.
+    latestMessageId: () => rows.at(-1)?.id ?? 0,
+    getMessages: () => rows,
     updateTitle: () => {},
     setInitialSystemPrompt: () => {},
     setInitialArchitectureConfig: () => {},
@@ -148,5 +164,31 @@ describe('runAgentTurn — answer collapse (0.1.58)', () => {
     const { deps } = makeDeps();
     const result = await runAgentTurn(deps, makeInput());
     expect(result.answer).toBe('Done — here is the conclusion.');
+  });
+});
+
+describe('runAgentTurn — ask context posture (0.1.79)', () => {
+  it('forces planMode=true even when the thread flag is false, and excludes c4s/transagent tools', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'read-only answer' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string; planMode: boolean }).contextType = 'ask';
+    (input.thread as unknown as { contextType: string; planMode: boolean }).planMode = false;
+
+    const result = await runAgentTurn(deps, input);
+
+    // Builtin posture: read-only regardless of the stored plan_mode flag.
+    expect(hoisted.lastExecute?.planMode).toBe(true);
+    // Recursion guards: a consulted peer cannot consult/delegate.
+    const mcpKeys = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
+    expect(mcpKeys).not.toContain('c4s-tools');
+    expect(mcpKeys).not.toContain('transagent-tools');
+    // plan-tools stay available — a peer can still leave a plan behind.
+    expect(mcpKeys).toContain('plan-tools');
+    // The turn's messages are returned for output:'full' callers.
+    expect(Array.isArray(result.messages)).toBe(true);
   });
 });
