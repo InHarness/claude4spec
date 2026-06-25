@@ -12,7 +12,6 @@ import { useWritePage } from './hooks/usePage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
-import { NewDatabaseTablePopover } from './components/NewDatabaseTablePopover.js';
 import { NewUiViewPopover } from './components/NewUiViewPopover.js';
 import { NewDesignSystemPopover } from './components/NewDesignSystemPopover.js';
 import { TodoPopover } from './components/TodoPopover.js';
@@ -169,7 +168,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
-      <NewDatabaseTablePopover />
       <NewUiViewPopover />
       <NewDesignSystemPopover />
       <TodoPopover />
