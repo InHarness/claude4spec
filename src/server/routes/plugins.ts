@@ -5,8 +5,8 @@
  *
  *   GET /api/plugins/frontend-manifest   → import map + active plugins ("Option B")
  *   GET /api/plugins/runtime/<peer>.js   → shared-singleton ESM shim
- *   GET /api/plugins/<name>/frontend.js  → project-local plugin frontend (trust-gated)
- *   GET /api/plugins/<name>/frontend.css → project-local plugin styles (trust-gated)
+ *   GET /api/plugins/<name>/frontend.js  → plugin frontend (overlay: trust-gated, workspace: ungated)
+ *   GET /api/plugins/<name>/frontend.css → plugin styles  (overlay: trust-gated, workspace: ungated)
  *   GET /api/_meta/plugins               → loader diagnostics (per-package state)
  */
 
@@ -18,6 +18,7 @@ import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
 import {
   resolveFrontendAsset,
+  resolveWorkspaceFrontendAsset,
   type FrontendAssetFile,
 } from '../core/plugin-host/frontend-assets.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
@@ -39,6 +40,12 @@ export interface PluginRoutesDeps {
    * takes effect without a process restart.
    */
   frontendServing?: { cwd: string; isTrusted: () => boolean };
+  /**
+   * M33 phase 3: the process's resolved workspace plugin package names (the same
+   * list `loadWorkspacePlugins` consumed). Their frontends are served UNGATED for
+   * every project, and they are advertised in the manifest. Empty by default.
+   */
+  workspacePackages?: string[];
 }
 
 /** Diagnostics response — array of per-package records, extensible for phase 2. */
@@ -48,14 +55,14 @@ export interface PluginsMetaResponse {
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
-  const { pluginRegistry, pluginRecords, frontendServing } = deps;
+  const { pluginRegistry, pluginRecords, frontendServing, workspacePackages = [] } = deps;
   const router = Router();
 
   router.get('/plugins/frontend-manifest', (_req, res) => {
     const serving = frontendServing
       ? { cwd: frontendServing.cwd, trusted: frontendServing.isTrusted() }
       : undefined;
-    res.json(buildFrontendManifest(pluginRegistry, serving));
+    res.json(buildFrontendManifest(pluginRegistry, serving, workspacePackages));
   });
 
   router.get('/plugins/runtime/:file', async (req, res, next) => {
@@ -73,11 +80,13 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
     }
   });
 
-  // M33 phase 2: stream the trusted project-local precompiled bundle from
-  // `.claude4spec/plugins/<name>/dist/<file>`. The trust gate, the
-  // unknown-package guard, and the missing-build case all collapse to the same
-  // `404 PLUGIN_FRONTEND_NOT_FOUND` (an untrusted/undecided project emits no
-  // project-committed bytes; a trusted project never fabricates a bundle).
+  // M33: stream a plugin's precompiled bundle. Two tiers, tried in order:
+  //   1. overlay (phase 2) — the trusted primary project's
+  //      `.claude4spec/plugins/<name>/dist/<file>` (trust-gated); then
+  //   2. workspace (phase 3) — a workspace/npm plugin's `dist/<file>`, UNGATED,
+  //      bounded to `workspacePackages` (which also guards traversal).
+  // The gate, the unknown-package guard, and the missing-build case all collapse
+  // to the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
   const FRONTEND_CONTENT_TYPE: Record<FrontendAssetFile, string> = {
     'frontend.js': 'text/javascript',
     'frontend.css': 'text/css',
@@ -85,8 +94,9 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
   const serveFrontendAsset = (file: FrontendAssetFile) => (req: Request, res: Response) => {
     const name = req.params.name!;
     const abs =
-      frontendServing &&
-      resolveFrontendAsset(frontendServing.cwd, frontendServing.isTrusted(), name, file);
+      (frontendServing &&
+        resolveFrontendAsset(frontendServing.cwd, frontendServing.isTrusted(), name, file)) ||
+      resolveWorkspaceFrontendAsset(name, file, workspacePackages);
     if (!abs) {
       return res.status(404).json({
         error: {

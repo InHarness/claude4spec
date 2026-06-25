@@ -1,10 +1,12 @@
-import { describe, expect, it, beforeEach, afterEach } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
   enumerateFrontendBundles,
   resolveFrontendAsset,
+  enumerateWorkspaceFrontendBundles,
+  resolveWorkspaceFrontendAsset,
 } from './frontend-assets.js';
 import { buildFrontendManifest } from './frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
@@ -123,6 +125,88 @@ describe('frontend-assets', () => {
     it('no serving context (workspace-only start) ⇒ plugins []', () => {
       const m = buildFrontendManifest(REGISTRY);
       expect(m.plugins).toEqual([]);
+    });
+  });
+
+  // ─── Workspace tier (phase 3) ─────────────────────────────────────────────
+  // A workspace plugin lives in `node_modules`; resolution is injected here (the
+  // `WorkspaceRootResolver` seam) so the test owns a temp package root instead of
+  // mutating the repo's node_modules (which is a symlink under a worktree).
+  describe('workspace tier', () => {
+    const FIXTURE = 'c4s-ws-fixture-plugin';
+    let wsRoot: string; // the installed package's root dir
+    /** Resolver mapping ONLY the fixture name → its temp root (else unresolvable). */
+    const resolveRoot = (name: string) => (name === FIXTURE ? wsRoot : null);
+
+    beforeAll(() => {
+      wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-pkg-'));
+      fs.mkdirSync(path.join(wsRoot, 'dist'), { recursive: true });
+      fs.writeFileSync(
+        path.join(wsRoot, 'package.json'),
+        JSON.stringify({
+          name: FIXTURE,
+          version: '3.1.4',
+          exports: { './frontend': { import: './dist/frontend.js' } },
+        }),
+      );
+      fs.writeFileSync(path.join(wsRoot, 'dist', 'frontend.js'), 'export const x = 1;');
+    });
+    afterAll(() => {
+      fs.rmSync(wsRoot, { recursive: true, force: true });
+    });
+
+    it('resolves the package frontend.js (from exports[./frontend]) when allowlisted, ungated', () => {
+      const js = resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', [FIXTURE], resolveRoot);
+      expect(js).toBe(path.join(wsRoot, 'dist', 'frontend.js'));
+    });
+
+    it('not in the allowlist ⇒ null (traversal/scope guard, even for a resolvable package)', () => {
+      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', [], resolveRoot)).toBeNull();
+      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.js', ['other'], resolveRoot)).toBeNull();
+    });
+
+    it('unresolvable package ⇒ null', () => {
+      expect(
+        resolveWorkspaceFrontendAsset('c4s-not-installed', 'frontend.js', ['c4s-not-installed'], resolveRoot),
+      ).toBeNull();
+    });
+
+    it('css sibling ⇒ null when not shipped', () => {
+      expect(resolveWorkspaceFrontendAsset(FIXTURE, 'frontend.css', [FIXTURE], resolveRoot)).toBeNull();
+    });
+
+    it('enumerate lists allowlisted built packages with version + hasCss', () => {
+      expect(enumerateWorkspaceFrontendBundles([FIXTURE], resolveRoot)).toEqual([
+        { name: FIXTURE, version: '3.1.4', hasCss: false },
+      ]);
+      expect(enumerateWorkspaceFrontendBundles([], resolveRoot)).toEqual([]);
+    });
+
+    it('manifest: workspace bundles are ungated (present even when project untrusted)', () => {
+      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: false }, [FIXTURE], resolveRoot);
+      expect(m.plugins).toEqual([
+        { name: FIXTURE, version: '3.1.4', entry: `/api/plugins/${FIXTURE}/frontend.js` },
+      ]);
+    });
+
+    it('manifest: base ∪ overlay, overlay overrides a same-named workspace bundle', () => {
+      // Overlay (project-local) bundle of the SAME name, different version.
+      makePkg(FIXTURE, { version: '9.9.9' });
+      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: true }, [FIXTURE], resolveRoot);
+      // De-duped by name → one entry; the overlay (project-local) copy wins.
+      expect(m.plugins).toEqual([
+        { name: FIXTURE, version: '9.9.9', entry: `/api/plugins/${FIXTURE}/frontend.js` },
+      ]);
+    });
+
+    it('manifest: distinct names from both tiers are both present', () => {
+      makePkg('overlay-only', { version: '1.0.0' });
+      const m = buildFrontendManifest(REGISTRY, { cwd, trusted: true }, [FIXTURE], resolveRoot);
+      const byName = [...m.plugins].sort((a, b) => a.name.localeCompare(b.name));
+      expect(byName).toEqual([
+        { name: FIXTURE, version: '3.1.4', entry: `/api/plugins/${FIXTURE}/frontend.js` },
+        { name: 'overlay-only', version: '1.0.0', entry: '/api/plugins/overlay-only/frontend.js' },
+      ]);
     });
   });
 });

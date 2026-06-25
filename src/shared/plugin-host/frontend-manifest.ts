@@ -44,6 +44,11 @@ export const SHARED_PEER_SPECIFIERS = [
   'react-dom/client',
   '@tiptap/core',
   '@tanstack/react-query',
+  // M33 phase 3: the router is a SHARED library peer (one instance via the import
+  // map) so a plugin's `createRoute({ getParentRoute })` and the host's single
+  // TanStack Router operate on the SAME route-tree types — NOT a live singleton
+  // re-exported through `@c4s/plugin-runtime`.
+  '@tanstack/react-router',
   '@c4s/plugin-runtime',
   '@c4s/plugin-runtime/ui',
 ] as const;

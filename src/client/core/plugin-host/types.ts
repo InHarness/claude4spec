@@ -10,6 +10,7 @@
  */
 
 import type { ComponentType } from 'react';
+import type { AnyRoute } from '@tanstack/react-router';
 import type {
   EntityModuleManifest,
   PluginActivationState,
@@ -36,6 +37,30 @@ export interface SidebarTabSlot {
  * the legacy entity registry directly.
  */
 export type { EntityChipProps, EntityCardProps, EntityRowProps, EntityDetailProps };
+
+/**
+ * L? (M33 phase 3) — a plugin's page-routing contribution. A FACTORY, not a
+ * static route array: a plugin can't reference the host's `rootRoute` at
+ * authoring time, but `createRoute` needs `getParentRoute: () => rootRoute`. The
+ * host calls it once during `mountFrontend`, passing its live `rootRoute`, and
+ * mounts the returned routes into its single TanStack Router (see
+ * `rebuildRouteTree` in `client/router.tsx`). Routes are deduped by `path`
+ * against the host's base routes (first wins).
+ */
+export type RouteTreeFragment = (ctx: { rootRoute: AnyRoute }) => AnyRoute[];
+
+/**
+ * L? (M33 phase 3) — a plugin's optional client state-slice registration.
+ * TYPED BUT UNCONSUMED: there is no host store-slice mechanism yet, so
+ * `mountFrontend` only acknowledges it via a no-op registration point. Shape is
+ * intentionally minimal until a real consumer lands (see the `stateSlice` patch).
+ */
+export interface StateSliceContribution {
+  /** Unique slice key (namespaced by the plugin's entity type by convention). */
+  key: string;
+  /** Opaque initial state — the host has no store to merge it into yet. */
+  initial?: unknown;
+}
 
 export interface FrontendModule extends EntityModuleManifest {
   /** L8 — chip rendered inline by InlineMentionView etc. */
@@ -72,7 +97,18 @@ export interface FrontendModule extends EntityModuleManifest {
    */
   editorExtensions?: EditorExtensionRegistration[];
 
-  // routes, stateSlice: filled per-entity in Phase 3.
+  /**
+   * Phase 3 — page routes this module owns, as a factory bound to the host's
+   * `rootRoute`. The host mounts them into its single TanStack Router. Optional:
+   * a module with no pages (e.g. embed-only) omits it.
+   */
+  routes?: RouteTreeFragment;
+
+  /**
+   * Phase 3 — optional client state slice. Typed but currently UNCONSUMED (no
+   * host store mechanism); `mountFrontend` only acknowledges it.
+   */
+  stateSlice?: StateSliceContribution;
 }
 
 export interface ClientPluginHost {

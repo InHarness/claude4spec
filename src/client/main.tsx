@@ -10,6 +10,7 @@ import { RouterProvider } from '@tanstack/react-router';
 import { createAppRouter } from './router.js';
 import './entities/index.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
+import { mountFrontend } from './tiptap/mountFrontend.js';
 import { queryClient } from './runtime/query-client.js';
 import { bootFrontendPlugins } from './runtime/boot-plugins.js';
 import { metaApi } from './lib/api.js';
@@ -26,16 +27,21 @@ metaApi
     clientPluginHost.applyActivation(null);
   });
 
-// M33: load runtime plugins WITHOUT blocking first paint (parity with the
-// activation seeding above — the import map is already injected server-side, and
-// the editor isn't mounted on first paint, so pinning extensions need not gate
-// the shell). Phase 1 ships no plugins, so this resolves immediately;
-// mountFrontend runs as soon as the manifest resolves.
-void bootFrontendPlugins().catch((err) => {
+const router = createAppRouter(queryClient);
+
+// M33 phase 3: mount the SYNCHRONOUSLY-registered built-in entity modules' page
+// routes (e.g. the transitional `database-table` fragment) onto the router BEFORE
+// first paint, so a deep link to a built-in route doesn't hit a 404 window while
+// the async plugin boot is still in flight.
+mountFrontend(router, clientPluginHost.listEntities());
+
+// M33: load runtime plugins WITHOUT blocking first paint (the import map is
+// injected server-side and the editor isn't mounted on first paint). This
+// re-runs `mountFrontend` once the manifest resolves — idempotent, rebuilding the
+// route tree from the frozen base so the built-in routes above are not duplicated.
+void bootFrontendPlugins(router).catch((err) => {
   console.warn('[plugin-host] plugin boot failed', err);
 });
-
-const router = createAppRouter(queryClient);
 
 const rootEl = document.getElementById('root');
 if (!rootEl) throw new Error('#root missing from index.html');

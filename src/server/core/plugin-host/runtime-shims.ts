@@ -28,6 +28,7 @@ export const PEER_SLUG: Record<SharedPeerSpecifier, string> = {
   'react-dom/client': 'react-dom-client',
   '@tiptap/core': 'tiptap-core',
   '@tanstack/react-query': 'react-query',
+  '@tanstack/react-router': 'react-router',
   '@c4s/plugin-runtime': 'plugin-runtime',
   '@c4s/plugin-runtime/ui': 'plugin-runtime-ui',
 };
