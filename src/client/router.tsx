@@ -7,6 +7,7 @@ import {
   useSearch,
   useNavigate,
   Navigate,
+  type AnyRoute,
 } from '@tanstack/react-router';
 import type { QueryClient } from '@tanstack/react-query';
 import { z } from 'zod';
@@ -18,7 +19,6 @@ import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
 import { EndpointsList } from './entities/endpoint/list-page.js';
 import { DtosList } from './entities/dto/list-page.js';
-import { DatabaseTablesList } from './entities/database-table/list-page.js';
 import { UiViewsList } from './entities/ui-view/list-page.js';
 import { AcsList } from './entities/ac/list-page.js';
 import { DesignSystemsList } from './entities/design-system/list-page.js';
@@ -37,7 +37,6 @@ import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
 import { EndpointDetail } from './entities/endpoint/detail-panel.js';
 import { DtoDetail } from './entities/dto/detail-panel.js';
-import { DatabaseTableDetail } from './entities/database-table/detail-panel.js';
 import { UiViewDetail } from './entities/ui-view/detail-panel.js';
 import { AcDetail } from './entities/ac/detail-panel.js';
 import { DesignSystemDetail } from './entities/design-system/detail-panel.js';
@@ -45,7 +44,6 @@ import { VersionHistory } from './components/VersionHistory.js';
 import { usePages } from './hooks/usePages.js';
 import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
-import { useDatabaseTable } from './hooks/useDatabaseTables.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
 import { EntityDetailToolbar } from './entities/_shared/EntityDetailToolbar.js';
@@ -63,7 +61,10 @@ import { PROJECT_ID } from './lib/api-core.js';
  */
 type NavigateFn = ReturnType<typeof useNavigate>;
 
-function navigateToEntity(navigate: NavigateFn, type: EntityType, slug: string): void {
+// M33 phase 3: exported so a de-hardcoded entity route fragment (e.g. the
+// transitional `database-table/routes.tsx`) reuses the SAME host navigation
+// helpers instead of duplicating the type→URL resolution.
+export function navigateToEntity(navigate: NavigateFn, type: EntityType, slug: string): void {
   const mod = clientPluginHost.getEntity(type) ?? clientPluginHost.getAvailable(type);
   if (!mod) return;
   navigate({ to: `${mod.pathPrefix}/$slug`, params: { slug } } as never);
@@ -75,7 +76,7 @@ function navigateToEntityList(navigate: NavigateFn, type: EntityType): void {
   navigate({ to: mod.pathPrefix } as never);
 }
 
-function navigateToSection(navigate: NavigateFn, pagePath: string, anchor: string): void {
+export function navigateToSection(navigate: NavigateFn, pagePath: string, anchor: string): void {
   navigate({ to: '/pages/$', params: { _splat: pagePath }, hash: `anchor-${anchor}` } as never);
 }
 
@@ -83,12 +84,18 @@ export interface RouterContext {
   queryClient: QueryClient;
 }
 
-const listSearchSchema = z.object({
+// M33 phase 3: exported so a de-hardcoded entity route fragment reuses the exact
+// list search-param schema the host's other list routes use.
+export const listSearchSchema = z.object({
   q: z.string().optional(),
   tag: z.string().optional(),
 });
 
-const rootRoute = createRootRouteWithContext<RouterContext>()({
+/**
+ * M33 phase 3: the single host root route. Exported so a `RouteTreeFragment`
+ * factory can attach its routes via `createRoute({ getParentRoute: () => rootRoute })`.
+ */
+export const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootLayout,
 });
 
@@ -144,25 +151,10 @@ const dtoHistoryRoute = createRoute({
   component: DtoHistoryRoute,
 });
 
-const databaseTablesIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/database-tables',
-  validateSearch: listSearchSchema,
-  component: DatabaseTablesIndexRoute,
-});
-
-const databaseTableDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/database-tables/$slug',
-  component: DatabaseTableDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="database-table" />,
-});
-
-const databaseTableHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/database-tables/$slug/history',
-  component: DatabaseTableHistoryRoute,
-});
+// M33 phase 3: the 3 `/database-tables` routes are no longer hardcoded here.
+// They are contributed as a `RouteTreeFragment` by the `database-table`
+// FrontendModule (transitional built-in: `entities/database-table/routes.tsx`),
+// and overridden by the external plugin's fragment once it loads (same `type`).
 
 const uiViewsIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -291,7 +283,16 @@ const patchDetailRoute = createRoute({
   component: PatchDetailRoute,
 });
 
-const routeTree = rootRoute.addChildren([
+/**
+ * M33 phase 3: the host's STATIC routes — every route the host owns directly,
+ * minus the de-hardcoded `/database-tables` routes (now a `RouteTreeFragment`).
+ * Frozen and treated as immutable: `rebuildRouteTree` always rebuilds the tree
+ * from this base + the current plugin routes, so re-mounting (hot-reload) never
+ * accumulates stale routes. NOTE: intentionally NOT annotated `AnyRoute[]` — the
+ * literal's inferred union type is what gives `createAppRouter` (and thus the
+ * registered router) its statically-typed navigation.
+ */
+export const BASE_ROUTE_CHILDREN = Object.freeze([
   indexRoute,
   pageRoute,
   endpointsIndexRoute,
@@ -300,9 +301,6 @@ const routeTree = rootRoute.addChildren([
   dtosIndexRoute,
   dtoDetailRoute,
   dtoHistoryRoute,
-  databaseTablesIndexRoute,
-  databaseTableDetailRoute,
-  databaseTableHistoryRoute,
   uiViewsIndexRoute,
   uiViewDetailRoute,
   designSystemsIndexRoute,
@@ -327,7 +325,9 @@ const routeTree = rootRoute.addChildren([
 
 export function createAppRouter(queryClient: QueryClient) {
   return createRouter({
-    routeTree,
+    // Stand the host up with ONLY the base routes; plugin routes are mounted
+    // afterwards via `rebuildRouteTree` (see `mountFrontend`).
+    routeTree: rootRoute.addChildren([...BASE_ROUTE_CHILDREN]),
     context: { queryClient },
     defaultPreload: 'intent',
     // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
@@ -338,13 +338,31 @@ export function createAppRouter(queryClient: QueryClient) {
 
 export type AppRouter = ReturnType<typeof createAppRouter>;
 
+/**
+ * M33 phase 3: remount the router's route tree as BASE ∪ `pluginRoutes`. Centralizes
+ * the TanStack-internal workaround: `router.update({ routeTree })` silently no-ops
+ * when the `routeTree` reference is unchanged (and `addChildren` returns the same
+ * `rootRoute`), so we rebuild the processed tree directly via
+ * `setRoutes(buildRouteTree())` then `invalidate()` to re-match the current location.
+ * Rebuilding from the frozen base each call makes it idempotent for hot-reload.
+ */
+export function rebuildRouteTree(router: AppRouter, pluginRoutes: AnyRoute[]): void {
+  // The combined tree is dynamic (plugin routes leave the static route-tree type),
+  // so this branch is deliberately untyped — `addChildren` only needs the runtime
+  // route objects, and `setRoutes`/`invalidate` re-derive matching from them.
+  rootRoute.addChildren([...BASE_ROUTE_CHILDREN, ...pluginRoutes] as unknown as AnyRoute[]);
+  router.setRoutes(router.buildRouteTree());
+  void router.invalidate();
+}
+
 declare module '@tanstack/react-router' {
   interface Register {
     router: AppRouter;
   }
 }
 
-function RoutePane({ children }: { children: React.ReactNode }) {
+// M33 phase 3: exported for the transitional `database-table/routes.tsx` fragment.
+export function RoutePane({ children }: { children: React.ReactNode }) {
   return (
     <main
       className="flex-1 flex flex-col min-w-0 h-full"
@@ -567,82 +585,6 @@ function DtoHistoryRoute() {
         type="dto"
         slug={slug}
         onBack={() => navigate({ to: '/dtos/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function DatabaseTablesIndexRoute() {
-  const search = useSearch({ from: '/database-tables' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <DatabaseTablesList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/database-tables', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/database-tables',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/database-tables/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function DatabaseTableDetailRoute() {
-  const { slug } = useParams({ from: '/database-tables/$slug' });
-  const navigate = useNavigate();
-  const { data: dbTable } = useDatabaseTable(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityDetailToolbar type="database-table" slug={slug} name={dbTable?.name} view="details" hasHistory />
-      <EditorBridgeProvider bridge={bridge}>
-        <DatabaseTableDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/database-tables' })}
-          onRenamed={(newSlug) =>
-            navigate({
-              to: '/database-tables/$slug',
-              params: { slug: newSlug },
-              replace: true,
-            })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function DatabaseTableHistoryRoute() {
-  const { slug } = useParams({ from: '/database-tables/$slug/history' });
-  const navigate = useNavigate();
-  const { data: dbTable } = useDatabaseTable(slug);
-
-  return (
-    <RoutePane>
-      <EntityDetailToolbar type="database-table" slug={slug} name={dbTable?.name} view="history" hasHistory />
-      <VersionHistory
-        type="database-table"
-        slug={slug}
-        onBack={() => navigate({ to: '/database-tables/$slug', params: { slug } })}
       />
     </RoutePane>
   );
@@ -954,7 +896,8 @@ function PlanRoute() {
   );
 }
 
-function EntityNotFound({ type }: { type: EntityType }) {
+// M33 phase 3: exported for the transitional `database-table/routes.tsx` fragment.
+export function EntityNotFound({ type }: { type: EntityType }) {
   const navigate = useNavigate();
   const mod = clientPluginHost.getAvailable(type);
   const label = mod?.label ?? 'Entity';

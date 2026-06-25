@@ -12,6 +12,7 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { DatabaseTableDetail } from './detail-panel.js';
+import { databaseTableRoutes } from './routes.js';
 
 function DatabaseTableRow({ entity, active, onOpen }: EntityRowProps<DatabaseTable>) {
   return (
@@ -217,6 +218,10 @@ const databaseTableFrontendModule: FrontendModule = {
   useGetBySlug: (slug) => useDatabaseTable(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => databaseTablesApi.list({ tags, tagFilter: filter }),
   sidebarTab: { icon: Database, label: 'Database Tables', order: 30 },
+  // M33 phase 3: this built-in contributes its `/database-tables` pages as a
+  // RouteTreeFragment (transitional — see ./routes.tsx) instead of the host
+  // hardcoding them in router.tsx.
+  routes: databaseTableRoutes,
 };
 
 clientPluginHost.registerFrontendModule(databaseTableFrontendModule);

@@ -2,11 +2,11 @@
  * M33: build the `GET /api/plugins/frontend-manifest` payload.
  *
  * Emits the fixed peer import map + host API version and the active plugins to
- * boot ("Option B"). Phase 2: when the process's primary project is trusted,
- * `plugins[]` lists its project-local plugins that ship a built
- * `.claude4spec/plugins/<name>/dist/frontend.js` — each pointing the client at
- * the serving routes in `routes/plugins.ts`. Untrusted/absent ⇒ `plugins: []`,
- * so the import map + shim plumbing still stands up end-to-end with nothing to load.
+ * boot ("Option B"). Two tiers feed `plugins[]` (see `buildFrontendManifest`):
+ * the workspace/npm tier (ungated, every project) and the project-local overlay
+ * tier (only when the primary project is trusted) — each pointing the client at
+ * the serving routes in `routes/plugins.ts`. No tiers active ⇒ `plugins: []`, so
+ * the import map + shim plumbing still stands up end-to-end with nothing to load.
  */
 
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
@@ -15,35 +15,57 @@ import type {
   PluginFrontendEntry,
 } from '../../../shared/plugin-host/frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
-import { enumerateFrontendBundles } from './frontend-assets.js';
+import {
+  enumerateFrontendBundles,
+  enumerateWorkspaceFrontendBundles,
+  type FrontendBundle,
+  type WorkspaceRootResolver,
+} from './frontend-assets.js';
 import type { PluginRegistry } from './types.js';
 
 /**
  * Serving context for the process's primary project. Absent on workspace-only
- * starts (nothing registered) ⇒ no project-local frontends are advertised.
+ * starts (nothing registered) ⇒ only workspace-tier frontends are advertised.
  */
 export interface FrontendManifestServing {
   cwd: string;
-  /** `trustProjectPlugins === true` for the primary project. Untrusted ⇒ no plugins. */
+  /** `trustProjectPlugins === true` for the primary project. Untrusted ⇒ no overlay plugins. */
   trusted: boolean;
 }
 
+/** One bundle → the manifest entry pointing at the (tier-agnostic) serving routes. */
+function toEntry(b: FrontendBundle): PluginFrontendEntry {
+  return {
+    name: b.name,
+    version: b.version,
+    entry: `/api/plugins/${b.name}/frontend.js`,
+    ...(b.hasCss ? { css: `/api/plugins/${b.name}/frontend.css` } : {}),
+  };
+}
+
+/**
+ * Build the boot manifest. `plugins[]` is base ∪ overlay:
+ *   • workspace tier (`workspacePackages`) — ALWAYS advertised, ungated (a base
+ *     npm install is trusted), present for every project of the process; and
+ *   • overlay tier — the primary project's project-local bundles, ONLY when that
+ *     project is trusted.
+ * De-duped by `name`: an overlay bundle overrides a workspace bundle of the same
+ * name (the project-local copy wins). CSS only when the bundle ships it, so a
+ * style-less plugin omits `css` and the client never fetches it.
+ */
 export function buildFrontendManifest(
   _registry: PluginRegistry,
   serving?: FrontendManifestServing,
+  workspacePackages: readonly string[] = [],
+  workspaceRootResolver?: WorkspaceRootResolver,
 ): FrontendManifestResponse {
-  // Project-local plugins (axis: a trusted project with a built frontend bundle).
-  // Each resolves to the phase-2 serving routes; CSS only when `dist/frontend.css`
-  // exists, so a style-less plugin omits `css` and the client never fetches it.
-  const plugins: PluginFrontendEntry[] =
-    serving?.trusted
-      ? enumerateFrontendBundles(serving.cwd).map((b) => ({
-          name: b.name,
-          version: b.version,
-          entry: `/api/plugins/${b.name}/frontend.js`,
-          ...(b.hasCss ? { css: `/api/plugins/${b.name}/frontend.css` } : {}),
-        }))
-      : [];
+  const byName = new Map<string, PluginFrontendEntry>();
+  for (const b of enumerateWorkspaceFrontendBundles(workspacePackages, workspaceRootResolver))
+    byName.set(b.name, toEntry(b));
+  if (serving?.trusted) {
+    for (const b of enumerateFrontendBundles(serving.cwd)) byName.set(b.name, toEntry(b));
+  }
+  const plugins: PluginFrontendEntry[] = [...byName.values()];
 
   // `importMap` is informational here (diagnostics / future non-head consumers).
   // The AUTHORITATIVE copy the browser uses is injected server-side into the SPA

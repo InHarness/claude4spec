@@ -380,6 +380,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       frontendServing: initialProject
         ? { cwd, isTrusted: () => registry.getProjectTrust(workspace, initialProject.id) === true }
         : undefined,
+      // M33 phase 3: workspace/npm plugin frontends are served ungated for every
+      // project — the same resolved package list `loadWorkspacePlugins` consumed.
+      workspacePackages: resolvePluginPackages(workspace),
     }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));

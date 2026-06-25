@@ -21,7 +21,15 @@ import { metaApi, pluginsApi } from '../lib/api.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { mountFrontend } from '../tiptap/mountFrontend.js';
 import { registerPluginCommands } from '../tiptap/pluginCommands.js';
+import type { AppRouter } from '../router.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
+
+/**
+ * Module-level handle to the live router, captured by `bootFrontendPlugins` so a
+ * later WS-driven `reloadFrontendPlugins()` (no router argument available there)
+ * can re-mount routes onto the SAME router instance.
+ */
+let activeRouter: AppRouter | null = null;
 
 function injectCssOnce(href: string): void {
   if (document.querySelector(`link[rel="stylesheet"][href="${CSS.escape(href)}"]`)) return;
@@ -42,7 +50,11 @@ function injectCssOnce(href: string): void {
  * Returns nothing — slots land on `clientPluginHost` via `@c4s/plugin-runtime`,
  * then `mountFrontend` pins them into the shared registry.
  */
-async function loadManifestPlugins(manifest: FrontendManifestResponse, bust = false): Promise<void> {
+async function loadManifestPlugins(
+  manifest: FrontendManifestResponse,
+  router: AppRouter,
+  bust = false,
+): Promise<void> {
   for (const href of manifest.css ?? []) injectCssOnce(href);
   for (const plugin of manifest.plugins) {
     if (plugin.css) injectCssOnce(plugin.css);
@@ -54,8 +66,8 @@ async function loadManifestPlugins(manifest: FrontendManifestResponse, bust = fa
       console.warn(`[plugin-host] failed to import plugin "${plugin.name}" (${plugin.entry})`, err);
     }
   }
-  // Pin editor extensions + XML embeds for everything that registered.
-  mountFrontend(clientPluginHost.listEntities());
+  // Pin editor extensions + XML embeds + page routes for everything that registered.
+  mountFrontend(router, clientPluginHost.listEntities());
 }
 
 /** Register the declarative `contributes.commands` of loaded+trusted plugins. */
@@ -68,7 +80,8 @@ async function registerProjectPluginCommands(): Promise<void> {
   }
 }
 
-export async function bootFrontendPlugins(): Promise<void> {
+export async function bootFrontendPlugins(router: AppRouter): Promise<void> {
+  activeRouter = router;
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();
@@ -76,7 +89,7 @@ export async function bootFrontendPlugins(): Promise<void> {
     console.warn('[plugin-host] failed to fetch frontend manifest — running without plugins', err);
     return;
   }
-  await loadManifestPlugins(manifest);
+  await loadManifestPlugins(manifest, router);
   await registerProjectPluginCommands();
 }
 
@@ -89,6 +102,10 @@ export async function bootFrontendPlugins(): Promise<void> {
  * registry on the `c4s:plugins-reloaded` event dispatched by the caller.
  */
 export async function reloadFrontendPlugins(): Promise<void> {
+  if (!activeRouter) {
+    console.warn('[plugin-host] plugin reload before boot — no router captured; skipping');
+    return;
+  }
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();
@@ -96,6 +113,6 @@ export async function reloadFrontendPlugins(): Promise<void> {
     console.warn('[plugin-host] plugin reload — manifest refetch failed', err);
     return;
   }
-  await loadManifestPlugins(manifest, true);
+  await loadManifestPlugins(manifest, activeRouter, true);
   await registerProjectPluginCommands();
 }
