@@ -84,8 +84,10 @@ export function hasProjectPlugins(cwd: string): boolean {
  * (`{ import, default, require, node }`) at either the top level or under `"."`.
  * Returns the first string match (preferring ESM `import`/`default`), or
  * undefined if no string entry is reachable (caller falls back to module/main).
+ * Exported so the workspace-tier frontend resolver reuses the same condition
+ * handling for a plugin's `exports['./frontend']` (see `frontend-assets.ts`).
  */
-function resolveExportsEntry(exp: unknown): string | undefined {
+export function resolveExportsEntry(exp: unknown): string | undefined {
   if (typeof exp === 'string') return exp;
   if (!exp || typeof exp !== 'object') return undefined;
   const obj = exp as Record<string, unknown>;
