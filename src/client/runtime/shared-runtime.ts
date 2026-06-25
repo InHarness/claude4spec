@@ -11,6 +11,8 @@
  */
 
 import * as React from 'react';
+import * as ReactJsxRuntime from 'react/jsx-runtime';
+import * as ReactJsxDevRuntime from 'react/jsx-dev-runtime';
 import * as ReactDOM from 'react-dom';
 import * as ReactDOMClient from 'react-dom/client';
 import * as TiptapCore from '@tiptap/core';
@@ -26,6 +28,8 @@ declare global {
 
 globalThis.__c4s_shared = {
   react: React,
+  'react/jsx-runtime': ReactJsxRuntime,
+  'react/jsx-dev-runtime': ReactJsxDevRuntime,
   'react-dom': ReactDOM,
   'react-dom/client': ReactDOMClient,
   '@tiptap/core': TiptapCore,

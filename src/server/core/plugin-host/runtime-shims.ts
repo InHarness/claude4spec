@@ -24,6 +24,8 @@ import type { SharedPeerSpecifier } from '../../../shared/plugin-host/frontend-m
 /** Bare specifier → URL slug used in `/api/plugins/runtime/<slug>.js`. */
 export const PEER_SLUG: Record<SharedPeerSpecifier, string> = {
   react: 'react',
+  'react/jsx-runtime': 'react-jsx-runtime',
+  'react/jsx-dev-runtime': 'react-jsx-dev-runtime',
   'react-dom': 'react-dom',
   'react-dom/client': 'react-dom-client',
   '@tiptap/core': 'tiptap-core',
