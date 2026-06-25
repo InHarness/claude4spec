@@ -22,6 +22,23 @@ describe('runtime-shims', () => {
     expect(src).toContain('export const useState =');
   });
 
+  it('shares the automatic JSX runtime subpaths as their own peers', () => {
+    // A plugin compiled with the automatic JSX runtime imports `jsx`/`jsxs` from
+    // `react/jsx-runtime` (and `jsxDEV` from `react/jsx-dev-runtime` in dev). These
+    // are separate bare subpaths, so each needs its own import-map entry.
+    const map = buildImportMap();
+    expect(map['react/jsx-runtime']).toBe('/api/plugins/runtime/react-jsx-runtime.js');
+    expect(map['react/jsx-dev-runtime']).toBe('/api/plugins/runtime/react-jsx-dev-runtime.js');
+  });
+
+  it('emits the jsx-runtime exports introspected from the host package', async () => {
+    const src = await getRuntimeShim(PEER_SLUG['react/jsx-runtime']);
+    expect(src).toContain('globalThis.__c4s_shared');
+    // The automatic-runtime entry points the plugin resolves to the host singleton.
+    expect(src).toContain('export const jsx =');
+    expect(src).toContain('export const jsxs =');
+  });
+
   it('emits the fixed @c4s/plugin-runtime surface', async () => {
     const src = await getRuntimeShim(PEER_SLUG['@c4s/plugin-runtime']);
     expect(src).toContain('export const clientPluginHost =');

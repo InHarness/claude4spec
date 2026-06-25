@@ -5,7 +5,6 @@ import { dtosApi, endpointsApi } from '../lib/api.js';
 import { acsApi } from '../entities/ac/api.js';
 import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
-import { dispatchNewDatabaseTable } from '../components/NewDatabaseTablePopover.js';
 import { dispatchNewUiView } from '../components/NewUiViewPopover.js';
 import { dispatchNewDesignSystem } from '../components/NewDesignSystemPopover.js';
 import { dispatchTodoPopover } from '../components/TodoPopover.js';
@@ -69,9 +68,6 @@ export async function invokeSlash(
       return;
     case 'ac':
       await runCreateAc(editor, deps);
-      return;
-    case 'database-table':
-      runCreateDatabaseTable(editor, deps);
       return;
     case 'ui-view':
       runCreateUiView(editor, deps);
@@ -267,23 +263,6 @@ async function runCreateDto(editor: Editor, deps: SlashInvokeDeps): Promise<void
   } catch (err) {
     toast.error((err as Error).message);
   }
-}
-
-function runCreateDatabaseTable(editor: Editor, deps: SlashInvokeDeps): void {
-  const { x, y } = coordsAt(editor);
-  dispatchNewDatabaseTable({
-    x,
-    y,
-    onCreated: (slug) => {
-      deps.qc.invalidateQueries({ queryKey: ['database-tables'] });
-      editor
-        .chain()
-        .focus()
-        .insertContent({ type: 'single_element', attrs: { type: 'database-table', slug } })
-        .run();
-      toast.success(`Table ${slug} created`);
-    },
-  });
 }
 
 function runCreateUiView(editor: Editor, deps: SlashInvokeDeps): void {

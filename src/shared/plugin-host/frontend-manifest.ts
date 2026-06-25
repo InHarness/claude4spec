@@ -40,6 +40,15 @@ export interface FrontendManifestResponse {
  */
 export const SHARED_PEER_SPECIFIERS = [
   'react',
+  // The automatic JSX runtime subpaths a plugin's `dist/frontend.js` emits when
+  // compiled with `jsx: 'react-jsx'` (`import { jsx, jsxs } from "react/jsx-runtime"`,
+  // dev builds also `jsxDEV` from `react/jsx-dev-runtime`). These are SEPARATE bare
+  // subpaths not covered by the `react` entry, so they need their own import-map
+  // entries — otherwise the browser can't resolve them and the whole plugin module
+  // fails to load. Sharing them keeps the plugin on the host's single React
+  // reconciler (L11 invariant) instead of bundling a second copy.
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
   'react-dom',
   'react-dom/client',
   '@tiptap/core',
