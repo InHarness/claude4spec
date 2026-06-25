@@ -369,7 +369,19 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
   // M33: process-level plugin endpoints (frontend manifest, runtime shims,
   // loader diagnostics) — before the project dispatch so they stay prefix-free.
-  app.use('/api', pluginsRouter({ pluginRegistry, pluginRecords: pluginLoad.records }));
+  // Phase 2: project-local frontend serving binds to the process's primary
+  // project (the `--cwd`); `isTrusted` is read live so a trust flip applies
+  // without a restart. Workspace-only starts register nothing ⇒ serving disabled.
+  app.use(
+    '/api',
+    pluginsRouter({
+      pluginRegistry,
+      pluginRecords: pluginLoad.records,
+      frontendServing: initialProject
+        ? { cwd, isTrusted: () => registry.getProjectTrust(workspace, initialProject.id) === true }
+        : undefined,
+    }),
+  );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));
 
   // Eager warm of the CLI-started project: clone executes before listen and a
