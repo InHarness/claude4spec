@@ -24,7 +24,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { enumerateOverlayPackages, projectPluginsDir } from './overlay-loader.js';
+import {
+  enumerateOverlayPackages,
+  projectPluginsDir,
+  resolveExportsEntry,
+} from './overlay-loader.js';
+
+/** The `package.json` fields the asset resolvers read. */
+interface PackageManifest {
+  name?: unknown;
+  version?: unknown;
+  exports?: unknown;
+}
+
+/** Read + parse a `package.json`, or `null` when missing/unreadable/invalid. */
+function readPackageJson(pkgJsonPath: string): PackageManifest | null {
+  try {
+    return JSON.parse(fs.readFileSync(pkgJsonPath, 'utf8')) as PackageManifest;
+  } catch {
+    return null;
+  }
+}
+
+/** A manifest's declared `version`, falling back to `'0.0.0'`. */
+function packageVersion(pkg: PackageManifest | null): string {
+  return pkg && typeof pkg.version === 'string' ? pkg.version : '0.0.0';
+}
 
 /** The two precompiled assets a plugin frontend bundle may ship. */
 export type FrontendAssetFile = 'frontend.js' | 'frontend.css';
@@ -65,15 +90,9 @@ export interface FrontendBundle {
   hasCss: boolean;
 }
 
-/** Read a package's declared version, falling back to `'0.0.0'`. */
+/** Read an overlay package's declared version, falling back to `'0.0.0'`. */
 function readBundleVersion(cwd: string, name: string): string {
-  try {
-    const pkgJson = path.join(projectPluginsDir(cwd), name, 'package.json');
-    const pkg = JSON.parse(fs.readFileSync(pkgJson, 'utf8')) as { version?: unknown };
-    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
+  return packageVersion(readPackageJson(path.join(projectPluginsDir(cwd), name, 'package.json')));
 }
 
 /**
@@ -124,15 +143,7 @@ const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
   if (!entryUrl) return null;
   let dir = path.dirname(fileURLToPath(entryUrl));
   for (let i = 0; i < 12; i++) {
-    const pj = path.join(dir, 'package.json');
-    if (fs.existsSync(pj)) {
-      try {
-        const name = (JSON.parse(fs.readFileSync(pj, 'utf8')) as { name?: unknown }).name;
-        if (name === packageName) return dir;
-      } catch {
-        /* unreadable package.json — keep walking up */
-      }
-    }
+    if (readPackageJson(path.join(dir, 'package.json'))?.name === packageName) return dir;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
@@ -140,45 +151,19 @@ const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
   return null;
 };
 
-/** First string target of a package.json `exports` subpath (conditions object or bare string). */
-function pickConditionTarget(node: unknown): string | undefined {
-  if (typeof node === 'string') return node;
-  if (!node || typeof node !== 'object') return undefined;
-  const cond = node as Record<string, unknown>;
-  for (const key of ['import', 'module', 'default']) {
-    if (typeof cond[key] === 'string') return cond[key] as string;
-  }
-  return undefined;
-}
-
 /**
- * The package's declared `./frontend` import target, relative to its root, or
- * the `dist/frontend.js` convention when `exports` does not declare one.
+ * The package's declared `./frontend` import target (relative to its root), or
+ * the `dist/frontend.js` convention when `exports` does not declare one. Reuses
+ * the overlay loader's condition handling so the two tiers can't drift.
  */
-function workspaceFrontendEntryRel(pkgRoot: string): string {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(pkgRoot, 'package.json'), 'utf8')) as {
-      exports?: unknown;
-    };
-    const sub = (pkg.exports as Record<string, unknown> | undefined)?.['./frontend'];
-    const rel = pickConditionTarget(sub);
-    if (rel) return rel;
-  } catch {
-    /* fall through to the convention */
-  }
-  return 'dist/frontend.js';
+function workspaceFrontendEntryRel(pkg: PackageManifest | null): string {
+  const sub = (pkg?.exports as Record<string, unknown> | undefined)?.['./frontend'];
+  return resolveExportsEntry(sub) ?? 'dist/frontend.js';
 }
 
-/** Read an installed workspace package's declared version, falling back to `'0.0.0'`. */
-function readWorkspaceBundleVersion(pkgRoot: string): string {
-  try {
-    const pkg = JSON.parse(fs.readFileSync(path.join(pkgRoot, 'package.json'), 'utf8')) as {
-      version?: unknown;
-    };
-    return typeof pkg.version === 'string' ? pkg.version : '0.0.0';
-  } catch {
-    return '0.0.0';
-  }
+/** Absolute path of a workspace package's `frontend.js`, given its parsed manifest. */
+function workspaceFrontendJs(root: string, pkg: PackageManifest | null): string {
+  return path.resolve(root, workspaceFrontendEntryRel(pkg));
 }
 
 /**
@@ -200,7 +185,7 @@ export function resolveWorkspaceFrontendAsset(
   if (!allowedPackages.includes(packageName)) return null;
   const root = resolveRoot(packageName);
   if (!root) return null;
-  const frontendAbs = path.resolve(root, workspaceFrontendEntryRel(root));
+  const frontendAbs = workspaceFrontendJs(root, readPackageJson(path.join(root, 'package.json')));
   const abs =
     file === 'frontend.js' ? frontendAbs : path.join(path.dirname(frontendAbs), 'frontend.css');
   return fs.existsSync(abs) ? abs : null;
@@ -210,7 +195,12 @@ export function resolveWorkspaceFrontendAsset(
  * Workspace/npm plugins that ship a resolvable built `frontend` entry, for the
  * frontend manifest. UNGATED (parity with the backend base tier). A package
  * without a built bundle (or unresolvable) is simply omitted. `resolveRoot` is a
- * test seam — production passes the default `createRequire`-based resolver.
+ * test seam — production passes the default `import.meta.resolve`-based resolver.
+ *
+ * `packageNames` is the resolved workspace allowlist, so every name is trusted by
+ * construction (the traversal guard in `resolveWorkspaceFrontendAsset` exists for
+ * the user-supplied route `:name`). Each package is resolved + its `package.json`
+ * read exactly ONCE here (this runs per `GET /frontend-manifest`).
  */
 export function enumerateWorkspaceFrontendBundles(
   packageNames: readonly string[],
@@ -218,12 +208,15 @@ export function enumerateWorkspaceFrontendBundles(
 ): FrontendBundle[] {
   const bundles: FrontendBundle[] = [];
   for (const name of packageNames) {
-    if (!resolveWorkspaceFrontendAsset(name, 'frontend.js', packageNames, resolveRoot)) continue;
     const root = resolveRoot(name);
+    if (!root) continue;
+    const pkg = readPackageJson(path.join(root, 'package.json'));
+    const frontendAbs = workspaceFrontendJs(root, pkg);
+    if (!fs.existsSync(frontendAbs)) continue;
     bundles.push({
       name,
-      version: root ? readWorkspaceBundleVersion(root) : '0.0.0',
-      hasCss: resolveWorkspaceFrontendAsset(name, 'frontend.css', packageNames, resolveRoot) != null,
+      version: packageVersion(pkg),
+      hasCss: fs.existsSync(path.join(path.dirname(frontendAbs), 'frontend.css')),
     });
   }
   return bundles;
