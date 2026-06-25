@@ -7,6 +7,9 @@ import {
   resolveFrontendAsset,
   enumerateWorkspaceFrontendBundles,
   resolveWorkspaceFrontendAsset,
+  assetContentType,
+  resolveOverlayAsset,
+  resolveWorkspaceAsset,
 } from './frontend-assets.js';
 import { buildFrontendManifest } from './frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
@@ -69,6 +72,68 @@ describe('frontend-assets', () => {
       expect(resolveFrontendAsset(cwd, true, 'nope', 'frontend.js')).toBeNull();
       expect(resolveFrontendAsset(cwd, true, '..', 'frontend.js')).toBeNull();
       expect(resolveFrontendAsset(cwd, true, '../../etc', 'frontend.js')).toBeNull();
+    });
+  });
+
+  describe('generalized dist assets (native-ESM siblings)', () => {
+    it('assetContentType allowlists only .js/.css/.map', () => {
+      expect(assetContentType('dto-ABC123.js')).toBe('text/javascript');
+      expect(assetContentType('frontend.css')).toBe('text/css');
+      expect(assetContentType('frontend.js.map')).toBe('application/json');
+      expect(assetContentType('package.json')).toBeNull();
+      expect(assetContentType('secret.env')).toBeNull();
+      expect(assetContentType('noext')).toBeNull();
+    });
+
+    it('overlay: serves a code-split chunk + source map sibling of frontend.js (trusted)', () => {
+      makePkg('glossary');
+      const dist = path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist');
+      fs.writeFileSync(path.join(dist, 'dto-ABC123.js'), 'export const d = 1;');
+      fs.writeFileSync(path.join(dist, 'frontend.js.map'), '{}');
+      expect(resolveOverlayAsset(cwd, true, 'glossary', 'dto-ABC123.js')).toBe(
+        path.join(dist, 'dto-ABC123.js'),
+      );
+      expect(resolveOverlayAsset(cwd, true, 'glossary', 'frontend.js.map')).toBe(
+        path.join(dist, 'frontend.js.map'),
+      );
+    });
+
+    it('overlay: gate off / disallowed ext / traversal / missing ⇒ null', () => {
+      makePkg('glossary');
+      const dist = path.join(cwd, '.claude4spec', 'plugins', 'glossary', 'dist');
+      fs.writeFileSync(path.join(dist, 'chunk.js'), 'export const c = 1;');
+      // Secret next to the bundle must never be served (extension allowlist).
+      fs.writeFileSync(path.join(dist, 'secret.json'), '{"k":1}');
+      expect(resolveOverlayAsset(cwd, false, 'glossary', 'chunk.js')).toBeNull(); // gate off
+      expect(resolveOverlayAsset(cwd, true, 'glossary', 'secret.json')).toBeNull(); // ext
+      expect(resolveOverlayAsset(cwd, true, 'glossary', '../package.json')).toBeNull(); // traversal
+      expect(resolveOverlayAsset(cwd, true, 'glossary', 'sub/x.js')).toBeNull(); // separator
+      expect(resolveOverlayAsset(cwd, true, 'glossary', 'absent.js')).toBeNull(); // missing
+      expect(resolveOverlayAsset(cwd, true, 'nope', 'chunk.js')).toBeNull(); // unknown pkg
+    });
+
+    it('workspace: serves a chunk sibling of the resolved frontend entry, ungated but allowlist-bounded', () => {
+      const wsRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-asset-'));
+      try {
+        fs.mkdirSync(path.join(wsRoot, 'dist'), { recursive: true });
+        fs.writeFileSync(
+          path.join(wsRoot, 'package.json'),
+          JSON.stringify({ name: 'c4s-ws-asset', version: '1.0.0', exports: { './frontend': { import: './dist/frontend.js' } } }),
+        );
+        fs.writeFileSync(path.join(wsRoot, 'dist', 'frontend.js'), 'export const x = 1;');
+        fs.writeFileSync(path.join(wsRoot, 'dist', 'dto-XYZ.js'), 'export const d = 1;');
+        const resolveRoot = (n: string) => (n === 'c4s-ws-asset' ? wsRoot : null);
+        expect(resolveWorkspaceAsset('c4s-ws-asset', 'dto-XYZ.js', ['c4s-ws-asset'], resolveRoot)).toBe(
+          path.join(wsRoot, 'dist', 'dto-XYZ.js'),
+        );
+        // Not in allowlist ⇒ null even for a resolvable, existing chunk.
+        expect(resolveWorkspaceAsset('c4s-ws-asset', 'dto-XYZ.js', [], resolveRoot)).toBeNull();
+        // Disallowed extension ⇒ null.
+        fs.writeFileSync(path.join(wsRoot, 'dist', 'meta.json'), '{}');
+        expect(resolveWorkspaceAsset('c4s-ws-asset', 'meta.json', ['c4s-ws-asset'], resolveRoot)).toBeNull();
+      } finally {
+        fs.rmSync(wsRoot, { recursive: true, force: true });
+      }
     });
   });
 

@@ -13,6 +13,8 @@
 
 import type {
   ChangedBy,
+  DatabaseTable,
+  DatabaseTableCreateInput,
   EndpointDtoLink,
   EndpointDtoRelation,
 } from '../../shared/entities.js';
@@ -21,13 +23,30 @@ import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../domain/raw-entity-reader.js';
 import type { EndpointService } from '../entities/endpoint/services.js';
 import type { DtoService } from '../entities/dto/services.js';
-import type { DatabaseTableService } from '../entities/database-table/services.js';
 import type { UiViewService } from '../entities/ui-view/services.js';
 import type { AcService } from '../entities/ac/services.js';
 import type { DesignSystemService } from '../entities/design-system/services.js';
 import type { DiagramService } from '../entities/diagram/services.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
+
+/**
+ * Structural shape of the `database-table` entity service the host writer needs.
+ * The concrete service now ships in the preinstalled `c4s-plugin-simple-database-tables`
+ * plugin (registered via `ctx.registerEntityService('database-table', …)`), so the
+ * host depends on its shape — not its type — exactly as the plugin's restore slot
+ * depends on `writer.upsertDatabaseTable()` structurally.
+ */
+interface DatabaseTableServiceLike {
+  upsert(
+    slug: string,
+    input: DatabaseTableCreateInput,
+    actor: ChangedBy,
+    opts: { capture: boolean; writeFile: boolean },
+  ): { dbTable: DatabaseTable; op: 'created' | 'updated'; warnings?: string[] };
+  getBySlug(slug: string): unknown;
+  remove(slug: string, actor: ChangedBy): unknown;
+}
 
 export class HostEntityWriter implements EntityWriter {
   /**
@@ -56,8 +75,8 @@ export class HostEntityWriter implements EntityWriter {
     return { entity: result.dto, op: result.op };
   }
 
-  upsertDatabaseTable(slug: string, input: Parameters<DatabaseTableService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DatabaseTableService['upsert']>['dbTable']> {
-    const service = this.requireService<DatabaseTableService>('database-table');
+  upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable> {
+    const service = this.requireService<DatabaseTableServiceLike>('database-table');
     const result = service.upsert(slug, input, actor, this.mutateOpts);
     return { entity: result.dbTable, op: result.op, warnings: result.warnings };
   }
@@ -150,7 +169,7 @@ export class HostEntityWriter implements EntityWriter {
         return { deleted: true };
       }
       case 'database-table': {
-        const service = this.requireService<DatabaseTableService>('database-table');
+        const service = this.requireService<DatabaseTableServiceLike>('database-table');
         if (!service.getBySlug(slug)) return { deleted: false };
         service.remove(slug, actor);
         return { deleted: true };
