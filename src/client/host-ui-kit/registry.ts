@@ -16,6 +16,8 @@ import { FieldGrid } from './core/FieldGrid.js';
 import { EntityListLayout } from './list/EntityListLayout.js';
 import { Pagination } from './list/Pagination.js';
 import { EmptyState } from './list/EmptyState.js';
+import { TagFilterBar } from './list/TagFilterBar.js';
+import { EntityListRow } from './list/EntityListRow.js';
 import { ActionButton } from './actions/ActionButton.js';
 import { Badge } from './actions/Badge.js';
 import { LoadingState } from './actions/LoadingState.js';
@@ -39,6 +41,8 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   { name: 'EntityListLayout', group: 'list', stability: EntityListLayout.stability },
   { name: 'Pagination', group: 'list', stability: Pagination.stability },
   { name: 'EmptyState', group: 'list', stability: EmptyState.stability },
+  { name: 'TagFilterBar', group: 'list', stability: TagFilterBar.stability },
+  { name: 'EntityListRow', group: 'list', stability: EntityListRow.stability },
   { name: 'ActionButton', group: 'actions', stability: ActionButton.stability },
   { name: 'Badge', group: 'actions', stability: Badge.stability },
   { name: 'LoadingState', group: 'actions', stability: LoadingState.stability },

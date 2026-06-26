@@ -1,15 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useTags } from '../../hooks/useTags.js';
-import type { EntityType, Tag } from '../../../shared/entities.js';
-
-export interface TagBarProps {
-  tags: Tag[];
-  tagFilter: string[];
-  onTagToggle: (slug: string) => void;
-  tagMode: 'and' | 'or';
-  onToggleMode: () => void;
-  onClear: () => void;
-}
+import type { EntityType } from '../../../shared/entities.js';
+// `TagBarProps` is owned by the Host UI Kit's `TagFilterBar` (M34/L12); the app
+// still builds the value and passes it into the kit component.
+import type { TagBarProps } from '../../host-ui-kit/index.js';
 
 interface Options {
   search: string;

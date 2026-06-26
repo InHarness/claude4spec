@@ -26,6 +26,8 @@ export { FieldGrid, type FieldGridProps } from './core/FieldGrid.js';
 export { EntityListLayout, type EntityListLayoutProps } from './list/EntityListLayout.js';
 export { Pagination, type PaginationProps } from './list/Pagination.js';
 export { EmptyState, type EmptyStateProps } from './list/EmptyState.js';
+export { TagFilterBar, type TagBarProps } from './list/TagFilterBar.js';
+export { EntityListRow, type EntityListRowProps } from './list/EntityListRow.js';
 
 // Actions & states (experimental)
 export { ActionButton, type ActionButtonProps, type ActionButtonVariant } from './actions/ActionButton.js';

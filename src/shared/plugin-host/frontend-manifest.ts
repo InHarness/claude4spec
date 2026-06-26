@@ -98,6 +98,8 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'EntityListLayout',
   'Pagination',
   'EmptyState',
+  'TagFilterBar',
+  'EntityListRow',
   // Actions & states (experimental)
   'ActionButton',
   'Badge',
