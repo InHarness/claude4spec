@@ -10,6 +10,7 @@ import {
   assetContentType,
   resolveOverlayAsset,
   resolveWorkspaceAsset,
+  nearestPackageRoot,
 } from './frontend-assets.js';
 import { buildFrontendManifest } from './frontend-manifest.js';
 import { buildImportMap } from './runtime-shims.js';
@@ -273,5 +274,46 @@ describe('frontend-assets', () => {
         { name: 'overlay-only', version: '1.0.0', entry: '/api/plugins/overlay-only/frontend.js' },
       ]);
     });
+  });
+});
+
+// `defaultWorkspaceRoot` resolves a plugin's package root by walking up from the
+// `import.meta.resolve`d entry via this pure helper. The regression: it must NOT
+// gate on the manifest `name`, so a plugin installed under an unscoped dir name
+// whose real `package.json` `name` is scoped still resolves (else its frontend
+// is silently dropped — no manifest entry, no sidebar link).
+describe('nearestPackageRoot', () => {
+  let root: string;
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-pkgroot-'));
+  });
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  it('walks up from a nested entry dir to the package root (name mismatch tolerated)', () => {
+    // Dir/install name (unscoped) ≠ real package.json name (scoped) — the bug case.
+    fs.writeFileSync(
+      path.join(root, 'package.json'),
+      JSON.stringify({ name: '@inharness-ai/c4s-plugin-simple-database-tables', version: '1.0.0' }),
+    );
+    fs.mkdirSync(path.join(root, 'dist'), { recursive: true });
+    // entry resolves to <root>/dist/frontend.js → start the walk from <root>/dist.
+    expect(nearestPackageRoot(path.join(root, 'dist'))).toBe(root);
+  });
+
+  it('returns the start dir itself when it owns a package.json', () => {
+    fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'whatever' }));
+    expect(nearestPackageRoot(root)).toBe(root);
+  });
+
+  it('returns null when no ancestor owns a readable package.json', () => {
+    // A temp dir with no package.json and (within 12 hops) none up the chain.
+    const deep = path.join(root, 'a', 'b', 'c');
+    fs.mkdirSync(deep, { recursive: true });
+    // Guard: only assert null when the real fs has no package.json up to root.
+    // os.tmpdir() chains have none, so the walk terminates at filesystem root.
+    expect(nearestPackageRoot(deep)).toBeNull();
   });
 });

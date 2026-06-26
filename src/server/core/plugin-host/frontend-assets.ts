@@ -51,6 +51,26 @@ function packageVersion(pkg: PackageManifest | null): string {
   return pkg && typeof pkg.version === 'string' ? pkg.version : '0.0.0';
 }
 
+/**
+ * Walk up from `startDir` to the NEAREST ancestor that owns a readable
+ * `package.json` — the package root — or `null` if none within 12 levels. The
+ * caller has already proved the package's identity (`import.meta.resolve`
+ * resolved a DECLARED subpath of `packageName`), so we deliberately do NOT gate
+ * on the manifest `name`: a workspace plugin whose install/dir name differs from
+ * its real (e.g. scoped) `package.json` `name` must still resolve to its root.
+ * The 12-level bound is a cheap runaway guard for a pathological deep tree.
+ */
+export function nearestPackageRoot(startDir: string): string | null {
+  let dir = startDir;
+  for (let i = 0; i < 12; i++) {
+    if (readPackageJson(path.join(dir, 'package.json'))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 /** The two precompiled assets a plugin frontend bundle may ship. */
 export type FrontendAssetFile = 'frontend.js' | 'frontend.css';
 
@@ -127,8 +147,12 @@ export type WorkspaceRootResolver = (packageName: string) => string | null;
  *      modern plugin's `exports` is import-only (`{ types, import }`) ⇒ "No
  *      exports main defined".
  * So resolve a DECLARED ESM subpath with `import.meta.resolve` (which uses the
- * `import` condition), then walk up to the directory owning the matching
- * `package.json`. Try `./frontend` first (the only subpath we serve), then `.`.
+ * `import` condition) — that resolution alone PROVES identity — then walk up to
+ * the nearest directory owning a `package.json` (the package root) via
+ * `nearestPackageRoot`. We do NOT re-check that `package.json`'s `name` equals
+ * the requested id: a plugin installed under an unscoped dir name whose real
+ * `name` is scoped (`@scope/pkg`) would otherwise never match and silently lose
+ * its frontend. Try `./frontend` first (the only subpath we serve), then `.`.
  */
 const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
   let entryUrl: string | undefined;
@@ -141,14 +165,7 @@ const defaultWorkspaceRoot: WorkspaceRootResolver = (packageName) => {
     }
   }
   if (!entryUrl) return null;
-  let dir = path.dirname(fileURLToPath(entryUrl));
-  for (let i = 0; i < 12; i++) {
-    if (readPackageJson(path.join(dir, 'package.json'))?.name === packageName) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  return null;
+  return nearestPackageRoot(path.dirname(fileURLToPath(entryUrl)));
 };
 
 /**
