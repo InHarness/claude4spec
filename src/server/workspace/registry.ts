@@ -16,11 +16,14 @@ const LOCK_STALE_MS = 5_000;
 
 /**
  * M33: plugin packages built into claude4spec core deps — always present in
- * every workspace regardless of the persisted `plugins[]`. Phase 1 ships none
- * (the 7 entity types are still in-host built-ins registered via
- * `registerAllPlugins`); the mechanism is what matters for forward-compat.
+ * every workspace regardless of the persisted `plugins[]`, trusted by virtue of
+ * installation (outside the workspace `trustProjectPlugins` gate) and loaded
+ * FIRST, before any workspace-declared plugin. `database-table` is the first
+ * preinstalled plugin: it stopped being an in-host built-in (6 core types remain
+ * in `registerAllPlugins`) and is now contributed by this package via the M33
+ * loader fan-out — default-active, so tables work identically out of the box.
  */
-export const PREDEFINED_PLUGINS: readonly string[] = [];
+export const PREDEFINED_PLUGINS: readonly string[] = ['c4s-plugin-simple-database-tables'];
 
 /**
  * Effective workspace plugin package set = predefined ∪ user-added, deduped,

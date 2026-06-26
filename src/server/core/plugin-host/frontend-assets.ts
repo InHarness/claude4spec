@@ -221,3 +221,77 @@ export function enumerateWorkspaceFrontendBundles(
   }
   return bundles;
 }
+
+// ─── Generalized dist asset serving (native-ESM siblings) ───────────────────
+//
+// A plugin's `frontend.js` is served as native ESM (m33l5fe0 — the host does NOT
+// re-bundle), so its RELATIVE imports resolve against the module URL: a code-split
+// chunk `./dto-*.js` becomes `GET /api/plugins/<name>/dto-*.js`. Serving only
+// `frontend.js`/`frontend.css` (the original two-file enum) left those siblings
+// 404 and broke any code-split bundle (the first real plugin tripped on it). So
+// the host serves any allowlisted asset that physically sits next to the entry,
+// strictly contained in the bundle dir, under the SAME trust gating as the entry.
+
+/** Asset extensions a plugin bundle dir may serve, with their content types. */
+const ASSET_CONTENT_TYPE: Record<string, string> = {
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.map': 'application/json',
+};
+
+/** Content type for a served asset name, or `null` when the extension is not allowed. */
+export function assetContentType(asset: string): string | null {
+  return ASSET_CONTENT_TYPE[path.extname(asset).toLowerCase()] ?? null;
+}
+
+/**
+ * Resolve a single flat `asset` strictly within `distDir`. Returns `null` (→ 404)
+ * on a disallowed extension, any path separator / traversal in the name, an
+ * escape outside `distDir`, or a missing file. Vite library output is flat
+ * (`frontend.js`, `dto-*.js`, `*.map` all in the bundle root), so a single
+ * path-segment name with no separators is exactly what a relative ESM import
+ * requests — and rejecting separators is the simplest sound traversal guard.
+ */
+function resolveWithinDist(distDir: string, asset: string): string | null {
+  if (!assetContentType(asset)) return null;
+  if (asset.includes('/') || asset.includes('\\') || asset.includes('..')) return null;
+  const abs = path.join(distDir, asset);
+  const rel = path.relative(distDir, abs);
+  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) return null;
+  return fs.existsSync(abs) ? abs : null;
+}
+
+/**
+ * Overlay tier (trust-gated): resolve any allowlisted sibling of the project-local
+ * bundle at `<cwd>/.claude4spec/plugins/<name>/dist/<asset>`. Same gate + package
+ * guard as `resolveFrontendAsset`, generalized from the two fixed filenames.
+ */
+export function resolveOverlayAsset(
+  cwd: string,
+  trusted: boolean,
+  name: string,
+  asset: string,
+): string | null {
+  if (!trusted) return null;
+  if (!enumerateOverlayPackages(cwd).includes(name)) return null;
+  return resolveWithinDist(path.join(projectPluginsDir(cwd), name, 'dist'), asset);
+}
+
+/**
+ * Workspace tier (ungated, allowlist-bounded): resolve any allowlisted sibling of
+ * a workspace/npm plugin's resolved `frontend` entry (i.e. files in the same
+ * `dist/` dir). Generalizes `resolveWorkspaceFrontendAsset` from the two fixed
+ * filenames so code-split chunks (`dto-*.js`) and source maps resolve.
+ */
+export function resolveWorkspaceAsset(
+  packageName: string,
+  asset: string,
+  allowedPackages: readonly string[],
+  resolveRoot: WorkspaceRootResolver = defaultWorkspaceRoot,
+): string | null {
+  if (!allowedPackages.includes(packageName)) return null;
+  const root = resolveRoot(packageName);
+  if (!root) return null;
+  const frontendAbs = workspaceFrontendJs(root, readPackageJson(path.join(root, 'package.json')));
+  return resolveWithinDist(path.dirname(frontendAbs), asset);
+}

@@ -20,6 +20,7 @@ import { PageDiffCard } from './release/PageDiffCard.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
 
@@ -28,29 +29,26 @@ interface Props {
 }
 
 /**
- * Sekcje per typ w kolejności wymaganej przez spec m17uidet01:
- *   Pages → Endpoints → DTOs → Database Tables → UI Views.
+ * Sections per entity type, in REGISTRY registration order (spec m17uidet01).
+ * Pages stay first; the entity sections that follow are no longer a hardcoded
+ * `Endpoints → DTOs → Database Tables → UI Views` list — they are derived from
+ * `clientPluginHost` (core types in `displayOrder`, then a section per active
+ * plugin, e.g. Database Tables from the preinstalled plugin). Labels come from
+ * each module's `label` / `labelPlural`.
  */
-const ENTITY_SECTION_ORDER = [
-  { type: 'endpoint', label: 'Endpoints' },
-  { type: 'dto', label: 'DTOs' },
-  { type: 'database-table', label: 'Database Tables' },
-  { type: 'ui-view', label: 'UI Views' },
-] as const;
-
-const TYPE_LABEL_SINGULAR: Record<string, string> = {
-  endpoint: 'endpoint',
-  dto: 'DTO',
-  'database-table': 'table',
-  'ui-view': 'view',
-};
-
-const TYPE_LABEL_PLURAL: Record<string, string> = {
-  endpoint: 'endpoints',
-  dto: 'DTOs',
-  'database-table': 'tables',
-  'ui-view': 'views',
-};
+function registrySectionOrder(): Array<{
+  type: string;
+  label: string;
+  singular: string;
+  plural: string;
+}> {
+  return clientPluginHost.listAvailable().map((m) => ({
+    type: m.type,
+    label: m.labelPlural,
+    singular: m.label,
+    plural: m.labelPlural,
+  }));
+}
 
 export function ReleaseDetail({ idOrName }: Props) {
   const { data: release, isLoading } = useRelease(idOrName);
@@ -463,9 +461,11 @@ function DeltaSection({
 }) {
   const visiblePages = pageChanges.filter((c) => c.op !== 'noop');
   const entitiesByType = useMemo(() => groupByType(entityChanges), [entityChanges]);
+  const sectionOrder = registrySectionOrder();
 
   const counter = useMemo(
-    () => buildGlobalCounter(visiblePages.length, entitiesByType),
+    () => buildGlobalCounter(visiblePages.length, entitiesByType, sectionOrder),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [visiblePages.length, entitiesByType],
   );
 
@@ -507,8 +507,9 @@ function DeltaSection({
         </section>
       )}
 
-      {/* Entities w kolejności: Endpoints → DTOs → Database Tables → UI Views. Sekcje z 0 zmian — UKRYTE. */}
-      {ENTITY_SECTION_ORDER.map(({ type, label }) => {
+      {/* Entities in registry registration order (core types, then active plugins).
+          Sections with 0 changes — HIDDEN. */}
+      {sectionOrder.map(({ type, label }) => {
         const items = entitiesByType.get(type) ?? [];
         if (items.length === 0) return null;
         return (
@@ -527,9 +528,9 @@ function DeltaSection({
         );
       })}
 
-      {/* Encje typu spoza ENTITY_SECTION_ORDER — fallback na końcu. */}
+      {/* Entity types not in the registry (e.g. a historical type) — fallback at the end. */}
       {Array.from(entitiesByType.keys())
-        .filter((t) => !ENTITY_SECTION_ORDER.some((s) => s.type === t))
+        .filter((t) => !sectionOrder.some((s) => s.type === t))
         .map((type) => {
           const items = entitiesByType.get(type)!;
           if (items.length === 0) return null;
@@ -566,19 +567,19 @@ function groupByType(changes: RawDeltaEntityChange[]): Map<string, RawDeltaEntit
 function buildGlobalCounter(
   pagesCount: number,
   entitiesByType: Map<string, RawDeltaEntityChange[]>,
+  sectionOrder: Array<{ type: string; singular: string; plural: string }>,
 ): { total: number; parts: string[] } {
   const parts: string[] = [];
   if (pagesCount > 0) parts.push(`${pagesCount} ${pagesCount === 1 ? 'page' : 'pages'}`);
   let total = pagesCount;
-  for (const { type } of ENTITY_SECTION_ORDER) {
+  for (const { type, singular, plural } of sectionOrder) {
     const n = entitiesByType.get(type)?.length ?? 0;
     if (n === 0) continue;
     total += n;
-    const label = n === 1 ? TYPE_LABEL_SINGULAR[type] ?? type : TYPE_LABEL_PLURAL[type] ?? type;
-    parts.push(`${n} ${label}`);
+    parts.push(`${n} ${n === 1 ? singular : plural}`);
   }
   for (const [type, items] of entitiesByType) {
-    if (ENTITY_SECTION_ORDER.some((s) => s.type === type)) continue;
+    if (sectionOrder.some((s) => s.type === type)) continue;
     if (items.length === 0) continue;
     total += items.length;
     parts.push(`${items.length} ${type}`);

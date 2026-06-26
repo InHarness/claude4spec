@@ -153,8 +153,9 @@ const dtoHistoryRoute = createRoute({
 
 // M33 phase 3: the 3 `/database-tables` routes are no longer hardcoded here.
 // They are contributed as a `RouteTreeFragment` by the `database-table`
-// FrontendModule (transitional built-in: `entities/database-table/routes.tsx`),
-// and overridden by the external plugin's fragment once it loads (same `type`).
+// FrontendModule shipped in the preinstalled `c4s-plugin-simple-database-tables`
+// plugin (the in-host built-in module was removed in brief 0-1-82-to-0-1-83), and
+// mounted by `mountFrontend` once the plugin's frontend bundle loads.
 
 const uiViewsIndexRoute = createRoute({
   getParentRoute: () => rootRoute,

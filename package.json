@@ -78,6 +78,7 @@
     "@tiptap/suggestion": "^2.27.2",
     "@types/diff": "^7.0.2",
     "better-sqlite3": "^11.7.0",
+    "c4s-plugin-simple-database-tables": "^0.1.0",
     "chokidar": "^4.0.3",
     "diff": "^9.0.0",
     "express": "^4.21.2",

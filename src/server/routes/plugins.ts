@@ -17,9 +17,9 @@ import type { PluginRegistry } from '../core/plugin-host/types.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js';
 import {
-  resolveFrontendAsset,
-  resolveWorkspaceFrontendAsset,
-  type FrontendAssetFile,
+  assetContentType,
+  resolveOverlayAsset,
+  resolveWorkspaceAsset,
 } from '../core/plugin-host/frontend-assets.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 // M33 phase 3: base-package assembly lives in a shared, express-free module so
@@ -80,42 +80,43 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
     }
   });
 
-  // M33: stream a plugin's precompiled bundle. Two tiers, tried in order:
+  // M33: stream any asset from a plugin's precompiled bundle dir (`dist/`). The
+  // entry `frontend.js` is native ESM (m33l5fe0 — the host does NOT re-bundle),
+  // so its relative imports (e.g. a code-split `./dto-*.js` chunk, source maps)
+  // resolve to siblings under `/api/plugins/<name>/<asset>`. Two tiers, tried in
+  // order, each strictly contained in the bundle dir + extension-allowlisted:
   //   1. overlay (phase 2) — the trusted primary project's
-  //      `.claude4spec/plugins/<name>/dist/<file>` (trust-gated); then
-  //   2. workspace (phase 3) — a workspace/npm plugin's `dist/<file>`, UNGATED,
+  //      `.claude4spec/plugins/<name>/dist/<asset>` (trust-gated); then
+  //   2. workspace (phase 3) — a workspace/npm plugin's `dist/<asset>`, UNGATED,
   //      bounded to `workspacePackages` (which also guards traversal).
-  // The gate, the unknown-package guard, and the missing-build case all collapse
-  // to the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
-  const FRONTEND_CONTENT_TYPE: Record<FrontendAssetFile, string> = {
-    'frontend.js': 'text/javascript',
-    'frontend.css': 'text/css',
-  };
-  const serveFrontendAsset = (file: FrontendAssetFile) => (req: Request, res: Response) => {
+  // The gate, the unknown-package/disallowed-extension guard, and the
+  // missing-file case all collapse to the same `404 PLUGIN_FRONTEND_NOT_FOUND`.
+  router.get('/plugins/:name/:asset', (req: Request, res: Response) => {
     const name = req.params.name!;
+    const asset = req.params.asset!;
+    const contentType = assetContentType(asset);
     const abs =
-      (frontendServing &&
-        resolveFrontendAsset(frontendServing.cwd, frontendServing.isTrusted(), name, file)) ||
-      resolveWorkspaceFrontendAsset(name, file, workspacePackages);
-    if (!abs) {
+      contentType &&
+      ((frontendServing &&
+        resolveOverlayAsset(frontendServing.cwd, frontendServing.isTrusted(), name, asset)) ||
+        resolveWorkspaceAsset(name, asset, workspacePackages));
+    if (!abs || !contentType) {
       return res.status(404).json({
         error: {
           code: 'PLUGIN_FRONTEND_NOT_FOUND',
-          message: `no ${file} for plugin "${name}"`,
+          message: `no ${asset} for plugin "${name}"`,
         },
       });
     }
     // `nosniff` so a mistyped bundle can't be reinterpreted (mirrors routes/static).
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.type(FRONTEND_CONTENT_TYPE[file]);
+    res.type(contentType);
     fs.createReadStream(abs)
       .on('error', () => {
         if (!res.headersSent) res.status(404).end();
       })
       .pipe(res);
-  };
-  router.get('/plugins/:name/frontend.js', serveFrontendAsset('frontend.js'));
-  router.get('/plugins/:name/frontend.css', serveFrontendAsset('frontend.css'));
+  });
 
   router.get('/_meta/plugins', (_req, res) => {
     const response: PluginsMetaResponse = {
