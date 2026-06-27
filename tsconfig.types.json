@@ -1,0 +1,31 @@
+{
+  "//": "M34/brief 0.1.85→0.1.86 — emits the PUBLISHED Host API type surface for",
+  "//2": "plugin authors (`@inharness-ai/claude4spec/plugin-runtime` + `/ui`).",
+  "//3": "Declaration-only: never emits .js, so it can't clobber the server/client",
+  "//4": "build outputs. Uses client-flavoured options (jsx + DOM lib) because the",
+  "//5": "surface declares React component prop contracts.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": [],
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "outDir": "./dist",
+    "rootDir": "./src"
+  },
+  "//6": "ambient.d.ts is shipped verbatim (re-exports the package's own subpaths,",
+  "//7": "which only resolve once installed), so it is excluded from compilation and",
+  "//8": "copied into dist by the build:types script instead.",
+  "include": ["src/plugin-types/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/plugin-types/ambient.d.ts"]
+}

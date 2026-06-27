@@ -38,15 +38,28 @@
     "c4s": "dist/bin/c4s.js",
     "c4s-mcp": "dist/bin/c4s-mcp.js"
   },
+  "exports": {
+    "./package.json": "./package.json",
+    "./plugin-runtime": {
+      "types": "./dist/plugin-types/plugin-runtime.d.ts"
+    },
+    "./plugin-runtime/ui": {
+      "types": "./dist/plugin-types/ui.d.ts"
+    },
+    "./plugin-runtime/ambient": {
+      "types": "./dist/plugin-types/ambient.d.ts"
+    }
+  },
   "scripts": {
     "dev": "tsx watch src/bin/claude4spec.ts --mode dev",
     "dev:sandbox": "tsx watch src/bin/claude4spec.ts --mode dev --cwd .claude/skills/specyfikacja --pages .",
     "c4s": "tsx src/bin/c4s.ts",
     "build:server": "tsc -p tsconfig.server.json && rm -rf dist/server/db/migrations && cp -R src/server/db/migrations dist/server/db/migrations && rm -rf dist/server/skills && cp -R src/server/skills dist/server/skills && chmod +x dist/bin/claude4spec.js dist/bin/c4s.js dist/bin/c4s-mcp.js",
     "build:client": "vite build",
-    "build": "npm run build:client && npm run build:server",
+    "build:types": "tsc -p tsconfig.types.json && cp src/plugin-types/ambient.d.ts dist/plugin-types/ambient.d.ts",
+    "build": "npm run build:client && npm run build:server && npm run build:types",
     "start": "node dist/bin/claude4spec.js",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.types.json --noEmit",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
