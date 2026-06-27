@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.23] - 2026-06-27
+
+### Fixed
+- **Scoped plugin frontends 404'd → missing sidebar entry.** The frontend-manifest built asset URLs with a raw package name, so a scoped plugin (`@scope/pkg`) produced `/api/plugins/@scope/pkg/frontend.js` — an extra path segment the `/api/plugins/:name/:asset` route never matched. The preinstalled database-table plugin (`@inharness-ai/c4s-plugin-simple-database-tables`) loaded on the backend but its sidebar link vanished. The name is now percent-encoded into a single path segment (the route already decodes it).
+
 ## [1.0.22] - 2026-06-27
 
 ### Added
@@ -259,3 +264,5 @@ Initial public release.
 [1.0.2]: https://github.com/InHarness/claude4spec/compare/v1.0.1...v1.0.2
 
 [1.0.22]: https://github.com/InHarness/claude4spec/compare/v1.0.21...v1.0.22
+
+[1.0.23]: https://github.com/InHarness/claude4spec/compare/v1.0.22...v1.0.23
