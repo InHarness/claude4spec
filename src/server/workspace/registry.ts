@@ -23,7 +23,9 @@ const LOCK_STALE_MS = 5_000;
  * in `registerAllPlugins`) and is now contributed by this package via the M33
  * loader fan-out — default-active, so tables work identically out of the box.
  */
-export const PREDEFINED_PLUGINS: readonly string[] = ['c4s-plugin-simple-database-tables'];
+export const PREDEFINED_PLUGINS: readonly string[] = [
+  '@inharness-ai/c4s-plugin-simple-database-tables',
+];
 
 /**
  * Effective workspace plugin package set = predefined ∪ user-added, deduped,
