@@ -274,6 +274,43 @@ describe('frontend-assets', () => {
         { name: 'overlay-only', version: '1.0.0', entry: '/api/plugins/overlay-only/frontend.js' },
       ]);
     });
+
+    it('manifest: a SCOPED package name is percent-encoded into ONE path segment', () => {
+      // Regression: a scoped name (`@scope/pkg`) has a `/`. The asset URL must
+      // encode it so the `:name/:asset` serving route still matches — otherwise the
+      // frontend 404s and the plugin's sidebar entry silently disappears (the exact
+      // symptom when the preinstalled database-table plugin moved to its scoped name).
+      const SCOPED = '@inharness-ai/c4s-plugin-simple-database-tables';
+      const scopedRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ws-scoped-'));
+      fs.mkdirSync(path.join(scopedRoot, 'dist'), { recursive: true });
+      fs.writeFileSync(
+        path.join(scopedRoot, 'package.json'),
+        JSON.stringify({
+          name: SCOPED,
+          version: '0.1.0',
+          exports: { './frontend': { import: './dist/frontend.js' } },
+        }),
+      );
+      fs.writeFileSync(path.join(scopedRoot, 'dist', 'frontend.js'), 'export const x = 1;');
+      const resolveScoped = (name: string) => (name === SCOPED ? scopedRoot : null);
+      try {
+        const m = buildFrontendManifest(REGISTRY, undefined, [SCOPED], resolveScoped);
+        expect(m.plugins).toEqual([
+          {
+            name: SCOPED,
+            version: '0.1.0',
+            entry: `/api/plugins/${encodeURIComponent(SCOPED)}/frontend.js`,
+          },
+        ]);
+        // The name portion of the URL must be a SINGLE segment (no raw slash) and
+        // round-trip back to the real package name via the route's param decoding.
+        const seg = m.plugins[0]!.entry.slice('/api/plugins/'.length).split('/')[0]!;
+        expect(seg).not.toContain('/');
+        expect(decodeURIComponent(seg)).toBe(SCOPED);
+      } finally {
+        fs.rmSync(scopedRoot, { recursive: true, force: true });
+      }
+    });
   });
 });
 

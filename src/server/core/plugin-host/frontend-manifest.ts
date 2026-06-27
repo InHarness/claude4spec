@@ -35,11 +35,19 @@ export interface FrontendManifestServing {
 
 /** One bundle → the manifest entry pointing at the (tier-agnostic) serving routes. */
 function toEntry(b: FrontendBundle): PluginFrontendEntry {
+  // The serving route is `/api/plugins/:name/:asset` — a single path segment for
+  // the name. A SCOPED package (`@scope/pkg`) contains a `/`, so it MUST be
+  // percent-encoded to stay one segment (the route decodes `:name` back via
+  // Express param decoding). Without this a scoped plugin's frontend URL gains an
+  // extra segment, the route never matches → 404 → no frontend loads → no sidebar
+  // entry. The browser preserves the encoded segment when resolving the bundle's
+  // relative code-split siblings (`./chunk.js`), so those resolve too.
+  const seg = encodeURIComponent(b.name);
   return {
     name: b.name,
     version: b.version,
-    entry: `/api/plugins/${b.name}/frontend.js`,
-    ...(b.hasCss ? { css: `/api/plugins/${b.name}/frontend.css` } : {}),
+    entry: `/api/plugins/${seg}/frontend.js`,
+    ...(b.hasCss ? { css: `/api/plugins/${seg}/frontend.css` } : {}),
   };
 }
 
