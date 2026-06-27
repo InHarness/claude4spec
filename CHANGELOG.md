@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.22] - 2026-06-27
+
+### Added
+- **Published Host API types.** The CLI package now ships TypeScript declarations under type-only subpaths `@inharness-ai/claude4spec/plugin-runtime` and `@inharness-ai/claude4spec/plugin-runtime/ui`, plus an ambient binding (`@inharness-ai/claude4spec/plugin-runtime/ambient`) so a single reference types both the `@c4s/plugin-runtime` value specifier and all type names. Plugin authors reference the host's published types directly instead of vendoring a `c4s-runtime.d.ts` copy. `hostApiVersion` is unchanged — this is additive DX infrastructure. (brief 0.1.85→0.1.86)
+- **Host UI Kit** (`@c4s/plugin-runtime/ui`, M34/L12) — a presentational component catalog delivered to plugins through the import-map shim: four `stable` core components (`EntityListHeader`, `DetailPanelShell`, `FieldRow`, `FieldGrid`) whose prop contracts are part of the versioned surface, plus experimental list/action/form components and a token bridge.
+- **M33 plugin system (phase 3)** — the database-table entity now ships as the preinstalled `@inharness-ai/c4s-plugin-simple-database-tables` plugin; workspace-tier plugin frontend serving behind a trust gate; a plugin page-routing contract; per-plugin Settings and editor-command hot-reload.
+
+### Fixed
+- The preinstalled database-table plugin was referenced under a non-existent unscoped name; corrected to the published scoped `@inharness-ai/c4s-plugin-simple-database-tables` so a registry install resolves.
+- Workspace plugin frontend was dropped when the install name differed from the package's `package.json` name.
+
 ## [1.0.21] - 2026-06-22
 
 ### Added
@@ -246,3 +257,5 @@ Initial public release.
 [1.0.4]: https://github.com/InHarness/claude4spec/compare/v1.0.3...v1.0.4
 [1.0.3]: https://github.com/InHarness/claude4spec/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/InHarness/claude4spec/compare/v1.0.1...v1.0.2
+
+[1.0.22]: https://github.com/InHarness/claude4spec/compare/v1.0.21...v1.0.22
