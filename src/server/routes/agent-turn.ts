@@ -543,10 +543,12 @@ export async function runAgentTurn(
           briefService: deps.briefService,
         })
       : null;
-    // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Stateless,
-    // fresh factory per request. Registry-gated: chat + patch only (brief is
-    // intentionally narrow; `ask` is excluded — a consulted peer cannot consult another).
-    const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer() : null;
+    // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
+    // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
+    // workspace (fixes AMBIGUOUS_WORKSPACE when the project lives in N>1 workspaces).
+    // Registry-gated: chat + patch only (brief is intentionally narrow; `ask` is
+    // excluded — a consulted peer cannot consult another).
+    const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
 
     // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
     //   - registry dimension `transagentTools` (chat + patch only — never brief/`ask`).

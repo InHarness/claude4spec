@@ -11,16 +11,22 @@ import { runAgent, AgentError } from '../../core/agent/run-agent.js';
  * temu filtrowi, wiec `mcp__c4s-tools__ask` dziala w plan_mode i poza nim,
  * bez zdejmowania bana na Bash.
  *
- * Stateless — w odroznieniu od `plan-tools` (gdzie `threadId` jest ambient
- * z closure), `c4s-tools.ask` celuje w **innego** peera, wszystkie parametry
- * przychodza jako input. Brak `ctx` w fabryce.
+ * Prawie stateless — wzorem `plan-tools` (gdzie `threadId` jest ambient z
+ * closure) fabryka domyka jedynie `callerWorkspace`: domyslny workspace, w
+ * ktorym dziala wolajacy agent. Pozostale parametry (peer, threadId, model)
+ * celuja w **innego** peera i przychodza jako input.
+ *
+ * `callerWorkspace` rozwiazuje AMBIGUOUS_WORKSPACE: gdy ten sam katalog projektu
+ * jest zarejestrowany w N>1 workspace'ach, `ask` bez jawnego `workspace`
+ * dziedziczy workspace wolajacego zamiast wpadac w niejednoznacznosc, ktora z
+ * jego perspektywy nie istnieje. Jawny `input.workspace` nadal wygrywa (override).
  *
  * 0.1.79: tool zablokowany do READ-ONLY. `contextType='ask'` jest zahardkodowany
  * wewnatrz (caller nie moze wybrac mutujacego kontekstu), a `output: 'final'`
  * zwraca terse `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete
  * z wejscia.
  */
-export function buildC4sToolsServer(): McpServerInstance {
+export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance {
   const ask = mcpTool(
     'ask',
     [
@@ -44,7 +50,8 @@ export function buildC4sToolsServer(): McpServerInstance {
         const result = await runAgent({
           message: String(input.message ?? ''),
           project: typeof input.project === 'string' ? input.project : undefined,
-          workspace: typeof input.workspace === 'string' ? input.workspace : undefined,
+          // Jawny input wygrywa; w przeciwnym razie dziedzicz workspace wolajacego.
+          workspace: (typeof input.workspace === 'string' ? input.workspace : undefined) ?? callerWorkspace,
           server: typeof input.server === 'string' ? input.server : undefined,
           threadId: typeof input.threadId === 'string' ? input.threadId : undefined,
           model: typeof input.model === 'string' ? input.model : undefined,
