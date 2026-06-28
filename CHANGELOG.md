@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.24] - 2026-06-28
+
+### Changed
+- Pin the preinstalled `@inharness-ai/c4s-plugin-simple-database-tables` dependency to `^0.1.1`, which fixes the database-table list (its frontend now calls the project-scoped `/api/projects/<id>/database-tables` path instead of 404'ing on `/api/database-tables`). `^0.1.0` already resolved 0.1.1 on a fresh install; this makes the minimum explicit.
+
 ## [1.0.23] - 2026-06-27
 
 ### Fixed
@@ -266,3 +271,5 @@ Initial public release.
 [1.0.22]: https://github.com/InHarness/claude4spec/compare/v1.0.21...v1.0.22
 
 [1.0.23]: https://github.com/InHarness/claude4spec/compare/v1.0.22...v1.0.23
+
+[1.0.24]: https://github.com/InHarness/claude4spec/compare/v1.0.23...v1.0.24
