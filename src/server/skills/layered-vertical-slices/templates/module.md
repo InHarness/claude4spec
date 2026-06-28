@@ -48,5 +48,12 @@ Copy this file, rename it, and replace placeholders. See SKILL.md §5 and §6 fo
 
 ## Acceptance criteria
 
+<!-- Preferred when the project models AC entities: the criteria live as `ac` entities tagged MXX
+     (edge cases under MXX-edge), created via the project's MCP tools. Embed them live and add one
+     sentence of prose explaining why; the list updates itself. -->
+<tagged_list type="ac" tags="MXX"/>
+
+<!-- Fallback — only when the project does not model AC as entities. Inline observable checklist:
 - [ ] <criterion 1>
 - [ ] <criterion 2>
+-->

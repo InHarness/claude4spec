@@ -86,7 +86,7 @@ After writing, list the created files back to the user and ask: *"Skeleton is in
 
 For each module (in the chosen order), fill its file in two parts:
 
-1. **Module's own substance** (its domain — *not* a layer): `Purpose`, `Edge cases`, `Acceptance criteria`. Ask the user about the module's operations, validations, lifecycle, and edge cases here. This is the module file's heart and does not belong to any layer section.
+1. **Module's own substance** (its domain — *not* a layer): `Purpose`, `Edge cases`, `Acceptance criteria`. Ask the user about the module's operations, validations, lifecycle, and edge cases here. This is the module file's heart and does not belong to any layer section. For `Acceptance criteria`, follow SKILL.md §6.8: when the project models AC entities, create the criteria as `ac` entities via the project's MCP tools (tagged `mNN` / `mNN-edge`, with `kind` and `verifies`) and embed them with `<tagged_list type="ac" tags="mNN"/>`; fall back to an inline `- [ ]` checklist only when the project does not model AC as entities.
 2. **Per-layer sections** — for each layer the module touches, ask a layer-scoped question and write the section following that layer's `## Module slice schema`. For example, for a module that touches L1 (persistence) and L3 (HTTP API):
    - *"M03 persistence (L1): what columns does the entity have? Any unique constraints? Any relations?"* → write the L1 section per the layer's schema (or, if it dominates the module file, split M03 into `modules/M03-<slug>/` and move the slice to `modules/M03-<slug>/L1-<slug>.md`).
    - *"M03 HTTP API (L3): what endpoints expose this entity?"* → write the L3 section per the layer's schema.

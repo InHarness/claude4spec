@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react';
 import type { EntityType } from '../../shared/entities.js';
 import { legacyRegisterClientEntity } from '../core/plugin-host/legacy-adapter.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 
 export interface EntityRowProps<T> {
   slug: string;
@@ -43,7 +44,13 @@ export function registerEntity<T>(def: EntityDef<T>): void {
 }
 
 export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
-  return (registry[type as EntityType] as EntityDef<T> | undefined) ?? null;
+  // Resolve from the client plugin host — the single source of truth that holds
+  // BOTH built-in types (mirrored in via the legacy adapter) and plugin-registered
+  // types (via registerFrontendModule). The old `registry` map only ever held
+  // built-ins, so plugin entity types rendered as "unknown type" on pages.
+  // `FrontendModule` is a structural superset of `EntityDef`, and `getEntity`
+  // respects activation (inactive types resolve to null → broken-chip path).
+  return (clientPluginHost.getEntity(type) as unknown as EntityDef<T> | null) ?? null;
 }
 
 export function listEntityDefs(): EntityDef[] {
