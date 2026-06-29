@@ -5,6 +5,7 @@ import { useWritingStyles } from '../../../hooks/useWritingStyles.js';
 import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 import { SUPPORTED_LANGUAGES } from '../../../../shared/languages.js';
+import { validateName } from '../../onboarding/NameField.js';
 
 /**
  * M26 §1, §2 — Project section. `name` is hot-reload; `writingStyle` and
@@ -16,6 +17,9 @@ export function ProjectSection() {
   const { data: writingStyles } = useWritingStyles();
   const patch = usePatchConfig();
   const [name, setName] = useState<string>('');
+  // 0.1.91 — reuse M16's display-only Unicode rule by reference (validateName);
+  // surfaced inline so a control char is blocked client-side, not just by the server.
+  const [nameError, setNameError] = useState<string | null>(null);
   // M26 §3 — surface a 400 from an unknown writingStyle inline under the dropdown
   // (the backend rejects with `... not a selectable writing-style skill. Available: ...`).
   const [writingStyleError, setWritingStyleError] = useState<string | null>(null);
@@ -32,6 +36,12 @@ export function ProjectSection() {
 
   async function handleSaveName() {
     if (!dirty) return;
+    const err = validateName(name);
+    if (err) {
+      setNameError(err);
+      return;
+    }
+    setNameError(null);
     try {
       await patch.mutateAsync({ name });
       toast.success('Project name updated');
@@ -92,7 +102,11 @@ export function ProjectSection() {
             <input
               type="text"
               value={dirty ? name : initialName}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError) setNameError(null);
+              }}
+              onBlur={() => setNameError(dirty ? validateName(name) : null)}
               maxLength={80}
               className="flex-1 rounded-md px-3 py-1.5 text-[13px]"
               style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
@@ -107,7 +121,13 @@ export function ProjectSection() {
               Save
             </button>
           </div>
-          <Hint>1–80 chars, [a-zA-Z0-9._- ].</Hint>
+          {nameError ? (
+            <span className="text-[11.5px]" style={{ color: '#a83232' }}>
+              {nameError}
+            </span>
+          ) : (
+            <Hint>1–80 chars; any character except line breaks and control characters.</Hint>
+          )}
         </Field>
 
         <Field label="Description">

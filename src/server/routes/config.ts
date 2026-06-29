@@ -124,8 +124,10 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'name must be a string' } });
         }
         const trimmed = body.name.trim();
-        if (trimmed.length < 1 || trimmed.length > 80 || !/^[a-zA-Z0-9._\- ]+$/.test(trimmed)) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'name: 1-80 chars, allowed [a-zA-Z0-9._- ]' } });
+        // 0.1.91 — name is display-only (folder identity is sha1(cwd), not the name),
+        // so full Unicode is allowed; reject only C0/DEL/C1 control chars + newline/tab.
+        if (trimmed.length < 1 || trimmed.length > 80 || /[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'name: 1-80 chars, no line breaks or control characters' } });
         }
         patch.name = trimmed;
       }

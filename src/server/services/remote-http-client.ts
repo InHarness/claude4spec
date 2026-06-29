@@ -332,7 +332,10 @@ export class RemoteHttpClient {
     projectName: string,
   ): Promise<CreateProjectResponse> {
     const res = await this.streamBundle('/v1/projects', accessToken, payload, {
-      'x-project-name': projectName,
+      // 0.1.91 — name accepts full Unicode but HTTP header values are Latin-1/ASCII,
+      // so percent-encode (UTF-8) to keep undici/fetch from throwing on the value.
+      // The peer (POST /v1/projects) recovers it via decodeURIComponent.
+      'x-project-name': encodeURIComponent(projectName),
     });
     if (res.status === 401) throw new RemoteUnauthorizedError();
     if (!res.ok) {
