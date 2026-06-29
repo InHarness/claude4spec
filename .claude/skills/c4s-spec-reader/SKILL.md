@@ -47,24 +47,28 @@ The database is opened **read-only** — `c4s` never mutates the project.
 ## Asking the spec agent
 
 When a question goes beyond resolving entities or pages, `c4s ask` runs a
-synchronous agent turn against the specification:
+synchronous agent turn against the specification. The CLAUDE 4 SPEC spec lives
+at `.claude/skills/specyfikacja` (a symlink), not at the repo root — always
+point to it with `--project`; do **not** `cd` into it, or `c4s` reports
+`PROJECT_NOT_FOUND`:
 
 ```sh
-c4s ask "<question>" --ct chat
+c4s ask "<question>" --ct chat --project .claude/skills/specyfikacja
 ```
 
 Unlike the read-only commands above, `c4s ask` requires a running
 `npx claude4spec` server (it delegates the turn to the server's agent).
 
-### `PROJECT_NOT_FOUND` when the project dir is a symlink
+### Why `--project`, not `cd` (the `PROJECT_NOT_FOUND` mechanics)
 
-If `c4s ask` (or any `c4s` command) returns `PROJECT_NOT_FOUND` even though a
-server is running, your cwd is most likely reached through a **symlink** (common
-for `.claude/skills/<name>` that points elsewhere). `c4s` resolves `process.cwd()`
-through the symlink to the real path, which is NOT the path registered in
-`~/.claude4spec/workspaces.json`. Pass the registered (symlink) path explicitly —
-`--project` is run through `path.resolve`, which does NOT canonicalize symlinks, so
-it matches the registry exactly:
+`.claude/skills/specyfikacja` is a **symlink** that points elsewhere, so `cd`-ing
+in (or any cwd reached through a symlink) makes `c4s` resolve `process.cwd()` to
+the real path — which is NOT the path registered in
+`~/.claude4spec/workspaces.json`, hence `PROJECT_NOT_FOUND`. Passing the
+registered (symlink) path with `--project` avoids this: `--project` is run
+through `path.resolve`, which does NOT canonicalize symlinks, so it matches the
+registry exactly. If the registered path differs from `.claude/skills/specyfikacja`,
+pass that absolute path instead:
 
 ```sh
 c4s ask "<question>" --ct chat --project /abs/path/to/registered/project-dir

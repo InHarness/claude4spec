@@ -2,6 +2,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { isMarkdownPath } from '../../shared/page-files.js';
+import { makeWatchIgnore } from './watch-ignore.js';
 
 type EventKind = 'add' | 'change' | 'unlink';
 
@@ -22,12 +23,16 @@ export class PagesWatcher {
   start(): void {
     this.watcher = chokidar.watch(this.pagesRoot, {
       ignoreInitial: true,
-      ignored: (p) => /(^|\/|\\)\./.test(path.basename(p)),
+      ignored: makeWatchIgnore(this.pagesRoot),
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
     });
     this.watcher.on('add', (p) => this.emit('add', p));
     this.watcher.on('change', (p) => this.emit('change', p));
     this.watcher.on('unlink', (p) => this.emit('unlink', p));
+    // EMFILE (and other watch errors) emit on the 'error' event — without a
+    // listener Node escalates them to an uncaught exception that kills the
+    // process. Log instead so a transient watch failure stays non-fatal.
+    this.watcher.on('error', (err) => console.error('[watcher] watch error:', err));
   }
 
   /** Call before a programmatic write so the resulting chokidar event is suppressed. */

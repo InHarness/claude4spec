@@ -17,6 +17,7 @@
 
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
+import { makeWatchIgnore } from '../../fs/watch-ignore.js';
 
 export type PluginWatcherCallback = (changedPaths: string[]) => void;
 
@@ -43,6 +44,10 @@ export class PluginWatcher {
     if (this.roots.length === 0 || this.watcher) return;
     this.watcher = chokidar.watch(this.roots, {
       ignoreInitial: true,
+      // Skip heavy/dot dirs (node_modules, .git, dist, …). A resolved package
+      // dir can itself be `<pkg>/dist`, so `makeWatchIgnore` never ignores a
+      // watch root — only its descendants.
+      ignored: makeWatchIgnore(this.roots),
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
     });
     const onEvent = (p: string) => this.queue(p);
@@ -51,6 +56,9 @@ export class PluginWatcher {
     this.watcher.on('unlink', onEvent);
     this.watcher.on('addDir', onEvent);
     this.watcher.on('unlinkDir', onEvent);
+    // Keep watch errors (EMFILE etc.) non-fatal — an unhandled 'error' event
+    // would otherwise crash the process.
+    this.watcher.on('error', (err) => console.warn('[plugin-watcher] watch error:', err));
   }
 
   /**

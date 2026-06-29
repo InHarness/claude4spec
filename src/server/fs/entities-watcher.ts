@@ -1,5 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar';
 import path from 'node:path';
+import { makeWatchIgnore } from './watch-ignore.js';
 
 type EventKind = 'add' | 'change' | 'unlink';
 
@@ -34,14 +35,18 @@ export class EntitiesWatcher {
   start(): void {
     this.watcher = chokidar.watch(this.entitiesRoot, {
       ignoreInitial: true,
-      // Ignore editor/dotfiles (e.g. `.foo.json.swp`, `.DS_Store`). Entity files
-      // are `<type>/<slug>.json` / `tags.json` — never dot-prefixed basenames.
-      ignored: (p) => /(^|\/|\\)\./.test(path.basename(p)),
+      // Ignore editor/dotfiles (e.g. `.foo.json.swp`, `.DS_Store`) and heavy
+      // dirs. Entity files are `<type>/<slug>.json` / `tags.json` — never
+      // dot-prefixed basenames.
+      ignored: makeWatchIgnore(this.entitiesRoot),
       awaitWriteFinish: { stabilityThreshold: 80, pollInterval: 20 },
     });
     this.watcher.on('add', (p) => this.emit('add', p));
     this.watcher.on('change', (p) => this.emit('change', p));
     this.watcher.on('unlink', (p) => this.emit('unlink', p));
+    // Keep watch errors (EMFILE etc.) non-fatal — an unhandled 'error' event
+    // would otherwise crash the process.
+    this.watcher.on('error', (err) => console.error('[entities-watcher] watch error:', err));
   }
 
   /** Call before a programmatic write so the resulting chokidar event is suppressed. */
