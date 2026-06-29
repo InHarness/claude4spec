@@ -27,12 +27,17 @@ export function NameField({
   );
 }
 
+// Display-only string: a project's folder identity comes from sha1(cwd), not the
+// name, so full Unicode is allowed (diacritics, CJK, emoji, `/`…). The only forbidden
+// characters are C0/DEL/C1 control characters and newline/tab (both inside the C0 range).
+const CONTROL_CHARS = /[\u0000-\u001F\u007F-\u009F]/;
+
 export function validateName(s: string): string | null {
   const trimmed = s.trim();
   if (trimmed.length < 1) return 'Project name is required';
   if (trimmed.length > 80) return 'Project name must be at most 80 characters';
-  if (!/^[a-zA-Z0-9._\- ]+$/.test(trimmed)) {
-    return 'Allowed characters: letters, digits, spaces, dots, dashes, underscores';
+  if (CONTROL_CHARS.test(trimmed)) {
+    return 'Project name must be 1–80 characters and cannot contain line breaks or control characters.';
   }
   return null;
 }
