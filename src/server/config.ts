@@ -116,6 +116,16 @@ export interface AgentConfig {
    * artifact. Additive — no `$schemaVersion` bump.
    */
   conversationalLanguage?: string | null;
+  /**
+   * 0.1.90: filesystem path scope for the chat agent. The implicit base (`cwd`
+   * ∪ `pagesDir` when outside `cwd`) is added by the agent-adapters library;
+   * these widen/narrow it. `allowedPaths` extends scope beyond the base;
+   * `disallowedPaths` carves out (precedence: deny > allow > base). Absolute
+   * recommended; relative entries resolve vs `cwd` in the runtime resolver
+   * (M05). Read+write combined. Additive — no `$schemaVersion` bump.
+   */
+  allowedPaths?: string[];
+  disallowedPaths?: string[];
 }
 
 export interface ConfigCliArgs {
@@ -289,6 +299,16 @@ function validate(raw: unknown): Partial<Config> {
         throw typeError('agent.conversationalLanguage', 'string | null', ar.conversationalLanguage);
       }
       agent.conversationalLanguage = ar.conversationalLanguage;
+    }
+    // 0.1.90: agent FS path scope — both string[] (same shape check as `entities`).
+    for (const field of ['allowedPaths', 'disallowedPaths'] as const) {
+      if (field in ar) {
+        if (!Array.isArray(ar[field])) throw typeError(`agent.${field}`, 'string[]', ar[field]);
+        if (!(ar[field] as unknown[]).every((e) => typeof e === 'string')) {
+          throw new Error(`config.json: field 'agent.${field}' expected string[], got non-string element`);
+        }
+        agent[field] = ar[field] as string[];
+      }
     }
     out.agent = agent;
   }

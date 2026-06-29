@@ -29,6 +29,7 @@ import {
   type PeerProject,
 } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
+import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
@@ -476,6 +477,22 @@ export async function runAgentTurn(
     // config per-turn here, NOT via architectureConfig. Effective only from the first
     // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
     const cfg = readConfig(deps.cwd);
+    // 0.1.90 (M05): agent FS path scope, read per-turn (hot-reload, same as
+    // conversationalLanguage). Scoping only ACTIVATES when the user configured at
+    // least one path — empty config behaves exactly as before (no sandbox change).
+    // When active, the resolver folds in the implicit base (pagesDir-if-outside-cwd)
+    // and normalizes everything to absolute, so the agent never loses pagesDir access.
+    const agentAllowedPaths = cfg.agent?.allowedPaths ?? [];
+    const agentDisallowedPaths = cfg.agent?.disallowedPaths ?? [];
+    const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
+    const resolvedPathScope = pathScopeRequested
+      ? resolveAgentPathScope({
+          cwd: deps.cwd,
+          pagesDir: deps.pagesDir,
+          allowedPaths: agentAllowedPaths,
+          disallowedPaths: agentDisallowedPaths,
+        })
+      : { allowedPaths: [], disallowedPaths: [] };
     const systemPrompt = buildSystemPrompt({
       host: deps.pluginHost,
       projectName: cfg.name,
@@ -504,6 +521,9 @@ export async function runAgentTurn(
       writingStyle,
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
+      // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
+      // presence (base-only ⇒ no block). The block renders cwd/pagesDir itself.
+      agentPathScope: { allowedPaths: agentAllowedPaths, disallowedPaths: agentDisallowedPaths },
       contextType: thread.contextType,
       brief: briefSnapshot,
       patch: patchSnapshot,
@@ -599,6 +619,14 @@ export async function runAgentTurn(
       planMode,
       onUserInput: input.onUserInput,
       ...(streamingInput ? { streamingInput: true } : {}),
+      // 0.1.90 hard layer: resolved, absolute scope handed to the native sandbox
+      // every turn (hot-reload). Empty when scoping isn't requested ⇒ library no-op.
+      ...(pathScopeRequested
+        ? {
+            allowedPaths: resolvedPathScope.allowedPaths,
+            disallowedPaths: resolvedPathScope.disallowedPaths,
+          }
+        : {}),
     };
     // Resume anchor threaded across turns of THIS request (merged dispatch resumes
     // the just-finished session). `setLastSessionId` only writes the DB, so we

@@ -105,8 +105,13 @@ export interface ConfigResponse {
   entitiesDir: string;
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
-  /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage. */
-  agent: { claudeUsePreset: boolean; conversationalLanguage: string | null };
+  /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage; 0.1.90 adds FS path scope. */
+  agent: {
+    claudeUsePreset: boolean;
+    conversationalLanguage: string | null;
+    allowedPaths: string[];
+    disallowedPaths: string[];
+  };
   /** M28: hot-reload git-sync toggles (always resolved; both default false). */
   git: { syncCommitOnRelease: boolean; syncPushOnPush: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
@@ -132,8 +137,13 @@ export interface ConfigPatch {
   description?: string | null;
   onboardingCompleted?: boolean;
   entities?: string[];
-  /** 0.1.51: agent.conversationalLanguage deep-merged server-side (preserves claudeUsePreset). */
-  agent?: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
+  /** 0.1.51: agent.* deep-merged server-side (preserves untouched fields). 0.1.90 adds FS path scope. */
+  agent?: {
+    claudeUsePreset?: boolean;
+    conversationalLanguage?: string | null;
+    allowedPaths?: string[];
+    disallowedPaths?: string[];
+  };
   /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
   git?: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
   /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */

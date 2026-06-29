@@ -160,3 +160,54 @@ describe('config — plugins namespace (M33 phase 3)', () => {
     expect(merged.plugins).toEqual({ '@c4s/foo': { a: 1 } });
   });
 });
+
+// 0.1.90: additive agent FS path-scope fields (string[]). Type validation lives in
+// config.ts `validate()` (same shape check as `entities`); path normalization happens
+// later in the M05 runtime resolver, not here.
+describe('config — agent path scope (0.1.90)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (agent: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, name: 'X', agent }));
+  };
+
+  it('accepts string[] allowedPaths and disallowedPaths', () => {
+    write({ allowedPaths: ['/a', '/b'], disallowedPaths: ['/a/secret'] });
+    const cfg = readConfig(dir);
+    expect(cfg.agent?.allowedPaths).toEqual(['/a', '/b']);
+    expect(cfg.agent?.disallowedPaths).toEqual(['/a/secret']);
+  });
+
+  it('treats missing path-scope fields as absent (no error)', () => {
+    write({ claudeUsePreset: true });
+    expect(readConfig(dir).agent?.allowedPaths).toBeUndefined();
+    expect(readConfig(dir).agent?.disallowedPaths).toBeUndefined();
+  });
+
+  it('rejects a non-array allowedPaths', () => {
+    write({ allowedPaths: '/a' });
+    expect(() => readConfig(dir)).toThrow("config.json: field 'agent.allowedPaths' expected string[]");
+  });
+
+  it('rejects a non-string element in disallowedPaths', () => {
+    write({ disallowedPaths: ['/a', 42] });
+    expect(() => readConfig(dir)).toThrow(
+      "config.json: field 'agent.disallowedPaths' expected string[], got non-string element",
+    );
+  });
+
+  it('deep-merges agent: writing allowedPaths alone preserves claudeUsePreset', () => {
+    write({ claudeUsePreset: false });
+    const merged = writeConfig(dir, { agent: { allowedPaths: ['/extra'] } });
+    expect(merged.agent).toEqual({ claudeUsePreset: false, allowedPaths: ['/extra'] });
+  });
+});
