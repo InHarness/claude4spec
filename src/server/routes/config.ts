@@ -53,6 +53,8 @@ function configResponse(c: Config) {
     agent: {
       claudeUsePreset: c.agent?.claudeUsePreset ?? true,
       conversationalLanguage: c.agent?.conversationalLanguage ?? null,
+      allowedPaths: c.agent?.allowedPaths ?? [],
+      disallowedPaths: c.agent?.disallowedPaths ?? [],
     },
     git: {
       syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
@@ -206,7 +208,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent must be an object' } });
         }
         const ar = a as Record<string, unknown>;
-        const next: { claudeUsePreset?: boolean; conversationalLanguage?: string | null } = {};
+        const next: {
+          claudeUsePreset?: boolean;
+          conversationalLanguage?: string | null;
+          allowedPaths?: string[];
+          disallowedPaths?: string[];
+        } = {};
         if ('claudeUsePreset' in ar) {
           if (typeof ar.claudeUsePreset !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'agent.claudeUsePreset must be boolean' } });
@@ -218,6 +225,16 @@ export function configRouter(deps: ConfigRouterDeps): Router {
             return res.status(400).json({ error: { code: 'VALIDATION', message: `agent.conversationalLanguage "${String(ar.conversationalLanguage)}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}` } });
           }
           next.conversationalLanguage = ar.conversationalLanguage;
+        }
+        // 0.1.90: agent FS path scope — each must be string[] (membership/normalization
+        // happens later in the M05 resolver; here we only enforce the wire type).
+        for (const field of ['allowedPaths', 'disallowedPaths'] as const) {
+          if (field in ar) {
+            if (!Array.isArray(ar[field]) || !(ar[field] as unknown[]).every((e) => typeof e === 'string')) {
+              return res.status(400).json({ error: { code: 'VALIDATION', message: `agent.${field} must be string[]` } });
+            }
+            next[field] = ar[field] as string[];
+          }
         }
         // Only present subfields are forwarded; writeConfig deep-merges `agent`
         // so the untouched field (e.g. claudeUsePreset) is preserved.

@@ -107,9 +107,124 @@ export function AgentSection() {
           )}
         </label>
 
+        <PathScopeFields />
+
         <ApiKeyField />
       </div>
     </SettingsCard>
+  );
+}
+
+/**
+ * 0.1.90 (M26) — "Agent file scope". Two textareas (one path per line) that map to
+ * `agent.allowedPaths` / `agent.disallowedPaths`. By default the agent sees only the
+ * project dir (`cwd`) and the pages dir; ALLOWED widens, DISALLOWED carves out
+ * (exclusion wins). Saved via PATCH /api/config — deep-merged server-side, so each
+ * field is sent alone and the other agent flags are preserved. Hot-reload per turn.
+ */
+function PathScopeFields() {
+  const { data: config } = useConfig();
+  const patch = usePatchConfig();
+
+  // Nullable-draft pattern (mirror ProjectSection): null = unedited (mirror config).
+  const [allowedDraft, setAllowedDraft] = useState<string | null>(null);
+  const [disallowedDraft, setDisallowedDraft] = useState<string | null>(null);
+
+  const baselineAllowed = (config?.agent?.allowedPaths ?? []).join('\n');
+  const baselineDisallowed = (config?.agent?.disallowedPaths ?? []).join('\n');
+  const allowedValue = allowedDraft ?? baselineAllowed;
+  const disallowedValue = disallowedDraft ?? baselineDisallowed;
+  const allowedDirty = allowedDraft !== null && allowedDraft !== baselineAllowed;
+  const disallowedDirty = disallowedDraft !== null && disallowedDraft !== baselineDisallowed;
+
+  const parse = (text: string): string[] => text.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  async function save(
+    field: 'allowedPaths' | 'disallowedPaths',
+    value: string,
+    reset: (v: string | null) => void,
+    label: string,
+  ) {
+    try {
+      await patch.mutateAsync({ agent: { [field]: parse(value) } });
+      reset(null);
+      toast.success(`${label} updated`);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : `Failed to update ${label}`);
+    }
+  }
+
+  const tooltip =
+    'By default the agent sees only the project directory (cwd) and the pages directory. ' +
+    'ALLOWED PATHS adds directories, DISALLOWED PATHS excludes them (exclusion takes precedence). ' +
+    'Use absolute paths, one per line.';
+
+  return (
+    <div className="flex flex-col gap-3" title={tooltip}>
+      <span className="text-[11.5px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-muted)' }}>
+        Agent file scope
+      </span>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
+          Allowed paths
+        </span>
+        <textarea
+          value={allowedValue}
+          onChange={(e) => setAllowedDraft(e.target.value)}
+          disabled={patch.isPending}
+          rows={3}
+          spellCheck={false}
+          placeholder={'/absolute/path/to/extra/dir\n…one per line'}
+          className="w-full rounded-md px-3 py-1.5 text-[12.5px] font-mono resize-y"
+          style={inputStyle}
+        />
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => void save('allowedPaths', allowedValue, setAllowedDraft, 'Allowed paths')}
+            disabled={patch.isPending || !allowedDirty}
+            className="rounded-md px-3 py-1 text-[12px] font-medium disabled:opacity-50"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            Save
+          </button>
+        </div>
+      </label>
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
+          Disallowed paths
+        </span>
+        <textarea
+          value={disallowedValue}
+          onChange={(e) => setDisallowedDraft(e.target.value)}
+          disabled={patch.isPending}
+          rows={3}
+          spellCheck={false}
+          placeholder={'/absolute/path/to/exclude\n…one per line'}
+          className="w-full rounded-md px-3 py-1.5 text-[12.5px] font-mono resize-y"
+          style={inputStyle}
+        />
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => void save('disallowedPaths', disallowedValue, setDisallowedDraft, 'Disallowed paths')}
+            disabled={patch.isPending || !disallowedDirty}
+            className="rounded-md px-3 py-1 text-[12px] font-medium disabled:opacity-50"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            Save
+          </button>
+        </div>
+      </label>
+
+      <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+        Enforced natively by the Claude Code sandbox when your host supports it (bubblewrap on Linux,
+        seatbelt on macOS); otherwise it degrades to a model-visible hint only. Exclusion takes precedence
+        over inclusion. Applied from your next chat turn.
+      </span>
+    </div>
   );
 }
 

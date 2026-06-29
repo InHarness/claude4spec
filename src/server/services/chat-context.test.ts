@@ -158,3 +158,49 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
     expect(out).not.toContain('<claude4spec_brief_identity>');
   });
 });
+
+describe('buildSystemPrompt — <agent_path_scope> (0.1.90)', () => {
+  const scope = { allowedPaths: ['/extra/lib'], disallowedPaths: ['/tmp/my-spec/src'] };
+
+  it('omits the block when both lists are empty (base-only ⇒ no-op)', () => {
+    const out = build({ agentPathScope: { allowedPaths: [], disallowedPaths: [] } });
+    expect(out).not.toContain('<agent_path_scope>');
+  });
+
+  it('omits the block when agentPathScope is absent', () => {
+    expect(build({})).not.toContain('<agent_path_scope>');
+  });
+
+  it('emits the block in the chat frame with cwd, allowed and disallowed lines', () => {
+    const out = build({ contextType: 'chat', agentPathScope: scope });
+    expect(out).toContain('<agent_path_scope>');
+    // cwd is always listed; configured allow/deny entries appear verbatim.
+    expect(out).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /extra/lib');
+    expect(out).toContain('DISALLOWED (never read/write here, takes precedence): /tmp/my-spec/src');
+  });
+
+  it('emits the block in the patch and ask frames', () => {
+    expect(build({ contextType: 'patch', agentPathScope: scope })).toContain('<agent_path_scope>');
+    expect(build({ contextType: 'ask', agentPathScope: scope })).toContain('<agent_path_scope>');
+  });
+
+  it('NEVER emits the block in the brief frame, even with a configured scope', () => {
+    const out = build({ contextType: 'brief', agentPathScope: scope });
+    expect(out).not.toContain('<agent_path_scope>');
+  });
+
+  it('drops the DISALLOWED line when only allowedPaths is set', () => {
+    const out = build({ contextType: 'chat', agentPathScope: { allowedPaths: ['/extra/lib'], disallowedPaths: [] } });
+    expect(out).toContain('<agent_path_scope>');
+    // The DISALLOWED *list* line is dropped (the trailing "ALLOWED minus DISALLOWED"
+    // instruction always mentions the word, so assert on the list-line prefix).
+    expect(out).not.toContain('DISALLOWED (never read/write here');
+  });
+
+  it('includes pagesDir on the ALLOWED line only when it sits outside cwd', () => {
+    const inside = build({ contextType: 'chat', pagesDir: 'pages', agentPathScope: scope });
+    expect(inside).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /extra/lib');
+    const outside = build({ contextType: 'chat', pagesDir: '/var/spec-pages', agentPathScope: scope });
+    expect(outside).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /var/spec-pages, /extra/lib');
+  });
+});

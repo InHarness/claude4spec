@@ -5,6 +5,7 @@ import type {
   PatchResponse,
   Plan,
 } from '../../shared/entities.js';
+import path from 'node:path';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 
@@ -128,6 +129,13 @@ export interface SystemPromptInput {
   specLanguage?: string;
   /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
   conversationalLanguage?: string;
+  /**
+   * 0.1.90: config-level agent FS path scope (the raw `allowedPaths`/`disallowedPaths`,
+   * NOT the resolved/absolute lists). Drives the soft `<agent_path_scope>` block, which
+   * is emitted only when at least one list is non-empty and only in chat/patch/ask frames
+   * (absent in brief). The block renders cwd/pagesDir itself.
+   */
+  agentPathScope?: { allowedPaths: string[]; disallowedPaths: string[] };
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
@@ -571,6 +579,45 @@ function buildConversationalLanguage(lang: string): string {
 }
 
 /**
+ * 0.1.90: soft filesystem-scope directive (config.agent.allowedPaths/disallowedPaths).
+ * The HARD boundary is enforced natively by the agent-adapters sandbox; this block is the
+ * directional guide and the only layer for adapters without a sandbox. ALLOWED lists `cwd`,
+ * `pagesDir` (only when outside `cwd`), then the configured `allowedPaths`; DISALLOWED lists
+ * the configured `disallowedPaths` (precedence). Empty lists are omitted from their line.
+ * Caller gates on `allowedPaths.length || disallowedPaths.length` and on a non-brief frame.
+ */
+function buildAgentPathScope(
+  scope: { allowedPaths: string[]; disallowedPaths: string[] },
+  cwd: string,
+  pagesDir: string,
+): string {
+  // pagesDir may be relative (e.g. '.' or 'pages') — resolve against cwd before the
+  // inside check, mirroring the M05 resolver, so a nested pages dir is correctly omitted.
+  const pagesAbs = path.resolve(cwd, pagesDir);
+  const pagesOutsideCwd = !isInside(cwd, pagesAbs);
+  const allowed = [cwd, ...(pagesOutsideCwd ? [pagesAbs] : []), ...scope.allowedPaths];
+  const lines = [
+    `<agent_path_scope>`,
+    `You are scoped to this project's filesystem. The hard boundary is enforced natively by the agent sandbox; this block is the directional guide.`,
+    `  ALLOWED (you may read/write here): ${allowed.join(', ')}`,
+  ];
+  if (scope.disallowedPaths.length) {
+    lines.push(`  DISALLOWED (never read/write here, takes precedence): ${scope.disallowedPaths.join(', ')}`);
+  }
+  lines.push(
+    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it.`,
+    `</agent_path_scope>`,
+  );
+  return lines.join('\n');
+}
+
+/** True when `child` is the same as or nested under `parent`. */
+function isInside(parent: string, child: string): boolean {
+  const rel = path.relative(parent, child);
+  return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+}
+
+/**
  * M21 brief-context system prompt. Minimal frame: identity, brief-tools usage,
  * brief-author skill (genre — bundled), writing-style skill (methodology —
  * supplies workflows/brief.md), brief snapshot, optional annotations.
@@ -769,6 +816,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     writingStyle = null,
     specLanguage,
     conversationalLanguage,
+    agentPathScope,
     contextType = 'chat',
     brief = null,
     patch = null,
@@ -833,6 +881,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   }
   if (conversationalLanguage) {
     parts.push(buildConversationalLanguage(conversationalLanguage));
+  }
+
+  // 0.1.90 step 6c: soft agent path-scope directive, right after the language
+  // directives and before <current_patch>. Gated on at least one configured list
+  // (base-only ⇒ no block). This sits on the non-brief path (brief frame returned
+  // early above), so the block is present in chat/patch/ask and absent in brief.
+  if (agentPathScope && (agentPathScope.allowedPaths.length || agentPathScope.disallowedPaths.length)) {
+    parts.push(buildAgentPathScope(agentPathScope, cwd, pagesDir));
   }
 
   // M23: patch-resolution thread. The patch file (a coding agent's feedback
