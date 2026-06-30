@@ -1,6 +1,7 @@
+import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { PluginRegistryImpl } from './registry.js';
-import type { BackendModule, ProjectPluginOverlay } from './types.js';
+import type { BackendModule, MountContext, ProjectPluginOverlay, SqlMigration } from './types.js';
 
 /** Minimal BackendModule for pool/activation assertions. */
 function mod(type: string, displayOrder = 100): BackendModule {
@@ -87,5 +88,63 @@ describe('consolidate — overlay', () => {
       overlayOf([mod('glossary')]),
     );
     expect(host.partition().unknown).toEqual(['ghost']);
+  });
+});
+
+describe('mountBackend — runs declared plugin migrations (L1/M13)', () => {
+  const exampleMigrations: SqlMigration[] = [
+    {
+      version: 1,
+      name: 'create_example_entity',
+      up: 'CREATE TABLE IF NOT EXISTS example_entity (slug TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL);',
+    },
+  ];
+
+  /** A module whose mount() queries its own table — fails with "no such table" unless migrations ran first. */
+  function modWithBackend(type: string, migrations: SqlMigration[]): BackendModule {
+    return {
+      ...mod(type),
+      backend: {
+        migrations,
+        mount(ctx: MountContext) {
+          // The original repro: the service queries the table at mount time.
+          ctx.db.prepare(`SELECT slug, name FROM ${type}`).all();
+        },
+      },
+    };
+  }
+
+  function activeHost(module: BackendModule) {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(module);
+    return registry.consolidate({ entities: [module.type] });
+  }
+
+  it('creates the plugin table before mount(), so the first query succeeds', () => {
+    const db = new Database(':memory:');
+    const host = activeHost(modWithBackend('example_entity', exampleMigrations));
+
+    // Without the fix this throws SqliteError: no such table: example_entity.
+    expect(() => host.mountBackend({ db } as unknown as MountContext)).not.toThrow();
+
+    const ledger = db
+      .prepare("SELECT plugin, version FROM plugin_schema_migrations WHERE plugin = 'example_entity'")
+      .all();
+    expect(ledger).toEqual([{ plugin: 'example_entity', version: 1 }]);
+    db.close();
+  });
+
+  it('is idempotent across a re-mount (ProjectContext dispose + rebuild)', () => {
+    const db = new Database(':memory:');
+    const host = activeHost(modWithBackend('example_entity', exampleMigrations));
+
+    host.mountBackend({ db } as unknown as MountContext);
+    expect(() => host.mountBackend({ db } as unknown as MountContext)).not.toThrow();
+
+    const count = db
+      .prepare("SELECT COUNT(*) AS n FROM plugin_schema_migrations WHERE plugin = 'example_entity'")
+      .get() as { n: number };
+    expect(count.n).toBe(1);
+    db.close();
   });
 });

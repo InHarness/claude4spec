@@ -27,6 +27,7 @@ import type {
   SnapshotData,
 } from '../../serialization/types.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
+import { runPluginMigrations } from './plugin-migrate.js';
 
 export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
@@ -135,9 +136,13 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   }
 
   mountBackend(ctx: MountContext): void {
-    // A throwing plugin mount propagates — M31 turns it into a per-project
-    // build failure (500 PROJECT_BUILD_FAILED), never a process crash.
+    // A throwing plugin migration/mount propagates — M31 turns it into a
+    // per-project build failure (500 PROJECT_BUILD_FAILED), never a process
+    // crash. L1 (M13): the host runs each plugin's declared `backend.migrations`
+    // (schema_version per plugin, idempotent) BEFORE its mount, so the entity
+    // table exists by the time `mount` builds its service and the first query runs.
     for (const m of this.listEntities()) {
+      runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
       m.backend?.mount?.(ctx);
     }
   }
