@@ -15,9 +15,8 @@ import { workspaceRouter } from './workspace/routes.js';
 import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './serialization/registerAll.js';
-import { loadWorkspacePlugins, reloadPlugin } from './core/plugin-host/loader.js';
+import { loadWorkspacePlugins, reloadPlugin, resolveBaseEntry } from './core/plugin-host/loader.js';
 import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
-import { createRequire } from 'node:module';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
@@ -320,15 +319,18 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33 phase 3: process-global base (workspace/npm) plugin hot-reload watcher.
   // The base catalog is shared across projects, so a reload mutates the shared
   // `pluginRegistry` (unregister old → register new) and invalidates ALL cached
-  // contexts; each live project room is told to remount. Resolves each package
-  // to its install dir; an unresolvable package is simply not watched.
+  // contexts; each live project room is told to remount.
+  //
+  // M33 (0.1.92): discovery uses `resolveBaseEntry` — the SAME ESM resolution
+  // (`import.meta.resolve`) as the bootstrap `import(pkg)`, not CJS
+  // `createRequire(...).resolve`. So an ESM-only package (only an `import`
+  // condition in `exports`) that loads at bootstrap is ALSO watched here — load
+  // and watch can't drift. `dirname` of the resolved entry is the dist dir; an
+  // unresolvable package (not installed) resolves to null and is simply not watched.
   const baseDirByPkg = new Map<string, string>();
   for (const pkg of resolvePluginPackages(workspace)) {
-    try {
-      baseDirByPkg.set(pkg, path.dirname(createRequire(import.meta.url).resolve(pkg)));
-    } catch {
-      /* unresolvable (not installed) — nothing to watch */
-    }
+    const entry = resolveBaseEntry(pkg);
+    if (entry) baseDirByPkg.set(pkg, path.dirname(entry));
   }
   // Serialize reload runs so overlapping watcher flushes never interleave
   // unregister/register on the shared registry.

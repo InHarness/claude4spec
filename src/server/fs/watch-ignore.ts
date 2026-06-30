@@ -18,9 +18,9 @@ const HEAVY_DIRS = new Set([
 /**
  * Build a chokidar `ignored` predicate. Ignores dotfile basenames and known
  * heavy directories, but NEVER the watch root(s) themselves — a root resolved
- * to e.g. `<pkg>/dist` (PluginWatcher uses `dirname(require.resolve(pkg))`)
- * must still be watched, otherwise the watcher would ignore its own root and
- * observe nothing.
+ * to e.g. `<pkg>/dist` (the base watcher uses `dirname(resolveBaseEntry(pkg))`,
+ * an ESM `import.meta.resolve`) must still be watched, otherwise the watcher
+ * would ignore its own root and observe nothing.
  */
 export function makeWatchIgnore(roots: string | string[]): (p: string) => boolean {
   const rootSet = new Set((Array.isArray(roots) ? roots : [roots]).map((r) => path.resolve(r)));

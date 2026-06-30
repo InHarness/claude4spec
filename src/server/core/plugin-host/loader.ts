@@ -11,8 +11,7 @@
  *   4. Registration        — `registry.registerPlugin(manifest)`.
  */
 
-import { createRequire } from 'node:module';
-import { pathToFileURL } from 'node:url';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 import semver from 'semver';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
@@ -212,10 +211,20 @@ export async function loadWorkspacePlugins(
   return { records };
 }
 
-/** Resolve a base package's main entry to an absolute path (cache-bust + watch). */
-function resolveBaseEntry(pkg: string): string | null {
+/**
+ * Resolve a base package's main entry (the `.` export) to an absolute path,
+ * using the SAME ESM resolution as the bootstrap `import(pkg)` — `import.meta.resolve`
+ * honors the `import` condition, so an ESM-only package (`exports["."]` with only
+ * `import`, no `require`/`default`) resolves where CJS `createRequire(...).resolve`
+ * would throw `ERR_PACKAGE_PATH_NOT_EXPORTED`.
+ *
+ * Shared by the reload cache-bust (here, via `reloadPlugin`) and the base-watcher
+ * dir discovery (`server/index.ts`) so load and watch can never drift: a package
+ * that loads at bootstrap is observable by the base watcher, identically.
+ */
+export function resolveBaseEntry(pkg: string): string | null {
   try {
-    return createRequire(import.meta.url).resolve(pkg);
+    return fileURLToPath(import.meta.resolve(pkg));
   } catch {
     return null;
   }
