@@ -34,6 +34,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const ct = optionalString(args, 'ct');
   const briefPath = optionalString(args, 'brief');
   const server = optionalString(args, 'server');
+  const effort = optionalString(args, 'effort');
   const project = args.project;
   const workspace = args.workspace;
 
@@ -71,6 +72,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       contextType: ct as AgentContextType | undefined,
       threadId,
       briefPath,
+      effort: effort as 'low' | 'medium' | 'high' | undefined,
       output: 'full',
     });
   } catch (err) {

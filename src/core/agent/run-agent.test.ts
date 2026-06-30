@@ -92,7 +92,7 @@ describe('runAgent — input validation', () => {
 describe('runAgent — ask context + output axis', () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("creates the thread with context_type='ask' and resolves the default model", async () => {
+  it("creates the thread with context_type='ask' and resolves the default model + effort", async () => {
     const { calls } = stubFullFlow({ threadId: 'T1', answer: 'pong' });
 
     await runAgent({ ...BASE, message: 'ping', contextType: 'ask' });
@@ -100,7 +100,16 @@ describe('runAgent — ask context + output axis', () => {
     const create = calls.find((c) => c.url.endsWith('/threads'));
     expect(create?.body).toEqual({ context_type: 'ask' });
     const ask = calls.find((c) => c.url.endsWith('/T1/ask'));
-    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-4.8' });
+    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-4.8', effort: 'medium' });
+  });
+
+  it('forwards an explicit effort to the run-turn body', async () => {
+    const { calls } = stubFullFlow({ threadId: 'T1', answer: 'pong' });
+
+    await runAgent({ ...BASE, message: 'ping', contextType: 'ask', effort: 'high' });
+
+    const ask = calls.find((c) => c.url.endsWith('/T1/ask'));
+    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-4.8', effort: 'high' });
   });
 
   it("output 'full' surfaces messages[]; default 'final' omits them", async () => {

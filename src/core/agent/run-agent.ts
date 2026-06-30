@@ -21,6 +21,9 @@ export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
 /** Default model resolved here so every transport shares one source of truth. */
 const DEFAULT_MODEL = 'opus-4.8';
 
+/** Default reasoning level resolved here — single source of truth, jak `DEFAULT_MODEL`. */
+const DEFAULT_EFFORT = 'medium';
+
 export interface AgentParams {
   message: string;
   /** Local path do `.claude4spec/` peera; mutex z `server`. */
@@ -37,6 +40,8 @@ export interface AgentParams {
   briefPath?: string;
   /** Model tury; domyslnie `'opus-4.8'` (rozwiazywany tutaj). */
   model?: string;
+  /** Poziom reasoning tury; domyslnie `'medium'` (rozwiazywany tutaj). */
+  effort?: 'low' | 'medium' | 'high';
   /**
    * `'final'` (default) → terse `{ threadId, answer }` (ostatnia wiadomosc asystenta).
    * `'full'` → dodatkowo `messages: AgentMessage[]` — wszystkie wiadomosci tury
@@ -92,6 +97,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     throw new AgentError('INVALID_ARGS', 'message is required');
   }
   const model = params.model ?? DEFAULT_MODEL;
+  const effort = params.effort ?? DEFAULT_EFFORT;
   const output: 'final' | 'full' = params.output ?? 'final';
 
   // --- discovery: adres serwera + project-id ------------------------------
@@ -178,6 +184,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   const result = await postJson(`${apiBase}/threads/${encodeURIComponent(threadId)}/ask`, {
     message,
     model,
+    effort,
   });
   const answer = typeof result.answer === 'string' ? result.answer : '';
   const outThreadId = typeof result.threadId === 'string' ? result.threadId : threadId;
