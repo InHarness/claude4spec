@@ -38,6 +38,10 @@ export { LoadingState, type LoadingStateProps } from './actions/LoadingState.js'
 export { FormField, type FormFieldProps } from './form/FormField.js';
 export { InlineEditField, type InlineEditFieldProps } from './form/InlineEditField.js';
 
+// Overlay/Create (experimental)
+export { Dialog, type DialogProps } from './overlay/Dialog.js';
+export { FormShell, type FormShellProps } from './overlay/FormShell.js';
+
 // Token bridge
 export { useHostTokens } from './useHostTokens.js';
 export { HOST_TOKEN_NAMES, readHostTokens, type HostTokenName } from './tokens.js';

@@ -54,6 +54,8 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'LoadingState',
   'FormField',
   'InlineEditField',
+  'Dialog',
+  'FormShell',
   'useHostTokens',
   'HOST_TOKEN_NAMES',
   'readHostTokens',

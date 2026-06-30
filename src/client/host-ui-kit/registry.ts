@@ -23,8 +23,10 @@ import { Badge } from './actions/Badge.js';
 import { LoadingState } from './actions/LoadingState.js';
 import { FormField } from './form/FormField.js';
 import { InlineEditField } from './form/InlineEditField.js';
+import { Dialog } from './overlay/Dialog.js';
+import { FormShell } from './overlay/FormShell.js';
 
-export type UiKitGroup = 'core' | 'list' | 'actions' | 'form';
+export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay';
 
 export interface UiKitComponentEntry {
   name: string;
@@ -48,6 +50,8 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   { name: 'LoadingState', group: 'actions', stability: LoadingState.stability },
   { name: 'FormField', group: 'form', stability: FormField.stability },
   { name: 'InlineEditField', group: 'form', stability: InlineEditField.stability },
+  { name: 'Dialog', group: 'overlay', stability: Dialog.stability },
+  { name: 'FormShell', group: 'overlay', stability: FormShell.stability },
 ];
 
 /**
