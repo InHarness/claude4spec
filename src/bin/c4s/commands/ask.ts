@@ -33,6 +33,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
 
   const threadId = optionalString(args, 'thread');
   const server = optionalString(args, 'server');
+  const effort = optionalString(args, 'effort');
   const project = args.project;
   const workspace = args.workspace;
 
@@ -49,6 +50,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
       server,
       contextType: 'ask',
       threadId,
+      effort: effort as 'low' | 'medium' | 'high' | undefined,
       output: 'final',
     });
   } catch (err) {

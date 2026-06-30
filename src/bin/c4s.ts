@@ -45,7 +45,8 @@ Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
   agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
   ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
   ask "<msg>" --thread <id>                   continue an existing ask thread
-    --server <url>    override server discovery (remote / one-off --port)
+    --server <url>             override server discovery (remote / one-off --port)
+    --effort <low|medium|high> reasoning level for the turn (default medium)
 
 Discovery:
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)

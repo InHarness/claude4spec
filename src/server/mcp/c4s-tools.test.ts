@@ -72,4 +72,20 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]?.workspace).toBeUndefined();
   });
+
+  it('forwards the optional effort param to runAgent', async () => {
+    const client = await connectClient('ws-5555');
+    await client.callTool({ name: 'ask', arguments: { message: 'ping', effort: 'low' } });
+
+    expect(hoisted.calls).toHaveLength(1);
+    expect(hoisted.calls[0]).toMatchObject({ effort: 'low' });
+  });
+
+  it('leaves effort undefined when not supplied (default resolves in runAgent)', async () => {
+    const client = await connectClient('ws-5555');
+    await client.callTool({ name: 'ask', arguments: { message: 'ping' } });
+
+    expect(hoisted.calls).toHaveLength(1);
+    expect(hoisted.calls[0]?.effort).toBeUndefined();
+  });
 });

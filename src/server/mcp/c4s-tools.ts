@@ -21,6 +21,9 @@ import { runAgent, AgentError } from '../../core/agent/run-agent.js';
  * dziedziczy workspace wolajacego zamiast wpadac w niejednoznacznosc, ktora z
  * jego perspektywy nie istnieje. Jawny `input.workspace` nadal wygrywa (override).
  *
+ * Pozostale parametry (peer, threadId, model, effort) celuja w innego peera i
+ * przychodza jako input; default `effort` ('medium') rozwiazywany w `runAgent`.
+ *
  * 0.1.79: tool zablokowany do READ-ONLY. `contextType='ask'` jest zahardkodowany
  * wewnatrz (caller nie moze wybrac mutujacego kontekstu), a `output: 'final'`
  * zwraca terse `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete
@@ -36,6 +39,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance
       'Continue an existing peer thread by passing its `threadId`.',
       'Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled `c4s ask` does not.',
       'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',
+      "`effort` (string, optional, default 'medium') — reasoning level for the peer turn; default resolved in `runAgent`, mapped to `architectureConfig.claude_effort`; resume-immutable (continuing a peer thread created with a different `effort` → RESUME_CONFIG_LOCKED).",
     ].join('\n'),
     {
       message: z.string(),
@@ -44,6 +48,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance
       server: z.string().optional(),
       threadId: z.string().optional(),
       model: z.string().optional(),
+      effort: z.string().optional(),
     },
     async (input) => {
       try {
@@ -55,6 +60,7 @@ export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance
           server: typeof input.server === 'string' ? input.server : undefined,
           threadId: typeof input.threadId === 'string' ? input.threadId : undefined,
           model: typeof input.model === 'string' ? input.model : undefined,
+          effort: typeof input.effort === 'string' ? (input.effort as 'low' | 'medium' | 'high') : undefined,
           // Locked: a consulted peer always runs read-only, terse output.
           contextType: 'ask',
           output: 'final',

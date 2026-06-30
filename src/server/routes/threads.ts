@@ -126,6 +126,16 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         ...clientArchitectureConfig,
         claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
       };
+      // Opcjonalny `effort` z body → `architectureConfig.claude_effort` (ten sam slownik
+      // reasoning co `POST /api/chat`). Bez defaultu tutaj — rozwiazywany w `runAgent`.
+      // Wstrzykiwany PRZED guardem resume, wiec wznowienie z innym `effort` = 409.
+      const effortArg = typeof req.body?.effort === 'string' ? req.body.effort : undefined;
+      if (effortArg !== undefined) {
+        if (!(['low', 'medium', 'high'] as readonly string[]).includes(effortArg)) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'invalid effort' } });
+        }
+        architectureConfig.claude_effort = effortArg;
+      }
       // M05 0.1.62: own ANTHROPIC API key — same injection as `POST /api/chat`. When set,
       // decrypt and inject per-turn into `custom_env`; the SDK prefers it over the local
       // OAuth. No row ⇒ local Claude Code login (unchanged). Not in RESUME_CONFIG_LOCKED.
