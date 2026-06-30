@@ -107,6 +107,9 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   // Form (experimental)
   'FormField',
   'InlineEditField',
+  // Overlay/Create (experimental)
+  'Dialog',
+  'FormShell',
   // Token bridge
   'useHostTokens',
   'HOST_TOKEN_NAMES',

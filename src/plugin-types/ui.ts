@@ -19,7 +19,7 @@
  * modules (single source of truth).
  */
 
-import type { ComponentType, ReactNode, CSSProperties } from 'react';
+import type { ComponentType, ReactNode, CSSProperties, FormEvent } from 'react';
 
 export type { Tag } from '../shared/entities.js';
 export type { Stability } from '../shared/plugin-host/ui-kit-surface.js';
@@ -157,6 +157,26 @@ export interface InlineEditFieldProps {
 }
 export declare const InlineEditField: ComponentType<InlineEditFieldProps>;
 
+// ── Overlay/Create (experimental) ──
+export interface DialogProps {
+  open: boolean;
+  onClose: () => void;
+  title?: ReactNode;
+  footer?: ReactNode;
+  children: ReactNode;
+  size?: 'sm' | 'md' | 'lg';
+}
+export declare const Dialog: ComponentType<DialogProps>;
+
+export interface FormShellProps {
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  children: ReactNode;
+  actions?: ReactNode;
+  busy?: boolean;
+  error?: ReactNode;
+}
+export declare const FormShell: ComponentType<FormShellProps>;
+
 // ── Token bridge ──
 export type HostTokenName =
   | '--c-bg'
@@ -186,7 +206,7 @@ export declare function useHostTokens(): Record<HostTokenName, string>;
 
 // ── Stability metadata ──
 export type WithStability<C> = C & { stability: import('../shared/plugin-host/ui-kit-surface.js').Stability };
-export type UiKitGroup = 'core' | 'list' | 'actions' | 'form';
+export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay';
 export interface UiKitComponentEntry {
   name: string;
   group: UiKitGroup;
