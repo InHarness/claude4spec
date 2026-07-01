@@ -31,7 +31,21 @@ export function pagesServiceSource(pages: PagesService): PagesSource {
 }
 
 export class ReferencesService {
-  constructor(private pages: PagesService, private watcher: PagesWatcher) {}
+  /**
+   * 0.1.96 multiroot: the service is bound to the REFERENCE-VALIDATED page roots
+   * (config.roots filtered by `referenceValidated`), keyed by `rootId`. Every
+   * walk/propagate iterates that subset keyed `(rootId, path)`; writes go through
+   * the matching root's `PagesService` + `PagesWatcher` (suppress before write).
+   * Entity-file propagation (setEntityDeps) is root-agnostic and unchanged.
+   */
+  constructor(
+    private roots: Map<string, PagesService>,
+    private watchers: Map<string, PagesWatcher>,
+  ) {}
+
+  private watcherFor(rootId: string): PagesWatcher | undefined {
+    return this.watchers.get(rootId);
+  }
 
   /**
    * M29: deps for propagating a slug rename into the committed entity files
@@ -125,10 +139,31 @@ export class ReferencesService {
     }
   }
 
+  /**
+   * Aggregate the reference-validated roots into a single serverless `PagesSource`
+   * (M19) so the core walks every root's markdown once.
+   */
+  private aggregateSource(): PagesSource {
+    const roots = this.roots;
+    return {
+      async listPages(): Promise<ReferencePage[]> {
+        const out: ReferencePage[] = [];
+        for (const pages of roots.values()) {
+          const files = await pages.listMarkdownFiles();
+          for (const rel of files) {
+            const page = await pages.read(rel);
+            out.push({ path: rel, body: page.body });
+          }
+        }
+        return out;
+      },
+    };
+  }
+
   async findReferences(type: EntityType, slug: string): Promise<ReferenceHit[]> {
     // Delegate to the serverless core (M19); static-only (no includeTagMatches),
     // so every superset hit carries `raw`. Project back onto ReferenceHit.
-    const hits = await findReferencesCore({ pages: pagesServiceSource(this.pages) }, type, slug);
+    const hits = await findReferencesCore({ pages: this.aggregateSource() }, type, slug);
     return hits.map((h) => ({
       pagePath: h.pagePath,
       tagType: h.tagType,
@@ -139,7 +174,7 @@ export class ReferencesService {
 
   async findPagesReferencingSlugs(type: EntityType, slugs: Set<string>): Promise<Set<string>> {
     const out = new Set<string>();
-    await this.walkPages(async (relPath, body) => {
+    await this.walkPages(async (_rootId, relPath, body) => {
       for (const tag of parseXmlTagsExcludingCode(body)) {
         if (tag.attrs.type && tag.attrs.type !== type && tag.kind !== 'tagged_list_mixed') continue;
         const hasSlug = entitySlugsInTag(tag).some((s) => slugs.has(s));
@@ -156,65 +191,57 @@ export class ReferencesService {
   ): Promise<{ changed: string[] }> {
     if (oldSlug === newSlug) return { changed: [] };
     const changed: string[] = [];
-    const backups = new Map<string, string>();
+    // Keyed by (rootId, relPath): a bare relPath is ambiguous across roots.
+    const backups = new Map<string, { rootId: string; relPath: string; body: string }>();
+    const changedKeys = new Set<string>();
+    const key = (rootId: string, relPath: string) => `${rootId} ${relPath}`;
 
-    await this.walkPages(async (relPath, body) => {
-      const rewritten = rewriteTagsInBody(body, (tag) => {
-        if (tag.kind === 'diagram') {
-          if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
-          return { ...tag.attrs, slug: newSlug };
-        }
-        if (tag.attrs.type !== type) return null;
-        if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
-          if (tag.attrs.slug !== oldSlug) return null;
-          return { ...tag.attrs, slug: newSlug };
-        }
-        if (tag.kind === 'element_list') {
-          const slugs = splitCsv(tag.attrs.slugs);
-          if (!slugs.includes(oldSlug)) return null;
-          return { ...tag.attrs, slugs: slugs.map((s) => (s === oldSlug ? newSlug : s)).join(',') };
-        }
-        return null;
-      });
+    const mutate = (tag: XmlTag): Record<string, string> | null => {
+      if (tag.kind === 'diagram') {
+        if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
+        return { ...tag.attrs, slug: newSlug };
+      }
+      if (tag.attrs.type !== type) return null;
+      if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
+        if (tag.attrs.slug !== oldSlug) return null;
+        return { ...tag.attrs, slug: newSlug };
+      }
+      if (tag.kind === 'element_list') {
+        const slugs = splitCsv(tag.attrs.slugs);
+        if (!slugs.includes(oldSlug)) return null;
+        return { ...tag.attrs, slugs: slugs.map((s) => (s === oldSlug ? newSlug : s)).join(',') };
+      }
+      return null;
+    };
+
+    await this.walkPages(async (rootId, relPath, body) => {
+      const rewritten = rewriteTagsInBody(body, mutate);
       if (rewritten !== body) {
-        backups.set(relPath, body);
+        backups.set(key(rootId, relPath), { rootId, relPath, body });
       }
     });
 
     try {
-      for (const [relPath, originalBody] of backups) {
-        const current = await this.pages.read(relPath);
-        const newBody = rewriteTagsInBody(current.body, (tag) => {
-          if (tag.kind === 'diagram') {
-            if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
-            return { ...tag.attrs, slug: newSlug };
-          }
-          if (tag.attrs.type !== type) return null;
-          if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
-            if (tag.attrs.slug !== oldSlug) return null;
-            return { ...tag.attrs, slug: newSlug };
-          }
-          if (tag.kind === 'element_list') {
-            const slugs = splitCsv(tag.attrs.slugs);
-            if (!slugs.includes(oldSlug)) return null;
-            return { ...tag.attrs, slugs: slugs.map((s) => (s === oldSlug ? newSlug : s)).join(',') };
-          }
-          return null;
-        });
+      for (const { rootId, relPath } of backups.values()) {
+        const pages = this.roots.get(rootId);
+        if (!pages) continue;
+        const current = await pages.read(relPath);
+        const newBody = rewriteTagsInBody(current.body, mutate);
         if (newBody !== current.body) {
-          this.watcher.suppress(relPath);
-          await this.pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
+          this.watcherFor(rootId)?.suppress(relPath);
+          await pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
           changed.push(relPath);
+          changedKeys.add(key(rootId, relPath));
         }
-        // swallow the unused original backup — we only need it if we need to rollback
-        void originalBody;
       }
     } catch (err) {
-      for (const [relPath, originalBody] of backups) {
-        if (!changed.includes(relPath)) continue;
-        const current = await this.pages.read(relPath);
-        this.watcher.suppress(relPath);
-        await this.pages.write(relPath, { frontmatter: current.frontmatter, body: originalBody });
+      for (const { rootId, relPath, body: originalBody } of backups.values()) {
+        if (!changedKeys.has(key(rootId, relPath))) continue;
+        const pages = this.roots.get(rootId);
+        if (!pages) continue;
+        const current = await pages.read(relPath);
+        this.watcherFor(rootId)?.suppress(relPath);
+        await pages.write(relPath, { frontmatter: current.frontmatter, body: originalBody });
       }
       throw err;
     }
@@ -232,17 +259,19 @@ export class ReferencesService {
     if (oldTagSlug === newTagSlug) return { changed: [] };
     const changed: string[] = [];
 
-    await this.walkPages(async (relPath) => {
-      const current = await this.pages.read(relPath);
-      const newBody = rewriteTagsInBody(current.body, (tag) => {
+    await this.walkPages(async (rootId, relPath, body) => {
+      const newBody = rewriteTagsInBody(body, (tag) => {
         if (tag.kind !== 'tagged_list' && tag.kind !== 'tagged_list_mixed') return null;
         const tags = splitCsv(tag.attrs.tags);
         if (!tags.includes(oldTagSlug)) return null;
         return { ...tag.attrs, tags: tags.map((t) => (t === oldTagSlug ? newTagSlug : t)).join(',') };
       });
-      if (newBody !== current.body) {
-        this.watcher.suppress(relPath);
-        await this.pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
+      if (newBody !== body) {
+        const pages = this.roots.get(rootId);
+        if (!pages) return;
+        const current = await pages.read(relPath);
+        this.watcherFor(rootId)?.suppress(relPath);
+        await pages.write(relPath, { frontmatter: current.frontmatter, body: newBody });
         changed.push(relPath);
       }
     });
@@ -251,12 +280,14 @@ export class ReferencesService {
   }
 
   private async walkPages(
-    visit: (relPath: string, body: string) => Promise<void>
+    visit: (rootId: string, relPath: string, body: string) => Promise<void>
   ): Promise<void> {
-    const files = await this.pages.listMarkdownFiles();
-    for (const rel of files) {
-      const page = await this.pages.read(rel);
-      await visit(rel, page.body);
+    for (const [rootId, pages] of this.roots) {
+      const files = await pages.listMarkdownFiles();
+      for (const rel of files) {
+        const page = await pages.read(rel);
+        await visit(rootId, rel, page.body);
+      }
     }
   }
 }

@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { configApi, type ConfigPatch } from '../lib/api.js';
 import { PROJECT_ID } from '../lib/api-core.js';
+import type { Root } from '../../shared/types.js';
 
 /**
  * M31: fields that rebuild the project context server-side (the PATCH handler
@@ -9,7 +10,7 @@ import { PROJECT_ID } from '../lib/api-core.js';
  * "Restart required" (M26) is gone: nothing needs a process restart anymore.
  */
 const CONTEXT_DEFINING_FIELDS = [
-  'pagesDir',
+  'roots',
   'briefsDir',
   'patchesDir',
   'entitiesDir',
@@ -24,6 +25,15 @@ export function useConfig() {
     // no project-scoped `/api/config` to read — skip the doomed request.
     enabled: !!PROJECT_ID,
   });
+}
+
+/**
+ * 0.1.96 multiroot: selector for the configured page roots. Empty until the
+ * config query resolves (or project-less `/welcome`, where there is no config).
+ */
+export function useRoots(): Root[] {
+  const { data } = useConfig();
+  return data?.roots ?? [];
 }
 
 export function usePatchConfig() {

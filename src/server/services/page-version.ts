@@ -10,14 +10,6 @@ import { PageSerializer, type PageSnapshotData } from './page-serializer.js';
 
 export type PageChangedBy = 'user' | 'agent' | 'filesystem';
 export type PageOp = 'create' | 'update' | 'delete';
-/**
- * Dyskryminator źródła w `page_version`. `'page'` = pagesDir (M02), `'brief'` =
- * briefsDir (M21), `'patch'` = patchesDir (M23). Filtruje briefy/patche z
- * release snapshot/diff/restore — to artefakty POST-release, nie część
- * release'u (M17 spec, sekcja m17top001). Wersjonowanie jest niezależne per
- * `(path, kind)` — każda para ma własną oś czasu.
- */
-export type PageKind = 'page' | 'brief' | 'patch';
 
 export interface PageVersionListItem {
   id: number;
@@ -28,6 +20,8 @@ export interface PageVersionListItem {
   releaseId: number | null;
   serializerVersion: string;
   createdAt: string;
+  /** 0.1.96: which root this version belongs to ('pages' | user slug | 'brief' | 'patch'). */
+  rootId: string;
   /** Human-readable opis zmiany. Null = brak (filesystem watcher, legacy). */
   changeSummary: string | null;
 }
@@ -46,6 +40,7 @@ interface Row {
   release_id: number | null;
   changed_by: string;
   created_at: string;
+  rootId: string;
   change_summary: string | null;
 }
 
@@ -58,10 +53,12 @@ export class PageVersionService {
    * a tombstone snapshot.
    *
    * M21 (m02multidir): caller can pass an alternative `serializer` so this
-   * single shared `PageVersionService` can capture both `pagesDir` and
-   * `briefsDir` files. Each `PageSerializer` is bound to a specific
-   * `PagesService` (= rootDir) at construction time; the path-keyed
-   * `page_version` table itself is rootDir-agnostic.
+   * single shared `PageVersionService` can capture files from any root. Each
+   * `PageSerializer` is bound to a specific `PagesService` (= a root dir) at
+   * construction time; the `page_version` table is keyed by `(rootId, path)`.
+   *
+   * 0.1.96: `rootId` is a dynamic string — the built-in `'pages'` root, a user
+   * root slug, or the fixed `'brief'`/`'patch'` markers.
    */
   async recordVersion(
     relPath: string,
@@ -69,7 +66,7 @@ export class PageVersionService {
     changedBy: PageChangedBy,
     fallbackContent?: string,
     serializer?: PageSerializer,
-    kind: PageKind = 'page',
+    rootId: string = 'pages',
     changeSummary?: string | null,
   ): Promise<PageVersionListItem> {
     const ser = serializer ?? this.serializer;
@@ -77,38 +74,42 @@ export class PageVersionService {
       op === 'delete' && fallbackContent !== undefined
         ? ser.snapshotFromContent(relPath, fallbackContent)
         : op === 'delete'
-          ? this.synthesizeDeleteFromLastVersion(relPath)
+          ? this.synthesizeDeleteFromLastVersion(relPath, rootId)
           : await ser.snapshot(relPath);
 
-    const next = this.nextVersionNumber(relPath, kind);
+    const next = this.nextVersionNumber(relPath, rootId);
     const summary = typeof changeSummary === 'string' && changeSummary.length > 0
       ? changeSummary
       : null;
     const info = this.db
       .prepare(
-        `INSERT INTO page_version (path, version, data, serializer_version, op, changed_by, kind, change_summary)
+        `INSERT INTO page_version (path, version, data, serializer_version, op, changed_by, rootId, change_summary)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(relPath, next, JSON.stringify(data), ser.version, op, changedBy, kind, summary);
+      .run(relPath, next, JSON.stringify(data), ser.version, op, changedBy, rootId, summary);
     const row = this.db
       .prepare(`SELECT * FROM page_version WHERE id = ?`)
       .get(info.lastInsertRowid) as Row;
     return this.toListItem(row);
   }
 
-  listVersions(relPath: string): PageVersionListItem[] {
+  listVersions(relPath: string, rootId?: string): PageVersionListItem[] {
+    // 0.1.96: `path` alone is no longer unique across roots — filter by rootId
+    // when the caller knows it (page/brief/patch routes always do).
+    const rootClause = rootId ? ' AND rootId = ?' : '';
     const rows = this.db
       .prepare(
-        `SELECT * FROM page_version WHERE path = ? ORDER BY version DESC`
+        `SELECT * FROM page_version WHERE path = ?${rootClause} ORDER BY version DESC`
       )
-      .all(relPath) as Row[];
+      .all(...(rootId ? [relPath, rootId] : [relPath])) as Row[];
     return rows.map((r) => this.toListItem(r));
   }
 
-  getVersion(relPath: string, version: number): PageVersionDetail | null {
+  getVersion(relPath: string, version: number, rootId?: string): PageVersionDetail | null {
+    const rootClause = rootId ? ' AND rootId = ?' : '';
     const row = this.db
-      .prepare(`SELECT * FROM page_version WHERE path = ? AND version = ?`)
-      .get(relPath, version) as Row | undefined;
+      .prepare(`SELECT * FROM page_version WHERE path = ? AND version = ?${rootClause}`)
+      .get(...(rootId ? [relPath, version, rootId] : [relPath, version])) as Row | undefined;
     return row ? this.toDetail(row) : null;
   }
 
@@ -119,34 +120,34 @@ export class PageVersionService {
   getLatestForPath(
     relPath: string,
     releaseId?: number | null,
-    kind?: PageKind,
+    rootId?: string,
   ): PageVersionDetail | null {
-    // M23: optional `kind` filter — distinguishes page/brief/patch timelines
-    // for the same path. Omitted ⇒ legacy behaviour (latest regardless of kind).
-    const kindClause = kind ? ' AND kind = ?' : '';
+    // 0.1.96: optional `rootId` filter — distinguishes per-root timelines for the
+    // same path. Omitted ⇒ legacy behaviour (latest regardless of root).
+    const rootClause = rootId ? ' AND rootId = ?' : '';
     let row: Row | undefined;
     if (releaseId === undefined) {
       row = this.db
         .prepare(
-          `SELECT * FROM page_version WHERE path = ?${kindClause}
+          `SELECT * FROM page_version WHERE path = ?${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(kind ? [relPath, kind] : [relPath])) as Row | undefined;
+        .get(...(rootId ? [relPath, rootId] : [relPath])) as Row | undefined;
     } else if (releaseId === null) {
       row = this.db
         .prepare(
-          `SELECT * FROM page_version WHERE path = ? AND release_id IS NULL${kindClause}
+          `SELECT * FROM page_version WHERE path = ? AND release_id IS NULL${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(kind ? [relPath, kind] : [relPath])) as Row | undefined;
+        .get(...(rootId ? [relPath, rootId] : [relPath])) as Row | undefined;
     } else {
       row = this.db
         .prepare(
           `SELECT * FROM page_version
-            WHERE path = ? AND release_id IS NOT NULL AND release_id <= ?${kindClause}
+            WHERE path = ? AND release_id IS NOT NULL AND release_id <= ?${rootClause}
             ORDER BY version DESC LIMIT 1`
         )
-        .get(...(kind ? [relPath, releaseId, kind] : [relPath, releaseId])) as Row | undefined;
+        .get(...(rootId ? [relPath, releaseId, rootId] : [relPath, releaseId])) as Row | undefined;
     }
     return row ? this.toDetail(row) : null;
   }
@@ -171,42 +172,51 @@ export class PageVersionService {
 
   /**
    * Count page captures with `release_id IS NULL` (waiting to be picked up by
-   * next release). Excludes briefs — briefs nigdy nie wpadają do release'u
-   * (M21 spec, sekcja m21db0001).
+   * next release), restricted to the given releasable root ids. Briefs/patches
+   * (markers 'brief'/'patch') fall out structurally — they are never releasable.
    */
-  countUnreleased(): number {
+  countUnreleased(releasableRootIds: string[]): number {
+    if (releasableRootIds.length === 0) return 0;
+    const placeholders = releasableRootIds.map(() => '?').join(', ');
     const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM page_version WHERE release_id IS NULL AND kind = 'page'`)
-      .get() as { n: number };
+      .prepare(
+        `SELECT COUNT(*) AS n FROM page_version
+          WHERE release_id IS NULL AND rootId IN (${placeholders})`
+      )
+      .get(...releasableRootIds) as { n: number };
     return row.n;
   }
 
   /**
-   * Atomic: assign all unreleased page_version rows (kind='page') to a release.
-   * Returns the count of rows updated. Briefy (kind='brief') NIGDY nie wpadają
-   * do release'u — mają własną oś czasu, niezależną od release timeline.
+   * Atomic: assign all unreleased page_version rows in the given releasable roots
+   * to a release. Returns the count of rows updated. Briefs/patches never enter a
+   * release — they carry non-releasable rootId markers and fall out structurally.
    */
-  assignToRelease(releaseId: number): number {
+  assignToRelease(releaseId: number, releasableRootIds: string[]): number {
+    if (releasableRootIds.length === 0) return 0;
+    const placeholders = releasableRootIds.map(() => '?').join(', ');
     const info = this.db
-      .prepare(`UPDATE page_version SET release_id = ? WHERE release_id IS NULL AND kind = 'page'`)
-      .run(releaseId);
+      .prepare(
+        `UPDATE page_version SET release_id = ?
+          WHERE release_id IS NULL AND rootId IN (${placeholders})`
+      )
+      .run(releaseId, ...releasableRootIds);
     return Number(info.changes);
   }
 
   /**
-   * M23: numer wersji jest sekwencyjny per `(path, kind)`, nie per `path` —
-   * page/brief/patch o tej samej ścieżce (teoretycznie) mają niezależne osie
-   * czasu. W praktyce ścieżki nie kolidują, bo każdy `kind` ma własny katalog.
+   * 0.1.96: version numbers are sequential per `(rootId, path)` — the same
+   * relative path in different roots has independent timelines.
    */
-  private nextVersionNumber(relPath: string, kind: PageKind): number {
+  private nextVersionNumber(relPath: string, rootId: string): number {
     const row = this.db
-      .prepare(`SELECT MAX(version) AS v FROM page_version WHERE path = ? AND kind = ?`)
-      .get(relPath, kind) as { v: number | null };
+      .prepare(`SELECT MAX(version) AS v FROM page_version WHERE path = ? AND rootId = ?`)
+      .get(relPath, rootId) as { v: number | null };
     return (row.v ?? 0) + 1;
   }
 
-  private synthesizeDeleteFromLastVersion(relPath: string): PageSnapshotData {
-    const last = this.getLatestForPath(relPath);
+  private synthesizeDeleteFromLastVersion(relPath: string, rootId: string): PageSnapshotData {
+    const last = this.getLatestForPath(relPath, undefined, rootId);
     if (last) return last.data;
     // No prior version — we don't have content. Tombstone with empty content.
     return {
@@ -228,6 +238,7 @@ export class PageVersionService {
       releaseId: row.release_id,
       serializerVersion: row.serializer_version,
       createdAt: row.created_at,
+      rootId: row.rootId,
       changeSummary: row.change_summary,
     };
   }

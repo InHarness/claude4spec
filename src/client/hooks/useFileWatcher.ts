@@ -39,11 +39,12 @@ export function useFileWatcher() {
         try {
           const data = JSON.parse(e.data) as WsEvent;
           if (data.kind === 'page:changed') {
-            batcher.queue(['pages']);
+            // 0.1.96 multiroot: page trees + documents are keyed by rootId.
+            batcher.queue(['pages', data.rootId]);
             if (data.origin === 'external') {
               useFileEventsStore.getState().notifyExternalChange(data.path);
             } else {
-              batcher.queue(['page', data.path]);
+              batcher.queue(['page', data.rootId, data.path]);
             }
           } else if (data.kind === 'entity:changed') {
             batcher.queue([entityListKey(data.entityType)]);

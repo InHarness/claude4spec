@@ -926,6 +926,9 @@ export const BRIEF_IMMUTABLE_FRONTMATTER_KEYS = [
   'to_release',
   'generated_at',
   'generator_version',
+  // 0.1.96: brief scope — the releasable roots this brief covers. Absent/omitted
+  // = whole-release scope (every releasable root). Immutable once written.
+  'roots',
 ] as const;
 
 /**
@@ -949,6 +952,12 @@ export interface BriefFrontmatter {
   generated_at: string;
   generator_version: string;
   implemented?: boolean;
+  /**
+   * 0.1.96: brief scope — the releasable root ids this brief covers (verbatim).
+   * Absent/omitted = whole-release scope (all releasable roots). Immutable
+   * (see BRIEF_IMMUTABLE_FRONTMATTER_KEYS).
+   */
+  roots?: string[];
   [key: string]: unknown;
 }
 
@@ -985,6 +994,11 @@ export interface BriefCreateRequest {
   toReleaseName: string;
   additionalPrompt?: string;
   suffix?: string;
+  /**
+   * 0.1.96: brief scope — releasable root ids to cover. Omitted/empty =
+   * whole-release scope (all releasable roots).
+   */
+  roots?: string[];
 }
 
 export interface BriefCreateResult {

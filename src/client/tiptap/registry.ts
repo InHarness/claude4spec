@@ -11,7 +11,45 @@ export interface RegistryContext {
   getAnnotations: () => Annotation[];
   /** Context in which the extension is being instantiated. Set by EditorFactory. */
   contextId?: EditorContextId;
+  /**
+   * 0.1.96: per-root behaviour props of the page's root. Set by EditorFactory.
+   * Factory extensions (e.g. the `@` mention framework) may read
+   * `rootProps.linkTargets` to scope their link/autocomplete targets.
+   */
+  rootProps?: RootEditorProps;
 }
+
+/**
+ * 0.1.96: the subset of a `Root`'s behaviour flags that gate which editor
+ * extensions mount. Mirrors the three gating fields of the shared `Root` type
+ * (kept structurally local so this client module doesn't depend on server-side
+ * config types). Threaded through `RegistryContext` by EditorFactory.
+ */
+export interface RootEditorProps {
+  /** Section-indexed ⇒ Anchor / SectionRef / heading-outline extensions. */
+  sectionIndexed: boolean;
+  /** Reference-validated ⇒ the 5 reference nodes + broken-ref decorations. */
+  referenceValidated: boolean;
+  /** Root ids whose pages are valid `@`-autocomplete / link targets (in addition to self). */
+  linkTargets: string[];
+}
+
+/**
+ * Full-behaviour props — the built-in `pages` root editor. Used as the default
+ * when a caller does not pass root props, preserving pre-0.1.96 behaviour.
+ */
+export const FULL_ROOT_EDITOR_PROPS: RootEditorProps = {
+  sectionIndexed: true,
+  referenceValidated: true,
+  linkTargets: [],
+};
+
+/** Minimal-behaviour props — a default user root / brief / patch editor. */
+export const MINIMAL_ROOT_EDITOR_PROPS: RootEditorProps = {
+  sectionIndexed: false,
+  referenceValidated: false,
+  linkTargets: [],
+};
 
 export type EditorExtensionFactory = AnyExtension | ((ctx: RegistryContext) => AnyExtension);
 
@@ -32,6 +70,30 @@ export interface EditorExtensionRegistration {
   slashCommand?: SlashCommand;
   markdownIt?: { kind: 'inline' | 'block' | 'block_content'; pattern: RegExp };
 }
+
+/**
+ * 0.1.96: root-property gates keyed by registration name. Kept centrally here (not
+ * on each registration) so that per-root behaviour is gated on a root PROPERTY and
+ * the registration list stays declarative. Only applied in the `page` context — the
+ * sole context backed by a configurable root. Extensions absent from this map mount
+ * in every page root (the "minimal" base editor: pages / user roots / briefs / patches).
+ *
+ * GOLDEN RULE: gating keys on a Root property (sectionIndexed / referenceValidated),
+ * never on `rootId === 'pages'`.
+ */
+const ROOT_PROP_GATES: Record<string, 'sectionIndexed' | 'referenceValidated'> = {
+  // sectionIndexed ⇒ Anchor / SectionRef / heading-outline actions.
+  anchor_marker: 'sectionIndexed',
+  section_ref: 'sectionIndexed',
+  heading_actions: 'sectionIndexed',
+  // referenceValidated ⇒ the 5 reference nodes (broken-ref decorations render inside
+  // their node views).
+  inline_mention: 'referenceValidated',
+  single_element: 'referenceValidated',
+  element_list: 'referenceValidated',
+  tagged_list: 'referenceValidated',
+  tagged_list_mixed: 'referenceValidated',
+};
 
 const REGISTRY: EditorExtensionRegistration[] = [];
 
@@ -60,15 +122,26 @@ export function getEditorExtensions(
  * Resolution order:
  *   1. If `availableIn` is set → use it literally.
  *   2. Fallback to `scope`: 'shared' → all contexts, 'full' → ['page', 'plan'].
+ *   3. In the `page` context, additionally gate on the page root's PROPERTIES
+ *      (`rootProps`) via `ROOT_PROP_GATES`.
  * Sorted by priority asc (lower = earlier).
+ *
+ * `rootProps` defaults to full-behaviour props so callers that have not yet been
+ * migrated keep the pre-0.1.96 `pages`-root editor.
  */
 export function getEditorExtensionsForContext(
   ctx: RegistryContext,
   contextId: EditorContextId,
+  rootProps: RootEditorProps = FULL_ROOT_EDITOR_PROPS,
 ): AnyExtension[] {
-  const ctxWithId: RegistryContext = { ...ctx, contextId };
+  const ctxWithId: RegistryContext = { ...ctx, contextId, rootProps };
   return [...REGISTRY]
-    .filter((r) => r.extension && isAvailableInContext(r, contextId))
+    .filter(
+      (r) =>
+        r.extension &&
+        isAvailableInContext(r, contextId) &&
+        satisfiesRootProps(r, contextId, rootProps),
+    )
     .sort((a, b) => (a.priority ?? 1000) - (b.priority ?? 1000))
     .map((r) =>
       typeof r.extension === 'function'
@@ -85,6 +158,23 @@ function isAvailableInContext(
   const scope = reg.scope ?? 'shared';
   if (scope === 'shared') return true;
   return contextId === 'page' || contextId === 'plan';
+}
+
+/**
+ * 0.1.96 root-property gate. Only the `page` context is backed by a configurable
+ * root, so non-page contexts (plan / description / chat-input) are never filtered
+ * by root props. In the `page` context, an extension named in `ROOT_PROP_GATES`
+ * mounts only when the corresponding root property is enabled.
+ */
+function satisfiesRootProps(
+  reg: EditorExtensionRegistration,
+  contextId: EditorContextId,
+  rootProps: RootEditorProps,
+): boolean {
+  if (contextId !== 'page') return true;
+  const gate = ROOT_PROP_GATES[reg.name];
+  if (!gate) return true;
+  return rootProps[gate];
 }
 
 export function getRegisteredSlashCommands(): SlashCommand[] {

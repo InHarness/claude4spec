@@ -39,6 +39,7 @@ import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/tr
 import type { PageVersionService } from '../services/page-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import type { Annotation, Brief, ChatMessage, ChatThread, PatchResponse } from '../../shared/entities.js';
+import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -73,7 +74,9 @@ export interface AgentTurnDeps {
   skillRegistry: SkillRegistry;
   ws: WsEmitter;
   cwd: string;
-  pagesDir: string;
+  /** 0.1.96 multiroot: every configured page root (was the single `pagesDir` scalar).
+   *  Folded into the agent's FS path scope and rendered in the `<project roots>` attr. */
+  roots: Root[];
   mode: 'dev' | 'prod';
   db: Db;
   /**
@@ -480,15 +483,15 @@ export async function runAgentTurn(
     // 0.1.90 (M05): agent FS path scope, read per-turn (hot-reload, same as
     // conversationalLanguage). Scoping only ACTIVATES when the user configured at
     // least one path — empty config behaves exactly as before (no sandbox change).
-    // When active, the resolver folds in the implicit base (pagesDir-if-outside-cwd)
-    // and normalizes everything to absolute, so the agent never loses pagesDir access.
+    // When active, the resolver folds in the implicit base (each root dir-if-outside-cwd)
+    // and normalizes everything to absolute, so the agent never loses root access.
     const agentAllowedPaths = cfg.agent?.allowedPaths ?? [];
     const agentDisallowedPaths = cfg.agent?.disallowedPaths ?? [];
     const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
     const resolvedPathScope = pathScopeRequested
       ? resolveAgentPathScope({
           cwd: deps.cwd,
-          pagesDir: deps.pagesDir,
+          roots: deps.roots,
           allowedPaths: agentAllowedPaths,
           disallowedPaths: agentDisallowedPaths,
         })
@@ -497,8 +500,14 @@ export async function runAgentTurn(
       host: deps.pluginHost,
       projectName: cfg.name,
       cwd: deps.cwd,
-      pagesDir: deps.pagesDir,
+      roots: deps.roots,
+      // briefs/patches are NOT roots but are shown in the `<project roots>` attr so the
+      // agent has a full spatial map; dirs read per-turn from config (hot-reload).
+      briefsDir: cfg.briefsDir,
+      patchesDir: cfg.patchesDir,
       currentPagePath: currentPage,
+      // The current-page fetch uses the built-in pages root's service (rootId 'pages').
+      currentPageRootId: deps.pagesService.rootId,
       currentPageBody,
       pageCount,
       entityCounts: isBriefFrame ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),
@@ -522,7 +531,7 @@ export async function runAgentTurn(
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
-      // presence (base-only ⇒ no block). The block renders cwd/pagesDir itself.
+      // presence (base-only ⇒ no block). The block renders cwd + every root dir itself.
       agentPathScope: { allowedPaths: agentAllowedPaths, disallowedPaths: agentDisallowedPaths },
       contextType: thread.contextType,
       brief: briefSnapshot,

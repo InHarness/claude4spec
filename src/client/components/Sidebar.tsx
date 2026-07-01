@@ -22,9 +22,10 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import type { PageNode, PageSearchHit } from '../../shared/types.js';
+import type { PageNode, PageSearchHit, Root } from '../../shared/types.js';
 import { markdownExtension } from '../../shared/page-files.js';
-import { usePagesSearch } from '../hooks/usePages.js';
+import { usePages, usePagesSearch } from '../hooks/usePages.js';
+import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
@@ -34,9 +35,15 @@ interface SidebarProps {
   cwdPath: string;
   projectName: string | null;
   headerLoading: boolean;
-  tree: PageNode[];
+  /**
+   * 0.1.96 multiroot: the sidebar now self-fetches one tree per accordion root
+   * (see `RootAccordion`). Kept optional for the built-in `'pages'` root's tree
+   * during the transition — no longer read for rendering.
+   */
+  tree?: PageNode[];
   onNewPage: () => void;
-  pageCount: number;
+  /** 0.1.96: pages-root file count (legacy; per-root counts render on each accordion). */
+  pageCount?: number;
   /** Per-plugin-type counts, keyed by `module.type`. */
   entityCounts: Record<string, number>;
   todoCount: number;
@@ -45,14 +52,21 @@ interface SidebarProps {
   unresolvedMentionCount: number;
 }
 
+/**
+ * 0.1.96 multiroot: per-root open/closed state. Value is the list of COLLAPSED
+ * folder paths for that root (default is expanded, matching pre-multiroot UX).
+ * The sentinel `''` collapses the whole root accordion. Stale root ids are
+ * ignored on read (only current roots are looked up).
+ */
+type SidebarOpenState = Record<string, string[]>;
+const ROOT_COLLAPSE_SENTINEL = '';
+
 export function Sidebar({
   width,
   cwdPath,
   projectName,
   headerLoading,
-  tree,
   onNewPage,
-  pageCount,
   entityCounts,
   todoCount,
   todoCountByPath,
@@ -60,24 +74,30 @@ export function Sidebar({
   unresolvedMentionCount,
 }: SidebarProps) {
   const navigate = useNavigate();
+  const roots = useRoots();
+  const accordionRoots = roots.filter((r) => r.sidebar === 'accordion');
   const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
-  const activePagePath = pathname.startsWith('/pages/')
-    ? decodeURIComponent(pathname.slice('/pages/'.length))
-    : null;
+  // /space/<rootId>/<path…>
+  const spaceMatch = /^\/space\/([^/]+)\/(.*)$/.exec(pathname);
+  const activeRootId = spaceMatch ? decodeURIComponent(spaceMatch[1] ?? '') : null;
+  const activePagePath = spaceMatch ? decodeURIComponent(spaceMatch[2] ?? '') : null;
   const [query, setQuery] = useState('');
   const searching = query.trim().length > 0;
-  const [openFolders, setOpenFolders] = usePersistedState<Record<string, boolean>>(
+  const [collapsed, setCollapsed] = usePersistedState<SidebarOpenState>(
     projectKey('c4s:sidebar:pages-open'),
     {},
-    1,
+    2,
   );
-  const toggleFolder = useCallback(
-    (path: string) =>
-      setOpenFolders({ ...openFolders, [path]: !(openFolders[path] ?? true) }),
-    [openFolders, setOpenFolders],
+  const toggle = useCallback(
+    (rootId: string, path: string) => {
+      const cur = collapsed[rootId] ?? [];
+      const next = cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path];
+      setCollapsed({ ...collapsed, [rootId]: next });
+    },
+    [collapsed, setCollapsed],
   );
+  // Sidebar search is scoped to the built-in `'pages'` root.
   const { data: searchHits = [], isFetching: searchFetching } = usePagesSearch(query);
-  const filesActive = pathname === '/' || pathname.startsWith('/pages');
   // Iterate active plugins in declared order; render only those with a sidebarTab.
   const entityTabs = clientPluginHost
     .listEntities()
@@ -131,15 +151,6 @@ export function Sidebar({
             </button>
           }
         />
-        <div className="px-1.5">
-          <NavLinkRow
-            icon={FileText}
-            label="Pages"
-            count={pageCount}
-            active={filesActive}
-            to="/"
-          />
-        </div>
 
         <div className="px-2 pt-1 pb-1">
           <div
@@ -175,23 +186,26 @@ export function Sidebar({
             <SearchResults
               hits={searchHits}
               loading={searchFetching}
-              activePath={activePagePath}
+              activePath={activeRootId === 'pages' ? activePagePath : null}
               onClose={() => setQuery('')}
             />
-          ) : tree.length > 0 ? (
-            <PagesTree
-              nodes={tree}
-              activePath={activePagePath}
-              todoCountByPath={todoCountByPath}
-              open={openFolders}
-              onToggle={toggleFolder}
-            />
+          ) : accordionRoots.length > 0 ? (
+            accordionRoots.map((root) => (
+              <RootAccordion
+                key={root.id}
+                root={root}
+                collapsedPaths={collapsed[root.id] ?? []}
+                onToggle={(path) => toggle(root.id, path)}
+                activePagePath={activeRootId === root.id ? activePagePath : null}
+                todoCountByPath={todoCountByPath}
+              />
+            ))
           ) : (
             <div
               className="text-[11.5px] px-3 py-2 italic"
               style={{ color: 'var(--c-subtle)' }}
             >
-              No pages yet — use + to create one.
+              No page roots configured.
             </div>
           )}
         </div>
@@ -378,8 +392,8 @@ function SearchResults({
         return (
           <Link
             key={hit.path + hit.line}
-            to="/pages/$"
-            params={{ _splat: hit.path }}
+            to="/space/$rootId/$"
+            params={{ rootId: 'pages', _splat: hit.path }}
             onClick={onClose}
             className="block px-2 py-1 rounded text-[12px]"
             style={{
@@ -419,26 +433,85 @@ function SearchResults({
   );
 }
 
+/**
+ * 0.1.96 multiroot: one collapsible accordion per `sidebar: 'accordion'` root,
+ * labelled by `root.name`. Each self-fetches its own tree keyed by `root.id`.
+ */
+function RootAccordion({
+  root,
+  collapsedPaths,
+  onToggle,
+  activePagePath,
+  todoCountByPath,
+}: {
+  root: Root;
+  collapsedPaths: string[];
+  onToggle: (path: string) => void;
+  activePagePath: string | null;
+  todoCountByPath?: Record<string, number>;
+}) {
+  const { data: tree = [] } = usePages(root.id);
+  const rootOpen = !collapsedPaths.includes(ROOT_COLLAPSE_SENTINEL);
+  const fileCount = countFiles(tree);
+  return (
+    <div className="mb-0.5">
+      <button
+        className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded transition"
+        style={{ color: 'var(--c-subtle)' }}
+        onClick={() => onToggle(ROOT_COLLAPSE_SENTINEL)}
+        onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--c-panel)')}
+        onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+        title={root.name}
+      >
+        {rootOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        <span className="flex-1 truncate text-left text-[10px] uppercase tracking-wider font-mono font-semibold">
+          {root.name}
+        </span>
+        <span className="font-mono" style={{ fontSize: 10 }}>
+          {fileCount}
+        </span>
+      </button>
+      {rootOpen &&
+        (tree.length > 0 ? (
+          <PagesTree
+            rootId={root.id}
+            nodes={tree}
+            activePath={activePagePath}
+            todoCountByPath={todoCountByPath}
+            collapsedPaths={collapsedPaths}
+            onToggle={onToggle}
+          />
+        ) : (
+          <div className="text-[11.5px] px-3 py-1.5 italic" style={{ color: 'var(--c-subtle)' }}>
+            No pages yet.
+          </div>
+        ))}
+    </div>
+  );
+}
+
 function PagesTree({
+  rootId,
   nodes,
   depth = 0,
   activePath,
   todoCountByPath,
-  open,
+  collapsedPaths,
   onToggle,
 }: {
+  rootId: string;
   nodes: PageNode[];
   depth?: number;
   activePath: string | null;
   todoCountByPath?: Record<string, number>;
-  open: Record<string, boolean>;
+  collapsedPaths: string[];
   onToggle: (path: string) => void;
 }) {
   return (
     <div>
       {nodes.map((n) => {
         if (n.type === 'folder') {
-          const isOpen = open[n.path] ?? true;
+          const isOpen = !collapsedPaths.includes(n.path);
           return (
             <div key={n.path}>
               <button
@@ -454,11 +527,12 @@ function PagesTree({
               </button>
               {isOpen && n.children && (
                 <PagesTree
+                  rootId={rootId}
                   nodes={n.children}
                   depth={depth + 1}
                   activePath={activePath}
                   todoCountByPath={todoCountByPath}
-                  open={open}
+                  collapsedPaths={collapsedPaths}
                   onToggle={onToggle}
                 />
               )}
@@ -470,8 +544,8 @@ function PagesTree({
         return (
           <Link
             key={n.path}
-            to="/pages/$"
-            params={{ _splat: n.path }}
+            to="/space/$rootId/$"
+            params={{ rootId, _splat: n.path }}
             className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded text-[13px] transition text-left"
             style={{
               paddingLeft: 6 + depth * 12 + 14,
@@ -502,6 +576,15 @@ function PagesTree({
       })}
     </div>
   );
+}
+
+function countFiles(nodes: PageNode[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    if (node.type === 'file') n++;
+    else if (node.children) n += countFiles(node.children);
+  }
+  return n;
 }
 
 const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links'];

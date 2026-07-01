@@ -1,4 +1,4 @@
-import type { PageContent, PageNode, PageSearchHit, TodoCounts, TodoHit } from '../../shared/types.js';
+import type { PageContent, PageNode, PageSearchHit, Root, TodoCounts, TodoHit } from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
@@ -49,28 +49,36 @@ export {
   type DesignSystemWithWarnings,
 } from '../entities/design-system/api.js';
 
+// 0.1.96 multiroot: every page primitive is keyed by `(rootId, path)`. The
+// server mounts the pages router under `/api/pages/:rootId`, so `rootId` is the
+// first path segment for the tree/read/write/remove/search calls.
 export const api = {
-  async tree(): Promise<PageNode[]> {
-    const res = await apiFetch('/api/pages');
+  async tree(rootId: string): Promise<PageNode[]> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}`);
     const data = await handle<{ tree: PageNode[] }>(res);
     return data.tree;
   },
 
-  async search(q: string, limit = 50): Promise<PageSearchHit[]> {
+  async search(rootId: string, q: string, limit = 50): Promise<PageSearchHit[]> {
     const params = new URLSearchParams({ q });
     if (limit !== 50) params.set('limit', String(limit));
-    const res = await apiFetch(`/api/pages/search?${params.toString()}`);
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/search?${params.toString()}`);
     const data = await handle<{ hits: PageSearchHit[] }>(res);
     return data.hits;
   },
 
-  async read(path: string): Promise<PageContent> {
-    const res = await apiFetch(`/api/pages/${encodePath(path)}`);
+  async read(rootId: string, path: string): Promise<PageContent> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`);
     return handle<PageContent>(res);
   },
 
-  async write(path: string, body: string, frontmatter?: Record<string, unknown>): Promise<PageContent> {
-    const res = await apiFetch(`/api/pages/${encodePath(path)}`, {
+  async write(
+    rootId: string,
+    path: string,
+    body: string,
+    frontmatter?: Record<string, unknown>,
+  ): Promise<PageContent> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body, frontmatter }),
@@ -78,8 +86,10 @@ export const api = {
     return handle<PageContent>(res);
   },
 
-  async remove(path: string): Promise<void> {
-    const res = await apiFetch(`/api/pages/${encodePath(path)}`, { method: 'DELETE' });
+  async remove(rootId: string, path: string): Promise<void> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
+      method: 'DELETE',
+    });
     await handle<{ ok: true }>(res);
   },
 };
@@ -90,7 +100,8 @@ function encodePath(p: string): string {
 
 export interface ConfigResponse {
   name: string;
-  pagesDir: string;
+  /** 0.1.96 multiroot: replaces the single `pagesDir`. The mandatory `'pages'` root is always roots[0]. */
+  roots: Root[];
   writingStyle: string | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
   language: string | null;
@@ -120,13 +131,14 @@ export interface ConfigResponse {
   remoteApiUrl: string | null;
   /** M33 phase 3: per-plugin settings namespace (absent ⇒ {}). */
   plugins: Record<string, Record<string, unknown>>;
-  /** M01: config schema version (currently 3 — M31 moved port/mode to the workspace). */
+  /** M01: config schema version (0.1.96 bumped to 4 — pagesDir → roots[]). */
   $schemaVersion: number;
 }
 
 export interface ConfigPatch {
   name?: string;
-  pagesDir?: string;
+  /** 0.1.96 multiroot: replaces `pagesDir`; a full roots array replaces the whole set server-side. */
+  roots?: Root[];
   briefsDir?: string;
   patchesDir?: string;
   entitiesDir?: string;
