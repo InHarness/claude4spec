@@ -19,7 +19,20 @@ function stubConfigResponse(res: { status: number; ok: boolean; json: () => unkn
 
 const VALID_CONFIG = {
   name: 'peer',
-  pagesDir: 'pages',
+  roots: [
+    {
+      id: 'pages',
+      name: 'Pages',
+      dir: 'pages',
+      builtin: true,
+      releasable: true,
+      sectionIndexed: true,
+      referenceValidated: true,
+      linkTargets: [],
+      sidebar: 'accordion',
+      briefTarget: true,
+    },
+  ],
   entitiesDir: 'entities',
   writingStyle: null,
   onboarding: {},

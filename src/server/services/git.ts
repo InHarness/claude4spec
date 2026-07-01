@@ -5,8 +5,8 @@
  * a missing repo, or a failed command never throws to the caller — it resolves
  * to a non-throwing result shape.
  *
- * `detect()` answers "is `pagesDir` inside a worktree, and what does it look
- * like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
+ * `detect()` answers "is any releasable root inside a worktree, and what does it
+ * look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
  * / `pushOnPush()` are the gated entry points the hooks call: they read the
  * (hot-reloaded) config flag, detect the repo, and either act or return `null`
  * (flag off OR no repo).
@@ -36,15 +36,21 @@ const NOT_DETECTED: GitStatusResponse = {
 };
 
 export class GitService {
+  /** Releasable root dirs resolved to absolute paths (probe locations). */
+  private readonly releasableRootDirs: string[];
+
   /**
-   * @param cwd       project root (holds `.claude4spec/config.json`).
-   * @param pagesPath absolute path to the pages directory — the probe location
-   *                  for repo detection (a release may live in a sub-worktree).
+   * @param cwd                project root (holds `.claude4spec/config.json`).
+   * @param releasableRootDirs dirs of the releasable roots (absolute or
+   *                           cwd-relative) — the probe locations for repo
+   *                           detection (a release may live in a sub-worktree).
    */
   constructor(
     private cwd: string,
-    private pagesPath: string,
-  ) {}
+    releasableRootDirs: string[],
+  ) {
+    this.releasableRootDirs = releasableRootDirs.map((d) => path.resolve(cwd, d));
+  }
 
   /** Run `git <args>` in `dir`. Throws on non-zero exit or a missing binary. */
   private async git(args: string[], dir: string): Promise<{ stdout: string; stderr: string }> {
@@ -52,19 +58,32 @@ export class GitService {
   }
 
   /**
-   * Probe `pagesDir` for a git worktree. Never throws — git missing (ENOENT),
-   * no repo, or `pagesDir` outside any worktree (exit 128) all map to
-   * `detected: false`.
+   * Probe the releasable roots for a git worktree. Detected when ANY releasable
+   * root is inside a worktree; the first such root wins. Never throws — git
+   * missing (ENOENT), no repo, or a root outside any worktree (exit 128) all map
+   * to `detected: false`.
    */
   async detect(): Promise<GitStatusResponse> {
-    let rootPath: string;
-    try {
-      const { stdout } = await this.git(['rev-parse', '--show-toplevel'], this.pagesPath);
-      rootPath = stdout.trim();
-      if (!rootPath) return NOT_DETECTED;
-    } catch {
-      return NOT_DETECTED;
+    let rootPath: string | null = null;
+    for (const dir of this.releasableRootDirs) {
+      let real: string;
+      try {
+        real = fs.realpathSync(dir);
+      } catch {
+        continue; // missing path — cannot probe from it
+      }
+      try {
+        const { stdout } = await this.git(['rev-parse', '--show-toplevel'], real);
+        const top = stdout.trim();
+        if (top) {
+          rootPath = top;
+          break;
+        }
+      } catch {
+        // not inside a worktree (or git missing) — try the next root
+      }
     }
+    if (!rootPath) return NOT_DETECTED;
 
     // Inside a worktree — the remaining probes are individually best-effort.
     const remoteUrl = await this.git(['remote', 'get-url', 'origin'], rootPath)
@@ -87,9 +106,10 @@ export class GitService {
   }
 
   /**
-   * Stage `pagesDir` + `config.json` and commit. Assumes a repo is detected
-   * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached HEAD,
-   * `'nothing-to-commit'` when nothing is staged, `'error'` on any git failure.
+   * Stage every releasable root dir + `config.json` and commit. Assumes a repo
+   * is detected (callers gate via `commitOnRelease`). Returns `'skipped'` on
+   * detached HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on
+   * any git failure.
    */
   async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
     const status = await this.detect();
@@ -97,18 +117,19 @@ export class GitService {
     if (!status.branch) return { status: 'skipped', message: 'detached HEAD' };
     const root = status.rootPath;
 
-    // Canonicalize staging targets. pagesPath / configPath may be reached
+    // Canonicalize staging targets. Root dirs / configPath may be reached
     // through a symlink (e.g. `.claude/skills/specyfikacja` → another repo's
     // worktree). `git add` matches pathspecs lexically against the real worktree
     // root, so an unresolved symlink path reads as "outside repository". Resolve
     // to real paths and keep only those that actually live inside `root`.
     //
-    // M29: also stage the committed entity store (<entitiesDir> contains the
-    // entity JSON files + tags.json — the source of truth). db.sqlite is
-    // gitignored, so the whole dir can be staged safely.
+    // Stage every releasable root dir; briefsDir/patchesDir are NEVER releasable
+    // and so are never staged. M29: also stage the committed entity store
+    // (<entitiesDir> contains the entity JSON files + tags.json — the source of
+    // truth). db.sqlite is gitignored, so the whole dir can be staged safely.
     const entitiesPath = path.resolve(this.cwd, readConfig(this.cwd).entitiesDir);
     const targets: string[] = [];
-    for (const p of [this.pagesPath, configPath(this.cwd), entitiesPath]) {
+    for (const p of [...this.releasableRootDirs, configPath(this.cwd), entitiesPath]) {
       let real: string;
       try {
         real = fs.realpathSync(p);
@@ -121,7 +142,7 @@ export class GitService {
     if (targets.length === 0) {
       return {
         status: 'skipped',
-        message: 'pages directory / config.json are outside the detected repository',
+        message: 'releasable roots / config.json are outside the detected repository',
       };
     }
 

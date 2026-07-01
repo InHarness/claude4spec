@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useConfig, usePatchConfig } from '../../hooks/useConfig.js';
+import type { ConfigPatch } from '../../lib/api.js';
 import { useWritingStyles } from '../../hooks/useWritingStyles.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
 import { NameField, validateName } from './NameField.js';
 import { WritingStyleList, type WritingStyleSelection } from './WritingStyleList.js';
 import { SpecLanguageField, ConversationalLanguageField } from './LanguageFields.js';
-import { DirectoriesSection, type DirectoriesDraft } from './DirectoriesSection.js';
+import { DirectoriesSection, validatePagesDir } from './DirectoriesSection.js';
 
 export function OnboardingPage() {
   const navigate = useNavigate();
@@ -21,14 +22,10 @@ export function OnboardingPage() {
   // gate [Continue].
   const [language, setLanguage] = useState<string | null>(null);
   const [conversationalLanguage, setConversationalLanguage] = useState<string | null>(null);
-  // 0.1.56: optional directory overrides. Pre-filled from config; sent on Continue
-  // (also covers escape-hatch rerun pre-fill). Empty defaults until hydrated.
-  const [dirs, setDirs] = useState<DirectoriesDraft>({
-    pagesDir: '',
-    briefsDir: '',
-    patchesDir: '',
-    entitiesDir: '',
-  });
+  // 0.1.96: onboarding edits only the built-in `pages` root's dir. Pre-filled from
+  // config.roots (also covers escape-hatch rerun pre-fill); the full roots[] editor
+  // lives in Settings. Empty default until hydrated.
+  const [pagesDir, setPagesDir] = useState('');
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -41,12 +38,7 @@ export function OnboardingPage() {
       }
       setLanguage(config.language);
       setConversationalLanguage(config.agent?.conversationalLanguage ?? null);
-      setDirs({
-        pagesDir: config.pagesDir,
-        briefsDir: config.briefsDir,
-        patchesDir: config.patchesDir,
-        entitiesDir: config.entitiesDir,
-      });
+      setPagesDir(config.roots.find((r) => r.id === 'pages')?.dir ?? 'pages');
       setHydrated(true);
     }
   }, [config, hydrated]);
@@ -68,21 +60,26 @@ export function OnboardingPage() {
       return;
     }
     if (writingStyle === undefined) return;
+    if (validatePagesDir(pagesDir) !== null) return;
     try {
-      await patchConfig.mutateAsync({
+      const patchBody: ConfigPatch = {
         name: name.trim(),
         writingStyle,
         language,
         agent: { conversationalLanguage }, // deep-merged server-side; preserves claudeUsePreset
-        // 0.1.56: always send the (pre-filled or edited) directories. Unchanged
-        // values are an accepted no-op rebuild; a changed pagesDir rebuilds the
-        // context and the deferred welcome lands on the new path.
-        pagesDir: dirs.pagesDir,
-        briefsDir: dirs.briefsDir,
-        patchesDir: dirs.patchesDir,
-        entitiesDir: dirs.entitiesDir,
         onboardingCompleted: true,
-      });
+      };
+      // 0.1.96: send `roots` only if the pages dir actually changed — a full-array
+      // replace that swaps the built-in `pages` root's dir (all other roots and
+      // props preserved). A changed dir rebuilds the context and the deferred
+      // welcome lands on the new path.
+      const currentPagesDir = config?.roots.find((r) => r.id === 'pages')?.dir ?? 'pages';
+      if (config && pagesDir.trim() !== currentPagesDir) {
+        patchBody.roots = config.roots.map((r) =>
+          r.id === 'pages' ? { ...r, dir: pagesDir.trim() } : r,
+        );
+      }
+      await patchConfig.mutateAsync(patchBody);
       toast.success('Setup complete');
       navigate({ to: '/' });
     } catch (e) {
@@ -109,6 +106,7 @@ export function OnboardingPage() {
     nameError !== null ||
     writingStyle === undefined ||
     name.trim().length === 0 ||
+    validatePagesDir(pagesDir) !== null ||
     patchConfig.isPending;
 
   return (
@@ -165,8 +163,9 @@ export function OnboardingPage() {
         />
 
         <DirectoriesSection
-          draft={dirs}
-          onChange={(next) => setDirs((d) => ({ ...d, ...next }))}
+          pagesDir={pagesDir}
+          error={hydrated ? validatePagesDir(pagesDir) : null}
+          onChange={setPagesDir}
         />
 
         <div className="flex items-center justify-end gap-3 mt-2">

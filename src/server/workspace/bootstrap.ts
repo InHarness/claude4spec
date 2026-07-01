@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadOrCreateConfig, migrateConfigToV3, type Config } from '../config.js';
+import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type Config } from '../config.js';
 import { ensureExternalSkills } from '../external-skills/external-skills-service.js';
 import { ensureMcpJson } from '../mcp/ensure-mcp-json.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
@@ -75,8 +75,11 @@ export function bootstrapProject(
   });
   // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
   // the workspace registry (first-wins — an existing defaultPort stays).
-  const { config, carried } = migrateConfigToV3(cwd);
+  const { carried } = migrateConfigToV3(cwd);
   registry.carryDefaults(workspace.name, carried);
+  // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
+  // root (config.roots[]). Idempotent; no-op for already-v4 configs.
+  const { config } = migrateConfigToV4(cwd);
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
   ensureGitignore(cwd);

@@ -34,14 +34,21 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
   const ctx = await createContext(args);
   try {
     const tags = new TagsService(ctx.db);
-    // Honor the project's configured pagesDir (CLI flag > config.json > 'pages');
-    // for projects with pagesDir: '.' the walk roots at the project dir and the
-    // dotfile skip below excludes .claude4spec/.git (parity with PagesService).
-    const pagesDir = optionalString(args, 'pages') ?? readConfig(ctx.projectDir).pagesDir;
-    const pagesRoot = path.join(ctx.projectDir, pagesDir);
+    // Honor the project's configured page roots (CLI flag > config.roots). The
+    // reference walk spans every REFERENCE-VALIDATED root; a `--pages <dir>` flag
+    // overrides to a single dir. For a root at '.' the walk roots at the project
+    // dir and the dotfile skip below excludes .claude4spec/.git (parity with
+    // PagesService).
+    const override = optionalString(args, 'pages');
+    const dirs = override
+      ? [override]
+      : readConfig(ctx.projectDir)
+          .roots.filter((r) => r.referenceValidated)
+          .map((r) => r.dir);
+    const pageRoots = dirs.map((d) => path.join(ctx.projectDir, d));
     const hits = await findReferences(
       {
-        pages: { listPages: () => collectPages(pagesRoot) },
+        pages: { listPages: () => collectPages(pageRoots) },
         host: { entityExists: (t, s) => ctx.reader.getEntity(t as RawEntityType, s) != null },
         getEntityTagSlugs: (t, s) => tags.getEntityTagSlugs(t as EntityType, s),
       },
@@ -61,11 +68,11 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 }
 
 /**
- * Recursively collect `.md` pages under `pagesDir`, returning frontmatter-stripped
- * bodies with project-relative posix paths (parity with PagesService). A missing
- * `pages/` dir yields no refs.
+ * Recursively collect `.md` pages under each root dir, returning frontmatter-
+ * stripped bodies with root-relative posix paths (parity with PagesService). A
+ * missing dir yields no refs.
  */
-async function collectPages(pagesDir: string): Promise<ReferencePage[]> {
+async function collectPages(pageRoots: string[]): Promise<ReferencePage[]> {
   const out: ReferencePage[] = [];
   async function walk(absDir: string, rel: string): Promise<void> {
     let entries;
@@ -86,6 +93,8 @@ async function collectPages(pagesDir: string): Promise<ReferencePage[]> {
       }
     }
   }
-  await walk(pagesDir, '');
+  for (const root of pageRoots) {
+    await walk(root, '');
+  }
   return out;
 }

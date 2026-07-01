@@ -2,7 +2,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readConfig, writeConfig, configPath } from './config.js';
+import {
+  readConfig,
+  writeConfig,
+  configPath,
+  migrateConfigToV4,
+  validateRootDirs,
+  parseRootsArray,
+  builtinPagesRoot,
+} from './config.js';
 
 // 0.1.58: additive `description` field (string | null, 0–200). Type validation
 // lives in config.ts `validate()` (mirrors `language`); the 0–200 length cap is
@@ -209,5 +217,74 @@ describe('config — agent path scope (0.1.90)', () => {
     write({ claudeUsePreset: false });
     const merged = writeConfig(dir, { agent: { allowedPaths: ['/extra'] } });
     expect(merged.agent).toEqual({ claudeUsePreset: false, allowedPaths: ['/extra'] });
+  });
+});
+
+// 0.1.96 multiroot — config v4 (pagesDir → roots[]) migration + roots validation.
+describe('config — roots[] / v4 migration (0.1.96)', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+  const writeRaw = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(cfg));
+  };
+
+  it('migrateConfigToV4 maps a legacy pagesDir to the built-in pages root', () => {
+    writeRaw({ $schemaVersion: 3, name: 'X', pagesDir: 'docs', briefsDir: '.claude4spec/briefs' });
+    const { migrated, config } = migrateConfigToV4(dir);
+    expect(migrated).toBe(true);
+    expect(config.$schemaVersion).toBe(4);
+    const pages = config.roots.find((r) => r.id === 'pages');
+    expect(pages?.dir).toBe('docs');
+    expect(pages?.builtin).toBe(true);
+    // pagesDir is physically removed; briefsDir untouched.
+    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+    expect('pagesDir' in raw).toBe(false);
+    expect(raw.briefsDir).toBe('.claude4spec/briefs');
+    // idempotent: a second run is a no-op.
+    expect(migrateConfigToV4(dir).migrated).toBe(false);
+  });
+
+  it('readConfig synthesizes the pages root from a legacy pagesDir (in-memory forward-compat)', () => {
+    writeRaw({ $schemaVersion: 3, name: 'X', pagesDir: '.' });
+    const cfg = readConfig(dir);
+    expect(cfg.roots.find((r) => r.id === 'pages')?.dir).toBe('.');
+  });
+
+  it('validateRootDirs flags a hard overlap between a root and entitiesDir', () => {
+    const roots = [builtinPagesRoot('pages'), {
+      id: 'ent', name: 'Ent', dir: '.claude4spec/entities', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
+    }];
+    const { errors } = validateRootDirs(roots, {
+      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+    });
+    expect(errors.some((e) => e.includes('entitiesDir'))).toBe(true);
+  });
+
+  it('parseRootsArray rejects a dangling linkTargets id', () => {
+    expect(() => parseRootsArray([{ ...builtinPagesRoot(), linkTargets: ['ghost'] }])).toThrow(
+      /dangling link scope/,
+    );
+  });
+
+  it('parseRootsArray requires the built-in pages root', () => {
+    const userRoot = {
+      id: 'skills', name: 'Skills', dir: 'skills', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion', briefTarget: false,
+    };
+    expect(() => parseRootsArray([userRoot])).toThrow(/built-in 'pages' root is required/);
+  });
+
+  it('parseRootsArray rejects a root dir escaping cwd', () => {
+    expect(() => parseRootsArray([{ ...builtinPagesRoot('../evil') }])).toThrow(/relative path inside cwd/);
   });
 });

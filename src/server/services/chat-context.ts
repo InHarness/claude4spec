@@ -6,6 +6,7 @@ import type {
   Plan,
 } from '../../shared/entities.js';
 import path from 'node:path';
+import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 
@@ -103,8 +104,16 @@ export interface SystemPromptInput {
   host: ProjectPluginHost;
   projectName: string;
   cwd: string;
-  pagesDir: string;
+  /** 0.1.96 multiroot: every configured page root (replaces the single `pagesDir`).
+   *  Drives the `<project roots="…">` attr and the `<agent_path_scope>` allow-list. */
+  roots: Root[];
+  /** 0.1.96: brief store dir — rendered as `briefs=<dir>` in the `<project roots>` attr. */
+  briefsDir: string;
+  /** 0.1.96: patch store dir — rendered as `patches=<dir>` in the `<project roots>` attr. */
+  patchesDir: string;
   currentPagePath: string | null;
+  /** 0.1.96: which root the current page belongs to — the `root="…"` attr on `<current_page>`. */
+  currentPageRootId?: string;
   currentPageBody: string | null;
   pageCount: number;
   /** Counts indexed by entity-plugin type. Example: `{ endpoint: 12, dto: 5 }`. */
@@ -133,7 +142,7 @@ export interface SystemPromptInput {
    * 0.1.90: config-level agent FS path scope (the raw `allowedPaths`/`disallowedPaths`,
    * NOT the resolved/absolute lists). Drives the soft `<agent_path_scope>` block, which
    * is emitted only when at least one list is non-empty and only in chat/patch/ask frames
-   * (absent in brief). The block renders cwd/pagesDir itself.
+   * (absent in brief). The block renders cwd + every root dir itself.
    */
   agentPathScope?: { allowedPaths: string[]; disallowedPaths: string[] };
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
@@ -157,6 +166,26 @@ function attrs(o: Record<string, string | number | undefined | null>): string {
 
 function selfClose(name: string, attrsStr: string): string {
   return attrsStr ? `<${name} ${attrsStr}/>` : `<${name}/>`;
+}
+
+/**
+ * 0.1.96 multiroot: serialize the `roots="…"` attr on `<project>`. Format is a
+ * `;`-separated list of `id=dir` pairs: the built-in `pages` root first, then the
+ * two fixed write-target dirs (`briefs`/`patches` — NOT roots, but shown for the
+ * agent's spatial map), then every user root in `roots[]` order. Example:
+ * `pages=pages;briefs=.claude4spec/briefs;patches=.claude4spec/patches;adr=docs/adr`.
+ */
+function buildRootsAttr(roots: Root[], briefsDir: string, patchesDir: string): string {
+  const parts: string[] = [];
+  const pagesRoot = roots.find((r) => r.id === 'pages');
+  if (pagesRoot) parts.push(`pages=${pagesRoot.dir}`);
+  parts.push(`briefs=${briefsDir}`);
+  parts.push(`patches=${patchesDir}`);
+  for (const r of roots) {
+    if (r.id === 'pages') continue;
+    parts.push(`${r.id}=${r.dir}`);
+  }
+  return parts.join(';');
 }
 
 function buildEntityRows(pluginHost: ProjectPluginHost): string {
@@ -582,20 +611,23 @@ function buildConversationalLanguage(lang: string): string {
  * 0.1.90: soft filesystem-scope directive (config.agent.allowedPaths/disallowedPaths).
  * The HARD boundary is enforced natively by the agent-adapters sandbox; this block is the
  * directional guide and the only layer for adapters without a sandbox. ALLOWED lists `cwd`,
- * `pagesDir` (only when outside `cwd`), then the configured `allowedPaths`; DISALLOWED lists
- * the configured `disallowedPaths` (precedence). Empty lists are omitted from their line.
+ * every root dir (only when outside `cwd`), then the configured `allowedPaths`; DISALLOWED
+ * lists the configured `disallowedPaths` (precedence). Empty lists are omitted from their line.
  * Caller gates on `allowedPaths.length || disallowedPaths.length` and on a non-brief frame.
  */
 function buildAgentPathScope(
   scope: { allowedPaths: string[]; disallowedPaths: string[] },
   cwd: string,
-  pagesDir: string,
+  roots: Root[],
 ): string {
-  // pagesDir may be relative (e.g. '.' or 'pages') — resolve against cwd before the
-  // inside check, mirroring the M05 resolver, so a nested pages dir is correctly omitted.
-  const pagesAbs = path.resolve(cwd, pagesDir);
-  const pagesOutsideCwd = !isInside(cwd, pagesAbs);
-  const allowed = [cwd, ...(pagesOutsideCwd ? [pagesAbs] : []), ...scope.allowedPaths];
+  // Root dirs may be relative (e.g. '.' or 'pages') — resolve against cwd before the
+  // inside check, mirroring the M05 resolver, so a nested root dir is correctly omitted.
+  const rootExtras = [
+    ...new Set(
+      roots.map((r) => path.resolve(cwd, r.dir)).filter((rootAbs) => !isInside(cwd, rootAbs)),
+    ),
+  ];
+  const allowed = [cwd, ...rootExtras, ...scope.allowedPaths];
   const lines = [
     `<agent_path_scope>`,
     `You are scoped to this project's filesystem. The hard boundary is enforced natively by the agent sandbox; this block is the directional guide.`,
@@ -736,22 +768,23 @@ function buildBriefSystemPrompt(input: {
 
 const CURRENT_PAGE_PREVIEW_LINES = 40;
 
-function buildCurrentPage(path: string, body: string | null): string {
+function buildCurrentPage(path: string, body: string | null, root: string): string {
   if (body === null) {
-    return selfClose('current_page', attrs({ path, unavailable: 'true' }));
+    return selfClose('current_page', attrs({ path, root, unavailable: 'true' }));
   }
   if (body.trim() === '') {
-    return selfClose('current_page', attrs({ path, empty: 'true' }));
+    return selfClose('current_page', attrs({ path, root, empty: 'true' }));
   }
   const lines = body.split('\n');
   const totalLines = lines.length;
   if (totalLines <= CURRENT_PAGE_PREVIEW_LINES) {
-    return `<current_page ${attrs({ path, total_lines: totalLines })}>\n${body}\n</current_page>`;
+    return `<current_page ${attrs({ path, root, total_lines: totalLines })}>\n${body}\n</current_page>`;
   }
   const preview = lines.slice(0, CURRENT_PAGE_PREVIEW_LINES).join('\n');
   const remaining = totalLines - CURRENT_PAGE_PREVIEW_LINES;
   return `<current_page ${attrs({
     path,
+    root,
     total_lines: totalLines,
     preview_lines: `1-${CURRENT_PAGE_PREVIEW_LINES}`,
   })}>
@@ -799,8 +832,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     host,
     projectName,
     cwd,
-    pagesDir,
+    roots,
+    briefsDir,
+    patchesDir,
     currentPagePath,
+    currentPageRootId = 'pages',
     currentPageBody,
     pageCount,
     entityCounts,
@@ -834,13 +870,13 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   parts.push(buildIdentity(host, projectName));
 
-  // Project self-close — env metadata (cwd, pagesDir) before counters, then
+  // Project self-close — env metadata (cwd, roots) before counters, then
   // entity attrs in displayOrder, with `tags` last:
-  // (name, cwd, pagesDir, pages, sections, [entities...], tags).
+  // (name, cwd, roots, pages, sections, [entities...], tags).
   const projectAttrs: Record<string, string | number> = {
     name: projectName,
     cwd,
-    pagesDir,
+    roots: buildRootsAttr(roots, briefsDir, patchesDir),
     pages: pageCount,
     sections: sectionCount,
   };
@@ -888,7 +924,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // (base-only ⇒ no block). This sits on the non-brief path (brief frame returned
   // early above), so the block is present in chat/patch/ask and absent in brief.
   if (agentPathScope && (agentPathScope.allowedPaths.length || agentPathScope.disallowedPaths.length)) {
-    parts.push(buildAgentPathScope(agentPathScope, cwd, pagesDir));
+    parts.push(buildAgentPathScope(agentPathScope, cwd, roots));
   }
 
   // M23: patch-resolution thread. The patch file (a coding agent's feedback
@@ -903,7 +939,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // peer's spec headlessly, with no "current page" anchor. (In practice the
   // headless turn passes no page anyway; this guard makes the contract explicit.)
   if (contextType !== 'ask' && currentPagePath) {
-    parts.push(buildCurrentPage(currentPagePath, currentPageBody));
+    parts.push(buildCurrentPage(currentPagePath, currentPageBody, currentPageRootId));
   }
 
   if (annotations.length > 0) {

@@ -8,6 +8,8 @@
 
 /** A single markdown page: its project-relative path and frontmatter-stripped body. */
 export interface ReferencePage {
+  /** 0.1.96: which root this page came from (default 'pages' for single-root sources). */
+  rootId?: string;
   path: string;
   body: string;
 }
@@ -44,6 +46,8 @@ export interface FindReferencesOptions {
  * MCP/CLI keep `via`, drop `raw`).
  */
 export interface SupersetHit {
+  /** 0.1.96: which root the referencing page lives in (default 'pages'). */
+  rootId: string;
   pagePath: string;
   tagType: string;
   line: number;

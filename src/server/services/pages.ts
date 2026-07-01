@@ -6,9 +6,12 @@ import { isMarkdownPath } from '../../shared/page-files.js';
 
 export class PagesService {
   readonly root: string;
+  /** 0.1.96: which root this service serves ('pages' | user slug | 'brief' | 'patch'). */
+  readonly rootId: string;
 
-  constructor(cwd: string, pagesDir: string = 'pages') {
+  constructor(cwd: string, pagesDir: string = 'pages', rootId: string = 'pages') {
     this.root = path.join(cwd, pagesDir);
+    this.rootId = rootId;
   }
 
   async ensureRoot(): Promise<void> {

@@ -31,101 +31,116 @@ export class PagesLinkIndexerService {
   private debounceMs = 300;
   private pending = new Map<string, NodeJS.Timeout>();
 
+  // 0.1.96: all maps keyed by composite `${rootId}:${path}`. Resolution is
+  // scoped to the source root only (default linkTargets: [] ⇒ today's behaviour);
+  // cross-root `@`-autocomplete scope is applied client-side by the editor.
   private byPath = new Map<string, FileMeta>();
   private linkIndex = new Map<string, PageLink[]>();
   private reverseIndex = new Map<string, Set<string>>();
   private unresolved = new Map<string, UnresolvedMention[]>();
 
-  constructor(private pages: PagesService, private ws: WsEmitter) {}
+  constructor(private roots: Map<string, PagesService>, private ws: WsEmitter) {}
+
+  private key(rootId: string, relPath: string): string {
+    return `${rootId}:${relPath}`;
+  }
 
   async indexAll(): Promise<void> {
-    const files = await this.pages.listMarkdownFiles();
-    for (const rel of files) {
-      await this.parseAndStoreMeta(rel);
-    }
-    for (const rel of files) {
-      await this.parseAndStoreLinks(rel, { silent: true });
+    let fileCount = 0;
+    for (const [rootId, svc] of this.roots) {
+      const files = await svc.listMarkdownFiles();
+      for (const rel of files) await this.parseAndStoreMeta(rootId, rel);
+      for (const rel of files) await this.parseAndStoreLinks(rootId, rel, { silent: true });
+      fileCount += files.length;
     }
     console.log(
-      `[pages-link-indexer] indexed ${files.length} pages, ${this.totalLinksCount()} links, ${this.unresolvedCount()} unresolved`
+      `[pages-link-indexer] indexed ${fileCount} pages, ${this.totalLinksCount()} links, ${this.unresolvedCount()} unresolved`
     );
   }
 
-  schedulePage(relPath: string): void {
-    const prev = this.pending.get(relPath);
+  schedulePage(rootId: string, relPath: string): void {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
     if (prev) clearTimeout(prev);
     const timer = setTimeout(() => {
-      this.pending.delete(relPath);
-      this.indexPage(relPath).catch((err) => {
-        console.error(`[pages-link-indexer] failed to index ${relPath}:`, err);
+      this.pending.delete(k);
+      this.indexPage(rootId, relPath).catch((err) => {
+        console.error(`[pages-link-indexer] failed to index ${k}:`, err);
       });
     }, this.debounceMs);
-    this.pending.set(relPath, timer);
+    this.pending.set(k, timer);
   }
 
-  handleUnlink(relPath: string): void {
-    const prev = this.pending.get(relPath);
+  handleUnlink(rootId: string, relPath: string): void {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
     if (prev) {
       clearTimeout(prev);
-      this.pending.delete(relPath);
+      this.pending.delete(k);
     }
-    const hadMeta = this.byPath.delete(relPath);
-    this.clearSourceLinks(relPath);
-    if (this.unresolved.delete(relPath)) {
-      // noop; counted via broadcast below
-    }
+    const hadMeta = this.byPath.delete(k);
+    this.clearSourceLinks(k);
+    this.unresolved.delete(k);
     // Other pages may now point at a non-existent target; let their own events resolve later.
     if (hadMeta) {
-      this.ws.broadcast({ kind: 'pageLinks:changed', sourcePath: relPath });
+      this.ws.broadcast({ kind: 'pageLinks:changed', rootId, sourcePath: relPath });
     }
   }
 
-  private async indexPage(relPath: string): Promise<void> {
-    const prevMeta = this.byPath.get(relPath);
-    const metaChanged = await this.parseAndStoreMeta(relPath);
-    const linksChanged = await this.parseAndStoreLinks(relPath);
-    const exists = this.byPath.has(relPath);
+  private async indexPage(rootId: string, relPath: string): Promise<void> {
+    const k = this.key(rootId, relPath);
+    const prevMeta = this.byPath.get(k);
+    const metaChanged = await this.parseAndStoreMeta(rootId, relPath);
+    const linksChanged = await this.parseAndStoreLinks(rootId, relPath);
+    const exists = this.byPath.has(k);
     if (!exists && prevMeta) {
-      this.handleUnlink(relPath);
+      this.handleUnlink(rootId, relPath);
       return;
     }
     if (metaChanged || linksChanged) {
-      this.ws.broadcast({ kind: 'pageLinks:changed', sourcePath: relPath });
+      this.ws.broadcast({ kind: 'pageLinks:changed', rootId, sourcePath: relPath });
     }
   }
 
-  private async parseAndStoreMeta(relPath: string): Promise<boolean> {
+  private async parseAndStoreMeta(rootId: string, relPath: string): Promise<boolean> {
+    const k = this.key(rootId, relPath);
+    const svc = this.roots.get(rootId);
+    if (!svc) return this.byPath.delete(k);
     let page;
     try {
-      page = await this.pages.read(relPath);
+      page = await svc.read(relPath);
     } catch {
-      return this.byPath.delete(relPath);
+      return this.byPath.delete(k);
     }
     const title = extractTitle(relPath, page.frontmatter, page.body);
     const anchors = extractAnchors(page.body);
-    const prev = this.byPath.get(relPath);
+    const prev = this.byPath.get(k);
     const next: FileMeta = { path: relPath, title, anchors };
-    this.byPath.set(relPath, next);
+    this.byPath.set(k, next);
     return !prev || !sameMeta(prev, next);
   }
 
   private async parseAndStoreLinks(
+    rootId: string,
     relPath: string,
     opts: { silent?: boolean } = {}
   ): Promise<boolean> {
     void opts;
+    const k = this.key(rootId, relPath);
+    const svc = this.roots.get(rootId);
+    if (!svc) return this.clearSourceLinks(k);
     let page;
     try {
-      page = await this.pages.read(relPath);
+      page = await svc.read(relPath);
     } catch {
-      return this.clearSourceLinks(relPath);
+      return this.clearSourceLinks(k);
     }
     const parsed = parseLinks(page.body);
     const resolvedLinks: PageLink[] = [];
     const unresolvedEntries: UnresolvedMention[] = [];
 
     for (const cand of parsed.candidates) {
-      const hit = this.resolve(cand.targetPath, relPath);
+      const hit = this.resolve(cand.targetPath, relPath, rootId);
       if (!hit) {
         if (cand.syntax === 'at' || cand.syntax === 'link') {
           unresolvedEntries.push({
@@ -148,20 +163,20 @@ export class PagesLinkIndexerService {
       });
     }
 
-    const prevLinks = this.linkIndex.get(relPath) ?? [];
-    const prevUnresolved = this.unresolved.get(relPath) ?? [];
+    const prevLinks = this.linkIndex.get(k) ?? [];
+    const prevUnresolved = this.unresolved.get(k) ?? [];
 
     let changed = !sameLinks(prevLinks, resolvedLinks);
     if (!changed) changed = !sameUnresolved(prevUnresolved, unresolvedEntries);
 
-    // Update reverse index: remove old targets contributed by relPath, add new.
-    const oldTargets = new Set(prevLinks.map((l) => l.targetPath));
-    const newTargets = new Set(resolvedLinks.map((l) => l.targetPath));
+    // Reverse index keyed by composite target `${rootId}:${targetPath}` (self-scope).
+    const oldTargets = new Set(prevLinks.map((l) => this.key(rootId, l.targetPath)));
+    const newTargets = new Set(resolvedLinks.map((l) => this.key(rootId, l.targetPath)));
     for (const t of oldTargets) {
       if (!newTargets.has(t)) {
         const srcs = this.reverseIndex.get(t);
         if (srcs) {
-          srcs.delete(relPath);
+          srcs.delete(k);
           if (srcs.size === 0) this.reverseIndex.delete(t);
         }
       }
@@ -172,34 +187,37 @@ export class PagesLinkIndexerService {
         srcs = new Set();
         this.reverseIndex.set(t, srcs);
       }
-      srcs.add(relPath);
+      srcs.add(k);
     }
 
-    if (resolvedLinks.length === 0) this.linkIndex.delete(relPath);
-    else this.linkIndex.set(relPath, resolvedLinks);
-    if (unresolvedEntries.length === 0) this.unresolved.delete(relPath);
-    else this.unresolved.set(relPath, unresolvedEntries);
+    if (resolvedLinks.length === 0) this.linkIndex.delete(k);
+    else this.linkIndex.set(k, resolvedLinks);
+    if (unresolvedEntries.length === 0) this.unresolved.delete(k);
+    else this.unresolved.set(k, unresolvedEntries);
     return changed;
   }
 
-  private clearSourceLinks(relPath: string): boolean {
-    const prev = this.linkIndex.get(relPath);
+  private clearSourceLinks(sourceKey: string): boolean {
+    const rootId = sourceKey.slice(0, sourceKey.indexOf(':'));
+    const prev = this.linkIndex.get(sourceKey);
     if (!prev) {
-      return this.unresolved.delete(relPath);
+      return this.unresolved.delete(sourceKey);
     }
     for (const l of prev) {
-      const srcs = this.reverseIndex.get(l.targetPath);
+      const t = this.key(rootId, l.targetPath);
+      const srcs = this.reverseIndex.get(t);
       if (srcs) {
-        srcs.delete(relPath);
-        if (srcs.size === 0) this.reverseIndex.delete(l.targetPath);
+        srcs.delete(sourceKey);
+        if (srcs.size === 0) this.reverseIndex.delete(t);
       }
     }
-    this.linkIndex.delete(relPath);
-    this.unresolved.delete(relPath);
+    this.linkIndex.delete(sourceKey);
+    this.unresolved.delete(sourceKey);
     return true;
   }
 
-  resolve(candidate: string, sourcePath?: string): { path: string; anchor?: string } | null {
+  /** Resolve a candidate path within the SAME root (self-scope). */
+  resolve(candidate: string, sourcePath: string, rootId: string): { path: string; anchor?: string } | null {
     if (!candidate) return null;
     const hashIdx = candidate.indexOf('#');
     const rawPath = hashIdx >= 0 ? candidate.slice(0, hashIdx) : candidate;
@@ -207,38 +225,40 @@ export class PagesLinkIndexerService {
     const stripped = rawPath.replace(/^\/+/, '');
     if (!stripped) return null;
 
+    const has = (p: string): boolean => this.byPath.has(this.key(rootId, p));
+
     if (sourcePath) {
       const dir = path.posix.dirname(sourcePath);
       const joined = path.posix.normalize(path.posix.join(dir, stripped));
       if (!joined.startsWith('..') && !joined.startsWith('/')) {
-        if (this.byPath.has(joined)) return { path: joined, anchor };
-        if (this.byPath.has(joined + '.md')) return { path: joined + '.md', anchor };
+        if (has(joined)) return { path: joined, anchor };
+        if (has(joined + '.md')) return { path: joined + '.md', anchor };
       }
     }
 
     const normalized = path.posix.normalize(stripped);
     if (normalized.startsWith('..') || normalized.startsWith('/')) return null;
-    if (this.byPath.has(normalized)) return { path: normalized, anchor };
-    if (this.byPath.has(normalized + '.md')) return { path: normalized + '.md', anchor };
+    if (has(normalized)) return { path: normalized, anchor };
+    if (has(normalized + '.md')) return { path: normalized + '.md', anchor };
     return null;
   }
 
-  getFileMeta(relPath: string): FileMeta | undefined {
-    return this.byPath.get(relPath);
+  getFileMeta(rootId: string, relPath: string): FileMeta | undefined {
+    return this.byPath.get(this.key(rootId, relPath));
   }
 
-  getLinks(relPath: string): PageLink[] {
-    return this.linkIndex.get(relPath) ?? [];
+  getLinks(rootId: string, relPath: string): PageLink[] {
+    return this.linkIndex.get(this.key(rootId, relPath)) ?? [];
   }
 
-  getReverseLinks(relPath: string): string[] {
-    const srcs = this.reverseIndex.get(relPath);
+  getReverseLinks(rootId: string, relPath: string): string[] {
+    const srcs = this.reverseIndex.get(this.key(rootId, relPath));
     if (!srcs) return [];
     return [...srcs].sort();
   }
 
-  getUnresolved(relPath: string): UnresolvedMention[] {
-    return this.unresolved.get(relPath) ?? [];
+  getUnresolved(rootId: string, relPath: string): UnresolvedMention[] {
+    return this.unresolved.get(this.key(rootId, relPath)) ?? [];
   }
 
   allLinks(): Record<string, PageLink[]> {

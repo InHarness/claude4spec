@@ -25,7 +25,8 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import { DomainError } from './tags.js';
-import { readConfig, writeConfig, type Config } from '../config.js';
+import { readConfig, writeConfig, builtinPagesRoot, type Config } from '../config.js';
+import type { Root } from '../../shared/types.js';
 import {
   RemoteRequestError,
   type RemoteHttpClient,
@@ -33,7 +34,7 @@ import {
   type SnapshotDownloadResult,
 } from './remote-http-client.js';
 import type { ReleaseService } from './release.js';
-import { readBundleMeta, sha256File } from './release-bundle.js';
+import { readBundleMeta, sha256File, type BundleConfig } from './release-bundle.js';
 import type { ReleaseImportResponse } from '../../shared/release-import.js';
 
 interface ReleaseImportRow {
@@ -157,6 +158,11 @@ export class ReleaseImportService {
         onboardingCompleted: true,
       };
       if (bundleConfig?.entities !== undefined) patch.entities = bundleConfig.entities;
+      // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
+      // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
+      // root via the v3→v4 path so the cloned project is v4-shaped.
+      const restoredRoots = resolveBundleRoots(bundleConfig);
+      if (restoredRoots) patch.roots = restoredRoots;
       writeConfig(this.cwd, patch);
 
       // 9. Audit success.
@@ -258,7 +264,12 @@ export class ReleaseImportService {
 export function rollbackClone(
   cwd: string,
   opts: {
-    pagesDir: string;
+    /**
+     * 0.1.96: dirs (relative to `cwd`) of every releasable root the restore
+     * created — was the single `pagesDir` scalar. Each is wholly a restore
+     * mutation of this run (ensureBootstrap is skipped for clone).
+     */
+    rootDirs: string[];
     configCreated: boolean;
     claudeDirCreated: boolean;
     gitignoreCreated: boolean;
@@ -274,14 +285,28 @@ export function rollbackClone(
   for (const dir of [claudeDir, ...(opts.dbSlotDir ? [opts.dbSlotDir] : [])]) {
     for (const f of ['db.sqlite', 'db.sqlite-wal', 'db.sqlite-shm']) rm(path.join(dir, f));
   }
-  // pages/ + restored files — ensureBootstrap is skipped for clone, so pages/ is
-  // wholly a restore mutation of this run.
-  rm(path.join(cwd, opts.pagesDir));
+  // Each releasable root's dir + restored files.
+  for (const dir of opts.rootDirs) rm(path.join(cwd, dir));
   // Run-created scaffolding only — a pre-existing config.json / .claude4spec/ /
   // .gitignore (we'd have only appended to the last) is left untouched.
   if (opts.configCreated) rm(path.join(claudeDir, 'config.json')); // M01 step 5
   if (opts.gitignoreCreated) rm(path.join(cwd, '.gitignore')); // M01 ensureGitignore
   if (opts.claudeDirCreated) rm(claudeDir); // M01 step 3
+}
+
+/**
+ * Resolve the releasable roots to persist into a cloned project's config. A v2
+ * bundle carries `roots[]` directly; a v1 bundle carries only the legacy
+ * `pagesDir` scalar → map it to the built-in 'pages' root (the v3→v4 path).
+ */
+function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefined {
+  if (!bundleConfig) return undefined;
+  if (Array.isArray(bundleConfig.roots) && bundleConfig.roots.length > 0) {
+    return bundleConfig.roots;
+  }
+  const legacyDir = (bundleConfig as { pagesDir?: string }).pagesDir;
+  if (typeof legacyDir === 'string') return [builtinPagesRoot(legacyDir)];
+  return undefined;
 }
 
 /** Map a remote-client failure to a clone DomainError (404 ⇒ not-found). */

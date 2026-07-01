@@ -4,21 +4,22 @@ import { ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
 import { useHtmlViewerStore } from '../state/htmlViewer.js';
 
 interface Props {
+  rootId: string;
   path: string;
 }
 
 /**
- * M30 (L5): read-only preview of a static `.html` file from `pagesDir`.
+ * M30 (L5): read-only preview of a static `.html` file from a page root.
  *
- * The raw HTML is served by `GET /api/static/<path>` (same origin as the app) and loaded
- * into a sandboxed iframe. `sandbox="allow-scripts"` deliberately OMITS `allow-same-origin`,
- * so the page gets an opaque origin: in-page JS runs and relative assets load, but it has no
- * cookies/localStorage, no same-origin fetch, and no access to `window.parent`.
+ * The raw HTML is served by `GET /api/static/:rootId/<path>` (same origin as the app) and
+ * loaded into a sandboxed iframe. `sandbox="allow-scripts"` deliberately OMITS
+ * `allow-same-origin`, so the page gets an opaque origin: in-page JS runs and relative assets
+ * load, but it has no cookies/localStorage, no same-origin fetch, and no access to `window.parent`.
  *
  * No HTML editing/rename/delete in v1. Expand/collapse is an in-app overlay (not the native
  * Fullscreen API) backed by local UI state outside the URL.
  */
-export function HtmlViewer({ path }: Props) {
+export function HtmlViewer({ rootId, path }: Props) {
   const segments = path.split('/');
   const expanded = useHtmlViewerStore((s) => s.expanded);
   const toggleExpanded = useHtmlViewerStore((s) => s.toggleExpanded);
@@ -30,7 +31,7 @@ export function HtmlViewer({ path }: Props) {
   }, [path, setExpanded]);
 
   // Encode each path segment so spaces / unicode resolve, while keeping `/` separators.
-  const src = `${API_BASE}/static/${segments.map(encodeURIComponent).join('/')}`;
+  const src = `${API_BASE}/static/${encodeURIComponent(rootId)}/${segments.map(encodeURIComponent).join('/')}`;
 
   const frame = (
     <iframe

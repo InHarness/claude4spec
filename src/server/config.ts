@@ -1,10 +1,17 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS } from '../shared/types.js';
 
 export interface Config {
   $schemaVersion: number;
   name: string;
-  pagesDir: string;
+  /**
+   * 0.1.96 multiroot: ordered list of named page roots. The built-in `'pages'`
+   * root (`builtin: true`) is always present. Replaces the single `pagesDir`
+   * scalar. Briefs/patches are NOT roots — they stay as `briefsDir`/`patchesDir`
+   * scalars below.
+   */
+  roots: Root[];
   /**
    * M21: catalog of brief files (relative to cwd, default `.claude4spec/briefs`).
    * Same validation as `pagesDir` (must be relative, must not escape cwd).
@@ -140,21 +147,36 @@ export interface ConfigCliArgs {
 
 /**
  * v3 (M31): `port`/`mode` left the project config — they are workspace
- * settings now (`~/.claude4spec/workspaces.json`). Stale keys in older files
- * are silently ignored on read (same tolerance as v1→v2) and physically
- * removed by `migrateConfigToV3` at project activation.
+ * settings now (`~/.claude4spec/workspaces.json`).
+ * v4 (0.1.96): `pagesDir` scalar replaced by `roots[]` (a list of named page
+ * roots). Migrated by `migrateConfigToV4` at project activation.
  */
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
+
+/** Directories the app WRITES to; a root's `dir` overlapping one is a hard error. */
+export const RESERVED_WRITE_TARGETS = ['.claude4spec/skills', '.claude4spec/plugins'] as const;
 
 export function configPath(cwd: string): string {
   return path.join(cwd, '.claude4spec', 'config.json');
+}
+
+/** The built-in `pages` root with full behaviour, dir defaulting to 'pages'. */
+export function builtinPagesRoot(dir: string = 'pages'): Root {
+  return {
+    id: 'pages',
+    name: 'Pages',
+    dir,
+    builtin: true,
+    ...DEFAULT_PAGES_ROOT_PROPS,
+    linkTargets: [...DEFAULT_PAGES_ROOT_PROPS.linkTargets],
+  };
 }
 
 export function defaults(cwd: string): Config {
   return {
     $schemaVersion: CURRENT_SCHEMA_VERSION,
     name: path.basename(cwd),
-    pagesDir: 'pages',
+    roots: [builtinPagesRoot()],
     briefsDir: '.claude4spec/briefs',
     patchesDir: '.claude4spec/patches',
     entitiesDir: '.claude4spec/entities',
@@ -184,6 +206,170 @@ function typeError(field: string, expected: string, got: unknown): Error {
   return new Error(`config.json: field '${field}' expected ${expected}, got ${got === null ? 'null' : typeof got}`);
 }
 
+/** A cwd-relative dir must not be absolute nor escape cwd via `..`. */
+function isPathSafeRelative(dir: string): boolean {
+  if (typeof dir !== 'string' || dir.trim() === '') return false;
+  if (path.isAbsolute(dir)) return false;
+  const norm = path.normalize(dir);
+  if (norm === '..' || norm.startsWith('..' + path.sep) || norm.includes(path.sep + '..' + path.sep)) return false;
+  return true;
+}
+
+/** Normalize a cwd-relative dir for overlap comparison (trailing slash stripped). */
+function normDir(dir: string): string {
+  const n = path.normalize(dir).replace(/[\\/]+$/, '');
+  return n === '.' ? '' : n;
+}
+
+/** True when `child` equals or is nested under `parent` (both normalized). */
+function isInsideDir(parent: string, child: string): boolean {
+  if (parent === child) return true;
+  if (parent === '') return true; // cwd root contains everything
+  return child.startsWith(parent + path.sep);
+}
+
+/** True when any segment of a relative path starts with '.' (dot-dir the pages walker skips). */
+function hasDotSegment(rel: string): boolean {
+  return rel.split(path.sep).some((s) => s.startsWith('.'));
+}
+
+/**
+ * True when a page root at `rootDir` genuinely conflicts with `otherDir`:
+ *  - equal dirs, or
+ *  - the root sits inside `otherDir` (its own files would live under a write-target), or
+ *  - `otherDir` sits inside the root AND is reachable by the pages walker (no dot-dir
+ *    segment on the way — the walker skips `.`-prefixed directories, so a root at '.'
+ *    does NOT actually index `.claude4spec/*`).
+ */
+export function dirsOverlap(rootDir: string, otherDir: string): boolean {
+  const na = normDir(rootDir);
+  const nb = normDir(otherDir);
+  if (na === nb) return true;
+  if (isInsideDir(nb, na)) return true; // root nested under other
+  if (isInsideDir(na, nb)) {
+    const rel = na === '' ? nb : path.relative(na, nb);
+    return !hasDotSegment(rel); // other under root — a hazard only if the walker reaches it
+  }
+  return false;
+}
+
+/**
+ * 0.1.96: cross-field validation of `roots[]` dirs against each other and the
+ * other write/read targets. Returns hard `errors` (→ 400 / boot throw) and
+ * `warnings` (log-only). Kept separate from `validate()` because it needs the
+ * fully-merged config (entitiesDir/briefsDir/patchesDir), not a partial.
+ */
+export function validateRootDirs(
+  roots: Root[],
+  opts: { entitiesDir: string; briefsDir: string; patchesDir: string },
+): { errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  const hardTargets: Array<{ id: string; dir: string }> = [
+    { id: 'entitiesDir', dir: opts.entitiesDir },
+    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
+  ];
+  for (let i = 0; i < roots.length; i++) {
+    const r = roots[i]!;
+    // overlap vs other roots (hard)
+    for (let j = i + 1; j < roots.length; j++) {
+      const other = roots[j]!;
+      if (dirsOverlap(r.dir, other.dir)) {
+        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${other.id}'`);
+      }
+    }
+    // overlap vs entitiesDir / skills / plugins (hard)
+    for (const t of hardTargets) {
+      if (dirsOverlap(r.dir, t.dir)) {
+        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${t.id}'`);
+      }
+    }
+    // overlap vs briefsDir / patchesDir (warning). '.claude/skills' overlap is allowed.
+    if (dirsOverlap(r.dir, opts.briefsDir)) {
+      warnings.push(`config.json: root '${r.id}' dir overlaps briefsDir — pages may appear in both`);
+    }
+    if (dirsOverlap(r.dir, opts.patchesDir)) {
+      warnings.push(`config.json: root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
+    }
+  }
+  return { errors, warnings };
+}
+
+/**
+ * Structural validation of a raw `roots[]` value: each element well-typed +
+ * path-safe, ids unique, linkTargets reference existing roots, and the built-in
+ * `pages` root present with sidebar 'accordion'. Throws on any violation. Shared
+ * by `validate()` (boot/read) and the PATCH /api/config route (→ 400).
+ */
+export function parseRootsArray(raw: unknown): Root[] {
+  if (!Array.isArray(raw)) throw typeError('roots', 'Root[]', raw);
+  const roots = raw.map((r, i) => validateRoot(r, i));
+  const seen = new Set<string>();
+  for (const root of roots) {
+    if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
+    seen.add(root.id);
+  }
+  // linkTargets must reference existing root ids ("dangling link scope").
+  for (const root of roots) {
+    for (const t of root.linkTargets) {
+      if (!seen.has(t)) {
+        throw new Error(`config.json: root '${root.id}' has dangling link scope '${t}'`);
+      }
+    }
+  }
+  const pagesRoot = roots.find((x) => x.id === 'pages');
+  if (!pagesRoot) throw new Error(`config.json: built-in 'pages' root is required`);
+  if (pagesRoot.sidebar !== 'accordion') {
+    throw new Error(`config.json: built-in 'pages' root must have sidebar 'accordion'`);
+  }
+  return roots;
+}
+
+const VALID_SIDEBAR = new Set<RootSidebar>(['accordion', 'hidden']);
+
+/** Structural validation of one raw `roots[]` element. Throws on any violation. */
+function validateRoot(raw: unknown, index: number): Root {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw typeError(`roots[${index}]`, 'object', raw);
+  }
+  const r = raw as Record<string, unknown>;
+  const str = (k: string): string => {
+    if (typeof r[k] !== 'string' || (r[k] as string).trim() === '') {
+      throw typeError(`roots[${index}].${k}`, 'non-empty string', r[k]);
+    }
+    return r[k] as string;
+  };
+  const bool = (k: string): boolean => {
+    if (typeof r[k] !== 'boolean') throw typeError(`roots[${index}].${k}`, 'boolean', r[k]);
+    return r[k] as boolean;
+  };
+  const id = str('id');
+  const name = str('name');
+  const dir = str('dir');
+  if (!isPathSafeRelative(dir)) {
+    throw new Error(`config.json: root '${id}' dir '${dir}' must be a relative path inside cwd`);
+  }
+  const sidebar = r.sidebar;
+  if (typeof sidebar !== 'string' || !VALID_SIDEBAR.has(sidebar as RootSidebar)) {
+    throw new Error(`config.json: root '${id}' sidebar expected 'accordion' | 'hidden', got ${JSON.stringify(sidebar)}`);
+  }
+  if (!Array.isArray(r.linkTargets) || !r.linkTargets.every((x) => typeof x === 'string')) {
+    throw typeError(`roots[${index}].linkTargets`, 'string[]', r.linkTargets);
+  }
+  return {
+    id,
+    name,
+    dir,
+    builtin: bool('builtin'),
+    releasable: bool('releasable'),
+    sectionIndexed: bool('sectionIndexed'),
+    referenceValidated: bool('referenceValidated'),
+    linkTargets: r.linkTargets as string[],
+    sidebar: sidebar as RootSidebar,
+    briefTarget: bool('briefTarget'),
+  };
+}
+
 function validate(raw: unknown): Partial<Config> {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new Error(`config.json: expected JSON object at root, got ${Array.isArray(raw) ? 'array' : raw === null ? 'null' : typeof raw}`);
@@ -205,9 +391,8 @@ function validate(raw: unknown): Partial<Config> {
   }
   // 'port' / 'mode' (pre-v3) are intentionally NOT validated nor copied —
   // stale keys are silently ignored, physically removed by migrateConfigToV3.
-  if ('pagesDir' in r) {
-    if (typeof r.pagesDir !== 'string') throw typeError('pagesDir', 'string', r.pagesDir);
-    out.pagesDir = r.pagesDir;
+  if ('roots' in r) {
+    out.roots = parseRootsArray(r.roots);
   }
   if ('briefsDir' in r) {
     if (typeof r.briefsDir !== 'string') throw typeError('briefsDir', 'string', r.briefsDir);
@@ -394,6 +579,34 @@ export interface LoadResult {
 }
 
 /**
+ * v3→v4 forward-compat (in-memory): if a raw config predates `roots[]` but has a
+ * legacy string `pagesDir`, synthesize the built-in `pages` root from it so
+ * readers see the configured dir before the physical `migrateConfigToV4` runs.
+ */
+function legacyRootsFromRaw(raw: Record<string, unknown>): Root[] | undefined {
+  if (Array.isArray(raw.roots)) return undefined;
+  if (typeof raw.pagesDir === 'string' && raw.pagesDir.trim() !== '') {
+    return [builtinPagesRoot(raw.pagesDir)];
+  }
+  return undefined;
+}
+
+/** Apply the CLI `--pages` override to the built-in `pages` root's dir (in place, returns a copy). */
+function applyPagesDirOverride(config: Config, pagesDir: string | undefined): Config {
+  if (pagesDir == null) return config;
+  return {
+    ...config,
+    roots: config.roots.map((r) => (r.id === 'pages' ? { ...r, dir: pagesDir } : r)),
+  };
+}
+
+/** Split ConfigCliArgs into the Config patch (name/remoteApiUrl) and the special `--pages` override. */
+function splitCli(cli: ConfigCliArgs): { patch: Partial<Config>; pagesDir?: string } {
+  const { pagesDir, ...rest } = cli;
+  return { patch: pickDefined(rest) as Partial<Config>, pagesDir };
+}
+
+/**
  * Pure disk read configu — bez side-effectow (mkdir/atomic write/CLI merge).
  * Uzywany przez SkillResolver per query, zeby edycja config.json miedzy turami
  * threadu byla efektywna od nastepnego POST /api/chat.
@@ -412,10 +625,15 @@ export function readConfig(cwd: string): Config {
   }
   const loaded = validate(parsed);
   // Auto-bump older schemas in memory (v1→v2: `entities` undefined = all
-  // plugins active; v2→v3: stale port/mode ignored). Physical rewrite happens
-  // in migrateConfigToV3 (activation hook) or on the next PATCH /api/config.
+  // plugins active; v2→v3: stale port/mode ignored; v3→v4: legacy pagesDir →
+  // pages root). Physical rewrite happens in migrateConfigToV3/V4 (activation
+  // hook) or on the next PATCH /api/config.
   if (loaded.$schemaVersion != null && loaded.$schemaVersion < CURRENT_SCHEMA_VERSION) {
     loaded.$schemaVersion = CURRENT_SCHEMA_VERSION;
+  }
+  if (!loaded.roots) {
+    const legacy = legacyRootsFromRaw(parsed as Record<string, unknown>);
+    if (legacy) loaded.roots = legacy;
   }
   return { ...base, ...loaded };
 }
@@ -425,13 +643,17 @@ export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult 
   fs.mkdirSync(dir, { recursive: true });
   const file = configPath(cwd);
   const base = defaults(cwd);
-  const cliDefined = pickDefined(cli);
+  const { patch: cliDefined, pagesDir: cliPagesDir } = splitCli(cli);
 
   if (!fs.existsSync(file)) {
     // Swiezy bootstrap: wymusza onboardingCompleted=false zeby AppShell pokazal
     // /onboarding po pierwszym starcie (M16). Defaults() ma true (forward compat
-    // dla projektow sprzed M16); nadpisanie tylko w tym miejscu.
-    const effective: Config = { ...base, ...cliDefined, onboardingCompleted: false };
+    // dla projektow sprzed M16); nadpisanie tylko w tym miejscu. `--pages` seeds
+    // the built-in pages root's dir.
+    const effective: Config = applyPagesDirOverride(
+      { ...base, ...cliDefined, onboardingCompleted: false },
+      cliPagesDir,
+    );
     atomicWrite(file, JSON.stringify(effective, null, 2) + '\n');
     return { config: effective, created: true, path: file };
   }
@@ -448,7 +670,11 @@ export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult 
   if (loaded.$schemaVersion != null && loaded.$schemaVersion < CURRENT_SCHEMA_VERSION) {
     loaded.$schemaVersion = CURRENT_SCHEMA_VERSION;
   }
-  const effective: Config = { ...base, ...loaded, ...cliDefined };
+  if (!loaded.roots) {
+    const legacy = legacyRootsFromRaw(parsed as Record<string, unknown>);
+    if (legacy) loaded.roots = legacy;
+  }
+  const effective: Config = applyPagesDirOverride({ ...base, ...loaded, ...cliDefined }, cliPagesDir);
   return { config: effective, created: false, path: file };
 }
 
@@ -486,7 +712,7 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
 
   const alreadyV3 =
     typeof raw.$schemaVersion === 'number' &&
-    raw.$schemaVersion >= CURRENT_SCHEMA_VERSION &&
+    raw.$schemaVersion >= 3 &&
     !('port' in raw) &&
     !('mode' in raw) &&
     typeof raw.entitiesDir === 'string';
@@ -498,10 +724,57 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
   if (raw.mode === 'dev' || raw.mode === 'prod') carried.mode = raw.mode;
   delete raw.port;
   delete raw.mode;
-  raw.$schemaVersion = CURRENT_SCHEMA_VERSION;
+  // Bring the file to at least v3; the pagesDir→roots (v4) bump is owned by
+  // migrateConfigToV4, called right after this at activation.
+  if (typeof raw.$schemaVersion !== 'number' || raw.$schemaVersion < 3) raw.$schemaVersion = 3;
   if (typeof raw.entitiesDir !== 'string') raw.entitiesDir = '.claude4spec/entities';
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true, carried };
+}
+
+/**
+ * 0.1.96 config v4 migration — runs from the project activation hook right after
+ * `migrateConfigToV3`. Maps the legacy `pagesDir` scalar to the built-in `pages`
+ * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
+ * Does NOT touch `briefsDir`/`patchesDir`/`entitiesDir` (they stay scalars).
+ * Atomic write; no-op when already v4-shaped (`roots[]` present, no `pagesDir`).
+ */
+export function migrateConfigToV4(cwd: string): { config: Config; migrated: boolean } {
+  const file = configPath(cwd);
+  if (!fs.existsSync(file)) {
+    return { config: readConfig(cwd), migrated: false };
+  }
+  const text = fs.readFileSync(file, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('config.json: expected JSON object at root');
+  }
+  const raw = parsed as Record<string, unknown>;
+
+  const alreadyV4 =
+    typeof raw.$schemaVersion === 'number' &&
+    raw.$schemaVersion >= 4 &&
+    Array.isArray(raw.roots) &&
+    !('pagesDir' in raw);
+  if (alreadyV4) {
+    return { config: readConfig(cwd), migrated: false };
+  }
+
+  // Map legacy pagesDir → built-in pages root. Preserve an existing `roots[]` if
+  // one is somehow already present (defensive); otherwise synthesize from pagesDir.
+  if (!Array.isArray(raw.roots)) {
+    const legacyDir = typeof raw.pagesDir === 'string' && raw.pagesDir.trim() !== '' ? raw.pagesDir : 'pages';
+    raw.roots = [builtinPagesRoot(legacyDir)] as unknown as Root[];
+  }
+  delete raw.pagesDir;
+  raw.$schemaVersion = 4;
+  atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
+  return { config: readConfig(cwd), migrated: true };
 }
 
 /**

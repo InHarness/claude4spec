@@ -8,7 +8,7 @@
 
 /** Result of `gitService.detect()`, exposed by `GET /api/git/status`. */
 export interface GitStatusResponse {
-  /** `true` when `pagesDir` is inside a git worktree and `git` is on PATH. */
+  /** `true` when a releasable root is inside a git worktree and `git` is on PATH. */
   detected: boolean;
   /** Worktree root (`git rev-parse --show-toplevel`); `null` when not detected. */
   rootPath: string | null;

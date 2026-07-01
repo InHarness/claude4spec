@@ -27,6 +27,7 @@ import type {
   BriefThreadSummary,
 } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
+import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -63,6 +64,13 @@ export interface BriefCreateOpts {
    */
   content?: string;
   suffix?: string;
+  /**
+   * 0.1.96: brief scope — releasable root ids this brief covers. Written verbatim
+   * to immutable `roots` frontmatter and added as a slug segment. Omitted or empty
+   * ⇒ whole-release scope (all releasable roots) — no `roots` frontmatter key and
+   * no slug segment.
+   */
+  roots?: string[];
 }
 
 /** 0.1.69: extended createThreadForBrief signature — supports child banki. */
@@ -124,7 +132,7 @@ export class BriefService {
   }
 
   listBriefs(opts: BriefListOpts = {}): BriefListItem[] {
-    const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootDir: 'briefs' });
+    const records = this.deps.frontmatterIndexer.findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER });
     const out: BriefListItem[] = [];
     for (const rec of records) {
       const fm = rec.frontmatter as BriefFrontmatter;
@@ -197,7 +205,9 @@ export class BriefService {
     // === null` ⇒ initial brief, no fromRelease to validate.
     if (fromName !== null) this.deps.releaseService.getRelease(fromName);
 
-    const briefPath = await this.allocatePath(fromName, toName, opts.suffix);
+    // 0.1.96: normalize scope — empty array is whole-release (no `roots` key/segment).
+    const scopeRoots = opts.roots && opts.roots.length > 0 ? opts.roots : undefined;
+    const briefPath = await this.allocatePath(fromName, toName, opts.suffix, scopeRoots);
     const frontmatter: BriefFrontmatter = {
       type: 'brief',
       source,
@@ -206,6 +216,8 @@ export class BriefService {
       generated_at: new Date().toISOString(),
       generator_version: GENERATOR_VERSION,
       implemented: false,
+      // 0.1.96: written verbatim; omitted entirely for whole-release scope.
+      ...(scopeRoots ? { roots: scopeRoots } : {}),
     };
     const body =
       opts.content ??
@@ -230,7 +242,7 @@ export class BriefService {
     );
     // Re-sync indexer immediately (faster than waiting for watcher debounce —
     // the new brief should appear in `/briefs` list right after POST returns).
-    await this.deps.frontmatterIndexer.indexPage('briefs', briefPath);
+    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, briefPath);
 
     return { briefPath };
   }
@@ -273,7 +285,7 @@ export class BriefService {
       'brief',
       opts.changeSummary,
     );
-    await this.deps.frontmatterIndexer.indexPage('briefs', opts.path);
+    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);
     // The indexer only broadcasts `briefs:changed` when *frontmatter* changes; a
     // body-only edit (the common agent case) emits nothing, and the chokidar event
     // is suppressed above. Broadcast explicitly so open BriefEditors refresh.
@@ -308,7 +320,7 @@ export class BriefService {
       'brief',
       summaries.length > 0 ? summaries.join('; ') : null,
     );
-    await this.deps.frontmatterIndexer.indexPage('briefs', opts.path);
+    await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, opts.path);
     return this.getBrief(opts.path);
   }
 
@@ -328,14 +340,22 @@ export class BriefService {
     return path.join(this.deps.briefsPages.root, relPath);
   }
 
-  private async allocatePath(fromName: string | null, toName: string | null, suffix?: string): Promise<string> {
+  private async allocatePath(
+    fromName: string | null,
+    toName: string | null,
+    suffix?: string,
+    roots?: string[],
+  ): Promise<string> {
     const suf = suffix ? `-${slugify(suffix)}` : '';
-    // 0.1.69: analysis brief (to=null) — `{from-slug}-to-next[-{suffix}].md`.
+    // 0.1.96: scoped brief gains a roots segment (`-{root-slug}[-{root-slug}]`);
+    // omitted for whole-release scope (roots undefined/empty).
+    const rootsSeg = roots && roots.length > 0 ? `-${roots.map(slugify).join('-')}` : '';
+    // 0.1.69: analysis brief (to=null) — `{from-slug}-to-next[-{roots}][-{suffix}].md`.
     const base = toName === null
-      ? `${slugify(fromName ?? 'head')}-to-next${suf}`
+      ? `${slugify(fromName ?? 'head')}-to-next${rootsSeg}${suf}`
       : fromName === null
-        ? `initial-${slugify(toName)}${suf}`
-        : `${slugify(fromName)}-to-${slugify(toName)}${suf}`;
+        ? `initial-${slugify(toName)}${rootsSeg}${suf}`
+        : `${slugify(fromName)}-to-${slugify(toName)}${rootsSeg}${suf}`;
     let candidate = `${base}.md`;
     let n = 2;
     while (await this.deps.briefsPages.exists(candidate)) {

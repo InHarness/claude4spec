@@ -31,7 +31,7 @@ export interface PageSearchHit {
 }
 
 export type WsEvent =
-  | { kind: 'page:changed'; event: 'add' | 'change' | 'unlink'; path: string; origin: 'server' | 'external' }
+  | { kind: 'page:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
   | { kind: 'entity:changed'; entityType: string; slug: string }
   // M29: emitted by EntityIndexerService after a file-watch reindex (external
   // edit / git pull / self-write that slipped past suppress). `op: 'delete'`
@@ -39,9 +39,9 @@ export type WsEvent =
   // before listen()).
   | { kind: 'entity:indexed'; type: string; slug: string; op?: 'upsert' | 'delete' }
   | { kind: 'tag:changed'; slug: string }
-  | { kind: 'section:indexed'; pagePath: string; anchors: string[] }
-  | { kind: 'todos:changed'; pagePath?: string }
-  | { kind: 'pageLinks:changed'; sourcePath?: string }
+  | { kind: 'section:indexed'; rootId: string; pagePath: string; anchors: string[] }
+  | { kind: 'todos:changed'; rootId?: string; pagePath?: string }
+  | { kind: 'pageLinks:changed'; rootId?: string; sourcePath?: string }
   | { kind: 'page:renamed'; from: string; to: string }
   | {
       kind: 'plan:updated';
@@ -53,7 +53,7 @@ export type WsEvent =
   | { kind: 'release:created'; releaseId: number; name: string }
   | { kind: 'release:updated'; releaseId: number; name: string }
   // M21 Briefs / M02 frontmatter indexer
-  | { kind: 'pages:frontmatter-changed'; path: string; rootDir: PagesRootDir }
+  | { kind: 'pages:frontmatter-changed'; path: string; rootId: string }
   | { kind: 'briefs:changed'; path?: string; origin?: 'server' | 'external' }
   // M23 Patches
   | { kind: 'patches:changed'; path?: string }
@@ -68,10 +68,67 @@ export type WsEvent =
   // project-local overlay reload.
   | { kind: 'plugin:reloaded'; name: string; version: string; tier: 'base' | 'overlay' };
 
-/** M02 multidir: discriminator dla source-of-truth (pagesDir / briefsDir / patchesDir). */
-export type PagesRootDir = 'pages' | 'briefs' | 'patches';
+/**
+ * 0.1.96 multiroot: a page is keyed by `(rootId, path)`. `rootId` is a DYNAMIC
+ * string — the built-in `'pages'` root, user-defined root slugs, plus the two
+ * fixed markers below for briefs/patches (which are NOT roots but reuse the same
+ * PagesService/PagesWatcher primitive and carry these literal rootId markers on
+ * their `page_version` rows).
+ */
+export const BRIEF_ROOT_MARKER = 'brief';
+export const PATCH_ROOT_MARKER = 'patch';
+
+/** 0.1.96: how a root's page tree is surfaced in the sidebar. */
+export type RootSidebar = 'accordion' | 'hidden';
+
+/**
+ * 0.1.96: a named page root. `dir` is a cwd-relative path (validated path-safe).
+ * `builtin` is true only for the mandatory `'pages'` root. The remaining flags
+ * are per-root behaviour gates — every per-directory behaviour is gated on one of
+ * these properties, never on `if (rootId === 'pages')`.
+ */
+export interface Root {
+  id: string;
+  name: string;
+  dir: string;
+  builtin: boolean;
+  /** Included in release bundles + git commits + release diffs. */
+  releasable: boolean;
+  /** Section-indexed (anchors, `/space/:rootId/$` navigation, SectionRef nodes). */
+  sectionIndexed: boolean;
+  /** Reference-validated (5 reference nodes, broken-ref decorations, propagation). */
+  referenceValidated: boolean;
+  /** Root ids whose pages are valid `@`-autocomplete / link targets from this root (in addition to self). */
+  linkTargets: string[];
+  /** How the root's tree appears in the sidebar. */
+  sidebar: RootSidebar;
+  /** Selectable as a brief scope target in the brief-scope modal. */
+  briefTarget: boolean;
+}
+
+/** 0.1.96: per-root behaviour flags for a freshly-added user root (all gating off). */
+export const DEFAULT_USER_ROOT_PROPS = {
+  releasable: false,
+  sectionIndexed: false,
+  referenceValidated: false,
+  linkTargets: [] as string[],
+  sidebar: 'accordion' as RootSidebar,
+  briefTarget: false,
+} as const;
+
+/** 0.1.96: per-root behaviour flags for the built-in `pages` root (full behaviour). */
+export const DEFAULT_PAGES_ROOT_PROPS = {
+  releasable: true,
+  sectionIndexed: true,
+  referenceValidated: true,
+  linkTargets: [] as string[],
+  sidebar: 'accordion' as RootSidebar,
+  briefTarget: true,
+} as const;
 
 export interface TodoHit {
+  /** 0.1.96: which root this page belongs to. */
+  rootId: string;
   pagePath: string;
   line: number;
   col: number;

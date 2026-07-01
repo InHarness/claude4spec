@@ -76,8 +76,17 @@ function navigateToEntityList(navigate: NavigateFn, type: EntityType): void {
   navigate({ to: mod.pathPrefix } as never);
 }
 
-export function navigateToSection(navigate: NavigateFn, pagePath: string, anchor: string): void {
-  navigate({ to: '/pages/$', params: { _splat: pagePath }, hash: `anchor-${anchor}` } as never);
+export function navigateToSection(
+  navigate: NavigateFn,
+  pagePath: string,
+  anchor: string,
+  rootId = 'pages',
+): void {
+  navigate({
+    to: '/space/$rootId/$',
+    params: { rootId, _splat: pagePath },
+    hash: `anchor-${anchor}`,
+  } as never);
 }
 
 export interface RouterContext {
@@ -105,10 +114,18 @@ const indexRoute = createRoute({
   component: IndexRoute,
 });
 
-const pageRoute = createRoute({
+// 0.1.96 multiroot: the shared page route is keyed by `(rootId, splat path)`.
+const spaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/space/$rootId/$',
+  component: PageRoute,
+});
+
+// 0.1.96 multiroot: legacy `/pages/$` deep-links redirect to the built-in root.
+const legacyPageRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pages/$',
-  component: PageRoute,
+  component: LegacyPageRedirect,
 });
 
 const endpointsIndexRoute = createRoute({
@@ -295,7 +312,8 @@ const patchDetailRoute = createRoute({
  */
 export const BASE_ROUTE_CHILDREN = Object.freeze([
   indexRoute,
-  pageRoute,
+  spaceRoute,
+  legacyPageRedirectRoute,
   endpointsIndexRoute,
   endpointDetailRoute,
   endpointHistoryRoute,
@@ -332,7 +350,7 @@ export function createAppRouter(queryClient: QueryClient) {
     context: { queryClient },
     defaultPreload: 'intent',
     // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
-    // basepath-relative ('/pages/$', '/settings', …).
+    // basepath-relative ('/space/$rootId/$', '/settings', …).
     basepath: PROJECT_ID ? `/p/${PROJECT_ID}` : '/',
   });
 }
@@ -378,7 +396,7 @@ function IndexRoute() {
   const { data: tree = [] } = usePages();
   const firstPage = useMemo(() => firstLeaf(tree), [tree]);
   if (firstPage) {
-    return <Navigate to="/pages/$" params={{ _splat: firstPage.path }} replace />;
+    return <Navigate to="/space/$rootId/$" params={{ rootId: 'pages', _splat: firstPage.path }} replace />;
   }
   return (
     <RoutePane>
@@ -387,8 +405,14 @@ function IndexRoute() {
   );
 }
 
-function PageRoute() {
+// 0.1.96 multiroot: legacy `/pages/$` → `/space/pages/$` (built-in root).
+function LegacyPageRedirect() {
   const { _splat } = useParams({ from: '/pages/$' });
+  return <Navigate to="/space/$rootId/$" params={{ rootId: 'pages', _splat: _splat ?? '' }} replace />;
+}
+
+function PageRoute() {
+  const { rootId, _splat } = useParams({ from: '/space/$rootId/$' });
   const path = _splat ?? '';
   const navigate = useNavigate();
   const pageView = usePageViewStore((s) => s.pageView);
@@ -399,29 +423,32 @@ function PageRoute() {
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
+      // Same-root section jumps stay in the current root.
+      openSection: (pagePath: string, anchor: string) =>
+        navigateToSection(navigate, pagePath, anchor, rootId),
     }),
-    [navigate]
+    [navigate, rootId]
   );
-  // M30: shared /pages/$ route branches by file type — .html renders the read-only viewer,
+  // M30: shared /space/$rootId/$ route branches by file type — .html renders the read-only viewer,
   // .md renders the Tiptap editor. HtmlViewer carries its own header (no version history).
   if (path.toLowerCase().endsWith('.html')) {
     return (
       <RoutePane>
-        <HtmlViewer path={path} />
+        <HtmlViewer rootId={rootId} path={path} />
       </RoutePane>
     );
   }
   return (
     <RoutePane>
-      <EditorToolbar path={path} />
+      <EditorToolbar rootId={rootId} path={path} />
       <EditorBridgeProvider bridge={bridge}>
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {pageView === 'history' ? (
-            <PageVersionHistory path={path} onBack={() => setPageView('editor')} />
+            <PageVersionHistory rootId={rootId} path={path} onBack={() => setPageView('editor')} />
           ) : (
             <Editor
-              key={path}
+              key={`${rootId}/${path}`}
+              rootId={rootId}
               path={path}
               onOpenEntity={bridge.openEntity}
               onOpenSection={bridge.openSection}
@@ -488,7 +515,7 @@ function EndpointDetailRoute() {
             navigate({ to: '/endpoints/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -567,7 +594,7 @@ function DtoDetailRoute() {
             navigate({ to: '/dtos/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -643,7 +670,7 @@ function UiViewDetailRoute() {
             })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -698,7 +725,7 @@ function DesignSystemDetailRoute() {
             navigate({ to: '/design-systems/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -752,7 +779,7 @@ function AcDetailRoute() {
             navigate({ to: '/acs/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/pages/$', params: { _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
