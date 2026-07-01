@@ -28,7 +28,7 @@ export function pagesRouter(
   const router = Router({ mergeParams: true });
 
   const resolve = (req: Request, res: Response): PageRootRuntime | null => {
-    const rootId = (req.params as Record<string, string>).rootId;
+    const rootId = (req.params as Record<string, string>).rootId ?? '';
     const rt = resolveRoot(rootId);
     if (!rt) {
       res.status(404).json({ error: { code: 'ROOT_NOT_FOUND', message: `root '${rootId}' not found` } });

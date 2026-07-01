@@ -4,11 +4,13 @@ import { OutlineButton } from './OutlineButton.js';
 import { PageViewSwitcher } from './PageViewSwitcher.js';
 
 interface Props {
+  rootId: string;
   path: string;
 }
 
-export function EditorToolbar({ path }: Props) {
-  const segments = path.split('/');
+export function EditorToolbar({ rootId, path }: Props) {
+  // 0.1.96: prefix the breadcrumb with the root name for non-built-in roots.
+  const segments = (rootId === 'pages' ? [] : [rootId]).concat(path.split('/'));
 
   return (
     <div

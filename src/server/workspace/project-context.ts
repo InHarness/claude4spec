@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { readConfig } from '../config.js';
+import { readConfig, validateRootDirs } from '../config.js';
+import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, type Root } from '../../shared/types.js';
+import type { PageRootRuntime } from '../routes/pages.js';
+import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
 import { PagesService } from '../services/pages.js';
 import { pagesRouter } from '../routes/pages.js';
@@ -222,12 +225,12 @@ async function buildInner(
 
   const skillRegistry = SkillRegistry.load(findSkillsRoots(cwd));
   const bootConfig = readConfig(cwd);
-  // Effective pagesDir precedence: CLI flag > config.json > hardcoded 'pages'.
-  const pagesDir = deps.pagesDirOverride ?? bootConfig.pagesDir ?? 'pages';
-  // M21: briefsDir, default '.claude4spec/briefs'. Walidacja: musi byc relative,
-  // nie moze uciekac z cwd. Kolizja z pagesDir → tylko warn (user moze mocno
-  // celowo umieszczac brief'y w katalogu pages — frontmatter.type='brief'
-  // pelni hidden-tree filter).
+  // 0.1.96: page roots come from config.roots[]. The CLI --pages override
+  // applies to the built-in 'pages' root's dir only.
+  const effectiveRoots: Root[] = bootConfig.roots.map((r) =>
+    r.id === 'pages' && deps.pagesDirOverride ? { ...r, dir: deps.pagesDirOverride } : r,
+  );
+  // M21: briefsDir, default '.claude4spec/briefs'. Must be relative, must not escape cwd.
   const briefsDir = bootConfig.briefsDir ?? '.claude4spec/briefs';
   if (path.isAbsolute(briefsDir)) {
     throw new Error(`config.json: briefsDir must be relative to cwd, got: ${briefsDir}`);
@@ -236,11 +239,6 @@ async function buildInner(
   const briefsRel = path.relative(cwd, briefsAbs);
   if (briefsRel.startsWith('..') || path.isAbsolute(briefsRel)) {
     throw new Error(`config.json: briefsDir must not escape project root, got: ${briefsDir}`);
-  }
-  if (briefsDir === pagesDir) {
-    console.warn(
-      `[config] briefsDir === pagesDir ("${pagesDir}") — brief files will be visible in both indexers`,
-    );
   }
   // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
   const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
@@ -251,11 +249,6 @@ async function buildInner(
   const patchesRel = path.relative(cwd, patchesAbs);
   if (patchesRel.startsWith('..') || path.isAbsolute(patchesRel)) {
     throw new Error(`config.json: patchesDir must not escape project root, got: ${patchesDir}`);
-  }
-  if (patchesDir === pagesDir || patchesDir === briefsDir) {
-    console.warn(
-      `[config] patchesDir collides with pagesDir/briefsDir ("${patchesDir}") — patch files will be visible in multiple indexers`,
-    );
   }
 
   // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
@@ -269,6 +262,14 @@ async function buildInner(
   const entitiesRel = path.relative(cwd, entitiesAbs);
   if (entitiesRel.startsWith('..') || path.isAbsolute(entitiesRel)) {
     throw new Error(`config.json: entitiesDir must not escape project root, got: ${entitiesDir}`);
+  }
+
+  // 0.1.96: cross-field root overlap validation. Hard errors abort the build
+  // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
+  {
+    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, briefsDir, patchesDir });
+    for (const w of warnings) console.warn(`[config] ${w}`);
+    if (errors.length > 0) throw new Error(errors[0]);
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
   // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant
@@ -349,18 +350,47 @@ async function buildInner(
   const db: Db = openDb(workspace, cwd);
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
-  const pages = new PagesService(cwd, pagesDir);
-  await pages.ensureRoot();
-  // M30: static file server rooted at the same pagesDir, backing the HTML preview iframe.
-  const staticHtml = new StaticHtmlService(cwd, pagesDir);
-  // M21 m02multidir: drugi PagesService dla briefsDir. Wspoldziel z pierwszym
-  // zarowno PageVersionService jak i WsGateway, ale ma osobny watcher (debounce
-  // independent per katalog) i osobny PageSerializer (constructor-bound do
-  // odpowiedniego rootDir).
-  const briefsPages = new PagesService(cwd, briefsDir);
+
+  // 0.1.96: one runtime (PagesService + StaticHtmlService + PagesWatcher +
+  // PageSerializer) per configured page root. The built-in 'pages' root is
+  // always present; user roots are additive. Every per-directory behaviour is
+  // gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
+  interface RootRuntime {
+    root: Root;
+    pages: PagesService;
+    staticHtml: StaticHtmlService;
+    watcher: PagesWatcher;
+    serializer: PageSerializer;
+  }
+  const rootRuntimes: RootRuntime[] = [];
+  for (const root of effectiveRoots) {
+    const pagesSvc = new PagesService(cwd, root.dir, root.id);
+    await pagesSvc.ensureRoot();
+    const staticSvc = new StaticHtmlService(cwd, root.dir);
+    const rootWatcher = new PagesWatcher(pagesSvc.root, ws, root.id);
+    cleanup.push(() => rootWatcher.close());
+    rootRuntimes.push({
+      root,
+      pages: pagesSvc,
+      staticHtml: staticSvc,
+      watcher: rootWatcher,
+      serializer: new PageSerializer(pagesSvc),
+    });
+  }
+  const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
+  // The built-in 'pages' runtime backs the many single-root consumers that still
+  // take one PagesService/PagesWatcher/PageSerializer (release restore, entity
+  // reference-tools, current-page fetch, etc.).
+  const pagesRuntime = rootById.get('pages')!;
+  const pages = pagesRuntime.pages;
+  const watcher = pagesRuntime.watcher;
+  const pageSerializer = pagesRuntime.serializer;
+
+  // M21/M23: briefs & patches are NOT roots — they reuse the same primitive on
+  // dedicated instances and carry the fixed 'brief'/'patch' page_version markers.
+  const briefsPages = new PagesService(cwd, briefsDir, BRIEF_ROOT_MARKER);
   await briefsPages.ensureRoot();
-  // M23 m02multidir: trzeci PagesService dla patchesDir (analogicznie do briefsDir).
-  const patchesPages = new PagesService(cwd, patchesDir);
+  const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
   await patchesPages.ensureRoot();
 
   const tagsService = new TagsService(db.handle);
@@ -380,15 +410,11 @@ async function buildInner(
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
 
-  const watcher = new PagesWatcher(pages.root, ws);
-  cleanup.push(() => watcher.close());
-  // M21 m02multidir: drugi PagesWatcher na briefsDir. Wspoldzieli ten sam
-  // gateway (broadcast `page:changed` z drugiego katalogu — UI może slot-detect
-  // przez prefix sciezki, jezeli kiedys bedzie potrzebne).
-  const briefsWatcher = new PagesWatcher(briefsPages.root, ws);
+  // Per-root PagesWatchers live in rootRuntimes (created above). Briefs/patches
+  // keep their own dedicated watchers, carrying the 'brief'/'patch' markers.
+  const briefsWatcher = new PagesWatcher(briefsPages.root, ws, BRIEF_ROOT_MARKER);
   cleanup.push(() => briefsWatcher.close());
-  // M23 m02multidir: trzeci PagesWatcher na patchesDir.
-  const patchesWatcher = new PagesWatcher(patchesPages.root, ws);
+  const patchesWatcher = new PagesWatcher(patchesPages.root, ws, PATCH_ROOT_MARKER);
   cleanup.push(() => patchesWatcher.close());
   // M29: dedicated watcher + file store + indexer for the committed entity store.
   // The page-family watchers above are rooted outside `.claude4spec/`, so this
@@ -439,31 +465,42 @@ async function buildInner(
     tagsService,
     rawReader,
   );
-  const referencesService = new ReferencesService(pages, watcher);
+  // 0.1.96: per-behaviour root maps (gated on root PROPERTIES, not id).
+  const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
+  const referenceValidatedServices = new Map<string, PagesService>();
+  const referenceValidatedWatchers = new Map<string, PagesWatcher>();
+  const sidebarRoots = new Map<string, PagesService>(); // todos: any root with a visible tree
+  const allRootServices = new Map<string, PagesService>();
+  for (const rt of rootRuntimes) {
+    allRootServices.set(rt.root.id, rt.pages);
+    if (rt.root.sectionIndexed) sectionIndexedRoots.set(rt.root.id, { pages: rt.pages, watcher: rt.watcher });
+    if (rt.root.referenceValidated) {
+      referenceValidatedServices.set(rt.root.id, rt.pages);
+      referenceValidatedWatchers.set(rt.root.id, rt.watcher);
+    }
+    if (rt.root.sidebar !== 'hidden') sidebarRoots.set(rt.root.id, rt.pages);
+  }
+
+  const referencesService = new ReferencesService(referenceValidatedServices, referenceValidatedWatchers);
   const sectionsService = new SectionsService(db.handle);
-  sectionsService.setWriteDeps({ pages, watcher });
+  sectionsService.setWriteDeps(sectionIndexedRoots);
 
   const planService = new PlanService(db.handle, ws, chatService);
-  const sectionIndexer = new SectionIndexerService(db.handle, pages, watcher, ws, pluginHost);
-  const todosIndexer = new TodosIndexerService(pages, ws);
-  const pagesLinkIndexer = new PagesLinkIndexerService(pages, ws);
-  // M17: page versioning (out of L9 plugin host — decyzja 1)
-  const pageSerializer = new PageSerializer(pages);
-  // M21 m02multidir: osobny serializer dla briefsDir (PageSerializer trzyma
-  // referencje do PagesService w konstruktorze — czyta z dysku przez nia).
-  // PageVersionService akceptuje override serializera w recordVersion(),
-  // wiec dwa serializery dziela jedna instancje wersjonowania.
+  const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
+  const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
+  // pages-link indexer covers every page root (autocomplete/meta), resolving links
+  // within each root (self-scope); cross-root @-scope is applied client-side.
+  const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws);
+  // M21/M23 serializers for briefs/patches (own PagesService-bound instances).
   const briefsSerializer = new PageSerializer(briefsPages);
-  // M23: serializer dla patchesDir (analogicznie do briefsSerializer).
   const patchesSerializer = new PageSerializer(patchesPages);
+  // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
   const pageVersions = new PageVersionService(db.handle, pageSerializer);
-  // M21 m02fmidx / M23: in-memory frontmatter indexer feeded przez trzy watchery.
-  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(
-    pages,
-    briefsPages,
-    patchesPages,
-    ws,
-  );
+  // M21/M23: in-memory frontmatter indexer over every page root + the brief/patch markers.
+  const frontmatterRoots = new Map<string, PagesService>(allRootServices);
+  frontmatterRoots.set(BRIEF_ROOT_MARKER, briefsPages);
+  frontmatterRoots.set(PATCH_ROOT_MARKER, patchesPages);
+  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws);
 
   // Mount all active backend modules — each plugin constructs its own service,
   // mounts its router, registers its MCP server, and registers its entity
@@ -503,6 +540,9 @@ async function buildInner(
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
+  // 0.1.96: releasable roots drive releases/bundles/diffs and git staging.
+  const releasableRootIds = effectiveRoots.filter((r) => r.releasable).map((r) => r.id);
+  const releasableRootDirs = effectiveRoots.filter((r) => r.releasable).map((r) => path.resolve(cwd, r.dir));
   const releaseService = new ReleaseService(
     db.handle,
     pluginHost,
@@ -514,12 +554,13 @@ async function buildInner(
     pages,
     watcher,
     cwd,
+    releasableRootIds,
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
-  // git repo. Probes `pages.root` for the worktree; reads config per-action.
-  const gitService = new GitService(cwd, pages.root);
+  // git repo. Probes the releasable roots for a worktree; reads config per-action.
+  const gitService = new GitService(cwd, releasableRootDirs);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
   const releasePushService = new ReleasePushService(
     db.handle,
@@ -551,7 +592,7 @@ async function buildInner(
       // the DB handle first so db.sqlite can be unlinked (required on Windows).
       db.close();
       rollbackClone(cwd, {
-        pagesDir,
+        rootDirs: effectiveRoots.map((r) => r.dir),
         configCreated: deps.clone.configCreated,
         claudeDirCreated: deps.clone.claudeDirCreated,
         gitignoreCreated: deps.clone.gitignoreCreated,
@@ -613,8 +654,15 @@ async function buildInner(
       onContextConfigChanged: deps.onContextConfigChanged,
     }),
   );
-  router.use('/pages', pagesRouter(pages, watcher, pageVersions));
-  router.use('/static', staticRouter(staticHtml));
+  // 0.1.96: pages/static routers resolve a per-root runtime from the `:rootId`
+  // segment; unknown id → 404 ROOT_NOT_FOUND.
+  const resolveRoot = (rootId: string): PageRootRuntime | undefined => {
+    const rt = rootById.get(rootId);
+    return rt ? { root: rt.root, pages: rt.pages, watcher: rt.watcher } : undefined;
+  };
+  const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
+  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
+  router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader));
@@ -663,7 +711,7 @@ async function buildInner(
     skillRegistry,
     ws,
     cwd,
-    pagesDir,
+    roots: effectiveRoots,
     mode,
     db,
     workspaceName: workspace.name,
@@ -685,32 +733,39 @@ async function buildInner(
   router.use('/chat', chatRouter(agentDeps));
   router.use(errorHandler);
 
-  watcher.onChange((relPath, kind) => {
-    if (kind === 'unlink') {
-      sectionIndexer.handleUnlink(relPath).catch((err) => {
-        console.error('[section-indexer] unlink error:', err);
-      });
-      todosIndexer.handleUnlink(relPath);
-      pagesLinkIndexer.handleUnlink(relPath);
-      pagesFrontmatterIndexer.handleUnlink('pages', relPath);
-      // M17: capture filesystem-origin delete (chokidar saw external rm)
-      pageVersions.recordVersion(relPath, 'delete', 'filesystem').catch((err) => {
-        console.warn(`[page-version] watcher delete capture for ${relPath}:`, (err as Error).message);
-      });
-    } else {
-      sectionIndexer.schedulePage(relPath);
-      todosIndexer.schedulePage(relPath);
-      pagesLinkIndexer.schedulePage(relPath);
-      pagesFrontmatterIndexer.schedulePage('pages', relPath);
-      // M17: capture filesystem-origin add/change. `kind === 'add'` may be a
-      // real new file (op=create) or a re-detection — pageVersions.hasAny
-      // distinguishes.
-      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath) ? 'create' : 'update';
-      pageVersions.recordVersion(relPath, op, 'filesystem').catch((err) => {
-        console.warn(`[page-version] watcher capture for ${relPath}:`, (err as Error).message);
-      });
-    }
-  });
+  // 0.1.96: one fan-out per root. Indexers are invoked only when the root's
+  // property gates them (sectionIndexed / sidebar-visible / referenceValidated);
+  // page_version + frontmatter always capture, with the root's id + serializer.
+  for (const rt of rootRuntimes) {
+    const rootId = rt.root.id;
+    rt.watcher.onChange((relPath, kind) => {
+      if (kind === 'unlink') {
+        if (rt.root.sectionIndexed) {
+          sectionIndexer.handleUnlink(rootId, relPath).catch((err) => {
+            console.error('[section-indexer] unlink error:', err);
+          });
+        }
+        if (rt.root.sidebar !== 'hidden') todosIndexer.handleUnlink(rootId, relPath);
+        pagesLinkIndexer.handleUnlink(rootId, relPath);
+        pagesFrontmatterIndexer.handleUnlink(rootId, relPath);
+        // M17: capture filesystem-origin delete (chokidar saw external rm)
+        pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
+          console.warn(`[page-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
+        });
+      } else {
+        if (rt.root.sectionIndexed) sectionIndexer.schedulePage(rootId, relPath);
+        if (rt.root.sidebar !== 'hidden') todosIndexer.schedulePage(rootId, relPath);
+        pagesLinkIndexer.schedulePage(rootId, relPath);
+        pagesFrontmatterIndexer.schedulePage(rootId, relPath);
+        // M17: capture filesystem-origin add/change. `kind === 'add'` may be a
+        // real new file (op=create) or a re-detection — pageVersions.hasAny distinguishes.
+        const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, rootId) ? 'create' : 'update';
+        pageVersions.recordVersion(relPath, op, 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
+          console.warn(`[page-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
+        });
+      }
+    });
+  }
 
   // M21 m02multidir: drugi watcher dla briefsDir. Tylko frontmatter indexer
   // + page_version (z dedykowanym briefsSerializer). Section/todos/pages-link
@@ -718,14 +773,14 @@ async function buildInner(
   // nie czesc nawigowalnego drzewa, nie agreguja section_ref/todo'ow do tabel).
   briefsWatcher.onChange((relPath, kind) => {
     if (kind === 'unlink') {
-      pagesFrontmatterIndexer.handleUnlink('briefs', relPath);
-      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, briefsSerializer, 'brief').catch((err) => {
+      pagesFrontmatterIndexer.handleUnlink(BRIEF_ROOT_MARKER, relPath);
+      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
         console.warn(`[page-version] brief delete capture for ${relPath}:`, (err as Error).message);
       });
     } else {
-      pagesFrontmatterIndexer.schedulePage('briefs', relPath);
-      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath) ? 'create' : 'update';
-      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, briefsSerializer, 'brief').catch((err) => {
+      pagesFrontmatterIndexer.schedulePage(BRIEF_ROOT_MARKER, relPath);
+      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, BRIEF_ROOT_MARKER) ? 'create' : 'update';
+      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
         console.warn(`[page-version] brief capture for ${relPath}:`, (err as Error).message);
       });
       // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
@@ -738,14 +793,14 @@ async function buildInner(
   // M23: trzeci watcher dla patchesDir — analogicznie do briefsWatcher.
   patchesWatcher.onChange((relPath, kind) => {
     if (kind === 'unlink') {
-      pagesFrontmatterIndexer.handleUnlink('patches', relPath);
-      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, patchesSerializer, 'patch').catch((err) => {
+      pagesFrontmatterIndexer.handleUnlink(PATCH_ROOT_MARKER, relPath);
+      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
         console.warn(`[page-version] patch delete capture for ${relPath}:`, (err as Error).message);
       });
     } else {
-      pagesFrontmatterIndexer.schedulePage('patches', relPath);
-      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath) ? 'create' : 'update';
-      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, patchesSerializer, 'patch').catch((err) => {
+      pagesFrontmatterIndexer.schedulePage(PATCH_ROOT_MARKER, relPath);
+      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, PATCH_ROOT_MARKER) ? 'create' : 'update';
+      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
         console.warn(`[page-version] patch capture for ${relPath}:`, (err as Error).message);
       });
     }
@@ -762,7 +817,7 @@ async function buildInner(
     }
   });
 
-  watcher.start();
+  for (const rt of rootRuntimes) rt.watcher.start();
   briefsWatcher.start();
   patchesWatcher.start();
 
@@ -785,15 +840,17 @@ async function buildInner(
   // (server down, `git checkout` between restarts): without this, the phantom
   // `delete` stays the latest row and release diffs show the page as removed.
   (async () => {
-    try {
-      const files = await pages.listMarkdownFiles();
-      for (const relPath of files) {
-        const latest = pageVersions.getLatestForPath(relPath);
-        if (latest && latest.op !== 'delete') continue;
-        await pageVersions.recordVersion(relPath, 'create', 'filesystem');
+    for (const rt of rootRuntimes) {
+      try {
+        const files = await rt.pages.listMarkdownFiles();
+        for (const relPath of files) {
+          const latest = pageVersions.getLatestForPath(relPath, undefined, rt.root.id);
+          if (latest && latest.op !== 'delete') continue;
+          await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, rt.serializer, rt.root.id);
+        }
+      } catch (err) {
+        console.warn(`[page-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
       }
-    } catch (err) {
-      console.warn('[page-version] initial sync failed:', (err as Error).message);
     }
   })();
 
@@ -802,8 +859,8 @@ async function buildInner(
     try {
       const files = await briefsPages.listMarkdownFiles();
       for (const relPath of files) {
-        if (pageVersions.hasAny(relPath)) continue;
-        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, briefsSerializer, 'brief');
+        if (pageVersions.hasAny(relPath, BRIEF_ROOT_MARKER)) continue;
+        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER);
       }
     } catch (err) {
       console.warn('[page-version] briefs initial sync failed:', (err as Error).message);
@@ -812,8 +869,8 @@ async function buildInner(
     try {
       const files = await patchesPages.listMarkdownFiles();
       for (const relPath of files) {
-        if (pageVersions.hasAny(relPath)) continue;
-        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, patchesSerializer, 'patch');
+        if (pageVersions.hasAny(relPath, PATCH_ROOT_MARKER)) continue;
+        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER);
       }
     } catch (err) {
       console.warn('[page-version] patches initial sync failed:', (err as Error).message);
@@ -892,7 +949,7 @@ async function buildInner(
     hasInFlightTurn: () => activeAdapters.size > 0,
     // M31 dispose sequence: watchers → MCP factories → room → db handle.
     dispose: async () => {
-      await watcher.close();
+      for (const rt of rootRuntimes) await rt.watcher.close();
       await briefsWatcher.close();
       await patchesWatcher.close();
       await entitiesWatcher.close();

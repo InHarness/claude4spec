@@ -152,11 +152,12 @@ export class PageVersionService {
     return row ? this.toDetail(row) : null;
   }
 
-  /** True when this path has any captured version. Used by initial-sync hook. */
-  hasAny(relPath: string): boolean {
+  /** True when this (rootId, path) has any captured version. Used by initial-sync hook. */
+  hasAny(relPath: string, rootId?: string): boolean {
+    const rootClause = rootId ? ' AND rootId = ?' : '';
     const row = this.db
-      .prepare(`SELECT 1 FROM page_version WHERE path = ? LIMIT 1`)
-      .get(relPath) as { 1: number } | undefined;
+      .prepare(`SELECT 1 FROM page_version WHERE path = ?${rootClause} LIMIT 1`)
+      .get(...(rootId ? [relPath, rootId] : [relPath])) as { 1: number } | undefined;
     return !!row;
   }
 

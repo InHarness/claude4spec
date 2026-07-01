@@ -251,11 +251,12 @@ export function validateRootDirs(
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
   for (let i = 0; i < roots.length; i++) {
-    const r = roots[i];
+    const r = roots[i]!;
     // overlap vs other roots (hard)
     for (let j = i + 1; j < roots.length; j++) {
-      if (dirsOverlap(r.dir, roots[j].dir)) {
-        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${roots[j].id}'`);
+      const other = roots[j]!;
+      if (dirsOverlap(r.dir, other.dir)) {
+        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${other.id}'`);
       }
     }
     // overlap vs entitiesDir / skills / plugins (hard)

@@ -109,11 +109,13 @@ function MainShell({ projectName }: { projectName: string | null }) {
     );
     if (!result) return;
     try {
+      // The global "new page" action targets the built-in pages root.
       await write.mutateAsync({
+        rootId: 'pages',
         path: result.path,
         body: `# ${deriveTitle(result.path)}\n\n`,
       });
-      navigate({ to: '/pages/$', params: { _splat: result.path } });
+      navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: result.path } });
       toast.success(`Page ${result.path} created`);
     } catch (err) {
       toast.error((err as Error).message);

@@ -26,14 +26,14 @@ function encodePath(p: string): string {
 }
 
 export const pageVersionsApi = {
-  async list(path: string): Promise<PageVersionListItemClient[]> {
-    const res = await apiFetch(`/api/pages/${encodePath(path)}?versions=true`);
+  async list(rootId: string, path: string): Promise<PageVersionListItemClient[]> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}?versions=true`);
     const data = await handle<{ path: string; versions: PageVersionListItemClient[] }>(res);
     return data.versions;
   },
-  async get(path: string, version: number): Promise<PageVersionDetailClient> {
+  async get(rootId: string, path: string, version: number): Promise<PageVersionDetailClient> {
     const res = await apiFetch(
-      `/api/pages/${encodePath(path)}?versionDetail=${encodeURIComponent(String(version))}`,
+      `/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}?versionDetail=${encodeURIComponent(String(version))}`,
     );
     return handle<PageVersionDetailClient>(res);
   },

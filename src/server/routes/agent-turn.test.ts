@@ -85,7 +85,7 @@ function makeDeps() {
     activeAdapters: new Map(),
     pendingInputs: new Map(),
     chatService,
-    pagesService: { read: async () => ({ body: '' }), listTree: async () => [] },
+    pagesService: { rootId: 'pages', read: async () => ({ body: '' }), listTree: async () => [] },
     tagsService: { list: () => [] },
     sectionsService: { count: () => 0 },
     planService: {
@@ -100,7 +100,20 @@ function makeDeps() {
     skillRegistry: { has: () => false },
     ws: {},
     cwd: process.cwd(),
-    pagesDir: 'pages',
+    roots: [
+      {
+        id: 'pages',
+        name: 'Pages',
+        dir: 'pages',
+        builtin: true,
+        releasable: true,
+        sectionIndexed: true,
+        referenceValidated: true,
+        linkTargets: [],
+        sidebar: 'accordion',
+        briefTarget: true,
+      },
+    ],
     mode: 'dev',
     db: { handle: {} },
   } as unknown as AgentTurnDeps;

@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { buildSystemPrompt, subagentsFor, type SystemPromptInput, type PeerProject } from './chat-context.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { DEFAULT_PAGES_ROOT_PROPS, type Root } from '../../shared/types.js';
+
+/** Minimal Root at `dir` for prompt tests. */
+function rootAt(dir: string, id = 'pages'): Root {
+  return { id, name: id, dir, builtin: id === 'pages', ...DEFAULT_PAGES_ROOT_PROPS, linkTargets: [] };
+}
 
 // buildSystemPrompt only calls host.listEntities() (no active plugins needed for
 // these gating assertions); entityCounts is supplied directly by the caller.
@@ -11,7 +17,9 @@ function build(overrides: Partial<SystemPromptInput>): string {
     host,
     projectName: 'My Spec',
     cwd: '/tmp/my-spec',
-    pagesDir: 'pages',
+    roots: [rootAt('pages')],
+    briefsDir: '.claude4spec/briefs',
+    patchesDir: '.claude4spec/patches',
     currentPagePath: null,
     currentPageBody: null,
     pageCount: 0,
@@ -197,10 +205,10 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90)', () => {
     expect(out).not.toContain('DISALLOWED (never read/write here');
   });
 
-  it('includes pagesDir on the ALLOWED line only when it sits outside cwd', () => {
-    const inside = build({ contextType: 'chat', pagesDir: 'pages', agentPathScope: scope });
+  it('includes a root dir on the ALLOWED line only when it sits outside cwd', () => {
+    const inside = build({ contextType: 'chat', roots: [rootAt('pages')], agentPathScope: scope });
     expect(inside).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /extra/lib');
-    const outside = build({ contextType: 'chat', pagesDir: '/var/spec-pages', agentPathScope: scope });
+    const outside = build({ contextType: 'chat', roots: [rootAt('/var/spec-pages')], agentPathScope: scope });
     expect(outside).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /var/spec-pages, /extra/lib');
   });
 });

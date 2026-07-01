@@ -19,7 +19,7 @@ export function staticRouter(
 
   router.get('/*', async (req, res, next) => {
     try {
-      const rootId = (req.params as Record<string, string>).rootId;
+      const rootId = (req.params as Record<string, string>).rootId ?? '';
       const staticHtml = resolveStatic(rootId);
       if (!staticHtml) {
         return res.status(404).json({ error: { code: 'ROOT_NOT_FOUND', message: `root '${rootId}' not found` } });
