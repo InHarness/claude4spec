@@ -7,6 +7,7 @@ import type { PagesWatcher } from '../fs/watcher.js';
 interface SectionRow {
   id: number;
   anchor: string;
+  rootId: string;
   page_path: string;
   heading_path: string;
   heading_slug: string;
@@ -153,6 +154,7 @@ export class SectionsService {
     return {
       id: row.id,
       anchor: row.anchor,
+      rootId: row.rootId,
       pagePath: row.page_path,
       headingPath: row.heading_path,
       headingSlug: row.heading_slug,

@@ -156,12 +156,20 @@ export const C4S_VERSION = readC4sVersion();
  * consciously decides to keep it here. No allow-list entry → no leak.
  */
 export function sanitizeConfigForBundle(config: Config): BundleConfig {
+  // 0.1.96: only releasable roots enter the bundle (their pages are the only
+  // ones snapshotted); non-releasable / brief / patch roots fall out here. Any
+  // `linkTargets` pointing at a dropped root must also be pruned, else clone/
+  // import would fail parseRootsArray with a "dangling link scope" error.
+  const releasable = config.roots.filter((r) => r.releasable);
+  const keptIds = new Set(releasable.map((r) => r.id));
+  const roots = releasable.map((r) => ({
+    ...r,
+    linkTargets: r.linkTargets.filter((id) => keptIds.has(id)),
+  }));
   return {
     $schemaVersion: config.$schemaVersion,
     name: config.name,
-    // 0.1.96: only releasable roots enter the bundle (their pages are the only
-    // ones snapshotted); non-releasable / brief / patch roots fall out here.
-    roots: config.roots.filter((r) => r.releasable),
+    roots,
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,

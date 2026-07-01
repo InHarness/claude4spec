@@ -34,7 +34,7 @@ export async function findReferences(
   for (const page of pages) {
     for (const tag of parseXmlTagsExcludingCode(page.body)) {
       if (tagMatchesEntity(tag, type, slug)) {
-        hits.push({ pagePath: page.path, tagType: tag.kind, line: tag.line, raw: tag.raw });
+        hits.push({ rootId: page.rootId ?? 'pages', pagePath: page.path, tagType: tag.kind, line: tag.line, raw: tag.raw });
       }
     }
   }
@@ -47,7 +47,7 @@ export async function findReferences(
         for (const tag of parseXmlTagsExcludingCode(page.body)) {
           const via = taggedListVia(tag, type, entityTags);
           if (via.length === 0) continue;
-          hits.push({ pagePath: page.path, tagType: tag.kind, line: tag.line, via });
+          hits.push({ rootId: page.rootId ?? 'pages', pagePath: page.path, tagType: tag.kind, line: tag.line, via });
         }
       }
     }

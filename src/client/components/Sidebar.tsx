@@ -540,7 +540,8 @@ function PagesTree({
           );
         }
         const active = activePath === n.path;
-        const todoCount = todoCountByPath?.[n.path] ?? 0;
+        // 0.1.96: todos-indexer keys counts by `${rootId}:${path}`.
+        const todoCount = todoCountByPath?.[`${rootId}:${n.path}`] ?? 0;
         return (
           <Link
             key={n.path}

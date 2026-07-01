@@ -515,7 +515,7 @@ function EndpointDetailRoute() {
             navigate({ to: '/endpoints/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -594,7 +594,7 @@ function DtoDetailRoute() {
             navigate({ to: '/dtos/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -670,7 +670,7 @@ function UiViewDetailRoute() {
             })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -725,7 +725,7 @@ function DesignSystemDetailRoute() {
             navigate({ to: '/design-systems/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>
@@ -779,7 +779,7 @@ function AcDetailRoute() {
             navigate({ to: '/acs/$slug', params: { slug: newSlug }, replace: true })
           }
           onOpenEntity={bridge.openEntity}
-          onOpenPage={(p) => navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: p } })}
+          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
         />
       </EditorBridgeProvider>
     </RoutePane>

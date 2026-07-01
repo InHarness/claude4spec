@@ -128,8 +128,8 @@ function TodoRow({ hit }: { hit: TodoHit }) {
   const navigate = useNavigate();
   const go = () => {
     void navigate({
-      to: '/pages/$',
-      params: { _splat: hit.pagePath },
+      to: '/space/$rootId/$',
+      params: { rootId: hit.rootId, _splat: hit.pagePath },
       hash: `anchor-${hit.anchor}`,
     });
   };

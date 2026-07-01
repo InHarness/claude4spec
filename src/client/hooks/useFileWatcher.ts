@@ -42,7 +42,7 @@ export function useFileWatcher() {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
             if (data.origin === 'external') {
-              useFileEventsStore.getState().notifyExternalChange(data.path);
+              useFileEventsStore.getState().notifyExternalChange(data.rootId, data.path);
             } else {
               batcher.queue(['page', data.rootId, data.path]);
             }

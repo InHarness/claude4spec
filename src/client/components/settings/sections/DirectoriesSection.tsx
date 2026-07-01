@@ -49,13 +49,34 @@ function normDir(dir: string): string {
   return n === '.' || n === '' ? '' : n;
 }
 
-/** True when dir `a` equals, contains, or is contained by dir `b` (mirror of server). */
-function dirsOverlap(a: string, b: string): boolean {
-  const na = normDir(a);
-  const nb = normDir(b);
+/** True when `child` equals or is nested under `parent` (both normalized, '/'-sep). */
+function isInsideDir(parent: string, child: string): boolean {
+  if (parent === child) return true;
+  if (parent === '') return true; // cwd root contains everything
+  return child.startsWith(parent + '/');
+}
+
+/** True when any '/'-segment of a relative path starts with '.' (dot-dir the walker skips). */
+function hasDotSegment(rel: string): boolean {
+  return rel.split('/').some((s) => s.startsWith('.'));
+}
+
+/**
+ * Dot-directory-aware overlap (mirror of server config.ts `dirsOverlap`). A page
+ * root at '.' contains `.claude4spec/*` but the pages walker skips dot-dirs, so
+ * that is NOT a conflict — only flag when the walker would actually reach the
+ * other dir, or when the root is nested inside it.
+ */
+function dirsOverlap(rootDir: string, otherDir: string): boolean {
+  const na = normDir(rootDir);
+  const nb = normDir(otherDir);
   if (na === nb) return true;
-  if (na === '' || nb === '') return true;
-  return na.startsWith(nb + '/') || nb.startsWith(na + '/');
+  if (isInsideDir(nb, na)) return true; // root nested under other
+  if (isInsideDir(na, nb)) {
+    const rel = na === '' ? nb : nb.slice(na.length + 1);
+    return !hasDotSegment(rel);
+  }
+  return false;
 }
 
 /** A cwd-relative dir must be non-empty, not absolute, and not escape cwd via `..`. */

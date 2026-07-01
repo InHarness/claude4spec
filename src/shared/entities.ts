@@ -146,6 +146,8 @@ export interface DtoDeleteResult {
 }
 
 export interface ReferenceHit {
+  /** 0.1.96: which root the referencing page lives in. */
+  rootId: string;
   pagePath: string;
   tagType: string;
   line: number;
@@ -692,6 +694,8 @@ export interface AcDeleteResult {
 export interface SectionIndexEntry {
   id: number;
   anchor: string;
+  /** 0.1.96: which root the section's page lives in. */
+  rootId: string;
   pagePath: string;
   headingPath: string;
   headingSlug: string;

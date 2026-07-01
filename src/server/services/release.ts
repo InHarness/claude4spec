@@ -432,7 +432,7 @@ export class ReleaseService {
     const pageChanges: RawDeltaPageChange[] = [];
     // Key by (rootId, path) so the same relative path in two roots keeps an
     // independent timeline and is never cross-diffed.
-    const pageKey = (p: PageVersionRow): string => `${p.rootId} ${p.path}`;
+    const pageKey = (p: PageVersionRow): string => `${p.rootId}\u0000${p.path}`;
     const aPagesMap = new Map(fromPageRows.map((p) => [pageKey(p), p]));
     const bPagesMap = new Map(toPageRows.map((p) => [pageKey(p), p]));
     const allPageKeys = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);

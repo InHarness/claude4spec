@@ -270,6 +270,13 @@ async function buildInner(
     const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, briefsDir, patchesDir });
     for (const w of warnings) console.warn(`[config] ${w}`);
     if (errors.length > 0) throw new Error(errors[0]);
+    // Briefs/patches are distinct catalogs — an identical dir double-captures every
+    // file into page_version under both markers. Warn (the PATCH route hard-400s).
+    if (path.resolve(cwd, briefsDir) === path.resolve(cwd, patchesDir)) {
+      console.warn(
+        `[config] briefsDir === patchesDir ("${briefsDir}") — brief/patch files will be double-indexed`,
+      );
+    }
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
   // `--remote-url` flag (deps) > config.json > prod constant. The prod-constant

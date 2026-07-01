@@ -29,8 +29,8 @@ export function SectionRefChipWithData({ anchor }: Props) {
     e.preventDefault();
     e.stopPropagation();
     void navigate({
-      to: '/pages/$',
-      params: { _splat: data.pagePath },
+      to: '/space/$rootId/$',
+      params: { rootId: data.rootId, _splat: data.pagePath },
       hash: `anchor-${anchor}`,
     } as never);
   };

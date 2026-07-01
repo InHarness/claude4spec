@@ -166,7 +166,9 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
 
   useEffect(() => {
     if (!editor || !externalChange) return;
-    if (externalChange.path !== path) return;
+    // 0.1.96: match on (rootId, path) — a same-named file in another root must not
+    // trigger this editor's conflict dialog (would risk discarding unsaved edits).
+    if (externalChange.rootId !== rootId || externalChange.path !== path) return;
     if (!isDirtyRef.current) {
       clearExternalChange();
       qc.invalidateQueries({ queryKey: ['page', rootId, path] });

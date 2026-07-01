@@ -148,11 +148,11 @@ export class ReferencesService {
     return {
       async listPages(): Promise<ReferencePage[]> {
         const out: ReferencePage[] = [];
-        for (const pages of roots.values()) {
+        for (const [rootId, pages] of roots) {
           const files = await pages.listMarkdownFiles();
           for (const rel of files) {
             const page = await pages.read(rel);
-            out.push({ path: rel, body: page.body });
+            out.push({ rootId, path: rel, body: page.body });
           }
         }
         return out;
@@ -165,6 +165,7 @@ export class ReferencesService {
     // so every superset hit carries `raw`. Project back onto ReferenceHit.
     const hits = await findReferencesCore({ pages: this.aggregateSource() }, type, slug);
     return hits.map((h) => ({
+      rootId: h.rootId,
       pagePath: h.pagePath,
       tagType: h.tagType,
       line: h.line,

@@ -21,7 +21,7 @@ interface Props {
   onDeleted: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
-  onOpenPage?: (path: string) => void;
+  onOpenPage?: (rootId: string, path: string) => void;
 }
 
 interface Draft {
@@ -328,7 +328,7 @@ export function AcDetail({
                   style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
                 >
                   <button
-                    onClick={() => onOpenPage?.(r.pagePath)}
+                    onClick={() => onOpenPage?.(r.rootId, r.pagePath)}
                     className="font-mono text-left hover:underline"
                     style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}
                   >
