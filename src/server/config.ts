@@ -221,17 +221,36 @@ function normDir(dir: string): string {
   return n === '.' ? '' : n;
 }
 
-/** True when dir `a` equals, contains, or is contained by dir `b`. */
-export function dirsOverlap(a: string, b: string): boolean {
-  const na = normDir(a);
-  const nb = normDir(b);
+/** True when `child` equals or is nested under `parent` (both normalized). */
+function isInsideDir(parent: string, child: string): boolean {
+  if (parent === child) return true;
+  if (parent === '') return true; // cwd root contains everything
+  return child.startsWith(parent + path.sep);
+}
+
+/** True when any segment of a relative path starts with '.' (dot-dir the pages walker skips). */
+function hasDotSegment(rel: string): boolean {
+  return rel.split(path.sep).some((s) => s.startsWith('.'));
+}
+
+/**
+ * True when a page root at `rootDir` genuinely conflicts with `otherDir`:
+ *  - equal dirs, or
+ *  - the root sits inside `otherDir` (its own files would live under a write-target), or
+ *  - `otherDir` sits inside the root AND is reachable by the pages walker (no dot-dir
+ *    segment on the way — the walker skips `.`-prefixed directories, so a root at '.'
+ *    does NOT actually index `.claude4spec/*`).
+ */
+export function dirsOverlap(rootDir: string, otherDir: string): boolean {
+  const na = normDir(rootDir);
+  const nb = normDir(otherDir);
   if (na === nb) return true;
-  const aSlash = na === '' ? '' : na + path.sep;
-  const bSlash = nb === '' ? '' : nb + path.sep;
-  // '' (cwd root) contains everything.
-  if (na === '') return true;
-  if (nb === '') return true;
-  return na.startsWith(bSlash) || nb.startsWith(aSlash);
+  if (isInsideDir(nb, na)) return true; // root nested under other
+  if (isInsideDir(na, nb)) {
+    const rel = na === '' ? nb : path.relative(na, nb);
+    return !hasDotSegment(rel); // other under root — a hazard only if the walker reaches it
+  }
+  return false;
 }
 
 /**
