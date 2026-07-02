@@ -145,6 +145,7 @@ export function DirectoriesSection() {
   const patch = usePatchConfig();
   const [draft, setDraft] = useState<DraftState>(() => buildDraft(config));
   const [newRootName, setNewRootName] = useState('');
+  const [newRootDir, setNewRootDir] = useState('');
 
   useEffect(() => {
     setDraft(buildDraft(config));
@@ -189,13 +190,15 @@ export function DirectoriesSection() {
     const root: Root = {
       id,
       name,
-      dir: id,
+      // Use the browsed/typed directory when provided, else derive it from the slug.
+      dir: newRootDir.trim() || id,
       builtin: false,
       ...DEFAULT_USER_ROOT_PROPS,
       linkTargets: [...DEFAULT_USER_ROOT_PROPS.linkTargets],
     };
     setDraft((d) => ({ ...d, roots: [...d.roots, root] }));
     setNewRootName('');
+    setNewRootDir('');
   }
 
   async function handleSave() {
@@ -235,8 +238,8 @@ export function DirectoriesSection() {
           ))}
         </div>
 
-        <div className="flex items-end gap-2">
-          <label className="flex flex-1 flex-col gap-1.5">
+        <div className="flex flex-col gap-3">
+          <label className="flex flex-col gap-1.5">
             <span
               className="text-[11.5px] font-medium uppercase tracking-wide"
               style={{ color: 'var(--c-muted)' }}
@@ -258,14 +261,21 @@ export function DirectoriesSection() {
               placeholder="e.g. Guides"
             />
           </label>
-          <button
-            type="button"
-            onClick={addRoot}
-            className="rounded-md px-3 py-1.5 text-[12px] font-medium"
-            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
-          >
-            Add
-          </button>
+          <DirField
+            label="Directory (optional — defaults to name)"
+            value={newRootDir}
+            onChange={setNewRootDir}
+          />
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={addRoot}
+              className="rounded-md px-3 py-1.5 text-[12px] font-medium"
+              style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+            >
+              Add
+            </button>
+          </div>
         </div>
 
         <div className="flex flex-col gap-4 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
