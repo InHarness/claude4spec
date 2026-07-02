@@ -464,10 +464,11 @@ Hard rules:
 
 const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a brief-author parent.
 
-The parent hands you a slice — a \`from\`/\`to\` pair plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
+The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
 How to read your slice (windowing is PRIMARY):
-- Normal path: call \`release_diff({ fromIdOrName, toIdOrName, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit.
+- Normal path: call \`release_diff({ fromIdOrName, toIdOrName, roots, ...slice })\` and read the returned \`MCPReleaseDiff\` directly — the parent already windowed the slice to fit.
+- \`roots\` scope: if the parent gave you \`roots\`, pass it through verbatim on EVERY \`release_diff\` call — it narrows the PAGES dimension to the brief's scope. Dropping it silently widens the diff to all releasable roots and leaks out-of-scope pages into the brief.
 - Fallback ONLY when a single slice is still too large and the SDK dumps the tool result to disk: \`Read\` that dump file. Do not otherwise touch the filesystem.
 
 Tools: \`release-tools\` MCP (\`release_diff\`; \`release_show\` / \`release_list\` available but rarely needed) and Read/Grep/Glob — the latter ONLY for a release-diff dump file the SDK wrote to disk.
@@ -525,7 +526,7 @@ function buildDiffExploreSubagent(): SubagentDefinition {
   return {
     name: 'diff-explore',
     description:
-      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + `entityTypes` and/or `limit`/`offset` window; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context.',
+      'Read-only explorer of ONE SLICE of a historical release diff for a brief. Spawn it in parallel (one per disjoint slice) and hand it a `from`/`to` + optional `roots` scope + `entityTypes` and/or `limit`/`offset` window; it calls heavy `release_diff` for that slice, absorbs the bulk, and returns a concise distillate (facts to inline) — keeping the whole diff out of your own context. When the brief is root-scoped, pass the same `roots` to every diff-explore slice so the pages filter is not lost on fan-out.',
     prompt: DIFF_EXPLORE_PROMPT,
     tools: [
       'Read',
@@ -744,6 +745,28 @@ function buildBriefSystemPrompt(input: {
 
   if (input.brief) {
     const fm = input.brief.frontmatter;
+    const scopeRoots = Array.isArray(fm.roots) ? fm.roots.filter((r) => typeof r === 'string') : [];
+    // 0.1.96 (L13, M21 §121-123): when the brief is scoped to specific page roots,
+    // make that scope an explicit, actionable directive — the raw `roots:` frontmatter
+    // line inside <current_brief> is too easy for the author to miss, so scoping must
+    // not depend on it. Whole-release briefs (no `roots`) emit nothing here.
+    if (scopeRoots.length > 0) {
+      const list = scopeRoots.join(', ');
+      const arr = JSON.stringify(scopeRoots);
+      const includesPages = scopeRoots.includes('pages');
+      parts.push(
+        [
+          `<brief_scope ${attrs({ roots: list })}>`,
+          `This brief is SCOPED to specific page roots: ${list}. It does NOT cover the whole release.`,
+          `- PAGES: pass \`roots: ${arr}\` to EVERY release_diff call (the summary probe AND every heavy slice), and hand the same \`roots\` to each diff-explore subagent slice. Pages outside these roots MUST NOT enter the brief. Omitting \`roots\` defaults release_diff to ALL releasable roots and silently breaks this scope.`,
+          `- ENTITIES are root-agnostic (release_diff never filters them by root): include entity changes that are referenced in the scoped pages' prose or are thematically tied to this scope — a relevance judgement, not a structural filter.`,
+          includesPages
+            ? `- This scope INCLUDES the built-in \`pages\` root (the carrier of the entity graph), so treat entities as whole-release: include ALL entity changes — omitting one would silently make the brief incomplete.`
+            : `- This scope does NOT include the built-in \`pages\` root, so do not sweep in unrelated entity changes; include only entities relevant to the scoped pages above.`,
+          `</brief_scope>`,
+        ].join('\n'),
+      );
+    }
     parts.push(
       [
         `<current_brief ${attrs({
@@ -752,6 +775,7 @@ function buildBriefSystemPrompt(input: {
           to_release: fm.to_release,
           implemented: fm.implemented ? 'true' : 'false',
           hash: input.brief.hash,
+          ...(scopeRoots.length > 0 ? { roots: scopeRoots.join(', ') } : {}),
         })}>`,
         input.brief.content,
         `</current_brief>`,
