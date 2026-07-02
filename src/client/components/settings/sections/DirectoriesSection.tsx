@@ -2,12 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { ApiError, type ConfigPatch } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
-import {
-  type Root,
-  type RootSidebar,
-  DEFAULT_USER_ROOT_PROPS,
-} from '../../../../shared/types.js';
+import { type Root, DEFAULT_USER_ROOT_PROPS } from '../../../../shared/types.js';
 import { SettingsCard } from '../SettingsCard.js';
+import { DirectoryPickerModal } from '../../../host-ui-kit/overlay/DirectoryPickerModal.js';
 
 interface DraftState {
   roots: Root[];
@@ -232,7 +229,6 @@ export function DirectoriesSection() {
             <RootCard
               key={root.id}
               root={root}
-              allRoots={draft.roots}
               onChange={(p) => updateRoot(root.id, p)}
               onRemove={root.builtin ? undefined : () => removeRoot(root.id)}
             />
@@ -325,18 +321,22 @@ export function DirectoriesSection() {
   );
 }
 
+/**
+ * 0.1.97: a page root is "just another page directory sharing the `pages`
+ * lifecycle", so the card exposes only Name + Directory. The behaviour gates
+ * (`releasable`/`sectionIndexed`/`referenceValidated`/`briefTarget`/`sidebar`/
+ * `linkTargets`) still ride along on each `Root` in `draft.roots` → PATCH; they
+ * are simply no longer user-editable here.
+ */
 function RootCard({
   root,
-  allRoots,
   onChange,
   onRemove,
 }: {
   root: Root;
-  allRoots: Root[];
   onChange: (patch: Partial<Root>) => void;
   onRemove?: () => void;
 }) {
-  const otherRoots = allRoots.filter((r) => r.id !== root.id);
   return (
     <div
       className="flex flex-col gap-3 rounded-md p-3"
@@ -380,119 +380,7 @@ function RootCard({
       ) : null}
 
       <DirField label="Directory" value={root.dir} onChange={(v) => onChange({ dir: v })} />
-
-      {root.builtin ? null : (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <Check
-              checked={root.releasable}
-              onChange={(v) => onChange({ releasable: v })}
-              label="Releasable"
-              hint="Included in release bundles, git commits and release diffs."
-            />
-            <Check
-              checked={root.sectionIndexed}
-              onChange={(v) => onChange({ sectionIndexed: v })}
-              label="Section-indexed"
-              hint="Anchors, section navigation and SectionRef nodes."
-            />
-            <Check
-              checked={root.referenceValidated}
-              onChange={(v) => onChange({ referenceValidated: v })}
-              label="Reference-validated"
-              hint="Broken-reference decorations and reference propagation."
-            />
-            <Check
-              checked={root.briefTarget}
-              onChange={(v) => onChange({ briefTarget: v })}
-              label="Brief target"
-              hint="Selectable as a brief scope in the brief-scope modal."
-            />
-          </div>
-
-          <label className="flex flex-col gap-1.5">
-            <span
-              className="text-[11.5px] font-medium uppercase tracking-wide"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              Sidebar
-            </span>
-            <select
-              value={root.sidebar}
-              onChange={(e) => onChange({ sidebar: e.target.value as RootSidebar })}
-              className="w-full rounded-md px-3 py-1.5 text-[13px]"
-              style={inputStyle}
-            >
-              <option value="accordion">Accordion</option>
-              <option value="hidden">Hidden</option>
-            </select>
-          </label>
-
-          <div className="flex flex-col gap-1.5">
-            <span
-              className="text-[11.5px] font-medium uppercase tracking-wide"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              Link targets
-            </span>
-            {otherRoots.length === 0 ? (
-              <span className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
-                No other roots to link to.
-              </span>
-            ) : (
-              <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                {otherRoots.map((o) => {
-                  const checked = root.linkTargets.includes(o.id);
-                  return (
-                    <label key={o.id} className="flex items-center gap-2 text-[12.5px]">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          onChange({
-                            linkTargets: checked
-                              ? root.linkTargets.filter((t) => t !== o.id)
-                              : [...root.linkTargets, o.id],
-                          })
-                        }
-                        className="h-4 w-4"
-                      />
-                      <span style={{ color: 'var(--c-ink)' }}>{o.id}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </>
-      )}
     </div>
-  );
-}
-
-function Check({
-  checked,
-  onChange,
-  label,
-  hint,
-}: {
-  checked: boolean;
-  onChange: (next: boolean) => void;
-  label: string;
-  hint: string;
-}) {
-  return (
-    <label className="flex items-start gap-2" title={hint}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 h-4 w-4"
-      />
-      <span className="text-[12.5px]" style={{ color: 'var(--c-ink)' }}>
-        {label}
-      </span>
-    </label>
   );
 }
 
@@ -518,6 +406,13 @@ function TextField({
   );
 }
 
+/**
+ * A cwd-relative directory input. Manual typing always works; the "Browse…"
+ * affordance opens the shared `DirectoryPickerModal` in relative mode, which
+ * converts the chosen absolute path back to a project-cwd-relative string (and
+ * rejects a selection outside the project). Serves every dir field here — each
+ * root's Directory plus briefs/patches/entities.
+ */
 function DirField({
   label,
   value,
@@ -527,17 +422,37 @@ function DirField({
   value: string;
   onChange: (next: string) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
-    <Field label={label}>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md px-3 py-1.5 text-[13px] font-mono"
-        style={inputStyle}
-        placeholder="relative to project root"
+    <>
+      <Field label={label}>
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-md px-3 py-1.5 text-[13px] font-mono"
+            style={inputStyle}
+            placeholder="relative to project root"
+          />
+          <button
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="shrink-0 rounded-md px-3 py-1.5 text-[12px] font-medium"
+            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+          >
+            Browse…
+          </button>
+        </div>
+      </Field>
+      <DirectoryPickerModal
+        open={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        mode="relative"
+        onSelect={onChange}
+        title={`Choose ${label.toLowerCase()}`}
       />
-    </Field>
+    </>
   );
 }
 

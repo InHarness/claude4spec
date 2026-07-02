@@ -190,10 +190,11 @@ export function Sidebar({
               onClose={() => setQuery('')}
             />
           ) : accordionRoots.length > 0 ? (
-            accordionRoots.map((root) => (
+            accordionRoots.map((root, i) => (
               <RootAccordion
                 key={root.id}
                 root={root}
+                first={i === 0}
                 collapsedPaths={collapsed[root.id] ?? []}
                 onToggle={(path) => toggle(root.id, path)}
                 activePagePath={activeRootId === root.id ? activePagePath : null}
@@ -439,12 +440,14 @@ function SearchResults({
  */
 function RootAccordion({
   root,
+  first,
   collapsedPaths,
   onToggle,
   activePagePath,
   todoCountByPath,
 }: {
   root: Root;
+  first: boolean;
   collapsedPaths: string[];
   onToggle: (path: string) => void;
   activePagePath: string | null;
@@ -453,8 +456,16 @@ function RootAccordion({
   const { data: tree = [] } = usePages(root.id);
   const rootOpen = !collapsedPaths.includes(ROOT_COLLAPSE_SENTINEL);
   const fileCount = countFiles(tree);
+  // 0.1.97: visually separate consecutive roots — a ~12px gap plus a faint top
+  // hairline on every root after the first (no line directly under the search box).
   return (
-    <div className="mb-0.5">
+    <div
+      style={
+        first
+          ? undefined
+          : { marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--c-hair)' }
+      }
+    >
       <button
         className="w-full flex items-center gap-1.5 px-2 py-[3px] rounded transition"
         style={{ color: 'var(--c-subtle)' }}
