@@ -93,7 +93,17 @@ export function releasesRouter(
     try {
       const fromParam =
         req.params.from === '__INITIAL__' ? null : decodeIdOrName(req.params.from);
-      const delta = releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to));
+      // 0.1.96 (L13): narrow the pages dimension to the requested root(s). Express
+      // gives a string for `?roots=pages` and an array for `?roots=pages&roots=skills`;
+      // normalize both to `string[]`. Absent/empty ⇒ undefined ⇒ all releasable roots
+      // (unchanged behaviour for the release-detail diff view). Backs the brief-scope
+      // picker's per-root changed-page count probe.
+      const rawRoots = req.query.roots;
+      const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
+        .filter((r): r is string => typeof r === 'string');
+      const delta = releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to), {
+        roots: roots.length > 0 ? roots : undefined,
+      });
       res.json(delta);
     } catch (err) {
       next(err);
