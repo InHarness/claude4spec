@@ -33,8 +33,21 @@ interface FsResponse {
  * Presentational directory list backed by `GET /api/workspace/fs`. Owns its own
  * listing + browse-error state; reports the current absolute path via
  * `onCwdChange` on every successful navigation (initial load included).
+ *
+ * `initialPath` seeds the first listing (undefined → server CWD, as before).
+ * `boundaryPath`, when set, clamps upward navigation: the `..` button is hidden
+ * once the current folder equals the boundary, so the tree cannot be walked above
+ * it (used in relative mode to pin the browser inside the project cwd).
  */
-export function DirectoryBrowser({ onCwdChange }: { onCwdChange?: (absPath: string) => void }) {
+export function DirectoryBrowser({
+  onCwdChange,
+  initialPath,
+  boundaryPath,
+}: {
+  onCwdChange?: (absPath: string) => void;
+  initialPath?: string;
+  boundaryPath?: string;
+}) {
   const [listing, setListing] = useState<FsResponse | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
   // Ref so `browse` stays referentially stable regardless of an inline callback.
@@ -61,8 +74,12 @@ export function DirectoryBrowser({ onCwdChange }: { onCwdChange?: (absPath: stri
   }, []);
 
   useEffect(() => {
-    browse();
-  }, [browse]);
+    browse(initialPath);
+  }, [browse, initialPath]);
+
+  // At the boundary the `..` button is suppressed, so the tree can't go above it.
+  const atBoundary =
+    boundaryPath != null && listing != null && normPath(listing.path) === normPath(boundaryPath);
 
   return (
     <div className="rounded-md overflow-hidden" style={{ border: '1px solid var(--c-hair)' }}>
@@ -80,7 +97,7 @@ export function DirectoryBrowser({ onCwdChange }: { onCwdChange?: (absPath: stri
         {listing?.path ?? 'loading…'}
       </div>
       <div className="max-h-52 overflow-y-auto">
-        {listing?.parent != null ? (
+        {listing?.parent != null && !atBoundary ? (
           <button
             type="button"
             onClick={() => browse(listing.parent!)}
@@ -231,12 +248,22 @@ export function DirectoryPickerModal({
       }
     >
       <div className="space-y-3">
-        <DirectoryBrowser
-          onCwdChange={(p) => {
-            setCwd(p);
-            setError(null);
-          }}
-        />
+        {mode === 'relative' && !projectCwd ? (
+          // Wait for the project cwd so the browser can open pinned inside it
+          // (start there + clamp `..` at the boundary), never above it.
+          <div className="px-2.5 py-3 text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+            Loading project directory…
+          </div>
+        ) : (
+          <DirectoryBrowser
+            onCwdChange={(p) => {
+              setCwd(p);
+              setError(null);
+            }}
+            initialPath={mode === 'relative' ? projectCwd ?? undefined : undefined}
+            boundaryPath={mode === 'relative' ? projectCwd ?? undefined : undefined}
+          />
+        )}
         {error ? (
           <div
             className="rounded-md px-2.5 py-1.5 text-[12px]"
