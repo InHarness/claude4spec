@@ -62,6 +62,8 @@ export interface AgentTurnDeps {
   /** M05 0.1.62: user's own ANTHROPIC API key, injected per-turn into custom_env. */
   agentCredentialService: AgentCredentialService;
   pagesService: PagesService;
+  /** Resolve a page-root's service by id (for root-aware current-page reads). */
+  resolvePagesService?: (rootId: string) => PagesService | undefined;
   tagsService: TagsService;
   sectionsService: SectionsService;
   planService: PlanService;
@@ -177,6 +179,8 @@ export interface AgentTurnInput {
   annotations?: Annotation[];
   model: Model;
   currentPage?: string | null;
+  /** Root the `currentPage` path belongs to; resolves which PagesService reads it. */
+  currentPageRootId?: string | null;
   architectureConfig: Record<string, unknown>;
   requestId: string;
   consoleObserver: StreamObserver | null;
@@ -215,6 +219,7 @@ export async function runAgentTurn(
   const { thread, prompt, requestId } = input;
   const annotations = input.annotations ?? [];
   const currentPage = input.currentPage ?? null;
+  const currentPageRootId = input.currentPageRootId ?? null;
   // 0.1.79: snapshot the highest message id BEFORE this turn inserts anything, so
   // we can slice exactly this turn's messages at the end (for `output: 'full'`).
   const turnStartMessageId = deps.chatService.latestMessageId(thread.id);
@@ -432,10 +437,15 @@ export async function runAgentTurn(
       }
     }
 
+    // Read the attached page from the root the user is viewing. `currentPageRootId`
+    // comes from the `/space/$rootId/$` route; fall back to the built-in `pages` root
+    // when absent (older clients) or unknown.
+    const currentPageService =
+      deps.resolvePagesService?.(currentPageRootId ?? 'pages') ?? deps.pagesService;
     let currentPageBody: string | null = null;
     if (!isBriefFrame && currentPage) {
       try {
-        const page = await deps.pagesService.read(currentPage);
+        const page = await currentPageService.read(currentPage);
         currentPageBody = page.body;
       } catch {
         currentPageBody = null;
@@ -506,8 +516,9 @@ export async function runAgentTurn(
       briefsDir: cfg.briefsDir,
       patchesDir: cfg.patchesDir,
       currentPagePath: currentPage,
-      // The current-page fetch uses the built-in pages root's service (rootId 'pages').
-      currentPageRootId: deps.pagesService.rootId,
+      // rootId of the service the page was actually read from (viewed root, or the
+      // 'pages' fallback) — rendered into the `<current_page root="…">` context.
+      currentPageRootId: currentPageService.rootId,
       currentPageBody,
       pageCount,
       entityCounts: isBriefFrame ? {} : deps.pluginHost.computeEntityCounts(deps.db.handle),

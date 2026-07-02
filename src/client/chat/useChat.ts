@@ -218,7 +218,12 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   });
 
   const sendMessage = useCallback(
-    async (prompt: string, annotations: Annotation[] = [], currentPage?: string | null) => {
+    async (
+      prompt: string,
+      annotations: Annotation[] = [],
+      currentPage?: string | null,
+      currentPageRootId?: string | null,
+    ) => {
       if (state.isStreaming) return;
       if (!prompt.trim() && annotations.length === 0) return;
 
@@ -242,9 +247,11 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         ...(architectureConfig ? { architectureConfig } : {}),
         ...(annotations.length ? { annotations } : {}),
         ...(currentPage ? { currentPage } : {}),
+        ...(currentPageRootId ? { currentPageRootId } : {}),
       } as Parameters<typeof startStream>[0] & {
         annotations?: Annotation[];
         currentPage?: string;
+        currentPageRootId?: string;
         architectureConfig?: Record<string, unknown>;
         planMode?: boolean;
       };

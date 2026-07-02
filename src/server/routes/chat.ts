@@ -90,6 +90,8 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       const modelArg = typeof req.body?.model === 'string' ? req.body.model : 'sonnet-4.6';
       const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg) ? (modelArg as Model) : 'sonnet-4.6';
       const currentPage = typeof req.body?.currentPage === 'string' ? req.body.currentPage : null;
+      const currentPageRootId =
+        typeof req.body?.currentPageRootId === 'string' ? req.body.currentPageRootId : null;
       const annotations = Array.isArray(req.body?.annotations) ? (req.body.annotations as Annotation[]) : [];
       // M05 / M01 `c0nf1g4a`: `claude_usePreset` jest server-driven (per-query read
       // `.claude4spec/config.json` → `agent.claudeUsePreset`, brak pola = `true`).
@@ -215,6 +217,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
           annotations,
           model,
           currentPage,
+          currentPageRootId,
           architectureConfig,
           requestId,
           consoleObserver,
