@@ -22,7 +22,7 @@ import { pipeline } from 'node:stream/promises';
 import { create as tarCreate, extract as tarExtract } from 'tar';
 import { nanoid } from 'nanoid';
 import type { Release, SpecSnapshot, SpecSnapshotEntityRow } from '../../shared/entities.js';
-import type { PageSnapshotData } from './page-serializer.js';
+import type { Root } from '../../shared/types.js';
 import type { Config } from '../config.js';
 import { DomainError } from './tags.js';
 
@@ -33,8 +33,13 @@ import { DomainError } from './tags.js';
  * mismatch ⇒ `BUNDLE_SCHEMA_UNSUPPORTED`. NOT bumped when an entity's
  * `serializer_version` changes — each bundle is self-contained w.r.t. entity
  * schema (carried per-type in the manifest's `serializerVersions`).
+ *
+ * v2 (0.1.96 multiroot): pages are laid out as `<rootId>/<path>.md` (was flat
+ * `pages/`); the manifest gains `roots[]` and the sanitized config carries
+ * `roots[]` instead of the `pagesDir` scalar. v1 bundles (flat `pages/`, no
+ * `manifest.roots`) are still readable — see `ReleaseService.restoreBundleArchive`.
  */
-export const BUNDLE_SCHEMA_VERSION = 1 as const;
+export const BUNDLE_SCHEMA_VERSION = 2 as const;
 
 /**
  * Strict singular entity type → plural bundle file name. Published for M26
@@ -53,11 +58,23 @@ export const PLURAL_FILE_TO_ENTITY_TYPE: Record<string, string> = Object.fromEnt
   Object.entries(ENTITY_TYPE_TO_PLURAL_FILE).map(([type, file]) => [file, type]),
 );
 
+/** One releasable page root as carried by the bundle manifest (id/name/dir only). */
+export interface BundleRoot {
+  id: string;
+  name: string;
+  dir: string;
+}
+
 /** Sanitized `config.json` shape embedded in the bundle (white-list, see below). */
 export interface BundleConfig {
   $schemaVersion: number;
   name: string;
-  pagesDir: string;
+  /**
+   * v2 (0.1.96): releasable page roots (was the `pagesDir` scalar in v1). v1
+   * bundles carry `pagesDir` instead — the read direction maps it to a single
+   * built-in `pages` root via the v3→v4 config path.
+   */
+  roots: Root[];
   writingStyle: string | null;
   onboardingCompleted: boolean;
   entities?: string[];
@@ -65,7 +82,12 @@ export interface BundleConfig {
 }
 
 export interface BundleManifest {
-  bundleSchemaVersion: 1;
+  bundleSchemaVersion: 2;
+  /**
+   * v2 (0.1.96): releasable roots present in the bundle (id/name/dir only). The
+   * pages tree is laid out under `<rootId>/…`. Absent on v1 bundles (flat `pages/`).
+   */
+  roots: BundleRoot[];
   release: {
     id: number;
     name: string;
@@ -90,6 +112,18 @@ export interface BuildBundleResult {
   sizeBytes: number;
   sha256: string; // lowercase hex64
   bundleSchemaVersion: number;
+}
+
+/**
+ * One page to lay out in the bundle, carrying its `rootId` (the snapshot's
+ * `SpecSnapshotPageRow` does not — the caller resolves `rootId` straight from
+ * `page_version`). Delete tombstones are skipped by the writer.
+ */
+export interface BundlePageInput {
+  rootId: string;
+  path: string;
+  op: 'create' | 'update' | 'delete';
+  content: string;
 }
 
 /** claude4spec version read once at module load (pattern from `src/bin/c4s-mcp.ts`). */
@@ -122,10 +156,20 @@ export const C4S_VERSION = readC4sVersion();
  * consciously decides to keep it here. No allow-list entry → no leak.
  */
 export function sanitizeConfigForBundle(config: Config): BundleConfig {
+  // 0.1.96: only releasable roots enter the bundle (their pages are the only
+  // ones snapshotted); non-releasable / brief / patch roots fall out here. Any
+  // `linkTargets` pointing at a dropped root must also be pruned, else clone/
+  // import would fail parseRootsArray with a "dangling link scope" error.
+  const releasable = config.roots.filter((r) => r.releasable);
+  const keptIds = new Set(releasable.map((r) => r.id));
+  const roots = releasable.map((r) => ({
+    ...r,
+    linkTargets: r.linkTargets.filter((id) => keptIds.has(id)),
+  }));
   return {
     $schemaVersion: config.$schemaVersion,
     name: config.name,
-    pagesDir: config.pagesDir,
+    roots,
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,
@@ -178,12 +222,19 @@ export async function buildBundleArchive(
   snapshot: SpecSnapshot,
   release: Release,
   config: Config,
+  pageRows: BundlePageInput[],
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));
   try {
+    // 0.1.96: only releasable roots are carried (manifest + layout dirs).
+    const releasableRoots: BundleRoot[] = config.roots
+      .filter((r) => r.releasable)
+      .map((r) => ({ id: r.id, name: r.name, dir: r.dir }));
+
     // 1. manifest.json
     const manifest: BundleManifest = {
       bundleSchemaVersion: BUNDLE_SCHEMA_VERSION,
+      roots: releasableRoots,
       release: {
         id: release.id,
         name: release.name,
@@ -203,13 +254,14 @@ export async function buildBundleArchive(
       'utf8',
     );
 
-    // 3. pages/<path>.md — byte-equal content, skip delete tombstones.
-    for (const page of snapshot.pages) {
+    // 3. <rootId>/<path>.md — byte-equal content, skip delete tombstones. v2
+    //    layout keys pages by root so the same relative path in two roots does
+    //    not collide (v1 was a flat `pages/`).
+    for (const page of pageRows) {
       if (page.op === 'delete') continue;
-      const data = page.data as PageSnapshotData;
-      const dest = path.join(tempDir, 'pages', data.path);
+      const dest = path.join(tempDir, page.rootId, page.path);
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.writeFileSync(dest, data.content, 'utf8');
+      fs.writeFileSync(dest, page.content, 'utf8');
     }
 
     // 4. entities/<typePlural>.json — one file per active type with rows.

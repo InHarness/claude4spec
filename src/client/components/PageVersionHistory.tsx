@@ -4,6 +4,7 @@ import { usePageVersions, usePageVersionDetail } from '../hooks/usePageVersions.
 import { useReleases, useRestorePage } from '../hooks/useReleases.js';
 
 interface Props {
+  rootId: string;
   path: string;
   onBack: () => void;
 }
@@ -13,8 +14,8 @@ interface Props {
  * VersionHistory: lista wersji z release labelkami + restore button per
  * wersja przypisana do release'a. Detail panel pokazuje snapshot data.
  */
-export function PageVersionHistory({ path, onBack }: Props) {
-  const { data: versions = [], isLoading } = usePageVersions(path);
+export function PageVersionHistory({ rootId, path, onBack }: Props) {
+  const { data: versions = [], isLoading } = usePageVersions(rootId, path);
   const { data: allReleases = [] } = useReleases();
   const restorePage = useRestorePage();
   const [selected, setSelected] = useState<number | null>(null);
@@ -30,7 +31,7 @@ export function PageVersionHistory({ path, onBack }: Props) {
     if (versions.length && selected === null) setSelected(versions[0]!.version);
   }, [versions, selected]);
 
-  const { data: detail } = usePageVersionDetail(path, selected);
+  const { data: detail } = usePageVersionDetail(rootId, path, selected);
 
   const onRestore = async (releaseId: number) => {
     setRestoring(releaseId);

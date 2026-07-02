@@ -34,39 +34,55 @@ interface SectionInfo {
   paragraphCount: number;
 }
 
+/** 0.1.96: one section-indexed root — its PagesService plus the watcher whose
+ * captures we suppress when auto-injecting anchors. */
+export interface SectionIndexRoot {
+  pages: PagesService;
+  watcher: PagesWatcher;
+}
+
 export class SectionIndexerService {
   private debounceMs = 300;
+  /** Keyed by `${rootId}:${relPath}` so the same path in two roots debounces
+   * independently. */
   private pending = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private db: Database.Database,
-    private pages: PagesService,
-    private watcher: PagesWatcher,
+    /** rootId → {pages, watcher} for every SECTION-INDEXED root (filter
+     * config.roots by `sectionIndexed`, always includes the built-in 'pages'). */
+    private roots: Map<string, SectionIndexRoot>,
     private ws: WsEmitter,
     private host: ProjectPluginHost,
   ) {}
 
-  schedulePage(relPath: string): void {
-    const prev = this.pending.get(relPath);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(relPath);
-      this.indexPage(relPath).catch((err) => {
-        console.error(`[section-indexer] failed to index ${relPath}:`, err);
-      });
-    }, this.debounceMs);
-    this.pending.set(relPath, timer);
+  private key(rootId: string, relPath: string): string {
+    return `${rootId}:${relPath}`;
   }
 
-  async handleUnlink(relPath: string): Promise<void> {
-    const prev = this.pending.get(relPath);
+  schedulePage(rootId: string, relPath: string): void {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => {
+      this.pending.delete(k);
+      this.indexPage(rootId, relPath).catch((err) => {
+        console.error(`[section-indexer] failed to index ${rootId}:${relPath}:`, err);
+      });
+    }, this.debounceMs);
+    this.pending.set(k, timer);
+  }
+
+  async handleUnlink(rootId: string, relPath: string): Promise<void> {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
     if (prev) {
       clearTimeout(prev);
-      this.pending.delete(relPath);
+      this.pending.delete(k);
     }
     const existing = this.db
-      .prepare('SELECT anchor FROM section_index WHERE page_path = ?')
-      .all(relPath) as Array<{ anchor: string }>;
+      .prepare('SELECT anchor FROM section_index WHERE rootId = ? AND page_path = ?')
+      .all(rootId, relPath) as Array<{ anchor: string }>;
     if (existing.length === 0) return;
     const anchors = existing.map((r) => r.anchor);
     const tx = this.db.transaction(() => {
@@ -76,21 +92,27 @@ export class SectionIndexerService {
   }
 
   private removeSectionIndex(anchor: string): void {
+    // anchor is globally unique — deleting by anchor is root-agnostic.
     this.db.prepare('DELETE FROM section_entity_link WHERE anchor = ?').run(anchor);
     this.db.prepare('DELETE FROM section_index WHERE anchor = ?').run(anchor);
   }
 
   async indexAll(): Promise<void> {
-    const files = await this.pages.listMarkdownFiles();
-    for (const rel of files) {
-      await this.indexPage(rel);
+    for (const [rootId, { pages }] of this.roots) {
+      const files = await pages.listMarkdownFiles();
+      for (const rel of files) {
+        await this.indexPage(rootId, rel);
+      }
     }
   }
 
-  async indexPage(relPath: string): Promise<void> {
+  async indexPage(rootId: string, relPath: string): Promise<void> {
+    const root = this.roots.get(rootId);
+    if (!root) return;
+    const { pages, watcher } = root;
     let page;
     try {
-      page = await this.pages.read(relPath);
+      page = await pages.read(relPath);
     } catch {
       return;
     }
@@ -113,17 +135,17 @@ export class SectionIndexerService {
 
     if (bodyChanged) {
       body = lines.join('\n');
-      this.watcher.suppress(relPath);
-      await this.pages.write(relPath, { frontmatter: page.frontmatter, body });
+      watcher.suppress(relPath);
+      await pages.write(relPath, { frontmatter: page.frontmatter, body });
     }
 
     const sections = buildSections(lines, headings);
 
     const priorRows = this.db
       .prepare(
-        'SELECT anchor, content_hash FROM section_index WHERE page_path = ?'
+        'SELECT anchor, content_hash FROM section_index WHERE rootId = ? AND page_path = ?'
       )
-      .all(relPath) as Array<{ anchor: string; content_hash: string }>;
+      .all(rootId, relPath) as Array<{ anchor: string; content_hash: string }>;
     const prior = new Map(priorRows.map((r) => [r.anchor, r.content_hash] as const));
     const currentAnchors = new Set(sections.map((s) => s.anchor));
 
@@ -135,11 +157,12 @@ export class SectionIndexerService {
     const tx = this.db.transaction(() => {
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
-            (anchor, page_path, heading_path, heading_slug, heading_level,
+            (rootId, anchor, page_path, heading_path, heading_slug, heading_level,
              heading_text, content_hash, line_start, line_end, paragraph_count,
              created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
           ON CONFLICT(anchor) DO UPDATE SET
+            rootId = excluded.rootId,
             page_path = excluded.page_path,
             heading_path = excluded.heading_path,
             heading_slug = excluded.heading_slug,
@@ -153,6 +176,7 @@ export class SectionIndexerService {
       );
       for (const s of sections) {
         upsertStmt.run(
+          rootId,
           s.anchor,
           relPath,
           s.headingPath,
@@ -172,14 +196,18 @@ export class SectionIndexerService {
 
       const anchorsInFile = sections.map((s) => s.anchor);
       if (anchorsInFile.length) {
+        // Delete this page's links by (rootId, anchor-set). anchor alone is
+        // globally unique, so rootId is a belt-and-suspenders scope match.
         const placeholders = anchorsInFile.map(() => '?').join(',');
         this.db
-          .prepare(`DELETE FROM section_entity_link WHERE anchor IN (${placeholders})`)
-          .run(...anchorsInFile);
+          .prepare(
+            `DELETE FROM section_entity_link WHERE rootId = ? AND anchor IN (${placeholders})`
+          )
+          .run(rootId, ...anchorsInFile);
 
         const linkStmt = this.db.prepare(
-          `INSERT OR IGNORE INTO section_entity_link (anchor, entity_type, entity_slug, relation)
-               VALUES (?, ?, ?, 'uses')`
+          `INSERT OR IGNORE INTO section_entity_link (rootId, anchor, entity_type, entity_slug, relation)
+               VALUES (?, ?, ?, ?, 'uses')`
         );
         for (const s of sections) {
           const xmlTags = parseXmlTagsExcludingCode(s.content);
@@ -194,7 +222,7 @@ export class SectionIndexerService {
               seen.add(key);
               // M29: link by slug (sole identity); only persist for entities
               // that actually exist, mirroring the prior id-resolver guard.
-              if (this.host.entityExists(type, slug)) linkStmt.run(s.anchor, type, slug);
+              if (this.host.entityExists(type, slug)) linkStmt.run(rootId, s.anchor, type, slug);
             }
           }
         }
@@ -204,6 +232,7 @@ export class SectionIndexerService {
 
     this.ws.broadcast({
       kind: 'section:indexed',
+      rootId,
       pagePath: relPath,
       anchors: sections.map((s) => s.anchor),
     });

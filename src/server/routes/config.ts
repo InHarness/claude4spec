@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
-import { readConfig, writeConfig, type Config } from '../config.js';
+import { readConfig, writeConfig, parseRootsArray, validateRootDirs, type Config } from '../config.js';
+import type { Root } from '../../shared/types.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
@@ -17,8 +18,8 @@ export interface ConfigRouterDeps {
   onContextConfigChanged?: () => void;
   /**
    * 0.1.56: fired after a PATCH persists `onboardingCompleted: true` (Continue
-   * or Skip), with the effective post-write `pagesDir`. Wires the deferred,
-   * idempotent welcome `pages/index.md` step so changing `pagesDir` in
+   * or Skip), with the effective post-write pages-root dir. Wires the deferred,
+   * idempotent welcome `pages/index.md` step so changing the pages root's dir in
    * onboarding can't leave an orphan index on the old path.
    */
   onOnboardingCompleted?: (effectivePagesDir: string) => void;
@@ -31,7 +32,7 @@ export interface ConfigRouterDeps {
   pluginSettingsSections?: () => PluginSettingsSection[];
 }
 
-const CONTEXT_DEFINING_FIELDS = ['pagesDir', 'briefsDir', 'patchesDir', 'entitiesDir', 'entities'] as const;
+const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDir', 'entities'] as const;
 
 /**
  * Single source of the GET/PATCH /config response shape (was duplicated
@@ -41,7 +42,7 @@ const CONTEXT_DEFINING_FIELDS = ['pagesDir', 'briefsDir', 'patchesDir', 'entitie
 function configResponse(c: Config) {
   return {
     name: c.name,
-    pagesDir: c.pagesDir,
+    roots: c.roots,
     writingStyle: c.writingStyle,
     language: c.language ?? null,
     description: c.description ?? null,
@@ -96,7 +97,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // cannot do (writingStyle selectability, name regex, path safety).
       const patch: Partial<{
         name: string;
-        pagesDir: string;
+        roots: Root[];
         briefsDir: string;
         patchesDir: string;
         entitiesDir: string;
@@ -149,7 +150,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         return value;
       };
 
-      for (const field of ['pagesDir', 'briefsDir', 'patchesDir', 'entitiesDir'] as const) {
+      for (const field of ['briefsDir', 'patchesDir', 'entitiesDir'] as const) {
         if (field in body) {
           const result = validateDir(field, body[field]);
           if (typeof result === 'object') {
@@ -157,6 +158,33 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           }
           patch[field] = result;
         }
+      }
+
+      // 0.1.96: full-array replace of roots[]. Structural validation (types,
+      // path-safety, unique ids, dangling linkTargets, built-in pages present)
+      // via parseRootsArray; cross-field overlap via validateRootDirs against the
+      // effective (merged) briefs/patches/entities dirs. Any hard violation → 400.
+      if ('roots' in body) {
+        let roots: Root[];
+        try {
+          roots = parseRootsArray(body.roots);
+        } catch (err) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
+        }
+        const current = readConfig(cwd);
+        const effective = {
+          entitiesDir: (patch.entitiesDir ?? current.entitiesDir),
+          briefsDir: (patch.briefsDir ?? current.briefsDir),
+          patchesDir: (patch.patchesDir ?? current.patchesDir),
+        };
+        if (effective.briefsDir === effective.patchesDir) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: 'briefsDir and patchesDir must differ' } });
+        }
+        const { errors } = validateRootDirs(roots, effective);
+        if (errors.length > 0) {
+          return res.status(400).json({ error: { code: 'VALIDATION', message: errors[0] } });
+        }
+        patch.roots = roots;
       }
 
       if ('writingStyle' in body) {
@@ -301,7 +329,8 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // post-write pagesDir (a pagesDir change in the same atomic body is already
       // persisted in `updated`).
       if (patch.onboardingCompleted === true) {
-        deps.onOnboardingCompleted?.(updated.pagesDir);
+        const pagesDir = updated.roots.find((r) => r.id === 'pages')?.dir ?? 'pages';
+        deps.onOnboardingCompleted?.(pagesDir);
       }
       // M33 phase 3: a `plugins` write invalidates the context only when at
       // least one written field is `executive`; `hot-reload`-only writes take

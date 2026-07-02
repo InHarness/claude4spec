@@ -38,6 +38,12 @@ function persistLiteralIgnores(map: Record<string, string[]>) {
   }
 }
 
+/** 0.1.96: the page-links index keys entries by `${rootId}:${path}`. */
+function splitKey(key: string): { rootId: string; path: string } {
+  const i = key.indexOf(':');
+  return i < 0 ? { rootId: 'pages', path: key } : { rootId: key.slice(0, i), path: key.slice(i + 1) };
+}
+
 export function PageLinksList() {
   const { data, isLoading } = usePageLinks();
   const [tab, setTab] = useState<Tab>('broken');
@@ -154,7 +160,8 @@ export function PageLinksList() {
           grouped.map((g) => (
             <SourceGroup
               key={g.sourcePath}
-              sourcePath={g.sourcePath}
+              rootId={splitKey(g.sourcePath).rootId}
+              path={splitKey(g.sourcePath).path}
               items={g.items}
               onIgnore={(rawToken) => ignoreItem(g.sourcePath, rawToken)}
             />
@@ -201,11 +208,13 @@ function TabButton({
 }
 
 function SourceGroup({
-  sourcePath,
+  rootId,
+  path,
   items,
   onIgnore,
 }: {
-  sourcePath: string;
+  rootId: string;
+  path: string;
   items: UnresolvedMention[];
   onIgnore: (rawToken: string) => void;
 }) {
@@ -213,12 +222,12 @@ function SourceGroup({
   return (
     <section className="mb-6">
       <button
-        onClick={() => navigate({ to: '/pages/$', params: { _splat: sourcePath } })}
+        onClick={() => navigate({ to: '/space/$rootId/$', params: { rootId, _splat: path } })}
         className="flex items-center gap-2 mb-2 hover:underline"
       >
         <FileText size={12} style={{ color: 'var(--c-muted)' }} />
         <h2 className="text-[12px] font-mono" style={{ color: 'var(--c-muted)' }}>
-          {sourcePath}
+          {rootId === 'pages' ? path : `${rootId}/${path}`}
         </h2>
         <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           {items.length}
@@ -228,7 +237,8 @@ function SourceGroup({
         {items.map((it) => (
           <UnresolvedRow
             key={`${it.line}:${it.col}:${it.rawToken}`}
-            sourcePath={sourcePath}
+            rootId={rootId}
+            path={path}
             item={it}
             onIgnore={() => onIgnore(it.rawToken)}
           />
@@ -239,11 +249,13 @@ function SourceGroup({
 }
 
 function UnresolvedRow({
-  sourcePath,
+  rootId,
+  path,
   item,
   onIgnore,
 }: {
-  sourcePath: string;
+  rootId: string;
+  path: string;
   item: UnresolvedMention;
   onIgnore: () => void;
 }) {
@@ -257,7 +269,7 @@ function UnresolvedRow({
   const labelKind = item.syntax === 'link' ? 'broken link' : 'unresolved';
 
   const goToSource = () => {
-    void navigate({ to: '/pages/$', params: { _splat: sourcePath } });
+    void navigate({ to: '/space/$rootId/$', params: { rootId, _splat: path } });
   };
 
   async function handleCreate() {
@@ -266,11 +278,12 @@ function UnresolvedRow({
     try {
       const title = deriveTitle(item.candidatePath);
       await writePage.mutateAsync({
+        rootId,
         path: item.candidatePath,
         body: `# ${title}\n\n`,
       });
       toast.success(`Created ${item.candidatePath}`);
-      void navigate({ to: '/pages/$', params: { _splat: item.candidatePath } });
+      void navigate({ to: '/space/$rootId/$', params: { rootId, _splat: item.candidatePath } });
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -286,15 +299,16 @@ function UnresolvedRow({
     }
     setBusy(true);
     try {
-      const page = await api.read(sourcePath);
+      const page = await api.read(rootId, path);
       const newToken = item.rawToken.replace(item.candidatePath, newPath);
       if (!page.body.includes(item.rawToken)) {
-        toast.error(`Token "${item.rawToken}" not found in ${sourcePath}`);
+        toast.error(`Token "${item.rawToken}" not found in ${path}`);
         return;
       }
       const nextBody = page.body.replace(item.rawToken, newToken);
       await writePage.mutateAsync({
-        path: sourcePath,
+        rootId,
+        path,
         body: nextBody,
         frontmatter: page.frontmatter,
       });

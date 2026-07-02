@@ -14,7 +14,12 @@ export class PagesWatcher {
   private readonly SUPPRESS_WINDOW_MS = 350;
   private callbacks: PagesWatcherCallback[] = [];
 
-  constructor(private pagesRoot: string, private gateway: WsEmitter) {}
+  constructor(
+    private pagesRoot: string,
+    private gateway: WsEmitter,
+    /** 0.1.96: which root these events belong to ('pages' | user slug | 'brief' | 'patch'). */
+    readonly rootId: string = 'pages',
+  ) {}
 
   onChange(cb: PagesWatcherCallback): void {
     this.callbacks.push(cb);
@@ -47,7 +52,7 @@ export class PagesWatcher {
    * Does NOT fire the callback chain (callbacks are for external-origin indexing).
    */
   emitServerWrite(relPath: string): void {
-    this.gateway.broadcast({ kind: 'page:changed', event: 'change', path: relPath, origin: 'server' });
+    this.gateway.broadcast({ kind: 'page:changed', event: 'change', path: relPath, rootId: this.rootId, origin: 'server' });
   }
 
   private emit(kind: EventKind, absPath: string): void {
@@ -62,7 +67,7 @@ export class PagesWatcher {
       this.suppressUntil.delete(relPath);
       return;
     }
-    this.gateway.broadcast({ kind: 'page:changed', event: kind, path: relPath, origin: 'external' });
+    this.gateway.broadcast({ kind: 'page:changed', event: kind, path: relPath, rootId: this.rootId, origin: 'external' });
     // Indexer callbacks (M06 section index) run for .md only — .html is never indexed/versioned.
     if (!isMd) return;
     for (const cb of this.callbacks) {

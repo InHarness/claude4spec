@@ -35,7 +35,8 @@ import type { PagesWatcher } from '../fs/watcher.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
-import { readConfig } from '../config.js';
+import { readConfig, builtinPagesRoot } from '../config.js';
+import type { PageSnapshotData } from './page-serializer.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -43,6 +44,8 @@ import {
   PLURAL_FILE_TO_ENTITY_TYPE,
   type BuildBundleResult,
   type BundleManifest,
+  type BundlePageInput,
+  type BundleRoot,
 } from './release-bundle.js';
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
@@ -101,6 +104,7 @@ interface PageVersionRow {
   release_id: number | null;
   changed_by: string;
   created_at: string;
+  rootId: string;
 }
 
 export interface RestoreEntityInput {
@@ -149,6 +153,12 @@ export class ReleaseService {
     private pagesService: PagesService,
     private watcher: PagesWatcher | null = null,
     private cwd: string = process.cwd(),
+    /**
+     * 0.1.96: ids of the releasable roots (config.roots filtered by `releasable`).
+     * Only these roots' `page_version` rows enter releases/bundles/diffs; brief/
+     * patch markers and non-releasable user roots fall out structurally.
+     */
+    private releasableRootIds: string[] = ['pages'],
   ) {}
 
   /**
@@ -186,7 +196,7 @@ export class ReleaseService {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS n FROM entity_version WHERE release_id IS NULL`)
       .get() as { n: number };
-    return row.n + this.pageVersions.countUnreleased();
+    return row.n + this.pageVersions.countUnreleased(this.releasableRootIds);
   }
 
   // ─── Mutations ───────────────────────────────────────────────────────────
@@ -220,7 +230,7 @@ export class ReleaseService {
       this.db
         .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
         .run(releaseId);
-      this.pageVersions.assignToRelease(releaseId);
+      this.pageVersions.assignToRelease(releaseId, this.releasableRootIds);
 
       const row = this.db
         .prepare(`SELECT * FROM spec_release WHERE id = ?`)
@@ -291,7 +301,7 @@ export class ReleaseService {
         this.db
           .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
           .run(row.id);
-        this.pageVersions.assignToRelease(row.id);
+        this.pageVersions.assignToRelease(row.id, this.releasableRootIds);
       }
 
       return row.id;
@@ -357,7 +367,11 @@ export class ReleaseService {
    * Wszystkie encje/strony w `to` widoczne jako `op: 'create'`. Output
    * `RawDelta.from` jest wtedy `null` (sygnal dla M21 / UI).
    */
-  getReleaseDiff(fromIdOrName: number | string | null, toIdOrName: number | string): RawDelta {
+  getReleaseDiff(
+    fromIdOrName: number | string | null,
+    toIdOrName: number | string,
+    opts?: { roots?: string[] },
+  ): RawDelta {
     const toRow = this.findReleaseRow(toIdOrName);
     if (!toRow) throw new DomainError('NOT_FOUND', `release '${toIdOrName}' not found`);
 
@@ -365,6 +379,11 @@ export class ReleaseService {
 
     let fromSnap: SpecSnapshot;
     let fromMeta: { id: number; name: string } | null;
+    // 0.1.96: pages are correlated by (rootId, path), narrowed by opts.roots
+    // (default: all releasable roots) via latestPageRowsAtOrBefore, which carries
+    // rootId. Entities are unaffected by the roots narrowing.
+    const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts?.roots);
+    let fromPageRows: PageVersionRow[];
     if (fromIdOrName === null) {
       fromSnap = {
         release: { id: 0, name: '__initial__', description: '', createdBy: 'user', createdAt: '' },
@@ -373,11 +392,13 @@ export class ReleaseService {
         pages: [],
       };
       fromMeta = null;
+      fromPageRows = [];
     } else {
       const fromRow = this.findReleaseRow(fromIdOrName);
       if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
       fromSnap = this.getReleaseSnapshot(fromRow.id);
       fromMeta = { id: fromRow.id, name: fromRow.name };
+      fromPageRows = this.latestPageRowsAtOrBefore(fromRow.id, opts?.roots);
     }
 
     const entityChanges: RawDeltaEntityChange[] = [];
@@ -409,14 +430,22 @@ export class ReleaseService {
     }
 
     const pageChanges: RawDeltaPageChange[] = [];
-    const aPagesMap = new Map(fromSnap.pages.map((p) => [p.path, p]));
-    const bPagesMap = new Map(toSnap.pages.map((p) => [p.path, p]));
-    const allPaths = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);
-    for (const path of allPaths) {
-      const a = aPagesMap.get(path);
-      const b = bPagesMap.get(path);
-      const aData = a && a.op !== 'delete' ? (a.data as ReturnType<PageSerializer['snapshotFromContent']>) : null;
-      const bData = b && b.op !== 'delete' ? (b.data as ReturnType<PageSerializer['snapshotFromContent']>) : null;
+    // Key by (rootId, path) so the same relative path in two roots keeps an
+    // independent timeline and is never cross-diffed.
+    const pageKey = (p: PageVersionRow): string => `${p.rootId}\u0000${p.path}`;
+    const aPagesMap = new Map(fromPageRows.map((p) => [pageKey(p), p]));
+    const bPagesMap = new Map(toPageRows.map((p) => [pageKey(p), p]));
+    const allPageKeys = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);
+    for (const key of allPageKeys) {
+      const a = aPagesMap.get(key);
+      const b = bPagesMap.get(key);
+      const path = (a ?? b)!.path;
+      const aData = a && a.op !== 'delete'
+        ? (safeJsonParse(a.data) as ReturnType<PageSerializer['snapshotFromContent']>)
+        : null;
+      const bData = b && b.op !== 'delete'
+        ? (safeJsonParse(b.data) as ReturnType<PageSerializer['snapshotFromContent']>)
+        : null;
       const diff = this.pageSerializer.diff(aData, bData, path);
       if (diff.op === 'noop') continue;
       pageChanges.push({
@@ -642,7 +671,16 @@ export class ReleaseService {
   async buildBundleArchive(releaseId: number): Promise<BuildBundleResult> {
     const snapshot = this.getReleaseSnapshot(releaseId); // throws NOT_FOUND if missing
     const release = this.getRelease(releaseId);
-    return buildBundleArchiveImpl(snapshot, release, readConfig(this.cwd));
+    // 0.1.96: resolve rootId per page straight from page_version (the snapshot's
+    // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
+    // across every releasable root.
+    const pageRows: BundlePageInput[] = this.latestPageRowsAtOrBefore(release.id).map((p) => ({
+      rootId: p.rootId,
+      path: p.path,
+      op: p.op as 'create' | 'update' | 'delete',
+      content: (safeJsonParse(p.data) as PageSnapshotData).content,
+    }));
+    return buildBundleArchiveImpl(snapshot, release, readConfig(this.cwd), pageRows);
   }
 
   /**
@@ -685,20 +723,37 @@ export class ReleaseService {
         );
       }
 
-      // 3. Pages — write byte-for-byte, then capture an unreleased page_version.
-      //    (Mirrors restorePage's raw-write path. Watcher is suppressed; at clone
-      //    bootstrap it is not yet started, so this is a no-op there.)
+      // 3. Pages — write byte-for-byte per root, then capture an unreleased
+      //    page_version tagged with its rootId. v2 lays pages out under
+      //    `<rootId>/…`; a v1 bundle (flat `pages/`, no `manifest.roots`) is read
+      //    as the built-in 'pages' root — the flat `pages/` dir IS that root's
+      //    subdir, and the bundled v1 config's `pagesDir` is mapped to a root by
+      //    the clone caller (v3→v4 path). (Mirrors restorePage's raw-write path.
+      //    Watcher is suppressed; at clone bootstrap it is not yet started.)
       const pages: SpecSnapshotPageRow[] = [];
-      const pagesRoot = nodePath.join(restoreDir, 'pages');
-      for (const rel of listBundleFiles(pagesRoot)) {
-        assertSafeBundlePath(rel);
-        const content = nodeFs.readFileSync(nodePath.join(pagesRoot, rel), 'utf8');
-        const abs = nodePath.join(this.pagesService.root, rel);
-        this.watcher?.suppress(rel);
-        nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
-        nodeFs.writeFileSync(abs, content, 'utf8');
-        await this.pageVersions.recordVersion(rel, 'create', 'user');
-        pages.push({ path: rel, op: 'create', data: { path: rel, content } });
+      const fallbackRoot = builtinPagesRoot();
+      const bundleRoots: BundleRoot[] =
+        Array.isArray(manifest.roots) && manifest.roots.length > 0
+          ? manifest.roots
+          : [{ id: fallbackRoot.id, name: fallbackRoot.name, dir: fallbackRoot.dir }];
+      for (const root of bundleRoots) {
+        const srcDir = nodePath.join(restoreDir, root.id);
+        // The pages root writes through the running service's dir (preserving its
+        // suppress semantics); every other root writes to `<cwd>/<dir>`.
+        const destRoot =
+          this.pagesService.rootId === root.id
+            ? this.pagesService.root
+            : nodePath.join(this.cwd, root.dir);
+        for (const rel of listBundleFiles(srcDir)) {
+          assertSafeBundlePath(rel);
+          const content = nodeFs.readFileSync(nodePath.join(srcDir, rel), 'utf8');
+          const abs = nodePath.join(destRoot, rel);
+          if (this.watcher && this.watcher.rootId === root.id) this.watcher.suppress(rel);
+          nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
+          nodeFs.writeFileSync(abs, content, 'utf8');
+          await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
+          pages.push({ path: rel, op: 'create', data: { path: rel, content } });
+        }
       }
 
       // 4. Entities — UPSERT via host.restore in dependency order (DTO before
@@ -795,9 +850,15 @@ export class ReleaseService {
       entityCounts[r.entity_type] = r.n;
       entityTotal += r.n;
     }
-    const pageRow = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM page_version WHERE release_id = ? AND kind = 'page'`)
-      .get(releaseId) as { n: number };
+    const pagePlaceholders = this.releasableRootIds.map(() => '?').join(', ');
+    const pageRow = this.releasableRootIds.length === 0
+      ? { n: 0 }
+      : (this.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM page_version
+              WHERE release_id = ? AND rootId IN (${pagePlaceholders})`,
+          )
+          .get(releaseId, ...this.releasableRootIds) as { n: number });
     return {
       entities: entityCounts,
       pages: pageRow.n,
@@ -849,21 +910,30 @@ export class ReleaseService {
       .all(type, releaseId, releaseId) as EntityVersionRow[];
   }
 
-  private latestPageRowsAtOrBefore(releaseId: number): PageVersionRow[] {
+  /**
+   * 0.1.96: latest page_version rows per `(rootId, path)` at-or-before a release,
+   * restricted to releasable roots (optionally narrowed further by `roots`). The
+   * correlated subquery matches on both rootId and path so the same relative path
+   * in different roots has an independent timeline.
+   */
+  private latestPageRowsAtOrBefore(releaseId: number, roots?: string[]): PageVersionRow[] {
+    const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
+    if (rootIds.length === 0) return [];
+    const placeholders = rootIds.map(() => '?').join(', ');
     return this.db
       .prepare(
         `SELECT pv1.* FROM page_version pv1
-          WHERE pv1.kind = 'page'
+          WHERE pv1.rootId IN (${placeholders})
             AND pv1.release_id IS NOT NULL AND pv1.release_id <= ?
             AND pv1.version = (
               SELECT MAX(pv2.version) FROM page_version pv2
-               WHERE pv2.kind = 'page'
+               WHERE pv2.rootId = pv1.rootId
                  AND pv2.path = pv1.path
                  AND pv2.release_id IS NOT NULL AND pv2.release_id <= ?
             )
-          ORDER BY pv1.path`,
+          ORDER BY pv1.rootId, pv1.path`,
       )
-      .all(releaseId, releaseId) as PageVersionRow[];
+      .all(...rootIds, releaseId, releaseId) as PageVersionRow[];
   }
 
 }

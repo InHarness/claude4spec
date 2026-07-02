@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
 import type { PageVersionService } from '../services/page-version.js';
 import { DomainError } from '../services/tags.js';
+import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 
 /**
  * M21 REST routes. Path is splat (`/api/briefs/<path>`) so nested filenames
@@ -79,7 +80,7 @@ export function briefsRouter(
   router.get('/*/versions', (req, res, next) => {
     try {
       const briefPath = extractPath(req.params);
-      const versions = pageVersions.listVersions(briefPath);
+      const versions = pageVersions.listVersions(briefPath, BRIEF_ROOT_MARKER);
       res.json({ data: versions });
     } catch (err) {
       next(err);
@@ -94,7 +95,7 @@ export function briefsRouter(
         throw new DomainError('VALIDATION', 'version must be a positive integer');
       }
       const briefPath = extractPath(req.params);
-      const detail = pageVersions.getVersion(briefPath, version);
+      const detail = pageVersions.getVersion(briefPath, version, BRIEF_ROOT_MARKER);
       if (!detail) throw new DomainError('VERSION_NOT_FOUND', `version ${version} not found`);
       res.json({ data: detail });
     } catch (err) {

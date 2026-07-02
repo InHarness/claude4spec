@@ -305,6 +305,14 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         // here (read() rejects non-.md paths via resolveSafe).
         const pagePaths = await deps.pagesService.listMarkdownFiles();
 
+        // 0.1.96: section-based checks (rule 8 <section_ref/> anchor validation)
+        // only apply to SECTION-INDEXED roots. Gated on the root PROPERTY, never
+        // on `rootId === 'pages'`. This context scans a single page root
+        // (deps.pagesService); look up its `sectionIndexed` flag from config.
+        const scanRootId = deps.pagesService.rootId;
+        const scanRoot = readConfig(deps.cwd).roots.find((r) => r.id === scanRootId);
+        const sectionIndexed = scanRoot?.sectionIndexed ?? false;
+
         const categorise = (type: string): BrokenReferenceRow['category'] | 'active' => {
           if (pluginHost.getEntity(type)) return 'active';
           if (pluginHost.getAvailable(type)) return 'inactive-plugin';
@@ -381,6 +389,10 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
             // projects). Other extensions keep the registered `validate` slot.
             if (tag.source === 'extension') {
               if (tag.kind === 'section_ref') {
+                // Section rules are scoped to section-indexed roots; a non-indexed
+                // root has no anchor space to validate against. anchor lookup stays
+                // global (anchors are unique across roots) — no rootId to thread.
+                if (!sectionIndexed) continue;
                 const anchor = tag.attrs.anchor ?? '';
                 if (!anchor || !deps.sectionsService.has(anchor)) {
                   brokenExtensionReferences.push({

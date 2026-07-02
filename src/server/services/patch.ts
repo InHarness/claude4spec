@@ -29,6 +29,7 @@ import type {
   PatchStatus,
 } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
+import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { PageVersionService } from './page-version.js';
@@ -103,7 +104,7 @@ export class PatchService {
   listPatches(opts: PatchListOpts = {}): PatchListItem[] {
     const briefPaths = this.knownBriefPaths();
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('patch', {
-      rootDir: 'patches',
+      rootId: PATCH_ROOT_MARKER,
     });
     const out: PatchListItem[] = [];
     for (const rec of records) {
@@ -167,7 +168,7 @@ export class PatchService {
       this.deps.patchesSerializer,
       'patch',
     );
-    await this.deps.frontmatterIndexer.indexPage('patches', opts.path);
+    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
     return this.getPatch(opts.path);
   }
 
@@ -187,7 +188,7 @@ export class PatchService {
       'patch',
       `set status=${opts.status}`,
     );
-    await this.deps.frontmatterIndexer.indexPage('patches', opts.path);
+    await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
     return this.getPatch(opts.path);
   }
 
@@ -213,7 +214,7 @@ export class PatchService {
 
   private knownBriefPaths(): string[] {
     return this.deps.frontmatterIndexer
-      .findByFrontmatterType('brief', { rootDir: 'briefs' })
+      .findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER })
       .map((r) => r.path);
   }
 

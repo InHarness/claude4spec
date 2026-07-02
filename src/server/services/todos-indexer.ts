@@ -3,52 +3,70 @@ import type { TodoHit } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
+/**
+ * 0.1.96: indexes `<todo/>` tags across every root that has a sidebar tree.
+ * Keyed by `${rootId}:${relPath}`; `TodoHit`/`countByPath` carry the rootId so
+ * the sidebar can attribute indicators to the right root.
+ */
 export class TodosIndexerService {
   private debounceMs = 300;
   private pending = new Map<string, NodeJS.Timeout>();
-  private byPath = new Map<string, TodoHit[]>();
+  private byKey = new Map<string, TodoHit[]>();
 
-  constructor(private pages: PagesService, private ws: WsEmitter) {}
+  constructor(private roots: Map<string, PagesService>, private ws: WsEmitter) {}
 
-  schedulePage(relPath: string): void {
-    const prev = this.pending.get(relPath);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(relPath);
-      this.indexPage(relPath).catch((err) => {
-        console.error(`[todos-indexer] failed to index ${relPath}:`, err);
-      });
-    }, this.debounceMs);
-    this.pending.set(relPath, timer);
+  private key(rootId: string, relPath: string): string {
+    return `${rootId}:${relPath}`;
   }
 
-  handleUnlink(relPath: string): void {
-    const prev = this.pending.get(relPath);
+  schedulePage(rootId: string, relPath: string): void {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => {
+      this.pending.delete(k);
+      this.indexPage(rootId, relPath).catch((err) => {
+        console.error(`[todos-indexer] failed to index ${k}:`, err);
+      });
+    }, this.debounceMs);
+    this.pending.set(k, timer);
+  }
+
+  handleUnlink(rootId: string, relPath: string): void {
+    const k = this.key(rootId, relPath);
+    const prev = this.pending.get(k);
     if (prev) {
       clearTimeout(prev);
-      this.pending.delete(relPath);
+      this.pending.delete(k);
     }
-    if (this.byPath.delete(relPath)) {
-      this.ws.broadcast({ kind: 'todos:changed', pagePath: relPath });
+    if (this.byKey.delete(k)) {
+      this.ws.broadcast({ kind: 'todos:changed', rootId, pagePath: relPath });
     }
   }
 
   async indexAll(): Promise<void> {
-    const files = await this.pages.listMarkdownFiles();
-    for (const rel of files) {
-      await this.indexPage(rel, { silent: true });
+    let fileCount = 0;
+    for (const [rootId, svc] of this.roots) {
+      const files = await svc.listMarkdownFiles();
+      for (const rel of files) {
+        await this.indexPage(rootId, rel, { silent: true });
+        fileCount++;
+      }
     }
     const total = this.countTotal();
-    console.log(`[todos-indexer] indexed ${files.length} files, ${total} todos`);
+    console.log(`[todos-indexer] indexed ${fileCount} files, ${total} todos`);
   }
 
-  async indexPage(relPath: string, opts: { silent?: boolean } = {}): Promise<void> {
+  async indexPage(rootId: string, relPath: string, opts: { silent?: boolean } = {}): Promise<void> {
+    const svc = this.roots.get(rootId);
+    const k = this.key(rootId, relPath);
+    if (!svc) return;
     let page;
     try {
-      page = await this.pages.read(relPath);
+      page = await svc.read(relPath);
     } catch {
-      if (this.byPath.delete(relPath) && !opts.silent) {
-        this.ws.broadcast({ kind: 'todos:changed', pagePath: relPath });
+      if (this.byKey.delete(k) && !opts.silent) {
+        this.ws.broadcast({ kind: 'todos:changed', rootId, pagePath: relPath });
       }
       return;
     }
@@ -64,6 +82,7 @@ export class TodosIndexerService {
       if (seenAnchors.has(anchor)) anchor = `todo-${t.line}-${col}`;
       seenAnchors.add(anchor);
       hits.push({
+        rootId,
         pagePath: relPath,
         line: t.line,
         col,
@@ -72,41 +91,42 @@ export class TodosIndexerService {
       });
     }
 
-    const prev = this.byPath.get(relPath);
+    const prev = this.byKey.get(k);
     const changed = !sameHits(prev, hits);
     if (hits.length === 0) {
-      this.byPath.delete(relPath);
+      this.byKey.delete(k);
     } else {
-      this.byPath.set(relPath, hits);
+      this.byKey.set(k, hits);
     }
     if (changed && !opts.silent) {
-      this.ws.broadcast({ kind: 'todos:changed', pagePath: relPath });
+      this.ws.broadcast({ kind: 'todos:changed', rootId, pagePath: relPath });
     }
   }
 
   listAll(): TodoHit[] {
     const out: TodoHit[] = [];
-    const keys = [...this.byPath.keys()].sort();
+    const keys = [...this.byKey.keys()].sort();
     for (const k of keys) {
-      const hits = this.byPath.get(k);
+      const hits = this.byKey.get(k);
       if (hits) out.push(...hits);
     }
     return out;
   }
 
-  listByPath(relPath: string): TodoHit[] {
-    return this.byPath.get(relPath) ?? [];
+  listByPath(rootId: string, relPath: string): TodoHit[] {
+    return this.byKey.get(this.key(rootId, relPath)) ?? [];
   }
 
+  /** Counts keyed by `${rootId}:${relPath}`. */
   countByPath(): Record<string, number> {
     const out: Record<string, number> = {};
-    for (const [k, v] of this.byPath) out[k] = v.length;
+    for (const [k, v] of this.byKey) out[k] = v.length;
     return out;
   }
 
   countTotal(): number {
     let total = 0;
-    for (const v of this.byPath.values()) total += v.length;
+    for (const v of this.byKey.values()) total += v.length;
     return total;
   }
 }
@@ -121,4 +141,3 @@ function sameHits(a: TodoHit[] | undefined, b: TodoHit[]): boolean {
   }
   return true;
 }
-

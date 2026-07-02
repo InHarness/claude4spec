@@ -1,13 +1,15 @@
 import { create } from 'zustand';
 
 export interface ExternalChangeEvent {
+  /** 0.1.96 multiroot: same relative path can exist in multiple roots. */
+  rootId: string;
   path: string;
   ts: number;
 }
 
 interface FileEventsState {
   externalChange: ExternalChangeEvent | null;
-  notifyExternalChange(path: string): void;
+  notifyExternalChange(rootId: string, path: string): void;
   clearExternalChange(): void;
   /** Separate channel for briefs — brief paths live in a different namespace
    * (briefsDir) than page paths, so they must not collide on `externalChange`. */
@@ -18,15 +20,16 @@ interface FileEventsState {
 
 export const useFileEventsStore = create<FileEventsState>((set) => ({
   externalChange: null,
-  notifyExternalChange(path) {
-    set({ externalChange: { path, ts: Date.now() } });
+  notifyExternalChange(rootId, path) {
+    set({ externalChange: { rootId, path, ts: Date.now() } });
   },
   clearExternalChange() {
     set({ externalChange: null });
   },
   briefExternalChange: null,
   notifyBriefExternalChange(path) {
-    set({ briefExternalChange: { path, ts: Date.now() } });
+    // Briefs live in their own single-namespace channel; tag with the 'brief' marker.
+    set({ briefExternalChange: { rootId: 'brief', path, ts: Date.now() } });
   },
   clearBriefExternalChange() {
     set({ briefExternalChange: null });

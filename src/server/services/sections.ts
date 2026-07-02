@@ -7,6 +7,7 @@ import type { PagesWatcher } from '../fs/watcher.js';
 interface SectionRow {
   id: number;
   anchor: string;
+  rootId: string;
   page_path: string;
   heading_path: string;
   heading_slug: string;
@@ -26,10 +27,19 @@ export interface SectionsListQuery {
   limit?: number;
 }
 
-export interface SectionsServiceWriteDeps {
+/** 0.1.96: one section-indexed root — its PagesService plus the watcher whose
+ * captures we suppress when rewriting section_ref anchors. */
+export interface SectionsRootWriteDeps {
   pages: PagesService;
   watcher: PagesWatcher;
 }
+
+/**
+ * 0.1.96: write-side deps are now a map over the SECTION-INDEXED roots
+ * (rootId → {pages, watcher}). Anchor-rename propagation rewrites `<section_ref/>`
+ * occurrences across EVERY section-indexed root, not just the built-in 'pages'.
+ */
+export type SectionsServiceWriteDeps = Map<string, SectionsRootWriteDeps>;
 
 export class SectionsService {
   private writeDeps: SectionsServiceWriteDeps | null = null;
@@ -88,8 +98,10 @@ export class SectionsService {
   }
 
   /**
-   * Rewrite all `<section_ref anchor="oldAnchor"/>` occurrences across pagesDir to newAnchor.
-   * Atomic per-file with rollback on error. Emits page:changed via watcher suppress on each write.
+   * Rewrite all `<section_ref anchor="oldAnchor"/>` occurrences to newAnchor across
+   * EVERY section-indexed root (0.1.96). Atomic per-file with rollback on error.
+   * Emits page:changed via watcher suppress on each write. `changed` entries are
+   * `${rootId}:${relPath}` so a path present in two roots stays disambiguated.
    * Page links `@path.md#anchor` (M14) live elsewhere — handled by M14's link rewriter.
    */
   async propagateAnchorChange(
@@ -100,36 +112,37 @@ export class SectionsService {
     if (!this.writeDeps) {
       throw new Error('SectionsService.propagateAnchorChange requires setWriteDeps to be called');
     }
-    const { pages, watcher } = this.writeDeps;
     const changed: string[] = [];
-    const backups = new Map<string, string>();
+    // key `${rootId}:${relPath}` → { root deps, original body } for rollback.
+    const backups = new Map<string, { root: SectionsRootWriteDeps; rel: string; body: string }>();
 
-    const files = await pages.listMarkdownFiles();
-    for (const rel of files) {
-      const page = await pages.read(rel);
-      const rewritten = rewriteSectionRefAnchor(page.body, oldAnchor, newAnchor);
-      if (rewritten !== page.body) {
-        backups.set(rel, page.body);
+    for (const [rootId, root] of this.writeDeps) {
+      const files = await root.pages.listMarkdownFiles();
+      for (const rel of files) {
+        const page = await root.pages.read(rel);
+        const rewritten = rewriteSectionRefAnchor(page.body, oldAnchor, newAnchor);
+        if (rewritten !== page.body) {
+          backups.set(`${rootId}:${rel}`, { root, rel, body: page.body });
+        }
       }
     }
 
     try {
-      for (const [rel, originalBody] of backups) {
-        const current = await pages.read(rel);
+      for (const [key, { root, rel }] of backups) {
+        const current = await root.pages.read(rel);
         const newBody = rewriteSectionRefAnchor(current.body, oldAnchor, newAnchor);
         if (newBody !== current.body) {
-          watcher.suppress(rel);
-          await pages.write(rel, { frontmatter: current.frontmatter, body: newBody });
-          changed.push(rel);
+          root.watcher.suppress(rel);
+          await root.pages.write(rel, { frontmatter: current.frontmatter, body: newBody });
+          changed.push(key);
         }
-        void originalBody;
       }
     } catch (err) {
-      for (const [rel, originalBody] of backups) {
-        if (!changed.includes(rel)) continue;
-        const current = await pages.read(rel);
-        watcher.suppress(rel);
-        await pages.write(rel, { frontmatter: current.frontmatter, body: originalBody });
+      for (const [key, { root, rel, body }] of backups) {
+        if (!changed.includes(key)) continue;
+        const current = await root.pages.read(rel);
+        root.watcher.suppress(rel);
+        await root.pages.write(rel, { frontmatter: current.frontmatter, body });
       }
       throw err;
     }
@@ -141,6 +154,7 @@ export class SectionsService {
     return {
       id: row.id,
       anchor: row.anchor,
+      rootId: row.rootId,
       pagePath: row.page_path,
       headingPath: row.heading_path,
       headingSlug: row.heading_slug,

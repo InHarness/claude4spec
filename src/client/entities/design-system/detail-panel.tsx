@@ -28,7 +28,7 @@ interface Props {
   onDeleted: () => void;
   onRenamed: (newSlug: string) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
-  onOpenPage?: (path: string) => void;
+  onOpenPage?: (rootId: string, path: string) => void;
 }
 
 interface Draft {

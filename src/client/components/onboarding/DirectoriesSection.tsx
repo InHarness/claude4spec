@@ -1,22 +1,31 @@
-export interface DirectoriesDraft {
-  pagesDir: string;
-  briefsDir: string;
-  patchesDir: string;
-  entitiesDir: string;
+/**
+ * 0.1.96: onboarding no longer edits every scalar dir — the full roots[] editor
+ * lives in Settings (M26). Onboarding keeps a single optional "Pages directory"
+ * field, bound to the built-in `pages` root's `dir`. Collapsed by default
+ * (`<details>`), it does NOT gate [Continue]; a bad path is caught by inline
+ * `validatePagesDir` (and re-validated server-side, surfacing a 400 via toast).
+ */
+
+/** A cwd-relative pages dir must be non-empty, not absolute, and not escape cwd via `..`. */
+export function validatePagesDir(dir: string): string | null {
+  const v = dir.trim();
+  if (v === '') return 'Pages directory is required';
+  if (/^([A-Za-z]:[\\/]|[\\/])/.test(v)) return 'Must be a relative path inside the project';
+  const norm = v.replace(/\\/g, '/');
+  if (norm === '..' || norm.startsWith('../') || norm.includes('/../')) {
+    return 'Path must not escape the project root';
+  }
+  return null;
 }
 
-/**
- * 0.1.56: optional "Advanced / Directories" block in onboarding. Collapsed by
- * default (`<details>`), four controlled inputs pre-filled from GET /api/config.
- * It does NOT gate [Continue] and has no client-side validation — path-safety is
- * enforced server-side (M01), a 400 surfaces via the page's toast.error.
- */
 export function DirectoriesSection({
-  draft,
+  pagesDir,
+  error,
   onChange,
 }: {
-  draft: DirectoriesDraft;
-  onChange: (next: Partial<DirectoriesDraft>) => void;
+  pagesDir: string;
+  error: string | null;
+  onChange: (next: string) => void;
 }) {
   return (
     <details
@@ -29,64 +38,36 @@ export function DirectoriesSection({
       >
         Advanced / Directories
         <span className="ml-2 text-[12px] font-normal" style={{ color: 'var(--c-muted)' }}>
-          — optional, defaults are fine
+          — optional, the default is fine
         </span>
       </summary>
       <div className="flex flex-col gap-4 px-4 pb-4 pt-1">
-        <DirField
-          label="Pages directory"
-          value={draft.pagesDir}
-          onChange={(v) => onChange({ pagesDir: v })}
-        />
-        <DirField
-          label="Briefs directory"
-          value={draft.briefsDir}
-          onChange={(v) => onChange({ briefsDir: v })}
-        />
-        <DirField
-          label="Patches directory"
-          value={draft.patchesDir}
-          onChange={(v) => onChange({ patchesDir: v })}
-        />
-        <DirField
-          label="Entities directory"
-          value={draft.entitiesDir}
-          onChange={(v) => onChange({ entitiesDir: v })}
-        />
+        <label className="flex flex-col gap-1.5">
+          <span
+            className="text-[11.5px] font-medium uppercase tracking-wide"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            Pages directory
+          </span>
+          <input
+            type="text"
+            value={pagesDir}
+            onChange={(e) => onChange(e.target.value)}
+            className="w-full rounded-md px-3 py-1.5 text-[13px] font-mono"
+            style={{
+              background: 'var(--c-card)',
+              border: `1px solid ${error ? '#b3261e' : 'var(--c-hair)'}`,
+              color: 'var(--c-ink)',
+            }}
+            placeholder="relative to project root"
+          />
+          {error ? (
+            <span className="text-[11.5px]" style={{ color: '#b3261e' }}>
+              {error}
+            </span>
+          ) : null}
+        </label>
       </div>
     </details>
-  );
-}
-
-function DirField({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  onChange: (next: string) => void;
-}) {
-  return (
-    <label className="flex flex-col gap-1.5">
-      <span
-        className="text-[11.5px] font-medium uppercase tracking-wide"
-        style={{ color: 'var(--c-muted)' }}
-      >
-        {label}
-      </span>
-      <input
-        type="text"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md px-3 py-1.5 text-[13px] font-mono"
-        style={{
-          background: 'var(--c-card)',
-          border: '1px solid var(--c-hair)',
-          color: 'var(--c-ink)',
-        }}
-        placeholder="relative to project root"
-      />
-    </label>
   );
 }

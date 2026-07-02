@@ -18,13 +18,15 @@ import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import type { EntityType } from '../../shared/entities.js';
 
 interface Props {
+  /** 0.1.96 multiroot: which page root the document belongs to. */
+  rootId: string;
   path: string;
   onOpenEntity?: (type: EntityType, slug: string) => void;
   onOpenSection?: (pagePath: string, anchor: string) => void;
 }
 
-export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
-  const { data, isLoading } = usePage(path);
+export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
+  const { data, isLoading } = usePage(rootId, path);
   const write = useWritePage();
   const qc = useQueryClient();
   const saveTimer = useRef<number | null>(null);
@@ -66,7 +68,7 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
         if (!activePath) return;
         lastSavedBodyRef.current = md;
         isDirtyRef.current = false;
-        write.mutate({ path: activePath, body: md, frontmatter: data?.frontmatter });
+        write.mutate({ rootId, path: activePath, body: md, frontmatter: data?.frontmatter });
       }, 500);
     },
   });
@@ -164,10 +166,12 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
 
   useEffect(() => {
     if (!editor || !externalChange) return;
-    if (externalChange.path !== path) return;
+    // 0.1.96: match on (rootId, path) — a same-named file in another root must not
+    // trigger this editor's conflict dialog (would risk discarding unsaved edits).
+    if (externalChange.rootId !== rootId || externalChange.path !== path) return;
     if (!isDirtyRef.current) {
       clearExternalChange();
-      qc.invalidateQueries({ queryKey: ['page', path] });
+      qc.invalidateQueries({ queryKey: ['page', rootId, path] });
       return;
     }
     let cancelled = false;
@@ -187,18 +191,18 @@ export function Editor({ path, onOpenEntity, onOpenSection }: Props) {
       if (confirmed) {
         lastSavedBodyRef.current = null;
         isDirtyRef.current = false;
-        qc.invalidateQueries({ queryKey: ['page', path] });
+        qc.invalidateQueries({ queryKey: ['page', rootId, path] });
       } else {
         const md = editor.storage.markdown.getMarkdown() as string;
         lastSavedBodyRef.current = md;
         isDirtyRef.current = false;
-        write.mutate({ path, body: md, frontmatter: data?.frontmatter });
+        write.mutate({ rootId, path, body: md, frontmatter: data?.frontmatter });
       }
     });
     return () => {
       cancelled = true;
     };
-  }, [editor, externalChange, path, qc, clearExternalChange, write, data]);
+  }, [editor, externalChange, rootId, path, qc, clearExternalChange, write, data]);
 
   const bridge = useMemo(
     () => ({

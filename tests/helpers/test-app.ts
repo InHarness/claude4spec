@@ -58,10 +58,15 @@ export async function createTestApp(): Promise<TestApp> {
   const entityStore = new EntityStore(cwd, '.claude4spec/entities', entitiesWatcher, rawReader, host);
   entityStore.ensureRoot();
 
-  const pages = new PagesService(cwd, 'pages');
+  const pages = new PagesService(cwd, 'pages', 'pages');
   await pages.ensureRoot();
-  const watcher = new PagesWatcher(pages.root, ws);
-  const referencesService = new ReferencesService(pages, watcher);
+  const watcher = new PagesWatcher(pages.root, ws, 'pages');
+  // 0.1.96: ReferencesService is bound to the reference-validated roots (here just
+  // the built-in 'pages' root) keyed by rootId.
+  const referencesService = new ReferencesService(
+    new Map([['pages', pages]]),
+    new Map([['pages', watcher]]),
+  );
   // M29: wire the entity-file deps so slug-rename propagation (e.g. design-system
   // → ui-view designSystemSlug) runs as it does in production.
   referencesService.setEntityDeps(db, entityStore);

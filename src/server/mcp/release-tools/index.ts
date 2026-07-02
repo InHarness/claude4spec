@@ -170,6 +170,12 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         .describe(
           'Default false. true = light delta-map: only `total` + identifiers `{ type, slug, name, op }` / `{ path, op }` (incl. deletes), no before/after/content. Full lists — ignores limit/offset.',
         ),
+      roots: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Narrow the PAGES dimension to these page root ids (page_version.rootId). Default: all releasable roots. Does not affect the entities dimension.',
+        ),
       limit: z
         .number()
         .optional()
@@ -195,8 +201,9 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
         const fromIdOrName = args.fromIdOrName as number | string | null;
         const toIdOrName = args.toIdOrName as number | string;
+        const roots = args.roots as string[] | undefined;
 
-        const raw = deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName);
+        const raw = deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
         const toSnap = deps.releaseService.getReleaseSnapshot(toIdOrName);
         const fromSnap =
           fromIdOrName === null ? null : deps.releaseService.getReleaseSnapshot(fromIdOrName);

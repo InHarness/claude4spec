@@ -266,13 +266,13 @@ function isC4sErrorEnvelope(body: unknown): boolean {
   return !!e && typeof e === 'object' && typeof (e as { code?: unknown }).code === 'string';
 }
 
-/** M31 v3 shape — no port/mode anymore; entitiesDir is required. */
+/** M31/0.1.96 shape — no port/mode; `roots[]` (was `pagesDir`) + entitiesDir required. */
 function isConfigShape(body: unknown): boolean {
   if (!body || typeof body !== 'object') return false;
   const c = body as Record<string, unknown>;
   return (
     typeof c.name === 'string' &&
-    typeof c.pagesDir === 'string' &&
+    Array.isArray(c.roots) &&
     typeof c.entitiesDir === 'string' &&
     'writingStyle' in c &&
     !!c.onboarding &&
