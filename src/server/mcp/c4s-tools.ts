@@ -1,6 +1,7 @@
 import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import { runAgent, AgentError } from '../../core/agent/run-agent.js';
+import { ALLOWED_MODELS } from '../routes/models.js';
 
 /**
  * `c4s-tools` — cross-cutting in-process MCP server expozujacy peer-consult
@@ -39,16 +40,27 @@ export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance
       'Continue an existing peer thread by passing its `threadId`.',
       'Works in plan_mode — MCP is not filtered by READONLY_BUILTINS, so this works where Bash-shelled `c4s ask` does not.',
       'Same contract as the `c4s ask` CLI shorthand: same discovery, same errors.',
-      "`effort` (string, optional, default 'medium') — reasoning level for the peer turn; default resolved in `runAgent`, mapped to `architectureConfig.claude_effort`; resume-immutable (continuing a peer thread created with a different `effort` → RESUME_CONFIG_LOCKED).",
+      '`model` and `effort` are resume-immutable: continuing a peer thread (via `threadId`) with values different from its first turn → RESUME_CONFIG_LOCKED.',
     ].join('\n'),
     {
-      message: z.string(),
-      project: z.string().optional(),
-      workspace: z.string().optional(),
-      server: z.string().optional(),
-      threadId: z.string().optional(),
-      model: z.string().optional(),
-      effort: z.string().optional(),
+      message: z.string().describe('Question/prompt for the peer spec.'),
+      project: z.string().optional().describe('Local path to the peer .claude4spec/ directory.'),
+      workspace: z
+        .string()
+        .optional()
+        .describe("Workspace override; defaults to the caller's workspace when omitted."),
+      server: z.string().optional().describe('Peer server URL override; wins over `project` if both set.'),
+      threadId: z.string().optional().describe('Continue an existing peer thread.'),
+      model: z
+        .enum(ALLOWED_MODELS)
+        .optional()
+        .describe('Peer turn model. Default: opus-4.8. Resume-immutable.'),
+      effort: z
+        .enum(['low', 'medium', 'high'])
+        .optional()
+        .describe(
+          'Reasoning level for the peer turn, mapped to architectureConfig.claude_effort. Default: medium. Resume-immutable.',
+        ),
     },
     async (input) => {
       try {
@@ -59,6 +71,8 @@ export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance
           workspace: (typeof input.workspace === 'string' ? input.workspace : undefined) ?? callerWorkspace,
           server: typeof input.server === 'string' ? input.server : undefined,
           threadId: typeof input.threadId === 'string' ? input.threadId : undefined,
+          // Schema (z.enum) waliduje wartosci w runtime; `input` jest luzno typowany,
+          // wiec zawezamy dla TS (effort wymaga cast do unii).
           model: typeof input.model === 'string' ? input.model : undefined,
           effort: typeof input.effort === 'string' ? (input.effort as 'low' | 'medium' | 'high') : undefined,
           // Locked: a consulted peer always runs read-only, terse output.

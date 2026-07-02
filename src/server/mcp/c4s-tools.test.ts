@@ -88,4 +88,37 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     expect(hoisted.calls).toHaveLength(1);
     expect(hoisted.calls[0]?.effort).toBeUndefined();
   });
+
+  it('forwards a valid model + effort to runAgent', async () => {
+    const client = await connectClient('ws-5555');
+    await client.callTool({
+      name: 'ask',
+      arguments: { message: 'ping', model: 'opus-4.8', effort: 'high' },
+    });
+
+    expect(hoisted.calls).toHaveLength(1);
+    expect(hoisted.calls[0]).toMatchObject({ model: 'opus-4.8', effort: 'high' });
+  });
+
+  it('rejects an unknown model at the MCP schema boundary (never reaches runAgent)', async () => {
+    const client = await connectClient('ws-5555');
+    const res = await client.callTool({
+      name: 'ask',
+      arguments: { message: 'ping', model: 'gpt-4' },
+    });
+
+    expect(res.isError).toBeTruthy();
+    expect(hoisted.calls).toHaveLength(0);
+  });
+
+  it('rejects an out-of-range effort (e.g. max) at the MCP schema boundary', async () => {
+    const client = await connectClient('ws-5555');
+    const res = await client.callTool({
+      name: 'ask',
+      arguments: { message: 'ping', effort: 'max' },
+    });
+
+    expect(res.isError).toBeTruthy();
+    expect(hoisted.calls).toHaveLength(0);
+  });
 });

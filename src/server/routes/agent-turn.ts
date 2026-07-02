@@ -99,8 +99,8 @@ export interface AgentTurnDeps {
  *  database-table-tools, plan-tools, reference-tools) are NOT mounted. */
 const BRIEF_ALLOWED_PLUGIN_MCP = new Set(['release-tools']);
 
-export const ALLOWED_MODELS = ['fable-5', 'sonnet-4.6', 'opus-4.8', 'haiku-4.5'] as const;
-export type Model = (typeof ALLOWED_MODELS)[number];
+import { ALLOWED_MODELS, type Model } from './models.js';
+export { ALLOWED_MODELS, type Model };
 
 export interface PendingInput {
   resolve: (response: UserInputResponse) => void;
