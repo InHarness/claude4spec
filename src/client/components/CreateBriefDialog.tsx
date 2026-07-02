@@ -3,8 +3,10 @@ import { useNavigate } from '@tanstack/react-router';
 import { FileText, X } from 'lucide-react';
 import { useCreateBrief } from '../hooks/useBriefs.js';
 import { useReleases } from '../hooks/useReleases.js';
+import { useRoots } from '../hooks/useConfig.js';
 import { useChatStore } from '../state/chat.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
+import { BriefScopeFields, type BriefScope } from './briefs/BriefScopeModal.js';
 
 /**
  * Sentinel value w `<select>` reprezentujacy "initial brief" (from_release = null).
@@ -27,6 +29,7 @@ interface Props {
  */
 export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   const { data: allReleases = [] } = useReleases();
+  const roots = useRoots();
   const create = useCreateBrief();
   const navigate = useNavigate();
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
@@ -36,14 +39,23 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   // Pusty string = nic nie wybrane; INITIAL_FROM_VALUE = initial brief; inny string = nazwa release.
   const [fromReleaseName, setFromReleaseName] = useState('');
   const [suffix, setSuffix] = useState('');
+  // M21/L13 brief scope — whole-release (default) vs a selected briefTarget-root subset.
+  const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
   const [error, setError] = useState<string | null>(null);
 
   const candidates = allReleases.filter((r) => r.name !== toReleaseName);
+  // `from` for the per-root changed-page count probe: null for the initial brief.
+  const probeFrom =
+    fromReleaseName === INITIAL_FROM_VALUE ? null : fromReleaseName || null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fromReleaseName) {
       setError('Pick a "from" release (or "initial state" for the very first brief).');
+      return;
+    }
+    if (scope.kind === 'roots' && scope.roots.length === 0) {
+      setError('Select at least one root, or choose "Whole release".');
       return;
     }
     setError(null);
@@ -54,6 +66,8 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
         fromReleaseName: apiFromName,
         toReleaseName,
         suffix: suffix.trim() || undefined,
+        // Omit `roots` for whole-release (backward-compat: no frontmatter / slug segment).
+        roots: scope.kind === 'roots' ? scope.roots : undefined,
       });
       onClose();
       // Wypełniamy prompt w czacie bez wysyłki: setSeedPrompt ma priorytet w
@@ -163,6 +177,18 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
               }}
             />
           </label>
+
+          <div>
+            <span style={{ color: 'var(--c-muted)' }}>Scope</span>
+            <div className="mt-1">
+              <BriefScopeFields
+                fromReleaseName={probeFrom}
+                toReleaseName={toReleaseName}
+                roots={roots}
+                onChange={setScope}
+              />
+            </div>
+          </div>
 
           {error && (
             <div className="text-[12px] px-2 py-1.5 rounded" style={{ background: 'rgba(179, 58, 58, 0.08)', color: '#b33a3a' }}>

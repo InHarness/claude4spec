@@ -13,16 +13,16 @@ export type BriefScope =
   | { kind: 'whole-release' }
   | { kind: 'roots'; roots: string[] };
 
-interface Props {
+type Count = number | null | 'loading';
+
+interface FieldsProps {
   /** `null` = initial brief (no predecessor). Only used to probe changed-page counts. */
   fromReleaseName: string | null;
   toReleaseName: string;
   /** `config.roots` — filtered to `briefTarget` internally. */
   roots: Root[];
-  /** Initial selection. Defaults to whole-release. */
-  value?: BriefScope;
-  onConfirm: (scope: BriefScope) => void;
-  onClose: () => void;
+  /** Reports the current scope up on every mode/selection change. */
+  onChange: (scope: BriefScope) => void;
   /**
    * Override the per-root changed-page count probe. Defaults to a
    * `release_diff({ summaryOnly: true, roots: [id] })` REST call.
@@ -30,35 +30,29 @@ interface Props {
   fetchChangedCount?: (rootId: string) => Promise<number | null>;
 }
 
-type Count = number | null | 'loading';
-
 /**
- * 0.1.96 brief-scope picker. Two modes:
+ * 0.1.96 brief-scope picker fields (M21 modal-scope, L13). Two modes:
  *   - whole-release (default): the brief covers every releasable root.
  *   - selected roots: the author checks specific briefTarget roots; each shows
  *     its changed-page count for the `from → to` diff so the scope is informed.
  *
- * Self-contained. Mount it inside the "Generate brief" flow (CreateBriefDialog)
- * and pass the chosen `BriefScope` through to `createBrief({ roots })` —
- * `kind: 'whole-release'` ⇒ omit `roots`, `kind: 'roots'` ⇒ pass the array.
+ * Presentational + probe logic only (no dialog chrome / confirm button) so it can
+ * be embedded directly inside the "Generate brief" modal (CreateBriefDialog) as
+ * well as the standalone `BriefScopeModal`. The chosen `BriefScope` flows through
+ * to `createBrief({ roots })` — `kind: 'whole-release'` ⇒ omit `roots`,
+ * `kind: 'roots'` ⇒ pass the array.
  */
-export function BriefScopeModal({
+export function BriefScopeFields({
   fromReleaseName,
   toReleaseName,
   roots,
-  value,
-  onConfirm,
-  onClose,
+  onChange,
   fetchChangedCount,
-}: Props) {
+}: FieldsProps) {
   const targets = roots.filter((r) => r.briefTarget);
 
-  const [mode, setMode] = useState<'whole-release' | 'roots'>(
-    value?.kind === 'roots' ? 'roots' : 'whole-release',
-  );
-  const [selected, setSelected] = useState<Set<string>>(
-    () => new Set(value?.kind === 'roots' ? value.roots : []),
-  );
+  const [mode, setMode] = useState<'whole-release' | 'roots'>('whole-release');
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [counts, setCounts] = useState<Record<string, Count>>({});
 
   useEffect(() => {
@@ -83,21 +77,129 @@ export function BriefScopeModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromReleaseName, toReleaseName, roots]);
 
+  // Report the scope up whenever mode/selection changes. Called directly from the
+  // handlers (not an effect) so the parent never needs to memoize `onChange`.
+  const emit = (nextMode: 'whole-release' | 'roots', nextSelected: Set<string>) => {
+    if (nextMode === 'whole-release') onChange({ kind: 'whole-release' });
+    else onChange({ kind: 'roots', roots: targets.filter((r) => nextSelected.has(r.id)).map((r) => r.id) });
+  };
+
+  const chooseMode = (next: 'whole-release' | 'roots') => {
+    setMode(next);
+    emit(next, selected);
+  };
+
   const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+    emit(mode, next);
   };
 
-  const canConfirm = mode === 'whole-release' || selected.size > 0;
+  return (
+    <div className="space-y-2">
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="brief-scope"
+          checked={mode === 'whole-release'}
+          onChange={() => chooseMode('whole-release')}
+          className="mt-0.5"
+        />
+        <span>
+          <span style={{ color: 'var(--c-ink)' }}>Whole release</span>
+          <span className="block text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+            Cover every releasable root.
+          </span>
+        </span>
+      </label>
 
-  const handleConfirm = () => {
-    if (mode === 'whole-release') onConfirm({ kind: 'whole-release' });
-    else onConfirm({ kind: 'roots', roots: targets.filter((r) => selected.has(r.id)).map((r) => r.id) });
-  };
+      <label className="flex items-start gap-2 cursor-pointer">
+        <input
+          type="radio"
+          name="brief-scope"
+          checked={mode === 'roots'}
+          onChange={() => chooseMode('roots')}
+          className="mt-0.5"
+        />
+        <span>
+          <span style={{ color: 'var(--c-ink)' }}>Selected roots</span>
+          <span className="block text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+            Scope the brief to specific roots.
+          </span>
+        </span>
+      </label>
+
+      {mode === 'roots' && (
+        <div
+          className="rounded-md p-2 space-y-1.5"
+          style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
+        >
+          {targets.length === 0 && (
+            <div className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+              No brief-target roots configured.
+            </div>
+          )}
+          {targets.map((root) => {
+            const count = counts[root.id];
+            return (
+              <label
+                key={root.id}
+                className="flex items-center justify-between gap-2 cursor-pointer px-1 py-0.5"
+              >
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(root.id)}
+                    onChange={() => toggle(root.id)}
+                  />
+                  <span style={{ color: 'var(--c-ink)' }}>{root.name}</span>
+                  <span className="font-mono text-[11px]" style={{ color: 'var(--c-muted)' }}>
+                    {root.id}
+                  </span>
+                </span>
+                <span className="font-mono text-[11px]" style={{ color: 'var(--c-muted)' }}>
+                  {count === 'loading'
+                    ? '…'
+                    : count == null
+                      ? '—'
+                      : `${count} changed`}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ModalProps {
+  fromReleaseName: string | null;
+  toReleaseName: string;
+  roots: Root[];
+  onConfirm: (scope: BriefScope) => void;
+  onClose: () => void;
+  fetchChangedCount?: (rootId: string) => Promise<number | null>;
+}
+
+/**
+ * Standalone brief-scope modal (dialog chrome around `BriefScopeFields`). Not
+ * currently mounted in the "Generate brief" flow — the scope fields are embedded
+ * directly in `CreateBriefDialog` — but kept as a self-contained picker for any
+ * caller that wants scope selection as its own step.
+ */
+export function BriefScopeModal({
+  fromReleaseName,
+  toReleaseName,
+  roots,
+  onConfirm,
+  onClose,
+  fetchChangedCount,
+}: ModalProps) {
+  const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
+  const canConfirm = scope.kind === 'whole-release' || scope.roots.length > 0;
 
   return (
     <div
@@ -131,79 +233,14 @@ export function BriefScopeModal({
           </button>
         </div>
 
-        <div className="space-y-3 text-[12.5px]">
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="brief-scope"
-              checked={mode === 'whole-release'}
-              onChange={() => setMode('whole-release')}
-              className="mt-0.5"
-            />
-            <span>
-              <span style={{ color: 'var(--c-ink)' }}>Whole release</span>
-              <span className="block text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-                Cover every releasable root.
-              </span>
-            </span>
-          </label>
-
-          <label className="flex items-start gap-2 cursor-pointer">
-            <input
-              type="radio"
-              name="brief-scope"
-              checked={mode === 'roots'}
-              onChange={() => setMode('roots')}
-              className="mt-0.5"
-            />
-            <span>
-              <span style={{ color: 'var(--c-ink)' }}>Selected roots</span>
-              <span className="block text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-                Scope the brief to specific roots.
-              </span>
-            </span>
-          </label>
-
-          {mode === 'roots' && (
-            <div
-              className="rounded-md p-2 space-y-1.5"
-              style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-            >
-              {targets.length === 0 && (
-                <div className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-                  No brief-target roots configured.
-                </div>
-              )}
-              {targets.map((root) => {
-                const count = counts[root.id];
-                return (
-                  <label
-                    key={root.id}
-                    className="flex items-center justify-between gap-2 cursor-pointer px-1 py-0.5"
-                  >
-                    <span className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={selected.has(root.id)}
-                        onChange={() => toggle(root.id)}
-                      />
-                      <span style={{ color: 'var(--c-ink)' }}>{root.name}</span>
-                      <span className="font-mono text-[11px]" style={{ color: 'var(--c-muted)' }}>
-                        {root.id}
-                      </span>
-                    </span>
-                    <span className="font-mono text-[11px]" style={{ color: 'var(--c-muted)' }}>
-                      {count === 'loading'
-                        ? '…'
-                        : count == null
-                          ? '—'
-                          : `${count} changed`}
-                    </span>
-                  </label>
-                );
-              })}
-            </div>
-          )}
+        <div className="text-[12.5px]">
+          <BriefScopeFields
+            fromReleaseName={fromReleaseName}
+            toReleaseName={toReleaseName}
+            roots={roots}
+            onChange={setScope}
+            fetchChangedCount={fetchChangedCount}
+          />
         </div>
 
         <div className="flex items-center justify-end gap-2 mt-5">
@@ -217,7 +254,7 @@ export function BriefScopeModal({
           </button>
           <button
             type="button"
-            onClick={handleConfirm}
+            onClick={() => onConfirm(scope)}
             disabled={!canConfirm}
             className="px-3 py-1.5 rounded text-[12.5px]"
             style={{ background: 'var(--c-accent)', color: '#fff', opacity: canConfirm ? 1 : 0.6 }}
@@ -233,8 +270,7 @@ export function BriefScopeModal({
 /**
  * Default probe — `release_diff({ summaryOnly: true, roots: [rootId] })` via REST.
  * Returns the changed-page count for `rootId` between `from → to`, or `null` when
- * the diff cannot be computed. NOTE: relies on the releases diff endpoint honoring
- * the `roots` + `summaryOnly` query params (see followups).
+ * the diff cannot be computed.
  */
 async function defaultChangedCount(
   fromReleaseName: string | null,

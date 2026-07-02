@@ -22,6 +22,7 @@ export function briefsRouter(
         toReleaseName?: string;
         additionalPrompt?: string;
         suffix?: string;
+        roots?: string[];
       };
       // `fromReleaseName === null` ⇒ initial brief (no previous release).
       const fromIsValid =
@@ -32,6 +33,16 @@ export function briefsRouter(
           'toReleaseName is required (string); fromReleaseName must be string or null',
         );
       }
+      // 0.1.96 (M21/L13) brief scope: an array of root ids the brief covers.
+      // Absent / empty ⇒ whole-release (createBrief omits the `roots` frontmatter
+      // + slug segment). A non-array or non-string entry is a client bug → 400.
+      let roots: string[] | undefined;
+      if (body.roots !== undefined) {
+        if (!Array.isArray(body.roots) || body.roots.some((r) => typeof r !== 'string')) {
+          throw new DomainError('VALIDATION', 'roots must be an array of root id strings');
+        }
+        roots = body.roots.length > 0 ? body.roots : undefined;
+      }
       // 0.1.69: file-only createBrief + createThreadForBrief — the UI "New brief"
       // action still gets its initial editorial thread. `additionalPrompt` is a
       // client concern (appended to the first user message after redirect), not
@@ -40,6 +51,7 @@ export function briefsRouter(
         fromReleaseName: body.fromReleaseName ?? null,
         toReleaseName: body.toReleaseName,
         suffix: typeof body.suffix === 'string' ? body.suffix : undefined,
+        roots,
       });
       const fromName = body.fromReleaseName ?? null;
       const threadTitle = fromName === null
