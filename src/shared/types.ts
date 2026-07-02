@@ -106,14 +106,20 @@ export interface Root {
   briefTarget: boolean;
 }
 
-/** 0.1.96: per-root behaviour flags for a freshly-added user root (all gating off). */
+/**
+ * 0.1.97: per-root behaviour flags for a freshly-added user root. A page root is
+ * "just another page directory sharing the `pages` lifecycle", so a new root
+ * defaults to the FULL pages lifecycle — identical to `DEFAULT_PAGES_ROOT_PROPS`
+ * below minus the `builtin` marker. Advanced gates stay on the `Root` model/API
+ * (edge/programmatic use) but are no longer user-selectable in Settings.
+ */
 export const DEFAULT_USER_ROOT_PROPS = {
-  releasable: false,
-  sectionIndexed: false,
-  referenceValidated: false,
+  releasable: true,
+  sectionIndexed: true,
+  referenceValidated: true,
   linkTargets: [] as string[],
   sidebar: 'accordion' as RootSidebar,
-  briefTarget: false,
+  briefTarget: true,
 } as const;
 
 /** 0.1.96: per-root behaviour flags for the built-in `pages` root (full behaviour). */
