@@ -65,10 +65,15 @@ export function ChatOverlay() {
   draftsRef.current = drafts;
   const draftSaveTimer = useRef<number | null>(null);
 
-  const routerPagePath = useCurrentPagePath();
-  const [dismissedPagePath, setDismissedPagePath] = useState<string | null>(null);
-  const currentPage =
-    routerPagePath && routerPagePath !== dismissedPagePath ? routerPagePath : null;
+  const routerPage = useCurrentPage();
+  // Dismiss key is composite (`rootId::path`) so detaching a page in one root does
+  // not also detach a same-named page in another.
+  const routerPageKey = routerPage ? `${routerPage.rootId}::${routerPage.path}` : null;
+  const [dismissedPageKey, setDismissedPageKey] = useState<string | null>(null);
+  const activePage = routerPageKey && routerPageKey !== dismissedPageKey ? routerPage : null;
+  // Path string drives the chip + "Page attached" label; rootId rides along to send.
+  const currentPage = activePage?.path ?? null;
+  const currentPageRootId = activePage?.rootId ?? null;
 
   const onThreadCreated = useCallback(
     (id: string) => {
@@ -304,13 +309,13 @@ export function ChatOverlay() {
         if (detail.autoSend && messageCountRef.current === 0) {
           handle.clear();
           setHasInput(false);
-          void sendMessage(detail.prompt, [], currentPage);
+          void sendMessage(detail.prompt, [], currentPage, currentPageRootId);
         }
       }, 50);
     };
     window.addEventListener(CHAT_PREFILL_EVENT, onPrefill);
     return () => window.removeEventListener(CHAT_PREFILL_EVENT, onPrefill);
-  }, [setChatOpen, sendMessage, currentPage]);
+  }, [setChatOpen, sendMessage, currentPage, currentPageRootId]);
 
   useEffect(() => {
     if (!settingsOpen) return;
@@ -362,9 +367,9 @@ export function ChatOverlay() {
     clearAnnotations();
     setSystemPromptViewOpen(false);
     clearDraft();
-    await sendMessage(text, annotationsSnapshot, currentPage);
+    await sendMessage(text, annotationsSnapshot, currentPage, currentPageRootId);
     await threadList.refresh();
-  }, [sendMessage, annotations, currentPage, clearAnnotations, threadList, chatThreadId, setDrafts, isBusy, queueMessage]);
+  }, [sendMessage, annotations, currentPage, currentPageRootId, clearAnnotations, threadList, chatThreadId, setDrafts, isBusy, queueMessage]);
 
   const handleCreateThread = useCallback(async () => {
     const t = await threadList.createThread();
@@ -640,7 +645,7 @@ export function ChatOverlay() {
                       background: 'transparent',
                       opacity: 0.7,
                     }}
-                    onClick={() => setDismissedPagePath(routerPagePath)}
+                    onClick={() => setDismissedPageKey(routerPageKey)}
                     title="Detach current page"
                     aria-label="Detach current page"
                   >
@@ -1190,14 +1195,18 @@ function ContextLinkBar({
   );
 }
 
-function useCurrentPagePath(): string | null {
+// 0.1.96 multiroot renamed the page-viewing route `/pages/$` → `/space/$rootId/$`
+// (legacy `/pages/$` is now only a redirect stub with no `rootId` param). Keying on
+// `params.rootId` selects the live space route and yields both the root and the path.
+function useCurrentPage(): { rootId: string; path: string } | null {
   const matches = useMatches();
   return useMemo(() => {
     for (let i = matches.length - 1; i >= 0; i--) {
       const m = matches[i];
       if (!m) continue;
-      const params = m.params as { _splat?: string; slug?: string } | undefined;
-      if (m.routeId?.includes('pages/$') && params?._splat) return params._splat;
+      const params = m.params as { _splat?: string; rootId?: string } | undefined;
+      if (m.routeId?.includes('$rootId') && params?.rootId && params?._splat)
+        return { rootId: params.rootId, path: params._splat };
     }
     return null;
   }, [matches]);

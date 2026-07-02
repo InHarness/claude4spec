@@ -707,6 +707,9 @@ async function buildInner(
     chatService,
     agentCredentialService,
     pagesService: pages,
+    // Resolve a page-root's service by id so the chat "current page" context is read
+    // from the root the user is actually viewing (not always the built-in `pages`).
+    resolvePagesService: (rootId: string) => allRootServices.get(rootId),
     tagsService,
     sectionsService,
     planService,
