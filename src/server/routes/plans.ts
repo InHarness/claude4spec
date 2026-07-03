@@ -27,6 +27,22 @@ export function plansRouter(plan: PlanService): Router {
     }
   });
 
+  // Resolve a plan heading anchor to its plan, mirroring GET /api/sections/:anchor.
+  // Returns the raw { planId, threadId } (no data envelope) or 404, so the client chip
+  // can fall back from a page-section miss to a plan lookup.
+  router.get('/by-anchor/:anchor', (req, res, next) => {
+    try {
+      const row = plan.getByAnchor(req.params.anchor);
+      if (!row)
+        return res
+          .status(404)
+          .json({ error: { code: 'NOT_FOUND', message: 'plan anchor not found' } });
+      res.json(row);
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.get('/:planId', (req, res, next) => {
     try {
       const planId = Number(req.params.planId);

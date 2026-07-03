@@ -93,6 +93,26 @@ export class PlanService {
     return this.hydrate(row);
   }
 
+  /**
+   * Resolve a heading anchor (the `<!-- anchor: xxxxxxxx -->` marker injected by
+   * {@link injectAnchors}) back to the plan that contains it. Plans are not indexed in
+   * `section_index`, so a small `content LIKE` scan is used instead — acceptable given
+   * the low plan count. The `[a-z0-9]{6,12}` guard both validates the id and neutralizes
+   * LIKE metacharacters. `threadId` is best-effort (the plan's oldest thread, or null);
+   * callers navigate by `planId`.
+   */
+  getByAnchor(anchor: string): { planId: number; threadId: string | null } | null {
+    if (!/^[a-z0-9]{6,12}$/.test(anchor)) return null;
+    const row = this.db
+      .prepare(`SELECT id FROM plan WHERE content LIKE ? LIMIT 1`)
+      .get(`%<!-- anchor: ${anchor} -->%`) as { id: number } | undefined;
+    if (!row) return null;
+    const thread = this.db
+      .prepare(`SELECT id FROM chat_thread WHERE plan_id = ? ORDER BY created_at LIMIT 1`)
+      .get(row.id) as { id: string } | undefined;
+    return { planId: row.id, threadId: thread?.id ?? null };
+  }
+
   threadCount(planId: number): number {
     const row = this.db
       .prepare(`SELECT COUNT(*) AS n FROM chat_thread WHERE plan_id = ? AND parent_thread_id IS NULL`)

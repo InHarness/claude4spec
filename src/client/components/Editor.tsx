@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRouterState } from '@tanstack/react-router';
 import { usePage, useWritePage } from '../hooks/usePage.js';
+import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
@@ -36,7 +36,6 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const annotations = useChatStore((s) => s.annotations);
   const externalChange = useFileEventsStore((s) => s.externalChange);
   const clearExternalChange = useFileEventsStore((s) => s.clearExternalChange);
-  const routerHash = useRouterState({ select: (s) => s.location.hash });
   const pagesIndex = usePagesIndex();
 
   const extensions = useMemo(
@@ -132,37 +131,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     };
   }, [editor]);
 
-  useEffect(() => {
-    if (!editor || !data) return;
-    const dom = editor.view.dom as HTMLElement;
-
-    function scrollToHash() {
-      const m = /^#anchor-([a-z0-9]{6,12})$/.exec(window.location.hash);
-      if (!m) return;
-      const anchorId = m[1];
-      requestAnimationFrame(() => {
-        const marker = dom.querySelector(`anchor_marker[data-anchor="${anchorId}"]`);
-        if (!marker) {
-          console.warn(`[anchorscr] anchor not found in DOM: ${anchorId}`);
-          return;
-        }
-        let target: Element | null = marker.nextElementSibling;
-        while (target && !/^H[1-6]$/i.test(target.tagName)) {
-          target = target.nextElementSibling;
-        }
-        const scrollTarget = (target ?? marker) as HTMLElement;
-        scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        if (target) {
-          target.classList.add('anchor-highlight');
-          window.setTimeout(() => target.classList.remove('anchor-highlight'), 1000);
-        }
-      });
-    }
-
-    scrollToHash();
-    window.addEventListener('hashchange', scrollToHash);
-    return () => window.removeEventListener('hashchange', scrollToHash);
-  }, [editor, data, path, routerHash]);
+  useScrollToAnchor(editor, !!data, path);
 
   useEffect(() => {
     if (!editor || !externalChange) return;

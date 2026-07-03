@@ -73,3 +73,51 @@ describe('PlanService anchor injection', () => {
     expect(anchorCount).toBe(2);
   });
 });
+
+describe('PlanService.getByAnchor', () => {
+  let db: Database.Database;
+  let service: PlanService;
+
+  beforeEach(() => {
+    db = createTestDb();
+    service = new PlanService(db, noopWs, new ChatService(db));
+  });
+
+  function firstAnchorOf(threadId: string): string {
+    const line = storedContent(db, threadId)
+      .split('\n')
+      .find((l) => ANCHOR_RE.test(l))!;
+    return ANCHOR_RE.exec(line)![1]!;
+  }
+
+  it('resolves an injected plan heading anchor back to its plan + oldest thread', () => {
+    seedThread(db, 'thread-1');
+    service.update({
+      threadId: 'thread-1',
+      action: 'replace',
+      content: '## First section\n\nbody text',
+      changedBy: 'agent',
+    });
+    const anchor = firstAnchorOf('thread-1');
+
+    const hit = service.getByAnchor(anchor);
+    expect(hit).not.toBeNull();
+    const plan = service.getByThread('thread-1')!;
+    expect(hit!.planId).toBe(plan.id);
+    expect(hit!.threadId).toBe('thread-1');
+  });
+
+  it('returns null for an unknown anchor and for a malformed anchor', () => {
+    seedThread(db, 'thread-1');
+    service.update({
+      threadId: 'thread-1',
+      action: 'replace',
+      content: '## Only section\n\nbody',
+      changedBy: 'agent',
+    });
+
+    expect(service.getByAnchor('zzzzzzzz')).toBeNull(); // well-formed but absent
+    expect(service.getByAnchor('bad id!')).toBeNull(); // malformed → rejected by guard
+    expect(service.getByAnchor('%')).toBeNull(); // LIKE wildcard must not match everything
+  });
+});
