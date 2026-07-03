@@ -36,6 +36,16 @@ export function useRoots(): Root[] {
   return data?.roots ?? [];
 }
 
+/**
+ * 0.1.100: the cwd-relative `dir` of a given root, needed by the page-ref resolver's
+ * dir-strip fallback. Falls back to the `rootId` itself while config loads (a
+ * best-effort guess; harmless since the fallback only fires after an exact miss).
+ */
+export function useRootDir(rootId: string): string {
+  const roots = useRoots();
+  return roots.find((r) => r.id === rootId)?.dir ?? rootId;
+}
+
 export function usePatchConfig() {
   const qc = useQueryClient();
   return useMutation({

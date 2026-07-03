@@ -43,9 +43,10 @@ function resolvesInIndex(
   index: ReadonlyMap<string, unknown> | undefined,
   path: string,
   sourcePath?: string,
+  dir?: string,
 ): boolean {
   if (!index) return false;
-  return resolveAgainstIndex(path, index, sourcePath) !== null;
+  return resolveAgainstIndex(path, index, sourcePath, dir) !== null;
 }
 
 /**
@@ -84,6 +85,7 @@ export function setupPageRefRules(md: any): void {
     const index = state.md.__c4sPagesIndex as ReadonlyMap<string, unknown> | undefined;
     if (!index) return;
     const sourcePath = state.md.__c4sPageRefSourcePath as string | undefined;
+    const dir = state.md.__c4sPageRefDir as string | undefined;
     const Token = state.Token;
     for (const block of state.tokens) {
       if (!block.children) continue;
@@ -94,7 +96,7 @@ export function setupPageRefRules(md: any): void {
         if (!m) continue;
         const path = m[1]!;
         const anchor = m[2];
-        if (!resolvesInIndex(index, path, sourcePath)) continue;
+        if (!resolvesInIndex(index, path, sourcePath, dir)) continue;
         const replacement = new Token('html_inline', '', 0);
         replacement.content = buildHtmlInline({ syntax: 'backticks', path, anchor });
         block.children[i] = replacement;
@@ -106,6 +108,7 @@ export function setupPageRefRules(md: any): void {
     const index = state.md.__c4sPagesIndex as ReadonlyMap<string, unknown> | undefined;
     if (!index) return;
     const sourcePath = state.md.__c4sPageRefSourcePath as string | undefined;
+    const dir = state.md.__c4sPageRefDir as string | undefined;
     const Token = state.Token;
     for (const block of state.tokens) {
       if (!block.children) continue;
@@ -117,7 +120,7 @@ export function setupPageRefRules(md: any): void {
         const [pathPart, anchorPart] = href.split('#', 2);
         if (!pathPart || !LINK_PATH_RE.test(pathPart)) continue;
         const anchor = anchorPart && /^[a-f0-9]{8}$/.test(anchorPart) ? anchorPart : undefined;
-        if (!resolvesInIndex(index, pathPart, sourcePath)) continue;
+        if (!resolvesInIndex(index, pathPart, sourcePath, dir)) continue;
         let j = i + 1;
         let label = '';
         while (j < children.length && children[j].type !== 'link_close') {
@@ -206,6 +209,10 @@ export const PageRefNode = Node.create({
             const sourcePath = editor?.storage?.pageRefSourcePath;
             if (typeof sourcePath === 'string') md.__c4sPageRefSourcePath = sourcePath;
             else delete md.__c4sPageRefSourcePath;
+            // 0.1.100: current root's dir feeds the resolver's CWD-relative fallback.
+            const dir = editor?.storage?.pageRefDir;
+            if (typeof dir === 'string') md.__c4sPageRefDir = dir;
+            else delete md.__c4sPageRefDir;
           },
         },
       },

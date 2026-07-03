@@ -15,6 +15,7 @@ import { useChatStore } from '../state/chat.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { confirmDestructive } from '../ui/events.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
+import { useRootDir } from '../hooks/useConfig.js';
 import type { EntityType } from '../../shared/entities.js';
 
 interface Props {
@@ -36,7 +37,8 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const annotations = useChatStore((s) => s.annotations);
   const externalChange = useFileEventsStore((s) => s.externalChange);
   const clearExternalChange = useFileEventsStore((s) => s.clearExternalChange);
-  const pagesIndex = usePagesIndex();
+  const pagesIndex = usePagesIndex(rootId);
+  const rootDir = useRootDir(rootId);
 
   const extensions = useMemo(
     () =>
@@ -113,6 +115,10 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     const storage = editor.storage as Record<string, unknown>;
     storage.pagesIndex = pagesIndex;
     storage.pageRefSourcePath = path;
+    // 0.1.100: the current root's id + dir feed the resolver's CWD-relative fallback,
+    // so `@<dir>/relPath` chips resolve alongside root-relative `@relPath`.
+    storage.pageRefRootId = rootId;
+    storage.pageRefDir = rootDir;
     // First-time arrival or update — re-parse current body so code_inline and link
     // post-processors can promote resolved paths into PageRefNode chips.
     if (!pagesIndex || !data || isDirtyRef.current) return;
@@ -120,7 +126,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       if (editor.isDestroyed) return;
       editor.commands.setContent(data.body, false);
     });
-  }, [editor, pagesIndex, data, path]);
+  }, [editor, pagesIndex, data, path, rootId, rootDir]);
 
   useEffect(() => {
     useOutlineStore.getState().setEditor(editor ?? null);

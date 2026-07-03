@@ -240,6 +240,21 @@ export class PagesLinkIndexerService {
     if (normalized.startsWith('..') || normalized.startsWith('/')) return null;
     if (has(normalized)) return { path: normalized, anchor };
     if (has(normalized + '.md')) return { path: normalized + '.md', anchor };
+
+    // Step 3b (0.1.100) — CWD-relative fallback. Agents writing prose usually type the
+    // path relative to the project cwd, which includes the root's `dir` segment
+    // (e.g. `@pages/reference/x.md` for a file keyed `reference/x.md` in root `pages`
+    // whose dir='pages'). After the root-relative forms (steps 2–3) miss, strip the
+    // source root's `dir/` prefix and retry exact + `.md`/`.mdx`. No-op when dir='.'
+    // (both forms are identical). Precedence: root-relative always wins, so a genuine
+    // file at relPath `<dir>/x.md` is matched above and never reaches this branch.
+    const dir = this.roots.get(rootId)?.dir;
+    if (dir && dir !== '.' && normalized.startsWith(dir + '/')) {
+      const s = normalized.slice(dir.length + 1);
+      if (has(s)) return { path: s, anchor };
+      if (has(s + '.md')) return { path: s + '.md', anchor };
+      if (has(s + '.mdx')) return { path: s + '.mdx', anchor };
+    }
     return null;
   }
 
