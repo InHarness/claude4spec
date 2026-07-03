@@ -16,8 +16,8 @@ and hands off:
 2. drift that needs a **code** change → describe it in an **analysis brief**
    (\`c4s agent --ct chat\` driving the \`runTransagent\` brief tool).
 
-Execution is downstream: a human continues the spec plan thread, and
-[\`c4s-brief-implementer\`](../c4s-brief-implementer/SKILL.md) implements the brief.
+Execution is downstream: a human continues the spec plan thread, and the
+\`c4s-brief-implementer\` skill implements the brief.
 
 **CLI only — never call \`curl\` or the HTTP API directly.**
 
@@ -36,9 +36,9 @@ whole spec at once.
 
 ## Reading the spec
 
-Read the spec through the \`c4s\` reader — see
-[\`c4s-spec-reader\`](../c4s-spec-reader/SKILL.md) for the full command reference and
-the \`--project\` / \`PROJECT_NOT_FOUND\` symlink gotcha (not repeated here). In short:
+Read the spec through the \`c4s\` reader — see the \`c4s-spec-reader\` skill for the
+full command reference and the \`--project\` / \`PROJECT_NOT_FOUND\` symlink gotcha
+(not repeated here). In short:
 
 \`\`\`sh
 c4s catalog                                   # entity types + schemas
@@ -102,8 +102,8 @@ continues the thread (\`c4s ask "..." --thread <threadId>\`, or in the UI).
 
 ### 6. Path 2 — code-fix → analysis brief (\`c4s agent --ct chat\` + \`runTransagent\`)
 
-Route a code fix into an **analysis brief** that
-[\`c4s-brief-implementer\`](../c4s-brief-implementer/SKILL.md) can implement later.
+Route a code fix into an **analysis brief** that the \`c4s-brief-implementer\` skill
+can implement later.
 
 **Use \`c4s agent --ct chat\`, NOT \`c4s agent --ct brief\`.** Brief-context requires a
 **pre-existing minted brief**: \`--ct brief\` calls \`get_brief\`, which returns
