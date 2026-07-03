@@ -9,6 +9,10 @@ import {
   BRIEF_IMPLEMENTER_FRONTMATTER,
   BRIEF_IMPLEMENTER_BODY,
 } from './brief-implementer-template.js';
+import {
+  REFACTOR_FRONTMATTER,
+  REFACTOR_BODY,
+} from './refactor-template.js';
 
 export function renderSpecReaderSkill(): string {
   return SPEC_READER_FRONTMATTER + '\n' + SPEC_READER_BODY;
@@ -16,6 +20,10 @@ export function renderSpecReaderSkill(): string {
 
 export function renderBriefImplementerSkill(): string {
   return BRIEF_IMPLEMENTER_FRONTMATTER + '\n' + BRIEF_IMPLEMENTER_BODY;
+}
+
+export function renderRefactorSkill(): string {
+  return REFACTOR_FRONTMATTER + '\n' + REFACTOR_BODY;
 }
 
 function sha256(buf: Buffer | string): string {
@@ -63,7 +71,9 @@ export function ensureExternalSkills(cwd: string): void {
     'c4s-brief-implementer',
     'SKILL.md',
   );
+  const refactorPath = path.join(skillsRoot, 'c4s-refactor', 'SKILL.md');
 
   writeIfChanged(specReaderPath, renderSpecReaderSkill());
   writeIfChanged(briefImplementerPath, renderBriefImplementerSkill());
+  writeIfChanged(refactorPath, renderRefactorSkill());
 }

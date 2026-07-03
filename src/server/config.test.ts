@@ -269,6 +269,32 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(errors.some((e) => e.includes('entitiesDir'))).toBe(true);
   });
 
+  it('validateRootDirs rejects a root overlapping the .claude4spec/skills write-target', () => {
+    const roots = [builtinPagesRoot('pages'), {
+      id: 'gen', name: 'Gen', dir: '.claude4spec/skills', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
+    }];
+    const { errors } = validateRootDirs(roots, {
+      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+    });
+    expect(errors).toContain(
+      "config.json: root 'gen' dir overlaps write-target '.claude4spec/skills'",
+    );
+  });
+
+  it('validateRootDirs allows .claude/skills as a user root (writing styles, M15)', () => {
+    const roots = [builtinPagesRoot('pages'), {
+      id: 'styles', name: 'Styles', dir: '.claude/skills', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
+    }];
+    const { errors } = validateRootDirs(roots, {
+      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+    });
+    expect(errors).toHaveLength(0);
+  });
+
   it('parseRootsArray rejects a dangling linkTargets id', () => {
     expect(() => parseRootsArray([{ ...builtinPagesRoot(), linkTargets: ['ghost'] }])).toThrow(
       /dangling link scope/,
