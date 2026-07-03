@@ -95,10 +95,11 @@ Create \`.claude4spec/patches/<brief-slug>-<short-desc>.md\` with this format:
 \`\`\`markdown
 ---
 type: patch
-brief: v0-1-16-to-v0-1-17.md      # path relative to briefs/
+brief: v0-1-16-to-v0-1-17.md      # path relative to briefsDir
 patch_kind: drift                  # drift | missing | incorrect | clarification
 created_at: 2026-05-11T17:32:00Z
 created_by: claude-code            # or "cursor", "aider", ...
+status: awaiting                   # awaiting spec-author review
 ---
 
 # Patch — short title
