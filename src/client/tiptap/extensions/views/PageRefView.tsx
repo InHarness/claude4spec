@@ -4,19 +4,18 @@ import { useNavigate } from '@tanstack/react-router';
 import { usePageLinks } from '../../../hooks/usePageLinks.js';
 import { PageRefChip, type PageRefChipState } from '../../../components/PageRefChip.js';
 import { openPageRefPopover } from '../PageRefPopover.js';
-import { resolveAgainstIndex } from '../../lib/pathResolve.js';
+import { resolveAgainstIndex, buildPageRefIndex, basenameTitle } from '../../lib/pathResolve.js';
 import type { PageRefSyntax } from '../PageRefNode.js';
 import type { FileMeta } from '../../../../shared/page-links.js';
 
 function normalizePath(
   raw: string,
-  index: Record<string, FileMeta>,
+  index: Map<string, FileMeta>,
   sourcePath?: string,
+  dir?: string,
 ): string | null {
   if (!raw) return null;
-  return resolveAgainstIndex(raw, {
-    has: (p) => Object.prototype.hasOwnProperty.call(index, p),
-  }, sourcePath);
+  return resolveAgainstIndex(raw, { has: (p) => index.has(p) }, sourcePath, dir);
 }
 
 export function PageRefView(props: NodeViewProps) {
@@ -28,29 +27,22 @@ export function PageRefView(props: NodeViewProps) {
   const navigate = useNavigate();
   const { data, isLoading } = usePageLinks();
 
-  const byPath = useMemo<Record<string, FileMeta>>(() => {
-    const out: Record<string, FileMeta> = {};
-    if (!data) return out;
-    // The API returns links and reverseLinks; we need file metadata to show title + anchors.
-    // Until a dedicated /api/page-links/files endpoint exists, derive title from path basename.
-    const paths = new Set<string>();
-    for (const p of Object.keys(data.links)) paths.add(p);
-    for (const p of Object.keys(data.reverseLinks)) paths.add(p);
-    for (const sources of Object.values(data.reverseLinks)) sources.forEach((p) => paths.add(p));
-    for (const links of Object.values(data.links)) {
-      for (const l of links) paths.add(l.targetPath);
-    }
-    for (const p of paths) {
-      out[p] = { path: p, title: basenameTitle(p), anchors: [] };
-    }
-    return out;
-  }, [data]);
+  const storage = props.editor.storage as Record<string, unknown>;
+  const sourcePath = storage.pageRefSourcePath as string | undefined;
+  const rootId = storage.pageRefRootId as string | undefined;
+  const dir = storage.pageRefDir as string | undefined;
 
-  const sourcePath = (props.editor.storage as Record<string, unknown>).pageRefSourcePath as
-    | string
-    | undefined;
-  const resolvedPath = normalizePath(path, byPath, sourcePath);
-  const meta = resolvedPath ? byPath[resolvedPath] : undefined;
+  // The API returns links and reverseLinks keyed by composite `${rootId}:${relPath}`;
+  // buildPageRefIndex narrows to the current root and strips the prefix so the resolver
+  // (incl. the 0.1.100 dir-strip fallback) matches bare relPaths. Title is the basename
+  // until a dedicated /api/page-links/files endpoint exists.
+  const byPath = useMemo<Map<string, FileMeta>>(
+    () => (data ? buildPageRefIndex(data, rootId) : new Map()),
+    [data, rootId],
+  );
+
+  const resolvedPath = normalizePath(path, byPath, sourcePath, dir);
+  const meta = resolvedPath ? byPath.get(resolvedPath) : undefined;
 
   const chipState: PageRefChipState = (() => {
     if (isLoading && !data) return 'loading';
@@ -120,9 +112,4 @@ export function PageRefView(props: NodeViewProps) {
       />
     </NodeViewWrapper>
   );
-}
-
-function basenameTitle(p: string): string {
-  const base = p.split('/').pop() ?? p;
-  return base.replace(/\.md$/, '');
 }

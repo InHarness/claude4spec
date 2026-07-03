@@ -14,8 +14,12 @@ import { OutlineFloater } from './OutlineFloater.js';
 import { useChatStore } from '../state/chat.js';
 import { useOutlineStore } from '../state/outline.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
+import { useRootDir } from '../hooks/useConfig.js';
 import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
 import type { BlameBlock } from '../../shared/entities.js';
+
+// Plan prose references pages in the built-in `pages` root.
+const PLAN_REF_ROOT = 'pages';
 
 interface Props {
   content: string;
@@ -31,7 +35,8 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
   const blameOnRef = useRef<boolean>(blameOn);
   const annotations = useChatStore((s) => s.annotations);
   const qc = useQueryClient();
-  const pagesIndex = usePagesIndex();
+  const pagesIndex = usePagesIndex(PLAN_REF_ROOT);
+  const rootDir = useRootDir(PLAN_REF_ROOT);
 
   useEffect(() => {
     blameRef.current = blame;
@@ -100,13 +105,16 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
     const storage = editor.storage as Record<string, unknown>;
     storage.pagesIndex = pagesIndex;
     storage.pageRefSourcePath = currentPage;
+    // 0.1.100: dir-aware resolution against the pages root (see PLAN_REF_ROOT).
+    storage.pageRefRootId = PLAN_REF_ROOT;
+    storage.pageRefDir = rootDir;
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current !== lastServerBodyRef.current) return;
     queueMicrotask(() => {
       if (editor.isDestroyed) return;
       editor.commands.setContent(content, false);
     });
-  }, [editor, pagesIndex, content, currentPage]);
+  }, [editor, pagesIndex, content, currentPage, rootDir]);
 
   // Refresh blame decorations whenever data or toggle change.
   useEffect(() => {

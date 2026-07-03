@@ -8,10 +8,17 @@ export class PagesService {
   readonly root: string;
   /** 0.1.96: which root this service serves ('pages' | user slug | 'brief' | 'patch'). */
   readonly rootId: string;
+  /**
+   * 0.1.100: the root's cwd-relative `dir` (verbatim `Root.dir`, before joining onto cwd).
+   * Needed by the link indexer's CWD-relative fallback (step 3b): agents write `@<dir>/relPath`,
+   * so the indexer strips this prefix to recover the root-relative key.
+   */
+  readonly dir: string;
 
   constructor(cwd: string, pagesDir: string = 'pages', rootId: string = 'pages') {
     this.root = path.join(cwd, pagesDir);
     this.rootId = rootId;
+    this.dir = pagesDir;
   }
 
   async ensureRoot(): Promise<void> {
