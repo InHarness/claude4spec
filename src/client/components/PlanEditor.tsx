@@ -14,6 +14,7 @@ import { OutlineFloater } from './OutlineFloater.js';
 import { useChatStore } from '../state/chat.js';
 import { useOutlineStore } from '../state/outline.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
+import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
 import type { BlameBlock } from '../../shared/entities.js';
 
 interface Props {
@@ -125,6 +126,10 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
       }
     };
   }, [editor]);
+
+  // Scroll to a cited plan heading when the URL carries a #anchor-<id> hash. `content`
+  // gates on the plan being loaded; `currentPage` (/plans/<id>) resets on plan switch.
+  useScrollToAnchor(editor, !!content, currentPage);
 
   const outlineOpen = useOutlineStore((s) => s.outlineOpen);
 

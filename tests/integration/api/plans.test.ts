@@ -96,3 +96,46 @@ describe('GET /api/plans/:planId/threads', () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe('GET /api/plans/by-anchor/:anchor', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('resolves a plan heading anchor to { planId, threadId }', async () => {
+    const planId = seedPlan(t.db, 'Anchored plan', '<!-- anchor: abcd1234 -->\n## Section\n\nbody');
+    t.db
+      .prepare(
+        `INSERT INTO chat_thread (id, title, plan_id, created_at, updated_at)
+         VALUES ('th-1', 't1', ?, datetime('now'), datetime('now'))`,
+      )
+      .run(planId);
+
+    const res = await request(t.app).get('/api/plans/by-anchor/abcd1234');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ planId, threadId: 'th-1' });
+  });
+
+  it('resolves with threadId null when the plan has no thread', async () => {
+    const planId = seedPlan(t.db, 'Lonely plan', '<!-- anchor: deadbeef -->\n## S\n\nx');
+    const res = await request(t.app).get('/api/plans/by-anchor/deadbeef');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ planId, threadId: null });
+  });
+
+  it('404s for an unknown anchor', async () => {
+    seedPlan(t.db, 'Some plan', '<!-- anchor: abcd1234 -->\n## S\n\nx');
+    const res = await request(t.app).get('/api/plans/by-anchor/99999999');
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('NOT_FOUND');
+  });
+
+  it('does not leak plans through a LIKE-wildcard anchor', async () => {
+    seedPlan(t.db, 'Some plan', '<!-- anchor: abcd1234 -->\n## S\n\nx');
+    const res = await request(t.app).get('/api/plans/by-anchor/%25'); // decodes to "%"
+    expect(res.status).toBe(404);
+  });
+});

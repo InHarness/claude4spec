@@ -413,6 +413,21 @@ export const sectionsApi = {
   },
 };
 
+export interface PlanAnchorRef {
+  planId: number;
+  threadId: string | null;
+}
+
+export const plansApi = {
+  // Resolve a plan heading anchor to its plan, mirroring sectionsApi.getByAnchor.
+  // The route returns the raw ref (no data envelope) or 404 → null.
+  async getByAnchor(anchor: string): Promise<PlanAnchorRef | null> {
+    const res = await apiFetch(`/api/plans/by-anchor/${encodeURIComponent(anchor)}`);
+    if (res.status === 404) return null;
+    return handle<PlanAnchorRef>(res);
+  },
+};
+
 // M24 Remote Account. Login is a human action — no agent path. `access_token`
 // is never present in any of these responses.
 export const remoteAccountApi = {
