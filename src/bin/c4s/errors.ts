@@ -22,9 +22,17 @@ export type CliErrorCode =
   | 'AMBIGUOUS_WORKSPACE'
   | 'INDEX_NOT_MATERIALIZED'
   | 'PROJECT_NOT_IN_WORKSPACE'
+  // 0.1.103 — --project resolved as a NAME/slug (not a path): distinguishes
+  // an injected, externally-copied SKILL.md identity from the path-based
+  // PROJECT_NOT_FOUND/AMBIGUOUS_WORKSPACE above.
+  | 'PROJECT_SLUG_NOT_FOUND'
+  | 'AMBIGUOUS_PROJECT'
   // M33 phase 3 — `c4s plugins doctor` exits with this when a pool package was
   // built against an incompatible MAJOR Host API (the only non-zero plugins exit).
-  | 'HOST_API_INCOMPATIBLE';
+  | 'HOST_API_INCOMPATIBLE'
+  // 0.1.103 M11 — filesystem-only brief/patch command family.
+  | 'BRIEF_NOT_FOUND'
+  | 'PATCH_WRITE_FAILED';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

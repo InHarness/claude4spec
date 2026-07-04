@@ -88,6 +88,16 @@ export function optionalString(args: ParsedArgs, flag: string): string | undefin
   return undefined;
 }
 
+/** Parses `--flag N` as an integer; throws INVALID_ARGS for a non-integer value. Absent flag → undefined. */
+export function optionalInt(args: ParsedArgs, flag: string): number | undefined {
+  const v = args.flags.get(flag);
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string' || !/^-?\d+$/.test(v)) {
+    throw new CliError('INVALID_ARGS', `--${flag} must be an integer, got '${String(v)}'`);
+  }
+  return Number(v);
+}
+
 export function requireStringList(args: ParsedArgs, flag: string): string[] {
   const raw = requireString(args, flag);
   return raw

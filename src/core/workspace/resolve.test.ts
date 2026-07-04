@@ -47,7 +47,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     expect(result.projectDir).toBe(projectCwd);
   });
 
-  it('throws AMBIGUOUS_WORKSPACE when a name matches 2+ projects and --workspace is omitted', () => {
+  it('throws AMBIGUOUS_PROJECT when a name matches 2+ projects and --workspace is omitted', () => {
     const registry = new WorkspaceRegistry(dir);
     const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
     const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4502 });
@@ -59,7 +59,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       expect.unreachable('expected resolveWorkspaceProject to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_WORKSPACE');
+      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
       expect((err as WorkspaceResolveError).message).toContain('shared-name');
     }
   });
@@ -91,7 +91,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     }
   });
 
-  it('reports PROJECT_NOT_FOUND mentioning both the path and name attempts when neither matches', () => {
+  it('reports PROJECT_SLUG_NOT_FOUND mentioning both the path and name attempts when neither matches', () => {
     const registry = new WorkspaceRegistry(dir);
     registry.selectOrCreate({ name: 'default' });
 
@@ -100,8 +100,26 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       expect.unreachable('expected resolveWorkspaceProject to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('PROJECT_NOT_FOUND');
+      expect((err as WorkspaceResolveError).code).toBe('PROJECT_SLUG_NOT_FOUND');
       expect((err as WorkspaceResolveError).message).toContain('nonexistent-anything');
+      expect((err as WorkspaceResolveError).hint).toContain('regenerate the skill');
+    }
+  });
+
+  it('throws AMBIGUOUS_PROJECT with a hint to pass --workspace when a name collides', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4511 });
+    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4512 });
+    registry.registerProject(wsA, path.join(dir, 'repo-a', 'twin-name'));
+    registry.registerProject(wsB, path.join(dir, 'repo-b', 'twin-name'));
+
+    try {
+      resolveWorkspaceProject({ project: 'twin-name' });
+      expect.unreachable('expected resolveWorkspaceProject to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceResolveError);
+      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
+      expect((err as WorkspaceResolveError).hint).toContain('--workspace');
     }
   });
 

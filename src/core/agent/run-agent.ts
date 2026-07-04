@@ -72,6 +72,8 @@ export interface AgentResult {
 export type AgentErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'AMBIGUOUS_WORKSPACE'
+  | 'PROJECT_SLUG_NOT_FOUND'
+  | 'AMBIGUOUS_PROJECT'
   | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'

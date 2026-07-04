@@ -1,10 +1,14 @@
+import type { ExternalSkillContext } from './types.js';
+
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
 description: Detect drift between the claude4spec specification and the code for a given topic, then route the fix — to the spec (a read-only plan via \`c4s ask\`) or to the code (an analysis brief via \`c4s agent --ct chat\` + \`runTransagent\`). Use when reconciling spec with implementation ("check spec vs code for X", "reconcile topic Y"). Optional argument — the topic/scope (module, entity, slug, tag).
 ---
 `;
 
-export const REFACTOR_BODY = `# c4s-refactor
+export function refactorBody(ctx: ExternalSkillContext): string {
+  const identity = `--project ${ctx.slug} --workspace ${ctx.workspace}`;
+  return `# c4s-refactor
 
 A **spec↔code drift router**. For a single topic this skill reads the claude4spec
 specification, analyzes the matching code, detects **drift**, classifies it, and
@@ -20,6 +24,10 @@ Execution is downstream: a human continues the spec plan thread, and the
 \`c4s-brief-implementer\` skill implements the brief.
 
 **CLI only — never call \`curl\` or the HTTP API directly.**
+
+This skill is bound to one specification project — every \`c4s\` command below
+carries its identity (\`${identity}\`), so it works from any cwd. Do NOT \`cd\`
+into the spec repo; the identity is baked in, not derived from cwd.
 
 ## Input — a topic is required
 
@@ -37,24 +45,19 @@ whole spec at once.
 ## Reading the spec
 
 Read the spec through the \`c4s\` reader — see the \`c4s-spec-reader\` skill for the
-full command reference and the \`--project\` / \`PROJECT_NOT_FOUND\` symlink gotcha
-(not repeated here). In short:
+full command reference. In short:
 
 \`\`\`sh
-c4s catalog                                   # entity types + schemas
-c4s list-tags                                 # tags + counts
-c4s list-slugs --type endpoint                # slugs for a type
-c4s single_element --type endpoint --slug <x>
-c4s resolve modules/<module>.md               # expand a page's tags inline
+c4s catalog ${identity}                                   # entity types + schemas
+c4s list-tags ${identity}                                 # tags + counts
+c4s list-slugs --type endpoint ${identity}                # slugs for a type
+c4s single_element --type endpoint --slug <x> ${identity}
+c4s resolve modules/<module>.md ${identity}               # expand a page's tags inline
 \`\`\`
 
-Point at the spec project with the \`--project\` **flag** (not \`cd\`): the spec dir is
-often a symlink, and \`cd\`-ing into it resolves \`cwd\` to the real path ≠ the
-registered one → \`PROJECT_NOT_FOUND\`.
-
-Manual fallback (when the CLI/server is unavailable): read \`modules/*.md\`,
-\`entities/**\`, \`layers/*.md\`, and the entity JSON store under
-\`.claude4spec/entities/<type>/<slug>.json\`.
+Manual fallback (when \`c4s\`/the server is unavailable): read markdown pages
+directly under \`${ctx.pagesDirAbs ?? '<pages-dir-abs>'}\` (absolute — works from
+any cwd).
 
 ## Process
 
@@ -94,7 +97,7 @@ exactly one bucket:
 \`\`\`sh
 c4s ask "Spec drift on <topic>: <description>. Create a plan of specification \\
 changes — list the entities/pages to change and the exact edits. Plan only, do \\
-not execute." --project <spec-project>
+not execute." ${identity}
 \`\`\`
 
 **Record the returned \`threadId\`.** This skill does **not** apply the plan — a human
@@ -109,7 +112,7 @@ can implement later.
 **pre-existing minted brief**: \`--ct brief\` calls \`get_brief\`, which returns
 \`NOT_FOUND\` for a new slug and aborts. The working route is a \`--ct chat\` turn that
 drives the \`runTransagent\` MCP tool, which spawns a hidden child that authors and
-**saves the brief itself** into \`.claude4spec/briefs/\`:
+**saves the brief itself**:
 
 \`\`\`sh
 c4s agent --ct chat \\
@@ -119,7 +122,7 @@ Do NOT Write the file yourself — drive it through the transagent. Pass this as
 message (it must become a self-contained analysis brief with a 'For implementers' \\
 section): '<drift description + references to spec entities/pages + exact files to \\
 change>'. Report the runTransagent arguments and raw result (threadId + saved brief \\
-filename)." --project <spec-project>
+filename)." ${identity}
 \`\`\`
 
 The tool is \`runTransagent(contextType: 'brief'|'chat'|'patch', message, payload?, threadId?)\`.
@@ -143,19 +146,24 @@ Print and **finish** (no execution):
   the skill can still read the spec and analyze the code, but it **cannot route the
   fix** (\`c4s ask\` / \`c4s agent\` delegate the turn to the server). The read-only
   \`resolve\` / \`list-*\` / \`single_element\` commands do not need a server.
-- **\`--project\`, never \`cd\`:** the spec dir is often a symlink; \`cd\`-ing in resolves
-  \`cwd\` to the real path ≠ the registered one → \`PROJECT_NOT_FOUND\`. Always pass the
-  registered path with \`--project\`.
+- **The identity is baked in — never \`cd\`.** \`${identity}\` is injected into every
+  command above; \`cd\`-ing into the spec repo is unnecessary and, if it's reached
+  through a symlink, can even break resolution.
 - **\`c4s ask\` is read-only** — it yields a plan only and never mutates the spec;
   execution is a separate, human-driven step.
 - **Brief authoring = \`--ct chat\` + \`runTransagent\`, NOT \`--ct brief\`.** Telling a
   \`--ct chat\` agent to "just write the brief" makes it \`Write\` a loose \`.md\` in the
   wrong directory (not a registered brief) — always route through \`runTransagent\`.
+- **\`PROJECT_SLUG_NOT_FOUND\`** — the injected \`--project ${ctx.slug}\` no longer
+  matches a project in this machine's \`~/.claude4spec/workspaces.json\` (moved,
+  deleted, or copied from another machine). Regenerate this skill from the spec
+  repo and re-copy it here. \`AMBIGUOUS_WORKSPACE\` / \`AMBIGUOUS_PROJECT\` → pass the
+  correct \`--workspace <name>\`.
 
 ## Notes
 
 This is a **base skill** generated by claude4spec. The base copy under
 \`.claude4spec/skills/\` is refreshed on bootstrap, so copy it into your project's
-\`.claude/skills/\` if you want edits that stick (e.g. pinning your project's
-\`--project\` path or \`--workspace\`).
+\`.claude/skills/\` if you want edits that stick.
 `;
+}
