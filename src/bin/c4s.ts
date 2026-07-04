@@ -60,13 +60,13 @@ Plugins (M33 — reads loader state, no running server):
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
 
 Global flags:
-  --project <path>    override project dir (default: walk-up against the workspace registry)
-  --workspace <name>  pick the workspace when the project is registered in more than one
-  --format json|text  output format (default: json; resolve default: inline)
-  --compact           minified JSON (for pipelines)
-  --sort-keys         deterministic key order in JSON
-  --version           print c4s version
-  --help              show this help
+  --project <path|name>  override project (path tried first, else matched by registered name)
+  --workspace <name>      pick the workspace when the project is registered in more than one
+  --format json|text      output format (default: json; resolve default: inline)
+  --compact               minified JSON (for pipelines)
+  --sort-keys             deterministic key order in JSON
+  --version               print c4s version
+  --help                  show this help
 `;
 
 async function main(): Promise<void> {

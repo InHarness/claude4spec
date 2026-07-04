@@ -1,5 +1,10 @@
 import path from 'node:path';
-import { WorkspaceRegistry, resolvePluginPackages, findProjectByCwd } from '../../server/workspace/registry.js';
+import {
+  WorkspaceRegistry,
+  resolvePluginPackages,
+  findProjectByCwd,
+  findProjectByName,
+} from '../../server/workspace/registry.js';
 import { projectIdForCwd } from '../../server/workspace/project-id.js';
 import type { WorkspaceRecord } from '../../server/workspace/types.js';
 
@@ -37,6 +42,16 @@ export class WorkspaceResolveError extends Error {
  *   N>1 without --workspace → AMBIGUOUS_WORKSPACE listing candidates
  *
  * No last-opened guessing — ambiguity is always explicit.
+ *
+ * `--project` accepts a PATH first (unchanged, backward-compatible
+ * behavior — resolved against cwd, looked up by stored `cwd`/`sha1(cwd)`
+ * id). Only when that resolves to zero owners does it fall back to treating
+ * the value as a registered project's `name` (a cosmetic, non-unique
+ * `basename(cwd)`-derived label users see in `workspaces.json` and
+ * naturally expect to work here too) — scoped to `--workspace` when given
+ * (explicit, never silently widened), else searched across every workspace,
+ * matching the same "no last-opened guessing, ambiguity is always explicit"
+ * philosophy as the no-`--project` walk-up above.
  */
 export function resolveWorkspaceProject(
   opts: { project?: string; workspace?: string } = {},
@@ -47,9 +62,31 @@ export function resolveWorkspaceProject(
   // registry (a subdirectory of a registered project resolves to its root).
   let projectDir: string | null = null;
   let owners: WorkspaceRecord[] = [];
+  let triedName = false;
   if (opts.project) {
     projectDir = path.resolve(process.cwd(), opts.project);
     owners = registry.resolveWorkspacesForCwd(projectDir);
+    if (owners.length === 0) {
+      triedName = true;
+      const candidateWorkspaces = opts.workspace
+        ? [registry.getWorkspace(opts.workspace)].filter((w): w is WorkspaceRecord => w !== null)
+        : registry.listWorkspaces();
+      const matches = findProjectByName(candidateWorkspaces, opts.project);
+      if (matches.length === 1) {
+        projectDir = matches[0]!.project.cwd;
+        owners = [matches[0]!.workspace];
+      } else if (matches.length > 1) {
+        throw new WorkspaceResolveError(
+          'AMBIGUOUS_WORKSPACE',
+          `project name '${opts.project}' matches ${matches.length} projects: ${matches
+            .map((m) => `'${m.workspace.name}' (${m.project.cwd})`)
+            .join(', ')}`,
+          'pass --workspace <name> to pick one, or use --project <path> instead of a name',
+        );
+      }
+      // 0 matches: projectDir/owners stay as the failed path attempt — falls
+      // through to PROJECT_NOT_FOUND below, same as before this fallback existed.
+    }
   } else {
     let dir = process.cwd();
     for (;;) {
@@ -69,7 +106,9 @@ export function resolveWorkspaceProject(
     throw new WorkspaceResolveError(
       'PROJECT_NOT_FOUND',
       opts.project
-        ? `no workspace owns a claude4spec project at ${path.resolve(process.cwd(), opts.project)}`
+        ? `no workspace owns a claude4spec project at ${path.resolve(process.cwd(), opts.project)}${
+            triedName ? ` (and no registered project is named '${opts.project}')` : ''
+          }`
         : 'no workspace owns a claude4spec project in the current directory or any parent',
       'run `npx @inharness-ai/claude4spec` here first (it registers the project in a workspace)',
     );

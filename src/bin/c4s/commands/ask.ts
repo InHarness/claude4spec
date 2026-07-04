@@ -13,7 +13,7 @@ import { AgentError, runAgent } from '../../../core/agent/run-agent.js';
  * rejected (use `c4s agent` for other contexts).
  *
  *   c4s ask "<msg>"                 # consult the peer for the cwd's project
- *   c4s ask "<msg>" --project <p>   # consult a specific peer
+ *   c4s ask "<msg>" --project <p>   # consult a specific peer, by path or registered name
  *   c4s ask "<msg>" --thread <id>   # continue an existing ask thread
  */
 export async function runAsk_cli(args: ParsedArgs): Promise<void> {
