@@ -25,8 +25,14 @@ import { FormField } from './form/FormField.js';
 import { InlineEditField } from './form/InlineEditField.js';
 import { Dialog } from './overlay/Dialog.js';
 import { FormShell } from './overlay/FormShell.js';
+import { SegmentedControlTabs } from './detail/SegmentedControlTabs.js';
+import { VersionHistory } from './detail/VersionHistory.js';
+import { EntityDetailToolbar } from './detail/EntityDetailToolbar.js';
+import { RichTextField } from './detail/RichTextField.js';
+import { TagPicker } from './detail/TagPicker.js';
+import { ReferencesList } from './detail/ReferencesList.js';
 
-export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay';
+export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay' | 'detail';
 
 export interface UiKitComponentEntry {
   name: string;
@@ -52,6 +58,12 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   { name: 'InlineEditField', group: 'form', stability: InlineEditField.stability },
   { name: 'Dialog', group: 'overlay', stability: Dialog.stability },
   { name: 'FormShell', group: 'overlay', stability: FormShell.stability },
+  { name: 'SegmentedControlTabs', group: 'detail', stability: SegmentedControlTabs.stability },
+  { name: 'VersionHistory', group: 'detail', stability: VersionHistory.stability },
+  { name: 'EntityDetailToolbar', group: 'detail', stability: EntityDetailToolbar.stability },
+  { name: 'RichTextField', group: 'detail', stability: RichTextField.stability },
+  { name: 'TagPicker', group: 'detail', stability: TagPicker.stability },
+  { name: 'ReferencesList', group: 'detail', stability: ReferencesList.stability },
 ];
 
 /**

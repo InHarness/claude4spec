@@ -469,6 +469,9 @@ export interface Tag {
   updatedAt: string;
 }
 
+/** M34/L11: `GET /api/tags` response item shape, as named in the plugin-facing DTO. */
+export type TagListItem = Tag;
+
 export interface TagCreateInput {
   name: string;
   color?: string;

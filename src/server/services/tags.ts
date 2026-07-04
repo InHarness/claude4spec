@@ -3,6 +3,7 @@ import type { EntityType, Tag, TagCreateInput, TagUpdateInput } from '../../shar
 import { tagSlug } from './slug.js';
 import type { EntityStore } from './entity-store.js';
 import type { RawEntityType } from '../domain/raw-entity-reader.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 const COLOR_PALETTE = [
   '#c45a3b', '#5d7ea2', '#6e8a5f', '#8a6da3',
@@ -30,6 +31,17 @@ export class TagsService {
   private store: EntityStore | null = null;
   setEntityStore(store: EntityStore): void {
     this.store = store;
+  }
+
+  /**
+   * M34/L11: wired post-construction (host is consolidated after the DB
+   * opens). Used to drop counts for entity types that got disabled/unloaded
+   * after old `entity_tag` rows were written — `GET /api/tags` should only
+   * ever report counts for currently-active types.
+   */
+  private host: ProjectPluginHost | null = null;
+  setHost(host: ProjectPluginHost): void {
+    this.host = host;
   }
 
   list(): Tag[] {
@@ -160,6 +172,18 @@ export class TagsService {
     return tx();
   }
 
+  /**
+   * M34/L11: remove ONE tag from an entity's set, unlike `assignTags` which
+   * fully replaces it — the frontend `tagsService.remove` picker action must
+   * not clobber the entity's other tags. No-op if the tag wasn't assigned.
+   */
+  removeEntityTag(entityType: EntityType, entitySlug: string, tagSlugValue: string): string[] {
+    this.db
+      .prepare(`DELETE FROM entity_tag WHERE entity_type = ? AND entity_slug = ? AND tag_slug = ?`)
+      .run(entityType, entitySlug, tagSlugValue);
+    return this.getEntityTagSlugs(entityType, entitySlug);
+  }
+
   getEntityTagSlugs(entityType: EntityType, entitySlug: string): string[] {
     const rows = this.db
       .prepare(
@@ -185,8 +209,14 @@ export class TagsService {
       entity_type: string;
       c: number;
     }>;
+    // M34/L11: skip entity types no longer active — old entity_tag rows can
+    // outlive a disabled/unloaded plugin. `host` is null only during early
+    // boot / index rebuild (parity with `store`), in which case fall back to
+    // reporting every type unfiltered.
+    const activeTypes = this.host ? new Set(this.host.listEntities().map((m) => m.type)) : null;
     const out = new Map<string, Record<string, number>>();
     for (const row of rows) {
+      if (activeTypes && !activeTypes.has(row.entity_type)) continue;
       const entry = out.get(row.slug) ?? {};
       entry[row.entity_type] = row.c;
       out.set(row.slug, entry);

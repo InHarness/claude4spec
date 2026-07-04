@@ -1,23 +1,13 @@
-export function slugify(input: string): string {
-  return input
-    .toLowerCase()
-    // ł nie ma dekompozycji NFD — mapujemy jawnie przed normalizacją.
-    .replace(/ł/g, 'l')
-    // Transliteracja diakrytyków: NFD + usunięcie znaków łączących
-    // (ó→o, ż→z, ź→z, ę→e, ą→a, ś→s, ć→c, ń→n).
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-}
+// `slugify`/`tagSlug` moved to src/shared/slug.ts (single source of truth —
+// the client's createTagIdempotent needs the SAME normalization to recognize
+// a name that already resolves to an existing tag). Re-exported here so the
+// many existing server-side importers of this module don't need to change.
+export { slugify, tagSlug } from '../../shared/slug.js';
+import { slugify } from '../../shared/slug.js';
 
 export function endpointSlug(method: string, path: string): string {
   const base = `${method.toLowerCase()}-${slugify(path)}`;
   return base.replace(/^-+|-+$/g, '');
-}
-
-export function tagSlug(name: string): string {
-  return slugify(name);
 }
 
 export function dtoSlug(name: string): string {

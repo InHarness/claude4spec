@@ -241,6 +241,10 @@ export const tagsApi = {
       })
     );
   },
+  /** Single-row lookup by slug — 404s (via ApiError) if no such tag exists. */
+  async getBySlug(slug: string): Promise<Tag> {
+    return handle<Tag>(await apiFetch(`/api/tags/${encodeURIComponent(slug)}`));
+  },
   async update(slug: string, input: TagUpdateInput): Promise<Tag> {
     return handle<Tag>(
       await apiFetch(`/api/tags/${encodeURIComponent(slug)}`, {
@@ -261,6 +265,22 @@ export const tagsApi = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ tags }),
+      })
+    );
+    return data.tags;
+  },
+  /** M34/L11: tags currently assigned to one entity. */
+  async getEntityTags(type: EntityType, slug: string): Promise<string[]> {
+    const data = await handle<{ tags: string[] }>(
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/tags`)
+    );
+    return data.tags;
+  },
+  /** M34/L11: remove ONE tag from an entity — does not touch the others. */
+  async removeEntityTag(type: EntityType, slug: string, tagSlug: string): Promise<string[]> {
+    const data = await handle<{ tags: string[] }>(
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/tags/${encodeURIComponent(tagSlug)}`, {
+        method: 'DELETE',
       })
     );
     return data.tags;
@@ -312,6 +332,14 @@ export const versionsApi = {
   async get(type: EntityType, slug: string, version: number): Promise<VersionDetail> {
     return handle<VersionDetail>(
       await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${version}`)
+    );
+  },
+  /** M34/L11: restore an entity to an exact captured version. */
+  async restore(type: EntityType, slug: string, version: number): Promise<VersionListItem> {
+    return handle<VersionListItem>(
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${version}/restore`, {
+        method: 'POST',
+      })
     );
   },
 };

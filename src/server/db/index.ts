@@ -4,7 +4,6 @@ import path from 'node:path';
 import { runMigrations } from './migrate.js';
 import { backfillPlanTitles } from './fixups/backfill-plan-titles.js';
 import { slotDirFor } from '../workspace/registry.js';
-import { projectIdForCwd } from '../workspace/project-id.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
 export interface Db {
@@ -15,10 +14,11 @@ export interface Db {
 /**
  * M31: the derived SQLite lives OUTSIDE the project dir, in the workspace slot
  * `~/.claude4spec/<workspace>/<project-id>/db.sqlite` — the same cwd can carry
- * an independent index per workspace.
+ * an independent index per workspace. Keyed on the STABLE stored `projectId`,
+ * not a re-hash of cwd, so editing a project's cwd keeps its DB slot.
  */
-export function openDb(workspace: WorkspaceRecord, cwd: string): Db {
-  const dir = slotDirFor(workspace.name, projectIdForCwd(cwd));
+export function openDb(workspace: WorkspaceRecord, projectId: string): Db {
+  const dir = slotDirFor(workspace.name, projectId);
   fs.mkdirSync(dir, { recursive: true });
   return openDbAt(path.join(dir, 'db.sqlite'));
 }

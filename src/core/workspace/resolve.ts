@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { WorkspaceRegistry, resolvePluginPackages } from '../../server/workspace/registry.js';
+import { WorkspaceRegistry, resolvePluginPackages, findProjectByCwd } from '../../server/workspace/registry.js';
 import { projectIdForCwd } from '../../server/workspace/project-id.js';
 import type { WorkspaceRecord } from '../../server/workspace/types.js';
 
@@ -98,7 +98,11 @@ export function resolveWorkspaceProject(
     );
   }
 
-  const projectId = projectIdForCwd(projectDir);
+  // Read the STORED id off the matched record — never re-derive from the path,
+  // so a project whose id diverged from sha1(cwd) still resolves to its slot.
+  // sha1(cwd) is only a fallback for a record that somehow lacks the field.
+  const record = findProjectByCwd(workspace.projects, projectDir);
+  const projectId = record?.id ?? projectIdForCwd(projectDir);
   return {
     workspaceName: workspace.name,
     defaultPort: workspace.defaultPort,

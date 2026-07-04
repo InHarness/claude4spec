@@ -6,7 +6,11 @@ import type {
   VersionListItem,
 } from '../../shared/entities.js';
 import { DomainError } from './tags.js';
+import type { TagsService } from './tags.js';
+import { HostEntityWriter } from './entity-writer.js';
+import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
+import type { RestoreContext } from '../serialization/types.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
 
 export type VersionOp = 'create' | 'update' | 'delete';
@@ -41,12 +45,68 @@ export class VersionService {
   // entity services prefer captureSnapshot(...) over createVersion(...) so
   // entity_version.data carries the full snapshot (decyzja 4 — portable identity).
   private snapshotDeps: { reader: RawEntityReader; host: PluginHost } | null = null;
+  // M34/L11: wired separately from snapshotDeps — entityStore/tagsService are
+  // constructed later in bootstrap than reader/host.
+  private restoreDeps: { entityStore: EntityStore; tagsService: TagsService } | null = null;
 
   constructor(private db: Database.Database) {}
 
   /** M17: wire snapshot dependencies. Called once during server bootstrap. */
   configureSnapshot(reader: RawEntityReader, host: PluginHost): void {
     this.snapshotDeps = { reader, host };
+  }
+
+  /** M34/L11: wire restore dependencies. Called once during server bootstrap. */
+  configureRestore(entityStore: EntityStore, tagsService: TagsService): void {
+    this.restoreDeps = { entityStore, tagsService };
+  }
+
+  /**
+   * M34/L11: restore an entity to a specific captured version (distinct from
+   * the release-scoped `ReleaseService.restoreEntity`, which resolves "as of
+   * a release" instead of an exact `entity_version.version`). UPSERTs through
+   * the plugin's normal write-API via `HostEntityWriter` (same mechanism
+   * release restore uses), then captures a NEW `update` version so the
+   * restore itself is an append-only, undoable action.
+   */
+  restore(type: RawEntityType, entitySlug: string, version: number, actor: ChangedBy): VersionListItem {
+    if (!this.snapshotDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
+    if (!this.restoreDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
+    const target = this.getVersion(type, entitySlug, version);
+    if (!target) throw new DomainError('NOT_FOUND', `version ${version} not found for ${type}/${entitySlug}`);
+
+    const { reader, host } = this.snapshotDeps;
+    const { entityStore, tagsService } = this.restoreDeps;
+    const writer = new HostEntityWriter(host, tagsService);
+    const ctx: RestoreContext = { reader, writer, releaseId: null, actor };
+
+    // A version captured as a delete tombstone has no restorable snapshot —
+    // mirror ReleaseService.restoreEntity's delete branch instead of handing
+    // null data to a serializer's restore(), which assumes a real shape and
+    // would throw. `writer.delete` routes through the same entity service
+    // `.remove()` every other delete path uses, which captures its own
+    // 'delete' version internally — surface that freshly-captured row here.
+    if (target.op === 'delete' || target.data === null) {
+      const deleted = writer.delete(type, entitySlug, actor);
+      if (deleted.deleted) entityStore.remove(type, entitySlug);
+      const latest = this.getLatestVersionForEntity(type, entitySlug);
+      if (latest) return latest;
+      throw new DomainError('NOT_FOUND', `${type} '${entitySlug}' not found`);
+    }
+
+    host.restore(type, target.data, ctx);
+    // M29: persist the restored entity's file (host.restore used writeFile:false).
+    entityStore.persist(type, entitySlug);
+
+    const serializerVersion = host.getEntity(type)?.serializer.version ?? null;
+    return this.captureEntitySnapshot(
+      type,
+      entitySlug,
+      'update',
+      actor,
+      `Restored to version ${version}`,
+      serializerVersion ?? 'unknown',
+    );
   }
 
   /**

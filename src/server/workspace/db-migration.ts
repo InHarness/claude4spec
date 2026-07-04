@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { projectIdForCwd } from './project-id.js';
 import { slotDirFor, type WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
 
@@ -27,11 +26,14 @@ export function migrateLegacyDbIfNeeded(
   registry: WorkspaceRegistry,
   ws: WorkspaceRecord,
   cwd: string,
+  projectId: string,
 ): boolean {
   const legacyDb = path.join(cwd, '.claude4spec', 'db.sqlite');
   if (!fs.existsSync(legacyDb)) return false;
 
-  const id = projectIdForCwd(cwd);
+  // Stable stored id — the slot key. Not re-derived from cwd (which would pick
+  // the wrong slot if this project's id diverged from sha1(cwd)).
+  const id = projectId;
   for (const w of registry.listWorkspaces()) {
     if (fs.existsSync(path.join(slotDirFor(w.name, id), 'db.sqlite'))) return false;
   }

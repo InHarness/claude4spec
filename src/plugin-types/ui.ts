@@ -177,6 +177,65 @@ export interface FormShellProps {
 }
 export declare const FormShell: ComponentType<FormShellProps>;
 
+// ── Panel detalu (experimental, M34/L11) ──
+export interface SegmentedControlTabsProps {
+  tabs: { id: string; label: string }[];
+  active: string;
+  onChange(id: string): void;
+}
+export declare const SegmentedControlTabs: ComponentType<SegmentedControlTabsProps>;
+
+export interface VersionHistoryItem {
+  id: string;
+  label: string;
+  createdAt: string;
+  author?: string;
+}
+export interface VersionHistoryProps {
+  versions: VersionHistoryItem[];
+  activeVersion?: string;
+  onSelect?(id: string): void;
+  onRestore?(id: string): void;
+}
+export declare const VersionHistory: ComponentType<VersionHistoryProps>;
+
+export interface EntityDetailToolbarProps {
+  title: string;
+  onBack?(): void;
+  onDelete?(): void;
+  brokenRefs?: { type: string; slug: string }[];
+  busy?: boolean;
+}
+export declare const EntityDetailToolbar: ComponentType<EntityDetailToolbarProps>;
+
+export interface RichTextFieldProps {
+  value: string;
+  onChange(value: string): void;
+  readOnly?: boolean;
+  placeholder?: string;
+}
+export declare const RichTextField: ComponentType<RichTextFieldProps>;
+
+export interface TagPickerProps {
+  allTags: { slug: string; name: string; color?: string }[];
+  selected: string[];
+  onToggle(slug: string): void;
+  onCreate?(name: string): void;
+}
+export declare const TagPicker: ComponentType<TagPickerProps>;
+
+export interface ReferencesListItem {
+  pagePath: string;
+  label: string;
+  anchor?: string;
+}
+export interface ReferencesListProps {
+  references: ReferencesListItem[];
+  onOpen?(ref: ReferencesListItem): void;
+  loading?: boolean;
+}
+export declare const ReferencesList: ComponentType<ReferencesListProps>;
+
 // ── Token bridge ──
 export type HostTokenName =
   | '--c-bg'
