@@ -33,15 +33,16 @@ No argument → **ask the user to narrow the topic** (don't scan the whole spec 
 
 ## Reading the spec
 
-Prefer the read-only `c4s` commands, always with `--project .claude/skills/specyfikacja`:
+Prefer the read-only `c4s` commands, always with `--project app-spec` (the spec's
+registered project name):
 
 ```sh
-c4s catalog    --project .claude/skills/specyfikacja          # entity types + schemas
-c4s list-tags  --project .claude/skills/specyfikacja          # tags + counts
-c4s list-slugs --type endpoint --project .claude/skills/specyfikacja
-c4s single_element --type endpoint --slug <x> --project .claude/skills/specyfikacja
-c4s tagged_list    --type dto --tags <tag> --filter and --project .claude/skills/specyfikacja
-c4s resolve modules/m17-snapshots-releases.md --project .claude/skills/specyfikacja
+c4s catalog    --project app-spec          # entity types + schemas
+c4s list-tags  --project app-spec          # tags + counts
+c4s list-slugs --type endpoint --project app-spec
+c4s single_element --type endpoint --slug <x> --project app-spec
+c4s tagged_list    --type dto --tags <tag> --filter and --project app-spec
+c4s resolve modules/m17-snapshots-releases.md --project app-spec
 ```
 
 Manual fallback (when the CLI/server is unavailable): read `modules/*.md`,
@@ -56,7 +57,7 @@ and the `--project` / `PROJECT_NOT_FOUND` symlink gotcha** — not repeated here
 ### 1. Establish the topic
 
 Confirm the scope and gather vocabulary: `c4s list-slugs --type <t>`, `c4s list-tags`,
-`c4s catalog` (all with `--project .claude/skills/specyfikacja`).
+`c4s catalog` (all with `--project app-spec`).
 
 ### 2. Read the spec
 
@@ -86,7 +87,7 @@ spec changes and never mutates the spec:
 ```sh
 c4s ask "Create a plan of specification changes for <topic>. Drift found: <description>. \
 List the entities/pages to change and the exact edits — plan only, do not execute." \
-  --project .claude/skills/specyfikacja
+  --project app-spec --workspace default
 ```
 
 Record the returned `threadId`. A human continues the thread to execute the plan
@@ -109,7 +110,7 @@ file yourself — drive it through the transagent. Pass this as the message (it 
 self-contained analysis brief with a 'For implementers' section): '<drift description + \
 references to spec entities/pages, exact files/lines to change>'. \
 Report the runTransagent arguments and raw result (threadId + saved brief filename)." \
-  --project .claude/skills/specyfikacja
+  --project app-spec --workspace default
 ```
 
 The tool: `runTransagent(contextType: 'brief'|'chat'|'patch', message, payload?, threadId?)`.
@@ -135,9 +136,16 @@ Print and **finish** (no execution):
 
 - **Server:** `c4s ask` and `c4s agent` need a running `npx claude4spec`; read-only
   `resolve` / `list-*` / `single_element` do not.
-- **`--project`, never `cd`:** `.claude/skills/specyfikacja` is a symlink; `cd`-ing in
-  resolves `cwd` to the real path ≠ the registered one → `PROJECT_NOT_FOUND`. Always pass
-  `--project .claude/skills/specyfikacja`.
+- **`--project app-spec`, not the symlink path:** the spec lives at
+  `.claude/skills/specyfikacja`, a symlink; `cd`-ing in (or anything else that canonicalizes
+  it) resolves `cwd` to the real path ≠ the registered one → `PROJECT_NOT_FOUND`. Passing the
+  registered **name** (`app-spec`) sidesteps this entirely — always pass `--project app-spec`.
+- **`--workspace default` for `ask`/`agent`:** name lookup is scoped to `--workspace` when
+  given, else searched across all workspaces — if `app-spec` matched a project in more than
+  one workspace, `c4s` would fail with `AMBIGUOUS_WORKSPACE` (exit 7). Always pass
+  `--workspace default` (port 4508) to keep the lookup explicit. If your `npx claude4spec`
+  server runs on a different workspace, pass that name instead (the error message lists the
+  candidates and their ports).
 - **`ask` is read-only** — it yields a plan only and never mutates the spec; execution is
   a separate, human-driven step.
 - **CLI only — never `curl` or the HTTP API.**

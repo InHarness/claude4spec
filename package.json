@@ -52,7 +52,7 @@
   },
   "scripts": {
     "dev": "tsx watch src/bin/claude4spec.ts --mode dev",
-    "dev:sandbox": "tsx watch src/bin/claude4spec.ts --mode dev --cwd .claude/skills/specyfikacja --pages .",
+    "dev:default": "tsx watch src/bin/claude4spec.ts --mode dev --workspace default",
     "c4s": "tsx src/bin/c4s.ts",
     "build:server": "tsc -p tsconfig.server.json && rm -rf dist/server/db/migrations && cp -R src/server/db/migrations dist/server/db/migrations && rm -rf dist/server/skills && cp -R src/server/skills dist/server/skills && chmod +x dist/bin/claude4spec.js dist/bin/c4s.js dist/bin/c4s-mcp.js",
     "build:client": "vite build",

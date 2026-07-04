@@ -26,6 +26,7 @@ scripts/roundtrip-check.ts
 scripts/deps-link.mjs
 scripts/deps-unlink.mjs
 
+implementer/
 
 # Pliki notatek / draftów
 PLAN-*.md

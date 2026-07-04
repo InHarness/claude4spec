@@ -48,12 +48,13 @@ If the brief is unclear (missing detail, ambiguous wording, a decision you'd
 otherwise guess), you have two paths:
 
 **Synchronous (preferred when available).** Ask the spec agent and continue once
-you have an answer. The CLAUDE 4 SPEC spec lives at `.claude/skills/specyfikacja`
-(a symlink), not at the repo root — always point to it with `--project`; do
-**not** `cd` into it, or `c4s` reports `PROJECT_NOT_FOUND`.
+you have an answer. The CLAUDE 4 SPEC spec is registered under the project name
+`app-spec` — always point to it with `--project app-spec` (avoids the
+`PROJECT_NOT_FOUND` symlink/cwd footgun of using its path,
+`.claude/skills/specyfikacja`).
 
 ```bash
-c4s ask "Brief doesn't specify X — is it A or B?" --ct brief --brief <brief-slug>.md --project .claude/skills/specyfikacja
+c4s ask "Brief doesn't specify X — is it A or B?" --ct brief --brief <brief-slug>.md --project app-spec
 ```
 
 Continue the same thread with `c4s ask "..." --thread <threadId>` (the

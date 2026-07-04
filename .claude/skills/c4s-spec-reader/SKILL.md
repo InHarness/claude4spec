@@ -47,29 +47,37 @@ The database is opened **read-only** — `c4s` never mutates the project.
 ## Asking the spec agent
 
 When a question goes beyond resolving entities or pages, `c4s ask` runs a
-synchronous agent turn against the specification. The CLAUDE 4 SPEC spec lives
-at `.claude/skills/specyfikacja` (a symlink), not at the repo root — always
-point to it with `--project`; do **not** `cd` into it, or `c4s` reports
-`PROJECT_NOT_FOUND`:
+synchronous agent turn against the specification. The CLAUDE 4 SPEC spec is
+registered under the project name `app-spec` — always point to it with
+`--project app-spec`:
 
 ```sh
-c4s ask "<question>" --ct chat --project .claude/skills/specyfikacja
+c4s ask "<question>" --ct chat --project app-spec --workspace default
 ```
 
 Unlike the read-only commands above, `c4s ask` requires a running
 `npx claude4spec` server (it delegates the turn to the server's agent).
 
-### Why `--project`, not `cd` (the `PROJECT_NOT_FOUND` mechanics)
+### Why `--project app-spec`, not a path (the `PROJECT_NOT_FOUND` mechanics)
 
-`.claude/skills/specyfikacja` is a **symlink** that points elsewhere, so `cd`-ing
-in (or any cwd reached through a symlink) makes `c4s` resolve `process.cwd()` to
-the real path — which is NOT the path registered in
-`~/.claude4spec/workspaces.json`, hence `PROJECT_NOT_FOUND`. Passing the
-registered (symlink) path with `--project` avoids this: `--project` is run
-through `path.resolve`, which does NOT canonicalize symlinks, so it matches the
-registry exactly. If the registered path differs from `.claude/skills/specyfikacja`,
-pass that absolute path instead:
+The spec lives at `.claude/skills/specyfikacja`, a **symlink**. `c4s` resolves
+`--project <name>` by looking up the registered project's `name` in
+`~/.claude4spec/workspaces.json` directly — no path resolution, no symlink
+canonicalization, no dependence on cwd. That sidesteps the classic footgun with
+the path form: `cd`-ing into the symlink (or anything else that canonicalizes
+it) resolves `process.cwd()` to the real target path, which does NOT match the
+symlink path stored in the registry, causing `PROJECT_NOT_FOUND`. `--project
+<path>` still works as a fallback-free exact match when you need to target a
+project that has no convenient name, but for the spec, prefer the name.
 
-```sh
-c4s ask "<question>" --ct chat --project /abs/path/to/registered/project-dir
-```
+### Why `--workspace default` (the `AMBIGUOUS_WORKSPACE` mechanics)
+
+Name lookup is scoped to `--workspace` when given; otherwise it searches every
+registered workspace. If a project named `app-spec` were registered in more
+than one workspace, `c4s` couldn't pick one and would fail with
+`AMBIGUOUS_WORKSPACE` (exit 7) — the example above therefore always passes
+`--workspace default` (port 4508, the primary in-repo dev workspace) to keep
+the lookup explicit. This applies to the server-backed commands (`c4s ask`,
+`c4s agent`); the read-only resolve/`list-*` commands do not need it. If your
+`npx claude4spec` server runs on a different workspace, pass that name instead
+— the `AMBIGUOUS_WORKSPACE` error message lists every candidate with its port.
