@@ -241,6 +241,10 @@ export const tagsApi = {
       })
     );
   },
+  /** Single-row lookup by slug — 404s (via ApiError) if no such tag exists. */
+  async getBySlug(slug: string): Promise<Tag> {
+    return handle<Tag>(await apiFetch(`/api/tags/${encodeURIComponent(slug)}`));
+  },
   async update(slug: string, input: TagUpdateInput): Promise<Tag> {
     return handle<Tag>(
       await apiFetch(`/api/tags/${encodeURIComponent(slug)}`, {

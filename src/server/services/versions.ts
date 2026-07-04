@@ -79,6 +79,21 @@ export class VersionService {
     const { entityStore, tagsService } = this.restoreDeps;
     const writer = new HostEntityWriter(host, tagsService);
     const ctx: RestoreContext = { reader, writer, releaseId: null, actor };
+
+    // A version captured as a delete tombstone has no restorable snapshot —
+    // mirror ReleaseService.restoreEntity's delete branch instead of handing
+    // null data to a serializer's restore(), which assumes a real shape and
+    // would throw. `writer.delete` routes through the same entity service
+    // `.remove()` every other delete path uses, which captures its own
+    // 'delete' version internally — surface that freshly-captured row here.
+    if (target.op === 'delete' || target.data === null) {
+      const deleted = writer.delete(type, entitySlug, actor);
+      if (deleted.deleted) entityStore.remove(type, entitySlug);
+      const latest = this.getLatestVersionForEntity(type, entitySlug);
+      if (latest) return latest;
+      throw new DomainError('NOT_FOUND', `${type} '${entitySlug}' not found`);
+    }
+
     host.restore(type, target.data, ctx);
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
