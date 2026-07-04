@@ -77,7 +77,6 @@ import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
 import { ProjectWsEmitter } from '../ws/project-emitter.js';
-import { projectIdForCwd } from './project-id.js';
 import { ensureWelcomePage } from './bootstrap.js';
 import type { WorkspaceRegistry } from './registry.js';
 import type { WorkspaceRecord } from './types.js';
@@ -141,6 +140,8 @@ export interface ProjectContextDeps {
   /** M33: base-layer (workspace/npm) loader records, for per-project /_meta/plugins. */
   pluginRecords: PluginLoadRecord[];
   workspace: WorkspaceRecord;
+  /** Stable, stored `ProjectRecord.id` — the DB slot / ws-room key. Never re-derived from cwd. */
+  projectId: string;
   cwd: string;
   gateway: WsGateway;
   mode: 'dev' | 'prod';
@@ -213,8 +214,7 @@ async function buildInner(
   deps: ProjectContextDeps,
   cleanup: Array<() => unknown>,
 ): Promise<ProjectContext> {
-  const { registry, workspace, cwd, gateway, mode } = deps;
-  const projectId = projectIdForCwd(cwd);
+  const { registry, workspace, projectId, cwd, gateway, mode } = deps;
   const router = Router();
   // M31: every former WsGateway consumer now broadcasts into this project's
   // room only — the emitter is signature-compatible (`broadcast(event)`).
@@ -354,7 +354,7 @@ async function buildInner(
   }
   const skillResolver = new SkillResolver(skillRegistry, cwd);
 
-  const db: Db = openDb(workspace, cwd);
+  const db: Db = openDb(workspace, projectId);
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
 

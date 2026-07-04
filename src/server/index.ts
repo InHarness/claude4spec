@@ -3,7 +3,6 @@ import { createServer as createHttpServer, type Server as HttpServer } from 'nod
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
-import { createHash } from 'node:crypto';
 import { WsGateway } from './ws/gateway.js';
 import { WorkspaceRegistry } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
@@ -99,9 +98,10 @@ async function listenOrExit(server: HttpServer, port: number): Promise<number> {
 // inline theme-scriptem i bundlem React. Klient czyta `window.__C4S_PROJECT__.id`
 // synchronicznie przy module-load, zeby suffiksowac project-scoped klucze localStorage
 // (`::<scope>`), zbudowac API_BASE `/api/projects/<id>` i basepath routera `/p/<id>`.
-// M31: cwd przychodzi z ROUTE (`/p/<id>/…` → registry lookup), nie z procesu.
-function injectProjectGlobal(html: string, cwd: string, name: string): string {
-  const id = createHash('sha1').update(cwd).digest('hex').slice(0, 12);
+// M31: id przychodzi z ROUTE (`/p/<id>/…` → registry lookup) i jest STABILNYM,
+// przechowywanym `project.id` — nie przeliczamy go z cwd, zeby edycja cwd w
+// workspaces.json nie rozjechala routera/basepath z URL-em.
+function injectProjectGlobal(html: string, id: string, name: string): string {
   const payload = JSON.stringify({ id, name }).replace(/</g, '\\u003c');
   return html.replace('<head>', `<head><script>window.__C4S_PROJECT__=${payload};</script>`);
 }
@@ -188,7 +188,7 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
       }
       const { project } = resolution;
       deps.registry.touchLastOpened(deps.workspace.name, project.id);
-      html = injectProjectGlobal(html, project.cwd, project.name);
+      html = injectProjectGlobal(html, project.id, project.name);
       res.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (err) {
       vite.ssrFixStacktrace(err as Error);
@@ -219,7 +219,7 @@ function mountProd(app: Express, deps: SpaDeps) {
       res
         .status(200)
         .set({ 'Content-Type': 'text/html' })
-        .end(injectProjectGlobal(raw, project.cwd, project.name));
+        .end(injectProjectGlobal(raw, project.id, project.name));
     } catch (err) {
       next(err);
     }
@@ -269,7 +269,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // `/welcome`. Default `true` keeps the historic "always create" behavior.
   const createProject = opts.createProject ?? true;
   const initialProject = createProject ? registry.registerProject(workspace, cwd) : null;
-  if (createProject) migrateLegacyDbIfNeeded(registry, workspace, cwd);
+  if (createProject && initialProject)
+    migrateLegacyDbIfNeeded(registry, workspace, cwd, initialProject.id);
 
   // M31: process-immutable plugin catalog, populated exactly once.
   const pluginRegistry = new PluginRegistryImpl();
@@ -305,6 +306,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       pluginRegistry,
       pluginRecords: pluginLoad.records,
       workspace,
+      projectId: project.id,
       cwd: project.cwd,
       gateway,
       mode,

@@ -112,10 +112,17 @@ export class WorkspaceRegistry {
     return fresh.projects.find((p) => p.id === id) ?? null;
   }
 
-  /** Every workspace containing a project for this cwd (0/1/N rule for the CLI). */
+  /**
+   * Every workspace containing a project for this cwd (0/1/N rule for the CLI).
+   * Matches the stored `cwd` field (not a re-hash of it), so a project keeps
+   * resolving from its directory even after its `id` diverged from `sha1(cwd)`
+   * (e.g. a hand-edited path). Falls back to id-match for legacy safety.
+   */
   resolveWorkspacesForCwd(cwd: string): WorkspaceRecord[] {
     const id = projectIdForCwd(cwd);
-    return this.read().workspaces.filter((w) => w.projects.some((p) => p.id === id));
+    return this.read().workspaces.filter((w) =>
+      w.projects.some((p) => p.cwd === cwd || p.id === id),
+    );
   }
 
   slotDir(ws: WorkspaceRecord, projectId: string): string {
@@ -175,18 +182,21 @@ export class WorkspaceRegistry {
 
   /** Idempotent: registers cwd into the workspace, creates the DB slot dir. */
   registerProject(ws: WorkspaceRecord, cwd: string): ProjectRecord {
-    const id = projectIdForCwd(cwd);
     const project = this.withLock((data) => {
       const target = data.workspaces.find((w) => w.name === ws.name);
       if (!target) throw new Error(`workspace "${ws.name}" no longer exists in ${this.file}`);
-      let p = target.projects.find((x) => x.id === id);
+      // Reuse an existing entry for this directory first (so a project whose
+      // stored id diverged from sha1(cwd) — e.g. hand-edited path — isn't
+      // duplicated). sha1(cwd) is only the GENERATOR for a brand-new project.
+      let p = target.projects.find((x) => x.cwd === cwd);
       if (!p) {
+        const id = projectIdForCwd(cwd);
         p = { cwd, id, name: path.basename(cwd), addedAt: nowIso() };
         target.projects.push(p);
       }
       return p;
     });
-    fs.mkdirSync(this.slotDir(ws, id), { recursive: true });
+    fs.mkdirSync(this.slotDir(ws, project.id), { recursive: true });
     return project;
   }
 

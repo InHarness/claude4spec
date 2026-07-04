@@ -91,7 +91,7 @@ export function bootstrapProject(
   ensureMcpJson({ projectAbsPath: cwd, workspace: workspace.name });
 
   const project = registry.registerProject(workspace, cwd);
-  migrateLegacyDbIfNeeded(registry, workspace, cwd);
+  migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 
   return {
     project,

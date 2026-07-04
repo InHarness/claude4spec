@@ -98,7 +98,13 @@ export function resolveWorkspaceProject(
     );
   }
 
-  const projectId = projectIdForCwd(projectDir);
+  // Read the STORED id off the matched record — never re-derive from the path,
+  // so a project whose id diverged from sha1(cwd) still resolves to its slot.
+  // sha1(cwd) is only a fallback for a record that somehow lacks the field.
+  const record =
+    workspace.projects.find((p) => p.cwd === projectDir) ??
+    workspace.projects.find((p) => p.id === projectIdForCwd(projectDir));
+  const projectId = record?.id ?? projectIdForCwd(projectDir);
   return {
     workspaceName: workspace.name,
     defaultPort: workspace.defaultPort,
