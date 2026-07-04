@@ -42,6 +42,21 @@ export { InlineEditField, type InlineEditFieldProps } from './form/InlineEditFie
 export { Dialog, type DialogProps } from './overlay/Dialog.js';
 export { FormShell, type FormShellProps } from './overlay/FormShell.js';
 
+// Panel detalu (experimental)
+export {
+  SegmentedControlTabs,
+  type SegmentedControlTabsProps,
+} from './detail/SegmentedControlTabs.js';
+export { VersionHistory, type VersionHistoryProps, type VersionHistoryItem } from './detail/VersionHistory.js';
+export { EntityDetailToolbar, type EntityDetailToolbarProps } from './detail/EntityDetailToolbar.js';
+export { RichTextField, type RichTextFieldProps } from './detail/RichTextField.js';
+export { TagPicker, type TagPickerProps } from './detail/TagPicker.js';
+export {
+  ReferencesList,
+  type ReferencesListProps,
+  type ReferencesListItem,
+} from './detail/ReferencesList.js';
+
 // Token bridge
 export { useHostTokens } from './useHostTokens.js';
 export { HOST_TOKEN_NAMES, readHostTokens, type HostTokenName } from './tokens.js';

@@ -202,3 +202,77 @@ export declare function registerFrontendModule(module: FrontendModule): void;
 export declare const queryClient: unknown;
 export declare const editorBridge: EditorBridge;
 export declare function registerExtensionReferenceType(...args: unknown[]): void;
+
+// ── M34/L11 frontend data-service singletons + hooks ──
+// Each mirrors a backend service already carried in MountContext, bound to
+// the shared `queryClient` above. Query/mutation return shapes are
+// intentionally loose (not `UseQueryResult<T>`/`UseMutationResult<T>`) so
+// this surface stays decoupled from a specific `@tanstack/react-query`
+// version — plugins already get the real types via that shared peer.
+export interface VersionListItem {
+  version: number;
+  changedBy: 'user' | 'agent';
+  changeSummary: string | null;
+  createdAt: string;
+  releaseId?: number;
+  op?: 'create' | 'update' | 'delete';
+}
+export interface VersionDetail extends VersionListItem {
+  entityType: string;
+  entitySlug: string;
+  data: unknown;
+}
+export interface QueryLike<T> {
+  data: T | undefined;
+  isLoading: boolean;
+  error: unknown;
+  [key: string]: unknown;
+}
+export interface MutationLike<TVariables, TData> {
+  mutate: (variables: TVariables) => void;
+  mutateAsync: (variables: TVariables) => Promise<TData>;
+  isPending: boolean;
+  [key: string]: unknown;
+}
+
+export declare const versionService: {
+  listVersions(type: string, slug: string): Promise<VersionListItem[]>;
+  getVersion(type: string, slug: string, version: number): Promise<VersionDetail>;
+  restore(type: string, slug: string, version: number): Promise<VersionListItem>;
+};
+export declare function useVersions(type: string, slug: string | null): QueryLike<VersionListItem[]>;
+export declare function useVersionDetail(type: string, slug: string | null, version: number | null): QueryLike<VersionDetail>;
+export declare function useRestoreVersion(): MutationLike<{ type: string; slug: string; version: number }, VersionListItem>;
+
+export interface TagListItem {
+  slug: string;
+  name: string;
+  color: string | null;
+  description: string | null;
+  counts: Record<string, number>;
+}
+export declare const tagsService: {
+  list(): Promise<TagListItem[]>;
+  getEntityTagSlugs(type: string, slug: string): Promise<string[]>;
+  assign(type: string, slug: string, tags: string[]): Promise<string[]>;
+  remove(type: string, slug: string, tagSlug: string): Promise<string[]>;
+  create(name: string): Promise<TagListItem>;
+};
+export declare function useTags(): QueryLike<TagListItem[]>;
+export declare function useEntityTags(type: string, slug: string | null): QueryLike<string[]>;
+export declare function useAssignTags(): MutationLike<{ type: string; slug: string; tags: string[] }, string[]>;
+export declare function useRemoveEntityTag(): MutationLike<{ type: string; slug: string; tagSlug: string }, string[]>;
+export declare function useCreateTag(): MutationLike<string, TagListItem>;
+
+export interface ReferenceHit {
+  /** Which root the referencing page lives in. */
+  rootId: string;
+  pagePath: string;
+  tagType: string;
+  line: number;
+  raw: string;
+}
+export declare const referencesService: {
+  findReferrers(type: string, slug: string): Promise<ReferenceHit[]>;
+};
+export declare function useReferences(type: string, slug: string | null): QueryLike<ReferenceHit[]>;

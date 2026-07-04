@@ -77,6 +77,20 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'queryClient',
   'editorBridge',
   'registerExtensionReferenceType',
+  // M34/L11: frontend data-service singletons + hooks, additive to the 1.0.0
+  // baseline (no HOST_API_VERSION bump).
+  'versionService',
+  'tagsService',
+  'referencesService',
+  'useVersions',
+  'useVersionDetail',
+  'useRestoreVersion',
+  'useTags',
+  'useEntityTags',
+  'useAssignTags',
+  'useRemoveEntityTag',
+  'useCreateTag',
+  'useReferences',
   'HOST_API_VERSION',
 ] as const;
 
@@ -110,6 +124,13 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   // Overlay/Create (experimental)
   'Dialog',
   'FormShell',
+  // Panel detalu (experimental, M34/L11)
+  'SegmentedControlTabs',
+  'VersionHistory',
+  'EntityDetailToolbar',
+  'RichTextField',
+  'TagPicker',
+  'ReferencesList',
   // Token bridge
   'useHostTokens',
   'HOST_TOKEN_NAMES',

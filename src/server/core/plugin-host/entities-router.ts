@@ -32,7 +32,10 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
 /**
  * Cross-cutting host-owned router for /api/entities/:type/:slug/...:
  *   - GET    versions, GET version detail
+ *   - POST   version restore (M34/L11)
+ *   - GET    entity tag slugs (M34/L11)
  *   - POST   tags assign
+ *   - DELETE tags remove one (M34/L11)
  * Lives under core/plugin-host/ because the URL spans all plugins; per-plugin
  * routes (CRUD) stay inside their own vertical slice.
  */
@@ -78,6 +81,33 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
     }
   });
 
+  router.post('/:type/:slug/versions/:version/restore', (req, res, next) => {
+    try {
+      const type = assertType(host, req.params.type);
+      const slug = req.params.slug;
+      assertExists(host, type, slug);
+      if (!isRawEntityType(type)) {
+        return res.status(400).json({ error: { code: 'VALIDATION', message: `type '${type}' is not restorable` } });
+      }
+      const version = Number(req.params.version);
+      const restored = versions.restore(type, slug, version, 'user');
+      res.json(restored);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/:type/:slug/tags', (req, res, next) => {
+    try {
+      const type = assertType(host, req.params.type);
+      const slug = req.params.slug;
+      assertExists(host, type, slug);
+      res.json({ tags: tags.getEntityTagSlugs(type, slug) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post('/:type/:slug/tags', (req, res, next) => {
     try {
       const type = assertType(host, req.params.type);
@@ -91,6 +121,20 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       // M29: tag set changed → re-persist the entity file (its tags[]).
       if (isRawEntityType(type)) store.persist(type, slug);
       res.json({ tags: assigned });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.delete('/:type/:slug/tags/:tagSlug', (req, res, next) => {
+    try {
+      const type = assertType(host, req.params.type);
+      const slug = req.params.slug;
+      assertExists(host, type, slug);
+      const remaining = tags.removeEntityTag(type, slug, req.params.tagSlug);
+      // M29: tag set changed → re-persist the entity file (its tags[]).
+      if (isRawEntityType(type)) store.persist(type, slug);
+      res.json({ tags: remaining });
     } catch (err) {
       next(err);
     }

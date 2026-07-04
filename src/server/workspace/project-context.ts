@@ -401,6 +401,7 @@ async function buildInner(
   await patchesPages.ensureRoot();
 
   const tagsService = new TagsService(db.handle);
+  tagsService.setHost(pluginHost);
   const versionService = new VersionService(db.handle);
   const rawReader = new RawEntityReader(db.handle);
   // M17: wire snapshot capture deps. After this, every entity service
@@ -463,6 +464,8 @@ async function buildInner(
   cleanup.push(() => pluginOverlayWatcher.close());
   const entityStore = new EntityStore(cwd, entitiesDir, entitiesWatcher, rawReader, pluginHost);
   entityStore.ensureRoot();
+  // M34/L11: wire version-restore deps now that entityStore exists.
+  versionService.configureRestore(entityStore, tagsService);
   const entityIndexer = new EntityIndexerService(
     db.handle,
     entityStore,
