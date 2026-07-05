@@ -47,7 +47,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     expect(result.projectDir).toBe(projectCwd);
   });
 
-  it('throws AMBIGUOUS_WORKSPACE when a name matches 2+ projects and --workspace is omitted', () => {
+  it('throws AMBIGUOUS_PROJECT when a name matches 2+ projects and --workspace is omitted', () => {
     const registry = new WorkspaceRegistry(dir);
     const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4501 });
     const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4502 });
@@ -59,7 +59,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       expect.unreachable('expected resolveWorkspaceProject to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_WORKSPACE');
+      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
       expect((err as WorkspaceResolveError).message).toContain('shared-name');
     }
   });
@@ -91,7 +91,7 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     }
   });
 
-  it('reports PROJECT_NOT_FOUND mentioning both the path and name attempts when neither matches', () => {
+  it('reports PROJECT_SLUG_NOT_FOUND mentioning both the path and name attempts when neither matches', () => {
     const registry = new WorkspaceRegistry(dir);
     registry.selectOrCreate({ name: 'default' });
 
@@ -100,8 +100,26 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       expect.unreachable('expected resolveWorkspaceProject to throw');
     } catch (err) {
       expect(err).toBeInstanceOf(WorkspaceResolveError);
-      expect((err as WorkspaceResolveError).code).toBe('PROJECT_NOT_FOUND');
+      expect((err as WorkspaceResolveError).code).toBe('PROJECT_SLUG_NOT_FOUND');
       expect((err as WorkspaceResolveError).message).toContain('nonexistent-anything');
+      expect((err as WorkspaceResolveError).hint).toContain('regenerate the skill');
+    }
+  });
+
+  it('throws AMBIGUOUS_PROJECT with a hint to pass --workspace when a name collides', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4511 });
+    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4512 });
+    registry.registerProject(wsA, path.join(dir, 'repo-a', 'twin-name'));
+    registry.registerProject(wsB, path.join(dir, 'repo-b', 'twin-name'));
+
+    try {
+      resolveWorkspaceProject({ project: 'twin-name' });
+      expect.unreachable('expected resolveWorkspaceProject to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceResolveError);
+      expect((err as WorkspaceResolveError).code).toBe('AMBIGUOUS_PROJECT');
+      expect((err as WorkspaceResolveError).hint).toContain('--workspace');
     }
   });
 
@@ -114,5 +132,25 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
     expect(() => resolveWorkspaceProject({ project: 'only-in-a', workspace: 'ws-b' })).toThrow(
       WorkspaceResolveError,
     );
+  });
+
+  it('reports an unrecognized --workspace distinctly from PROJECT_SLUG_NOT_FOUND', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    registry.registerProject(ws, path.join(dir, 'app-spec-real'));
+
+    try {
+      // A valid, registered slug — but paired with a --workspace typo that
+      // doesn't exist at all. The bug this guards: this used to fall through
+      // to the name-fallback with an empty candidate list, mislabeling a
+      // workspace typo as a stale/ambiguous slug.
+      resolveWorkspaceProject({ project: 'app-spec-real', workspace: 'no-such-workspace' });
+      expect.unreachable('expected resolveWorkspaceProject to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceResolveError);
+      expect((err as WorkspaceResolveError).code).toBe('PROJECT_NOT_FOUND');
+      expect((err as WorkspaceResolveError).message).toContain("workspace 'no-such-workspace' is not registered");
+      expect((err as WorkspaceResolveError).hint).toContain('default');
+    }
   });
 });

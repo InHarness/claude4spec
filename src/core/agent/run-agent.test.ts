@@ -1,5 +1,9 @@
-import { describe, expect, it, afterEach, vi } from 'vitest';
+import { describe, expect, it, afterEach, beforeEach, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { runAgent, AgentError } from './run-agent.js';
+import { WorkspaceRegistry } from '../../server/workspace/registry.js';
 
 /**
  * Reaches `healthCheck` by passing `server` + an unregistered `project` path:
@@ -138,5 +142,41 @@ describe('runAgent — ask context + output axis', () => {
 
     const final = await runAgent({ ...BASE, message: 'ping', contextType: 'ask' });
     expect(final.messages).toBeUndefined();
+  });
+});
+
+describe('runAgent — --server branch surfaces real ambiguity instead of hashing the slug', () => {
+  let dir: string;
+  let prevHome: string | undefined;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-run-agent-'));
+    prevHome = process.env.C4S_HOME;
+    process.env.C4S_HOME = dir;
+  });
+  afterEach(() => {
+    if (prevHome === undefined) delete process.env.C4S_HOME;
+    else process.env.C4S_HOME = prevHome;
+    fs.rmSync(dir, { recursive: true, force: true });
+    vi.unstubAllGlobals();
+  });
+
+  it('throws AgentError(AMBIGUOUS_PROJECT) instead of silently hashing the slug as a path', async () => {
+    const registry = new WorkspaceRegistry(dir);
+    const wsA = registry.selectOrCreate({ name: 'ws-a', port: 4521 });
+    const wsB = registry.selectOrCreate({ name: 'ws-b', port: 4522 });
+    registry.registerProject(wsA, path.join(dir, 'repo-a', 'shared-name'));
+    registry.registerProject(wsB, path.join(dir, 'repo-b', 'shared-name'));
+
+    // No fetch stub: a fix regression here would previously hash the slug and
+    // proceed to a network call — asserting rejection means it never reaches fetch.
+    const err = await runAgent({
+      server: 'http://localhost:9999',
+      project: 'shared-name',
+      message: 'hi',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('AMBIGUOUS_PROJECT');
   });
 });

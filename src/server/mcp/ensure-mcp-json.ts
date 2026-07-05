@@ -52,6 +52,11 @@ function writeIfChanged(absPath: string, content: string): void {
   fs.writeFileSync(absPath, content, 'utf8');
 }
 
+/** Absolute path of the generated `.claude4spec/mcp.json` for a project — shared with M22's `<mcp-json-abs>` skill placeholder. */
+export function mcpJsonPath(projectAbsPath: string): string {
+  return path.join(projectAbsPath, '.claude4spec', 'mcp.json');
+}
+
 export function ensureMcpJson({
   projectAbsPath,
   workspace,
@@ -59,6 +64,5 @@ export function ensureMcpJson({
   projectAbsPath: string;
   workspace: string;
 }): void {
-  const mcpPath = path.join(projectAbsPath, '.claude4spec', 'mcp.json');
-  writeIfChanged(mcpPath, renderMcpJson({ projectAbsPath, workspace }));
+  writeIfChanged(mcpJsonPath(projectAbsPath), renderMcpJson({ projectAbsPath, workspace }));
 }

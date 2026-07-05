@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { readConfig, validateRootDirs } from '../config.js';
+import { readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, type Root } from '../../shared/types.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
@@ -61,6 +61,8 @@ import { todosRouter } from '../routes/todos.js';
 import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
+import { findProjectByCwd } from './registry.js';
+import { ensureExternalSkills, buildExternalSkillContext } from '../external-skills/external-skills-service.js';
 import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
@@ -216,6 +218,20 @@ async function buildInner(
 ): Promise<ProjectContext> {
   const { registry, workspace, projectId, cwd, gateway, mode } = deps;
   const router = Router();
+  // 0.1.103: a PATCH /config change to briefsDir/patchesDir/roots invalidates
+  // the abs-path fallbacks baked into the generated SKILL.md files (M22) —
+  // regenerate them alongside the existing cache-invalidation hook so they
+  // never go stale. Cheap/idempotent (writeIfChanged hash-diffs), so firing it
+  // on every onContextConfigChanged call (not just briefs/patches/roots ones)
+  // is harmless.
+  const onContextConfigChanged = (): void => {
+    const project = findProjectByCwd(workspace.projects, cwd);
+    if (project) {
+      const freshConfig = readConfig(cwd);
+      ensureExternalSkills(cwd, buildExternalSkillContext(cwd, project, workspace.name, freshConfig));
+    }
+    deps.onContextConfigChanged?.();
+  };
   // M31: every former WsGateway consumer now broadcasts into this project's
   // room only — the emitter is signature-compatible (`broadcast(event)`).
   const ws = new ProjectWsEmitter(gateway, projectId);
@@ -232,37 +248,16 @@ async function buildInner(
   );
   // M21: briefsDir, default '.claude4spec/briefs'. Must be relative, must not escape cwd.
   const briefsDir = bootConfig.briefsDir ?? '.claude4spec/briefs';
-  if (path.isAbsolute(briefsDir)) {
-    throw new Error(`config.json: briefsDir must be relative to cwd, got: ${briefsDir}`);
-  }
-  const briefsAbs = path.resolve(cwd, briefsDir);
-  const briefsRel = path.relative(cwd, briefsAbs);
-  if (briefsRel.startsWith('..') || path.isAbsolute(briefsRel)) {
-    throw new Error(`config.json: briefsDir must not escape project root, got: ${briefsDir}`);
-  }
+  resolveDirAbs(cwd, briefsDir, 'briefsDir');
   // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
   const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
-  if (path.isAbsolute(patchesDir)) {
-    throw new Error(`config.json: patchesDir must be relative to cwd, got: ${patchesDir}`);
-  }
-  const patchesAbs = path.resolve(cwd, patchesDir);
-  const patchesRel = path.relative(cwd, patchesAbs);
-  if (patchesRel.startsWith('..') || path.isAbsolute(patchesRel)) {
-    throw new Error(`config.json: patchesDir must not escape project root, got: ${patchesDir}`);
-  }
+  resolveDirAbs(cwd, patchesDir, 'patchesDir');
 
   // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
   // briefsDir/patchesDir — but this directory is COMMITTED to git (source of
   // truth for entities; SQLite is a derived index rebuilt from it at boot).
   const entitiesDir = bootConfig.entitiesDir ?? '.claude4spec/entities';
-  if (path.isAbsolute(entitiesDir)) {
-    throw new Error(`config.json: entitiesDir must be relative to cwd, got: ${entitiesDir}`);
-  }
-  const entitiesAbs = path.resolve(cwd, entitiesDir);
-  const entitiesRel = path.relative(cwd, entitiesAbs);
-  if (entitiesRel.startsWith('..') || path.isAbsolute(entitiesRel)) {
-    throw new Error(`config.json: entitiesDir must not escape project root, got: ${entitiesDir}`);
-  }
+  const entitiesAbs = resolveDirAbs(cwd, entitiesDir, 'entitiesDir');
 
   // 0.1.96: cross-field root overlap validation. Hard errors abort the build
   // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
@@ -642,7 +637,7 @@ async function buildInner(
     configRouter({
       cwd,
       skillRegistry,
-      onContextConfigChanged: deps.onContextConfigChanged,
+      onContextConfigChanged,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
       // field's `kind` — an `executive` field invalidates the context (rebuild),
@@ -661,7 +656,7 @@ async function buildInner(
       overlayRecords,
       localPluginsPresent,
       trust,
-      onContextConfigChanged: deps.onContextConfigChanged,
+      onContextConfigChanged,
     }),
   );
   // 0.1.96: pages/static routers resolve a per-root runtime from the `:rootId`

@@ -20,6 +20,9 @@ import { runResolve } from './c4s/commands/resolve.js';
 import { runAgentCmd } from './c4s/commands/agent.js';
 import { runAsk } from './c4s/commands/ask.js';
 import { runPlugins } from './c4s/commands/plugins.js';
+import { runListBriefs } from './c4s/commands/list-briefs.js';
+import { runReadBrief } from './c4s/commands/read-brief.js';
+import { runFilePatch } from './c4s/commands/file-patch.js';
 
 const HELP = `Usage: c4s <command> [options]
 
@@ -58,6 +61,12 @@ Plugins (M33 — reads loader state, no running server):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
   plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
+
+Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NOT_MATERIALIZED):
+  list-briefs [--limit N] [--offset M] [--status implemented|pending]
+  read-brief <brief-path>           <brief-path> relative to briefsDir
+  file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
+             [--body-file <f>]      body from --body-file or stdin; writes to patchesDir
 
 Global flags:
   --project <path|name>  override project (path tried first, else matched by registered name)
@@ -116,6 +125,12 @@ async function main(): Promise<void> {
       return runAsk(args);
     case 'plugins':
       return runPlugins(args);
+    case 'list-briefs':
+      return runListBriefs(args);
+    case 'read-brief':
+      return runReadBrief(args);
+    case 'file-patch':
+      return runFilePatch(args);
     default:
       throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
@@ -170,6 +185,14 @@ function codeToExit(code: string): number {
       return 8;
     case 'HOST_API_INCOMPATIBLE':
       return 9;
+    case 'PROJECT_SLUG_NOT_FOUND':
+      return 10;
+    case 'AMBIGUOUS_PROJECT':
+      return 11;
+    case 'BRIEF_NOT_FOUND':
+      return 12;
+    case 'PATCH_WRITE_FAILED':
+      return 13;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

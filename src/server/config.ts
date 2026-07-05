@@ -813,3 +813,23 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
   return merged;
 }
+
+/**
+ * Resolves a `config.json` directory field (`briefsDir`/`patchesDir`/
+ * `entitiesDir`/a root's `dir`) to an absolute path, guarding against an
+ * absolute value or one that escapes `cwd` via `..`. Extracted from the
+ * pattern duplicated 3x in `workspace/project-context.ts`'s `buildInner` —
+ * also used by M22's `buildExternalSkillContext` to derive the abs-path
+ * fallbacks baked into externally-copied SKILL.md files.
+ */
+export function resolveDirAbs(cwd: string, dir: string, fieldName: string): string {
+  if (path.isAbsolute(dir)) {
+    throw new Error(`config.json: ${fieldName} must be relative to cwd, got: ${dir}`);
+  }
+  const abs = path.resolve(cwd, dir);
+  const rel = path.relative(cwd, abs);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    throw new Error(`config.json: ${fieldName} must not escape project root, got: ${dir}`);
+  }
+  return abs;
+}

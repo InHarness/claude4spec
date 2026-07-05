@@ -72,6 +72,8 @@ export interface AgentResult {
 export type AgentErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'AMBIGUOUS_WORKSPACE'
+  | 'PROJECT_SLUG_NOT_FOUND'
+  | 'AMBIGUOUS_PROJECT'
   | 'PROJECT_NOT_IN_WORKSPACE'
   | 'SERVER_NOT_RUNNING'
   | 'SERVER_NOT_RECOGNIZED'
@@ -114,8 +116,13 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       const resolved = resolveWorkspaceProject({ project: params.project, workspace: params.workspace });
       projectId = resolved.projectId;
     } catch (err) {
-      if (err instanceof WorkspaceResolveError && params.project) {
-        // Sciezka podana wprost, ale nieznana lokalnemu rejestrowi (zdalny
+      if (err instanceof WorkspaceResolveError && (err.code === 'AMBIGUOUS_WORKSPACE' || err.code === 'AMBIGUOUS_PROJECT')) {
+        // Real ambiguity (2+ local matches) — surface it rather than silently
+        // hashing the value as a path; the caller needs to disambiguate with
+        // --workspace, not get routed to an arbitrary bogus projectId.
+        throw new AgentError(err.code, err.message, err.hint);
+      } else if (err instanceof WorkspaceResolveError && params.project) {
+        // Sciezka/slug podana wprost, ale nieznana lokalnemu rejestrowi (zdalny
         // peer) — id wyprowadzamy z samej sciezki.
         projectId = projectIdForPath(params.project);
       } else if (err instanceof WorkspaceResolveError) {
