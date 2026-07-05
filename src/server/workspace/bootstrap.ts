@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type Config } from '../config.js';
-import { ensureExternalSkills, buildExternalSkillContext } from '../external-skills/external-skills-service.js';
 import { ensureMcpJson } from '../mcp/ensure-mcp-json.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
@@ -55,10 +54,10 @@ export function ensureWelcomePage(cwd: string, pagesDir: string | undefined): vo
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
  * port/mode to the registry, first-wins) → .gitignore → entitiesDir →
  * .claude4spec/mcp.json (M12) → registry registration (creates the DB slot) →
- * external skills (M22, AFTER registration — the injected `--project <slug>`
- * identity reads back `ProjectRecord.name`, which only exists once registered)
- * → legacy DB relocation. (0.1.56: welcome page no longer created here —
- * deferred to onboarding close.)
+ * legacy DB relocation. (0.1.56: welcome page no longer created here —
+ * deferred to onboarding close. 0.1.104: external skills generation moved
+ * off this bootstrap hook entirely — see `c4s install-skills` / M22's
+ * `buildExternalSkillsBundle`, both on-demand.)
  */
 export function bootstrapProject(
   registry: WorkspaceRegistry,
@@ -92,8 +91,6 @@ export function bootstrapProject(
   ensureMcpJson({ projectAbsPath: cwd, workspace: workspace.name });
 
   const project = registry.registerProject(workspace, cwd);
-  const skillCtx = buildExternalSkillContext(cwd, project, workspace.name, config);
-  ensureExternalSkills(cwd, skillCtx);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 
   return {

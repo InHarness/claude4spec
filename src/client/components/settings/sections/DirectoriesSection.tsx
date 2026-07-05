@@ -17,9 +17,10 @@ interface DraftState {
  * 0.1.96: mirror of the server's write/read targets a root's `dir` must never
  * overlap (see `RESERVED_WRITE_TARGETS` in src/server/config.ts). Kept as a local
  * const so the client never pulls node-only server config code into the bundle;
- * the server re-validates authoritatively on PATCH.
+ * the server re-validates authoritatively on PATCH. 0.1.104: `.claude4spec/skills`
+ * dropped — nothing writes there anymore (external skills are on-demand).
  */
-const RESERVED_WRITE_TARGETS = ['.claude4spec/skills', '.claude4spec/plugins'];
+const RESERVED_WRITE_TARGETS = ['.claude4spec/plugins'];
 
 function buildDraft(config: ReturnType<typeof useConfig>['data']): DraftState {
   return {

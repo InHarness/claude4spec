@@ -23,6 +23,7 @@ import { runPlugins } from './c4s/commands/plugins.js';
 import { runListBriefs } from './c4s/commands/list-briefs.js';
 import { runReadBrief } from './c4s/commands/read-brief.js';
 import { runFilePatch } from './c4s/commands/file-patch.js';
+import { runInstallSkills } from './c4s/commands/install-skills.js';
 
 const HELP = `Usage: c4s <command> [options]
 
@@ -67,6 +68,11 @@ Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NO
   read-brief <brief-path>           <brief-path> relative to briefsDir
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; writes to patchesDir
+
+Skills (M22 — filesystem-only, no server, no sqlite; on-demand, no bootstrap side-effect):
+  install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
+                  writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
+                  CODE repo), not the --project spec repo; --skills default: all three
 
 Global flags:
   --project <path|name>  override project (path tried first, else matched by registered name)
@@ -131,6 +137,8 @@ async function main(): Promise<void> {
       return runReadBrief(args);
     case 'file-patch':
       return runFilePatch(args);
+    case 'install-skills':
+      return runInstallSkills(args);
     default:
       throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
@@ -193,6 +201,8 @@ function codeToExit(code: string): number {
       return 12;
     case 'PATCH_WRITE_FAILED':
       return 13;
+    case 'SKILLS_WRITE_FAILED':
+      return 14;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

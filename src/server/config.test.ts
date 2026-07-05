@@ -269,7 +269,21 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(errors.some((e) => e.includes('entitiesDir'))).toBe(true);
   });
 
-  it('validateRootDirs rejects a root overlapping the .claude4spec/skills write-target', () => {
+  it('validateRootDirs rejects a root overlapping the .claude4spec/plugins write-target', () => {
+    const roots = [builtinPagesRoot('pages'), {
+      id: 'gen', name: 'Gen', dir: '.claude4spec/plugins', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
+    }];
+    const { errors } = validateRootDirs(roots, {
+      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+    });
+    expect(errors).toContain(
+      "config.json: root 'gen' dir overlaps write-target '.claude4spec/plugins'",
+    );
+  });
+
+  it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {
     const roots = [builtinPagesRoot('pages'), {
       id: 'gen', name: 'Gen', dir: '.claude4spec/skills', builtin: false,
       releasable: false, sectionIndexed: false, referenceValidated: false,
@@ -278,9 +292,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     const { errors } = validateRootDirs(roots, {
       entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
     });
-    expect(errors).toContain(
-      "config.json: root 'gen' dir overlaps write-target '.claude4spec/skills'",
-    );
+    expect(errors).toHaveLength(0);
   });
 
   it('validateRootDirs allows .claude/skills as a user root (writing styles, M15)', () => {

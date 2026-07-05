@@ -1,10 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { createHash } from 'node:crypto';
 import { resolveDirAbs, type Config } from '../config.js';
 import { mcpJsonPath } from '../mcp/ensure-mcp-json.js';
 import type { ProjectRecord } from '../workspace/types.js';
-import type { ExternalSkillContext } from './types.js';
+import type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } from './types.js';
 import {
   SPEC_READER_FRONTMATTER,
   specReaderBody,
@@ -18,7 +17,7 @@ import {
   refactorBody,
 } from './refactor-template.js';
 
-export type { ExternalSkillContext } from './types.js';
+export type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } from './types.js';
 
 /**
  * 0.1.103 M22 — assembles the injected identity + abs-path fallbacks the
@@ -55,61 +54,82 @@ export function renderRefactorSkill(ctx: ExternalSkillContext): string {
   return REFACTOR_FRONTMATTER + '\n' + refactorBody(ctx);
 }
 
-function sha256(buf: Buffer | string): string {
-  return createHash('sha256').update(buf).digest('hex');
+interface SkillMeta {
+  slug: SkillSlug;
+  dirName: string;
+  name: string;
+  description: string;
+  render: (ctx: ExternalSkillContext) => string;
 }
 
-function writeIfChanged(absPath: string, content: string): void {
-  if (fs.existsSync(absPath)) {
-    const existing = fs.readFileSync(absPath);
-    if (sha256(existing) === sha256(content)) return;
-  }
-  fs.mkdirSync(path.dirname(absPath), { recursive: true });
-  fs.writeFileSync(absPath, content, 'utf8');
+// 0.1.104 M22 — short, UI-facing descriptions (distinct from each SKILL.md's
+// own long frontmatter `description:`, which is written for Claude's own
+// skill-discovery, not for a Settings-page card).
+const SKILL_META: SkillMeta[] = [
+  {
+    slug: 'spec-reader',
+    dirName: 'c4s-spec-reader',
+    name: 'c4s-spec-reader',
+    description: 'Read spec entities (XML tags, c4s CLI/MCP) from a foreign code repo.',
+    render: renderSpecReaderSkill,
+  },
+  {
+    slug: 'brief-implementer',
+    dirName: 'c4s-brief-implementer',
+    name: 'c4s-brief-implementer',
+    description: 'Implement M21 briefs in a code repo with a patches feedback loop.',
+    render: renderBriefImplementerSkill,
+  },
+  {
+    slug: 'refactor',
+    dirName: 'c4s-refactor',
+    name: 'c4s-refactor',
+    description: 'Drift-router spec↔code for a given topic (hard dependency on c4s + running server).',
+    render: renderRefactorSkill,
+  },
+];
+
+export const ALL_SKILL_SLUGS: SkillSlug[] = SKILL_META.map((m) => m.slug);
+
+export function isSkillSlug(x: string): x is SkillSlug {
+  return (ALL_SKILL_SLUGS as string[]).includes(x);
 }
 
-function migrateLegacyAgentMd(cwd: string): void {
-  const agentMd = path.join(cwd, '.claude4spec', 'AGENT.md');
-  const newSkill = path.join(
-    cwd,
-    '.claude4spec',
-    'skills',
-    'c4s-spec-reader',
-    'SKILL.md',
-  );
-  if (!fs.existsSync(agentMd)) return;
-  if (fs.existsSync(newSkill)) return;
-
-  const original = fs.readFileSync(agentMd, 'utf8');
-  const header =
-    '<!-- DEPRECATED: this file was AGENT.md. It has been replaced by skills in\n' +
-    '     .claude4spec/skills/c4s-spec-reader/SKILL.md (and c4s-brief-implementer).\n' +
-    '     Safe to delete after your team has upgraded. -->\n\n';
-  fs.writeFileSync(agentMd + '.deprecated', header + original, 'utf8');
-  fs.unlinkSync(agentMd);
-  console.log('Migrated .claude4spec/AGENT.md → external-skills format (M22).');
+/** Static metadata for `GET /api/external-skills` — no `ExternalSkillContext` needed. */
+export function externalSkillsMetadata(): ExternalSkillSummary[] {
+  return SKILL_META.map(({ slug, name, description }) => ({ slug, name, description }));
 }
 
 /**
- * `ctx` must already carry the registered project's identity — see
- * `buildExternalSkillContext`. Callers derive it once (after registration)
- * and pass it in, rather than this function re-deriving it via a second
- * registry read (which would reintroduce the 0/1/N ambiguity the CLI resolver
- * already handles once, for no benefit).
+ * 0.1.104 M22 — pure content builder shared by `c4s install-skills` (CLI,
+ * writes to disk) and `GET /api/external-skills/bundle` (HTTP, packs into a
+ * ZIP in memory). No disk writes, no side effects — replaces the old
+ * `ensureExternalSkills` bootstrap hook, which wrote unconditionally into
+ * `.claude4spec/skills/` on every project activation/config change.
  */
-export function ensureExternalSkills(cwd: string, ctx: ExternalSkillContext): void {
-  migrateLegacyAgentMd(cwd);
+export function buildExternalSkillsBundle(ctx: ExternalSkillContext, selection?: SkillSlug[]): FileSet {
+  const wanted = selection && selection.length > 0 ? new Set(selection) : new Set(ALL_SKILL_SLUGS);
+  const files: FileSet = new Map();
+  for (const meta of SKILL_META) {
+    if (!wanted.has(meta.slug)) continue;
+    files.set(`${meta.dirName}/SKILL.md`, meta.render(ctx));
+  }
+  return files;
+}
 
-  const skillsRoot = path.join(cwd, '.claude4spec', 'skills');
-  const specReaderPath = path.join(skillsRoot, 'c4s-spec-reader', 'SKILL.md');
-  const briefImplementerPath = path.join(
-    skillsRoot,
-    'c4s-brief-implementer',
-    'SKILL.md',
-  );
-  const refactorPath = path.join(skillsRoot, 'c4s-refactor', 'SKILL.md');
-
-  writeIfChanged(specReaderPath, renderSpecReaderSkill(ctx));
-  writeIfChanged(briefImplementerPath, renderBriefImplementerSkill(ctx));
-  writeIfChanged(refactorPath, renderRefactorSkill(ctx));
+/**
+ * Writes a `FileSet` to disk under `targetDir`, overwriting unconditionally
+ * (no hash-diff, no managed-zone markers — `c4s install-skills` is a one-shot
+ * on-demand export, not a bootstrap-time sync). Creates `targetDir` lazily.
+ * Returns the absolute paths written.
+ */
+export function writeFileSet(targetDir: string, files: FileSet): string[] {
+  const written: string[] = [];
+  for (const [relPath, content] of files) {
+    const abs = path.join(targetDir, relPath);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, content, 'utf8');
+    written.push(abs);
+  }
+  return written;
 }

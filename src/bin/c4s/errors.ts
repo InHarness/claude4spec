@@ -32,7 +32,9 @@ export type CliErrorCode =
   | 'HOST_API_INCOMPATIBLE'
   // 0.1.103 M11 — filesystem-only brief/patch command family.
   | 'BRIEF_NOT_FOUND'
-  | 'PATCH_WRITE_FAILED';
+  | 'PATCH_WRITE_FAILED'
+  // 0.1.104 M22 — `c4s install-skills`.
+  | 'SKILLS_WRITE_FAILED';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {
