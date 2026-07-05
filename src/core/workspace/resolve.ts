@@ -6,7 +6,7 @@ import {
   findProjectByName,
 } from '../../server/workspace/registry.js';
 import { projectIdForCwd } from '../../server/workspace/project-id.js';
-import type { WorkspaceRecord } from '../../server/workspace/types.js';
+import type { ProjectRecord, WorkspaceRecord } from '../../server/workspace/types.js';
 
 export interface ResolvedWorkspaceProject {
   workspaceName: string;
@@ -17,6 +17,14 @@ export interface ResolvedWorkspaceProject {
   dbPath: string;
   /** M33: workspace plugin packages (predefined ∪ user-added) for the loader. */
   pluginPackages: string[];
+  /**
+   * 0.1.104: the resolved registry record — e.g. for `c4s install-skills`,
+   * which needs `ProjectRecord.name` (the injected `--project <slug>`
+   * identity) without a second registry read (see `buildExternalSkillContext`'s
+   * own doc comment on why that'd reintroduce the 0/1/N ambiguity this
+   * resolver already settled once).
+   */
+  project: ProjectRecord;
 }
 
 export type WorkspaceResolveErrorCode =
@@ -163,6 +171,12 @@ export function resolveWorkspaceProject(
   // sha1(cwd) is only a fallback for a record that somehow lacks the field.
   const record = findProjectByCwd(workspace.projects, projectDir);
   const projectId = record?.id ?? projectIdForCwd(projectDir);
+  const project: ProjectRecord = record ?? {
+    cwd: projectDir,
+    id: projectId,
+    name: path.basename(projectDir),
+    addedAt: new Date().toISOString(),
+  };
   return {
     workspaceName: workspace.name,
     defaultPort: workspace.defaultPort,
@@ -170,5 +184,6 @@ export function resolveWorkspaceProject(
     projectDir,
     dbPath: path.join(registry.slotDir(workspace, projectId), 'db.sqlite'),
     pluginPackages: resolvePluginPackages(workspace),
+    project,
   };
 }

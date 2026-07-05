@@ -105,3 +105,13 @@ export function requireStringList(args: ParsedArgs, flag: string): string[] {
     .map((s) => s.trim())
     .filter(Boolean);
 }
+
+/** Same as `requireStringList`, but returns `undefined` when the flag is absent. */
+export function optionalStringList(args: ParsedArgs, flag: string): string[] | undefined {
+  const raw = optionalString(args, flag);
+  if (raw === undefined) return undefined;
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}

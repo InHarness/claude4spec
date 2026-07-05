@@ -3,24 +3,25 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  ensureExternalSkills,
   renderSpecReaderSkill,
   renderBriefImplementerSkill,
   renderRefactorSkill,
   buildExternalSkillContext,
+  buildExternalSkillsBundle,
+  writeFileSet,
+  externalSkillsMetadata,
+  isSkillSlug,
+  ALL_SKILL_SLUGS,
 } from './external-skills-service.js';
 import type { ExternalSkillContext } from './types.js';
 import type { ProjectRecord } from '../workspace/types.js';
 import type { Config } from '../config.js';
 
-const SKILL_NAMES = [
+const SKILL_DIRS = [
   'c4s-spec-reader',
   'c4s-brief-implementer',
   'c4s-refactor',
 ] as const;
-
-const skillPath = (cwd: string, name: string) =>
-  path.join(cwd, '.claude4spec', 'skills', name, 'SKILL.md');
 
 // 0.1.103: identity injected into every generated SKILL.md — see ExternalSkillContext.
 const FIXTURE_CTX: ExternalSkillContext = {
@@ -32,23 +33,8 @@ const FIXTURE_CTX: ExternalSkillContext = {
   mcpJsonAbs: '/abs/my-spec-project/.claude4spec/mcp.json',
 };
 
-describe('externalSkillsService', () => {
-  let dir: string;
-  beforeEach(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skills-'));
-  });
-  afterEach(() => {
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-
-  it('ensureExternalSkills writes all three SKILL.md files', () => {
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    for (const name of SKILL_NAMES) {
-      expect(fs.existsSync(skillPath(dir, name))).toBe(true);
-    }
-  });
-
-  it('renderers bake in the injected --project <slug> --workspace <name> identity and abs-path fallbacks', () => {
+describe('renderers', () => {
+  it('bake in the injected --project <slug> --workspace <name> identity and abs-path fallbacks', () => {
     const outputs = {
       'c4s-spec-reader': renderSpecReaderSkill(FIXTURE_CTX),
       'c4s-brief-implementer': renderBriefImplementerSkill(FIXTURE_CTX),
@@ -69,65 +55,6 @@ describe('externalSkillsService', () => {
     expect(outputs['c4s-brief-implementer']).toContain(FIXTURE_CTX.patchesDirAbs);
     expect(outputs['c4s-spec-reader']).toContain(FIXTURE_CTX.mcpJsonAbs);
     expect(outputs['c4s-refactor']).toContain(FIXTURE_CTX.pagesDirAbs);
-  });
-
-  it('is idempotent — a second run leaves each file byte-identical and untouched', () => {
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    const before = SKILL_NAMES.map((n) => ({
-      content: fs.readFileSync(skillPath(dir, n)),
-      mtimeMs: fs.statSync(skillPath(dir, n)).mtimeMs,
-    }));
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    SKILL_NAMES.forEach((n, i) => {
-      expect(fs.readFileSync(skillPath(dir, n)).equals(before[i]!.content)).toBe(true);
-      // unchanged content → writeIfChanged early-returns → mtime preserved
-      expect(fs.statSync(skillPath(dir, n)).mtimeMs).toBe(before[i]!.mtimeMs);
-    });
-  });
-
-  it('overwrites a user-edited SKILL.md (hash-diff → full overwrite)', () => {
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    const target = skillPath(dir, 'c4s-refactor');
-    fs.writeFileSync(target, '# hand-edited — should be reverted', 'utf8');
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    expect(fs.readFileSync(target, 'utf8')).toBe(renderRefactorSkill(FIXTURE_CTX));
-  });
-
-  it('leaves sibling non-SKILL.md files untouched (per-file idempotency)', () => {
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    const sibling = path.join(dir, '.claude4spec', 'skills', 'c4s-refactor', 'NOTES.md');
-    fs.writeFileSync(sibling, 'my own notes', 'utf8');
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    expect(fs.readFileSync(sibling, 'utf8')).toBe('my own notes');
-  });
-
-  it('migrates a legacy AGENT.md to AGENT.md.deprecated with a header (M22)', () => {
-    const agentMd = path.join(dir, '.claude4spec', 'AGENT.md');
-    fs.mkdirSync(path.dirname(agentMd), { recursive: true });
-    fs.writeFileSync(agentMd, 'legacy agent instructions', 'utf8');
-
-    ensureExternalSkills(dir, FIXTURE_CTX);
-
-    expect(fs.existsSync(agentMd)).toBe(false);
-    const deprecated = fs.readFileSync(agentMd + '.deprecated', 'utf8');
-    expect(deprecated).toContain('DEPRECATED');
-    expect(deprecated).toContain('c4s-spec-reader/SKILL.md');
-    expect(deprecated).toContain('legacy agent instructions');
-  });
-
-  it('leaves AGENT.md.deprecated untouched once SKILL.md already exists', () => {
-    // First run migrates and creates the spec-reader SKILL.md.
-    const agentMd = path.join(dir, '.claude4spec', 'AGENT.md');
-    fs.mkdirSync(path.dirname(agentMd), { recursive: true });
-    fs.writeFileSync(agentMd, 'legacy', 'utf8');
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    const firstDeprecated = fs.readFileSync(agentMd + '.deprecated', 'utf8');
-
-    // A stray AGENT.md reappears; SKILL.md now exists → migration must NOT re-fire.
-    fs.writeFileSync(agentMd, 'second legacy', 'utf8');
-    ensureExternalSkills(dir, FIXTURE_CTX);
-    expect(fs.existsSync(agentMd)).toBe(true); // left in place
-    expect(fs.readFileSync(agentMd + '.deprecated', 'utf8')).toBe(firstDeprecated);
   });
 });
 
@@ -151,7 +78,8 @@ describe('buildExternalSkillContext', () => {
         sectionIndexed: true,
         referenceValidated: true,
         linkTargets: [],
-        sidebar: 'tree',
+        sidebar: 'accordion',
+        briefTarget: false,
       },
     ],
     briefsDir: '.claude4spec/briefs',
@@ -176,5 +104,83 @@ describe('buildExternalSkillContext', () => {
     const noPages: Config = { ...config, roots: [] };
     const ctx = buildExternalSkillContext('/abs/my-spec-project', project, 'default', noPages);
     expect(ctx.pagesDirAbs).toBeUndefined();
+  });
+});
+
+describe('isSkillSlug / ALL_SKILL_SLUGS', () => {
+  it('recognizes exactly the three known slugs', () => {
+    expect(ALL_SKILL_SLUGS).toEqual(['spec-reader', 'brief-implementer', 'refactor']);
+    for (const slug of ALL_SKILL_SLUGS) expect(isSkillSlug(slug)).toBe(true);
+    expect(isSkillSlug('bogus')).toBe(false);
+  });
+});
+
+describe('externalSkillsMetadata', () => {
+  it('returns exactly three entries with no SKILL.md content', () => {
+    const meta = externalSkillsMetadata();
+    expect(meta).toHaveLength(3);
+    expect(meta.map((m) => m.slug).sort()).toEqual(['brief-implementer', 'refactor', 'spec-reader']);
+    for (const m of meta) {
+      expect(typeof m.name).toBe('string');
+      expect(typeof m.description).toBe('string');
+    }
+  });
+});
+
+describe('buildExternalSkillsBundle', () => {
+  it('defaults to all three skills, keyed by <dirName>/SKILL.md', () => {
+    const bundle = buildExternalSkillsBundle(FIXTURE_CTX);
+    expect([...bundle.keys()].sort()).toEqual([
+      'c4s-brief-implementer/SKILL.md',
+      'c4s-refactor/SKILL.md',
+      'c4s-spec-reader/SKILL.md',
+    ]);
+    expect(bundle.get('c4s-refactor/SKILL.md')).toBe(renderRefactorSkill(FIXTURE_CTX));
+  });
+
+  it('narrows to an explicit selection', () => {
+    const bundle = buildExternalSkillsBundle(FIXTURE_CTX, ['spec-reader']);
+    expect([...bundle.keys()]).toEqual(['c4s-spec-reader/SKILL.md']);
+  });
+
+  it('is deterministic for the same ctx', () => {
+    const before = buildExternalSkillsBundle(FIXTURE_CTX);
+    const after = buildExternalSkillsBundle(FIXTURE_CTX);
+    expect([...before.entries()]).toEqual([...after.entries()]);
+  });
+});
+
+describe('writeFileSet', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-skills-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('writes every entry, creating the target dir lazily', () => {
+    const bundle = buildExternalSkillsBundle(FIXTURE_CTX);
+    const written = writeFileSet(dir, bundle);
+    expect(written).toHaveLength(3);
+    for (const d of SKILL_DIRS) {
+      expect(fs.existsSync(path.join(dir, d, 'SKILL.md'))).toBe(true);
+    }
+  });
+
+  it('overwrites unconditionally, no hash-diff', () => {
+    writeFileSet(dir, buildExternalSkillsBundle(FIXTURE_CTX));
+    const target = path.join(dir, 'c4s-refactor', 'SKILL.md');
+    fs.writeFileSync(target, '# hand-edited', 'utf8');
+    writeFileSet(dir, buildExternalSkillsBundle(FIXTURE_CTX));
+    expect(fs.readFileSync(target, 'utf8')).toBe(renderRefactorSkill(FIXTURE_CTX));
+  });
+
+  it('leaves sibling non-SKILL.md files untouched', () => {
+    writeFileSet(dir, buildExternalSkillsBundle(FIXTURE_CTX));
+    const sibling = path.join(dir, 'c4s-refactor', 'NOTES.md');
+    fs.writeFileSync(sibling, 'my own notes', 'utf8');
+    writeFileSet(dir, buildExternalSkillsBundle(FIXTURE_CTX));
+    expect(fs.readFileSync(sibling, 'utf8')).toBe('my own notes');
   });
 });
