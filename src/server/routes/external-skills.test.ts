@@ -64,11 +64,7 @@ describe('externalSkillsRouter', () => {
   });
 
   it('GET /bundle returns a non-empty application/zip payload even though `workspace` predates registration', async () => {
-    const res = await request(app()).get('/bundle').buffer(true).parse((r, cb) => {
-      const chunks: Buffer[] = [];
-      r.on('data', (c) => chunks.push(c));
-      r.on('end', () => cb(null, Buffer.concat(chunks)));
-    });
+    const res = await fetchZipBuffer(app(), '/bundle');
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toBe('application/zip');
     expect(res.headers['content-disposition']).toContain('external-skills.zip');
@@ -84,11 +80,27 @@ describe('externalSkillsRouter', () => {
   });
 
   it('GET /bundle?skills=spec-reader narrows the selection without erroring', async () => {
-    const res = await request(app()).get('/bundle?skills=spec-reader').buffer(true).parse((r, cb) => {
+    const res = await fetchZipBuffer(app(), '/bundle?skills=spec-reader');
+    expect(res.status).toBe(200);
+  });
+
+  it('GET /bundle?skills=bogus&skills=spec-reader rejects an unknown slug even via a repeated query key', async () => {
+    // Express's default query parser turns a repeated `?skills=` key into an
+    // array, not a comma-joined string — parseSelection must validate every
+    // value in that array too, not just the single-string CSV shape.
+    const res = await request(app()).get('/bundle?skills=bogus&skills=spec-reader');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+});
+
+function fetchZipBuffer(app: express.Express, url: string) {
+  return request(app)
+    .get(url)
+    .buffer(true)
+    .parse((r, cb) => {
       const chunks: Buffer[] = [];
       r.on('data', (c) => chunks.push(c));
       r.on('end', () => cb(null, Buffer.concat(chunks)));
     });
-    expect(res.status).toBe(200);
-  });
-});
+}

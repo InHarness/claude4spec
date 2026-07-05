@@ -6,6 +6,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { readConfig } from '../../../server/config.js';
 import {
+  ALL_SKILL_SLUGS,
   buildExternalSkillContext,
   buildExternalSkillsBundle,
   isSkillSlug,
@@ -36,12 +37,20 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
 
   const skillsRaw = optionalStringList(args, 'skills');
   let selection: SkillSlug[] | undefined;
-  if (skillsRaw) {
+  // `skillsRaw` is `undefined` only when `--skills` was omitted entirely —
+  // optionalStringList still returns `[]` for a comma/whitespace-only value
+  // like `--skills=,,`, which is truthy in JS. Checking `!== undefined` (not
+  // truthiness) and rejecting an empty-after-filter list keeps that an error
+  // instead of silently falling through to "select all".
+  if (skillsRaw !== undefined) {
+    if (skillsRaw.length === 0) {
+      throw new CliError('INVALID_ARGS', '--skills was given but contained no valid slug');
+    }
     for (const s of skillsRaw) {
       if (!isSkillSlug(s)) {
         throw new CliError(
           'INVALID_ARGS',
-          `--skills: unknown slug '${s}' — expected one of spec-reader, brief-implementer, refactor`,
+          `--skills: unknown slug '${s}' — expected one of ${ALL_SKILL_SLUGS.join(', ')}`,
         );
       }
     }

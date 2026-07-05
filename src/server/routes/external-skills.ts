@@ -2,12 +2,14 @@ import { Router } from 'express';
 import archiver from 'archiver';
 import { readConfig } from '../config.js';
 import {
+  ALL_SKILL_SLUGS,
   buildExternalSkillContext,
   buildExternalSkillsBundle,
   externalSkillsMetadata,
   isSkillSlug,
   type SkillSlug,
 } from '../external-skills/external-skills-service.js';
+import type { ExternalSkillsListResponse } from '../external-skills/types.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 import { errorHandler } from './errors.js';
@@ -19,13 +21,26 @@ export interface ExternalSkillsRouterDeps {
   projectId: string;
 }
 
-/** Parses `?skills=a,b,c` into a validated `SkillSlug[]`; empty/absent → undefined (all). */
+/**
+ * Parses `?skills=a,b,c` into a validated `SkillSlug[]`; empty/absent → [] (all).
+ * Also accepts a repeated key (`?skills=a&skills=b`), which Express's query
+ * parser turns into a string[] rather than a comma-joined string — every
+ * value (and every comma-split token within it) is still validated, so an
+ * invalid slug can't slip through via that shape.
+ */
 function parseSelection(raw: unknown): SkillSlug[] | { error: string } {
-  if (typeof raw !== 'string' || raw.trim() === '') return [];
-  const tokens = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (raw === undefined) return [];
+  const values = Array.isArray(raw) ? raw : [raw];
+  const tokens: string[] = [];
+  for (const value of values) {
+    if (typeof value !== 'string') {
+      return { error: '?skills= must be a comma-separated string' };
+    }
+    tokens.push(...value.split(',').map((s) => s.trim()).filter(Boolean));
+  }
   for (const t of tokens) {
     if (!isSkillSlug(t)) {
-      return { error: `unknown skill '${t}' in ?skills= — expected one of spec-reader, brief-implementer, refactor` };
+      return { error: `unknown skill '${t}' in ?skills= — expected one of ${ALL_SKILL_SLUGS.join(', ')}` };
     }
   }
   return tokens as SkillSlug[];
@@ -41,7 +56,8 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
   const router = Router();
 
   router.get('/', (_req, res) => {
-    res.json({ skills: externalSkillsMetadata() });
+    const body: ExternalSkillsListResponse = { skills: externalSkillsMetadata() };
+    res.json(body);
   });
 
   router.get('/bundle', (req, res, next) => {

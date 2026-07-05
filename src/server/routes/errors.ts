@@ -37,7 +37,15 @@ const STATUS_FOR_CODE: Record<string, number> = {
   PUSH_FAILED: 502,
 };
 
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
+  // A streaming response (e.g. the external-skills ZIP download) can error
+  // after headers/bytes are already on the wire — setting a status/body at
+  // that point throws ERR_HTTP_HEADERS_SENT. Delegating to Express's built-in
+  // final handler is the documented pattern: it detects headersSent and just
+  // destroys the socket instead of trying to write a response.
+  if (res.headersSent) {
+    return next(err);
+  }
   if (err instanceof ConflictError) {
     return res.status(409).json({
       error: { code: err.code, message: err.message },

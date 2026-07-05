@@ -5,6 +5,7 @@ import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { ApiError, metaApi } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
+import { SettingsCheckboxRow } from '../SettingsCheckboxRow.js';
 
 /**
  * M26 §6 — Entities section, axis A (activation per project). Multi-select of the
@@ -101,35 +102,29 @@ export function EntitiesSection() {
             const checked = draft.has(type);
             const isOverlayOnly = clientPluginHost.getAvailable(type) == null;
             return (
-              <label
+              <SettingsCheckboxRow
                 key={type}
-                className="flex items-center gap-3 rounded-md px-3 py-2"
-                style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
+                checked={checked}
+                onChange={() => toggle(type)}
+                trailing={
+                  isOverlayOnly ? (
+                    <span
+                      className="text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5"
+                      style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }}
+                      title="Contributed by a project-local plugin (no bundled frontend module)."
+                    >
+                      overlay
+                    </span>
+                  ) : null
+                }
               >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  onChange={() => toggle(type)}
-                  className="h-4 w-4"
-                />
-                <span className="flex-1 min-w-0">
-                  <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
-                    {labelFor(type)}
-                  </span>
-                  <span className="block text-[11px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-                    {type}
-                  </span>
+                <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+                  {labelFor(type)}
                 </span>
-                {isOverlayOnly ? (
-                  <span
-                    className="text-[10px] font-mono uppercase tracking-wide rounded px-1.5 py-0.5"
-                    style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }}
-                    title="Contributed by a project-local plugin (no bundled frontend module)."
-                  >
-                    overlay
-                  </span>
-                ) : null}
-              </label>
+                <span className="block text-[11px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+                  {type}
+                </span>
+              </SettingsCheckboxRow>
             );
           })
         )}
