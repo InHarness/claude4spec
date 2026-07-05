@@ -122,6 +122,12 @@ export interface ConfigResponse {
     conversationalLanguage: string | null;
     allowedPaths: string[];
     disallowedPaths: string[];
+    /**
+     * 0.1.103: real probed runtime enforcement strength for the current config
+     * + host — 'hard' (OS-syscall sandbox), 'soft' (model-visible hint only),
+     * or 'none' (no scope configured). Server-computed; not client-settable.
+     */
+    pathScopeStrength: 'hard' | 'soft' | 'none';
   };
   /** M28: hot-reload git-sync toggles (always resolved; both default false). */
   git: { syncCommitOnRelease: boolean; syncPushOnPush: boolean };

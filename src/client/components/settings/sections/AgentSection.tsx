@@ -16,6 +16,63 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--c-ink)',
 };
 
+const STRENGTH_META: Record<'hard' | 'soft' | 'none', { label: string; color: string; detail: string }> = {
+  hard: {
+    label: 'Hard (OS-enforced)',
+    color: 'var(--c-accent)',
+    detail:
+      'Backed by the OS sandbox (seatbelt on macOS, bubblewrap on Linux) — out-of-scope paths are blocked at the syscall level.',
+  },
+  soft: {
+    label: 'Soft (model-visible only)',
+    color: '#c99467',
+    detail:
+      'This host has no OS sandbox available — the scope is only a prompt hint and SDK permission rule, not enforced at the OS level.',
+  },
+  none: {
+    label: 'Not configured',
+    color: 'var(--c-subtle)',
+    detail: 'No allowed/disallowed paths are set — the agent is unscoped beyond the project directory and configured roots.',
+  },
+};
+
+/** 0.1.103: live badge for the real, probed path-scope enforcement strength (`GET /api/config`'s `agent.pathScopeStrength`). */
+function PathScopeStrengthBadge({ strength }: { strength: 'hard' | 'soft' | 'none' }) {
+  const [show, setShow] = useState(false);
+  const meta = STRENGTH_META[strength];
+  return (
+    <span style={{ position: 'relative' }} onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}>
+      <span
+        className="rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide"
+        style={{ background: 'var(--c-panel)', color: meta.color, border: `1px solid ${meta.color}` }}
+      >
+        {meta.label}
+      </span>
+      {show && (
+        <div
+          className="text-[11px]"
+          style={{
+            position: 'absolute',
+            top: 20,
+            left: 0,
+            zIndex: 1050,
+            minWidth: 220,
+            padding: 10,
+            background: 'var(--c-card)',
+            border: '1px solid var(--c-hair-strong)',
+            borderRadius: 6,
+            boxShadow: '0 8px 20px rgba(0,0,0,0.10)',
+            color: 'var(--c-ink)',
+            whiteSpace: 'normal',
+          }}
+        >
+          {meta.detail}
+        </div>
+      )}
+    </span>
+  );
+}
+
 /**
  * M26 §1, §2 — Agent section. `claudeUsePreset` is per-query hot-reload (the next
  * chat turn picks it up). `conversationalLanguage` (0.1.51) takes effect only from
@@ -125,6 +182,7 @@ export function AgentSection() {
 function PathScopeFields() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
+  const strength = config?.agent?.pathScopeStrength ?? 'none';
 
   // Nullable-draft pattern (mirror ProjectSection): null = unedited (mirror config).
   const [allowedDraft, setAllowedDraft] = useState<string | null>(null);
@@ -161,9 +219,12 @@ function PathScopeFields() {
 
   return (
     <div className="flex flex-col gap-3" title={tooltip}>
-      <span className="text-[11.5px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-muted)' }}>
-        Agent file scope
-      </span>
+      <div className="flex items-center gap-2">
+        <span className="text-[11.5px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-muted)' }}>
+          Agent file scope
+        </span>
+        <PathScopeStrengthBadge strength={strength} />
+      </div>
 
       <label className="flex flex-col gap-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
@@ -220,9 +281,8 @@ function PathScopeFields() {
       </label>
 
       <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
-        Enforced natively by the Claude Code sandbox when your host supports it (bubblewrap on Linux,
-        seatbelt on macOS); otherwise it degrades to a model-visible hint only. Exclusion takes precedence
-        over inclusion. Applied from your next chat turn.
+        Exclusion takes precedence over inclusion. Applied from your next chat turn. See the badge above for
+        whether this host actually enforces the scope at the OS level or only as a model-visible hint.
       </span>
     </div>
   );

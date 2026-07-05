@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 
 // 0.1.58: `answer` = the LAST assistant text block of the turn (final summary
 // after the terminal `result`), not a concatenation of intermediate texts
@@ -7,6 +7,9 @@ import { describe, it, expect, vi } from 'vitest';
 const hoisted = vi.hoisted(() => ({
   events: [] as Array<Record<string, unknown>>,
   lastExecute: null as Record<string, unknown> | null,
+  // 0.1.103: lets tests control cfg.agent.{allowedPaths,disallowedPaths} without
+  // a real config.json on disk — undefined mirrors "nothing configured".
+  agent: undefined as { allowedPaths?: string[]; disallowedPaths?: string[] } | undefined,
 }));
 
 vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
@@ -23,7 +26,19 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
   };
 });
 
+vi.mock('../config.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../config.js')>();
+  return {
+    ...actual,
+    readConfig: (cwd: string) => ({ ...actual.readConfig(cwd), agent: hoisted.agent }),
+  };
+});
+
 import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-turn.js';
+
+afterEach(() => {
+  hoisted.agent = undefined;
+});
 
 interface Recorded {
   role: string;
@@ -203,5 +218,60 @@ describe('runAgentTurn — ask context posture (0.1.79)', () => {
     expect(mcpKeys).toContain('plan-tools');
     // The turn's messages are returned for output:'full' callers.
     expect(Array.isArray(result.messages)).toBe(true);
+  });
+});
+
+describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', () => {
+  it('requests hard enforcement (claude_sandbox) when a path scope is configured', async () => {
+    hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: ['/deny/dir'] };
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.architectureConfig).toMatchObject({
+      claude_sandbox: {
+        enabled: true,
+        filesystem: {
+          denyRead: ['/deny/dir'],
+          denyWrite: ['/deny/dir'],
+          allowWrite: ['/allowed/dir'],
+        },
+      },
+    });
+  });
+
+  it('preserves caller-supplied architectureConfig fields alongside claude_sandbox', async () => {
+    hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: [] };
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    input.architectureConfig = { some_existing_flag: 'keep-me' };
+
+    await runAgentTurn(deps, input);
+
+    const architectureConfig = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(architectureConfig.some_existing_flag).toBe('keep-me');
+    expect(architectureConfig.claude_sandbox).toBeDefined();
+  });
+
+  it('is an exact no-op when no path scope is configured (ac-puste-allowedpaths-i-disallowedpaths-n)', async () => {
+    hoisted.agent = undefined;
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    input.architectureConfig = { some_existing_flag: 'keep-me' };
+
+    await runAgentTurn(deps, input);
+
+    // architectureConfig reaches adapter.execute byte-for-byte unchanged —
+    // claude_sandbox must be genuinely ABSENT, not merely undefined.
+    const architectureConfig = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
+    expect(architectureConfig).toEqual({ some_existing_flag: 'keep-me' });
+    expect('claude_sandbox' in architectureConfig).toBe(false);
+    // The pre-existing conditional-spread behavior for allowedPaths/disallowedPaths
+    // (agent-adapters' own soft layer) is untouched by this change.
+    expect('allowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
+    expect('disallowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
   });
 });

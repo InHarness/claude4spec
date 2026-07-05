@@ -626,6 +626,26 @@ export async function runAgentTurn(
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).
     // Opt-in per architecture capability; one-shot path unchanged for the rest.
     const streamingInput = architectureCapabilities('claude-code').midTurnPush;
+    // 0.1.103: when a scope is configured, request HARD (OS-syscall) enforcement so
+    // agent-adapters' probePathScope() can return strength:'hard' on hosts with
+    // bubblewrap/seatbelt — previously only the soft (prompt + SDK deny-list) layer
+    // was ever requested. Built as a copy, not a mutation of input.architectureConfig:
+    // that object is also read above for the session-lock snapshot and passed into
+    // TransagentDispatcher for child turns, each of which recomputes its own scope
+    // independently via its own runAgentTurn recursion.
+    const architectureConfigForExecute = pathScopeRequested
+      ? {
+          ...input.architectureConfig,
+          claude_sandbox: {
+            enabled: true,
+            filesystem: {
+              denyRead: resolvedPathScope.disallowedPaths,
+              denyWrite: resolvedPathScope.disallowedPaths,
+              allowWrite: resolvedPathScope.allowedPaths,
+            },
+          },
+        }
+      : input.architectureConfig;
     const baseExecuteArgs = {
       systemPrompt,
       model: input.model,
@@ -635,7 +655,7 @@ export async function runAgentTurn(
       // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
       // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
       subagents: subagentsFor(thread.contextType, deps.pluginHost),
-      architectureConfig: input.architectureConfig,
+      architectureConfig: architectureConfigForExecute,
       planMode,
       onUserInput: input.onUserInput,
       ...(streamingInput ? { streamingInput: true } : {}),

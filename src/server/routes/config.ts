@@ -6,6 +6,8 @@ import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages
 import { C4S_VERSION } from '../services/release-bundle.js';
 import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
+import { resolveAgentPathScope } from '../services/agent-path-scope.js';
+import { probePathScope, type PathScopeStrength } from '@inharness-ai/agent-adapters';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -39,7 +41,26 @@ const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDi
  * inline in startServer before the M31 carve). M31 drops port/mode (workspace
  * settings now) and serverStartedAt (nothing requires a restart anymore).
  */
-function configResponse(c: Config) {
+function configResponse(c: Config, cwd: string) {
+  const agentAllowedPaths = c.agent?.allowedPaths ?? [];
+  const agentDisallowedPaths = c.agent?.disallowedPaths ?? [];
+  // 0.1.103: mirrors agent-turn.ts's exact pathScopeRequested gate — a pure
+  // host-capability + current-config probe (what a turn run right now WOULD
+  // get), not a specific past turn's actual adapter_ready event.
+  const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
+  const pathScopeStrength: PathScopeStrength = pathScopeRequested
+    ? probePathScope('claude-code', {
+        cwd,
+        ...resolveAgentPathScope({
+          cwd,
+          roots: c.roots,
+          allowedPaths: agentAllowedPaths,
+          disallowedPaths: agentDisallowedPaths,
+        }),
+        architectureConfig: { claude_sandbox: { enabled: true } },
+      }).strength
+    : 'none';
+
   return {
     name: c.name,
     roots: c.roots,
@@ -54,8 +75,11 @@ function configResponse(c: Config) {
     agent: {
       claudeUsePreset: c.agent?.claudeUsePreset ?? true,
       conversationalLanguage: c.agent?.conversationalLanguage ?? null,
-      allowedPaths: c.agent?.allowedPaths ?? [],
-      disallowedPaths: c.agent?.disallowedPaths ?? [],
+      allowedPaths: agentAllowedPaths,
+      disallowedPaths: agentDisallowedPaths,
+      // 0.1.103: real probed runtime enforcement strength for the current
+      // config + host. 'none' when no scope is configured.
+      pathScopeStrength,
     },
     git: {
       syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
@@ -85,7 +109,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     // readConfig per-request: PATCH /config musi byc widoczny w GET bez restartu.
     // Spojne z istniejacym wzorcem SkillResolver (per-query disk read).
     const c = readConfig(cwd);
-    res.json(configResponse(c));
+    res.json(configResponse(c, cwd));
   });
 
   router.patch('/config', (req, res, next) => {
@@ -353,7 +377,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       ) {
         deps.onContextConfigChanged();
       }
-      res.json(configResponse(updated));
+      res.json(configResponse(updated, cwd));
     } catch (err) {
       next(err);
     }
