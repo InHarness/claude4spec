@@ -74,9 +74,24 @@ export function resolveWorkspaceProject(
     projectDir = path.resolve(process.cwd(), opts.project);
     owners = registry.resolveWorkspacesForCwd(projectDir);
     if (owners.length === 0) {
-      const candidateWorkspaces = opts.workspace
-        ? [registry.getWorkspace(opts.workspace)].filter((w): w is WorkspaceRecord => w !== null)
-        : registry.listWorkspaces();
+      let candidateWorkspaces: WorkspaceRecord[];
+      if (opts.workspace) {
+        const ws = registry.getWorkspace(opts.workspace);
+        if (!ws) {
+          // Distinguish "the --workspace value itself is unrecognized" from
+          // the name-fallback's own PROJECT_SLUG_NOT_FOUND below — otherwise
+          // a typo'd --workspace gets misdiagnosed as a stale --project slug
+          // and the (wrong) "regenerate the skill" hint.
+          throw new WorkspaceResolveError(
+            'PROJECT_NOT_FOUND',
+            `workspace '${opts.workspace}' is not registered`,
+            `known workspaces: ${registry.listWorkspaces().map((w) => w.name).join(', ') || '(none)'}`,
+          );
+        }
+        candidateWorkspaces = [ws];
+      } else {
+        candidateWorkspaces = registry.listWorkspaces();
+      }
       const matches = findProjectByName(candidateWorkspaces, opts.project);
       if (matches.length === 1) {
         projectDir = matches[0]!.project.cwd;

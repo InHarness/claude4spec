@@ -4,8 +4,12 @@ import matter from 'gray-matter';
 import { isMarkdownPath } from '../../shared/page-files.js';
 import type { BriefFrontmatterRaw, BriefListItem, BriefListOpts, BriefListResult } from './types.js';
 
-/** A missing/unreadable dir yields no briefs — mirrors PagesService/find-references. */
-function collectBriefFiles(briefsDirAbs: string): string[] {
+/**
+ * A missing/unreadable dir yields no briefs — mirrors PagesService/find-references.
+ * Exported for callers that only need filenames (e.g. a "brief not found" hint)
+ * without paying for a full read+frontmatter-parse of every file via `listAllBriefs`.
+ */
+export function collectBriefFiles(briefsDirAbs: string): string[] {
   const out: string[] = [];
   function walk(absDir: string, rel: string): void {
     let entries;

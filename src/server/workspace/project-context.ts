@@ -61,6 +61,8 @@ import { todosRouter } from '../routes/todos.js';
 import { pageLinksRouter } from '../routes/page-links.js';
 import { errorHandler } from '../routes/errors.js';
 import { configRouter } from '../routes/config.js';
+import { findProjectByCwd } from './registry.js';
+import { ensureExternalSkills, buildExternalSkillContext } from '../external-skills/external-skills-service.js';
 import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
@@ -216,6 +218,20 @@ async function buildInner(
 ): Promise<ProjectContext> {
   const { registry, workspace, projectId, cwd, gateway, mode } = deps;
   const router = Router();
+  // 0.1.103: a PATCH /config change to briefsDir/patchesDir/roots invalidates
+  // the abs-path fallbacks baked into the generated SKILL.md files (M22) —
+  // regenerate them alongside the existing cache-invalidation hook so they
+  // never go stale. Cheap/idempotent (writeIfChanged hash-diffs), so firing it
+  // on every onContextConfigChanged call (not just briefs/patches/roots ones)
+  // is harmless.
+  const onContextConfigChanged = (): void => {
+    const project = findProjectByCwd(workspace.projects, cwd);
+    if (project) {
+      const freshConfig = readConfig(cwd);
+      ensureExternalSkills(cwd, buildExternalSkillContext(cwd, project, workspace.name, freshConfig));
+    }
+    deps.onContextConfigChanged?.();
+  };
   // M31: every former WsGateway consumer now broadcasts into this project's
   // room only — the emitter is signature-compatible (`broadcast(event)`).
   const ws = new ProjectWsEmitter(gateway, projectId);
@@ -621,7 +637,7 @@ async function buildInner(
     configRouter({
       cwd,
       skillRegistry,
-      onContextConfigChanged: deps.onContextConfigChanged,
+      onContextConfigChanged,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
       // field's `kind` — an `executive` field invalidates the context (rebuild),
@@ -640,7 +656,7 @@ async function buildInner(
       overlayRecords,
       localPluginsPresent,
       trust,
-      onContextConfigChanged: deps.onContextConfigChanged,
+      onContextConfigChanged,
     }),
   );
   // 0.1.96: pages/static routers resolve a per-root runtime from the `:rootId`

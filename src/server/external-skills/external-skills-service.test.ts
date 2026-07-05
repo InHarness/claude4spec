@@ -55,7 +55,9 @@ describe('externalSkillsService', () => {
       'c4s-refactor': renderRefactorSkill(FIXTURE_CTX),
     };
     for (const [name, body] of Object.entries(outputs)) {
-      expect(body, name).toContain(`--project ${FIXTURE_CTX.slug} --workspace ${FIXTURE_CTX.workspace}`);
+      // Quoted: the slug is an unvalidated directory basename (may contain
+      // spaces/shell metacharacters), so it's single-quoted in every example.
+      expect(body, name).toContain(`--project '${FIXTURE_CTX.slug}' --workspace '${FIXTURE_CTX.workspace}'`);
       // frontmatter description starts with a verb (Read… / Implement… / Detect…)
       const desc = body.match(/^description:\s*(\S+)/m)?.[1];
       expect(desc, `${name} description verb`).toMatch(/^(Read|Implement|Detect)/);

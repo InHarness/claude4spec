@@ -7,7 +7,10 @@ description: Detect drift between the claude4spec specification and the code for
 `;
 
 export function refactorBody(ctx: ExternalSkillContext): string {
-  const identity = `--project ${ctx.slug} --workspace ${ctx.workspace}`;
+  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
+  // and can contain spaces/shell metacharacters — unquoted interpolation here
+  // would break argv parsing when these example commands are run verbatim.
+  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
   return `# c4s-refactor
 
 A **spec↔code drift router**. For a single topic this skill reads the claude4spec
@@ -56,7 +59,7 @@ c4s resolve modules/<module>.md ${identity}               # expand a page's tags
 \`\`\`
 
 Manual fallback (when \`c4s\`/the server is unavailable): read markdown pages
-directly under \`${ctx.pagesDirAbs ?? '<pages-dir-abs>'}\` (absolute — works from
+directly under \`'${ctx.pagesDirAbs ?? '<pages-dir-abs>'}'\` (absolute — works from
 any cwd).
 
 ## Process
@@ -154,7 +157,7 @@ Print and **finish** (no execution):
 - **Brief authoring = \`--ct chat\` + \`runTransagent\`, NOT \`--ct brief\`.** Telling a
   \`--ct chat\` agent to "just write the brief" makes it \`Write\` a loose \`.md\` in the
   wrong directory (not a registered brief) — always route through \`runTransagent\`.
-- **\`PROJECT_SLUG_NOT_FOUND\`** — the injected \`--project ${ctx.slug}\` no longer
+- **\`PROJECT_SLUG_NOT_FOUND\`** — the injected \`--project '${ctx.slug}'\` no longer
   matches a project in this machine's \`~/.claude4spec/workspaces.json\` (moved,
   deleted, or copied from another machine). Regenerate this skill from the spec
   repo and re-copy it here. \`AMBIGUOUS_WORKSPACE\` / \`AMBIGUOUS_PROJECT\` → pass the

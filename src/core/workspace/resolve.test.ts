@@ -133,4 +133,24 @@ describe('resolveWorkspaceProject — --project <name> fallback', () => {
       WorkspaceResolveError,
     );
   });
+
+  it('reports an unrecognized --workspace distinctly from PROJECT_SLUG_NOT_FOUND', () => {
+    const registry = new WorkspaceRegistry(dir);
+    const ws = registry.selectOrCreate({ name: 'default' });
+    registry.registerProject(ws, path.join(dir, 'app-spec-real'));
+
+    try {
+      // A valid, registered slug — but paired with a --workspace typo that
+      // doesn't exist at all. The bug this guards: this used to fall through
+      // to the name-fallback with an empty candidate list, mislabeling a
+      // workspace typo as a stale/ambiguous slug.
+      resolveWorkspaceProject({ project: 'app-spec-real', workspace: 'no-such-workspace' });
+      expect.unreachable('expected resolveWorkspaceProject to throw');
+    } catch (err) {
+      expect(err).toBeInstanceOf(WorkspaceResolveError);
+      expect((err as WorkspaceResolveError).code).toBe('PROJECT_NOT_FOUND');
+      expect((err as WorkspaceResolveError).message).toContain("workspace 'no-such-workspace' is not registered");
+      expect((err as WorkspaceResolveError).hint).toContain('default');
+    }
+  });
 });

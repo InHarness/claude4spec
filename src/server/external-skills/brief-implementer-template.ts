@@ -7,7 +7,10 @@ description: Implement features described in claude4spec briefs (markdown files 
 `;
 
 export function briefImplementerBody(ctx: ExternalSkillContext): string {
-  const identity = `--project ${ctx.slug} --workspace ${ctx.workspace}`;
+  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
+  // and can contain spaces/shell metacharacters — unquoted interpolation here
+  // would break argv parsing when these example commands are run verbatim.
+  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
   return `# c4s-brief-implementer
 
 This skill describes how to implement a release brief in **your code repository**
@@ -32,7 +35,7 @@ even without \`c4s\` installed, via the absolute fallback paths below.
 c4s list-briefs --status pending --limit 10 ${identity}
 \`\`\`
 
-Fallback (no \`c4s\`): \`ls ${ctx.briefsDirAbs}\`.
+Fallback (no \`c4s\`): \`ls '${ctx.briefsDirAbs}'\`.
 
 When there are multiple \`pending\` candidates and it isn't obvious which one to
 implement — **ask the user, don't guess.** Only proceed automatically when
@@ -44,7 +47,7 @@ exactly one obvious candidate exists.
 c4s read-brief <brief-path> ${identity}
 \`\`\`
 
-Fallback: \`cat ${ctx.briefsDirAbs}/<brief-path>\`.
+Fallback: \`cat '${ctx.briefsDirAbs}/<brief-path>'\`.
 
 Every brief has YAML frontmatter:
 
@@ -97,8 +100,8 @@ printf '%s\\n' "$PATCH_BODY" | c4s file-patch \\
   ${identity}
 \`\`\`
 
-Fallback (no \`c4s\`): \`mkdir -p ${ctx.patchesDirAbs}\` then write
-\`${ctx.patchesDirAbs}/<brief-slug>-<short-desc>.md\` by hand with this format:
+Fallback (no \`c4s\`): \`mkdir -p '${ctx.patchesDirAbs}'\` then write
+\`'${ctx.patchesDirAbs}/<brief-slug>-<short-desc>.md'\` by hand with this format:
 
 \`\`\`markdown
 ---
@@ -141,7 +144,7 @@ merged to main / accepted by the user — flip the brief's frontmatter to
 edit in the spec repo's briefsDir:
 
 \`\`\`bash
-yq -i '.implemented = true' ${ctx.briefsDirAbs}/<brief-path>
+yq -i '.implemented = true' '${ctx.briefsDirAbs}/<brief-path>'
 \`\`\`
 
 \`implemented: true\` is a **declaration**, not a computed fact derived from git.
@@ -150,14 +153,14 @@ is realistically done — never proactively or "just in case".
 
 ### 6. Hand-off
 
-The spec-author reads patches manually (\`ls ${ctx.patchesDirAbs}\`, \`cat\`)
+The spec-author reads patches manually (\`ls '${ctx.patchesDirAbs}'\`, \`cat\`)
 and folds them into the next brief or entity edits. There is no UI listing in
 this release — patches are raw markdown.
 
 ## Errors
 
 If any \`c4s\` command above returns \`PROJECT_SLUG_NOT_FOUND\`, the \`--project
-${ctx.slug}\` baked into this skill no longer matches a project in this
+'${ctx.slug}'\` baked into this skill no longer matches a project in this
 machine's \`~/.claude4spec/workspaces.json\` (moved, deleted, or this skill was
 copied from a different machine). Regenerate this skill from the spec repo
 (\`npx @inharness-ai/claude4spec\`) and re-copy it here. \`AMBIGUOUS_WORKSPACE\` /

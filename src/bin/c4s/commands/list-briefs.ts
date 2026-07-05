@@ -1,18 +1,16 @@
-import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalInt, optionalString } from '../args.js';
-import { resolveWorkspaceProjectOrThrow } from '../context.js';
+import { resolveBriefsPatchesDirs } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { readConfig } from '../../../server/config.js';
 import { listBriefsFs } from '../../../core/briefs/index.js';
 import type { BriefListOpts } from '../../../core/briefs/index.js';
 
 /**
  * 0.1.103 M11 — filesystem-only, no server/sqlite. Resolves the project via
- * the registry (`resolveWorkspaceProjectOrThrow`, NOT `createContext`, which
- * opens db.sqlite) so this works under `INDEX_NOT_MATERIALIZED` and from any
- * cwd once `--project <slug> --workspace <name>` is supplied.
+ * the registry (`resolveBriefsPatchesDirs`, NOT `createContext`, which opens
+ * db.sqlite) so this works under `INDEX_NOT_MATERIALIZED` and from any cwd
+ * once `--project <slug> --workspace <name>` is supplied.
  *
  *   c4s list-briefs [--limit N] [--offset M] [--status implemented|pending] [--format json|text]
  */
@@ -30,9 +28,7 @@ export async function runListBriefs(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--status must be 'implemented' or 'pending', got '${status}'`);
   }
 
-  const { projectDir } = resolveWorkspaceProjectOrThrow(args);
-  const config = readConfig(projectDir);
-  const briefsDirAbs = path.resolve(projectDir, config.briefsDir);
+  const { briefsDirAbs } = resolveBriefsPatchesDirs(args);
 
   const opts: BriefListOpts = { limit, offset, status };
   writeOutput(listBriefsFs(briefsDirAbs, opts), args);

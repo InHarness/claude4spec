@@ -52,6 +52,44 @@ describe('writePatchFs', () => {
     expect(parsed.content).toContain('Explanation of the gap.');
   });
 
+  it('two briefs with the same basename in different subdirectories produce distinct patch filenames', () => {
+    fs.mkdirSync(path.join(briefsDirAbs, 'scoped-a'), { recursive: true });
+    fs.mkdirSync(path.join(briefsDirAbs, 'scoped-b'), { recursive: true });
+    fs.writeFileSync(
+      path.join(briefsDirAbs, 'scoped-a', 'foo.md'),
+      matter.stringify('# Brief A\n', { type: 'brief', to_release: '0.2', implemented: false }),
+      'utf8',
+    );
+    fs.writeFileSync(
+      path.join(briefsDirAbs, 'scoped-b', 'foo.md'),
+      matter.stringify('# Brief B\n', { type: 'brief', to_release: '0.2', implemented: false }),
+      'utf8',
+    );
+
+    const resultA = writePatchFs({
+      briefsDirAbs,
+      patchesDirAbs,
+      briefRelPath: 'scoped-a/foo.md',
+      desc: 'typo fix',
+      kind: 'drift',
+      body: 'body A',
+      createdBy: 'test',
+    });
+    const resultB = writePatchFs({
+      briefsDirAbs,
+      patchesDirAbs,
+      briefRelPath: 'scoped-b/foo.md',
+      desc: 'typo fix',
+      kind: 'drift',
+      body: 'body B',
+      createdBy: 'test',
+    });
+
+    expect(resultA.path).not.toBe(resultB.path);
+    expect(fs.readFileSync(path.join(patchesDirAbs, resultA.path), 'utf8')).toContain('body A');
+    expect(fs.readFileSync(path.join(patchesDirAbs, resultB.path), 'utf8')).toContain('body B');
+  });
+
   it('creates patchesDir lazily when it does not exist yet', () => {
     expect(fs.existsSync(patchesDirAbs)).toBe(false);
     writePatchFs({

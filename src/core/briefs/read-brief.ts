@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import matter from 'gray-matter';
-import { listAllBriefs } from './list-briefs.js';
+import { collectBriefFiles } from './list-briefs.js';
 import { BriefFsError } from './types.js';
 import type { BriefReadResult } from './types.js';
 
@@ -24,9 +24,9 @@ export function assertSafeRelPath(rel: string): void {
 export function assertBriefExists(briefsDirAbs: string, relPath: string): void {
   assertSafeRelPath(relPath);
   if (!fs.existsSync(path.join(briefsDirAbs, relPath))) {
-    const available = listAllBriefs(briefsDirAbs)
-      .map((b) => b.path)
-      .slice(0, 10);
+    // Cheap directory-listing only — no need to read+parse every file's
+    // frontmatter just to build a "here's what exists" hint.
+    const available = collectBriefFiles(briefsDirAbs).slice(0, 10);
     throw new BriefFsError(
       'BRIEF_NOT_FOUND',
       `brief '${relPath}' not found`,

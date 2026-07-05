@@ -7,7 +7,10 @@ description: Read claude4spec specification entities (endpoints, DTOs, tables, A
 `;
 
 export function specReaderBody(ctx: ExternalSkillContext): string {
-  const identity = `--project ${ctx.slug} --workspace ${ctx.workspace}`;
+  // Quoted: ProjectRecord.name (the slug) is an unvalidated directory basename
+  // and can contain spaces/shell metacharacters — unquoted interpolation here
+  // would break argv parsing when these example commands are run verbatim.
+  const identity = `--project '${ctx.slug}' --workspace '${ctx.workspace}'`;
   return `# c4s-spec-reader
 
 This skill is bound to one claude4spec specification project — every \`c4s\`
@@ -36,7 +39,7 @@ c4s resolve some-page.md --format json ${identity}   # writes { content, resolve
 \`\`\`
 
 Fallback (no \`c4s\`, or \`c4s\` unavailable): read the spec's pages directly under
-\`${ctx.pagesDirAbs ?? '<pages-dir-abs>'}\` (absolute — works from any cwd).
+\`'${ctx.pagesDirAbs ?? '<pages-dir-abs>'}'\` (absolute — works from any cwd).
 
 ## Discovery
 
@@ -66,7 +69,7 @@ Unlike the read-only commands above, \`c4s ask\` requires a running
 ## Editor MCP config
 
 Point your editor's MCP config at this spec's generated server config —
-\`${ctx.mcpJsonAbs}\` (absolute; this is a file in the **spec repo**, not one you
+\`'${ctx.mcpJsonAbs}'\` (absolute; this is a file in the **spec repo**, not one you
 add to the code repo this skill was copied into).
 
 ## Errors
@@ -74,7 +77,7 @@ add to the code repo this skill was copied into).
 ### \`PROJECT_SLUG_NOT_FOUND\` — this skill's identity no longer resolves
 
 If any \`c4s\` command above returns \`PROJECT_SLUG_NOT_FOUND\`, the \`--project
-${ctx.slug}\` baked into this skill no longer matches a project in this
+'${ctx.slug}'\` baked into this skill no longer matches a project in this
 machine's \`~/.claude4spec/workspaces.json\` (the spec project was moved, deleted,
 or this skill was copied from a different machine). Regenerate the skill from
 the spec repo (\`npx @inharness-ai/claude4spec\`) and re-copy it here.

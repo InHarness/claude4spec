@@ -1,9 +1,7 @@
-import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
-import { resolveWorkspaceProjectOrThrow } from '../context.js';
+import { resolveBriefsPatchesDirs } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { readConfig } from '../../../server/config.js';
 import { readBriefFs, BriefFsError } from '../../../core/briefs/index.js';
 
 /**
@@ -23,9 +21,7 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
     );
   }
 
-  const { projectDir } = resolveWorkspaceProjectOrThrow(args);
-  const config = readConfig(projectDir);
-  const briefsDirAbs = path.resolve(projectDir, config.briefsDir);
+  const { briefsDirAbs } = resolveBriefsPatchesDirs(args);
 
   try {
     writeOutput(readBriefFs(briefsDirAbs, briefPath), args);

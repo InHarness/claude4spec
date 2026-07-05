@@ -2,10 +2,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalString } from '../args.js';
-import { resolveWorkspaceProjectOrThrow } from '../context.js';
+import { resolveBriefsPatchesDirs } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { readConfig } from '../../../server/config.js';
 import { writePatchFs, BriefFsError } from '../../../core/briefs/index.js';
 import type { PatchKind } from '../../../core/briefs/index.js';
 
@@ -49,10 +48,7 @@ export async function runFilePatch(args: ParsedArgs): Promise<void> {
     body = fs.readFileSync(0, 'utf8');
   }
 
-  const { projectDir } = resolveWorkspaceProjectOrThrow(args);
-  const config = readConfig(projectDir);
-  const briefsDirAbs = path.resolve(projectDir, config.briefsDir);
-  const patchesDirAbs = path.resolve(projectDir, config.patchesDir);
+  const { briefsDirAbs, patchesDirAbs } = resolveBriefsPatchesDirs(args);
 
   try {
     writeOutput(

@@ -37,7 +37,13 @@ function slugify(input: string): string {
 export function writePatchFs(opts: WritePatchOpts): WritePatchResult {
   assertBriefExists(opts.briefsDirAbs, opts.briefRelPath);
 
-  const briefSlug = path.basename(opts.briefRelPath, path.extname(opts.briefRelPath));
+  // Slugify the whole relative path (not just its basename) so briefs that
+  // share a filename in different subdirectories (e.g. `scoped-a/foo.md` vs
+  // `scoped-b/foo.md`) don't collide on the same patch filename and silently
+  // overwrite each other — slugify collapses the path separator into `-`.
+  const briefExt = path.extname(opts.briefRelPath);
+  const briefStem = opts.briefRelPath.slice(0, opts.briefRelPath.length - briefExt.length);
+  const briefSlug = slugify(briefStem);
   const filename = `${briefSlug}-${slugify(opts.desc)}.md`;
 
   const frontmatter = {
@@ -54,11 +60,7 @@ export function writePatchFs(opts: WritePatchOpts): WritePatchResult {
     fs.mkdirSync(opts.patchesDirAbs, { recursive: true });
     fs.writeFileSync(path.join(opts.patchesDirAbs, filename), content, 'utf8');
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'EACCES' || code === 'EROFS' || code === 'EPERM') {
-      throw new BriefFsError('PATCH_WRITE_FAILED', `failed to write patch file: ${(err as Error).message}`);
-    }
-    throw err;
+    throw new BriefFsError('PATCH_WRITE_FAILED', `failed to write patch file: ${(err as Error).message}`);
   }
 
   return { path: filename };

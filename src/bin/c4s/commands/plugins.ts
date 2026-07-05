@@ -2,7 +2,7 @@ import type { ParsedArgs } from '../args.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { collectPluginDiagnostics } from '../../../server/core/plugin-host/cli-plugins.js';
-import { WorkspaceResolveError } from '../../../core/workspace/resolve.js';
+import { mapWorkspaceResolveError } from '../context.js';
 import type { PluginLoadRecord } from '../../../server/core/plugin-host/loader.js';
 
 /**
@@ -23,10 +23,7 @@ export async function runPlugins(args: ParsedArgs): Promise<void> {
     diag = await collectPluginDiagnostics({ project: args.project, workspace: args.workspace });
   } catch (err) {
     // Map workspace resolution errors onto the CLI error surface (exit codes).
-    if (err instanceof WorkspaceResolveError) {
-      throw new CliError(err.code, err.message, err.hint);
-    }
-    throw err;
+    mapWorkspaceResolveError(err);
   }
 
   if (sub === 'list') {
