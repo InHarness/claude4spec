@@ -69,31 +69,12 @@ Unlike the read-only commands above, \`c4s ask\` requires a running
 
 ## Errors
 
-### \`PROJECT_SLUG_NOT_FOUND\` — this skill's identity no longer resolves
-
-If any \`c4s\` command above returns \`PROJECT_SLUG_NOT_FOUND\`, the \`--project
-'${ctx.slug}'\` baked into this skill no longer matches a project in this
-machine's \`~/.claude4spec/workspaces.json\` (the spec project was moved, deleted,
-or this skill was copied from a different machine). Regenerate the skill from
-the spec repo (\`npx @inharness-ai/claude4spec\`) and re-copy it here.
-
-### \`AMBIGUOUS_WORKSPACE\` / \`AMBIGUOUS_PROJECT\`
-
-The project (or its registered name) matches more than one entry in the
-registry — pass the correct \`--workspace <name>\` to disambiguate.
-
-### \`SERVER_NOT_RECOGNIZED\` / \`PROJECT_BUILD_FAILED\` — the project failed to build
-
-If \`c4s ask\` reports the server is "not a claude4spec server", or
-\`GET /api/projects/<id>/config\` returns \`PROJECT_BUILD_FAILED\`, the server IS
-running but **that project failed to build**. A common cause is the configured
-\`writingStyle\` skill failing to load: a skill under \`.claude/skills/\` whose
-frontmatter \`version\` exceeds the supported version is skipped at scan time, so
-the style is "not a selectable writing-style skill".
-
-\`c4s ask\` surfaces the real \`PROJECT_BUILD_FAILED\` message, which names the cause
-(e.g. \`writingStyle "X" was found on disk but skipped: version 2 > supported 1\`).
-Fix the skill's frontmatter (\`version\` is a format-compat gate — keep it \`1\`, don't
-use it as a content counter) and restart the server.
+If \`c4s\` reports \`PROJECT_SLUG_NOT_FOUND\` or \`AMBIGUOUS_WORKSPACE\` /
+\`AMBIGUOUS_PROJECT\`, this skill's baked-in \`${identity}\` identity no longer
+resolves — regenerate the skill from the spec repo and re-copy it, or pass the
+correct \`--workspace <name>\`. If \`c4s ask\` reports the server isn't recognized
+as a claude4spec server, or that the project failed to build
+(\`PROJECT_BUILD_FAILED\`), that's a problem on the spec repo/server side —
+report it to the user; don't try to fix the spec repo from here.
 `;
 }
