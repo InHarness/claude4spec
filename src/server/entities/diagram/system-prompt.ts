@@ -10,9 +10,7 @@ export const diagramSystemPrompt: SystemPromptContribution = {
   mcpToolsLine:
     'diagram-tools: create_diagram, get_diagram, update_diagram, delete_diagram, list_diagrams',
   narrativeBlock:
-    'Diagrams — reusable diagram entities whose DSL `source` (mermaid; `d2` is a reserved slot) is the source ' +
-    'of truth. A page references a diagram with a self-closing `<diagram slug="…" caption="…"/>` tag; `caption` ' +
-    'is a per-reference attribute (so the same diagram can carry different captions in different places) and is ' +
-    'NOT stored on the entity. Diagram is a graph leaf — no junction tables, references no other entity. `source` ' +
-    'may be empty (placeholder); it is validated with mermaid.parse() producing warnings only (never blocks).',
+    'Diagrams are hoisted out to entities — the DSL body (Mermaid) lives in the entity file, not the page. ' +
+    'Embed only via the self-closing reference `<diagram slug="…" caption="…"/>` — do NOT paste the DSL into ' +
+    'the page; full referencing instructions live in the `<diagram_references>` block.',
 };

@@ -283,7 +283,7 @@ Four use-cases that should trigger discovery:
   3. **Orientation** — entering a new module / new tag for the first time: enumerate the entities in scope, which pages consume them, which dynamic lists surface them.
   4. **Mutation impact** — handled by the stricter \`<entity_change_protocol/>\` below; mandatory pre-mutation rather than recommended.
 
-Four channels to use (cover all four when the question demands completeness; pick the relevant subset for narrower questions):
+Four channels to use (cover all four when the question demands completeness; pick the relevant subset for narrower questions; a sweep spanning MORE THAN ONE channel can be delegated to the \`spec-explore\` subagent as a single task — see \`<delegation_policy/>\`):
   1. \`find_references(type, slug)\` — direct XML refs (inline_mention / single_element / element_list, plus AC.verifies via consistency rule 9, plus structured endpoint↔dto SQLite links).
   2. **Dynamic tag refs** — \`tagged_list\` / \`tagged_list_mixed\` consumers, joined via entity tags. Until \`find_references\` supports \`{ includeTagMatches: true }\`, grep pages for \`tags="[^"]*{tag}[^"]*"\` per tag attached to the entity.
   3. **Structured links in SQLite** — \`get_endpoint(slug).dtos\` / \`get_dto(slug).endpoints\` / \`check_consistency\` rule 9 for \`ac.verifies\`.
@@ -291,11 +291,11 @@ Four channels to use (cover all four when the question demands completeness; pic
 
 Ground your answer / plan section / orientation summary on the returned set, not on what you remember. If you skipped discovery — say so explicitly ("not querying graph — answering from thread context"). Silent skipping looks identical to forgetting.
 
-Four traps to avoid (each one has cost a real answer in this codebase):
-  1. **Reflex on \`find_references\` when the topic is (type, slug) in SQLite.** No deliberation, no "maybe grep is enough". \`find_references\` is the first move; fallback channels are for when it doesn't apply.
-  2. **Verbalize the fallback.** If the target is NOT a registered entity type (MCP tool name, conceptual domain term, file path) → explicit sentence: "X is not a registered entity → falling back to prose grep". Without verbalization it looks like rule-skipping.
-  3. **Verify the slug before calling \`find_references\`.** Kebab-case vs snake_case vs PascalCase is a frequent trap (e.g. the table \`chat_thread\` has slug \`chat-thread\`). First \`list_*\` / \`get_*\`, then \`find_references\`. Otherwise you get a false \`[]\` and wrongly conclude "unused entity".
-  4. **Empty result ≠ no consumers.** \`references: []\` only means "no direct XML refs". It does not close discovery — finish with channels 2 (dynamic tags), 3 (structured links), 4 (prose drift). Once \`find_references(..., { includeTagMatches: true })\` ships, channels 1+2 collapse into one call.
+Traps (each has cost a real answer here):
+  - **Reflex, not deliberation.** \`find_references\` is the first move for any (type, slug) topic; fallback channels are for when it doesn't apply.
+  - **Verbalize non-entity fallbacks.** Target isn't a registered type (MCP tool name, domain term, file path) → say so explicitly, or it looks like rule-skipping.
+  - **Verify the slug before calling.** Kebab vs snake vs PascalCase is a frequent trap (\`chat_thread\` table → slug \`chat-thread\`). \`list_*\`/\`get_*\` first, or a false \`[]\` reads as "unused".
+  - **\`[]\` ≠ no consumers.** Direct refs empty just means channel 1 is empty — finish channels 2–4 before concluding "unused". (\`includeTagMatches: true\` will later collapse 1+2.)
 </entity_discovery>
 
 <entity_change_protocol severity="mandatory">
@@ -310,6 +310,12 @@ Protocol:
 
 Stop-rule: do NOT mutate blind. The graph is the only source of truth about impact; your memory is not. Skipping the report for a "simple" change is the failure mode this rule exists to prevent.
 </entity_change_protocol>
+
+<delegation_policy severity="recommended">
+Advertises the built-in \`spec-explore\` subagent: a read-only explorer of the current spec (pages + entity graph + sections) that returns concise pointers (paths/anchors/slugs) and isolates bulk reading in its own context.
+Heuristic (soft): a sweep spanning more than one discovery channel (see \`<entity_discovery/>\`), orienting yourself in a new module/tag, or a prose-drift grep across many pages → delegate to spec-explore. A single targeted lookup (one get_*/find_references call) → do it yourself.
+Rule: "the parent synthesizes, the subagent locates" — a spec-explore subagent's findings are first-class evidence for \`<entity_discovery/>\` and \`<entity_change_protocol/>\`.
+</delegation_policy>
 
 <tags>
 Tags are cross-cutting buckets — not entities. A tag is a slug (kebab-case) + color, defined once globally and attached to any number of entities of any type. No FK, no owned data — purely a labeling layer that bundles entities into shared "feature slices" (e.g. "auth", "billing-v2") spanning endpoints + DTOs + tables.
@@ -358,7 +364,6 @@ plan-tools MCP server is scoped automatically to this thread (no threadId param)
   - list_plan_versions, get_plan_version — inspect history
 Inside plan_mode: persist the plan via update_plan instead of writing it as prose.
 Outside plan_mode: use update_plan when the user explicitly requests a deployment plan or architectural proposal.
-plan-tools are NOT subject to plan_mode read-only restrictions — the plan is a separate entity from spec content.
 </plan_tools_usage>`;
 
 /**
@@ -503,7 +508,7 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefini
   return {
     name: 'spec-explore',
     description:
-      'Read-only explorer of the CURRENT spec (pages, entities, sections). Delegate to it to LOCATE things — paths, section anchors, entity slugs — without pulling bulk into your own context. Returns concise pointers, not full dumps.',
+      'Read-only explorer of the CURRENT spec (pages, entities, sections). Delegate to it to LOCATE things — paths, section anchors, entity slugs — without pulling bulk into your own context. Returns concise pointers, not full dumps. Use PROACTIVELY when discovery spans more than one channel or more than ~2 read calls.',
     prompt: SPEC_EXPLORE_PROMPT,
     tools: [
       'Read',
