@@ -44,10 +44,12 @@ describe('renderers', () => {
       expect(desc, `${name} description verb`).toMatch(/^(Read|Implement|Detect)/);
       // the old walk-up/symlink workaround is gone, replaced by PROJECT_SLUG_NOT_FOUND guidance
       expect(body, name).not.toMatch(/walk up the directory tree/);
-      // c4s-brief-implementer's spec-source page dropped its `## Errors` section (0.1.107 drift
-      // fix); spec-reader and refactor still carry theirs.
-      if (name !== 'c4s-brief-implementer') {
+      // 0.1.108: PROJECT_SLUG_NOT_FOUND/AMBIGUOUS_WORKSPACE troubleshooting text was duplicated
+      // across all three skills — only c4s-spec-reader keeps a (condensed) copy now.
+      if (name === 'c4s-spec-reader') {
         expect(body, name).toContain('PROJECT_SLUG_NOT_FOUND');
+      } else {
+        expect(body, name).not.toContain('PROJECT_SLUG_NOT_FOUND');
       }
       // 0.1.106: strictly CLI-only — no filesystem-fallback reads/writes, no MCP setup block.
       expect(body, name).not.toMatch(/[Ff]allback \(no/);
@@ -55,6 +57,11 @@ describe('renderers', () => {
       expect(body, name).not.toContain('mcp.json');
     }
     expect(outputs['c4s-brief-implementer']).toContain('c4s mark-brief-implemented');
+    // 0.1.108: Path 2 (code-fix) routes through native create-mode now — the old
+    // `--ct chat` + `runTransagent` workaround is gone.
+    expect(outputs['c4s-refactor']).toContain('--ct brief --source analysis');
+    expect(outputs['c4s-refactor']).not.toContain('runTransagent');
+    expect(outputs['c4s-refactor']).not.toMatch(/--ct chat/);
   });
 });
 

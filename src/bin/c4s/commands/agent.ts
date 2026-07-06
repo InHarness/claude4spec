@@ -146,7 +146,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
     }
   }
 
-  let result: { threadId: string; answer: string; messages?: AgentMessage[] };
+  let result: { threadId: string; answer: string; briefPath?: string; messages?: AgentMessage[] };
   try {
     result = await runAgent({
       message,
@@ -175,13 +175,21 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       process.stdout.write(formatMessage(m) + '\n');
     }
     process.stdout.write('\n' + result.answer + '\n');
+    if (result.briefPath) {
+      process.stdout.write(`brief: ${result.briefPath}\n`);
+    }
     process.stderr.write(
       `thread: ${result.threadId} (continue: c4s agent "..." --thread ${result.threadId})\n`,
     );
   } else {
     process.stdout.write(
       JSON.stringify(
-        { threadId: result.threadId, answer: result.answer, messages: result.messages ?? [] },
+        {
+          threadId: result.threadId,
+          answer: result.answer,
+          briefPath: result.briefPath,
+          messages: result.messages ?? [],
+        },
         null,
         2,
       ) + '\n',

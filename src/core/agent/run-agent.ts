@@ -81,6 +81,8 @@ export interface AgentMessage {
 export interface AgentResult {
   threadId: string;
   answer: string;
+  /** Populated only for `contextType='brief'` create-mode calls — the freshly minted brief's path. */
+  briefPath?: string;
   /** Populated only when `output === 'full'`. */
   messages?: AgentMessage[];
 }
@@ -196,6 +198,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
 
   // --- create-thread (context-specific) — pomijany dla threadId ----------
   let threadId: string;
+  let mintedBriefPath: string | undefined;
   if (params.threadId) {
     threadId = params.threadId;
   } else {
@@ -230,6 +233,7 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
           suffix: params.briefCreate.suffix,
         });
         threadId = pickThreadId(created);
+        mintedBriefPath = typeof created.briefPath === 'string' ? created.briefPath : undefined;
       } else if (params.briefPath) {
         const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
         const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
@@ -257,6 +261,9 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   const answer = typeof result.answer === 'string' ? result.answer : '';
   const outThreadId = typeof result.threadId === 'string' ? result.threadId : threadId;
   const out: AgentResult = { threadId: outThreadId, answer };
+  if (mintedBriefPath) {
+    out.briefPath = mintedBriefPath;
+  }
   if (output === 'full') {
     out.messages = Array.isArray(result.messages) ? (result.messages as AgentMessage[]) : [];
   }

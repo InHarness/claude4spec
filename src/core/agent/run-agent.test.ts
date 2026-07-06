@@ -145,6 +145,74 @@ describe('runAgent — ask context + output axis', () => {
   });
 });
 
+describe('runAgent — brief create-mode', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('surfaces the minted brief path on AgentResult.briefPath', async () => {
+    const calls: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: { body?: string }) => {
+        const body = init?.body ? JSON.parse(init.body) : undefined;
+        calls.push({ url, body });
+        if (url.endsWith('/config')) {
+          return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        }
+        if (url.endsWith('/briefs')) {
+          return {
+            status: 201,
+            ok: true,
+            json: async () => ({ data: { briefPath: 'analysis-brief.md', initialThreadId: 'T1' } }),
+          };
+        }
+        // POST /threads/T1/ask
+        return { status: 200, ok: true, json: async () => ({ threadId: 'T1', answer: 'done' }) };
+      }),
+    );
+
+    const result = await runAgent({
+      ...BASE,
+      message: 'Code drift on X',
+      contextType: 'brief',
+      briefCreate: { source: 'analysis', fromReleaseName: null, toReleaseName: null },
+    });
+
+    expect(result.briefPath).toBe('analysis-brief.md');
+    const create = calls.find((c) => c.url.endsWith('/briefs'));
+    expect(create?.body).toEqual({
+      source: 'analysis',
+      fromReleaseName: null,
+      toReleaseName: null,
+      roots: undefined,
+      suffix: undefined,
+    });
+  });
+
+  it('omits briefPath for attach-mode (existing brief, no mint)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/config')) {
+          return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        }
+        if (url.endsWith('/threads')) {
+          return { status: 201, ok: true, json: async () => ({ data: { threadId: 'T1' } }) };
+        }
+        return { status: 200, ok: true, json: async () => ({ threadId: 'T1', answer: 'done' }) };
+      }),
+    );
+
+    const result = await runAgent({
+      ...BASE,
+      message: 'follow up',
+      contextType: 'brief',
+      briefPath: 'existing-brief.md',
+    });
+
+    expect(result.briefPath).toBeUndefined();
+  });
+});
+
 describe('runAgent — --server branch surfaces real ambiguity instead of hashing the slug', () => {
   let dir: string;
   let prevHome: string | undefined;
