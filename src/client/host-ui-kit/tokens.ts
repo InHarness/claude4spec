@@ -2,10 +2,12 @@
  * M34 / L12 — token bridge.
  *
  * The Host UI Kit exposes the host's RESOLVED presentation tokens to plugins as
- * the SAME `--c-*` CSS variables the host itself uses. Because the variables
- * cascade from `:root` / `.dark` (see `styles/theme.css`), a plugin's entity view
- * styled with `var(--c-accent)` automatically matches the host — the components
- * here, and any plugin markup, just reference `var(--c-*)`.
+ * the SAME CSS variables the host itself uses: color (`--c-*`), typography
+ * (`--text-*`/`--font-*`/`--weight-*`), and layering (`--z-popover`/`--z-toast`).
+ * Because the variables cascade from `:root` / `.dark` (see `styles/theme.css`),
+ * a plugin's entity view styled with `var(--c-accent)` or `var(--text-lede)`
+ * automatically matches the host — the components here, and any plugin markup,
+ * just reference `var(--...)`.
  *
  * Source of truth for the token set is the ONE canonical design-system entity
  * `c4s-paper-terra` (paper/terra palette, Inter/Lora/JetBrains Mono, motion,
@@ -13,15 +15,17 @@
  * is applied by toggling the `.dark` class on `<html>` (`state/tweaks.ts`,
  * persisted in `localStorage` `c4s:settings:theme`). {@link useHostTokens} reads
  * the resolved values and re-reads whenever that class changes, so it always
- * reflects the active mode.
+ * reflects the active mode. Typography and z-index tokens are mode-invariant
+ * (defined once in `:root`, not duplicated into `.dark`) — they don't change
+ * with the light/dark toggle, only color does.
  *
  * DELIBERATE DEBT — three-way identity. The token SETS in the entity
- * `c4s-paper-terra` ↔ L5 `--c-*` (`theme.css`) ↔ this bridge are kept identical
- * BY HAND. There is no linter enforcing equality; the corresponding acceptance
- * criterion is verified manually.
+ * `c4s-paper-terra` ↔ L5 CSS custom properties (`theme.css`) ↔ this bridge are
+ * kept identical BY HAND. There is no linter enforcing equality; the
+ * corresponding acceptance criterion is verified manually.
  */
 
-/** The resolved presentation tokens the bridge exposes (the L5 `--c-*` set). */
+/** The resolved presentation tokens the bridge exposes (the L5 `--c-*`/`--text-*`/`--font-*`/`--weight-*`/`--z-*` set). */
 export const HOST_TOKEN_NAMES = [
   '--c-bg',
   '--c-panel',
@@ -44,6 +48,20 @@ export const HOST_TOKEN_NAMES = [
   '--c-purple-soft',
   '--c-red',
   '--c-red-soft',
+  '--font-heading',
+  '--font-body',
+  '--font-mono',
+  '--text-h1',
+  '--text-h2',
+  '--text-h3',
+  '--text-body',
+  '--text-lede',
+  '--text-code',
+  '--weight-heading',
+  '--weight-body',
+  '--weight-lede',
+  '--z-popover',
+  '--z-toast',
 ] as const;
 
 export type HostTokenName = (typeof HOST_TOKEN_NAMES)[number];

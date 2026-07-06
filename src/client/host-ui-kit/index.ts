@@ -7,9 +7,13 @@
  * delivered to plugins through the M33 import-map shim — so the subpath resolves
  * to ONE host UI bundle, not a per-plugin copy.
  *
- * Every component is pure-presentational (props-in, no `useEditor()`/`useQuery()`
- * /fetch) and carries a mandatory `stability` constant. Only `stable` components
- * are part of the versioned `hostApiVersion` surface.
+ * Every component is pure-presentational — props-in, no live host services
+ * (no `useQueryClient()`, no fetch, no EditorBridge singleton) — and carries a
+ * mandatory `stability` constant. A local, self-contained editor instance
+ * (e.g. `RichTextField`'s Tiptap usage) is still pure-presentational in this
+ * sense: it touches no host service, only `value`/`onChange` props. `DocEditor`
+ * is the one documented exception (see its own docblock). Only `stable`
+ * components are part of the versioned `hostApiVersion` surface.
  */
 
 // Core (stable)
@@ -49,13 +53,31 @@ export {
 } from './detail/SegmentedControlTabs.js';
 export { VersionHistory, type VersionHistoryProps, type VersionHistoryItem } from './detail/VersionHistory.js';
 export { EntityDetailToolbar, type EntityDetailToolbarProps } from './detail/EntityDetailToolbar.js';
-export { RichTextField, type RichTextFieldProps } from './detail/RichTextField.js';
+export {
+  RichTextField,
+  type RichTextFieldProps,
+  type RichTextFieldToolbarItem,
+} from './detail/RichTextField.js';
 export { TagPicker, type TagPickerProps } from './detail/TagPicker.js';
 export {
   ReferencesList,
   type ReferencesListProps,
   type ReferencesListItem,
 } from './detail/ReferencesList.js';
+export { DocumentBody, type DocumentBodyProps } from './detail/DocumentBody.js';
+export { DocEditor, type DocEditorProps } from './detail/DocEditor.js';
+
+// Overlay/feedback (experimental)
+export { Popover, type PopoverProps } from './overlay-feedback/Popover.js';
+export { ToastViewport } from './overlay-feedback/ToastViewport.js';
+export { useToast } from './overlay-feedback/useToast.js';
+
+// Pickers (experimental)
+export { EnumBadgePicker, type EnumBadgePickerProps } from './pickers/EnumBadgePicker.js';
+export {
+  GroupedRelationPicker,
+  type GroupedRelationPickerProps,
+} from './pickers/GroupedRelationPicker.js';
 
 // Token bridge
 export { useHostTokens } from './useHostTokens.js';

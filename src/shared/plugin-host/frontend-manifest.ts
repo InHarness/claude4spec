@@ -131,6 +131,15 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'RichTextField',
   'TagPicker',
   'ReferencesList',
+  'DocumentBody',
+  'DocEditor',
+  // Overlay/feedback (experimental, M34/L12)
+  'Popover',
+  'ToastViewport',
+  'useToast',
+  // Pickers (experimental, M34/L12)
+  'EnumBadgePicker',
+  'GroupedRelationPicker',
   // Token bridge
   'useHostTokens',
   'HOST_TOKEN_NAMES',

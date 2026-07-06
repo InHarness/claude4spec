@@ -31,8 +31,22 @@ import { EntityDetailToolbar } from './detail/EntityDetailToolbar.js';
 import { RichTextField } from './detail/RichTextField.js';
 import { TagPicker } from './detail/TagPicker.js';
 import { ReferencesList } from './detail/ReferencesList.js';
+import { DocumentBody } from './detail/DocumentBody.js';
+import { DocEditor } from './detail/DocEditor.js';
+import { Popover } from './overlay-feedback/Popover.js';
+import { ToastViewport } from './overlay-feedback/ToastViewport.js';
+import { EnumBadgePicker } from './pickers/EnumBadgePicker.js';
+import { GroupedRelationPicker } from './pickers/GroupedRelationPicker.js';
 
-export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay' | 'detail';
+export type UiKitGroup =
+  | 'core'
+  | 'list'
+  | 'actions'
+  | 'form'
+  | 'overlay'
+  | 'detail'
+  | 'feedback'
+  | 'pickers';
 
 export interface UiKitComponentEntry {
   name: string;
@@ -64,6 +78,12 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   { name: 'RichTextField', group: 'detail', stability: RichTextField.stability },
   { name: 'TagPicker', group: 'detail', stability: TagPicker.stability },
   { name: 'ReferencesList', group: 'detail', stability: ReferencesList.stability },
+  { name: 'DocumentBody', group: 'detail', stability: DocumentBody.stability },
+  { name: 'DocEditor', group: 'detail', stability: DocEditor.stability },
+  { name: 'Popover', group: 'feedback', stability: Popover.stability },
+  { name: 'ToastViewport', group: 'feedback', stability: ToastViewport.stability },
+  { name: 'EnumBadgePicker', group: 'pickers', stability: EnumBadgePicker.stability },
+  { name: 'GroupedRelationPicker', group: 'pickers', stability: GroupedRelationPicker.stability },
 ];
 
 /**

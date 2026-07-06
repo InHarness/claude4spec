@@ -1,12 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Trash, CheckSquare, X } from 'lucide-react';
-import { TagChip } from '../../components/atoms.js';
-import { DocEditor } from '../../components/DocEditor.js';
+import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
+import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useAc, useDeleteAc, useUpdateAc } from '../../hooks/useAcs.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
-import { confirmDestructive, openPopover, toast } from '../../ui/events.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import { tagSlug } from '../../../shared/slug.js';
 import type {
   Ac,
   AcKind,
@@ -58,7 +59,6 @@ export function AcDetail({
   const { data: refs = [] } = useReferences('ac', ac?.slug ?? null);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [showTagPicker, setShowTagPicker] = useState(false);
 
   const { draft, dirty, patch } = useEntityDraftEditor({
     entity: ac,
@@ -112,17 +112,11 @@ export function AcDetail({
     patch({ tags: next });
   }
 
-  async function addNewTag(e: React.MouseEvent<HTMLElement>) {
+  function handleCreateTag(name: string) {
     if (!draft) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const result = await openPopover('create-tag', { x: rect.left, y: rect.bottom + 4 }, {});
-    if (!result) return;
-    const tslug = result.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!tslug || draft.tags.includes(tslug)) return;
-    patch({ tags: [...draft.tags, tslug] });
+    const slug = tagSlug(name);
+    if (!slug || draft.tags.includes(slug)) return;
+    patch({ tags: [...draft.tags, slug] });
   }
 
   function addVerify(refType: string, refSlug: string) {
@@ -245,48 +239,14 @@ export function AcDetail({
           </span>
         </div>
 
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
-          {draft.tags.map((tslug) => {
-            const t = allTags.find((x) => x.slug === tslug);
-            return (
-              <TagChip
-                key={tslug}
-                tag={t ?? { slug: tslug, name: tslug, color: null }}
-                active
-                small
-                onRemove={() => toggleTag(tslug)}
-              />
-            );
-          })}
-          <button
-            onClick={() => setShowTagPicker((s) => !s)}
-            className="text-[11.5px] px-2 py-0.5 rounded-full"
-            style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-          >
-            + tag
-          </button>
-          {showTagPicker && (
-            <div className="w-full mt-1 flex items-center gap-1.5 flex-wrap">
-              <span
-                className="text-[10px] uppercase font-mono tracking-wider mr-1"
-                style={{ color: 'var(--c-subtle)' }}
-              >
-                pick:
-              </span>
-              {allTags
-                .filter((t) => !draft.tags.includes(t.slug))
-                .map((t) => (
-                  <TagChip key={t.slug} tag={t} small onClick={() => toggleTag(t.slug)} />
-                ))}
-              <button
-                onClick={addNewTag}
-                className="text-[11.5px] px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-              >
-                new…
-              </button>
-            </div>
-          )}
+        <div className="mt-3">
+          <TagPicker
+            allTags={allTags}
+            selected={draft.tags}
+            onToggle={toggleTag}
+            onCreate={handleCreateTag}
+            variant="collapsed"
+          />
         </div>
 
         <div className="mt-8">
@@ -306,7 +266,6 @@ export function AcDetail({
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="Optional context: why this AC matters, how it's tested, related modules…"
-            onOpenEntity={onOpenEntity}
           />
         </div>
 

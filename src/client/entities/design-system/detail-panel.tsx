@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Palette, Plus, Trash } from 'lucide-react';
-import { TagChip } from '../../components/atoms.js';
-import { DocEditor } from '../../components/DocEditor.js';
+import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
+import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDeleteDesignSystem,
@@ -10,7 +10,8 @@ import {
 } from '../../hooks/useDesignSystems.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
-import { confirmDestructive, openPopover, toast } from '../../ui/events.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import { tagSlug } from '../../../shared/slug.js';
 import { aliasTarget, lintTokens, resolve } from '../../../shared/design-system.js';
 import {
   COMPOSITE_TOKEN_TYPES,
@@ -104,7 +105,6 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('design-system', ds?.slug ?? null);
 
-  const [showTagPicker, setShowTagPicker] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [activeMode, setActiveMode] = useState<string>(BASE_MODE);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -168,14 +168,11 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
     patch({ tags: next });
   }
 
-  async function addNewTag(e: React.MouseEvent<HTMLElement>) {
+  function handleCreateTag(name: string) {
     if (!draft) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const result = await openPopover('create-tag', { x: rect.left, y: rect.bottom + 4 }, { contextLabel: ds?.name });
-    if (!result) return;
-    const tslug = result.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    if (!tslug || draft.tags.includes(tslug)) return;
-    patch({ tags: [...draft.tags, tslug] });
+    const slug = tagSlug(name);
+    if (!slug || draft.tags.includes(slug)) return;
+    patch({ tags: [...draft.tags, slug] });
   }
 
   // ─── group / token / mode editing ─────────────────────────────────────────
@@ -320,45 +317,14 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         </div>
 
         {/* tags */}
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
-          {draft.tags.map((tslug) => {
-            const t = allTags.find((x) => x.slug === tslug);
-            return (
-              <TagChip
-                key={tslug}
-                tag={t ?? { slug: tslug, name: tslug, color: null }}
-                active
-                small
-                onRemove={() => toggleTag(tslug)}
-              />
-            );
-          })}
-          <button
-            onClick={() => setShowTagPicker((s) => !s)}
-            className="text-[11.5px] px-2 py-0.5 rounded-full"
-            style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-          >
-            + tag
-          </button>
-          {showTagPicker && (
-            <div className="w-full mt-1 flex items-center gap-1.5 flex-wrap">
-              <span className="text-[10px] uppercase font-mono tracking-wider mr-1" style={{ color: 'var(--c-subtle)' }}>
-                pick:
-              </span>
-              {allTags
-                .filter((t) => !draft.tags.includes(t.slug))
-                .map((t) => (
-                  <TagChip key={t.slug} tag={t} small onClick={() => toggleTag(t.slug)} />
-                ))}
-              <button
-                onClick={addNewTag}
-                className="text-[11.5px] px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-              >
-                new…
-              </button>
-            </div>
-          )}
+        <div className="mt-3">
+          <TagPicker
+            allTags={allTags}
+            selected={draft.tags}
+            onToggle={toggleTag}
+            onCreate={handleCreateTag}
+            variant="collapsed"
+          />
         </div>
 
         {/* warnings */}
@@ -388,7 +354,6 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="What this design system covers, when to use it, conventions…"
-            onOpenEntity={onOpenEntity}
           />
         </div>
 

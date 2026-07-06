@@ -47,6 +47,29 @@
   --c-red-soft: #4a2820;
 }
 
+/* M34/L12 token bridge — typography + layering. Mode-invariant (unlike the
+   --c-* palette above): these values don't change between light/dark, so
+   they live in a single :root block, not duplicated into .dark. */
+:root {
+  --font-heading: 'Lora', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --text-h1: 34px;
+  --text-h2: 22px;
+  --text-h3: 15px;
+  --text-body: 15.5px;
+  --text-lede: 17px;
+  --text-code: 13px;
+
+  --weight-heading: 600;
+  --weight-body: 400;
+  --weight-lede: 400;
+
+  --z-popover: 1100;
+  --z-toast: 1300;
+}
+
 html,
 body,
 #root {
@@ -57,47 +80,47 @@ body {
   margin: 0;
   background: var(--c-bg);
   color: var(--c-ink);
-  font-family: 'Inter', system-ui, sans-serif;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
 }
 
 /* editor prose */
 .prose-spec h1 {
-  font-family: 'Lora', Georgia, serif;
-  font-size: 34px;
+  font-family: var(--font-heading);
+  font-size: var(--text-h1);
   line-height: 1.15;
-  font-weight: 600;
+  font-weight: var(--weight-heading);
   margin: 0 0 14px;
   letter-spacing: -0.01em;
 }
 .prose-spec h2 {
-  font-family: 'Lora', Georgia, serif;
-  font-size: 22px;
+  font-family: var(--font-heading);
+  font-size: var(--text-h2);
   line-height: 1.2;
-  font-weight: 600;
+  font-weight: var(--weight-heading);
   margin: 34px 0 10px;
   letter-spacing: -0.005em;
 }
 .prose-spec h3 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: var(--text-h3);
+  font-weight: var(--weight-heading);
   margin: 22px 0 6px;
   color: var(--c-ink);
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
 .prose-spec p {
-  font-size: 15.5px;
+  font-size: var(--text-body);
   line-height: 1.7;
   margin: 0 0 14px;
   color: var(--c-ink);
 }
 .prose-spec p.lede {
-  font-size: 17px;
+  font-size: var(--text-lede);
   color: var(--c-muted);
   font-style: italic;
-  font-family: 'Lora', serif;
+  font-family: var(--font-heading);
 }
 /* wrapped in @layer components so rules land AFTER tailwind preflight
    (which is in @layer base) — :where() keeps specificity at (0,0,1), so the
@@ -154,8 +177,8 @@ body {
   }
 }
 .prose-spec code {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
   background: var(--c-panel);
   border: 1px solid var(--c-hair);
   border-radius: 4px;
@@ -163,8 +186,8 @@ body {
   color: var(--c-accent-ink);
 }
 .prose-spec pre {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 13px;
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
   background: var(--c-panel);
   border: 1px solid var(--c-hair);
   border-radius: 6px;
