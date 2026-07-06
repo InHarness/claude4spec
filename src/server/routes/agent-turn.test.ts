@@ -275,3 +275,14 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', (
     expect('disallowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
   });
 });
+
+describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
+  it('passes a positive timeoutMs into adapter.execute() so AdapterTimeoutError/TIMEOUT is reachable', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
+  });
+});
