@@ -80,6 +80,16 @@ Standard code flow in your target repository: read existing code, plan, edit, te
 
 Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Use the `/run` skill to start the app (it discovers this project's current launch command on its own); if it's unavailable, `npm run dev:default` on a free port is the known-good fallback today. Verify the brief's behaviour, then stop the server. If the smoke test reveals drift, file a patch (step 6).
 
+**Alternative: Docker smoke-test** (matches a real registry build, useful when you want a clean-room check). From inside the worktree:
+
+```bash
+docker/setup-env.sh "$brief_slug"
+C4S_ENV="$brief_slug" PORT_HOST=3000 docker compose up app-registry
+# bump PORT_HOST (e.g. 3001) if another worktree/brief already has one running
+```
+
+Exercise the change at `http://localhost:$PORT_HOST/welcome`, then `docker compose down` when finished. Use `app-local` instead of `app-registry` only if this brief also touches `agent-adapters`/`agent-chat` — see `DOCKER.md` (repo root) for details and env vars.
+
 ### 6. Feedback loop (patches)
 
 When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use `c4s file-patch`, which records the patch on the spec side for you:

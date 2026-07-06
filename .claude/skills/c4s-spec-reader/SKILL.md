@@ -62,10 +62,9 @@ Unlike the read-only commands above, `c4s ask` requires a running
 ## Errors
 
 If `c4s` reports `PROJECT_SLUG_NOT_FOUND` or `AMBIGUOUS_WORKSPACE` /
-`AMBIGUOUS_PROJECT`, this skill's baked-in `--project 'app-spec' --workspace
-'default'` identity no longer resolves — regenerate the skill from the spec
-repo and re-copy it, or pass the correct `--workspace <name>`. If `c4s ask`
-reports the server isn't recognized as a claude4spec server, or that the
-project failed to build (`PROJECT_BUILD_FAILED`), that's a problem on the spec
-repo/server side — report it to the user; don't try to fix the spec repo from
-here.
+`AMBIGUOUS_PROJECT`, this skill's baked-in `--project 'app-spec' --workspace 'default'` identity no longer
+resolves — regenerate the skill from the spec repo and re-copy it, or pass the
+correct `--workspace <name>`. If `c4s ask` reports the server isn't recognized
+as a claude4spec server, or that the project failed to build
+(`PROJECT_BUILD_FAILED`), that's a problem on the spec repo/server side —
+report it to the user; don't try to fix the spec repo from here.

@@ -5,6 +5,11 @@ sandbox/
 .worktrees/
 .claude4spec/
 .DS_Store
+
+# docker/environments/*/runtime/ holds generated, per-checkout container
+# state (sqlite db, workspace registry, bootstrapped project files) — never
+# committed.
+docker/environments/*/runtime/
 *.log
 .env
 .env.local
@@ -44,3 +49,16 @@ CLAUDE.md
 c4s-cpanel/app.cjs
 c4s-cpanel/package.json
 .nvmrc
+
+# The unanchored data/, .claude4spec/, and pages/ rules above would otherwise
+# blanket-ignore committed SEED fixture content nested under
+# docker/environments/*/seed/project/. Un-ignore just that subtree (both the
+# directory itself and its contents — git won't recurse into an ignored dir
+# for negations unless the dir itself is un-ignored too). Must stay LAST in
+# this file: gitignore rules apply in order, and a later match wins — these
+# negations only take effect appearing after the pages/ and .claude4spec/
+# rules above.
+!docker/environments/*/seed/project/pages/
+!docker/environments/*/seed/project/pages/**
+!docker/environments/*/seed/project/.claude4spec/
+!docker/environments/*/seed/project/.claude4spec/**

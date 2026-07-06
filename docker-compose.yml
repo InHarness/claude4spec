@@ -1,0 +1,36 @@
+services:
+  # Registry mode — @inharness-ai/agent-adapters and @inharness-ai/agent-chat
+  # come from npm, matching a real release.
+  app-registry:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        DEPS_MODE: registry
+    ports:
+      - "${PORT_HOST:-3000}:3000"
+    environment:
+      - ANTHROPIC_API_KEY
+    volumes:
+      - ./docker/environments/${C4S_ENV:-default}/runtime/registry/data:/data
+      - ./docker/environments/${C4S_ENV:-default}/runtime/registry/workspace:/workspace
+
+  # Local mode — those two packages come from the sibling checkouts next to
+  # this repo, to test proposed/uncommitted changes to the agent runtime.
+  # Requires Docker Compose with `additional_contexts` support (Compose v2.17+).
+  app-local:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      args:
+        DEPS_MODE: local
+      additional_contexts:
+        agent-adapters: ${AGENT_ADAPTERS_DIR:-../agent-adapters}
+        agent-chat: ${AGENT_CHAT_DIR:-../agent-chat}
+    ports:
+      - "${PORT_HOST:-3000}:3000"
+    environment:
+      - ANTHROPIC_API_KEY
+    volumes:
+      - ./docker/environments/${C4S_ENV:-default}/runtime/local/data:/data
+      - ./docker/environments/${C4S_ENV:-default}/runtime/local/workspace:/workspace
