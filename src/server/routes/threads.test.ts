@@ -7,6 +7,7 @@ import request from 'supertest';
 import { threadsRouter } from './threads.js';
 import type { AgentTurnDeps } from './agent-turn.js';
 import type { ChatThreadMeta } from '../../shared/entities.js';
+import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 // 0.1.107: threads.ts's `POST /:id/ask` now branches on model adaptivity (mirrors
 // the client's `thinkingToConfig`) instead of only setting `claude_effort`.
@@ -198,5 +199,37 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });
+  });
+});
+
+describe('POST /:id/ask — headless-only turn timeout (0-1-110-to-next)', () => {
+  let dir: string;
+  let thread: ChatThreadMeta;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-threads-route-'));
+    thread = makeThread();
+    runAgentTurnMock.mockClear();
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('passes ASK_TURN_TIMEOUT_MS into runAgentTurn — unlike interactive POST /api/chat, no human is present to keep a stuck turn alive', async () => {
+    const deps = {
+      chatService: {
+        getThreadMeta: (id: string) => (id === thread.id ? thread : null),
+        getInitialArchitectureConfig: () => null,
+      },
+      agentCredentialService: { getDecrypted: () => null },
+      activeAdapters: new Map(),
+      cwd: dir,
+    } as unknown as AgentTurnDeps;
+    const app = express().use(express.json()).use('/threads', threadsRouter(deps));
+
+    const res = await request(app).post(`/threads/${thread.id}/ask`).send({ message: 'hi' });
+
+    expect(res.status).toBe(200);
+    expect(runAgentTurnMock.mock.calls.at(-1)?.[1].timeoutMs).toBe(ASK_TURN_TIMEOUT_MS);
   });
 });

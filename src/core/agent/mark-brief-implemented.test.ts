@@ -117,6 +117,26 @@ describe('markBriefImplemented', () => {
     expect((err as AgentError).code).toBe('SERVER_NOT_RUNNING');
   });
 
+  it('does NOT report SERVER_NOT_RUNNING for a PATCH client-side timeout — the health-check already confirmed the server is up', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/config')) {
+          return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        }
+        const err = new Error('fetch failed');
+        (err as unknown as { cause: { code: string } }).cause = { code: 'UND_ERR_HEADERS_TIMEOUT' };
+        throw err;
+      }),
+    );
+
+    const err = await markBriefImplemented({ briefPath: 'x.md', project: projectDir, workspace: 'default' }).catch(
+      (e) => e,
+    );
+    expect(err).not.toBeInstanceOf(AgentError);
+    expect((err as Error).message).toBe('fetch failed');
+  });
+
   it('translates a 404 (generic NOT_FOUND envelope) into BRIEF_NOT_FOUND', async () => {
     stubFlow({
       status: 404,

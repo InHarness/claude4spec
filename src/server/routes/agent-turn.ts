@@ -188,6 +188,15 @@ export interface AgentTurnInput {
   onEvent: (event: TurnEvent) => void;
   /** Interaktywny kanal user-input. Brak = headless (np. `ask`). */
   onUserInput?: UserInputHandler;
+  /**
+   * Bounds this turn's `adapter.execute()` call so the documented `TIMEOUT`
+   * code is actually enforced/emitted, instead of the turn running unbounded.
+   * Caller-supplied, NOT defaulted here: only the headless `ask` route passes
+   * one (see `ASK_TURN_TIMEOUT_MS`, shared with the client-side run-turn fetch
+   * dispatcher in `run-agent.ts`) — interactive `POST /api/chat` turns can
+   * legitimately pause for a long time on `onUserInput` and must stay unbounded.
+   */
+  timeoutMs?: number;
 }
 
 export interface AgentTurnResult {
@@ -658,6 +667,7 @@ export async function runAgentTurn(
       architectureConfig: architectureConfigForExecute,
       planMode,
       onUserInput: input.onUserInput,
+      ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
       ...(streamingInput ? { streamingInput: true } : {}),
       // 0.1.90 hard layer: resolved, absolute scope handed to the native sandbox
       // every turn (hot-reload). Empty when scoping isn't requested ⇒ library no-op.

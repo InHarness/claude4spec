@@ -275,3 +275,25 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', (
     expect('disallowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
   });
 });
+
+describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
+  it('passes caller-supplied timeoutMs into adapter.execute() so AdapterTimeoutError/TIMEOUT is reachable', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    const input = makeInput();
+    input.timeoutMs = 15 * 60_000;
+
+    await runAgentTurn(deps, input);
+
+    expect(hoisted.lastExecute?.timeoutMs).toBe(15 * 60_000);
+  });
+
+  it('leaves timeoutMs unset when the caller omits it (interactive chat must stay unbounded)', async () => {
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect('timeoutMs' in (hoisted.lastExecute ?? {})).toBe(false);
+  });
+});

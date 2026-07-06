@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { Agent, type Dispatcher } from 'undici';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/resolve.js';
+import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 /**
  * `runAgent(...)` — single source of truth for the headless turn flow.
@@ -253,11 +255,13 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
   }
 
   // --- run-turn (generyczny po context_type) ------------------------------
-  const result = await postJson(`${apiBase}/threads/${encodeURIComponent(threadId)}/ask`, {
-    message,
-    model,
-    effort,
-  });
+  // Long peer turns are legitimate — this is the one postJson call that must
+  // not be bounded by undici's default 300s headers/body timeout.
+  const result = await postJson(
+    `${apiBase}/threads/${encodeURIComponent(threadId)}/ask`,
+    { message, model, effort },
+    { dispatcher: runTurnDispatcher },
+  );
   const answer = typeof result.answer === 'string' ? result.answer : '';
   const outThreadId = typeof result.threadId === 'string' ? result.threadId : threadId;
   const out: AgentResult = { threadId: outThreadId, answer };
@@ -355,17 +359,44 @@ function isConfigShape(body: unknown): boolean {
   );
 }
 
+/**
+ * Node's global `fetch` (undici) defaults to a 300s `headersTimeout`/`bodyTimeout`
+ * — too short for the run-turn call (`POST /api/threads/:id/ask`), which blocks
+ * for the entire duration of a peer's agent turn and can legitimately run for
+ * many minutes. `AbortSignal.timeout()` can only *shorten* a request, not lift
+ * undici's default cap, so a dedicated dispatcher is required for that one call.
+ */
+const runTurnDispatcher = new Agent({
+  headersTimeout: ASK_TURN_TIMEOUT_MS,
+  bodyTimeout: ASK_TURN_TIMEOUT_MS,
+});
+
+/** Distinguishes genuine connection-refused from other fetch failures (e.g. a
+ *  client-side timeout) — only the former legitimately means "not running". */
+function throwOnFetchFailure(err: unknown, url: string): never {
+  const code = (err as { cause?: { code?: string } } | undefined)?.cause?.code;
+  if (code === 'ECONNREFUSED') {
+    throw new AgentError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
+  }
+  throw err;
+}
+
 /** POST JSON; przy nie-2xx propaguje `{ error: { code, message } }` endpointu. */
-async function postJson(url: string, payload: unknown): Promise<Record<string, unknown>> {
+async function postJson(
+  url: string,
+  payload: unknown,
+  opts?: { dispatcher?: Dispatcher },
+): Promise<Record<string, unknown>> {
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
+      ...(opts?.dispatcher ? { dispatcher: opts.dispatcher } : {}),
     });
-  } catch {
-    throw new AgentError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
+  } catch (err) {
+    throwOnFetchFailure(err, url);
   }
   let body: Record<string, unknown> = {};
   try {
@@ -393,8 +424,8 @@ export async function patchJson(url: string, payload: unknown): Promise<Record<s
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(payload),
     });
-  } catch {
-    throw new AgentError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
+  } catch (err) {
+    throwOnFetchFailure(err, url);
   }
   let body: Record<string, unknown> = {};
   try {

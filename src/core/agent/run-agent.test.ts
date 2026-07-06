@@ -96,6 +96,54 @@ describe('runAgent healthCheck — build-failure surfacing', () => {
   });
 });
 
+describe('runAgent — run-turn fetch failure classification', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('surfaces SERVER_NOT_RUNNING when the run-turn call is refused (ECONNREFUSED)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/config')) {
+          return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        }
+        if (url.endsWith('/threads')) {
+          return { status: 201, ok: true, json: async () => ({ data: { id: 'T1' } }) };
+        }
+        // POST /threads/T1/ask — genuine connection refusal.
+        const err = new Error('fetch failed');
+        (err as unknown as { cause: { code: string } }).cause = { code: 'ECONNREFUSED' };
+        throw err;
+      }),
+    );
+
+    const err = await runAgent({ ...BASE, message: 'ping', contextType: 'ask' }).catch((e) => e);
+    expect(err).toBeInstanceOf(AgentError);
+    expect((err as AgentError).code).toBe('SERVER_NOT_RUNNING');
+  });
+
+  it('does NOT report SERVER_NOT_RUNNING for a run-turn client-side timeout — the turn may have completed', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.endsWith('/config')) {
+          return { status: 200, ok: true, json: async () => VALID_CONFIG };
+        }
+        if (url.endsWith('/threads')) {
+          return { status: 201, ok: true, json: async () => ({ data: { id: 'T1' } }) };
+        }
+        // POST /threads/T1/ask — undici headers/body timeout, NOT a dead server.
+        const err = new Error('fetch failed');
+        (err as unknown as { cause: { code: string } }).cause = { code: 'UND_ERR_HEADERS_TIMEOUT' };
+        throw err;
+      }),
+    );
+
+    const err = await runAgent({ ...BASE, message: 'ping', contextType: 'ask' }).catch((e) => e);
+    expect(err).not.toBeInstanceOf(AgentError);
+    expect((err as Error).message).toBe('fetch failed');
+  });
+});
+
 describe('runAgent — input validation', () => {
   afterEach(() => vi.unstubAllGlobals());
 
