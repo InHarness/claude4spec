@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
-import { findResumeViolations } from '@inharness-ai/agent-adapters';
+import { findResumeViolations, resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import {
   runAgentTurn,
@@ -134,7 +134,21 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         if (!(['low', 'medium', 'high'] as readonly string[]).includes(effortArg)) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'invalid effort' } });
         }
+        // Server-side mirror of `thinkingToConfig` (src/client/state/chat.ts), with one
+        // deliberate divergence: `claude_effort` is ALWAYS set (both branches), not omitted
+        // for non-adaptive models — the claude-code adapter forwards `claude_effort` to
+        // `Options.effort` unconditionally regardless of thinking mode, so keeping it here
+        // for non-adaptive models is harmless and intentional, not a bug to "fix" later.
         architectureConfig.claude_effort = effortArg;
+        const resolvedModel = resolveModel('claude-code', model);
+        if (ADAPTIVE_THINKING_ONLY.has(resolvedModel)) {
+          architectureConfig.claude_thinking = 'adaptive';
+        } else {
+          architectureConfig.claude_thinking = 'enabled';
+          architectureConfig.claude_thinking_budget = (
+            { low: 2048, medium: 8192, high: 24000 } as const
+          )[effortArg as 'low' | 'medium' | 'high'];
+        }
       }
       // M05 0.1.62: own ANTHROPIC API key — same injection as `POST /api/chat`. When set,
       // decrypt and inject per-turn into `custom_env`; the SDK prefers it over the local

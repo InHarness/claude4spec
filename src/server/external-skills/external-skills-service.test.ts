@@ -44,7 +44,11 @@ describe('renderers', () => {
       expect(desc, `${name} description verb`).toMatch(/^(Read|Implement|Detect)/);
       // the old walk-up/symlink workaround is gone, replaced by PROJECT_SLUG_NOT_FOUND guidance
       expect(body, name).not.toMatch(/walk up the directory tree/);
-      expect(body, name).toContain('PROJECT_SLUG_NOT_FOUND');
+      // c4s-brief-implementer's spec-source page dropped its `## Errors` section (0.1.107 drift
+      // fix); spec-reader and refactor still carry theirs.
+      if (name !== 'c4s-brief-implementer') {
+        expect(body, name).toContain('PROJECT_SLUG_NOT_FOUND');
+      }
       // 0.1.106: strictly CLI-only — no filesystem-fallback reads/writes, no MCP setup block.
       expect(body, name).not.toMatch(/[Ff]allback \(no/);
       expect(body, name).not.toMatch(/yq -i/);
