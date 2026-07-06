@@ -212,3 +212,64 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90)', () => {
     expect(outside).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /var/spec-pages, /extra/lib');
   });
 });
+
+// 0.1.110: <delegation_policy> advertises the spec-explore subagent inside <claude4spec_identity>.
+describe('buildSystemPrompt — <delegation_policy> (0.1.110)', () => {
+  it('renders between </entity_change_protocol> and <tags> in the chat frame, mentioning spec-explore', () => {
+    const out = build({ contextType: 'chat' });
+    const protocolEndIdx = out.indexOf('</entity_change_protocol>');
+    // Match the block's opening tag, not the `<delegation_policy/>` self-reference inside
+    // <entity_discovery>'s channels intro (which appears earlier in the identity block).
+    const delegationIdx = out.indexOf('<delegation_policy severity=');
+    const tagsIdx = out.indexOf('<tags>');
+    expect(protocolEndIdx).toBeGreaterThanOrEqual(0);
+    expect(delegationIdx).toBeGreaterThan(protocolEndIdx);
+    expect(tagsIdx).toBeGreaterThan(delegationIdx);
+    expect(out).toContain('spec-explore');
+  });
+
+  it('never renders in the brief frame', () => {
+    const out = build({ contextType: 'brief', brief: null });
+    expect(out).not.toContain('<delegation_policy');
+  });
+});
+
+// 0.1.110: each of the 5 entity-embed forms is fully described exactly once, inside <entity_embeds>.
+describe('buildSystemPrompt — <entity_embeds> single-source regression (0.1.110)', () => {
+  it('describes each embed form exactly once', () => {
+    const out = build({ contextType: 'chat' });
+    const start = out.indexOf('<entity_embeds>');
+    const end = out.indexOf('</entity_embeds>');
+    expect(start).toBeGreaterThanOrEqual(0);
+    const embedsBlock = out.slice(start, end);
+    const restOfPrompt = out.slice(0, start) + out.slice(end);
+
+    const formSignatures = [
+      'Inline chip inside a sentence',
+      'Block card with the entity',
+      'Static block list of hand-picked',
+      'Dynamic block list filtered by tag',
+      'spans all entity types',
+    ];
+    for (const signature of formSignatures) {
+      expect(embedsBlock.split(signature).length - 1).toBe(1);
+      // The full description must not be duplicated elsewhere (e.g. <entity_linking_rule>, <tags>).
+      expect(restOfPrompt).not.toContain(signature);
+    }
+  });
+});
+
+// 0.1.110: the plan-tools read-only exemption sentence has exactly one source (<claude4spec_plan_mode>).
+describe('buildSystemPrompt — plan-tools exemption single-source regression (0.1.110)', () => {
+  it('appears exactly once when both plan_tools_usage and plan_mode are mounted', () => {
+    const out = build({ contextType: 'chat', planToolsAvailable: true, planMode: true });
+    expect(out.split('EXEMPT').length - 1).toBe(1);
+  });
+
+  it('is absent from <plan_tools_usage> on its own (plan_mode not active)', () => {
+    const out = build({ contextType: 'chat', planToolsAvailable: true, planMode: false });
+    expect(out).toContain('<plan_tools_usage>');
+    expect(out).not.toContain('EXEMPT');
+    expect(out).not.toContain('NOT subject to plan_mode');
+  });
+});

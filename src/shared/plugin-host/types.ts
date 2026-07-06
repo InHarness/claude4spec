@@ -70,7 +70,12 @@ export interface SystemPromptContribution {
   /** MCP tools listing line, e.g. "endpoint-tools: create_endpoint, ...". */
   mcpToolsLine: string;
 
-  /** Optional domain-specific paragraph injected after the core narrative. */
+  /**
+   * Optional domain-specific paragraph injected after the core narrative.
+   * Budget: 2-3 sentences max, operational knowledge only (what the entity IS,
+   * how it's referenced/embedded) — no implementation details (storage layout,
+   * migrations, internal validation mechanics).
+   */
   narrativeBlock?: string;
 }
 
