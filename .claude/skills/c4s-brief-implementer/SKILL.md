@@ -76,11 +76,9 @@ cd ".worktrees/$brief_slug"
 
 Standard code flow in your target repository: read existing code, plan, edit, test. Stay focused on what the brief specifies. Commit your work on the `brief/<slug>` branch.
 
-### 5. Smoke-test locally
+### 5. Smoke-test in Docker
 
-Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Use the `/run` skill to start the app (it discovers this project's current launch command on its own); if it's unavailable, `npm run dev:default` on a free port is the known-good fallback today. Verify the brief's behaviour, then **leave the server running** — do not stop it. The user gets their own hands-on look at the same environment you just exercised, so report back: the URL, the port, the workspace/project name used, and (if you seeded one) which scratch project directory backs it. If the smoke test reveals drift, file a patch (step 6).
-
-**Alternative: Docker smoke-test** (matches a real registry build, useful when you want a clean-room check). From inside the worktree:
+Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Always smoke-test in Docker, never on the bare host: a host-level dev server binds fixed ports tied to `--workspace default`, so it collides the moment another worktree or session already has one running. Docker gives each worktree its own isolated, port-bumped environment instead. From inside the worktree:
 
 ```bash
 docker/setup-env.sh "$brief_slug"
@@ -88,7 +86,7 @@ C4S_ENV="$brief_slug" PORT_HOST=3000 docker compose up -d app-registry
 # bump PORT_HOST (e.g. 3001) if another worktree/brief already has one running
 ```
 
-Exercise the change at `http://localhost:$PORT_HOST/welcome`. Leave the container running (note the `-d`) and report the URL/port so the user can pick up testing where you left off — don't `docker compose down` unless the user asks you to tear it down. Use `app-local` instead of `app-registry` only if this brief also touches `agent-adapters`/`agent-chat` — see `DOCKER.md` (repo root) for details and env vars.
+Exercise the change at `http://localhost:$PORT_HOST/welcome`. Leave the container running (note the `-d`) and report back: the URL, the port, and (if you seeded one) which scratch project directory backs it — the user gets their own hands-on look at the same environment you just exercised. Don't `docker compose down` unless the user asks you to tear it down. Use `app-local` instead of `app-registry` only if this brief also touches `agent-adapters`/`agent-chat` — see `DOCKER.md` (repo root) for details and env vars. If the smoke test reveals drift, file a patch (step 6).
 
 ### 6. Feedback loop (patches)
 
@@ -129,8 +127,8 @@ gh pr create --draft --base main \
 Only do this once the user explicitly tells you the PR is merged (or asks you to merge it yourself) — never proactively. Then, from the **primary repo checkout** (not the worktree, since it has the target branch, e.g. `main`, checked out and `git worktree remove`/branch deletion must run from outside the worktree being removed):
 
 ```bash
-# stop whatever you left running for this brief's smoke-test (step 5) first —
-# the dev server process, or `docker compose down` if you went the Docker route
+# stop the Docker environment you left running for this brief's smoke-test (step 5) first:
+# C4S_ENV="$brief_slug" docker compose down
 git fetch origin
 git checkout main && git pull origin main   # or the repo's actual base branch
 git worktree remove ".worktrees/$brief_slug"
@@ -140,7 +138,7 @@ git push origin --delete "brief/$brief_slug" 2>/dev/null    # remote, if `gh pr 
 
 If you merge the PR yourself (`gh pr merge --draft` PRs need `gh pr ready` first), pass `--delete-branch` — but still verify locally afterward: `gh pr merge` run from inside the worktree can fail the local branch-delete/checkout step (base branch is checked out elsewhere), so don't assume it fully succeeded without checking (`git ls-remote --heads origin "brief/$brief_slug"` should come back empty).
 
-Also check for stray Docker state tied to this brief (only relevant if you used the Docker smoke-test path in step 5): `docker ps -a --filter "name=$brief_slug"` — tear down anything found.
+Also check for stray Docker state tied to this brief: `docker ps -a --filter "name=$brief_slug"` — tear down anything found.
 
 ### 9. Mark brief as implemented
 
