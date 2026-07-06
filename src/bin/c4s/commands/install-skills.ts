@@ -4,7 +4,6 @@ import { optionalString, optionalStringList } from '../args.js';
 import { resolveWorkspaceProjectOrThrow } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { readConfig } from '../../../server/config.js';
 import {
   ALL_SKILL_SLUGS,
   buildExternalSkillContext,
@@ -28,12 +27,11 @@ import {
  *   c4s install-skills --project my-spec-project --dir ./tools/skills
  */
 export async function runInstallSkills(args: ParsedArgs): Promise<void> {
-  const { projectDir, project, workspaceName } = resolveWorkspaceProjectOrThrow({
+  const { project, workspaceName } = resolveWorkspaceProjectOrThrow({
     project: args.project,
     workspace: args.workspace,
   });
-  const config = readConfig(projectDir);
-  const ctx = buildExternalSkillContext(projectDir, project, workspaceName, config);
+  const ctx = buildExternalSkillContext(project, workspaceName);
 
   const skillsRaw = optionalStringList(args, 'skills');
   let selection: SkillSlug[] | undefined;

@@ -1,11 +1,12 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString } from '../args.js';
+import { optionalString, optionalStringList } from '../args.js';
 import { CliError, type CliErrorCode } from '../errors.js';
 import {
   AgentError,
   runAgent,
   type AgentContextType,
   type AgentMessage,
+  type AgentParams,
 } from '../../../core/agent/run-agent.js';
 
 /**
@@ -18,7 +19,10 @@ import {
  *
  *   c4s agent "<msg>" --ct chat
  *   c4s agent "<msg>" --ct ask                 # read-only peer consult
- *   c4s agent "<msg>" --ct brief --brief <path>
+ *   c4s agent "<msg>" --ct brief --brief <path>                     # attach-mode
+ *   c4s agent "<msg>" --ct brief --source release-diff --from <r> --to <r>  # create-mode
+ *   c4s agent "<msg>" --ct brief --source initial --to <r>          # create-mode
+ *   c4s agent "<msg>" --ct brief --source analysis [--from <r>]     # create-mode
  *   c4s agent "<msg>" --thread <id>            # continue (—ct not needed)
  *
  * The terse peer-consult shorthand lives in `ask.ts` (hardcodes --ct=ask,
@@ -38,9 +42,24 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const project = args.project;
   const workspace = args.workspace;
 
+  // 0.1.104 create-mode flags (only meaningful for --ct brief).
+  const sourceFlag = optionalString(args, 'source');
+  const fromFlag = optionalString(args, 'from');
+  const toFlag = optionalString(args, 'to');
+  const rootsFlag = optionalStringList(args, 'roots');
+  const suffixFlag = optionalString(args, 'suffix');
+  const hasCreateFlags =
+    sourceFlag !== undefined ||
+    fromFlag !== undefined ||
+    toFlag !== undefined ||
+    rootsFlag !== undefined ||
+    suffixFlag !== undefined;
+
   if (project && server) {
     process.stderr.write('warning: both --project and --server given; --server wins, --project ignored\n');
   }
+
+  let briefCreate: AgentParams['briefCreate'];
 
   if (!threadId) {
     // Early CLI-level validation (livelier hints); runAgent re-validates at the
@@ -57,8 +76,73 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
         'c4s agent cannot create a patch thread; pass --thread <id> to continue one',
       );
     }
-    if (ct === 'brief' && !briefPath) {
-      throw new CliError('INVALID_ARGS', '--ct brief requires --brief <path>');
+    if (ct === 'brief') {
+      // --brief (attach-mode) XOR --source/--from/--to/--roots/--suffix (create-mode).
+      if (briefPath && hasCreateFlags) {
+        throw new CliError(
+          'INVALID_ARGS',
+          '--ct brief: --brief (attach) and --source/--from/--to/--roots/--suffix (create) are mutually exclusive',
+        );
+      }
+      if (!briefPath && !hasCreateFlags) {
+        throw new CliError(
+          'INVALID_ARGS',
+          '--ct brief requires either --brief <path> (attach) or --source <release-diff|initial|analysis> (create)',
+        );
+      }
+      if (hasCreateFlags) {
+        const cliSource = sourceFlag ?? 'release-diff';
+        if (cliSource === 'release-diff') {
+          if (!fromFlag || !toFlag) {
+            throw new CliError(
+              'INVALID_ARGS',
+              "--source release-diff requires both --from <release> and --to <release>",
+            );
+          }
+          briefCreate = {
+            source: 'release-diff',
+            fromReleaseName: fromFlag,
+            toReleaseName: toFlag,
+            roots: rootsFlag,
+            suffix: suffixFlag,
+          };
+        } else if (cliSource === 'initial') {
+          if (!toFlag) {
+            throw new CliError('INVALID_ARGS', '--source initial requires --to <release>');
+          }
+          if (fromFlag) {
+            throw new CliError(
+              'INVALID_ARGS',
+              '--source initial does not accept --from (fromReleaseName is always null)',
+            );
+          }
+          briefCreate = {
+            source: 'release-diff',
+            fromReleaseName: null,
+            toReleaseName: toFlag,
+            roots: rootsFlag,
+            suffix: suffixFlag,
+          };
+        } else if (cliSource === 'analysis') {
+          if (rootsFlag) {
+            throw new CliError('INVALID_ARGS', "--source analysis does not accept --roots");
+          }
+          if (toFlag) {
+            throw new CliError(
+              'INVALID_ARGS',
+              '--source analysis does not accept --to (toReleaseName is always null)',
+            );
+          }
+          briefCreate = {
+            source: 'analysis',
+            fromReleaseName: fromFlag ?? null,
+            toReleaseName: null,
+            suffix: suffixFlag,
+          };
+        } else {
+          throw new CliError('INVALID_ARGS', '--source must be release-diff|initial|analysis');
+        }
+      }
     }
   }
 
@@ -71,7 +155,8 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       server,
       contextType: ct as AgentContextType | undefined,
       threadId,
-      briefPath,
+      briefPath: briefCreate ? undefined : briefPath,
+      briefCreate,
       effort: effort as 'low' | 'medium' | 'high' | undefined,
       output: 'full',
     });

@@ -2,7 +2,7 @@ import type { ExternalSkillContext } from './types.js';
 
 export const SPEC_READER_FRONTMATTER = `---
 name: c4s-spec-reader
-description: Read claude4spec specification entities (endpoints, DTOs, tables, AC, UI views) referenced from markdown pages through XML tags like <inline_mention/>, <single_element/>, <tagged_list/>. Use when working in a repository whose pages/ contain these tags or whose .claude4spec/ directory exists. Resolves entity slugs to full data via c4s CLI or c4s-reader MCP server.
+description: Read claude4spec specification entities (endpoints, DTOs, tables, AC, UI views) referenced from markdown pages through XML tags like <inline_mention/>, <single_element/>, <tagged_list/>. Use when working in a repository whose pages/ contain these tags or whose .claude4spec/ directory exists. Resolves entity slugs to full data via the c4s CLI.
 ---
 `;
 
@@ -17,6 +17,10 @@ This skill is bound to one claude4spec specification project — every \`c4s\`
 command below carries its identity (\`${identity}\`), so it works from any cwd,
 including a foreign code repo whose pages reference this spec's entities. Do
 NOT \`cd\` into the spec repo; the identity is baked in, not derived from cwd.
+
+**CLI-only — no filesystem fallback.** Every command below goes through
+\`c4s\`. If \`c4s\` isn't installed, STOP and ask the user to install it —
+never read the spec repo's pages or entity files directly.
 
 ## Resolving a tag
 
@@ -37,9 +41,6 @@ XML tag names 1:1 — append \`${identity}\` to every command below.
 c4s resolve some-page.md ${identity}                # writes markdown with tags expanded inline
 c4s resolve some-page.md --format json ${identity}   # writes { content, resolved: [...] }
 \`\`\`
-
-Fallback (no \`c4s\`, or \`c4s\` unavailable): read the spec's pages directly under
-\`'${ctx.pagesDirAbs ?? '<pages-dir-abs>'}'\` (absolute — works from any cwd).
 
 ## Discovery
 
@@ -65,12 +66,6 @@ c4s ask "<question>" --ct chat ${identity}
 
 Unlike the read-only commands above, \`c4s ask\` requires a running
 \`npx @inharness-ai/claude4spec\` server (it delegates the turn to the server's agent).
-
-## Editor MCP config
-
-Point your editor's MCP config at this spec's generated server config —
-\`'${ctx.mcpJsonAbs}'\` (absolute; this is a file in the **spec repo**, not one you
-add to the code repo this skill was copied into).
 
 ## Errors
 

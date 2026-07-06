@@ -1,7 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { resolveDirAbs, type Config } from '../config.js';
-import { mcpJsonPath } from '../mcp/ensure-mcp-json.js';
 import type { ProjectRecord } from '../workspace/types.js';
 import type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } from './types.js';
 import {
@@ -20,25 +18,15 @@ import {
 export type { ExternalSkillContext, ExternalSkillSummary, FileSet, SkillSlug } from './types.js';
 
 /**
- * 0.1.103 M22 — assembles the injected identity + abs-path fallbacks the
- * renderers below bake into each generated SKILL.md. Must be called AFTER
- * `registry.registerProject(...)` (the `project.name` — reused as the
- * "slug" identity — only exists once registered).
+ * 0.1.103 M22 — assembles the injected identity the renderers below bake into
+ * each generated SKILL.md. Must be called AFTER `registry.registerProject(...)`
+ * (the `project.name` — reused as the "slug" identity — only exists once
+ * registered).
  */
-export function buildExternalSkillContext(
-  cwd: string,
-  project: ProjectRecord,
-  workspaceName: string,
-  config: Config,
-): ExternalSkillContext {
-  const pagesRoot = config.roots.find((r) => r.id === 'pages');
+export function buildExternalSkillContext(project: ProjectRecord, workspaceName: string): ExternalSkillContext {
   return {
     slug: project.name,
     workspace: workspaceName,
-    briefsDirAbs: resolveDirAbs(cwd, config.briefsDir, 'briefsDir'),
-    patchesDirAbs: resolveDirAbs(cwd, config.patchesDir, 'patchesDir'),
-    pagesDirAbs: pagesRoot ? path.resolve(cwd, pagesRoot.dir) : undefined,
-    mcpJsonAbs: mcpJsonPath(cwd),
   };
 }
 

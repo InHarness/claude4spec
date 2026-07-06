@@ -13,7 +13,8 @@ import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/res
  *   await runAgent({ message: '...', contextType: 'chat' })
  *   await runAgent({ message: '...', contextType: 'ask' })          // read-only peer consult
  *   await runAgent({ message: '...', server: 'http://other:4501', threadId: '...' })
- *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })
+ *   await runAgent({ message: '...', contextType: 'brief', briefPath: '...' })       // attach-mode
+ *   await runAgent({ message: '...', contextType: 'brief', briefCreate: {...} })    // create-mode (0.1.104)
  */
 
 export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
@@ -36,8 +37,23 @@ export interface AgentParams {
   contextType?: AgentContextType;
   /** Kontynuacja istniejacego watku u peera; pomija create-thread. */
   threadId?: string;
-  /** Wymagane dla `contextType='brief'` (gdy brak `threadId`). */
+  /** Attach-mode dla `contextType='brief'` — otwiera watek na istniejacym briefie. Mutex z `briefCreate`. */
   briefPath?: string;
+  /**
+   * 0.1.104 create-mode dla `contextType='brief'` — mintuje nowy brief przez
+   * `POST /api/briefs` (plik + initial thread), potem run-turn jak zwykle.
+   * Mutex z `briefPath`. Dokladnie jedno z (`briefPath`, `briefCreate`) wymagane
+   * gdy `contextType='brief'` i brak `threadId`.
+   */
+  briefCreate?: {
+    source: 'release-diff' | 'analysis';
+    /** `null` = initial brief (no previous release). */
+    fromReleaseName: string | null;
+    /** `null` = analysis brief (state relative to HEAD); required unless `source='analysis'`. */
+    toReleaseName: string | null;
+    roots?: string[];
+    suffix?: string;
+  };
   /** Model tury; domyslnie `'opus-4.8'` (rozwiazywany tutaj). */
   model?: string;
   /** Poziom reasoning tury; domyslnie `'medium'` (rozwiazywany tutaj). */
@@ -84,7 +100,14 @@ export type AgentErrorCode =
   | 'AGENT_ERROR'
   | 'TIMEOUT'
   | 'ABORTED'
-  | 'INVALID_ARGS';
+  | 'INVALID_ARGS'
+  // 0.1.104 create-mode (`POST /api/briefs`) error propagation.
+  | 'VALIDATION'
+  | 'BRIEF_SAME_RELEASE'
+  | 'RELEASE_NOT_FOUND'
+  // 0.1.106 `c4s mark-brief-implemented` (`PATCH /api/briefs/:path/frontmatter`).
+  | 'BRIEF_NOT_FOUND'
+  | 'BRIEF_FRONTMATTER_IMMUTABLE';
 
 export class AgentError extends Error {
   constructor(public code: AgentErrorCode, message: string, public hint?: string) {
@@ -93,19 +116,21 @@ export class AgentError extends Error {
   }
 }
 
-export async function runAgent(params: AgentParams): Promise<AgentResult> {
-  const message = params.message;
-  if (!message || !message.trim()) {
-    throw new AgentError('INVALID_ARGS', 'message is required');
-  }
-  const model = params.model ?? DEFAULT_MODEL;
-  const effort = params.effort ?? DEFAULT_EFFORT;
-  const output: 'final' | 'full' = params.output ?? 'final';
-
-  // --- discovery: adres serwera + project-id ------------------------------
-  // M31: discovery przez rejestr workspace'ow (`defaultPort`), nie przez
-  // config.json (port wyprowadzil sie z configu w v3). Kazdy URL dostaje
-  // prefiks `/api/projects/<id>` — peer servuje N projektow.
+/**
+ * Discovery: resuwa `baseUrl` + `projectId` z `--server`/`--project`/`--workspace`.
+ * M31: discovery przez rejestr workspace'ow (`defaultPort`), nie przez
+ * config.json (port wyprowadzil sie z configu w v3). Kazdy URL dostaje
+ * prefiks `/api/projects/<id>` — peer servuje N projektow.
+ *
+ * Wyodrebnione z `runAgent` (0.1.106) tak, by `c4s mark-brief-implemented`
+ * (ktore nie odpala tury agenta, tylko pojedynczy PATCH) mogl reuzyc dokladnie
+ * to samo resolve+health-check bez duplikowania logiki.
+ */
+export async function resolveServer(params: {
+  project?: string;
+  workspace?: string;
+  server?: string;
+}): Promise<{ baseUrl: string; apiBase: string; projectId: string }> {
   let baseUrl: string;
   let projectId: string;
   if (params.server) {
@@ -149,8 +174,24 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
     projectId = resolved.projectId;
   }
   const apiBase = `${baseUrl}/api/projects/${projectId}`;
+  return { baseUrl, apiBase, projectId };
+}
 
-  // --- health-check tozsamosci --------------------------------------------
+export async function runAgent(params: AgentParams): Promise<AgentResult> {
+  const message = params.message;
+  if (!message || !message.trim()) {
+    throw new AgentError('INVALID_ARGS', 'message is required');
+  }
+  const model = params.model ?? DEFAULT_MODEL;
+  const effort = params.effort ?? DEFAULT_EFFORT;
+  const output: 'final' | 'full' = params.output ?? 'final';
+
+  // --- discovery + health-check tozsamosci --------------------------------
+  const { baseUrl, apiBase } = await resolveServer({
+    project: params.project,
+    workspace: params.workspace,
+    server: params.server,
+  });
   await healthCheck(baseUrl, apiBase);
 
   // --- create-thread (context-specific) — pomijany dla threadId ----------
@@ -173,12 +214,32 @@ export async function runAgent(params: AgentParams): Promise<AgentResult> {
       );
     }
     if (ct === 'brief') {
-      if (!params.briefPath) {
-        throw new AgentError('INVALID_ARGS', "contextType='brief' requires briefPath");
+      if (params.briefPath && params.briefCreate) {
+        throw new AgentError(
+          'INVALID_ARGS',
+          "contextType='brief' accepts briefPath (attach) or briefCreate (create), not both",
+        );
       }
-      const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
-      const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
-      threadId = pickThreadId(created);
+      if (params.briefCreate) {
+        // 0.1.104 create-mode: mint a new brief (file + initial thread) in one call.
+        const created = await postJson(`${apiBase}/briefs`, {
+          source: params.briefCreate.source,
+          fromReleaseName: params.briefCreate.fromReleaseName,
+          toReleaseName: params.briefCreate.toReleaseName,
+          roots: params.briefCreate.roots,
+          suffix: params.briefCreate.suffix,
+        });
+        threadId = pickThreadId(created);
+      } else if (params.briefPath) {
+        const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
+        const created = await postJson(`${apiBase}/briefs/${encoded}/threads`, {});
+        threadId = pickThreadId(created);
+      } else {
+        throw new AgentError(
+          'INVALID_ARGS',
+          "contextType='brief' requires briefPath (attach) or briefCreate (create)",
+        );
+      }
     } else {
       // 'chat' + 'ask' share the generic create-thread route; the server
       // validates `context_type` (only 'chat'/'ask' accepted on this path).
@@ -219,7 +280,7 @@ function projectIdForPath(project: string): string {
  *   inny nie-2xx z koperta c4s    → kod z koperty (np. PROJECT_BUILD_FAILED)
  *   200 config                    → OK
  */
-async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
+export async function healthCheck(baseUrl: string, apiBase: string): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`${apiBase}/config`);
@@ -316,9 +377,39 @@ async function postJson(url: string, payload: unknown): Promise<Record<string, u
   return (body.data as Record<string, unknown>) ?? body;
 }
 
+/** PATCH JSON; przy nie-2xx propaguje `{ error: { code, message } }` endpointu — mirror of `postJson`. */
+export async function patchJson(url: string, payload: unknown): Promise<Record<string, unknown>> {
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new AgentError('SERVER_NOT_RUNNING', `request to ${url} failed (connection refused)`);
+  }
+  let body: Record<string, unknown> = {};
+  try {
+    body = (await res.json()) as Record<string, unknown>;
+  } catch {
+    /* puste/nie-JSON body — obsluzone nizej przez !res.ok */
+  }
+  if (!res.ok) {
+    const err = (body.error ?? {}) as { code?: string; message?: string; hint?: string };
+    throw new AgentError(
+      (err.code as AgentErrorCode) ?? 'AGENT_ERROR',
+      err.message ?? `request to ${url} failed with HTTP ${res.status}`,
+      err.hint,
+    );
+  }
+  return (body.data as Record<string, unknown>) ?? body;
+}
+
 function pickThreadId(created: Record<string, unknown>): string {
-  // `POST /api/threads` → `{ id }`; `POST /api/briefs/.../threads` → `{ threadId }`.
-  const id = created.threadId ?? created.id;
+  // `POST /api/threads` → `{ id }`; `POST /api/briefs/.../threads` → `{ threadId }`;
+  // `POST /api/briefs` (create-mode) → `{ briefPath, initialThreadId }`.
+  const id = created.threadId ?? created.id ?? created.initialThreadId;
   if (typeof id !== 'string' || !id) {
     throw new AgentError('AGENT_ERROR', 'create-thread response had no thread id');
   }

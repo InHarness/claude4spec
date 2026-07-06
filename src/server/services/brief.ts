@@ -172,18 +172,27 @@ export class BriefService {
    * thread). Callers pair this with {@link createThreadForBrief}. `content`
    * carries a pre-synthesized body for analysis briefs; else a generated stub.
    *
-   * Validation matrix (from, to):
-   *   - (null, set)  → initial brief
-   *   - (set,  set)  → release-diff brief
-   *   - (set,  null) → analysis brief (state relative to HEAD)
-   *   - (null, null) → 400 VALIDATION
+   * Validation matrix (source, from, to):
+   *   - (release-diff, null, set) → initial brief
+   *   - (release-diff, set,  set) → release-diff brief
+   *   - (analysis,     set,  null) → analysis brief (state relative to HEAD)
+   *   - (*, null, null) → 400 VALIDATION
+   *   - (release-diff, *, null) → 400 VALIDATION (only analysis may omit `to`)
+   *   - (analysis, *, set) → 400 VALIDATION (analysis always has `to_release = null`)
+   * `analysis` briefs missing `fromReleaseName` default to the latest release
+   * (mirrors `TransagentDispatcher.createChild`'s own resolution).
    * When `to=null` (analysis) the BRIEF_SAME_RELEASE guard and the
    * `getRelease(toName)` existence check are skipped.
    */
-  async createBrief(opts: BriefCreateOpts): Promise<{ briefPath: string }> {
+  async createBrief(
+    opts: BriefCreateOpts,
+  ): Promise<{ briefPath: string; fromReleaseName: string | null; toReleaseName: string | null }> {
     const source: BriefSource = opts.source ?? 'release-diff';
-    const fromName = opts.fromReleaseName === null ? null : opts.fromReleaseName.trim();
+    let fromName = opts.fromReleaseName === null ? null : opts.fromReleaseName.trim();
     const toName = opts.toReleaseName === null ? null : opts.toReleaseName.trim();
+    if (source === 'analysis' && fromName === null) {
+      fromName = this.deps.releaseService.getLatestReleaseName();
+    }
     if (fromName === null && toName === null) {
       throw new DomainError('VALIDATION', 'at least one of fromReleaseName / toReleaseName is required');
     }
@@ -192,6 +201,18 @@ export class BriefService {
     }
     if (toName !== null && toName.length === 0) {
       throw new DomainError('VALIDATION', 'toReleaseName must be non-empty (or null for analysis brief)');
+    }
+    if (source === 'analysis' && toName !== null) {
+      throw new DomainError('VALIDATION', "toReleaseName must be null when source = 'analysis'");
+    }
+    if (source === 'release-diff' && toName === null) {
+      throw new DomainError('VALIDATION', "toReleaseName is required when source = 'release-diff'");
+    }
+    // 0.1.104 D4: roots is a dead field once `toReleaseName = null` (analysis).
+    // Enforced here (not just the HTTP route) so in-process callers like
+    // `TransagentDispatcher` can't bypass it.
+    if (source === 'analysis' && opts.roots && opts.roots.length > 0) {
+      throw new DomainError('VALIDATION', "roots is not allowed when source = 'analysis'");
     }
     // 0.1.69: analysis briefs (to=null) compare against HEAD — skip same-release
     // guard and the target-release existence check.
@@ -244,7 +265,7 @@ export class BriefService {
     // the new brief should appear in `/briefs` list right after POST returns).
     await this.deps.frontmatterIndexer.indexPage(BRIEF_ROOT_MARKER, briefPath);
 
-    return { briefPath };
+    return { briefPath, fromReleaseName: fromName, toReleaseName: toName };
   }
 
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {

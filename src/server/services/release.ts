@@ -180,6 +180,14 @@ export class ReleaseService {
     return rows.map((r) => this.toRelease(r));
   }
 
+  /** 0.1.104: name of the most recent release, or `null` if none exist yet. */
+  getLatestReleaseName(): string | null {
+    const row = this.db
+      .prepare(`SELECT name FROM spec_release ORDER BY created_at DESC, id DESC LIMIT 1`)
+      .get() as { name: string } | undefined;
+    return row?.name ?? null;
+  }
+
   getRelease(idOrName: number | string): ReleaseDetail {
     const row = this.findReleaseRow(idOrName);
     if (!row) throw new DomainError('NOT_FOUND', `release '${idOrName}' not found`);

@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import archiver from 'archiver';
-import { readConfig } from '../config.js';
 import {
   ALL_SKILL_SLUGS,
   buildExternalSkillContext,
@@ -15,7 +14,6 @@ import type { WorkspaceRecord } from '../workspace/types.js';
 import { errorHandler } from './errors.js';
 
 export interface ExternalSkillsRouterDeps {
-  cwd: string;
   registry: WorkspaceRegistry;
   workspace: WorkspaceRecord;
   projectId: string;
@@ -74,8 +72,7 @@ export function externalSkillsRouter(deps: ExternalSkillsRouterDeps): Router {
       if (!project) {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'project not registered' } });
       }
-      const config = readConfig(deps.cwd);
-      const ctx = buildExternalSkillContext(deps.cwd, project, deps.workspace.name, config);
+      const ctx = buildExternalSkillContext(project, deps.workspace.name);
       const files = buildExternalSkillsBundle(ctx, selection.length > 0 ? selection : undefined);
 
       res.setHeader('Content-Type', 'application/zip');

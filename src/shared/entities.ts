@@ -996,14 +996,18 @@ export interface BriefListItem {
 }
 
 export interface BriefCreateRequest {
+  /** 0.1.104: brief provenance. Defaults to 'release-diff' when absent. */
+  source?: BriefSource;
   /** `null` = initial brief (no previous release to compare against). */
-  fromReleaseName: string | null;
-  toReleaseName: string;
+  fromReleaseName?: string | null;
+  /** `null` = analysis brief (state relative to HEAD); required unless `source = 'analysis'`. */
+  toReleaseName?: string | null;
   additionalPrompt?: string;
   suffix?: string;
   /**
    * 0.1.96: brief scope — releasable root ids to cover. Omitted/empty =
-   * whole-release scope (all releasable roots).
+   * whole-release scope (all releasable roots). Not allowed when
+   * `source = 'analysis'` (dead field once `toReleaseName = null`).
    */
   roots?: string[];
 }

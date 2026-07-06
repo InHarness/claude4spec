@@ -15,7 +15,6 @@ import {
 } from './external-skills-service.js';
 import type { ExternalSkillContext } from './types.js';
 import type { ProjectRecord } from '../workspace/types.js';
-import type { Config } from '../config.js';
 
 const SKILL_DIRS = [
   'c4s-spec-reader',
@@ -27,14 +26,10 @@ const SKILL_DIRS = [
 const FIXTURE_CTX: ExternalSkillContext = {
   slug: 'my-spec-project',
   workspace: 'default',
-  briefsDirAbs: '/abs/my-spec-project/.claude4spec/briefs',
-  patchesDirAbs: '/abs/my-spec-project/.claude4spec/patches',
-  pagesDirAbs: '/abs/my-spec-project/pages',
-  mcpJsonAbs: '/abs/my-spec-project/.claude4spec/mcp.json',
 };
 
 describe('renderers', () => {
-  it('bake in the injected --project <slug> --workspace <name> identity and abs-path fallbacks', () => {
+  it('bake in the injected --project <slug> --workspace <name> identity, no filesystem fallback', () => {
     const outputs = {
       'c4s-spec-reader': renderSpecReaderSkill(FIXTURE_CTX),
       'c4s-brief-implementer': renderBriefImplementerSkill(FIXTURE_CTX),
@@ -50,11 +45,12 @@ describe('renderers', () => {
       // the old walk-up/symlink workaround is gone, replaced by PROJECT_SLUG_NOT_FOUND guidance
       expect(body, name).not.toMatch(/walk up the directory tree/);
       expect(body, name).toContain('PROJECT_SLUG_NOT_FOUND');
+      // 0.1.106: strictly CLI-only — no filesystem-fallback reads/writes, no MCP setup block.
+      expect(body, name).not.toMatch(/[Ff]allback \(no/);
+      expect(body, name).not.toMatch(/yq -i/);
+      expect(body, name).not.toContain('mcp.json');
     }
-    expect(outputs['c4s-brief-implementer']).toContain(FIXTURE_CTX.briefsDirAbs);
-    expect(outputs['c4s-brief-implementer']).toContain(FIXTURE_CTX.patchesDirAbs);
-    expect(outputs['c4s-spec-reader']).toContain(FIXTURE_CTX.mcpJsonAbs);
-    expect(outputs['c4s-refactor']).toContain(FIXTURE_CTX.pagesDirAbs);
+    expect(outputs['c4s-brief-implementer']).toContain('c4s mark-brief-implemented');
   });
 });
 
@@ -65,45 +61,10 @@ describe('buildExternalSkillContext', () => {
     name: 'my-spec-project',
     addedAt: '2026-01-01T00:00:00.000Z',
   };
-  const config: Config = {
-    $schemaVersion: 4,
-    name: 'my-spec-project',
-    roots: [
-      {
-        id: 'pages',
-        name: 'Pages',
-        dir: 'pages',
-        builtin: true,
-        releasable: true,
-        sectionIndexed: true,
-        referenceValidated: true,
-        linkTargets: [],
-        sidebar: 'accordion',
-        briefTarget: false,
-      },
-    ],
-    briefsDir: '.claude4spec/briefs',
-    patchesDir: '.claude4spec/patches',
-    entitiesDir: '.claude4spec/entities',
-    writingStyle: null,
-    language: null,
-    onboardingCompleted: true,
-  } as Config;
 
-  it('derives slug from ProjectRecord.name and resolves abs-path fallbacks', () => {
-    const ctx = buildExternalSkillContext('/abs/my-spec-project', project, 'default', config);
-    expect(ctx.slug).toBe('my-spec-project');
-    expect(ctx.workspace).toBe('default');
-    expect(ctx.briefsDirAbs).toBe(path.join('/abs/my-spec-project', '.claude4spec', 'briefs'));
-    expect(ctx.patchesDirAbs).toBe(path.join('/abs/my-spec-project', '.claude4spec', 'patches'));
-    expect(ctx.pagesDirAbs).toBe(path.join('/abs/my-spec-project', 'pages'));
-    expect(ctx.mcpJsonAbs).toBe(path.join('/abs/my-spec-project', '.claude4spec', 'mcp.json'));
-  });
-
-  it('pagesDirAbs is undefined when config has no builtin pages root', () => {
-    const noPages: Config = { ...config, roots: [] };
-    const ctx = buildExternalSkillContext('/abs/my-spec-project', project, 'default', noPages);
-    expect(ctx.pagesDirAbs).toBeUndefined();
+  it('derives the identity from ProjectRecord.name and the given workspace name', () => {
+    const ctx = buildExternalSkillContext(project, 'default');
+    expect(ctx).toEqual({ slug: 'my-spec-project', workspace: 'default' });
   });
 });
 

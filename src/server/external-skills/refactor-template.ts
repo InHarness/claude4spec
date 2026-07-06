@@ -58,9 +58,8 @@ c4s single_element --type endpoint --slug <x> ${identity}
 c4s resolve modules/<module>.md ${identity}               # expand a page's tags inline
 \`\`\`
 
-Manual fallback (when \`c4s\`/the server is unavailable): read markdown pages
-directly under \`'${ctx.pagesDirAbs ?? '<pages-dir-abs>'}'\` (absolute — works from
-any cwd).
+**CLI-only — no filesystem fallback.** If \`c4s\` isn't installed, STOP and ask
+the user to install it; never read the spec repo's pages directly.
 
 ## Process
 

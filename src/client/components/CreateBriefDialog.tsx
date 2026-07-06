@@ -7,12 +7,37 @@ import { useRoots } from '../hooks/useConfig.js';
 import { useChatStore } from '../state/chat.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { BriefScopeFields, type BriefScope } from './briefs/BriefScopeModal.js';
+import { projectKey } from '../state/persisted.js';
 
 /**
  * Sentinel value w `<select>` reprezentujacy "initial brief" (from_release = null).
  * HTML option value to string, wiec uzywamy markera; przy submit mapujemy na null.
  */
 const INITIAL_FROM_VALUE = '__INITIAL__';
+
+/**
+ * 0.1.104: last-used additional-prompt text, preloaded on modal open. Project-
+ * scoped via `projectKey` — claude4spec serves multiple projects from one
+ * host:port, and this dialog's own convention (see `state/persisted.ts`)
+ * suffixes every persisted key so values don't leak across projects.
+ */
+const LAST_ADDITIONAL_PROMPT_KEY = projectKey('c4s:briefs:last-additional-prompt');
+
+function loadLastAdditionalPrompt(): string {
+  try {
+    return localStorage.getItem(LAST_ADDITIONAL_PROMPT_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function persistLastAdditionalPrompt(value: string): void {
+  try {
+    localStorage.setItem(LAST_ADDITIONAL_PROMPT_KEY, value);
+  } catch {
+    /* quota/private-mode — best-effort only */
+  }
+}
 
 interface Props {
   /** Pre-populated `to_release` (the release the user opened). User picks the from. */
@@ -39,6 +64,7 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   // Pusty string = nic nie wybrane; INITIAL_FROM_VALUE = initial brief; inny string = nazwa release.
   const [fromReleaseName, setFromReleaseName] = useState('');
   const [suffix, setSuffix] = useState('');
+  const [additionalPrompt, setAdditionalPrompt] = useState(loadLastAdditionalPrompt);
   // M21/L13 brief scope — whole-release (default) vs a selected briefTarget-root subset.
   const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +87,7 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
     setError(null);
     const isInitial = fromReleaseName === INITIAL_FROM_VALUE;
     const apiFromName = isInitial ? null : fromReleaseName;
+    persistLastAdditionalPrompt(additionalPrompt);
     try {
       const result = await create.mutateAsync({
         fromReleaseName: apiFromName,
@@ -75,9 +102,11 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
       // więc nie ma race'a z handle.clear() jak przy requestChatPrefill. User
       // wybiera model w ModelSettingsPopover (mutowalny, bo wątek bez sesji),
       // ewentualnie dopisuje wytyczne, i sam wysyła pierwszą wiadomość.
-      const prompt = isInitial
+      const basePrompt = isInitial
         ? `Generate an initial brief describing the state of ${toReleaseName} (first release of the project — no predecessor to compare against).`
         : `Generate a brief for the changes ${fromReleaseName} → ${toReleaseName}.`;
+      const trimmedExtra = additionalPrompt.trim();
+      const prompt = trimmedExtra ? `${basePrompt}\n\n${trimmedExtra}` : basePrompt;
       setSeedPrompt(prompt);
       navigate({
         to: '/briefs/$path',
@@ -174,6 +203,23 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
                 background: 'var(--c-card)',
                 border: '1px solid var(--c-hair)',
                 color: 'var(--c-ink)',
+              }}
+            />
+          </label>
+
+          <label className="block">
+            <span style={{ color: 'var(--c-muted)' }}>Additional guidance (optional)</span>
+            <textarea
+              value={additionalPrompt}
+              onChange={(e) => setAdditionalPrompt(e.target.value)}
+              placeholder="e.g. focus on the auth module, keep it under 200 words"
+              rows={2}
+              className="mt-1 w-full rounded-md px-2 py-1.5 text-[12.5px]"
+              style={{
+                background: 'var(--c-card)',
+                border: '1px solid var(--c-hair)',
+                color: 'var(--c-ink)',
+                resize: 'vertical',
               }}
             />
           </label>

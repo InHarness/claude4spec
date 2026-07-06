@@ -23,6 +23,7 @@ import { runPlugins } from './c4s/commands/plugins.js';
 import { runListBriefs } from './c4s/commands/list-briefs.js';
 import { runReadBrief } from './c4s/commands/read-brief.js';
 import { runFilePatch } from './c4s/commands/file-patch.js';
+import { runMarkBriefImplemented } from './c4s/commands/mark-brief-implemented.js';
 import { runInstallSkills } from './c4s/commands/install-skills.js';
 
 const HELP = `Usage: c4s <command> [options]
@@ -68,6 +69,9 @@ Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NO
   read-brief <brief-path>           <brief-path> relative to briefsDir
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
              [--body-file <f>]      body from --body-file or stdin; writes to patchesDir
+  mark-brief-implemented <brief-path> --project <slug> --workspace <name>
+                                     server-delegating (unlike the three above) — wraps
+                                     PATCH /api/briefs/:path/frontmatter; requires a running server
 
 Skills (M22 — filesystem-only, no server, no sqlite; on-demand, no bootstrap side-effect):
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
@@ -137,6 +141,8 @@ async function main(): Promise<void> {
       return runReadBrief(args);
     case 'file-patch':
       return runFilePatch(args);
+    case 'mark-brief-implemented':
+      return runMarkBriefImplemented(args);
     case 'install-skills':
       return runInstallSkills(args);
     default:

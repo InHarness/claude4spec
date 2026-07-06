@@ -150,10 +150,10 @@ export class TransagentDispatcher {
     payload: Record<string, unknown>,
   ): Promise<ChatThread> {
     if (contextType === 'brief') {
+      // `createBrief` itself defaults a null `fromReleaseName` to the latest
+      // release for `source: 'analysis'` — no need to resolve it here too.
       const fromReleaseName =
-        typeof payload.fromReleaseName === 'string'
-          ? payload.fromReleaseName
-          : (this.deps.releaseService.listReleases()[0]?.name ?? null);
+        typeof payload.fromReleaseName === 'string' ? payload.fromReleaseName : null;
       const suffix = typeof payload.suffix === 'string' ? payload.suffix : undefined;
       const content = typeof payload.content === 'string' ? payload.content : undefined;
       const { briefPath } = await this.deps.briefService.createBrief({

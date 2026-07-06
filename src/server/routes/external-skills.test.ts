@@ -4,7 +4,6 @@ import os from 'node:os';
 import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
-import { configPath } from '../config.js';
 import { WorkspaceRegistry } from '../workspace/registry.js';
 import { externalSkillsRouter } from './external-skills.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
@@ -19,19 +18,6 @@ describe('externalSkillsRouter', () => {
   beforeEach(() => {
     registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-extskills-registry-'));
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-extskills-project-'));
-    const file = configPath(projectDir);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(
-      file,
-      JSON.stringify({
-        $schemaVersion: 4,
-        name: 'my-spec-project',
-        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, linkTargets: [], sidebar: 'accordion', briefTarget: false }],
-        briefsDir: '.claude4spec/briefs',
-        patchesDir: '.claude4spec/patches',
-        entitiesDir: '.claude4spec/entities',
-      }),
-    );
 
     registry = new WorkspaceRegistry(registryDir);
     // 0.1.104 regression: `workspace` is captured BEFORE `registerProject` below,
@@ -49,7 +35,7 @@ describe('externalSkillsRouter', () => {
     fs.rmSync(projectDir, { recursive: true, force: true });
   });
 
-  const app = () => express().use(externalSkillsRouter({ cwd: projectDir, registry, workspace, projectId }));
+  const app = () => express().use(externalSkillsRouter({ registry, workspace, projectId }));
 
   it('GET / returns exactly three metadata entries, no SKILL.md content', async () => {
     const res = await request(app()).get('/');

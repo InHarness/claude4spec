@@ -23,9 +23,9 @@ carries its identity (\`${identity}\`), so it works from any cwd, including a
 foreign code repo where \`.claude4spec/\` doesn't exist. Do NOT \`cd\` into the
 spec repo; the identity is baked in, not derived from cwd.
 
-**This skill prefers the \`c4s\` CLI but has a filesystem fallback** — briefs are
-self-contained, so the core loop (read brief → implement → file a patch) works
-even without \`c4s\` installed, via the absolute fallback paths below.
+**This skill is CLI-only** — every step below goes through \`c4s\`. If \`c4s\`
+isn't installed, STOP and ask the user to install it; never read or write the
+spec repo's files directly.
 
 ## Workflow
 
@@ -34,8 +34,6 @@ even without \`c4s\` installed, via the absolute fallback paths below.
 \`\`\`sh
 c4s list-briefs --status pending --limit 10 ${identity}
 \`\`\`
-
-Fallback (no \`c4s\`): \`ls '${ctx.briefsDirAbs}'\`.
 
 When there are multiple \`pending\` candidates and it isn't obvious which one to
 implement — **ask the user, don't guess.** Only proceed automatically when
@@ -46,8 +44,6 @@ exactly one obvious candidate exists.
 \`\`\`sh
 c4s read-brief <brief-path> ${identity}
 \`\`\`
-
-Fallback: \`cat '${ctx.briefsDirAbs}/<brief-path>'\`.
 
 Every brief has YAML frontmatter:
 
@@ -100,30 +96,6 @@ printf '%s\\n' "$PATCH_BODY" | c4s file-patch \\
   ${identity}
 \`\`\`
 
-Fallback (no \`c4s\`): \`mkdir -p '${ctx.patchesDirAbs}'\` then write
-\`'${ctx.patchesDirAbs}/<brief-slug>-<short-desc>.md'\` by hand with this format:
-
-\`\`\`markdown
----
-type: patch
-brief: v0-1-16-to-v0-1-17.md      # path relative to briefsDir
-patch_kind: drift                  # drift | missing | incorrect | clarification
-created_at: 2026-05-11T17:32:00Z
-created_by: claude-code            # or "cursor", "aider", ...
-status: awaiting                   # awaiting spec-author review
----
-
-# Patch — short title
-
-## What I found
-
-…description of the drift / missing detail / incorrect assumption…
-
-## Suggestion
-
-…what the spec-author should consider in a follow-up brief or entity edits…
-\`\`\`
-
 Patch-kind values:
 
 - \`drift\` — the brief described behavior X, but the codebase already does Y.
@@ -133,19 +105,23 @@ Patch-kind values:
   explicit for next time.
 
 The patches directory is created **lazily** — only when you file your first
-patch (\`c4s file-patch\` mkdir's it itself; the fallback needs an explicit
-\`mkdir -p\`). The claude4spec server does NOT create it upfront.
+patch (\`c4s file-patch\` mkdir's it itself). The claude4spec server does NOT
+create it upfront.
 
 ### 5. Mark brief as implemented
 
 When the implementation is genuinely finished — code committed, tests green,
 merged to main / accepted by the user — flip the brief's frontmatter to
-\`implemented: true\`. There is no \`c4s\` command for this — it's a direct file
-edit in the spec repo's briefsDir:
+\`implemented: true\` through the server:
 
-\`\`\`bash
-yq -i '.implemented = true' '${ctx.briefsDirAbs}/<brief-path>'
+\`\`\`sh
+c4s mark-brief-implemented <brief-path> ${identity}
 \`\`\`
+
+This wraps \`PATCH /api/briefs/:path/frontmatter\` (\`implemented\` is the only
+mutable key) and requires a running \`npx @inharness-ai/claude4spec\` server.
+NOT through MCP \`update_brief\` (frontmatter-immutable there), and NOT a
+direct file edit.
 
 \`implemented: true\` is a **declaration**, not a computed fact derived from git.
 A revert on main does NOT roll the flag back. Set it ONLY when implementation
@@ -153,9 +129,9 @@ is realistically done — never proactively or "just in case".
 
 ### 6. Hand-off
 
-The spec-author reads patches manually (\`ls '${ctx.patchesDirAbs}'\`, \`cat\`)
-and folds them into the next brief or entity edits. There is no UI listing in
-this release — patches are raw markdown.
+The spec-author reads patches (via the UI, or by opening the file) and folds
+them into the next brief or entity edits. There is no UI listing in this
+release — patches are raw markdown.
 
 ## Errors
 
