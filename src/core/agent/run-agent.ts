@@ -2,6 +2,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { Agent, type Dispatcher } from 'undici';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../workspace/resolve.js';
+import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 /**
  * `runAgent(...)` — single source of truth for the headless turn flow.
@@ -365,10 +366,9 @@ function isConfigShape(body: unknown): boolean {
  * many minutes. `AbortSignal.timeout()` can only *shorten* a request, not lift
  * undici's default cap, so a dedicated dispatcher is required for that one call.
  */
-const RUN_TURN_TIMEOUT_MS = 15 * 60_000;
 const runTurnDispatcher = new Agent({
-  headersTimeout: RUN_TURN_TIMEOUT_MS,
-  bodyTimeout: RUN_TURN_TIMEOUT_MS,
+  headersTimeout: ASK_TURN_TIMEOUT_MS,
+  bodyTimeout: ASK_TURN_TIMEOUT_MS,
 });
 
 /** Distinguishes genuine connection-refused from other fetch failures (e.g. a

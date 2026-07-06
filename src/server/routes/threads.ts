@@ -9,6 +9,7 @@ import {
   type Model,
   type AgentTurnDeps,
 } from './agent-turn.js';
+import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
   const router = Router();
@@ -200,6 +201,9 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         // Headless: stream kolapsowany serwerowo, brak transportu eventow.
         onEvent: () => {},
         // Brak interaktywnego kanalu — patrz patch `headless-onuserinput`.
+        // Headless-only bound: no human is present to keep a stuck turn alive,
+        // so this route (unlike interactive POST /api/chat) opts into a timeout.
+        timeoutMs: ASK_TURN_TIMEOUT_MS,
       });
 
       res.json(result);
