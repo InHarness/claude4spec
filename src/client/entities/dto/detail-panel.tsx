@@ -1,13 +1,14 @@
-import { useState } from 'react';
 import { Plus, Trash } from 'lucide-react';
 import { Braces } from 'lucide-react';
-import { MethodBadge, TagChip } from '../../components/atoms.js';
-import { DocEditor } from '../../components/DocEditor.js';
+import { MethodBadge } from '../../components/atoms.js';
+import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
+import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useDto, useDeleteDto, useUpdateDto } from '../../hooks/useDtos.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
-import { confirmDestructive, openPopover, toast } from '../../ui/events.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import { tagSlug } from '../../../shared/slug.js';
 import type { Dto, DtoExample, DtoField, EntityType } from '../../../shared/entities.js';
 import { ExamplesPanel } from '../../components/dto/ExamplesPanel.js';
 
@@ -49,8 +50,6 @@ export function DtoDetail({
   const remove = useDeleteDto();
   const { data: allTags = [] } = useTags();
   const { data: refs = [] } = useReferences('dto', dto?.slug ?? null);
-
-  const [showTagPicker, setShowTagPicker] = useState(false);
 
   const { draft, dirty, patch } = useEntityDraftEditor({
     entity: dto,
@@ -96,21 +95,11 @@ export function DtoDetail({
     patch({ tags: next });
   }
 
-  async function addNewTag(e: React.MouseEvent<HTMLElement>) {
+  function handleCreateTag(name: string) {
     if (!draft) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const result = await openPopover(
-      'create-tag',
-      { x: rect.left, y: rect.bottom + 4 },
-      { contextLabel: dto?.name },
-    );
-    if (!result) return;
-    const tslug = result.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!tslug || draft.tags.includes(tslug)) return;
-    patch({ tags: [...draft.tags, tslug] });
+    const slug = tagSlug(name);
+    if (!slug || draft.tags.includes(slug)) return;
+    patch({ tags: [...draft.tags, slug] });
   }
 
   function updateField(index: number, partial: Partial<DtoField>) {
@@ -189,48 +178,14 @@ export function DtoDetail({
           />
         </div>
 
-        <div className="mt-3 flex items-center gap-2 flex-wrap">
-          {draft.tags.map((tslug) => {
-            const t = allTags.find((x) => x.slug === tslug);
-            return (
-              <TagChip
-                key={tslug}
-                tag={t ?? { slug: tslug, name: tslug, color: null }}
-                active
-                small
-                onRemove={() => toggleTag(tslug)}
-              />
-            );
-          })}
-          <button
-            onClick={() => setShowTagPicker((s) => !s)}
-            className="text-[11.5px] px-2 py-0.5 rounded-full"
-            style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-          >
-            + tag
-          </button>
-          {showTagPicker && (
-            <div className="w-full mt-1 flex items-center gap-1.5 flex-wrap">
-              <span
-                className="text-[10px] uppercase font-mono tracking-wider mr-1"
-                style={{ color: 'var(--c-subtle)' }}
-              >
-                pick:
-              </span>
-              {allTags
-                .filter((t) => !draft.tags.includes(t.slug))
-                .map((t) => (
-                  <TagChip key={t.slug} tag={t} small onClick={() => toggleTag(t.slug)} />
-                ))}
-              <button
-                onClick={addNewTag}
-                className="text-[11.5px] px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-              >
-                new…
-              </button>
-            </div>
-          )}
+        <div className="mt-3">
+          <TagPicker
+            allTags={allTags}
+            selected={draft.tags}
+            onToggle={toggleTag}
+            onCreate={handleCreateTag}
+            variant="collapsed"
+          />
         </div>
 
         <div className="mt-8">
@@ -239,7 +194,6 @@ export function DtoDetail({
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="What this DTO represents, which endpoints use it, invariants…"
-            onOpenEntity={onOpenEntity}
           />
         </div>
 

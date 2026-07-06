@@ -208,19 +208,22 @@ export interface EntityDetailToolbarProps {
 }
 export declare const EntityDetailToolbar: ComponentType<EntityDetailToolbarProps>;
 
+export type RichTextFieldToolbarItem = 'bold' | 'italic' | 'heading' | 'list' | 'table' | 'code';
 export interface RichTextFieldProps {
   value: string;
   onChange(value: string): void;
   readOnly?: boolean;
   placeholder?: string;
+  toolbar?: RichTextFieldToolbarItem[];
 }
 export declare const RichTextField: ComponentType<RichTextFieldProps>;
 
 export interface TagPickerProps {
-  allTags: { slug: string; name: string; color?: string }[];
+  allTags: { slug: string; name: string; color?: string | null }[];
   selected: string[];
   onToggle(slug: string): void;
   onCreate?(name: string): void;
+  variant?: 'flat' | 'collapsed';
 }
 export declare const TagPicker: ComponentType<TagPickerProps>;
 
@@ -235,6 +238,59 @@ export interface ReferencesListProps {
   loading?: boolean;
 }
 export declare const ReferencesList: ComponentType<ReferencesListProps>;
+
+export interface DocumentBodyProps {
+  title?: { value: string; onChange?(v: string): void; placeholder?: string };
+  children: ReactNode;
+  maxWidth?: number;
+}
+export declare const DocumentBody: ComponentType<DocumentBodyProps>;
+
+export interface DocEditorProps {
+  value: string;
+  onChange(md: string): void;
+  readOnly?: boolean;
+  placeholder?: string;
+}
+export declare const DocEditor: ComponentType<DocEditorProps>;
+
+// ── Overlay/feedback (experimental, M34/L12) ──
+export interface PopoverProps {
+  open: boolean;
+  onClose(): void;
+  anchorRef: { current: HTMLElement | null };
+  placement?: 'top' | 'bottom' | 'left' | 'right';
+  children: ReactNode;
+}
+export declare const Popover: ComponentType<PopoverProps>;
+export declare const ToastViewport: ComponentType<Record<string, never>>;
+export interface ToastAction {
+  label: string;
+  onClick(): void;
+}
+export declare function useToast(): {
+  success(message: string, action?: ToastAction): void;
+  error(message: string, action?: ToastAction): void;
+  warning(message: string, action?: ToastAction): void;
+};
+
+// ── Pickers (experimental, M34/L12) ──
+export interface EnumBadgePickerProps {
+  options: { value: string; label: string; color?: string }[];
+  value: string;
+  onChange(value: string): void;
+  readOnly?: boolean;
+}
+export declare const EnumBadgePicker: ComponentType<EnumBadgePickerProps>;
+
+export interface GroupedRelationPickerProps {
+  groups: { key: string; label: string; items: { id: string; label: string; badge?: ReactNode }[] }[];
+  selected: Record<string, string[]>;
+  onAdd(groupKey: string, id: string): void;
+  onRemove(groupKey: string, id: string): void;
+  onSearch?(q: string): void;
+}
+export declare const GroupedRelationPicker: ComponentType<GroupedRelationPickerProps>;
 
 // ── Token bridge ──
 export type HostTokenName =
@@ -258,14 +314,28 @@ export type HostTokenName =
   | '--c-purple'
   | '--c-purple-soft'
   | '--c-red'
-  | '--c-red-soft';
+  | '--c-red-soft'
+  | '--font-heading'
+  | '--font-body'
+  | '--font-mono'
+  | '--text-h1'
+  | '--text-h2'
+  | '--text-h3'
+  | '--text-body'
+  | '--text-lede'
+  | '--text-code'
+  | '--weight-heading'
+  | '--weight-body'
+  | '--weight-lede'
+  | '--z-popover'
+  | '--z-toast';
 export declare const HOST_TOKEN_NAMES: readonly HostTokenName[];
 export declare function readHostTokens(): Record<HostTokenName, string>;
 export declare function useHostTokens(): Record<HostTokenName, string>;
 
 // ── Stability metadata ──
 export type WithStability<C> = C & { stability: import('../shared/plugin-host/ui-kit-surface.js').Stability };
-export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay';
+export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay' | 'detail' | 'feedback' | 'pickers';
 export interface UiKitComponentEntry {
   name: string;
   group: UiKitGroup;

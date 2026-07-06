@@ -56,7 +56,7 @@ export function PopoverShell({
         position: 'fixed',
         top: cy,
         left: cx,
-        zIndex: 1100,
+        zIndex: 'var(--z-popover)',
         width,
         background: 'var(--c-card)',
         border: '1px solid var(--c-hair-strong)',

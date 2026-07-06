@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
-import { Braces, Trash } from 'lucide-react';
-import { MethodBadge, METHOD_STYLE, TagChip } from '../../components/atoms.js';
-import { DocEditor } from '../../components/DocEditor.js';
+import { useEffect, useState } from 'react';
+import { Trash } from 'lucide-react';
+import { METHOD_STYLE } from '../../components/atoms.js';
+import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
+import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
+import { EnumBadgePicker } from '../../host-ui-kit/pickers/EnumBadgePicker.js';
+import { GroupedRelationPicker } from '../../host-ui-kit/pickers/GroupedRelationPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useEndpoint,
@@ -13,15 +16,12 @@ import {
 import { useDtos } from '../../hooks/useDtos.js';
 import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
-import { confirmDestructive, openPopover, toast } from '../../ui/events.js';
-import type {
-  Endpoint,
-  EndpointDtoRelation,
-  EntityType,
-  HttpMethod,
-} from '../../../shared/entities.js';
+import { confirmDestructive, toast } from '../../ui/events.js';
+import { tagSlug } from '../../../shared/slug.js';
+import type { Endpoint, EndpointDtoRelation, EntityType, HttpMethod } from '../../../shared/entities.js';
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+const RELATIONS: EndpointDtoRelation[] = ['request', 'response', 'error'];
 
 interface Props {
   slug: string;
@@ -64,8 +64,6 @@ export function EndpointDetail({
   const { data: allTags = [] } = useTags();
   const { data: allDtos = [] } = useDtos();
   const { data: refs = [] } = useReferences('endpoint', endpoint?.slug ?? null);
-
-  const [showTagPicker, setShowTagPicker] = useState(false);
 
   const { draft, dirty, patch } = useEntityDraftEditor({
     entity: endpoint,
@@ -111,21 +109,11 @@ export function EndpointDetail({
     patch({ tags: next });
   }
 
-  async function addNewTag(e: React.MouseEvent<HTMLElement>) {
+  function handleCreateTag(name: string) {
     if (!draft) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const result = await openPopover(
-      'create-tag',
-      { x: rect.left, y: rect.bottom + 4 },
-      { contextLabel: endpoint ? `${endpoint.method} ${endpoint.path}` : undefined },
-    );
-    if (!result) return;
-    const tslug = result.name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    if (!tslug || draft.tags.includes(tslug)) return;
-    patch({ tags: [...draft.tags, tslug] });
+    const slug = tagSlug(name);
+    if (!slug || draft.tags.includes(slug)) return;
+    patch({ tags: [...draft.tags, slug] });
   }
 
   if (isLoading && !endpoint) {
@@ -173,7 +161,11 @@ export function EndpointDetail({
         </div>
 
         <div className="flex items-center gap-2 mt-2 mb-1">
-          <MethodPicker value={draft.method} onChange={(m) => patch({ method: m })} />
+          <EnumBadgePicker
+            options={METHODS.map((m) => ({ value: m, label: METHOD_STYLE[m].label, color: METHOD_STYLE[m].fg }))}
+            value={draft.method}
+            onChange={(m) => patch({ method: m as HttpMethod })}
+          />
           <input
             value={draft.path}
             onChange={(e) => patch({ path: e.target.value })}
@@ -196,48 +188,14 @@ export function EndpointDetail({
           placeholder="Short summary…"
         />
 
-        <div className="mt-5 flex items-center gap-2 flex-wrap">
-          {draft.tags.map((tslug) => {
-            const t = allTags.find((x) => x.slug === tslug);
-            return (
-              <TagChip
-                key={tslug}
-                tag={t ?? { slug: tslug, name: tslug, color: null }}
-                active
-                small
-                onRemove={() => toggleTag(tslug)}
-              />
-            );
-          })}
-          <button
-            onClick={() => setShowTagPicker((s) => !s)}
-            className="text-[11.5px] px-2 py-0.5 rounded-full"
-            style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-          >
-            + tag
-          </button>
-          {showTagPicker && (
-            <div className="w-full mt-1 flex items-center gap-1.5 flex-wrap">
-              <span
-                className="text-[10px] uppercase font-mono tracking-wider mr-1"
-                style={{ color: 'var(--c-subtle)' }}
-              >
-                pick:
-              </span>
-              {allTags
-                .filter((t) => !draft.tags.includes(t.slug))
-                .map((t) => (
-                  <TagChip key={t.slug} tag={t} small onClick={() => toggleTag(t.slug)} />
-                ))}
-              <button
-                onClick={addNewTag}
-                className="text-[11.5px] px-2 py-0.5 rounded-full"
-                style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
-              >
-                new…
-              </button>
-            </div>
-          )}
+        <div className="mt-5">
+          <TagPicker
+            allTags={allTags}
+            selected={draft.tags}
+            onToggle={toggleTag}
+            onCreate={handleCreateTag}
+            variant="collapsed"
+          />
         </div>
 
         <div className="mt-8">
@@ -246,22 +204,47 @@ export function EndpointDetail({
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="Describe what this endpoint does, invariants, gotchas…"
-            onOpenEntity={onOpenEntity}
           />
         </div>
 
         <div className="mt-10">
           <SectionLabel>Linked DTOs</SectionLabel>
-          <LinkedDtos
-            endpoint={endpoint}
-            availableDtos={allDtos.map((d) => ({ slug: d.slug, name: d.name }))}
-            onLink={(dtoSlug, relation, statusCode) =>
-              linkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode })
-            }
-            onUnlink={(dtoSlug, relation, statusCode) =>
-              unlinkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode })
-            }
-            onOpenDto={(dtoSlug) => onOpenEntity?.('dto', dtoSlug)}
+          <GroupedRelationPicker
+            groups={RELATIONS.map((rel) => ({
+              key: rel,
+              label: rel,
+              items: allDtos.map((d) => {
+                const link = endpoint.dtos.find((l) => l.dtoSlug === d.slug && l.relation === rel);
+                return {
+                  id: d.slug,
+                  label: d.name,
+                  badge:
+                    rel === 'request' ? undefined : (
+                      <StatusBadge
+                        value={link?.statusCode ?? (rel === 'response' ? 200 : 400)}
+                        onChange={(status) => {
+                          if (link) unlinkDto.mutate({ slug: endpoint.slug, dtoSlug: d.slug, relation: rel, statusCode: link.statusCode });
+                          linkDto.mutate({ slug: endpoint.slug, dtoSlug: d.slug, relation: rel, statusCode: status });
+                        }}
+                      />
+                    ),
+                };
+              }),
+            }))}
+            selected={RELATIONS.reduce<Record<string, string[]>>((acc, rel) => {
+              acc[rel] = endpoint.dtos.filter((l) => l.relation === rel).map((l) => l.dtoSlug);
+              return acc;
+            }, {})}
+            onAdd={(rel, dtoSlug) => {
+              const relation = rel as EndpointDtoRelation;
+              const status = relation === 'response' ? 200 : relation === 'error' ? 400 : null;
+              linkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode: status });
+            }}
+            onRemove={(rel, dtoSlug) => {
+              const relation = rel as EndpointDtoRelation;
+              const link = endpoint.dtos.find((l) => l.dtoSlug === dtoSlug && l.relation === relation);
+              unlinkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode: link?.statusCode ?? null });
+            }}
           />
         </div>
 
@@ -306,58 +289,6 @@ export function EndpointDetail({
   );
 }
 
-function MethodPicker({
-  value,
-  onChange,
-}: {
-  value: HttpMethod;
-  onChange: (m: HttpMethod) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="rounded px-1 py-0.5"
-        style={{ border: '1px solid transparent' }}
-        onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair-strong)')}
-        onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'transparent')}
-        title="change method"
-      >
-        <MethodBadge method={value} large />
-      </button>
-      {open && (
-        <div
-          className="absolute top-full left-0 mt-1 rounded-md p-1 flex flex-col"
-          style={{
-            background: 'var(--c-card)',
-            border: '1px solid var(--c-hair-strong)',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
-            zIndex: 40,
-          }}
-        >
-          {METHODS.map((m) => (
-            <button
-              key={m}
-              onClick={() => {
-                onChange(m);
-                setOpen(false);
-              }}
-              className="px-2 py-1 text-left rounded text-[11px] font-mono font-semibold"
-              style={{
-                background: value === m ? METHOD_STYLE[m].bg : 'transparent',
-                color: value === m ? METHOD_STYLE[m].fg : 'var(--c-muted)',
-              }}
-            >
-              {METHOD_STYLE[m].label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div
@@ -369,209 +300,26 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-const RELATIONS: EndpointDtoRelation[] = ['request', 'response', 'error'];
-
-function LinkedDtos({
-  endpoint,
-  availableDtos,
-  onLink,
-  onUnlink,
-  onOpenDto,
-}: {
-  endpoint: Endpoint;
-  availableDtos: Array<{ slug: string; name: string }>;
-  onLink: (dtoSlug: string, relation: EndpointDtoRelation, statusCode: number | null) => void;
-  onUnlink: (dtoSlug: string, relation: EndpointDtoRelation, statusCode: number | null) => void;
-  onOpenDto: (dtoSlug: string) => void;
-}) {
-  const [pickerOpen, setPickerOpen] = useState<EndpointDtoRelation | null>(null);
-  const [pickerDto, setPickerDto] = useState<string | null>(null);
-  const [pickerStatus, setPickerStatus] = useState<string>('');
-  const grouped = useMemo(() => {
-    const m: Record<EndpointDtoRelation, Endpoint['dtos']> = {
-      request: [],
-      response: [],
-      error: [],
-    };
-    for (const link of endpoint.dtos) m[link.relation].push(link);
-    return m;
-  }, [endpoint.dtos]);
-
-  function resetPicker() {
-    setPickerOpen(null);
-    setPickerDto(null);
-    setPickerStatus('');
-  }
-
-  function openPicker(rel: EndpointDtoRelation) {
-    setPickerOpen(pickerOpen === rel ? null : rel);
-    setPickerDto(null);
-    setPickerStatus(rel === 'response' ? '200' : rel === 'error' ? '400' : '');
-  }
-
-  function submitPicker(rel: EndpointDtoRelation) {
-    if (!pickerDto) return;
-    const status =
-      rel === 'request'
-        ? null
-        : pickerStatus.trim() === ''
-          ? null
-          : Number.isInteger(Number(pickerStatus))
-            ? Number(pickerStatus)
-            : null;
-    onLink(pickerDto, rel, status);
-    resetPicker();
-  }
-
+/**
+ * Inline-editable status code, passed as `GroupedRelationPicker`'s per-item
+ * `badge` slot — the generic picker contract has no status-code field of its
+ * own, so an editable node is what restores that capability (see the filed
+ * `missing`-kind patch on this brief).
+ */
+function StatusBadge({ value, onChange }: { value: number | null; onChange: (v: number | null) => void }) {
+  const [draft, setDraft] = useState(value === null ? '' : String(value));
+  useEffect(() => setDraft(value === null ? '' : String(value)), [value]);
   return (
-    <div
-      className="rounded-md"
-      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-    >
-      {RELATIONS.map((rel, i) => {
-        const linked = grouped[rel];
-        return (
-          <div
-            key={rel}
-            style={{
-              borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)',
-              padding: '10px 12px',
-            }}
-          >
-            <div className="flex items-center gap-2">
-              <span
-                className="text-[10.5px] uppercase font-mono tracking-wider"
-                style={{ color: 'var(--c-subtle)', minWidth: 64 }}
-              >
-                {rel}
-              </span>
-              <div className="flex-1 flex flex-wrap items-center gap-1.5">
-                {linked.length === 0 && (
-                  <span className="text-[12px]" style={{ color: 'var(--c-subtle)' }}>
-                    —
-                  </span>
-                )}
-                {linked.map((link) => (
-                  <span
-                    key={`${link.dtoSlug}:${link.statusCode ?? 'null'}`}
-                    className="inline-flex items-center gap-1 rounded px-1.5 py-[2px]"
-                    style={{
-                      background: 'var(--c-panel)',
-                      border: '1px solid var(--c-hair)',
-                      fontSize: 12,
-                    }}
-                  >
-                    <button
-                      onClick={() => onOpenDto(link.dtoSlug)}
-                      className="inline-flex items-center gap-1"
-                      style={{ color: 'var(--c-ink)' }}
-                    >
-                      <Braces size={11} style={{ color: 'var(--c-accent)' }} />
-                      {link.dtoName}
-                    </button>
-                    {link.statusCode !== null && (
-                      <span
-                        className="font-mono text-[10.5px] px-1 rounded"
-                        style={{
-                          background: 'var(--c-card)',
-                          color: 'var(--c-muted)',
-                        }}
-                      >
-                        @ {link.statusCode}
-                      </span>
-                    )}
-                    <button
-                      onClick={() => onUnlink(link.dtoSlug, rel, link.statusCode)}
-                      className="opacity-70 hover:opacity-100"
-                      style={{ color: 'var(--c-subtle)' }}
-                      aria-label={`unlink ${link.dtoName}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-                <button
-                  onClick={() => openPicker(rel)}
-                  className="text-[11.5px] px-2 py-0.5 rounded-full"
-                  style={{
-                    color: 'var(--c-subtle)',
-                    border: '1px dashed var(--c-hair-strong)',
-                  }}
-                >
-                  + link
-                </button>
-              </div>
-            </div>
-            {pickerOpen === rel && (
-              <div
-                className="mt-2 p-2 rounded flex flex-wrap items-center gap-1.5"
-                style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
-              >
-                {availableDtos.length === 0 ? (
-                  <span className="text-[11.5px] italic" style={{ color: 'var(--c-subtle)' }}>
-                    No DTOs yet — create one first.
-                  </span>
-                ) : (
-                  <>
-                    {availableDtos.map((c) => (
-                      <button
-                        key={c.slug}
-                        onClick={() => setPickerDto(c.slug)}
-                        className="text-[11.5px] inline-flex items-center gap-1 rounded px-1.5 py-0.5"
-                        style={{
-                          background:
-                            pickerDto === c.slug
-                              ? 'var(--c-accent-soft)'
-                              : 'var(--c-card)',
-                          border: `1px solid ${pickerDto === c.slug ? 'var(--c-accent)' : 'var(--c-hair)'}`,
-                          color: 'var(--c-ink)',
-                        }}
-                      >
-                        <Braces size={11} style={{ color: 'var(--c-accent)' }} />
-                        {c.name}
-                      </button>
-                    ))}
-                    {rel !== 'request' && (
-                      <input
-                        value={pickerStatus}
-                        onChange={(e) => setPickerStatus(e.target.value.replace(/[^0-9]/g, ''))}
-                        placeholder="status"
-                        className="font-mono text-[11.5px] rounded px-1.5 py-0.5 outline-none"
-                        style={{
-                          width: 64,
-                          background: 'var(--c-card)',
-                          border: '1px solid var(--c-hair)',
-                          color: 'var(--c-ink)',
-                        }}
-                      />
-                    )}
-                    <button
-                      onClick={() => submitPicker(rel)}
-                      disabled={!pickerDto}
-                      className="text-[11.5px] px-2 py-0.5 rounded"
-                      style={{
-                        background: pickerDto ? 'var(--c-accent)' : 'var(--c-card)',
-                        color: pickerDto ? '#fff' : 'var(--c-subtle)',
-                        border: '1px solid var(--c-hair-strong)',
-                        cursor: pickerDto ? 'pointer' : 'not-allowed',
-                      }}
-                    >
-                      link
-                    </button>
-                    <button
-                      onClick={resetPicker}
-                      className="text-[11.5px] px-2 py-0.5"
-                      style={{ color: 'var(--c-muted)' }}
-                    >
-                      cancel
-                    </button>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <input
+      value={draft}
+      onChange={(e) => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+      onBlur={() => {
+        const n = draft.trim() === '' ? null : Number(draft);
+        if (n !== value) onChange(Number.isInteger(n) ? n : null);
+      }}
+      aria-label="status code"
+      className="font-mono text-[10.5px] px-1 rounded outline-none"
+      style={{ width: 34, background: 'var(--c-card)', color: 'var(--c-muted)', border: 'none' }}
+    />
   );
 }
