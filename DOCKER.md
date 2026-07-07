@@ -139,6 +139,98 @@ with two things to know:
 - Use `PORT_HOST` to run more than one worktree's container at once (see
   Env vars above).
 
+## Plugin smoke-testing (project-local overlay)
+
+Lets a plugin author smoke-test their built `.claude4spec/plugins/<name>/`
+package against a real running host, without rebuilding this image and
+without clicking through the Trust Plugins UI. Uses the SAME project-local
+overlay mechanism a real trusted repo uses
+(`src/server/core/plugin-host/overlay-loader.ts`) — nothing Docker-specific
+about plugin *loading*, only about how trust and the mount get wired up
+non-interactively. The intended caller is `docker/plugin-smoke.sh` in a
+plugin's own repo (e.g. `c4s-plugin-scaffold`), not something you normally
+run by hand.
+
+```bash
+docker/setup-plugin-env.sh myplugin --entity-type=my-plugin:widget
+PLUGIN_ROOT=/absolute/path/to/my-plugin-package \
+PLUGIN_MOUNT_NAME=my-plugin \
+C4S_ENV=myplugin PORT_HOST=3002 \
+  docker compose -f docker-compose.yml -f docker-compose.plugin.yml up -d app-registry
+```
+
+Then poll `http://localhost:3002/api/projects/<id>/_meta/plugins` for your
+package's entry in `packages[]` with `status: "loaded"` (not `"failed"` /
+`"incompatible"` / `"skipped"`) and top-level `trust: true` — and
+`http://localhost:3002/api/projects/<id>/_meta/entities` for your type(s)
+under `active`, not `inactive`/`unknown`. `<id>` is deterministic:
+`sha1("/workspace/project")` truncated to 12 hex chars, since `PROJECT_DIR`
+is always that fixed path inside the container.
+
+Trust is set by `docker/setup-plugin-env.sh` calling `c4s trust-plugins`
+directly against the environment's `/data`-backed registry file, **before**
+`docker compose up` ever starts a container — not by an env var read inside
+the running server. This keeps the non-interactive trust bypass out of the
+production server's boot path entirely (it's a one-off CLI mutation of
+`workspaces.json`, not a passively-checked flag in `src/server/index.ts`).
+
+### What must be true of your `dist/`
+
+- `PLUGIN_ROOT` must point at a directory containing `package.json` at its
+  root (not `dist/` itself) — the host resolves the entry via
+  `package.json`'s `main`/`module`/`exports`, falling back to
+  `index.{js,mjs,cjs}`, exactly as for a real committed overlay.
+- **Your `dist/` must be fully self-contained — the host does not run `npm
+  install` against the mounted directory, on Docker or otherwise.** An
+  overlay package is loaded with a raw Node `import()` of the resolved entry
+  file; there is no `NODE_PATH`, symlink, or other bridge to this host's own
+  `node_modules`. This is a property of the overlay mechanism itself, not a
+  Docker limitation — the exact same failure would occur running this host
+  bare-metal against a real project directory elsewhere on disk. Any runtime
+  dependency your plugin's backend entry imports beyond Node builtins must be
+  bundled into `dist/` (e.g. don't mark pure-JS backend deps like `express`
+  or `zod` as Rollup/esbuild `external`). A dependency left unbundled
+  resolves to nothing and the package record comes back `status: "failed"`.
+- **Native modules (e.g. `better-sqlite3`) are not supported by this
+  mechanism today** — there's no way to bundle a compiled `.node` binary the
+  same way, and there is no backend equivalent of the frontend's
+  import-map peer-sharing shim (`runtime-shims.ts`/`buildImportMap`, which
+  only covers browser-side peers like `react`/`@tiptap/core`). If your
+  plugin needs a native backend dependency, it isn't usable via the overlay
+  mechanism until that gap is addressed — file a separate issue rather than
+  working around it here.
+- Frontend-facing peer imports (`react`, `react-dom`, `@c4s/plugin-runtime`,
+  etc.) ARE provided by the host's import-map shim for the *browser* bundle
+  — but that shim has no bearing on the *backend* entry's Node `import()`.
+- `hostApiVersion` in your manifest must satisfy this build's
+  `HOST_API_VERSION` (`src/shared/plugin-host/manifest.ts`) — a major
+  mismatch reports `status: "incompatible"` with a migration descriptor.
+
+### Env vars (additive — see also the table above)
+
+| Var | Required | Meaning |
+|---|---|---|
+| `PLUGIN_ROOT` | yes | Host path to your plugin's package root (`package.json` + `dist/`). |
+| `PLUGIN_MOUNT_NAME` | no (default `plugin`) | Subdirectory name under `.claude4spec/plugins/` — cosmetic only, shows up in `/_meta/plugins` diagnostics. |
+
+### Caveats
+
+- Don't override `PROJECT_DIR` together with `docker-compose.plugin.yml` —
+  the mount target path is hardcoded to
+  `/workspace/project/.claude4spec/plugins/...`.
+- `docker/setup-plugin-env.sh`'s `config.json` whitelist patch is a no-op on
+  a brand-new environment (no `entities` key = all plugin types already
+  active by default) — it only matters when reusing/seeding an environment
+  that already narrows `entities`.
+- Don't rely on hot-reload after rebuilding your plugin's `dist/` — Docker
+  bind-mount file-watch propagation (especially Docker Desktop/macOS) isn't
+  guaranteed to fire the host's `chokidar` watcher. Recreate the container
+  (`docker compose up -d --force-recreate app-registry`, or just re-run
+  `plugin-smoke.sh`) after every rebuild instead of expecting a live reload.
+- The version-gate for a caller in another repo is simply the presence of
+  `docker-compose.plugin.yml` in this checkout — no separate API version
+  field. If that file is missing, the checkout predates this feature.
+
 ## Verifying a code change
 
 1. Rebuild: `docker/build.sh registry` (or `local`).
@@ -155,6 +247,9 @@ with two things to know:
 docker rm -f <container>
 docker rmi claude4spec-test:registry claude4spec-test:local
 rm -rf docker/environments/default/runtime      # or: docker/setup-env.sh --reset
+
+# plugin smoke-test environment, additionally scoped by C4S_ENV:
+docker compose -f docker-compose.yml -f docker-compose.plugin.yml down
 ```
 
 ## Notes / gotchas
