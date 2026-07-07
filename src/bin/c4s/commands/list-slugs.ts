@@ -19,6 +19,6 @@ export async function runListSlugs(args: ParsedArgs): Promise<void> {
 export const listSlugsCommand: CliCommandContribution = {
   name: 'list-slugs',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
   handler: runListSlugs,
 };

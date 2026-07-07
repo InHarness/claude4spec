@@ -28,6 +28,6 @@ export async function runDescribe(args: ParsedArgs): Promise<void> {
 export const describeCommand: CliCommandContribution = {
   name: 'describe',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE', 'INVALID_VIEW'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_VIEW'],
   handler: runDescribe,
 };

@@ -24,6 +24,6 @@ export async function runDetail(args: ParsedArgs): Promise<void> {
 export const detailCommand: CliCommandContribution = {
   name: 'detail',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE', 'ENTITY_NOT_FOUND'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runDetail,
 };

@@ -24,6 +24,6 @@ export async function runSingleElement(args: ParsedArgs): Promise<void> {
 export const singleElementCommand: CliCommandContribution = {
   name: 'single_element',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE', 'ENTITY_NOT_FOUND'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runSingleElement,
 };

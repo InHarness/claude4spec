@@ -31,6 +31,6 @@ export async function runElementList(args: ParsedArgs): Promise<void> {
 export const elementListCommand: CliCommandContribution = {
   name: 'element_list',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE', 'ENTITY_NOT_FOUND'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'ENTITY_NOT_FOUND'],
   handler: runElementList,
 };

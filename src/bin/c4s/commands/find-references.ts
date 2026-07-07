@@ -71,7 +71,7 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 export const findReferencesCommand: CliCommandContribution = {
   name: 'find-references',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
   handler: runFindReferences,
 };
 
