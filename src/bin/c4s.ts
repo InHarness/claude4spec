@@ -21,6 +21,7 @@ import { resolveCommand } from './c4s/commands/resolve.js';
 import { agentCommand } from './c4s/commands/agent.js';
 import { askCommand } from './c4s/commands/ask.js';
 import { pluginsCommand } from './c4s/commands/plugins.js';
+import { trustPluginsCommand } from './c4s/commands/trust-plugins.js';
 import { listBriefsCommand } from './c4s/commands/list-briefs.js';
 import { readBriefCommand } from './c4s/commands/read-brief.js';
 import { filePatchCommand } from './c4s/commands/file-patch.js';
@@ -48,6 +49,7 @@ const COMMANDS: CliCommandContribution[] = [
   agentCommand,
   askCommand,
   pluginsCommand,
+  trustPluginsCommand,
   listBriefsCommand,
   readBriefCommand,
   filePatchCommand,
@@ -94,6 +96,10 @@ Plugins (M33 — reads loader state, no running server):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
   plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
+  trust-plugins --cwd <dir> [--port <n>] [--mode dev|prod] <true|false>
+                                    server-free: sets trustProjectPlugins for a project directly in
+                                    workspaces.json, creating the project record if absent — for
+                                    non-interactive Docker plugin smoke-testing (see DOCKER.md)
 
 Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NOT_MATERIALIZED):
   list-briefs [--limit N] [--offset M] [--status implemented|pending]

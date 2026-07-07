@@ -1,0 +1,29 @@
+# Additive override — NOT a standalone file. Invoke together with the base
+# file:
+#
+#   docker/setup-plugin-env.sh myplugin-env --entity-type=my-plugin:widget
+#   PLUGIN_ROOT=/path/to/plugin-package \
+#   PLUGIN_MOUNT_NAME=my-plugin \
+#   C4S_ENV=myplugin-env PORT_HOST=3001 \
+#     docker compose -f docker-compose.yml -f docker-compose.plugin.yml up -d app-registry
+#
+# Mounts a plugin author's built package (package.json + dist/ at PLUGIN_ROOT
+# — NOT node_modules, see "Plugin smoke-testing" in DOCKER.md) read-only into
+# the seeded project's `.claude4spec/plugins/<PLUGIN_MOUNT_NAME>/` overlay dir
+# — the same directory the overlay loader (src/server/core/plugin-host/
+# overlay-loader.ts) reads from a real, committed project. Trust is set
+# separately, out-of-band, by `docker/setup-plugin-env.sh` calling
+# `c4s trust-plugins` BEFORE this compose file is applied — not by an env var
+# here, so the production server bootstrap gains no new code path.
+#
+# PLUGIN_ROOT is required — no default, fails loudly (`:?`) if unset, since a
+# silently-empty mount would be far more confusing than a hard error.
+
+services:
+  app-registry:
+    volumes:
+      - ${PLUGIN_ROOT:?Set PLUGIN_ROOT to the plugin package dir (package.json + dist/)}:/workspace/project/.claude4spec/plugins/${PLUGIN_MOUNT_NAME:-plugin}:ro
+
+  app-local:
+    volumes:
+      - ${PLUGIN_ROOT:?Set PLUGIN_ROOT to the plugin package dir (package.json + dist/)}:/workspace/project/.claude4spec/plugins/${PLUGIN_MOUNT_NAME:-plugin}:ro
