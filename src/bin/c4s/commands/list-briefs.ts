@@ -5,6 +5,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { listBriefsFs } from '../../../core/briefs/index.js';
 import type { BriefListOpts } from '../../../core/briefs/index.js';
+import type { CliCommandContribution } from '../registry.js';
 
 /**
  * 0.1.103 M11 — filesystem-only, no server/sqlite. Resolves the project via
@@ -33,3 +34,10 @@ export async function runListBriefs(args: ParsedArgs): Promise<void> {
   const opts: BriefListOpts = { limit, offset, status };
   writeOutput(listBriefsFs(briefsDirAbs, opts), args);
 }
+
+export const listBriefsCommand: CliCommandContribution = {
+  name: 'list-briefs',
+  executionMode: 'fs-scoped',
+  errorCodes: ['INVALID_ARGS'],
+  handler: runListBriefs,
+};

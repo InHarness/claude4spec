@@ -5,6 +5,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { withMeta } from './_meta.js';
 import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
+import type { CliCommandContribution } from '../registry.js';
 
 export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   const tags = requireStringList(args, 'tags');
@@ -47,3 +48,10 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const taggedListMixedCommand: CliCommandContribution = {
+  name: 'tagged_list_mixed',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_ARGS'],
+  handler: runTaggedListMixed,
+};

@@ -5,6 +5,7 @@ import { optionalString } from '../args.js';
 import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { resolvePageContent } from '../../../server/serialization/resolve-page.js';
+import type { CliCommandContribution } from '../registry.js';
 
 export async function runResolve(args: ParsedArgs): Promise<void> {
   const filePath = args.positional[0];
@@ -41,3 +42,10 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const resolveCommand: CliCommandContribution = {
+  name: 'resolve',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_ARGS', 'FILE_NOT_FOUND'],
+  handler: runResolve,
+};

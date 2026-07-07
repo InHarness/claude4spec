@@ -5,6 +5,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import { withMeta } from './_meta.js';
+import type { CliCommandContribution } from '../registry.js';
 
 export async function runElementList(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -26,3 +27,10 @@ export async function runElementList(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const elementListCommand: CliCommandContribution = {
+  name: 'element_list',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_TYPE', 'ENTITY_NOT_FOUND'],
+  handler: runElementList,
+};

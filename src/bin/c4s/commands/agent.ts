@@ -8,6 +8,8 @@ import {
   type AgentMessage,
   type AgentParams,
 } from '../../../core/agent/run-agent.js';
+import { parseModelFlag } from '../model-flag.js';
+import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
  * `c4s agent` — generic synchronous agent turn over any thread context (M11).
@@ -39,6 +41,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
   const briefPath = optionalString(args, 'brief');
   const server = optionalString(args, 'server');
   const effort = optionalString(args, 'effort');
+  const model = parseModelFlag(args);
   const project = args.project;
   const workspace = args.workspace;
 
@@ -158,6 +161,7 @@ export async function runAgentCmd(args: ParsedArgs): Promise<void> {
       briefPath: briefCreate ? undefined : briefPath,
       briefCreate,
       effort: effort as 'low' | 'medium' | 'high' | undefined,
+      model,
       output: 'full',
     });
   } catch (err) {
@@ -219,3 +223,17 @@ function extractText(content: string): string {
   }
   return content;
 }
+
+export const agentCommand: CliCommandContribution = {
+  name: 'agent',
+  executionMode: 'server-delegating',
+  errorCodes: [
+    ...SERVER_DELEGATING_CODES,
+    'INVALID_ARGS',
+    'VALIDATION',
+    'BRIEF_NOT_FOUND',
+    'BRIEF_SAME_RELEASE',
+    'RELEASE_NOT_FOUND',
+  ],
+  handler: runAgentCmd,
+};

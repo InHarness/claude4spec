@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { ParsedArgs } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
+import type { CliCommandContribution } from '../registry.js';
 
 export async function runCatalog(args: ParsedArgs): Promise<void> {
   const ctx = await createContext(args);
@@ -14,6 +15,13 @@ export async function runCatalog(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const catalogCommand: CliCommandContribution = {
+  name: 'catalog',
+  executionMode: 'readonly-reader',
+  errorCodes: [],
+  handler: runCatalog,
+};
 
 function readPackageVersion(): string {
   try {
