@@ -2,6 +2,8 @@ import type { ParsedArgs } from '../args.js';
 import { optionalString } from '../args.js';
 import { CliError, type CliErrorCode } from '../errors.js';
 import { AgentError, runAgent } from '../../../core/agent/run-agent.js';
+import { parseModelFlag } from '../model-flag.js';
+import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
  * `c4s ask` — read-only peer-consult shorthand (M11 / 0.1.79).
@@ -34,6 +36,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
   const threadId = optionalString(args, 'thread');
   const server = optionalString(args, 'server');
   const effort = optionalString(args, 'effort');
+  const model = parseModelFlag(args);
   const project = args.project;
   const workspace = args.workspace;
 
@@ -51,6 +54,7 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
       contextType: 'ask',
       threadId,
       effort: effort as 'low' | 'medium' | 'high' | undefined,
+      model,
       output: 'final',
     });
   } catch (err) {
@@ -72,3 +76,10 @@ export async function runAsk_cli(args: ParsedArgs): Promise<void> {
 
 // Eksport pod historyczna nazwa — `src/bin/c4s.ts` importuje `runAsk`.
 export { runAsk_cli as runAsk };
+
+export const askCommand: CliCommandContribution = {
+  name: 'ask',
+  executionMode: 'server-delegating',
+  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS'],
+  handler: runAsk_cli,
+};

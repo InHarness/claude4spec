@@ -3,6 +3,7 @@ import { CliError, type CliErrorCode } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { AgentError } from '../../../core/agent/run-agent.js';
 import { markBriefImplemented } from '../../../core/agent/mark-brief-implemented.js';
+import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
 /**
  * `c4s mark-brief-implemented` — the terminal implementer-agent's server-backed
@@ -37,3 +38,10 @@ export async function runMarkBriefImplemented(args: ParsedArgs): Promise<void> {
     throw err;
   }
 }
+
+export const markBriefImplementedCommand: CliCommandContribution = {
+  name: 'mark-brief-implemented',
+  executionMode: 'server-delegating',
+  errorCodes: [...SERVER_DELEGATING_CODES, 'INVALID_ARGS', 'BRIEF_NOT_FOUND', 'BRIEF_FRONTMATTER_IMMUTABLE'],
+  handler: runMarkBriefImplemented,
+};

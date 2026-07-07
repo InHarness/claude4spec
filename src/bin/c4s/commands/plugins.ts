@@ -4,6 +4,7 @@ import { writeOutput } from '../output.js';
 import { collectPluginDiagnostics } from '../../../server/core/plugin-host/cli-plugins.js';
 import { mapWorkspaceResolveError } from '../context.js';
 import type { PluginLoadRecord } from '../../../server/core/plugin-host/loader.js';
+import type { CliCommandContribution } from '../registry.js';
 
 /**
  * M11 / M33 phase 3 — `c4s plugins <list|status|doctor>`. Reads the loader state
@@ -93,3 +94,10 @@ function trustLabel(p: PluginLoadRecord): string {
   if (p.code === 'PLUGIN_PROJECT_UNTRUSTED') return 'untrusted-skipped';
   return p.trust ?? 'trusted';
 }
+
+export const pluginsCommand: CliCommandContribution = {
+  name: 'plugins',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_ARGS', 'HOST_API_INCOMPATIBLE'],
+  handler: runPlugins,
+};

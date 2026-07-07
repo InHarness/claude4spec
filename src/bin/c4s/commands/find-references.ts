@@ -13,6 +13,7 @@ import { TagsService } from '../../../server/services/tags.js';
 import { readConfig } from '../../../server/config.js';
 import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
 import type { EntityType } from '../../../shared/entities.js';
+import type { CliCommandContribution } from '../registry.js';
 
 /**
  * Graph reader (M11 owns the command, M19 owns the logic). Readonly: opens
@@ -66,6 +67,13 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const findReferencesCommand: CliCommandContribution = {
+  name: 'find-references',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
+  handler: runFindReferences,
+};
 
 /**
  * Recursively collect `.md` pages under each root dir, returning frontmatter-

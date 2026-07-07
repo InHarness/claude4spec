@@ -5,26 +5,56 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from './c4s/args.js';
 import { CliError } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
-import { runInlineMention } from './c4s/commands/inline-mention.js';
-import { runSingleElement } from './c4s/commands/single-element.js';
-import { runElementList } from './c4s/commands/element-list.js';
-import { runTaggedList } from './c4s/commands/tagged-list.js';
-import { runTaggedListMixed } from './c4s/commands/tagged-list-mixed.js';
-import { runDetail } from './c4s/commands/detail.js';
-import { runCatalog } from './c4s/commands/catalog.js';
-import { runDescribe } from './c4s/commands/describe.js';
-import { runListTags } from './c4s/commands/list-tags.js';
-import { runListSlugs } from './c4s/commands/list-slugs.js';
-import { runFindReferences } from './c4s/commands/find-references.js';
-import { runResolve } from './c4s/commands/resolve.js';
-import { runAgentCmd } from './c4s/commands/agent.js';
-import { runAsk } from './c4s/commands/ask.js';
-import { runPlugins } from './c4s/commands/plugins.js';
-import { runListBriefs } from './c4s/commands/list-briefs.js';
-import { runReadBrief } from './c4s/commands/read-brief.js';
-import { runFilePatch } from './c4s/commands/file-patch.js';
-import { runMarkBriefImplemented } from './c4s/commands/mark-brief-implemented.js';
-import { runInstallSkills } from './c4s/commands/install-skills.js';
+import type { CliCommandContribution } from './c4s/registry.js';
+import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
+import { singleElementCommand } from './c4s/commands/single-element.js';
+import { elementListCommand } from './c4s/commands/element-list.js';
+import { taggedListCommand } from './c4s/commands/tagged-list.js';
+import { taggedListMixedCommand } from './c4s/commands/tagged-list-mixed.js';
+import { detailCommand } from './c4s/commands/detail.js';
+import { catalogCommand } from './c4s/commands/catalog.js';
+import { describeCommand } from './c4s/commands/describe.js';
+import { listTagsCommand } from './c4s/commands/list-tags.js';
+import { listSlugsCommand } from './c4s/commands/list-slugs.js';
+import { findReferencesCommand } from './c4s/commands/find-references.js';
+import { resolveCommand } from './c4s/commands/resolve.js';
+import { agentCommand } from './c4s/commands/agent.js';
+import { askCommand } from './c4s/commands/ask.js';
+import { pluginsCommand } from './c4s/commands/plugins.js';
+import { listBriefsCommand } from './c4s/commands/list-briefs.js';
+import { readBriefCommand } from './c4s/commands/read-brief.js';
+import { filePatchCommand } from './c4s/commands/file-patch.js';
+import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
+import { installSkillsCommand } from './c4s/commands/install-skills.js';
+
+/**
+ * L14 — CLI Commands: every command a module contributes to this bin, keyed
+ * by name. The bin itself holds no domain logic — each contribution's
+ * `handler` delegates to its owning module's core (see registry.ts).
+ */
+const COMMANDS: CliCommandContribution[] = [
+  inlineMentionCommand,
+  singleElementCommand,
+  elementListCommand,
+  taggedListCommand,
+  taggedListMixedCommand,
+  detailCommand,
+  resolveCommand,
+  catalogCommand,
+  describeCommand,
+  listTagsCommand,
+  listSlugsCommand,
+  findReferencesCommand,
+  agentCommand,
+  askCommand,
+  pluginsCommand,
+  listBriefsCommand,
+  readBriefCommand,
+  filePatchCommand,
+  markBriefImplementedCommand,
+  installSkillsCommand,
+];
+const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name, c]));
 
 const HELP = `Usage: c4s <command> [options]
 
@@ -50,8 +80,9 @@ Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
   agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
   ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
   ask "<msg>" --thread <id>                   continue an existing ask thread
-    --server <url>             override server discovery (remote / one-off --port)
-    --effort <low|medium|high> reasoning level for the turn (default medium)
+    --server <url>                                    override server discovery (remote / one-off --port)
+    --effort <low|medium|high>                        reasoning level for the turn (default medium)
+    --model <fable-5|sonnet-4.6|opus-4.8|haiku-4.5>    model for the turn (default opus-4.8)
 
 Discovery:
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
@@ -104,50 +135,11 @@ async function main(): Promise<void> {
     throw new CliError('UNKNOWN_COMMAND', 'no command given', 'run `c4s --help`');
   }
 
-  switch (args.command) {
-    case 'inline_mention':
-      return runInlineMention(args);
-    case 'single_element':
-      return runSingleElement(args);
-    case 'element_list':
-      return runElementList(args);
-    case 'tagged_list':
-      return runTaggedList(args);
-    case 'tagged_list_mixed':
-      return runTaggedListMixed(args);
-    case 'detail':
-      return runDetail(args);
-    case 'resolve':
-      return runResolve(args);
-    case 'catalog':
-      return runCatalog(args);
-    case 'describe':
-      return runDescribe(args);
-    case 'list-tags':
-      return runListTags(args);
-    case 'list-slugs':
-      return runListSlugs(args);
-    case 'find-references':
-      return runFindReferences(args);
-    case 'agent':
-      return runAgentCmd(args);
-    case 'ask':
-      return runAsk(args);
-    case 'plugins':
-      return runPlugins(args);
-    case 'list-briefs':
-      return runListBriefs(args);
-    case 'read-brief':
-      return runReadBrief(args);
-    case 'file-patch':
-      return runFilePatch(args);
-    case 'mark-brief-implemented':
-      return runMarkBriefImplemented(args);
-    case 'install-skills':
-      return runInstallSkills(args);
-    default:
-      throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
+  const command = COMMANDS_BY_NAME.get(args.command);
+  if (!command) {
+    throw new CliError('UNKNOWN_COMMAND', `unknown command '${args.command}'`, 'run `c4s --help`');
   }
+  return command.handler(args);
 }
 
 function readPackageVersion(): string {

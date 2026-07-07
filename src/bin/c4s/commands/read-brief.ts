@@ -3,6 +3,7 @@ import { resolveBriefsPatchesDirs } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { readBriefFs, BriefFsError } from '../../../core/briefs/index.js';
+import type { CliCommandContribution } from '../registry.js';
 
 /**
  * 0.1.103 M11 — filesystem-only, no server/sqlite. `<brief-path>` is relative
@@ -32,3 +33,10 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
     throw err;
   }
 }
+
+export const readBriefCommand: CliCommandContribution = {
+  name: 'read-brief',
+  executionMode: 'fs-scoped',
+  errorCodes: ['INVALID_ARGS', 'BRIEF_NOT_FOUND'],
+  handler: runReadBrief,
+};

@@ -7,6 +7,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { writePatchFs, BriefFsError } from '../../../core/briefs/index.js';
 import type { PatchKind } from '../../../core/briefs/index.js';
+import type { CliCommandContribution } from '../registry.js';
 
 const PATCH_KINDS: PatchKind[] = ['drift', 'missing', 'incorrect', 'clarification'];
 
@@ -62,3 +63,10 @@ export async function runFilePatch(args: ParsedArgs): Promise<void> {
     throw err;
   }
 }
+
+export const filePatchCommand: CliCommandContribution = {
+  name: 'file-patch',
+  executionMode: 'fs-scoped',
+  errorCodes: ['INVALID_ARGS', 'BRIEF_NOT_FOUND', 'PATCH_WRITE_FAILED'],
+  handler: runFilePatch,
+};

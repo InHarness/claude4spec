@@ -12,6 +12,7 @@ import {
   writeFileSet,
   type SkillSlug,
 } from '../../../server/external-skills/external-skills-service.js';
+import type { CliCommandContribution } from '../registry.js';
 
 /**
  * 0.1.104 M22 — filesystem-only, no server/sqlite: writes the on-demand
@@ -65,3 +66,10 @@ export async function runInstallSkills(args: ParsedArgs): Promise<void> {
     throw new CliError('SKILLS_WRITE_FAILED', `failed to write skills to ${targetDir}: ${(err as Error).message}`);
   }
 }
+
+export const installSkillsCommand: CliCommandContribution = {
+  name: 'install-skills',
+  executionMode: 'fs-scoped',
+  errorCodes: ['INVALID_ARGS', 'SKILLS_WRITE_FAILED'],
+  handler: runInstallSkills,
+};

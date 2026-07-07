@@ -3,6 +3,7 @@ import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
+import type { CliCommandContribution } from '../registry.js';
 
 export async function runDescribe(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -23,3 +24,10 @@ export async function runDescribe(args: ParsedArgs): Promise<void> {
     ctx.close();
   }
 }
+
+export const describeCommand: CliCommandContribution = {
+  name: 'describe',
+  executionMode: 'readonly-reader',
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_VIEW'],
+  handler: runDescribe,
+};
