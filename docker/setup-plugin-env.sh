@@ -46,9 +46,11 @@ if [ ! -f "$CLI" ]; then
   exit 1
 fi
 
-RESET_FLAG=()
-[ "$RESET" = "1" ] && RESET_FLAG=(--reset)
-docker/setup-env.sh "$ENV_NAME" "${RESET_FLAG[@]}"
+if [ "$RESET" = "1" ]; then
+  docker/setup-env.sh "$ENV_NAME" --reset
+else
+  docker/setup-env.sh "$ENV_NAME"
+fi
 
 ENV_DIR="$REPO_ROOT/docker/environments/$ENV_NAME"
 SEED_CONFIG="$ENV_DIR/seed/project/.claude4spec/config.json"
