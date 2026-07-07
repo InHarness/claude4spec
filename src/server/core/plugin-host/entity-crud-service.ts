@@ -15,6 +15,15 @@ export interface EntityListOpts {
   tagFilter?: 'and' | 'or';
   limit: number;
   offset: number;
+  /**
+   * Escape hatch for type-specific list filters the generic contract doesn't
+   * name (e.g. ac's status/kind, which its old dedicated list_acs MCP tool
+   * exposed). entity-tools passes this through verbatim from the
+   * list_entities/search_entities tool call; a type without extra filters
+   * just ignores it. Loosely typed on purpose — each service interprets its
+   * own shape, there is no cross-type contract here.
+   */
+  filters?: Record<string, unknown>;
 }
 
 export interface EntityListResult<T> {
@@ -49,7 +58,10 @@ export interface EntityCrudService<T = unknown> {
   delete(slug: string): void;
   list(opts: EntityListOpts): EntityListResult<T>;
   /** Optional — types without a meaningful text search omit this. */
-  search?(query: string, opts: { limit: number; offset: number }): EntityListResult<T>;
+  search?(
+    query: string,
+    opts: { limit: number; offset: number; filters?: Record<string, unknown> },
+  ): EntityListResult<T>;
 }
 
 /**

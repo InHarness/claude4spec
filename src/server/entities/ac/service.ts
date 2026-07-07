@@ -345,7 +345,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
 
   create(data: unknown): EntityMutateResult {
     const created = this.createRaw(data as AcCreateInput, 'agent');
-    return { slug: created.slug };
+    return { slug: created.slug, ...this.verifyWarnings(created.verifies) };
   }
 
   get(slug: string): Ac | null {
@@ -355,7 +355,21 @@ export class AcService extends BaseEntityCrudService<Ac> {
   /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
   update(slug: string, data: unknown): EntityMutateResult {
     const result = this.updateRaw(slug, data as AcUpdateInput, 'agent');
-    return { slug: result.ac.slug };
+    return { slug: result.ac.slug, ...this.verifyWarnings(result.ac.verifies) };
+  }
+
+  /**
+   * The old create_ac/update_ac MCP tools always returned brokenVerifies so
+   * an agent could immediately fix a dangling `verifies` reference — carry
+   * that forward through the generic `warnings` field (same channel
+   * design-system/ui-view/diagram already use for their own lint feedback)
+   * rather than silently dropping it now that entity-tools is generic.
+   */
+  private verifyWarnings(verifies: AcVerifyRef[]): { warnings?: string[] } {
+    if (!verifies.length) return {};
+    const broken = this.classifyVerifies(verifies);
+    if (!broken.length) return {};
+    return { warnings: broken.map((b) => `verifies ${b.type}/${b.slug}: ${b.reason}`) };
   }
 
   delete(slug: string): void {
@@ -363,14 +377,22 @@ export class AcService extends BaseEntityCrudService<Ac> {
   }
 
   list(opts: EntityListOpts): EntityListResult<Ac> {
-    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    // ac's old dedicated list_acs MCP tool exposed status/kind alongside tags —
+    // the generic EntityListOpts has no room for them, so they travel through
+    // the type-specific `filters` escape hatch instead of being silently lost.
+    const { status, kind } = (opts.filters ?? {}) as { status?: AcStatus | 'all'; kind?: AcKind };
+    const items = this.listRaw({ status, kind, tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ status, kind, tags: opts.tags, tagFilter: opts.tagFilter });
     return { items, total };
   }
 
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Ac> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
+  search(
+    query: string,
+    opts: { limit: number; offset: number; filters?: Record<string, unknown> },
+  ): EntityListResult<Ac> {
+    const { status, kind } = (opts.filters ?? {}) as { status?: AcStatus | 'all'; kind?: AcKind };
+    const items = this.listRaw({ status, kind, search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ status, kind, search: query });
     return { items, total };
   }
 }

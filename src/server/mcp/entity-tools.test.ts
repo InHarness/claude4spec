@@ -58,14 +58,14 @@ function fakeWidgetService(): EntityCrudService<Widget> {
       if (!store.has(slug)) throw new DomainError('NOT_FOUND', `widget '${slug}' not found`);
       store.delete(slug);
     },
-    list() {
+    list: vi.fn(() => {
       const items = Array.from(store.values());
       return { items, total: items.length };
-    },
-    search(query) {
+    }),
+    search: vi.fn((query: string) => {
       const items = Array.from(store.values()).filter((w) => w.name.includes(query));
       return { items, total: items.length };
-    },
+    }),
   };
 }
 
@@ -110,6 +110,11 @@ function fakeDeps(): { deps: EntityToolsDeps; service: EntityCrudService<Widget>
     } as unknown as EntityToolsDeps['registry'],
     reader: {
       getEntity: (_type: string, slug: string) => service.get(slug),
+      getEntities: (_type: string, slugs: string[]) => {
+        const items = slugs.map((slug) => service.get(slug)).filter((e): e is Widget => e != null);
+        const missing = slugs.filter((slug) => service.get(slug) == null);
+        return { items, missing };
+      },
     } as unknown as EntityToolsDeps['reader'],
     db: {} as EntityToolsDeps['db'],
     ws: { broadcast: vi.fn() },
@@ -197,6 +202,22 @@ describe('entity-tools: update_entities rename', () => {
       'widget-existing',
       'widget-renamed',
     );
+  });
+});
+
+describe('entity-tools: filters escape hatch (list_entities/search_entities)', () => {
+  it('list_entities forwards `filters` through to service.list(opts) untouched', async () => {
+    const { deps, service } = fakeDeps();
+    await tool(deps, 'list_entities').handler({ type: 'widget', filters: { status: 'all', kind: 'edge-case' } });
+    expect(service.list).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { status: 'all', kind: 'edge-case' } }),
+    );
+  });
+
+  it('search_entities forwards `filters` through to service.search(query, opts) untouched', async () => {
+    const { deps, service } = fakeDeps();
+    await tool(deps, 'search_entities').handler({ type: 'widget', query: 'a', filters: { status: 'all' } });
+    expect(service.search).toHaveBeenCalledWith('a', expect.objectContaining({ filters: { status: 'all' } }));
   });
 });
 

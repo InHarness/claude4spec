@@ -95,6 +95,19 @@ describe('synthesizeMount', () => {
     expect(() => synthesizeMount(mod)).toThrow(PluginManifestError);
   });
 
+  // A manifest still written against the pre-M13 "bare Router" sugar
+  // (backend.routes = someRouterInstance) must fail fast and readably here,
+  // not with a raw "routes.router is not a function" TypeError deep inside
+  // mountBackend (which would fail the whole project load) — regression
+  // coverage for a gap found by code review.
+  it('throws PluginManifestError when routes.router is not a function (pre-M13 bare Router sugar)', () => {
+    const service = vi.fn();
+    const bareRouterSugar = { router: { __isExpressRouterInstance: true } as unknown };
+    const mod = lowerEntityContribution(base({ backend: { service, routes: bareRouterSugar } }));
+    expect(() => synthesizeMount(mod)).toThrow(PluginManifestError);
+    expect(() => synthesizeMount(mod)).toThrow(/routes\.router must be a function/);
+  });
+
   it('synthesizes a mount wiring service → DI, routes factory, and custom mcpServer with referential identity', () => {
     const fakeService = { kind: 'fake-service' };
     const service = vi.fn(() => fakeService);

@@ -244,14 +244,21 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
+  /** Batch slug list → serialized L9 element_list_item views, via the same reader.getEntities used by c4s-reader/get_entities (no ad-hoc missing-slug handling duplicated here). */
+  const serializeSlugs = (type: string, slugs: string[]) =>
+    deps.reader
+      .getEntities(type as RawEntityType, slugs)
+      .items.map((raw) => deps.registry.serializeEntity(type, 'element_list_item', raw, deps.reader).data);
+
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total } (L9 list view per item).',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total } (L9 list view per item). `filters` is a type-specific escape hatch (e.g. ac: { status: "all", kind: "edge-case" }) — see describe_entity_type for what a type accepts; unrecognized keys are ignored by types that don\'t support them.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
       tagFilter: z.enum(['and', 'or']).optional(),
+      filters: z.record(z.string(), z.unknown()).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     },
@@ -263,31 +270,30 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const opts = {
         tags: args.tags as string[] | undefined,
         tagFilter: (args.tagFilter as 'and' | 'or' | undefined) ?? 'and',
+        filters: args.filters as Record<string, unknown> | undefined,
         limit: (args.limit as number | undefined) ?? 50,
         offset: (args.offset as number | undefined) ?? 0,
       };
       const page = service.list(opts);
-      const items = page.items
-        .map((item) => (item as { slug: string }).slug)
-        .map((slug) => deps.reader.getEntity(type as RawEntityType, slug))
-        .filter((e): e is NonNullable<typeof e> => e != null)
-        .map((raw) => deps.registry.serializeEntity(type, 'element_list_item', raw, deps.reader).data);
-      return ok({ type, items, total: page.total });
+      const slugs = page.items.map((item) => (item as { slug: string }).slug);
+      return ok({ type, items: serializeSlugs(type, slugs), total: page.total });
     },
   );
 
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search across one or all active entity types that support search (see describe_entity_type.searchSupported). Omit `type` to search every searchable active type, grouped by type in the response. Returns { results: [{ type, items, total }] }.',
+    'Plain text search across one or all active entity types that support search (see describe_entity_type.searchSupported). Omit `type` to search every searchable active type, grouped by type in the response. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total }] }.',
     {
       type: z.string().optional(),
       query: z.string(),
+      filters: z.record(z.string(), z.unknown()).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     },
     async (args) => {
       const query = String(args.query);
+      const filters = args.filters as Record<string, unknown> | undefined;
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
 
@@ -304,13 +310,9 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         }
         const { service } = resolved;
         if (typeof service.search !== 'function') continue; // searchSupported: false — silently skipped, per brief
-        const page = service.search(query, { limit, offset });
-        const items = page.items
-          .map((item) => (item as { slug: string }).slug)
-          .map((slug) => deps.reader.getEntity(type as RawEntityType, slug))
-          .filter((e): e is NonNullable<typeof e> => e != null)
-          .map((raw) => deps.registry.serializeEntity(type, 'element_list_item', raw, deps.reader).data);
-        results.push({ type, items, total: page.total });
+        const page = service.search(query, { limit, offset, filters });
+        const slugs = page.items.map((item) => (item as { slug: string }).slug);
+        results.push({ type, items: serializeSlugs(type, slugs), total: page.total });
       }
       return ok({ results });
     },

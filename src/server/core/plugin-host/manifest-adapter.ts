@@ -158,9 +158,11 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
  *
  * Idempotent / side-effect-free at registration time: it only builds a new
  * `mount` closure, never calls it. Throws `PluginManifestError` if `crud` or
- * `mcpServer` is declared without `service` — both factories receive the
- * service instance as their first argument and would otherwise fail
- * confusingly at first mount, deep inside a project's request path.
+ * `mcpServer` is declared without `service` (both factories receive the
+ * service instance as their first argument) or if `routes.router` is present
+ * but not a function (the pre-M13 bare-Router sugar) — all three would
+ * otherwise fail confusingly at first mount, deep inside a project's request
+ * path.
  */
 export function synthesizeMount(module: BackendModule): BackendModule {
   const backend = module.backend;
@@ -174,6 +176,18 @@ export function synthesizeMount(module: BackendModule): BackendModule {
   }
   if (mcpServer && !service) {
     throw new PluginManifestError(`entity "${module.type}" — backend.mcpServer requires backend.service`);
+  }
+  if (routes && typeof routes.router !== 'function') {
+    // M13 breaking change: backend.routes.router is now ALWAYS a factory
+    // `(service, ctx) => Router` — a manifest still written against the old
+    // pre-M13 "bare Router" sugar (`backend.routes = someRouterInstance`)
+    // would otherwise only fail later, deep inside mountBackend, as a raw
+    // "routes.router is not a function" TypeError that fails the whole
+    // project load. Fail fast here with a readable, attributable error.
+    throw new PluginManifestError(
+      `entity "${module.type}" — backend.routes.router must be a function (service, ctx) => Router; ` +
+        `a bare express Router is no longer accepted (breaking change from the pre-M13 "routes" sugar)`,
+    );
   }
 
   const mount: PluginMountFn = (ctx: MountContext): void => {

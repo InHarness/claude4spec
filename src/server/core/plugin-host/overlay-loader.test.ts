@@ -151,4 +151,44 @@ describe('overlay-loader', () => {
     expect(byPkg).toEqual({ bad: 'failed', good: 'loaded' });
     expect(res.overlay?.listLocal().map((m) => m.type)).toEqual(['glossary']);
   });
+
+  // M13: an overlay entity authored with the declarative backend.{service,
+  // crud,routes,mcpServer} style must get an equivalent `mount` synthesized —
+  // regression coverage for a bug found by code review, where only the
+  // base-layer registry path (registerEntityModule) applied synthesizeMount
+  // and the overlay path silently left such an entity inert (no mount at all).
+  it('synthesizes a mount for a declarative overlay entity (service/crud/routes)', async () => {
+    const url = makePkg('declarative-pkg');
+    const declarativeEntity: EntityContribution = {
+      ...entity('widget'),
+      backend: {
+        service: () => ({}) as never,
+        crud: { createSchema: {} },
+        routes: { router: () => ({}) as never },
+      },
+    };
+    const res = await loadProjectOverlay(
+      cwd,
+      fakeImporter({ [url]: { manifest: manifest({ contributes: { entities: [declarativeEntity] } }) } }),
+    );
+    expect(res.records[0]).toMatchObject({ status: 'loaded' });
+    const mod = res.overlay?.listLocal().find((m) => m.type === 'widget');
+    expect(typeof mod?.backend?.mount).toBe('function');
+  });
+
+  // Same bug class: crud declared without service must be REJECTED at load
+  // time (PLUGIN_INVALID_MANIFEST), not silently registered with no mount.
+  it('rejects an overlay entity declaring crud without service', async () => {
+    const url = makePkg('invalid-pkg');
+    const invalidEntity: EntityContribution = {
+      ...entity('widget'),
+      backend: { crud: { createSchema: {} } }, // no `service`
+    };
+    const res = await loadProjectOverlay(
+      cwd,
+      fakeImporter({ [url]: { manifest: manifest({ contributes: { entities: [invalidEntity] } }) } }),
+    );
+    expect(res.records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_INVALID_MANIFEST' });
+    expect(res.overlay?.listLocal() ?? []).toEqual([]);
+  });
 });
