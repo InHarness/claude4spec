@@ -16,6 +16,13 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
 const ALLOWED_RELATIONS: ReadonlySet<EndpointDtoRelation> = new Set<EndpointDtoRelation>([
   'request',
@@ -33,18 +40,6 @@ interface EndpointRow {
   updated_at: string;
 }
 
-/**
- * M29: write options. `capture: false` suppresses the entity_version capture —
- * used by the index-reconstruction path (boot rebuild / incremental reindex),
- * where the file is the commit point and capture happens once in the write-path
- * orchestrator, not inside the service mutation.
- */
-export interface MutateOpts {
-  capture?: boolean;
-  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
-  writeFile?: boolean;
-}
-
 const ALLOWED_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
   'GET',
   'POST',
@@ -53,15 +48,59 @@ const ALLOWED_METHODS: ReadonlySet<HttpMethod> = new Set<HttpMethod>([
   'DELETE',
 ]);
 
-export class EndpointService {
+/** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
+function buildFilter(query: Pick<EndpointListQuery, 'search' | 'tags' | 'tagFilter'>): {
+  whereSql: string;
+  params: unknown[];
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.search) {
+    where.push(`(path LIKE ? OR summary LIKE ? OR slug LIKE ?)`);
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+
+  const tagSlugs = query.tags?.filter(Boolean) ?? [];
+  if (tagSlugs.length) {
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    if (query.tagFilter === 'and') {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug
+            FROM entity_tag et
+           WHERE et.entity_type = 'endpoint' AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
+        )
+      `);
+      params.push(...tagSlugs, tagSlugs.length);
+    } else {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = 'endpoint' AND et.tag_slug IN (${placeholders})
+        )
+      `);
+      params.push(...tagSlugs);
+    }
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+export class EndpointService extends BaseEntityCrudService<Endpoint> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private store: EntityStore
-  ) {}
+  ) {
+    super();
+  }
 
-  create(input: EndpointCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Endpoint {
+  createRaw(input: EndpointCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Endpoint {
     const method = this.requireMethod(input.method);
     if (!input.path) throw new DomainError('VALIDATION', 'path is required');
     const slug = endpointSlug(method, input.path);
@@ -97,44 +136,8 @@ export class EndpointService {
     return created;
   }
 
-  list(query: EndpointListQuery = {}): Endpoint[] {
-    const where: string[] = [];
-    const params: unknown[] = [];
-
-    if (query.search) {
-      where.push(`(path LIKE ? OR summary LIKE ? OR slug LIKE ?)`);
-      const like = `%${query.search}%`;
-      params.push(like, like, like);
-    }
-
-    let tagFilter: string | null = null;
-    const tagSlugs = query.tags?.filter(Boolean) ?? [];
-    if (tagSlugs.length) {
-      const placeholders = tagSlugs.map(() => '?').join(',');
-      if (query.tagFilter === 'and') {
-        tagFilter = `
-          slug IN (
-            SELECT et.entity_slug
-              FROM entity_tag et
-             WHERE et.entity_type = 'endpoint' AND et.tag_slug IN (${placeholders})
-          GROUP BY et.entity_slug
-            HAVING COUNT(DISTINCT et.tag_slug) = ?
-          )
-        `;
-        params.push(...tagSlugs, tagSlugs.length);
-      } else {
-        tagFilter = `
-          slug IN (
-            SELECT et.entity_slug FROM entity_tag et
-             WHERE et.entity_type = 'endpoint' AND et.tag_slug IN (${placeholders})
-          )
-        `;
-        params.push(...tagSlugs);
-      }
-    }
-    if (tagFilter) where.push(tagFilter);
-
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  listRaw(query: EndpointListQuery = {}): Endpoint[] {
+    const { whereSql, params } = buildFilter(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
 
@@ -150,6 +153,14 @@ export class EndpointService {
     return rows.map((r) => this.hydrate(r));
   }
 
+  count(query: Pick<EndpointListQuery, 'search' | 'tags' | 'tagFilter'> = {}): number {
+    const { whereSql, params } = buildFilter(query);
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM endpoint ${whereSql}`).get(...params) as {
+      c: number;
+    };
+    return row.c;
+  }
+
   getBySlug(slug: string): Endpoint | null {
     const row = this.db.prepare(`SELECT * FROM endpoint WHERE slug = ?`).get(slug) as
       | EndpointRow
@@ -157,7 +168,7 @@ export class EndpointService {
     return row ? this.hydrate(row) : null;
   }
 
-  update(slug: string, input: EndpointUpdateInput, actor: ChangedBy, opts: MutateOpts = {}): Endpoint {
+  updateRaw(slug: string, input: EndpointUpdateInput, actor: ChangedBy, opts: MutateOpts = {}): Endpoint {
     const tx = this.db.transaction(() => {
       const current = this.db.prepare(`SELECT * FROM endpoint WHERE slug = ?`).get(slug) as
         | EndpointRow
@@ -233,10 +244,10 @@ export class EndpointService {
   upsert(slug: string, input: EndpointCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { entity: Endpoint; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const entity = this.create(input, actor, opts);
+      const entity = this.createRaw(input, actor, opts);
       return { entity, op: 'created' };
     }
-    const entity = this.update(slug, {
+    const entity = this.updateRaw(slug, {
       method: input.method,
       path: input.path,
       summary: input.summary,
@@ -387,5 +398,44 @@ export class EndpointService {
       throw new DomainError('VALIDATION', `unsupported method '${m}'`);
     }
     return upper;
+  }
+
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). Distinct names from createRaw/updateRaw/listRaw —
+  // TS structurally allows an interface's `unknown`-typed params to widen to
+  // a narrower concrete type, but two methods can't share one name with
+  // different signatures, and the old rich signatures (actor/opts) must stay
+  // intact for routes.ts and M17 restore.
+
+  create(data: unknown): EntityMutateResult {
+    const created = this.createRaw(data as EndpointCreateInput, 'agent');
+    return { slug: created.slug };
+  }
+
+  get(slug: string): Endpoint | null {
+    return this.getBySlug(slug);
+  }
+
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  update(slug: string, data: unknown): EntityMutateResult {
+    const updated = this.updateRaw(slug, data as EndpointUpdateInput, 'agent');
+    return { slug: updated.slug };
+  }
+
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<Endpoint> {
+    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Endpoint> {
+    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ search: query });
+    return { items, total };
   }
 }

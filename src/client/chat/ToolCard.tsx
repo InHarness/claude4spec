@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import {
-  Box,
   Braces,
   ChevronDown,
   ChevronRight,
@@ -8,7 +7,6 @@ import {
   Database,
   FileEdit,
   FileText,
-  Network,
   Search,
   Tag,
   Terminal,
@@ -192,11 +190,7 @@ function categoryIcon(category: LocalToolCategory): LucideIcon {
       return Terminal;
     case 'task':
       return Workflow;
-    case 'mcp-endpoint':
-      return Network;
-    case 'mcp-dto':
-      return Box;
-    case 'mcp-database':
+    case 'mcp-entity':
       return Database;
     case 'mcp-reference':
       return Tag;
@@ -219,9 +213,7 @@ function categoryColor(category: LocalToolCategory): string {
       return 'var(--c-ink)';
     case 'task':
       return 'var(--c-accent)';
-    case 'mcp-endpoint':
-    case 'mcp-dto':
-    case 'mcp-database':
+    case 'mcp-entity':
     case 'mcp-reference':
     case 'mcp-plan':
       return 'var(--c-accent)';

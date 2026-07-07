@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { UiViewService } from './services.js';
+import type { UiViewService } from './service.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { errorHandler } from '../../routes/errors.js';
@@ -28,7 +28,7 @@ export function uiViewsRouter(
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ uiViews: service.list(query) });
+      res.json({ uiViews: service.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -37,7 +37,7 @@ export function uiViewsRouter(
   router.post('/', (req, res, next) => {
     try {
       const body = req.body as UiViewCreateInput;
-      const { uiView, warnings } = service.create(body, 'user');
+      const { uiView, warnings } = service.createRaw(body, 'user');
       ws.broadcast({ kind: 'entity:changed', entityType: 'ui-view', slug: uiView.slug });
       res.status(201).json({ ...uiView, warnings });
     } catch (err) {
@@ -61,7 +61,7 @@ export function uiViewsRouter(
   router.patch('/:slug', async (req, res, next) => {
     try {
       const body = req.body as UiViewUpdateInput;
-      const { uiView, previousSlug, warnings } = service.update(
+      const { uiView, previousSlug, warnings } = service.updateRaw(
         req.params.slug,
         body,
         'user'

@@ -4,8 +4,8 @@ import { designSystemSlug } from '../../services/slug.js';
 import { designSystemSerializer } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemsRouter } from './routes.js';
-import { DesignSystemService } from './services.js';
-import { createDesignSystemToolsServer } from './mcp-server.js';
+import { DesignSystemService } from './service.js';
+import { designSystemCreateSchema, designSystemUpdateSchema } from './crud-schemas.js';
 
 export const designSystemBackendModule: BackendModule = {
   type: 'design-system',
@@ -18,28 +18,19 @@ export const designSystemBackendModule: BackendModule = {
   slugFrom: (data) => designSystemSlug((data as { name: string }).name),
   serializer: designSystemSerializer as EntitySerializer<unknown>,
   systemPrompt: designSystemSystemPrompt,
+  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
+  // manifest-adapter.ts#synthesizeMount): construct the service once, register
+  // it for DI + entity-tools, mount the REST router. design-system has no
+  // non-CRUD tools, so there is no `mcpServer` key at all.
   backend: {
-    mount(ctx) {
-      const service = new DesignSystemService(
-        ctx.db,
-        ctx.tagsService,
-        ctx.versionService,
-        ctx.entityStore
-      );
-      ctx.app.use(
-        `${designSystemBackendModule.pathPrefix}`,
-        designSystemsRouter(service, ctx.referencesService, ctx.ws)
-      );
-      ctx.registerMcpServer(
-        `${designSystemBackendModule.type}-tools`,
-        () =>
-          createDesignSystemToolsServer({
-            designSystemService: service,
-            referencesService: ctx.referencesService,
-            ws: ctx.ws,
-          })
-      );
-      ctx.registerEntityService(designSystemBackendModule.type, service);
+    service: (ctx) => new DesignSystemService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
+    crud: {
+      createSchema: designSystemCreateSchema,
+      updateSchema: designSystemUpdateSchema,
+    },
+    routes: {
+      router: (service, ctx) =>
+        designSystemsRouter(service as DesignSystemService, ctx.referencesService, ctx.ws),
     },
   },
 };

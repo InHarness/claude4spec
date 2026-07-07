@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { BriefUpdateCard } from './BriefUpdateCard.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 
 export interface ToolRenderer {
   summary(input: unknown, result?: unknown): string;
@@ -72,60 +73,10 @@ function cx2(input: unknown, result: unknown): RendererContext {
   return { input: (input ?? {}) as Record<string, unknown>, result: (result ?? {}) as Record<string, unknown> };
 }
 
-// --- Endpoint tools (7) ---
+// --- Endpoint tools (2) — CRUD moved to entity-tools (M13); only the
+// cross-entity DTO-link relation tools remain custom. ---
 
 const endpointRenderers: Record<string, ToolRenderer> = {
-  create_endpoint: {
-    summary(i) {
-      const { method, path } = cx(i).input;
-      return `Create endpoint ${method ?? ''} ${path ?? ''}`.trim();
-    },
-  },
-  get_endpoint: {
-    summary(i) {
-      return `Fetch endpoint: ${cx(i).input.slug ?? '?'}`;
-    },
-  },
-  update_endpoint: {
-    summary(i) {
-      return `Update endpoint: ${cx(i).input.slug ?? '?'}`;
-    },
-  },
-  delete_endpoint: {
-    summary(i) {
-      return `Delete endpoint: ${cx(i).input.slug ?? '?'}`;
-    },
-  },
-  list_endpoints: {
-    summary(_i, r) {
-      const { result } = cx2(_i, r);
-      const total = result?.total;
-      return typeof total === 'number' ? `List endpoints (${total})` : 'List endpoints';
-    },
-    renderResult(r) {
-      const { result } = cx2({}, r);
-      const items = Array.isArray(result?.endpoints) ? (result!.endpoints as unknown[]) : [];
-      if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no endpoints)</span>;
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {items.slice(0, 10).map((item, i) => {
-            const ep = item as { method?: string; path?: string; slug?: string };
-            return (
-              <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
-                <span style={{ color: 'var(--c-accent)' }}>{ep.method ?? '?'}</span>{' '}
-                {ep.path ?? ep.slug ?? '?'}
-              </div>
-            );
-          })}
-          {items.length > 10 && (
-            <div className="font-mono text-[11px] scroll-thin" style={{ color: 'var(--c-subtle)' }}>
-              … +{items.length - 10} more
-            </div>
-          )}
-        </div>
-      );
-    },
-  },
   link_dto: {
     summary(i) {
       const { endpointSlug, dtoSlug, relation } = cx(i).input;
@@ -136,22 +87,6 @@ const endpointRenderers: Record<string, ToolRenderer> = {
     summary(i) {
       const { endpointSlug, dtoSlug, relation } = cx(i).input;
       return `Unlink ${dtoSlug ?? '?'} ✗ ${endpointSlug ?? '?'} (${relation ?? '?'})`;
-    },
-  },
-};
-
-// --- DTO tools (5) ---
-
-const dtoRenderers: Record<string, ToolRenderer> = {
-  create_dto: { summary: (i) => `Create DTO: ${cx(i).input.name ?? '?'}` },
-  get_dto: { summary: (i) => `Fetch DTO: ${cx(i).input.slug ?? '?'}` },
-  update_dto: { summary: (i) => `Update DTO: ${cx(i).input.slug ?? '?'}` },
-  delete_dto: { summary: (i) => `Delete DTO: ${cx(i).input.slug ?? '?'}` },
-  list_dtos: {
-    summary(_i, r) {
-      const { result } = cx2(_i, r);
-      const total = result?.total;
-      return typeof total === 'number' ? `List DTOs (${total})` : 'List DTOs';
     },
   },
 };
@@ -202,71 +137,278 @@ const referenceRenderers: Record<string, ToolRenderer> = {
   },
 };
 
-// --- Database Table tools (5) ---
+// --- Entity tools (7) — M13: generic CRUD for every active entity type,
+// parametrized by `input.type`. Card/row rendering is delegated to the
+// type's own client entity registration (`clientPluginHost`) rather than
+// reinventing per-type markup here.
 
-const databaseRenderers: Record<string, ToolRenderer> = {
-  create_database_table: {
-    summary: (i) => `Create table: ${cx(i).input.name ?? '?'}`,
-    renderInput(i) {
-      const { name, fields, summary } = cx(i).input;
-      const cols = Array.isArray(fields) ? (fields as unknown[]) : [];
+function entityLabel(type: unknown, plural = true): string {
+  const t = typeof type === 'string' ? type : '?';
+  const mod = clientPluginHost.getEntity(t);
+  if (mod) return plural ? mod.labelPlural : mod.label;
+  return t;
+}
+
+interface ItemEnvelope {
+  slug?: unknown;
+  error?: unknown;
+  code?: unknown;
+  warnings?: unknown;
+}
+
+function isErrorItem(item: unknown): item is { error: string; code: string } {
+  return !!item && typeof item === 'object' && 'error' in (item as Record<string, unknown>);
+}
+
+function ItemBadgeList({ items }: { items: unknown[] }) {
+  if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(none)</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      {items.slice(0, 12).map((raw, i) => {
+        const item = raw as ItemEnvelope;
+        if (isErrorItem(item)) {
+          return (
+            <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-error, #c0392b)' }}>
+              ✗ {String(item.error)} <span style={{ color: 'var(--c-subtle)' }}>({String(item.code)})</span>
+            </div>
+          );
+        }
+        const warnings = Array.isArray(item.warnings) ? (item.warnings as string[]) : [];
+        return (
+          <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
+            {String(item.slug ?? '?')}
+            {warnings.length > 0 && (
+              <span style={{ color: 'var(--c-warning, #b8860b)' }}> — {warnings.join('; ')}</span>
+            )}
+          </div>
+        );
+      })}
+      {items.length > 12 && (
+        <div className="font-mono text-[11px] scroll-thin" style={{ color: 'var(--c-subtle)' }}>
+          … +{items.length - 12} more
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EntityRows({ type, items }: { type: string; items: unknown[] }) {
+  const mod = clientPluginHost.getEntity(type);
+  if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no results)</span>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {items.slice(0, 12).map((entity, i) => {
+        const slug = String((entity as { slug?: unknown })?.slug ?? '?');
+        if (mod?.renderRow) {
+          const Row = mod.renderRow;
+          return <Row key={i} slug={slug} entity={entity} />;
+        }
+        return (
+          <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
+            {slug}
+          </div>
+        );
+      })}
+      {items.length > 12 && (
+        <div className="font-mono text-[11px] scroll-thin" style={{ color: 'var(--c-subtle)' }}>
+          … +{items.length - 12} more
+        </div>
+      )}
+    </div>
+  );
+}
+
+const entityToolsRenderers: Record<string, ToolRenderer> = {
+  create_entities: {
+    summary(i, r) {
+      const { type, items } = cx(i).input;
+      const { result } = cx2(i, r);
+      const count = Array.isArray(items) ? (items as unknown[]).length : 0;
+      const results = Array.isArray(result?.results) ? (result!.results as unknown[]) : [];
+      const label = entityLabel(type, count !== 1);
+      if (count === 1 && results[0] && !isErrorItem(results[0])) {
+        return `Created ${entityLabel(type, false)}: ${String((results[0] as ItemEnvelope).slug ?? '?')}`;
+      }
+      return `Created ${count} ${label}`;
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const items = Array.isArray(result?.results) ? (result!.results as unknown[]) : [];
+      return <ItemBadgeList items={items} />;
+    },
+  },
+  get_entities: {
+    summary(i, r) {
+      const { type, slugs } = cx(i).input;
+      const { result } = cx2(i, r);
+      const results = Array.isArray(result?.results) ? (result!.results as unknown[]) : [];
+      const count = results.length || (Array.isArray(slugs) ? (slugs as unknown[]).length : 0);
+      return `Fetched ${count} ${entityLabel(type, count !== 1)}`;
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const type = typeof result?.type === 'string' ? (result!.type as string) : '';
+      const results = Array.isArray(result?.results) ? (result!.results as Array<{ slug: string; entity: unknown }>) : [];
+      const mod = clientPluginHost.getEntity(type);
+      if (results.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no results)</span>;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {kv('Name', mono(String(name ?? '?')))}
-          {summary ? kv('Summary', String(summary)) : null}
-          {cols.length > 0
-            ? kv(
-                'Fields',
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                  {cols.slice(0, 12).map((c, idx) => {
-                    const f = c as { name?: string; type?: string };
-                    return (
-                      <div key={idx} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
-                        {f.name ?? '?'}{' '}
-                        <span style={{ color: 'var(--c-subtle)' }}>{f.type ?? ''}</span>
-                      </div>
-                    );
-                  })}
-                  {cols.length > 12 && (
-                    <div className="font-mono text-[11px] scroll-thin" style={{ color: 'var(--c-subtle)' }}>
-                      … +{cols.length - 12} more
-                    </div>
-                  )}
-                </div>,
-              )
-            : null}
+          {results.slice(0, 10).map(({ slug, entity }, i) => {
+            if (entity == null) {
+              return (
+                <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-subtle)' }}>
+                  {slug} — not found
+                </div>
+              );
+            }
+            if (mod?.renderCard) {
+              const Card = mod.renderCard;
+              return <Card key={i} slug={slug} entity={entity} />;
+            }
+            return (
+              <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
+                {slug}
+              </div>
+            );
+          })}
         </div>
       );
     },
   },
-  get_database_table: { summary: (i) => `Fetch table: ${cx(i).input.slug ?? '?'}` },
-  update_database_table: { summary: (i) => `Update table: ${cx(i).input.slug ?? '?'}` },
-  delete_database_table: { summary: (i) => `Delete table: ${cx(i).input.slug ?? '?'}` },
-  list_database_tables: {
-    summary(_i, r) {
-      const { result } = cx2(_i, r);
-      const total = result?.total;
-      return typeof total === 'number' ? `List tables (${total})` : 'List tables';
+  update_entities: {
+    summary(i, r) {
+      const { type, updates } = cx(i).input;
+      const { result } = cx2(i, r);
+      const count =
+        (Array.isArray(result?.results) ? (result!.results as unknown[]).length : 0) ||
+        (Array.isArray(updates) ? (updates as unknown[]).length : 0);
+      return `Updated ${count} ${entityLabel(type, count !== 1)}`;
     },
     renderResult(r) {
       const { result } = cx2({}, r);
-      const items = Array.isArray(result?.tables) ? (result!.tables as unknown[]) : [];
-      if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no tables)</span>;
+      const items = Array.isArray(result?.results) ? (result!.results as unknown[]) : [];
+      return <ItemBadgeList items={items} />;
+    },
+  },
+  delete_entities: {
+    summary(i, r) {
+      const { type, slugs } = cx(i).input;
+      const { result } = cx2(i, r);
+      const count =
+        (Array.isArray(result?.results) ? (result!.results as unknown[]).length : 0) ||
+        (Array.isArray(slugs) ? (slugs as unknown[]).length : 0);
+      return `Deleted ${count} ${entityLabel(type, count !== 1)}`;
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const items = Array.isArray(result?.results) ? (result!.results as unknown[]) : [];
+      if (items.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(none)</span>;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {items.slice(0, 12).map((item, i) => {
-            const t = item as { name?: string; slug?: string };
+          {items.map((raw, i) => {
+            const item = raw as ItemEnvelope & { brokenReferences?: Array<{ pagePath: string; count: number }> };
+            if (isErrorItem(item)) {
+              return (
+                <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-error, #c0392b)' }}>
+                  ✗ {String(item.error)} <span style={{ color: 'var(--c-subtle)' }}>({String(item.code)})</span>
+                </div>
+              );
+            }
+            const broken = item.brokenReferences ?? [];
             return (
               <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
-                {t.name ?? t.slug ?? '?'}
+                {String(item.slug ?? '?')}
+                {broken.length > 0 && (
+                  <span style={{ color: 'var(--c-warning, #b8860b)' }}>
+                    {' '}
+                    — {broken.reduce((n, b) => n + b.count, 0)} broken reference(s) in {broken.length} page(s)
+                  </span>
+                )}
               </div>
             );
           })}
-          {items.length > 12 && (
-            <div className="font-mono text-[11px] scroll-thin" style={{ color: 'var(--c-subtle)' }}>
-              … +{items.length - 12} more
+        </div>
+      );
+    },
+  },
+  list_entities: {
+    summary(i, r) {
+      const { type } = cx(i).input;
+      const { result } = cx2(i, r);
+      const total = result?.total;
+      const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : [];
+      const count = typeof total === 'number' ? total : items.length;
+      return `Listed ${count} ${entityLabel(type, count !== 1)}`;
+    },
+    renderResult(r) {
+      // `renderResult` only receives `result`, not the tool input — `type` is
+      // read back off the response envelope (entity-tools echoes it) instead.
+      const { result } = cx2({}, r);
+      const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : [];
+      const type = typeof result?.type === 'string' ? (result!.type as string) : '';
+      return <EntityRows type={type} items={items} />;
+    },
+  },
+  search_entities: {
+    summary(i, r) {
+      const { query } = cx(i).input;
+      const { result } = cx2(i, r);
+      const groups = Array.isArray(result?.results) ? (result!.results as Array<{ total: number }>) : [];
+      const total = groups.reduce((n, g) => n + (g.total ?? 0), 0);
+      return `Found ${total} matches for "${String(query ?? '')}"`;
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const groups = Array.isArray(result?.results)
+        ? (result!.results as Array<{ type: string; items: unknown[]; total: number }>)
+        : [];
+      if (groups.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no matches)</span>;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {groups.map((g, i) => (
+            <div key={i}>
+              <div
+                className="font-mono uppercase"
+                style={{ fontSize: 10, color: 'var(--c-subtle)', letterSpacing: '0.04em', marginBottom: 4 }}
+              >
+                {entityLabel(g.type)} ({g.total})
+              </div>
+              <EntityRows type={g.type} items={g.items} />
             </div>
-          )}
+          ))}
+        </div>
+      );
+    },
+  },
+  describe_entity_type: {
+    summary(_i, r) {
+      const { result } = cx2(_i, r);
+      const types = Array.isArray(result?.types) ? (result!.types as unknown[]) : [];
+      return `Described ${types.length} entity type${types.length === 1 ? '' : 's'}`;
+    },
+    renderResult(r) {
+      const { result } = cx2({}, r);
+      const types = Array.isArray(result?.types)
+        ? (result!.types as Array<{
+            type: string;
+            label: string;
+            crudSupported: boolean;
+            searchSupported: boolean;
+            createSchema?: { properties?: Record<string, unknown> };
+          }>)
+        : [];
+      if (types.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no types)</span>;
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {types.map((t, i) => (
+            <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
+              {t.type}{' '}
+              <span style={{ color: 'var(--c-subtle)' }}>
+                crud={String(t.crudSupported)} search={String(t.searchSupported)} fields=
+                {Object.keys(t.createSchema?.properties ?? {}).length}
+              </span>
+            </div>
+          ))}
         </div>
       );
     },
@@ -978,13 +1120,10 @@ export const toolRenderers: Record<string, ToolRenderer> = {
     Object.entries(endpointRenderers).map(([k, v]) => [`mcp__endpoint-tools__${k}`, v]),
   ),
   ...Object.fromEntries(
-    Object.entries(dtoRenderers).map(([k, v]) => [`mcp__dto-tools__${k}`, v]),
+    Object.entries(entityToolsRenderers).map(([k, v]) => [`mcp__entity-tools__${k}`, v]),
   ),
   ...Object.fromEntries(
     Object.entries(referenceRenderers).map(([k, v]) => [`mcp__reference-tools__${k}`, v]),
-  ),
-  ...Object.fromEntries(
-    Object.entries(databaseRenderers).map(([k, v]) => [`mcp__database-tools__${k}`, v]),
   ),
   ...Object.fromEntries(
     Object.entries(planRenderers).map(([k, v]) => [`mcp__plan-tools__${k}`, v]),

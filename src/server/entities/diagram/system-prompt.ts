@@ -7,8 +7,9 @@ export const diagramSystemPrompt: SystemPromptContribution = {
     sqlQuery: 'SELECT COUNT(*) AS count FROM diagram',
     label: 'diagrams',
   },
-  mcpToolsLine:
-    'diagram-tools: create_diagram, get_diagram, update_diagram, delete_diagram, list_diagrams',
+  // M13: CRUD moved to the generic entity-tools server (composed by the host);
+  // this line now covers ONLY diagram's custom pre-flight validation tool.
+  mcpToolsLine: 'diagram-tools: validate_diagram',
   narrativeBlock:
     'Diagrams are hoisted out to entities — the DSL body (Mermaid) lives in the entity file, not the page. ' +
     'Embed only via the self-closing reference `<diagram slug="…" caption="…"/>` — do NOT paste the DSL into ' +

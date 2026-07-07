@@ -14,7 +14,7 @@ import { pagesServiceSource } from '../services/references.js';
 import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
-import type { AcService } from '../entities/ac/services.js';
+import type { AcService } from '../entities/ac/service.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
@@ -452,7 +452,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
           const requireModuleAc = config.consistency?.requireModuleAc ?? 'off';
 
           if (acService) {
-            const activeAcs = acService.list({ status: 'active' });
+            const activeAcs = acService.listRaw({ status: 'active' });
 
             // Rule 9 — broken AC verifies. AcService.classifyVerifies already
             // categorises into missing|inactive|unknown via the plugin host.

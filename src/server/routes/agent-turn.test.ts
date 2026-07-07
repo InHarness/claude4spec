@@ -221,6 +221,40 @@ describe('runAgentTurn — ask context posture (0.1.79)', () => {
   });
 });
 
+describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-113)', () => {
+  it('chat thread: entity-tools (from pluginHost.buildMcpServers) reaches adapter.execute mcpServers', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps.pluginHost as unknown as { buildMcpServers: () => unknown }).buildMcpServers = () => [
+      { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: {} } } },
+      { name: 'endpoint-tools', server: { config: { type: 'sdk', name: 'endpoint-tools', instance: {} } } },
+    ];
+
+    await runAgentTurn(deps, makeInput());
+
+    const mcpKeys = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
+    expect(mcpKeys).toContain('entity-tools');
+    expect(mcpKeys).toContain('endpoint-tools');
+  });
+
+  it('brief thread (pluginServers: release-only): entity-tools is excluded, same as every other per-type plugin server', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    (deps.pluginHost as unknown as { buildMcpServers: () => unknown }).buildMcpServers = () => [
+      { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: {} } } },
+      { name: 'release-tools', server: { config: { type: 'sdk', name: 'release-tools', instance: {} } } },
+    ];
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'brief';
+
+    await runAgentTurn(deps, input);
+
+    const mcpKeys = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
+    expect(mcpKeys).not.toContain('entity-tools');
+    expect(mcpKeys).toContain('release-tools');
+  });
+});
+
 describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', () => {
   it('requests hard enforcement (claude_sandbox) when a path scope is configured', async () => {
     hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: ['/deny/dir'] };

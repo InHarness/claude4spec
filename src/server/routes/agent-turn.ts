@@ -97,8 +97,9 @@ export interface AgentTurnDeps {
 
 /** M21 m05ctxreg: tools whitelist per context_type. Brief threads get only
  *  brief-tools (per-thread, mounted below) + release-tools (read-only).
- *  All other plugin servers (endpoint-tools, dto-tools, ui-view-tools,
- *  database-table-tools, plan-tools, reference-tools) are NOT mounted. */
+ *  All other plugin servers (M13: the generic entity-tools server, any
+ *  surviving per-type custom server, plan-tools, reference-tools) are NOT
+ *  mounted. */
 const BRIEF_ALLOWED_PLUGIN_MCP = new Set(['release-tools']);
 
 import { ALLOWED_MODELS, type Model } from './models.js';

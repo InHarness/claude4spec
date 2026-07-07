@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { DtoService } from './services.js';
+import type { DtoService } from './service.js';
 import type { ReferencesService } from '../../services/references.js';
 import { errorHandler } from '../../routes/errors.js';
 import type {
@@ -23,7 +23,7 @@ export function dtosRouter(dtos: DtoService, references: ReferencesService): Rou
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ dtos: dtos.list(query) });
+      res.json({ dtos: dtos.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -32,7 +32,7 @@ export function dtosRouter(dtos: DtoService, references: ReferencesService): Rou
   router.post('/', (req, res, next) => {
     try {
       const body = req.body as DtoCreateInput;
-      res.status(201).json(dtos.create(body, 'user'));
+      res.status(201).json(dtos.createRaw(body, 'user'));
     } catch (err) {
       next(err);
     }
@@ -51,7 +51,7 @@ export function dtosRouter(dtos: DtoService, references: ReferencesService): Rou
   router.patch('/:slug', async (req, res, next) => {
     try {
       const body = req.body as DtoUpdateInput;
-      const { dto, previousSlug } = dtos.update(req.params.slug, body, 'user');
+      const { dto, previousSlug } = dtos.updateRaw(req.params.slug, body, 'user');
       if (dto.slug !== previousSlug) {
         await references.propagateSlugChange('dto', previousSlug, dto.slug);
       }

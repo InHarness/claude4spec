@@ -84,16 +84,77 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
   });
 });
 
+// M13 (0.1.113): CRUD lives on the generic entity-tools server, composed by
+// the host — per-type mcpToolsLine now covers ONLY a custom server, and is
+// absent entirely for a type with no non-CRUD tools (e.g. dto).
+describe('buildSystemPrompt — <tooling> entity-tools (M13)', () => {
+  it('always includes the host-level entity-tools line', () => {
+    const out = build({});
+    expect(out).toContain(
+      '<mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>',
+    );
+  });
+
+  it('plug-and-play: config.entities = ["endpoint"] → entity-tools line + endpoint-tools custom line, no dto line', () => {
+    const singleEntityHost = {
+      listEntities: () => [
+        { systemPrompt: { mcpToolsLine: 'endpoint-tools: link_dto, unlink_dto' } },
+      ],
+    } as unknown as ProjectPluginHost;
+    const out = buildSystemPrompt({
+      host: singleEntityHost,
+      projectName: 'My Spec',
+      cwd: '/tmp/my-spec',
+      roots: [rootAt('pages')],
+      briefsDir: '.claude4spec/briefs',
+      patchesDir: '.claude4spec/patches',
+      currentPagePath: null,
+      currentPageBody: null,
+      pageCount: 0,
+      entityCounts: {},
+      tagCount: 0,
+      sectionCount: 0,
+    });
+    expect(out).toContain('<mcp name="entity-tools">');
+    expect(out).toContain('<mcp name="endpoint-tools">link_dto, unlink_dto</mcp>');
+    expect(out).not.toContain('dto-tools');
+  });
+
+  it('a type with no mcpToolsLine (e.g. dto — no custom tools) contributes no per-type <mcp> line', () => {
+    const dtoOnlyHost = {
+      listEntities: () => [{ systemPrompt: {} }],
+    } as unknown as ProjectPluginHost;
+    const out = buildSystemPrompt({
+      host: dtoOnlyHost,
+      projectName: 'My Spec',
+      cwd: '/tmp/my-spec',
+      roots: [rootAt('pages')],
+      briefsDir: '.claude4spec/briefs',
+      patchesDir: '.claude4spec/patches',
+      currentPagePath: null,
+      currentPageBody: null,
+      pageCount: 0,
+      entityCounts: {},
+      tagCount: 0,
+      sectionCount: 0,
+    });
+    // Only the always-present entity-tools + reference-tools lines — no extra <mcp> from the dto type.
+    const mcpLines = (out.match(/<mcp name="[^"]+">/g) ?? []).map((m) => m);
+    expect(mcpLines).toEqual(['<mcp name="entity-tools">', '<mcp name="reference-tools">']);
+  });
+});
+
 // 0.1.67 m05ctxreg: czwarty wymiar rejestru context_type — wbudowany subagent.
+// M13: post-migration mcpToolsLine values — endpoint keeps only its custom
+// relation tools; dto has no custom server left at all (no mcpToolsLine).
 const entityHost = {
   listEntities: () => [
     {
       systemPrompt: {
-        mcpToolsLine:
-          'endpoint-tools: create_endpoint, get_endpoint, update_endpoint, delete_endpoint, list_endpoints, link_dto, unlink_dto',
+        mcpToolsLine: 'endpoint-tools: link_dto, unlink_dto',
       },
     },
-    { systemPrompt: { mcpToolsLine: 'dto-tools: create_dto, get_dto, update_dto, delete_dto, list_dtos' } },
+    { systemPrompt: {} },
   ],
 } as unknown as ProjectPluginHost;
 
@@ -119,10 +180,12 @@ describe('subagentsFor (0.1.67)', () => {
       const subs = subagentsFor(ct, entityHost);
       expect(subs.map((s) => s.name)).toEqual(['spec-explore']);
       const tools = subs[0].tools ?? [];
-      // get_/list_ tools are enumerated; mutating tools are dropped.
-      expect(tools).toContain('mcp__endpoint-tools__get_endpoint');
-      expect(tools).toContain('mcp__endpoint-tools__list_endpoints');
-      expect(tools).toContain('mcp__dto-tools__get_dto');
+      // M13: CRUD (incl. reads) lives on the generic entity-tools server —
+      // hardcoded here since per-type mcpToolsLine no longer carries get_/list_.
+      expect(tools).toContain('mcp__entity-tools__get_entities');
+      expect(tools).toContain('mcp__entity-tools__list_entities');
+      expect(tools).toContain('mcp__entity-tools__search_entities');
+      expect(tools).toContain('mcp__entity-tools__describe_entity_type');
       expect(tools).toContain('mcp__reference-tools__find_references');
       expect(tools).toContain('mcp__reference-tools__check_consistency');
       expect(tools).toContain('mcp__reference-tools__list_sections');

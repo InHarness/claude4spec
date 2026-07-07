@@ -82,6 +82,29 @@ export interface MountContext {
 }
 export type PluginMountFn = (ctx: MountContext) => void;
 
+// ── M13 — generic entity-tools backend contract (declarative `backend.service`/
+// `backend.crud` slots). A plugin implements this interface directly; the
+// host-internal `BaseEntityCrudService` abstract base (default list/search over
+// a derived index) is not part of the published surface — it is an in-process
+// convenience for host-owned entities, not a contract plugin authors depend on.
+export interface EntityCrudService<T = unknown> {
+  create(data: unknown): { slug: string; warnings?: string[] } | Promise<{ slug: string; warnings?: string[] }>;
+  get(slug: string): T | null;
+  /** `data` may carry an explicit `newSlug` field to rename — not a separate parameter. */
+  update(
+    slug: string,
+    data: unknown,
+  ): { slug: string; warnings?: string[] } | Promise<{ slug: string; warnings?: string[] }>;
+  delete(slug: string): void;
+  list(opts: {
+    tags?: string[];
+    tagFilter?: 'and' | 'or';
+    limit: number;
+    offset: number;
+  }): { items: T[]; total: number };
+  search?(query: string, opts: { limit: number; offset: number }): { items: T[]; total: number };
+}
+
 // ── L9 serializer ──
 export interface SerializeContext {
   reader: unknown;

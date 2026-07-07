@@ -37,12 +37,20 @@ export interface CatalogEntry {
   version: string;
   description: string;
   roleNoun: string;
-  mcpToolsLine: string;
+  /** M13: only the type's CUSTOM server, e.g. "endpoint-tools: link_dto, unlink_dto". Absent when the type has no custom tools. */
+  mcpToolsLine?: string;
+  /** M13: whether this type's CRUD is reachable via the generic entity-tools server (has a declared backend.crud). */
+  crudSupported: boolean;
 }
 
 export interface CatalogResult {
   types: Record<string, CatalogEntry>;
+  /** M13: present iff at least one active type supports CRUD — the generic entity-tools row, composed from the host, not any single manifest. */
+  entityTools?: { mcpToolsLine: string };
 }
+
+const ENTITY_TOOLS_MCP_LINE =
+  'entity-tools: create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type';
 
 export interface DescribeResult {
   type: string;
@@ -139,7 +147,10 @@ export class SerializationEngine {
    */
   catalog(reader: RawEntityReader): CatalogResult {
     const types: Record<string, CatalogEntry> = {};
+    let anyCrudSupported = false;
     for (const m of this.host.listEntities()) {
+      const crudSupported = m.backend?.crud != null;
+      if (crudSupported) anyCrudSupported = true;
       types[m.type] = {
         count: reader.count(m.type as RawEntityType),
         version: m.serializer.version,
@@ -147,9 +158,13 @@ export class SerializationEngine {
         description: m.systemPrompt.narrativeBlock ?? m.systemPrompt.roleNoun,
         roleNoun: m.systemPrompt.roleNoun,
         mcpToolsLine: m.systemPrompt.mcpToolsLine,
+        crudSupported,
       };
     }
-    return { types };
+    return {
+      types,
+      ...(anyCrudSupported ? { entityTools: { mcpToolsLine: ENTITY_TOOLS_MCP_LINE } } : {}),
+    };
   }
 
   /**

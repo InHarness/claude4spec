@@ -21,12 +21,12 @@ import type {
 import type { EntityWriter, UpsertResult } from '../serialization/writer.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../domain/raw-entity-reader.js';
-import type { EndpointService } from '../entities/endpoint/services.js';
-import type { DtoService } from '../entities/dto/services.js';
-import type { UiViewService } from '../entities/ui-view/services.js';
-import type { AcService } from '../entities/ac/services.js';
-import type { DesignSystemService } from '../entities/design-system/services.js';
-import type { DiagramService } from '../entities/diagram/services.js';
+import type { EndpointService } from '../entities/endpoint/service.js';
+import type { DtoService } from '../entities/dto/service.js';
+import type { UiViewService } from '../entities/ui-view/service.js';
+import type { AcService } from '../entities/ac/service.js';
+import type { DesignSystemService } from '../entities/design-system/service.js';
+import type { DiagramService } from '../entities/diagram/service.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 

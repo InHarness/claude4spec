@@ -4,8 +4,9 @@ import { endpointSlug } from '../../services/slug.js';
 import { endpointSerializer } from './serializer.js';
 import { endpointSystemPrompt } from './system-prompt.js';
 import { endpointsRouter } from './routes.js';
-import { EndpointService } from './services.js';
+import { EndpointService } from './service.js';
 import { createEndpointToolsServer } from './mcp-server.js';
+import { endpointCreateSchema, endpointUpdateSchema } from './crud-schemas.js';
 
 export const endpointBackendModule: BackendModule = {
   type: 'endpoint',
@@ -20,20 +21,21 @@ export const endpointBackendModule: BackendModule = {
   },
   serializer: endpointSerializer as EntitySerializer<unknown>,
   systemPrompt: endpointSystemPrompt,
+  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
+  // manifest-adapter.ts#synthesizeMount): construct the service once, register
+  // it for DI + entity-tools, mount the REST router, mount the custom MCP
+  // server for endpoint's relation tools.
   backend: {
-    mount(ctx) {
-      const service = new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
-      ctx.app.use(`${endpointBackendModule.pathPrefix}`, endpointsRouter(service, ctx.referencesService));
-      ctx.registerMcpServer(
-        `${endpointBackendModule.type}-tools`,
-        () => createEndpointToolsServer({
-          endpointService: service,
-          referencesService: ctx.referencesService,
-          ws: ctx.ws,
-        }),
-      );
-      ctx.registerEntityService(endpointBackendModule.type, service);
+    service: (ctx) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
+    crud: {
+      createSchema: endpointCreateSchema,
+      updateSchema: endpointUpdateSchema,
     },
+    routes: {
+      router: (service, ctx) => endpointsRouter(service as EndpointService, ctx.referencesService),
+    },
+    mcpServer: (service, ctx) => () =>
+      createEndpointToolsServer({ endpointService: service as EndpointService, ws: ctx.ws }),
   },
 };
 

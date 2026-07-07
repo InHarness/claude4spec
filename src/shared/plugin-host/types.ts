@@ -67,8 +67,14 @@ export interface SystemPromptContribution {
     label: string;
   };
 
-  /** MCP tools listing line, e.g. "endpoint-tools: create_endpoint, ...". */
-  mcpToolsLine: string;
+  /**
+   * MCP tools listing line for this type's CUSTOM server, e.g.
+   * "endpoint-tools: link_dto, unlink_dto". Optional since M13 — CRUD tools
+   * live on the generic `entity-tools` server (composed by the host, not
+   * per-type); a type contributes no line here unless it also registers a
+   * custom `${type}-tools` server for non-CRUD tools.
+   */
+  mcpToolsLine?: string;
 
   /**
    * Optional domain-specific paragraph injected after the core narrative.

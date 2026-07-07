@@ -38,6 +38,16 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * (`@c4s/plugin-runtime/ui`, M34/L12) shipped WITHIN this major, so they are
  * folded into the `1.0.0` versioned surface rather than bumping it; no major has
  * been crossed, so the changelog stays empty.
+ *
+ * M13 (0.1.113) — the declarative backend surface (`service`/`crud`/`routes`/
+ * `mcpServer` slots, `EntityCrudService`/`BaseEntityCrudService`,
+ * `SystemPromptContribution.mcpToolsLine` becoming optional) is an additive
+ * extension of the `1.0.0` contract: new optional slots, no shape change to
+ * anything a plugin already depended on (the `mount` escape hatch is
+ * unchanged). Per the qualification rule above, additive-within-baseline
+ * during stabilization (no published third-party plugins yet) does not bump
+ * the version — it is simply folded into what `1.0.0` now covers, same as the
+ * Host UI Kit precedent.
  */
 export const HOST_API_VERSION = '1.0.0';
 
@@ -66,18 +76,52 @@ export interface EntityContribution extends EntityModuleManifest {
     /** Per-plugin idempotent SQL migrations (server `SqlMigration[]`). */
     migrations?: unknown[];
     /**
-     * Full-power imperative mount hook (server `PluginMountFn`). Receives the
-     * MountContext; owns service construction, route mounting, MCP + service
-     * registration. Takes precedence over `routes`.
+     * ESCAPE HATCH — full-power imperative mount hook (server `PluginMountFn`).
+     * A typical plugin does not write this; declare `service`/`crud`/`routes`/
+     * `mcpServer` instead and the host synthesizes an equivalent mount. When
+     * present, `mount` takes precedence over the declarative slots below (they
+     * are ignored).
      */
     mount?: unknown;
     /**
-     * Sugar: a pre-built express Router mounted at `pathPrefix`. When supplied
-     * without `mount`, the registry synthesizes
-     * `mount = (ctx) => ctx.app.use(pathPrefix, routes)` — no MCP server, no
-     * entity service, no migrations.
+     * M13 — L2 service factory (server `(ctx: MountContext) => EntityCrudService`).
+     * Instantiated by the host EXACTLY ONCE per `ProjectContext`; the same
+     * instance is then visible in DI (`ctx.registerEntityService`), in the
+     * generic `entity-tools` CRUD registry, and as the argument passed to the
+     * `routes`/`mcpServer` factories below (referential identity).
      */
-    routes?: unknown;
+    service?: unknown;
+    /**
+     * M13 — declarative contribution to the generic `entity-tools` MCP server.
+     * Requires `service` (validated at registration — `crud` without `service`
+     * is a rejected plugin, not silently-missing CRUD). `updateSchema` defaults
+     * to `createSchema.partial()`.
+     */
+    crud?: {
+      /** server `ZodRawShape`. */
+      createSchema: unknown;
+      /** server `ZodRawShape`; default `createSchema.partial()`. */
+      updateSchema?: unknown;
+      descriptions?: { entity?: string };
+    };
+    /**
+     * A factory receiving the SAME service instance as `crud`/`mcpServer`
+     * (server `(service, ctx) => Router`), mounted at `pathPrefix`. ALWAYS a
+     * factory — never a bare Router (express's `Router` type is itself
+     * callable, so a `Router | (fn)` union can't be discriminated at
+     * runtime). A plugin with no service dependency just ignores the args.
+     */
+    routes?: {
+      router: unknown;
+    };
+    /**
+     * M13 — factory for a CUSTOM MCP server carrying ONLY this type's
+     * non-standard tools (e.g. `link_dto`/`unlink_dto`); CRUD tools belong
+     * exclusively to `entity-tools`, never to a per-type server. Registered as
+     * `${type}-tools`. Omit when the type has no custom tools — no server is
+     * mounted in that case. (server `(service, ctx) => McpServerFactory`.)
+     */
+    mcpServer?: unknown;
   };
 
   /** L8 — client editor extensions + render slots (narrowed client-side). */

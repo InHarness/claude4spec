@@ -15,6 +15,14 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import { validateDiagramSource } from './validate.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
 interface DiagramRow {
   slug: string;
@@ -24,29 +32,21 @@ interface DiagramRow {
   updated_at: string;
 }
 
-/**
- * M29 write options — mirror the other entity services. `capture: false`
- * suppresses the entity_version capture (index-rebuild path); `writeFile: false`
- * skips the JSON file persist (the file is what the rebuild reads).
- */
-export interface MutateOpts {
-  capture?: boolean;
-  writeFile?: boolean;
-}
-
 const SERIALIZER_VERSION = '1.0.0';
 
 function readFormat(value: unknown): DiagramFormat {
   return value === 'd2' ? 'd2' : 'mermaid';
 }
 
-export class DiagramService {
+export class DiagramService extends BaseEntityCrudService<Diagram> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private store: EntityStore
-  ) {}
+  ) {
+    super();
+  }
 
   // ─── slug generation (decyzja #1 — explicit | slugify(caption) | diagram-<nanoid(8)>) ─
 
@@ -70,7 +70,7 @@ export class DiagramService {
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
-  create(input: DiagramCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Diagram {
+  createRaw(input: DiagramCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Diagram {
     const slug = this.generateSlug(input);
     if (!slug) throw new DomainError('VALIDATION', 'slug resolves to empty');
     const format = readFormat(input.format);
@@ -92,7 +92,7 @@ export class DiagramService {
     return created;
   }
 
-  list(query: DiagramListQuery = {}): Diagram[] {
+  listRaw(query: DiagramListQuery = {}): Diagram[] {
     const { whereSql, params } = buildWhere(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
@@ -116,7 +116,7 @@ export class DiagramService {
     return row ? this.hydrate(row) : null;
   }
 
-  update(
+  updateRaw(
     slug: string,
     input: DiagramUpdateInput,
     actor: ChangedBy,
@@ -179,10 +179,10 @@ export class DiagramService {
   ): { diagram: Diagram; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const diagram = this.create({ ...input, slug }, actor, opts);
+      const diagram = this.createRaw({ ...input, slug }, actor, opts);
       return { diagram, op: 'created' };
     }
-    const result = this.update(
+    const result = this.updateRaw(
       slug,
       { format: input.format, source: input.source, tags: input.tags },
       actor,
@@ -235,6 +235,46 @@ export class DiagramService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
+  }
+
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). `create`/`update` are async: they await the
+  // mermaid/d2 pre-flight validation (moved here from the old mcp-server.ts
+  // tool handlers) to compute `warnings` after the sync createRaw/updateRaw
+  // write completes. Distinct names from createRaw/updateRaw/listRaw.
+
+  async create(data: unknown): Promise<EntityMutateResult> {
+    const created = this.createRaw(data as DiagramCreateInput, 'agent');
+    const warnings = await validateDiagramSource(created.format, created.source);
+    return { slug: created.slug, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  get(slug: string): Diagram | null {
+    return this.getBySlug(slug);
+  }
+
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  async update(slug: string, data: unknown): Promise<EntityMutateResult> {
+    const result = this.updateRaw(slug, data as DiagramUpdateInput, 'agent');
+    const warnings = await validateDiagramSource(result.diagram.format, result.diagram.source);
+    return { slug: result.diagram.slug, ...(warnings.length ? { warnings } : {}) };
+  }
+
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<Diagram> {
+    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Diagram> {
+    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ search: query });
+    return { items, total };
   }
 }
 

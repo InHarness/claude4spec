@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { AcService } from './services.js';
+import type { AcService } from './service.js';
 import type { ReferencesService } from '../../services/references.js';
 import { errorHandler } from '../../routes/errors.js';
 import type {
@@ -29,7 +29,7 @@ export function acsRouter(acs: AcService, references: ReferencesService): Router
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ acs: acs.list(query) });
+      res.json({ acs: acs.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -38,7 +38,7 @@ export function acsRouter(acs: AcService, references: ReferencesService): Router
   router.post('/', (req, res, next) => {
     try {
       const body = req.body as AcCreateInput;
-      const ac = acs.create(body, 'user');
+      const ac = acs.createRaw(body, 'user');
       const broken = ac.verifies.length ? acs.classifyVerifies(ac.verifies) : [];
       res.status(201).json({ ...ac, brokenVerifies: broken });
     } catch (err) {
@@ -60,7 +60,7 @@ export function acsRouter(acs: AcService, references: ReferencesService): Router
   router.patch('/:slug', async (req, res, next) => {
     try {
       const body = req.body as AcUpdateInput;
-      const { ac, previousSlug } = acs.update(req.params.slug, body, 'user');
+      const { ac, previousSlug } = acs.updateRaw(req.params.slug, body, 'user');
       if (ac.slug !== previousSlug) {
         await references.propagateSlugChange('ac', previousSlug, ac.slug);
       }

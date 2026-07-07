@@ -29,6 +29,7 @@ import { ProjectPluginHostImpl } from './project-host.js';
 import {
   PluginManifestError,
   lowerEntityContribution,
+  synthesizeMount,
   validateWritingStyle,
 } from './manifest-adapter.js';
 
@@ -56,7 +57,11 @@ export class PluginRegistryImpl implements PluginRegistry {
     if (!module.type) {
       throw new Error('plugin-registry: module.type is required');
     }
-    this.modules.set(module.type, module);
+    // M13: lower declarative backend slots (service/crud/routes/mcpServer) into
+    // an equivalent `mount` for every module — in-repo entities build a
+    // `BackendModule` directly (never touching `EntityContribution`), so this
+    // is the one place both origins are guaranteed to pass through.
+    this.modules.set(module.type, synthesizeMount(module));
   }
 
   /**

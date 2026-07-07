@@ -4,8 +4,8 @@ import { uiViewSlug } from '../../services/slug.js';
 import { uiViewSerializer } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewsRouter } from './routes.js';
-import { UiViewService } from './services.js';
-import { createUiViewToolsServer } from './mcp-server.js';
+import { UiViewService } from './service.js';
+import { uiViewCreateSchema, uiViewUpdateSchema } from './crud-schemas.js';
 
 export const uiViewBackendModule: BackendModule = {
   type: 'ui-view',
@@ -17,22 +17,18 @@ export const uiViewBackendModule: BackendModule = {
   slugFrom: (data) => uiViewSlug((data as { name: string }).name),
   serializer: uiViewSerializer as EntitySerializer<unknown>,
   systemPrompt: uiViewSystemPrompt,
+  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
+  // manifest-adapter.ts#synthesizeMount): construct the service once, register
+  // it for DI + entity-tools, mount the REST router. No custom MCP server —
+  // ui-view has no non-CRUD tools.
   backend: {
-    mount(ctx) {
-      const service = new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
-      ctx.app.use(
-        `${uiViewBackendModule.pathPrefix}`,
-        uiViewsRouter(service, ctx.referencesService, ctx.ws),
-      );
-      ctx.registerMcpServer(
-        `${uiViewBackendModule.type}-tools`,
-        () => createUiViewToolsServer({
-          uiViewService: service,
-          referencesService: ctx.referencesService,
-          ws: ctx.ws,
-        }),
-      );
-      ctx.registerEntityService(uiViewBackendModule.type, service);
+    service: (ctx) => new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
+    crud: {
+      createSchema: uiViewCreateSchema,
+      updateSchema: uiViewUpdateSchema,
+    },
+    routes: {
+      router: (service, ctx) => uiViewsRouter(service as UiViewService, ctx.referencesService, ctx.ws),
     },
   },
 };

@@ -18,6 +18,13 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
 interface DtoRow {
   slug: string;
@@ -29,27 +36,59 @@ interface DtoRow {
   updated_at: string;
 }
 
-/**
- * M29: write options. `capture: false` suppresses the entity_version capture —
- * used by the index-reconstruction path (boot rebuild / incremental reindex),
- * where the file is the commit point and capture happens once in the write-path
- * orchestrator, not inside the service mutation.
- */
-export interface MutateOpts {
-  capture?: boolean;
-  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
-  writeFile?: boolean;
+/** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
+function buildFilter(query: Pick<DtoListQuery, 'search' | 'tags' | 'tagFilter'>): {
+  whereSql: string;
+  params: unknown[];
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.search) {
+    where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ?)`);
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+
+  const tagSlugs = query.tags?.filter(Boolean) ?? [];
+  if (tagSlugs.length) {
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    if (query.tagFilter === 'and') {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug
+            FROM entity_tag et
+           WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
+        )
+      `);
+      params.push(...tagSlugs, tagSlugs.length);
+    } else {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
+        )
+      `);
+      params.push(...tagSlugs);
+    }
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
 }
 
-export class DtoService {
+export class DtoService extends BaseEntityCrudService<Dto> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private store: EntityStore
-  ) {}
+  ) {
+    super();
+  }
 
-  create(input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Dto {
+  createRaw(input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Dto {
     if (!input.name) throw new DomainError('VALIDATION', 'name is required');
     const slug = input.slug?.trim() || dtoSlug(input.name);
     if (!slug) throw new DomainError('VALIDATION', 'slug resolves to empty');
@@ -86,42 +125,8 @@ export class DtoService {
     return created;
   }
 
-  list(query: DtoListQuery = {}): Dto[] {
-    const where: string[] = [];
-    const params: unknown[] = [];
-
-    if (query.search) {
-      where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ?)`);
-      const like = `%${query.search}%`;
-      params.push(like, like, like);
-    }
-
-    const tagSlugs = query.tags?.filter(Boolean) ?? [];
-    if (tagSlugs.length) {
-      const placeholders = tagSlugs.map(() => '?').join(',');
-      if (query.tagFilter === 'and') {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug
-              FROM entity_tag et
-             WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
-          GROUP BY et.entity_slug
-            HAVING COUNT(DISTINCT et.tag_slug) = ?
-          )
-        `);
-        params.push(...tagSlugs, tagSlugs.length);
-      } else {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug FROM entity_tag et
-             WHERE et.entity_type = 'dto' AND et.tag_slug IN (${placeholders})
-          )
-        `);
-        params.push(...tagSlugs);
-      }
-    }
-
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  listRaw(query: DtoListQuery = {}): Dto[] {
+    const { whereSql, params } = buildFilter(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
 
@@ -136,12 +141,20 @@ export class DtoService {
     return rows.map((r) => this.hydrate(r));
   }
 
+  count(query: Pick<DtoListQuery, 'search' | 'tags' | 'tagFilter'> = {}): number {
+    const { whereSql, params } = buildFilter(query);
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM dto ${whereSql}`).get(...params) as {
+      c: number;
+    };
+    return row.c;
+  }
+
   getBySlug(slug: string): Dto | null {
     const row = this.db.prepare(`SELECT * FROM dto WHERE slug = ?`).get(slug) as DtoRow | undefined;
     return row ? this.hydrate(row) : null;
   }
 
-  update(
+  updateRaw(
     slug: string,
     input: DtoUpdateInput,
     actor: ChangedBy,
@@ -220,10 +233,10 @@ export class DtoService {
   upsert(slug: string, input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { dto: Dto; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const dto = this.create({ ...input, slug } as DtoCreateInput & { slug?: string }, actor, opts);
+      const dto = this.createRaw({ ...input, slug } as DtoCreateInput & { slug?: string }, actor, opts);
       return { dto, op: 'created' };
     }
-    const { dto } = this.update(slug, {
+    const { dto } = this.updateRaw(slug, {
       name: input.name,
       description: input.description,
       fields: input.fields,
@@ -299,6 +312,45 @@ export class DtoService {
       relation: r.relation as EndpointDtoRelation,
       statusCode: r.status_code,
     }));
+  }
+
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). Distinct names from createRaw/updateRaw/listRaw —
+  // TS structurally allows an interface's `unknown`-typed params to widen to
+  // a narrower concrete type, but two methods can't share one name with
+  // different signatures, and the old rich signatures (actor/opts) must stay
+  // intact for routes.ts and M17 restore.
+
+  create(data: unknown): EntityMutateResult {
+    const created = this.createRaw(data as DtoCreateInput, 'agent');
+    return { slug: created.slug };
+  }
+
+  get(slug: string): Dto | null {
+    return this.getBySlug(slug);
+  }
+
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  update(slug: string, data: unknown): EntityMutateResult {
+    const { dto } = this.updateRaw(slug, data as DtoUpdateInput, 'agent');
+    return { slug: dto.slug };
+  }
+
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<Dto> {
+    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Dto> {
+    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ search: query });
+    return { items, total };
   }
 }
 

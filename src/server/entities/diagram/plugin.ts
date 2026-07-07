@@ -5,8 +5,9 @@ import { slugify } from '../../services/slug.js';
 import { diagramSerializer } from './serializer.js';
 import { diagramSystemPrompt } from './system-prompt.js';
 import { diagramsRouter } from './routes.js';
-import { DiagramService } from './services.js';
+import { DiagramService } from './service.js';
 import { createDiagramToolsServer } from './mcp-server.js';
+import { diagramCreateSchema, diagramUpdateSchema } from './crud-schemas.js';
 
 export const diagramBackendModule: BackendModule = {
   type: 'diagram',
@@ -25,29 +26,20 @@ export const diagramBackendModule: BackendModule = {
   },
   serializer: diagramSerializer as EntitySerializer<unknown>,
   systemPrompt: diagramSystemPrompt,
+  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
+  // manifest-adapter.ts#synthesizeMount): construct the service once, register
+  // it for DI + entity-tools, mount the REST router, mount the custom MCP
+  // server for diagram's pre-flight validation tool.
   backend: {
-    mount(ctx) {
-      const service = new DiagramService(
-        ctx.db,
-        ctx.tagsService,
-        ctx.versionService,
-        ctx.entityStore
-      );
-      ctx.app.use(
-        `${diagramBackendModule.pathPrefix}`,
-        diagramsRouter(service, ctx.referencesService, ctx.ws)
-      );
-      ctx.registerMcpServer(
-        `${diagramBackendModule.type}-tools`,
-        () =>
-          createDiagramToolsServer({
-            diagramService: service,
-            referencesService: ctx.referencesService,
-            ws: ctx.ws,
-          })
-      );
-      ctx.registerEntityService(diagramBackendModule.type, service);
+    service: (ctx) => new DiagramService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
+    crud: {
+      createSchema: diagramCreateSchema,
+      updateSchema: diagramUpdateSchema,
     },
+    routes: {
+      router: (service, ctx) => diagramsRouter(service as DiagramService, ctx.referencesService, ctx.ws),
+    },
+    mcpServer: () => () => createDiagramToolsServer(),
   },
 };
 
