@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { EndpointService } from './services.js';
+import type { EndpointService } from './service.js';
 import type { ReferencesService } from '../../services/references.js';
 import { errorHandler } from '../../routes/errors.js';
 import type {
@@ -23,7 +23,7 @@ export function endpointsRouter(endpoints: EndpointService, references: Referenc
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ endpoints: endpoints.list(query) });
+      res.json({ endpoints: endpoints.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -32,7 +32,7 @@ export function endpointsRouter(endpoints: EndpointService, references: Referenc
   router.post('/', (req, res, next) => {
     try {
       const body = req.body as EndpointCreateInput;
-      res.status(201).json(endpoints.create(body, 'user'));
+      res.status(201).json(endpoints.createRaw(body, 'user'));
     } catch (err) {
       next(err);
     }
@@ -52,7 +52,7 @@ export function endpointsRouter(endpoints: EndpointService, references: Referenc
     try {
       const body = req.body as EndpointUpdateInput;
       const previousSlug = req.params.slug;
-      const updated = endpoints.update(previousSlug, body, 'user');
+      const updated = endpoints.updateRaw(previousSlug, body, 'user');
       if (updated.slug !== previousSlug) {
         await references.propagateSlugChange('endpoint', previousSlug, updated.slug);
       }

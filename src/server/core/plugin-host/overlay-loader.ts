@@ -28,7 +28,7 @@ import {
   isValidManifestShape,
   type PluginLoadRecord,
 } from './loader.js';
-import { lowerEntityContribution, validateWritingStyle } from './manifest-adapter.js';
+import { lowerEntityContribution, synthesizeMount, validateWritingStyle } from './manifest-adapter.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
 import type {
   PluginCommandContribution,
@@ -198,7 +198,12 @@ export async function loadProjectOverlay(
     let lowered: BackendModule[];
     let styles: WritingStyleContribution[];
     try {
-      lowered = (manifest.contributes?.entities ?? []).map(lowerEntityContribution);
+      // M13: synthesizeMount is the same choke point registry.ts's
+      // registerEntityModule uses for base-layer plugins — apply it here too,
+      // or an overlay entity authored with the declarative backend.{service,
+      // crud,routes,mcpServer} style would register successfully but never
+      // get a mount, silently going inert (no DI, no REST, no MCP tools).
+      lowered = (manifest.contributes?.entities ?? []).map(lowerEntityContribution).map(synthesizeMount);
       styles = (manifest.contributes?.writingStyles ?? []).map(validateWritingStyle);
     } catch (err) {
       const reason = (err as Error).message;

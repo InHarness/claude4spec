@@ -3,16 +3,17 @@ import type { ToolCategory } from '@inharness-ai/agent-chat';
 
 export type LocalToolCategory =
   | ToolCategory
-  | 'mcp-endpoint'
-  | 'mcp-dto'
-  | 'mcp-database'
+  | 'mcp-entity'
   | 'mcp-reference'
   | 'mcp-plan';
 
 export function localToolCategory(toolName: string): LocalToolCategory {
-  if (toolName.startsWith('mcp__endpoint-tools__')) return 'mcp-endpoint';
-  if (toolName.startsWith('mcp__dto-tools__')) return 'mcp-dto';
-  if (toolName.startsWith('mcp__database-tools__')) return 'mcp-database';
+  // M13: CRUD for every entity type is now one generic server, parametrized by
+  // `input.type` — replaces the old per-type mcp-endpoint/mcp-dto/mcp-database
+  // categories. Surviving custom servers (endpoint-tools, ac-tools,
+  // diagram-tools — non-CRUD tools only) fall through to the generic 'other'
+  // bucket, same as before.
+  if (toolName.startsWith('mcp__entity-tools__')) return 'mcp-entity';
   if (toolName.startsWith('mcp__reference-tools__')) return 'mcp-reference';
   if (toolName.startsWith('mcp__plan-tools__')) return 'mcp-plan';
   return baseCategory(toolName);

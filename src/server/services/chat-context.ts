@@ -419,14 +419,26 @@ plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXE
 End your response with a concrete, numbered plan the user can review and approve before execution. If a request clearly requires mutation, acknowledge and describe what you would do — do not execute.
 </claude4spec_plan_mode>`;
 
+/**
+ * M13: the host-level `<mcp>` line for the generic `entity-tools` server —
+ * CRUD for every active entity type, composed once by the host rather than
+ * per-type. Static tool list (the active TYPE set lives in `<project>`/
+ * `<entities>`, already built from `listEntities()` elsewhere in this file).
+ */
+function buildEntityToolsLine(): string {
+  return `  <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>`;
+}
+
 function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
     `  <builtin>Read, Write, Edit, MultiEdit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
+    buildEntityToolsLine(),
   ];
   for (const m of pluginHost.listEntities()) {
     if (!m.systemPrompt.mcpToolsLine) continue;
-    // mcpToolsLine format: "{server-name}: {tool, tool, ...}"
+    // mcpToolsLine format: "{server-name}: {tool, tool, ...}" — M13: now ONLY
+    // the type's custom (non-CRUD) server, e.g. "endpoint-tools: link_dto, unlink_dto".
     const colonIdx = m.systemPrompt.mcpToolsLine.indexOf(':');
     if (colonIdx === -1) continue;
     const serverName = m.systemPrompt.mcpToolsLine.slice(0, colonIdx).trim();
@@ -514,6 +526,14 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefini
       'Read',
       'Grep',
       'Glob',
+      // M13: CRUD (incl. reads) moved to the generic entity-tools server, composed
+      // by the host — no longer discoverable by scanning per-type mcpToolsLine
+      // (entityReadMcpTools below now only catches a future custom server that
+      // happens to expose a get_/list_ tool, which none currently do).
+      'mcp__entity-tools__get_entities',
+      'mcp__entity-tools__list_entities',
+      'mcp__entity-tools__search_entities',
+      'mcp__entity-tools__describe_entity_type',
       ...entityReadMcpTools(pluginHost),
       // reference-tools is cross-cutting (not an entity), so its read tools are listed explicitly
       // — mirrors the hardcode in buildTooling().

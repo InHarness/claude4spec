@@ -53,6 +53,7 @@ import { EntitiesWatcher } from '../fs/entities-watcher.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
+import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
 import { chatRouter } from '../routes/chat.js';
 import { threadsRouter } from '../routes/threads.js';
@@ -530,6 +531,24 @@ async function buildInner(
     }),
   );
 
+  // M13: generic write-side CRUD server for every active entity type — the
+  // single `entity-tools` server replacing the per-type CRUD servers. Owned by
+  // the host (like reference-tools/release-tools), not a plugin: registered
+  // exactly once per ProjectContext. Hoisted here (rather than at its prior
+  // construction site near the return statement) so both this registration and
+  // the final `serialization:` field below share one SerializationEngine.
+  const serializationEngine = new SerializationEngine(pluginHost, sectionSerializer);
+  pluginHost.registerMcpServer('entity-tools', () =>
+    createEntityToolsServer({
+      host: pluginHost,
+      registry: serializationEngine,
+      reader: rawReader,
+      db: db.handle,
+      ws,
+      referencesService,
+    }),
+  );
+
   // M17: ReleaseService + cross-cutting `release-tools` MCP. Like
   // reference-tools, owned by the host (not a plugin) — release semantics
   // are dual-track (entities + pages), neither side is a plugin owner.
@@ -938,7 +957,7 @@ async function buildInner(
     router,
     db,
     pluginHost,
-    serialization: new SerializationEngine(pluginHost, sectionSerializer),
+    serialization: serializationEngine,
     ws,
     activeAdapters,
     pendingInputs,

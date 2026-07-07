@@ -16,9 +16,16 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
-// Re-export the pure token logic so existing importers (serializer, mcp-server)
-// keep their `./services.js` import paths.
+// Re-export the pure token logic so existing importers (serializer.ts, via
+// './service.js') keep working.
 export { resolve, lintTokens, parseGroups, parseModes, toListItem, aliasTarget } from '../../../shared/design-system.js';
 
 interface DesignSystemRow {
@@ -31,29 +38,63 @@ interface DesignSystemRow {
   updated_at: string;
 }
 
-/**
- * M29 write options — mirror UiViewService. `capture: false` suppresses the
- * entity_version capture (index-rebuild path); `writeFile: false` skips the
- * JSON file persist (the file is what the rebuild reads).
- */
-export interface MutateOpts {
-  capture?: boolean;
-  writeFile?: boolean;
-}
-
 const SERIALIZER_VERSION = '1.0.0';
 
-export class DesignSystemService {
+/** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
+function buildFilter(query: Pick<DesignSystemListQuery, 'search' | 'tags' | 'tagFilter'>): {
+  whereSql: string;
+  params: unknown[];
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.search) {
+    where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ?)`);
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+
+  const tagSlugs = query.tags?.filter(Boolean) ?? [];
+  if (tagSlugs.length) {
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    if (query.tagFilter === 'or') {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = 'design-system' AND et.tag_slug IN (${placeholders})
+        )
+      `);
+      params.push(...tagSlugs);
+    } else {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug
+            FROM entity_tag et
+           WHERE et.entity_type = 'design-system' AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
+        )
+      `);
+      params.push(...tagSlugs, tagSlugs.length);
+    }
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private store: EntityStore
-  ) {}
+  ) {
+    super();
+  }
 
   // ─── CRUD ──────────────────────────────────────────────────────────────────
 
-  create(
+  createRaw(
     input: DesignSystemCreateInput,
     actor: ChangedBy,
     opts: MutateOpts = {}
@@ -95,8 +136,8 @@ export class DesignSystemService {
     return created;
   }
 
-  list(query: DesignSystemListQuery = {}): DesignSystem[] {
-    const { whereSql, params } = buildWhere(query);
+  listRaw(query: DesignSystemListQuery = {}): DesignSystem[] {
+    const { whereSql, params } = buildFilter(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
     const rows = this.db
@@ -105,15 +146,18 @@ export class DesignSystemService {
     return rows.map((r) => this.hydrate(r));
   }
 
+  count(query: Pick<DesignSystemListQuery, 'search' | 'tags' | 'tagFilter'> = {}): number {
+    const { whereSql, params } = buildFilter(query);
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM design_system ${whereSql}`).get(...params) as {
+      c: number;
+    };
+    return row.c;
+  }
+
   /** Trimmed list rows + total (ignoring pagination). Counts computed without exposing the token payload. */
   listItems(query: DesignSystemListQuery = {}): { items: DesignSystemListItem[]; total: number } {
-    const { whereSql, params } = buildWhere(query);
-    const total = (
-      this.db.prepare(`SELECT COUNT(*) AS c FROM design_system ${whereSql}`).get(...params) as {
-        c: number;
-      }
-    ).c;
-    const items = this.list(query).map((ds) => toListItem(ds));
+    const total = this.count(query);
+    const items = this.listRaw(query).map((ds) => toListItem(ds));
     return { items, total };
   }
 
@@ -124,7 +168,7 @@ export class DesignSystemService {
     return row ? this.hydrate(row) : null;
   }
 
-  update(
+  updateRaw(
     slug: string,
     input: DesignSystemUpdateInput,
     actor: ChangedBy,
@@ -212,10 +256,10 @@ export class DesignSystemService {
   ): { designSystem: DesignSystem; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const result = this.create({ ...input, slug }, actor, opts);
+      const result = this.createRaw({ ...input, slug }, actor, opts);
       return { designSystem: result.designSystem, op: 'created', warnings: result.warnings };
     }
-    const result = this.update(
+    const result = this.updateRaw(
       slug,
       {
         name: input.name,
@@ -301,45 +345,56 @@ export class DesignSystemService {
       updatedAt: row.updated_at,
     };
   }
-}
 
-// ─── list helpers ────────────────────────────────────────────────────────────
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). Distinct names from createRaw/updateRaw/listRaw —
+  // TS structurally allows an interface's `unknown`-typed params to widen to
+  // a narrower concrete type, but two methods can't share one name with
+  // different signatures, and the old rich signatures (actor/opts) must stay
+  // intact for routes.ts and M17 restore.
 
-function buildWhere(query: DesignSystemListQuery): { whereSql: string; params: unknown[] } {
-  const where: string[] = [];
-  const params: unknown[] = [];
-
-  if (query.search) {
-    where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ?)`);
-    const like = `%${query.search}%`;
-    params.push(like, like, like);
+  create(data: unknown): EntityMutateResult {
+    const result = this.createRaw(data as DesignSystemCreateInput, 'agent');
+    return {
+      slug: result.designSystem.slug,
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+    };
   }
 
-  const tagSlugs = query.tags?.filter(Boolean) ?? [];
-  if (tagSlugs.length) {
-    const placeholders = tagSlugs.map(() => '?').join(',');
-    if (query.tagFilter === 'or') {
-      where.push(`
-        slug IN (
-          SELECT et.entity_slug FROM entity_tag et
-           WHERE et.entity_type = 'design-system' AND et.tag_slug IN (${placeholders})
-        )
-      `);
-      params.push(...tagSlugs);
-    } else {
-      where.push(`
-        slug IN (
-          SELECT et.entity_slug
-            FROM entity_tag et
-           WHERE et.entity_type = 'design-system' AND et.tag_slug IN (${placeholders})
-        GROUP BY et.entity_slug
-          HAVING COUNT(DISTINCT et.tag_slug) = ?
-        )
-      `);
-      params.push(...tagSlugs, tagSlugs.length);
-    }
+  /**
+   * Plain slug lookup only — the old `get_design_system` MCP tool's extra
+   * `resolveMode` param (server-side token resolution via `resolve()`) is
+   * intentionally dropped from the generic entity-tools surface, which has no
+   * room for per-type extra params. `resolve()` itself is untouched and still
+   * backs the REST route in routes.ts.
+   */
+  get(slug: string): DesignSystem | null {
+    return this.getBySlug(slug);
   }
 
-  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
-}
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  update(slug: string, data: unknown): EntityMutateResult {
+    const result = this.updateRaw(slug, data as DesignSystemUpdateInput, 'agent');
+    return {
+      slug: result.designSystem.slug,
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+    };
+  }
 
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<DesignSystem> {
+    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(query: string, opts: { limit: number; offset: number }): EntityListResult<DesignSystem> {
+    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ search: query });
+    return { items, total };
+  }
+}

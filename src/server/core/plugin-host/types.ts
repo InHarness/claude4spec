@@ -10,11 +10,13 @@
 import type { Database } from 'better-sqlite3';
 import type { Router } from 'express';
 import type { McpServerInstance } from '@inharness-ai/agent-adapters';
+import type { ZodRawShape } from 'zod';
 import type {
   EntityModuleManifest,
   PluginActivationState,
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
+import type { EntityCrudService } from './entity-crud-service.js';
 import type {
   PluginCommandContribution,
   PluginManifest,
@@ -97,6 +99,9 @@ export interface MountContext {
  */
 export type PluginMountFn = (ctx: MountContext) => void;
 
+/** Factory for a custom `${type}-tools` MCP server (non-CRUD tools only). */
+export type McpServerFactory = () => McpServerInstance;
+
 export interface BackendModule extends EntityModuleManifest {
   /** L9 — JSON serialization for external consumers (CLI, MCP, ...). */
   serializer: EntitySerializer<unknown>;
@@ -105,13 +110,40 @@ export interface BackendModule extends EntityModuleManifest {
   systemPrompt: SystemPromptContribution;
 
   /**
-   * L1–L4 backend slots. The `mount` hook is the single entry point used by
-   * `pluginHost.mountBackend(ctx)` — it owns service construction, route
-   * mounting, MCP registration, and id resolver wiring.
+   * L1–L4 backend slots. Either declare `service`/`crud`/`routes`/`mcpServer`
+   * (the host synthesizes an equivalent `mount`, see
+   * `manifest-adapter.ts#synthesizeMount`) or write `mount` directly as an
+   * escape hatch — `mount`, when present, always wins.
    */
   backend?: {
     migrations?: SqlMigration[];
     mount?: PluginMountFn;
+    /** M13 — L2 service factory, instantiated once per `ProjectContext`. */
+    service?: (ctx: MountContext) => EntityCrudService;
+    /**
+     * M13 — declarative contribution to the generic `entity-tools` server.
+     * Requires `service` (enforced by `synthesizeMount`). Kept on the module
+     * post-lowering (not consumed away) — `entity-tools` reads it directly for
+     * schema validation and `describe_entity_type`.
+     */
+    crud?: {
+      createSchema: ZodRawShape;
+      updateSchema?: ZodRawShape;
+      descriptions?: { entity?: string };
+    };
+    /**
+     * A factory receiving the same service instance as `crud`/`mcpServer`.
+     * ALWAYS a factory (never a bare `Router`) — express's `Router` type is
+     * itself callable (`(req, res, next) => void`), so a `Router | (fn)`
+     * union can't be discriminated at runtime by `typeof x === 'function'`
+     * (true for both members). A plugin with no service dependency just
+     * ignores the arguments: `router: (_service, _ctx) => myRouter`.
+     */
+    routes?: {
+      router: (service: EntityCrudService, ctx: MountContext) => Router;
+    };
+    /** Custom `${type}-tools` server factory for this type's non-CRUD tools. */
+    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
   };
 }
 

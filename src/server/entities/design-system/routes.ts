@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { DesignSystemService } from './services.js';
+import type { DesignSystemService } from './service.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import { errorHandler } from '../../routes/errors.js';
@@ -28,7 +28,7 @@ export function designSystemsRouter(
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ designSystems: service.list(query) });
+      res.json({ designSystems: service.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -37,7 +37,7 @@ export function designSystemsRouter(
   router.post('/', (req, res, next) => {
     try {
       const body = req.body as DesignSystemCreateInput;
-      const { designSystem, warnings } = service.create(body, 'user');
+      const { designSystem, warnings } = service.createRaw(body, 'user');
       ws.broadcast({ kind: 'entity:changed', entityType: 'design-system', slug: designSystem.slug });
       res.status(201).json({ ...designSystem, warnings });
     } catch (err) {
@@ -61,7 +61,7 @@ export function designSystemsRouter(
   router.patch('/:slug', async (req, res, next) => {
     try {
       const body = req.body as DesignSystemUpdateInput;
-      const { designSystem, previousSlug, warnings } = service.update(
+      const { designSystem, previousSlug, warnings } = service.updateRaw(
         req.params.slug,
         body,
         'user'

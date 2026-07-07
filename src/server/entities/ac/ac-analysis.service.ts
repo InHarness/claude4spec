@@ -1,6 +1,6 @@
 import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
 import type { Database } from 'better-sqlite3';
-import type { AcService } from './services.js';
+import type { AcService } from './service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import {
   RawEntityReader,
@@ -76,7 +76,7 @@ export class AcAnalysisService {
       };
     }
 
-    const allActive = this.deps.acService.list({ status: 'active' });
+    const allActive = this.deps.acService.listRaw({ status: 'active' });
     let targets = allActive;
     if (opts.ac_slug) {
       targets = targets.filter((a) => a.slug === opts.ac_slug);

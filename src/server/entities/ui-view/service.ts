@@ -15,6 +15,13 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
 interface UiViewRow {
   slug: string;
@@ -27,29 +34,61 @@ interface UiViewRow {
   updated_at: string;
 }
 
-/**
- * M29: write options. `capture: false` suppresses the entity_version capture —
- * used by the index-reconstruction path (boot rebuild / incremental reindex),
- * where the file is the commit point and capture happens once in the write-path
- * orchestrator, not inside the service mutation.
- */
-export interface MutateOpts {
-  capture?: boolean;
-  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
-  writeFile?: boolean;
-}
-
 const VALID_LOCATIONS: ReadonlyArray<UiViewParamLocation> = ['path', 'query', 'hash'];
 
-export class UiViewService {
+/** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
+function buildFilter(query: Pick<UiViewListQuery, 'search' | 'tags' | 'tagFilter'>): {
+  whereSql: string;
+  params: unknown[];
+} {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  if (query.search) {
+    where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ? OR url LIKE ?)`);
+    const like = `%${query.search}%`;
+    params.push(like, like, like, like);
+  }
+
+  const tagSlugs = query.tags?.filter(Boolean) ?? [];
+  if (tagSlugs.length) {
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    if (query.tagFilter === 'or') {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
+        )
+      `);
+      params.push(...tagSlugs);
+    } else {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug
+            FROM entity_tag et
+           WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
+        )
+      `);
+      params.push(...tagSlugs, tagSlugs.length);
+    }
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+export class UiViewService extends BaseEntityCrudService<UiView> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private store: EntityStore
-  ) {}
+  ) {
+    super();
+  }
 
-  create(
+  createRaw(
     input: UiViewCreateInput,
     actor: ChangedBy,
     opts: MutateOpts = {}
@@ -88,42 +127,8 @@ export class UiViewService {
     return created;
   }
 
-  list(query: UiViewListQuery = {}): UiView[] {
-    const where: string[] = [];
-    const params: unknown[] = [];
-
-    if (query.search) {
-      where.push(`(name LIKE ? OR description LIKE ? OR slug LIKE ? OR url LIKE ?)`);
-      const like = `%${query.search}%`;
-      params.push(like, like, like, like);
-    }
-
-    const tagSlugs = query.tags?.filter(Boolean) ?? [];
-    if (tagSlugs.length) {
-      const placeholders = tagSlugs.map(() => '?').join(',');
-      if (query.tagFilter === 'or') {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug FROM entity_tag et
-             WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
-          )
-        `);
-        params.push(...tagSlugs);
-      } else {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug
-              FROM entity_tag et
-             WHERE et.entity_type = 'ui-view' AND et.tag_slug IN (${placeholders})
-          GROUP BY et.entity_slug
-            HAVING COUNT(DISTINCT et.tag_slug) = ?
-          )
-        `);
-        params.push(...tagSlugs, tagSlugs.length);
-      }
-    }
-
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  listRaw(query: UiViewListQuery = {}): UiView[] {
+    const { whereSql, params } = buildFilter(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
 
@@ -138,6 +143,14 @@ export class UiViewService {
     return rows.map((r) => this.hydrate(r));
   }
 
+  count(query: Pick<UiViewListQuery, 'search' | 'tags' | 'tagFilter'> = {}): number {
+    const { whereSql, params } = buildFilter(query);
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ui_view ${whereSql}`).get(...params) as {
+      c: number;
+    };
+    return row.c;
+  }
+
   getBySlug(slug: string): UiView | null {
     const row = this.db.prepare(`SELECT * FROM ui_view WHERE slug = ?`).get(slug) as
       | UiViewRow
@@ -145,7 +158,7 @@ export class UiViewService {
     return row ? this.hydrate(row) : null;
   }
 
-  update(
+  updateRaw(
     slug: string,
     input: UiViewUpdateInput,
     actor: ChangedBy,
@@ -234,10 +247,10 @@ export class UiViewService {
   ): { uiView: UiView; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const result = this.create({ ...input, slug }, actor, opts);
+      const result = this.createRaw({ ...input, slug }, actor, opts);
       return { uiView: result.uiView, op: 'created', warnings: result.warnings };
     }
-    const result = this.update(slug, {
+    const result = this.updateRaw(slug, {
       name: input.name,
       url: input.url,
       description: input.description,
@@ -274,6 +287,51 @@ export class UiViewService {
     const result = tx();
     if (opts.writeFile !== false) this.store.remove('ui-view', slug);
     return result;
+  }
+
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). Distinct names from createRaw/updateRaw/listRaw —
+  // TS structurally allows an interface's `unknown`-typed params to widen to
+  // a narrower concrete type, but two methods can't share one name with
+  // different signatures, and the old rich signatures (actor/opts) must stay
+  // intact for routes.ts and M17 restore.
+
+  create(data: unknown): EntityMutateResult {
+    const result = this.createRaw(data as UiViewCreateInput, 'agent');
+    return {
+      slug: result.uiView.slug,
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+    };
+  }
+
+  get(slug: string): UiView | null {
+    return this.getBySlug(slug);
+  }
+
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  update(slug: string, data: unknown): EntityMutateResult {
+    const result = this.updateRaw(slug, data as UiViewUpdateInput, 'agent');
+    return {
+      slug: result.uiView.slug,
+      ...(result.warnings.length ? { warnings: result.warnings } : {}),
+    };
+  }
+
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<UiView> {
+    const items = this.listRaw({ tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(query: string, opts: { limit: number; offset: number }): EntityListResult<UiView> {
+    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ search: query });
+    return { items, total };
   }
 
   private getBySlugInternal(slug: string): UiView {

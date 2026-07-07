@@ -18,6 +18,13 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { MutateOpts } from '../mutate-opts.js';
+import {
+  BaseEntityCrudService,
+  type EntityListOpts,
+  type EntityListResult,
+  type EntityMutateResult,
+} from '../../core/plugin-host/entity-crud-service.js';
 
 interface AcRow {
   slug: string;
@@ -28,18 +35,6 @@ interface AcRow {
   description: string | null;
   created_at: string;
   updated_at: string;
-}
-
-/**
- * M29: write options. `capture: false` suppresses the entity_version capture —
- * used by the index-reconstruction path (boot rebuild / incremental reindex),
- * where the file is the commit point and capture happens once in the write-path
- * orchestrator, not inside the service mutation.
- */
-export interface MutateOpts {
-  capture?: boolean;
-  /** M29: false ⇒ do not (re)write the entity JSON file (index-rebuild path). */
-  writeFile?: boolean;
 }
 
 const SERIALIZER_VERSION = '1.0.0';
@@ -53,16 +48,70 @@ export interface AcUpdateResult {
   previousSlug: string;
 }
 
-export class AcService {
+/** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
+function buildFilter(
+  query: Pick<AcListQuery, 'status' | 'kind' | 'search' | 'tags' | 'tagFilter'>,
+): { whereSql: string; params: unknown[] } {
+  const where: string[] = [];
+  const params: unknown[] = [];
+
+  const status = query.status ?? 'active';
+  if (status !== 'all') {
+    where.push(`status = ?`);
+    params.push(status);
+  }
+
+  if (query.kind) {
+    where.push(`kind = ?`);
+    params.push(query.kind);
+  }
+
+  if (query.search) {
+    where.push(`(text LIKE ? OR description LIKE ? OR slug LIKE ?)`);
+    const like = `%${query.search}%`;
+    params.push(like, like, like);
+  }
+
+  const tagSlugs = query.tags?.filter(Boolean) ?? [];
+  if (tagSlugs.length) {
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    if (query.tagFilter === 'and') {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug
+            FROM entity_tag et
+           WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
+        GROUP BY et.entity_slug
+          HAVING COUNT(DISTINCT et.tag_slug) = ?
+        )
+      `);
+      params.push(...tagSlugs, tagSlugs.length);
+    } else {
+      where.push(`
+        slug IN (
+          SELECT et.entity_slug FROM entity_tag et
+           WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
+        )
+      `);
+      params.push(...tagSlugs);
+    }
+  }
+
+  return { whereSql: where.length ? `WHERE ${where.join(' AND ')}` : '', params };
+}
+
+export class AcService extends BaseEntityCrudService<Ac> {
   constructor(
     private db: Database.Database,
     private tags: TagsService,
     private versions: VersionService,
     private host: PluginHost,
     private store: EntityStore,
-  ) {}
+  ) {
+    super();
+  }
 
-  create(input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Ac {
+  createRaw(input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): Ac {
     const text = (input.text ?? '').trim();
     if (!text) throw new DomainError('VALIDATION', 'text is required');
     const slug = (input.slug?.trim() || this.allocateSlug(text));
@@ -94,53 +143,8 @@ export class AcService {
     return created;
   }
 
-  list(query: AcListQuery = {}): Ac[] {
-    const where: string[] = [];
-    const params: unknown[] = [];
-
-    const status = query.status ?? 'active';
-    if (status !== 'all') {
-      where.push(`status = ?`);
-      params.push(status);
-    }
-
-    if (query.kind) {
-      where.push(`kind = ?`);
-      params.push(query.kind);
-    }
-
-    if (query.search) {
-      where.push(`(text LIKE ? OR description LIKE ? OR slug LIKE ?)`);
-      const like = `%${query.search}%`;
-      params.push(like, like, like);
-    }
-
-    const tagSlugs = query.tags?.filter(Boolean) ?? [];
-    if (tagSlugs.length) {
-      const placeholders = tagSlugs.map(() => '?').join(',');
-      if (query.tagFilter === 'and') {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug
-              FROM entity_tag et
-             WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
-          GROUP BY et.entity_slug
-            HAVING COUNT(DISTINCT et.tag_slug) = ?
-          )
-        `);
-        params.push(...tagSlugs, tagSlugs.length);
-      } else {
-        where.push(`
-          slug IN (
-            SELECT et.entity_slug FROM entity_tag et
-             WHERE et.entity_type = 'ac' AND et.tag_slug IN (${placeholders})
-          )
-        `);
-        params.push(...tagSlugs);
-      }
-    }
-
-    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  listRaw(query: AcListQuery = {}): Ac[] {
+    const { whereSql, params } = buildFilter(query);
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
 
@@ -155,12 +159,20 @@ export class AcService {
     return rows.map((r) => this.hydrate(r));
   }
 
+  count(query: Pick<AcListQuery, 'status' | 'kind' | 'search' | 'tags' | 'tagFilter'> = {}): number {
+    const { whereSql, params } = buildFilter(query);
+    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ac ${whereSql}`).get(...params) as {
+      c: number;
+    };
+    return row.c;
+  }
+
   getBySlug(slug: string): Ac | null {
     const row = this.db.prepare(`SELECT * FROM ac WHERE slug = ?`).get(slug) as AcRow | undefined;
     return row ? this.hydrate(row) : null;
   }
 
-  update(slug: string, input: AcUpdateInput, actor: ChangedBy, opts: MutateOpts = {}): AcUpdateResult {
+  updateRaw(slug: string, input: AcUpdateInput, actor: ChangedBy, opts: MutateOpts = {}): AcUpdateResult {
     const tx = this.db.transaction(() => {
       const current = this.db.prepare(`SELECT * FROM ac WHERE slug = ?`).get(slug) as
         | AcRow
@@ -230,10 +242,10 @@ export class AcService {
   upsert(slug: string, input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { ac: Ac; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
-      const ac = this.create({ ...input, slug }, actor, opts);
+      const ac = this.createRaw({ ...input, slug }, actor, opts);
       return { ac, op: 'created' };
     }
-    const { ac } = this.update(
+    const { ac } = this.updateRaw(
       slug,
       {
         text: input.text,
@@ -322,6 +334,67 @@ export class AcService {
       updatedAt: row.updated_at,
     };
   }
+
+  // ─── EntityCrudService (M13 — generic entity-tools) ─────────────────────
+  // Thin adapters over the rich methods above, always actor='agent' (the only
+  // caller is entity-tools). Distinct names from createRaw/updateRaw/listRaw —
+  // TS structurally allows an interface's `unknown`-typed params to widen to
+  // a narrower concrete type, but two methods can't share one name with
+  // different signatures, and the old rich signatures (actor/opts) must stay
+  // intact for routes.ts and M17 restore.
+
+  create(data: unknown): EntityMutateResult {
+    const created = this.createRaw(data as AcCreateInput, 'agent');
+    return { slug: created.slug, ...this.verifyWarnings(created.verifies) };
+  }
+
+  get(slug: string): Ac | null {
+    return this.getBySlug(slug);
+  }
+
+  /** `data.newSlug`, when present, renames — see EntityCrudService.update doc. */
+  update(slug: string, data: unknown): EntityMutateResult {
+    const result = this.updateRaw(slug, data as AcUpdateInput, 'agent');
+    return { slug: result.ac.slug, ...this.verifyWarnings(result.ac.verifies) };
+  }
+
+  /**
+   * The old create_ac/update_ac MCP tools always returned brokenVerifies so
+   * an agent could immediately fix a dangling `verifies` reference — carry
+   * that forward through the generic `warnings` field (same channel
+   * design-system/ui-view/diagram already use for their own lint feedback)
+   * rather than silently dropping it now that entity-tools is generic.
+   */
+  private verifyWarnings(verifies: AcVerifyRef[]): { warnings?: string[] } {
+    if (!verifies.length) return {};
+    const broken = this.classifyVerifies(verifies);
+    if (!broken.length) return {};
+    return { warnings: broken.map((b) => `verifies ${b.type}/${b.slug}: ${b.reason}`) };
+  }
+
+  delete(slug: string): void {
+    this.remove(slug, 'agent');
+  }
+
+  list(opts: EntityListOpts): EntityListResult<Ac> {
+    // ac's old dedicated list_acs MCP tool exposed status/kind alongside tags —
+    // the generic EntityListOpts has no room for them, so they travel through
+    // the type-specific `filters` escape hatch instead of being silently lost.
+    const { status, kind } = (opts.filters ?? {}) as { status?: AcStatus | 'all'; kind?: AcKind };
+    const items = this.listRaw({ status, kind, tags: opts.tags, tagFilter: opts.tagFilter, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ status, kind, tags: opts.tags, tagFilter: opts.tagFilter });
+    return { items, total };
+  }
+
+  search(
+    query: string,
+    opts: { limit: number; offset: number; filters?: Record<string, unknown> },
+  ): EntityListResult<Ac> {
+    const { status, kind } = (opts.filters ?? {}) as { status?: AcStatus | 'all'; kind?: AcKind };
+    const items = this.listRaw({ status, kind, search: query, limit: opts.limit, offset: opts.offset });
+    const total = this.count({ status, kind, search: query });
+    return { items, total };
+  }
 }
 
 function normalizeKind(kind: AcKind | undefined): AcKind {
@@ -343,7 +416,7 @@ function normalizeVerifies(verifies: AcVerifyRef[] | undefined): AcVerifyRef[] {
     const type = v.type.trim();
     const slug = v.slug.trim();
     if (!type || !slug) continue;
-    const key = `${type} ${slug}`;
+    const key = `${type} ${slug}`;
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ type, slug });

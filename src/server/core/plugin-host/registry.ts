@@ -29,6 +29,7 @@ import { ProjectPluginHostImpl } from './project-host.js';
 import {
   PluginManifestError,
   lowerEntityContribution,
+  synthesizeMount,
   validateWritingStyle,
 } from './manifest-adapter.js';
 
@@ -56,7 +57,11 @@ export class PluginRegistryImpl implements PluginRegistry {
     if (!module.type) {
       throw new Error('plugin-registry: module.type is required');
     }
-    this.modules.set(module.type, module);
+    // M13: lower declarative backend slots (service/crud/routes/mcpServer) into
+    // an equivalent `mount` for every module — in-repo entities build a
+    // `BackendModule` directly (never touching `EntityContribution`), so this
+    // is the one place both origins are guaranteed to pass through.
+    this.modules.set(module.type, synthesizeMount(module));
   }
 
   /**
@@ -78,7 +83,18 @@ export class PluginRegistryImpl implements PluginRegistry {
     }
     // Two-pass for atomicity: lower (validate) every contribution first, so a
     // throw on a later entity/style never leaves earlier ones registered.
-    const entityModules = (manifest.contributes.entities ?? []).map(lowerEntityContribution);
+    // M13: also run synthesizeMount here (not just in registerEntityModule) —
+    // its crud-without-service / mcpServer-without-service checks must
+    // surface at VALIDATION time. The hot-reload pipeline calls validatePlugin
+    // before tearing down the old version specifically so a structurally
+    // broken new version never leaves the pool missing a type; skipping this
+    // check here would let it pass validation, tear down the old version, and
+    // only then fail at registerPlugin — the exact "old stays" gap this
+    // two-pass validate-before-teardown design exists to prevent. Idempotent:
+    // registerEntityModule reapplies it at commit time, a no-op once mount is set.
+    const entityModules = (manifest.contributes.entities ?? [])
+      .map(lowerEntityContribution)
+      .map(synthesizeMount);
     const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
 
     // `onUnregister` is a required slot from the HOST_API 1.0.0 baseline. A

@@ -4,8 +4,8 @@ import type { EntitySerializer } from '../../serialization/types.js';
 import { dtoSerializer } from './serializer.js';
 import { dtoSystemPrompt } from './system-prompt.js';
 import { dtosRouter } from './routes.js';
-import { DtoService } from './services.js';
-import { createDtoToolsServer } from './mcp-server.js';
+import { DtoService } from './service.js';
+import { dtoCreateSchema, dtoUpdateSchema } from './crud-schemas.js';
 
 export const dtoBackendModule: BackendModule = {
   type: 'dto',
@@ -17,19 +17,18 @@ export const dtoBackendModule: BackendModule = {
   slugFrom: (data) => dtoSlug((data as { name: string }).name),
   serializer: dtoSerializer as EntitySerializer<unknown>,
   systemPrompt: dtoSystemPrompt,
+  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
+  // manifest-adapter.ts#synthesizeMount): construct the service once, register
+  // it for DI + entity-tools, mount the REST router. No custom MCP server — dto
+  // has no non-CRUD tools left.
   backend: {
-    mount(ctx) {
-      const service = new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore);
-      ctx.app.use(`${dtoBackendModule.pathPrefix}`, dtosRouter(service, ctx.referencesService));
-      ctx.registerMcpServer(
-        `${dtoBackendModule.type}-tools`,
-        () => createDtoToolsServer({
-          dtoService: service,
-          referencesService: ctx.referencesService,
-          ws: ctx.ws,
-        }),
-      );
-      ctx.registerEntityService(dtoBackendModule.type, service);
+    service: (ctx) => new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
+    crud: {
+      createSchema: dtoCreateSchema,
+      updateSchema: dtoUpdateSchema,
+    },
+    routes: {
+      router: (service, ctx) => dtosRouter(service as DtoService, ctx.referencesService),
     },
   },
 };

@@ -7,8 +7,6 @@ export const dtoSystemPrompt: SystemPromptContribution = {
     sqlQuery: 'SELECT COUNT(*) AS count FROM dto',
     label: 'dtos',
   },
-  mcpToolsLine:
-    'dto-tools: create_dto, get_dto, update_dto, delete_dto, list_dtos',
   narrativeBlock:
     'Data Transfer Objects — named field schemas (name, type, required, description), examples, linked endpoints, tags.',
 };

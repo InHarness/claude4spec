@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import type { DiagramService } from './services.js';
+import type { DiagramService } from './service.js';
 import { validateDiagramSource } from './validate.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
@@ -29,7 +29,7 @@ export function diagramsRouter(
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       };
-      res.json({ diagrams: service.list(query) });
+      res.json({ diagrams: service.listRaw(query) });
     } catch (err) {
       next(err);
     }
@@ -38,7 +38,7 @@ export function diagramsRouter(
   router.post('/', async (req, res, next) => {
     try {
       const body = req.body as DiagramCreateInput;
-      const diagram = service.create(body, 'user');
+      const diagram = service.createRaw(body, 'user');
       const warnings = await validateDiagramSource(diagram.format, diagram.source);
       ws.broadcast({ kind: 'entity:changed', entityType: 'diagram', slug: diagram.slug });
       res.status(201).json({ ...diagram, warnings });
@@ -61,7 +61,7 @@ export function diagramsRouter(
   router.patch('/:slug', async (req, res, next) => {
     try {
       const body = req.body as DiagramUpdateInput;
-      const { diagram, previousSlug } = service.update(req.params.slug, body, 'user');
+      const { diagram, previousSlug } = service.updateRaw(req.params.slug, body, 'user');
       if (diagram.slug !== previousSlug) {
         await references.propagateSlugChange('diagram', previousSlug, diagram.slug);
       }

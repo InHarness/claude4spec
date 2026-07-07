@@ -7,8 +7,9 @@ export const acSystemPrompt: SystemPromptContribution = {
     sqlQuery: "SELECT COUNT(*) AS count FROM ac WHERE status='active'",
     label: 'AC (active)',
   },
-  mcpToolsLine:
-    'ac-tools: create_ac, get_ac, update_ac, delete_ac, list_acs',
+  // M13: CRUD moved to the generic entity-tools server (composed by the host);
+  // this line now covers ONLY ac's custom semantic-audit tool.
+  mcpToolsLine: 'ac-tools: analyze_ac_against_entities',
   narrativeBlock:
     'Acceptance criteria — one observable statement; kind (requirement/edge-case), status (active/deprecated), verifies[] refs to entities, tags.',
 };
