@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 export type RawEntityType =
   | 'endpoint'
@@ -10,7 +11,7 @@ export type RawEntityType =
   | 'diagram';
 
 export interface RawEntity {
-  type: RawEntityType;
+  type: string;
   slug: string;
   data: Record<string, unknown>;
   tags: string[];
@@ -84,10 +85,31 @@ export function isRawEntityType(value: string): value is RawEntityType {
 }
 
 export class RawEntityReader {
-  constructor(private db: Database.Database) {}
+  constructor(
+    private db: Database.Database,
+    /**
+     * M17: write-path capture needs to read a plugin-contributed type's raw
+     * row before snapshotting, not just the 7 core types. Optional — callers
+     * that only ever touch core types (CLI tools, reference-tools,
+     * ac-analysis) keep working unchanged without a host.
+     */
+    private host?: ProjectPluginHost,
+  ) {}
 
-  getEntity(type: RawEntityType, slug: string): RawEntity | null {
-    const table = ENTITY_TABLES[type];
+  /**
+   * Resolves the SQL table for `type`. The static `ENTITY_TABLES` map is
+   * checked first (identical behavior/perf for the 7 core types); a plugin
+   * type falls back to `host.getAvailable(type)?.table` — the same
+   * `EntityModuleManifest.table` field `auto-schema.ts#resolveTable` already
+   * uses for schema introspection. No static list gates capture anymore.
+   */
+  private resolveTable(type: string): string | undefined {
+    return ENTITY_TABLES[type as RawEntityType] ?? this.host?.getAvailable(type)?.table;
+  }
+
+  getEntity(type: string, slug: string): RawEntity | null {
+    const table = this.resolveTable(type);
+    if (!table) return null;
     const row = this.db.prepare(`SELECT * FROM ${table} WHERE slug = ?`).get(slug) as
       | Record<string, unknown>
       | undefined;
@@ -308,7 +330,7 @@ export class RawEntityReader {
     }));
   }
 
-  private hydrate(type: RawEntityType, row: Record<string, unknown>): RawEntity {
+  private hydrate(type: string, row: Record<string, unknown>): RawEntity {
     const slug = row.slug as string;
     const tags = this.getEntityTagSlugs(type, slug);
 
@@ -344,7 +366,7 @@ export class RawEntityReader {
     };
   }
 
-  private getEntityTagSlugs(type: RawEntityType, slug: string): string[] {
+  private getEntityTagSlugs(type: string, slug: string): string[] {
     const rows = this.db
       .prepare(
         `SELECT t.slug AS slug

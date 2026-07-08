@@ -41,7 +41,9 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
         entity,
         ctx.reader
       );
-      grouped[bucket[entity.type]]!.push(withMeta(result));
+      // findByTag only ever returns core RawEntityTypes (out of scope of the
+      // M17 generic-capture widening) — safe to narrow back here.
+      grouped[bucket[entity.type as RawEntityType]]!.push(withMeta(result));
     }
     writeOutput({ ...grouped, query: { tags, filter: filterRaw } }, args);
   } finally {

@@ -387,7 +387,7 @@ async function buildInner(
   const tagsService = new TagsService(db.handle);
   tagsService.setHost(pluginHost);
   const versionService = new VersionService(db.handle);
-  const rawReader = new RawEntityReader(db.handle);
+  const rawReader = new RawEntityReader(db.handle, pluginHost);
   // M17: wire snapshot capture deps. After this, every entity service
   // mutation captures a deterministic snapshot via host.snapshot(...).
   versionService.configureSnapshot(rawReader, pluginHost);

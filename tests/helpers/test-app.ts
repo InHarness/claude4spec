@@ -19,7 +19,7 @@ import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
-import type { ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
+import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
 import type Database from 'better-sqlite3';
 
 export interface TestApp {
@@ -27,6 +27,7 @@ export interface TestApp {
   db: Database.Database;
   host: ProjectPluginHost;
   rawReader: RawEntityReader;
+  versionService: VersionService;
   referencesService: ReferencesService;
   entityStore: EntityStore;
   cwd: string;
@@ -40,18 +41,22 @@ export interface TestApp {
  * starting chokidar here would leak fds across the fork pool. Do NOT import
  * project-context.ts (it registers section_ref at import time).
  */
-export async function createTestApp(): Promise<TestApp> {
+export async function createTestApp(opts: { extraModules?: BackendModule[] } = {}): Promise<TestApp> {
   const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-test-'));
   const db = createTestDb();
 
   const registry = new PluginRegistryImpl();
   registerAllPlugins(registry);
+  // Test-only fixture types (e.g. proving generic capture works for a
+  // plugin-contributed type) are registered before consolidate() so they
+  // behave identically to core types for the rest of this function.
+  for (const mod of opts.extraModules ?? []) registry.registerEntityModule(mod);
   const host = registry.consolidate(null);
 
   const ws: WsEmitter = { broadcast: () => {} };
   const tagsService = new TagsService(db);
   const versionService = new VersionService(db);
-  const rawReader = new RawEntityReader(db);
+  const rawReader = new RawEntityReader(db, host);
   versionService.configureSnapshot(rawReader, host);
 
   const entitiesWatcher = new EntitiesWatcher(path.join(cwd, '.claude4spec/entities'));
@@ -99,6 +104,7 @@ export async function createTestApp(): Promise<TestApp> {
     db,
     host,
     rawReader,
+    versionService,
     referencesService,
     entityStore,
     cwd,
