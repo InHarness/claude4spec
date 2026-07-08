@@ -190,7 +190,9 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
           slug: entity.slug,
           ...envelope(deps.registry.serializeEntity(entity.type, view, entity, ctx.reader)),
         };
-        groups[bucket[entity.type]]!.push(item);
+        // findByTag only ever returns core RawEntityTypes (out of scope of
+        // the M17 generic-capture widening) — safe to narrow back here.
+        groups[bucket[entity.type as RawEntityType]]!.push(item);
       }
       return ok({ view, query: { tags, filter }, ...groups });
     },

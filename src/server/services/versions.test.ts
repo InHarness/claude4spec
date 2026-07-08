@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { VersionService } from './versions.js';
 import { DomainError } from './tags.js';
-import type { PluginHost } from '../core/plugin-host/types.js';
+import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
+import { RawEntityReader } from '../domain/raw-entity-reader.js';
+import { fixtureModule } from '../../../tests/helpers/fixture-module.js';
+import type { MountContext, PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore } from './entity-store.js';
 import type { TagsService } from './tags.js';
 
@@ -44,8 +47,10 @@ describe('VersionService.restore', () => {
 
     // getEntity: null ⇒ captureEntitySnapshot's post-restore capture falls
     // back to the last-known version's data instead of re-reading a raw row
-    // (fakeHost.restore above doesn't actually write one).
-    const fakeReader = { getEntity: () => null } as never;
+    // (fakeHost.restore above doesn't actually write one). hasTable: true ⇒
+    // 'dto' resolves fine — this fake models "row absent", not "unresolvable
+    // type" (see the ghost-type test below for that distinct failure mode).
+    const fakeReader = { getEntity: () => null, hasTable: () => true } as never;
     versions.configureSnapshot(fakeReader, fakeHost);
     versions.configureRestore(fakeEntityStore, fakeTagsService);
   });
@@ -106,5 +111,90 @@ describe('VersionService.restore', () => {
     expect(hostRestore).not.toHaveBeenCalled();
     expect(serviceRemove).toHaveBeenCalledWith('my-dto', 'user');
     expect(result.op).toBe('delete');
+  });
+});
+
+describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', () => {
+  function setupHost(type: string, opts: { snapshotThrows?: boolean } = {}) {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(fixtureModule(type, opts));
+    const host = registry.consolidate({ entities: [type] });
+    host.mountBackend({ db } as unknown as MountContext);
+    const reader = new RawEntityReader(db, host);
+    const versions = new VersionService(db);
+    versions.configureSnapshot(reader, host);
+    return { db, versions };
+  }
+
+  it('captures an entity_version row for a type outside the core RawEntityType union', () => {
+    const { db, versions } = setupHost('widget');
+    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+
+    const result = versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created', '1.0.0');
+
+    expect(result.version).toBe(1);
+    const row = db
+      .prepare(
+        `SELECT entity_type, entity_slug, data FROM entity_version WHERE entity_type = 'widget' AND entity_slug = 'my-widget'`,
+      )
+      .get() as { entity_type: string; entity_slug: string; data: string };
+    expect(row.entity_type).toBe('widget');
+    expect(JSON.parse(row.data)).toMatchObject({ slug: 'my-widget', name: 'Hello' });
+  });
+
+  it('lists a captured plugin-type version through the same generic path GET /versions uses', () => {
+    const { db, versions } = setupHost('widget');
+    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+    versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created', '1.0.0');
+
+    const list = versions.listVersions('widget', 'my-widget');
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ version: 1, op: 'create' });
+  });
+
+  it('never silently swallows a capture failure — logs and rethrows, and no row is inserted', () => {
+    const { db, versions } = setupHost('brokenwidget', { snapshotThrows: true });
+    db.prepare(`INSERT INTO brokenwidget (slug, name) VALUES ('oops', 'X')`).run();
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
+      versions.captureEntitySnapshot('brokenwidget', 'oops', 'create', 'user', 'Created', '1.0.0'),
+    ).toThrow(/boom: no snapshot support/);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('snapshot capture failed for brokenwidget/oops'),
+      expect.any(Error),
+    );
+    const row = db
+      .prepare(`SELECT COUNT(*) AS c FROM entity_version WHERE entity_type = 'brokenwidget'`)
+      .get() as { c: number };
+    expect(row.c).toBe(0);
+
+    errorSpy.mockRestore();
+  });
+
+  it('fails loudly for a type that resolves to no table at all, instead of silently recording a null-data version', () => {
+    // 'widget' is registered/active, but 'ghost-type' is not — resolveTable
+    // can't find it in ENTITY_TABLES or via host.getEntity(type)?.table. This
+    // must be distinguished from "row not found" (which legitimately falls
+    // back to the last-known snapshot for a post-delete capture) — an
+    // unresolvable type is a hard configuration error, not an absent row.
+    const { db, versions } = setupHost('widget');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
+      versions.captureEntitySnapshot('ghost-type', 'nope', 'create', 'user', 'Created', '1.0.0'),
+    ).toThrow(/no table resolved for type 'ghost-type'/);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('snapshot capture failed for ghost-type/nope'),
+      expect.any(Error),
+    );
+    const row = db
+      .prepare(`SELECT COUNT(*) AS c FROM entity_version WHERE entity_type = 'ghost-type'`)
+      .get() as { c: number };
+    expect(row.c).toBe(0);
+
+    errorSpy.mockRestore();
   });
 });

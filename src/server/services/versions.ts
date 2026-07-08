@@ -117,7 +117,7 @@ export class VersionService {
    * explicitly to capture a tombstone with last-known data.
    */
   captureEntitySnapshot(
-    type: RawEntityType,
+    type: string,
     entitySlug: string,
     op: VersionOp,
     actor: ChangedBy,
@@ -127,6 +127,16 @@ export class VersionService {
     if (!this.snapshotDeps) {
       // Fallback: deps not yet wired. Store legacy domain object via createVersion.
       return this.createVersion(type, entitySlug, null, actor, summary, op, serializerVersion);
+    }
+    // A type that doesn't resolve to any table at all (misconfigured/inactive
+    // plugin, or a reader wired without a host) is a hard failure — must not
+    // be conflated with "row not found" below, which silently falls back to
+    // the last-known snapshot and would otherwise mask this as ordinary
+    // post-delete capture instead of surfacing it.
+    if (!this.snapshotDeps.reader.hasTable(type)) {
+      const err = new Error(`entity_version capture: no table resolved for type '${type}'`);
+      console.error(`[entity_version] snapshot capture failed for ${type}/${entitySlug} (op=${op}):`, err);
+      throw err;
     }
     // For all ops (including delete), snapshot the entity *as it currently is*
     // (callers must call this BEFORE the row is deleted from its table).
@@ -139,7 +149,16 @@ export class VersionService {
       return this.createVersion(type, entitySlug, last?.data ?? null, actor, summary, op, serializerVersion);
     }
     const ctx = { reader: this.snapshotDeps.reader, depth: 0, maxDepth: 1 };
-    const snapshot = this.snapshotDeps.host.snapshot(type, rawEntity, ctx);
+    // M17: a capture failure must never be silently dropped — log it here
+    // (the single real capture call site) and rethrow so the caller's
+    // transaction rolls back and the failure surfaces to the client.
+    let snapshot;
+    try {
+      snapshot = this.snapshotDeps.host.snapshot(type, rawEntity, ctx);
+    } catch (err) {
+      console.error(`[entity_version] snapshot capture failed for ${type}/${entitySlug} (op=${op}):`, err);
+      throw err;
+    }
     return this.createVersion(type, entitySlug, snapshot, actor, summary, op, serializerVersion);
   }
 
@@ -149,7 +168,7 @@ export class VersionService {
    * `releaseService.createRelease()`.
    */
   createVersion(
-    entityType: EntityType,
+    entityType: string,
     entitySlug: string,
     data: unknown,
     changedBy: ChangedBy,
@@ -183,7 +202,7 @@ export class VersionService {
     return this.toListItem(row);
   }
 
-  listVersions(entityType: EntityType, entitySlug: string): VersionListItem[] {
+  listVersions(entityType: string, entitySlug: string): VersionListItem[] {
     const rows = this.db
       .prepare(
         `SELECT version, changed_by, change_summary, created_at, release_id, op
@@ -209,7 +228,7 @@ export class VersionService {
     }));
   }
 
-  getVersion(entityType: EntityType, entitySlug: string, version: number): VersionDetail | null {
+  getVersion(entityType: string, entitySlug: string, version: number): VersionDetail | null {
     const row = this.db
       .prepare(
         `SELECT * FROM entity_version
@@ -226,7 +245,7 @@ export class VersionService {
    * `releaseId === undefined` returns the latest overall (no release filter).
    */
   getLatestVersionForEntity(
-    entityType: EntityType,
+    entityType: string,
     entitySlug: string,
     releaseId?: number | null
   ): VersionDetail | null {
@@ -260,7 +279,7 @@ export class VersionService {
   }
 
   diff(
-    entityType: EntityType,
+    entityType: string,
     entitySlug: string,
     fromVersion: number,
     toVersion: number
@@ -271,7 +290,7 @@ export class VersionService {
     return { from, to, changes: computeDiff(from.data, to.data) };
   }
 
-  private nextVersionNumber(entityType: EntityType, entitySlug: string): number {
+  private nextVersionNumber(entityType: string, entitySlug: string): number {
     const row = this.db
       .prepare(
         `SELECT MAX(version) AS v FROM entity_version WHERE entity_type = ? AND entity_slug = ?`
