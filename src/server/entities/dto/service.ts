@@ -347,11 +347,6 @@ export class DtoService extends BaseEntityCrudService<Dto> {
     return { items, total };
   }
 
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Dto> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
-    return { items, total };
-  }
 }
 
 function parseFields(raw: string): DtoField[] {

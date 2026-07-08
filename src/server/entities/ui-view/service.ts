@@ -328,12 +328,6 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
     return { items, total };
   }
 
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<UiView> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
-    return { items, total };
-  }
-
   private getBySlugInternal(slug: string): UiView {
     const row = this.db.prepare(`SELECT * FROM ui_view WHERE slug = ?`).get(slug) as
       | UiViewRow

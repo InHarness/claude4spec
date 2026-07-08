@@ -271,11 +271,6 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
     return { items, total };
   }
 
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Diagram> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
-    return { items, total };
-  }
 }
 
 // ─── list helpers ────────────────────────────────────────────────────────────

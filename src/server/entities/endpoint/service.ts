@@ -433,9 +433,4 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
     return { items, total };
   }
 
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<Endpoint> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
-    return { items, total };
-  }
 }

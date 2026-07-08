@@ -386,15 +386,6 @@ export class AcService extends BaseEntityCrudService<Ac> {
     return { items, total };
   }
 
-  search(
-    query: string,
-    opts: { limit: number; offset: number; filters?: Record<string, unknown> },
-  ): EntityListResult<Ac> {
-    const { status, kind } = (opts.filters ?? {}) as { status?: AcStatus | 'all'; kind?: AcKind };
-    const items = this.listRaw({ status, kind, search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ status, kind, search: query });
-    return { items, total };
-  }
 }
 
 function normalizeKind(kind: AcKind | undefined): AcKind {
