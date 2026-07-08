@@ -81,6 +81,35 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
     }
   });
 
+  /**
+   * M13/M34: version-to-version diff for the plugin-facing `useVersionDiff`
+   * hook. `entity_version.data` is already the M17 snapshot (captured via
+   * `host.snapshot` at write time), so it's fed straight into `host.diff`
+   * unchanged — the same L9 `EntitySerializer.diff`/JSON-deep-diff-fallback
+   * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
+   * Response shape matches `RawDeltaEntityChange` (shared/entities.ts).
+   */
+  router.get('/:type/:slug/versions/:from/diff/:to', (req, res, next) => {
+    try {
+      const type = assertType(host, req.params.type);
+      const slug = req.params.slug;
+      assertExists(host, type, slug);
+      const from = versions.getVersion(type, slug, Number(req.params.from));
+      const to = versions.getVersion(type, slug, Number(req.params.to));
+      if (!from || !to) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
+      const diff = host.diff(type, from.data, to.data, slug);
+      res.json({
+        type: diff.type,
+        slug: diff.slug,
+        op: diff.op,
+        ...(diff.changes ? { changes: diff.changes } : {}),
+        ...(diff.raw ? { raw: diff.raw } : {}),
+      });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   router.post('/:type/:slug/versions/:version/restore', (req, res, next) => {
     try {
       const type = assertType(host, req.params.type);

@@ -19,6 +19,28 @@ export function useVersionDetail(type: EntityType, slug: string | null, version:
 }
 
 /**
+ * Exported so the sentinel/null-input permutations can be unit-tested without
+ * rendering the hook (no React Testing Library in this repo).
+ */
+export function versionDiffQueryKey(
+  type: EntityType,
+  slug: string | null,
+  fromId: number | null,
+  toId: number | null
+): unknown[] {
+  return slug && fromId && toId ? ['version-diff', type, slug, fromId, toId] : ['version-diff', type, 'none'];
+}
+
+/** M13/M34: plugin-facing hook — computed diff between two captured versions. */
+export function useVersionDiff(type: EntityType, slug: string | null, fromId: number | null, toId: number | null) {
+  return useQuery({
+    queryKey: versionDiffQueryKey(type, slug, fromId, toId),
+    queryFn: () => versionsApi.diff(type, slug as string, fromId as number, toId as number),
+    enabled: Boolean(slug && fromId && toId),
+  });
+}
+
+/**
  * Exported so the invalidation set can be unit-tested against a real
  * QueryClient without rendering the hook (no React Testing Library in this
  * repo). Every per-type entity hook (useDto, useEndpoint, useAc, ...) keys

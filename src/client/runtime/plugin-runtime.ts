@@ -25,7 +25,7 @@ export { registerExtensionReferenceType } from '../../shared/reference-extension
 export { versionService } from './version-service.js';
 export { tagsService } from './tags-service.js';
 export { referencesService } from './references-service.js';
-export { useVersions, useVersionDetail, useRestoreVersion } from '../hooks/useVersions.js';
+export { useVersions, useVersionDetail, useRestoreVersion, useVersionDiff } from '../hooks/useVersions.js';
 export { useTags, useEntityTags, useAssignTags, useRemoveEntityTag, useCreateTag } from '../hooks/useTags.js';
 export { useReferences } from '../hooks/useReferences.js';
 

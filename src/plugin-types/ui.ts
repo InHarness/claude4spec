@@ -190,14 +190,39 @@ export interface VersionHistoryItem {
   label: string;
   createdAt: string;
   author?: string;
+  /** M13/M34: shown per-row in the `timeline` variant (kit doesn't fetch releases — author supplies it). */
+  releaseLabel?: string;
 }
 export interface VersionHistoryProps {
   versions: VersionHistoryItem[];
   activeVersion?: string;
   onSelect?(id: string): void;
   onRestore?(id: string): void;
+  /** M13/M34: `'flat'` (default) keeps the existing list; `'timeline'` adds the two-column/dots layout + "Compare to". */
+  variant?: 'flat' | 'timeline';
+  /** M13/M34: the version currently selected as the `timeline` "Compare to" target. */
+  compareVersion?: string;
+  /** M13/M34: fired when a `timeline` row's "Compare to" action is used. */
+  onCompare?(id: string): void;
 }
 export declare const VersionHistory: ComponentType<VersionHistoryProps>;
+
+export interface DiffViewLine {
+  op: 'keep' | 'added' | 'removed';
+  content: string;
+}
+export interface DiffViewProps {
+  /** Precomputed line hunks. Wins over `before`/`after` if both are given. */
+  hunks?: DiffViewLine[];
+  /** Pre-stringified "before" text — DiffView never serializes values itself. Only used when `hunks` is absent; requires `after` too. */
+  before?: string;
+  /** Pre-stringified "after" text — see `before`. */
+  after?: string;
+  title?: string;
+  /** `'inline'` (default): one unified column. `'split'`: two columns. Only affects `hunks` rendering. */
+  mode?: 'inline' | 'split';
+}
+export declare const DiffView: ComponentType<DiffViewProps>;
 
 export interface EntityDetailToolbarProps {
   title: string;

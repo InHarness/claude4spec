@@ -85,6 +85,7 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'useVersions',
   'useVersionDetail',
   'useRestoreVersion',
+  'useVersionDiff',
   'useTags',
   'useEntityTags',
   'useAssignTags',
@@ -127,6 +128,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   // Panel detalu (experimental, M34/L11)
   'SegmentedControlTabs',
   'VersionHistory',
+  'DiffView',
   'EntityDetailToolbar',
   'RichTextField',
   'TagPicker',

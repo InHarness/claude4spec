@@ -266,6 +266,26 @@ export declare const versionService: {
 export declare function useVersions(type: string, slug: string | null): QueryLike<VersionListItem[]>;
 export declare function useVersionDetail(type: string, slug: string | null, version: number | null): QueryLike<VersionDetail>;
 export declare function useRestoreVersion(): MutationLike<{ type: string; slug: string; version: number }, VersionListItem>;
+/**
+ * M13/M34: computed diff between two captured versions, via the L9
+ * `EntitySerializer.diff` slot (falls back to a JSON deep-diff, surfaced in
+ * `raw`, when the plugin's serializer provides no `diff`). Distinct from the
+ * narrower `EntityDiff` above (that one is what a plugin's own `diff()`
+ * returns; this is what the host hands back to the client either way).
+ */
+export interface VersionDiff {
+  type: string;
+  slug: string;
+  op: 'created' | 'deleted' | 'modified' | 'noop';
+  changes?: Record<string, unknown>;
+  raw?: { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> };
+}
+export declare function useVersionDiff(
+  type: string,
+  slug: string | null,
+  fromId: number | null,
+  toId: number | null
+): QueryLike<VersionDiff>;
 
 export interface TagListItem {
   slug: string;
