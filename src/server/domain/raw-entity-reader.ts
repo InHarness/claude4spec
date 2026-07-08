@@ -99,12 +99,25 @@ export class RawEntityReader {
   /**
    * Resolves the SQL table for `type`. The static `ENTITY_TABLES` map is
    * checked first (identical behavior/perf for the 7 core types); a plugin
-   * type falls back to `host.getAvailable(type)?.table` — the same
+   * type falls back to `host.getEntity(type)?.table` — the same
    * `EntityModuleManifest.table` field `auto-schema.ts#resolveTable` already
-   * uses for schema introspection. No static list gates capture anymore.
+   * uses for schema introspection. `getEntity` (not `getAvailable`) so an
+   * inactive/deactivated plugin type resolves to no table here too, matching
+   * every other host-gated read. No static list gates capture anymore.
    */
   private resolveTable(type: string): string | undefined {
-    return ENTITY_TABLES[type as RawEntityType] ?? this.host?.getAvailable(type)?.table;
+    return ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+  }
+
+  /**
+   * Whether `type` resolves to a real table — distinguishes "this type can't
+   * be read at all" (misconfigured/inactive plugin, or a reader built without
+   * a host) from "the table exists but this slug isn't in it." Callers that
+   * need to fail loudly on the former (e.g. M17 capture) check this instead
+   * of treating `getEntity`'s null return as ordinary absence.
+   */
+  hasTable(type: string): boolean {
+    return this.resolveTable(type) !== undefined;
   }
 
   getEntity(type: string, slug: string): RawEntity | null {

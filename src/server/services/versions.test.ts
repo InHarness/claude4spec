@@ -5,7 +5,8 @@ import { VersionService } from './versions.js';
 import { DomainError } from './tags.js';
 import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
 import { RawEntityReader } from '../domain/raw-entity-reader.js';
-import type { BackendModule, MountContext, PluginHost } from '../core/plugin-host/types.js';
+import { fixtureModule } from '../../../tests/helpers/fixture-module.js';
+import type { MountContext, PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore } from './entity-store.js';
 import type { TagsService } from './tags.js';
 
@@ -46,8 +47,10 @@ describe('VersionService.restore', () => {
 
     // getEntity: null ⇒ captureEntitySnapshot's post-restore capture falls
     // back to the last-known version's data instead of re-reading a raw row
-    // (fakeHost.restore above doesn't actually write one).
-    const fakeReader = { getEntity: () => null } as never;
+    // (fakeHost.restore above doesn't actually write one). hasTable: true ⇒
+    // 'dto' resolves fine — this fake models "row absent", not "unresolvable
+    // type" (see the ghost-type test below for that distinct failure mode).
+    const fakeReader = { getEntity: () => null, hasTable: () => true } as never;
     versions.configureSnapshot(fakeReader, fakeHost);
     versions.configureRestore(fakeEntityStore, fakeTagsService);
   });
@@ -111,44 +114,6 @@ describe('VersionService.restore', () => {
   });
 });
 
-/**
- * M17: a minimal, real (non-core) plugin module — distinct from every
- * RawEntityType — with a real migrated table and a real serializer, so these
- * tests exercise the actual RawEntityReader → host.getEntity → entity_version
- * path, not a fake reader/host. Proves "any active type" isn't limited to the
- * 7 hardcoded core types.
- */
-function fixtureModule(type: string, opts: { snapshotThrows?: boolean } = {}): BackendModule {
-  return {
-    type,
-    table: type,
-    label: type,
-    labelPlural: `${type}s`,
-    displayOrder: 999,
-    slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? ''),
-    pathPrefix: `/${type}s`,
-    serializer: {
-      type,
-      version: '1.0.0',
-      snapshot: (entity: unknown) => {
-        if (opts.snapshotThrows) throw new Error('boom: no snapshot support');
-        const e = entity as { slug: string; data: Record<string, unknown> };
-        return { slug: e.slug, ...e.data };
-      },
-    } as BackendModule['serializer'],
-    systemPrompt: {
-      roleNoun: type,
-      countStat: { placeholder: `${type}Count`, sqlQuery: 'SELECT 0 AS count', label: type },
-      mcpToolsLine: `${type}-tools: ...`,
-    },
-    backend: {
-      migrations: [
-        { version: 1, name: `create_${type}`, up: `CREATE TABLE ${type} (slug TEXT PRIMARY KEY NOT NULL, name TEXT);` },
-      ],
-    },
-  };
-}
-
 describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', () => {
   function setupHost(type: string, opts: { snapshotThrows?: boolean } = {}) {
     const db = new Database(':memory:');
@@ -203,6 +168,30 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
     );
     const row = db
       .prepare(`SELECT COUNT(*) AS c FROM entity_version WHERE entity_type = 'brokenwidget'`)
+      .get() as { c: number };
+    expect(row.c).toBe(0);
+
+    errorSpy.mockRestore();
+  });
+
+  it('fails loudly for a type that resolves to no table at all, instead of silently recording a null-data version', () => {
+    // 'widget' is registered/active, but 'ghost-type' is not — resolveTable
+    // can't find it in ENTITY_TABLES or via host.getEntity(type)?.table. This
+    // must be distinguished from "row not found" (which legitimately falls
+    // back to the last-known snapshot for a post-delete capture) — an
+    // unresolvable type is a hard configuration error, not an absent row.
+    const { db, versions } = setupHost('widget');
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() =>
+      versions.captureEntitySnapshot('ghost-type', 'nope', 'create', 'user', 'Created', '1.0.0'),
+    ).toThrow(/no table resolved for type 'ghost-type'/);
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringContaining('snapshot capture failed for ghost-type/nope'),
+      expect.any(Error),
+    );
+    const row = db
+      .prepare(`SELECT COUNT(*) AS c FROM entity_version WHERE entity_type = 'ghost-type'`)
       .get() as { c: number };
     expect(row.c).toBe(0);
 

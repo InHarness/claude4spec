@@ -128,6 +128,16 @@ export class VersionService {
       // Fallback: deps not yet wired. Store legacy domain object via createVersion.
       return this.createVersion(type, entitySlug, null, actor, summary, op, serializerVersion);
     }
+    // A type that doesn't resolve to any table at all (misconfigured/inactive
+    // plugin, or a reader wired without a host) is a hard failure — must not
+    // be conflated with "row not found" below, which silently falls back to
+    // the last-known snapshot and would otherwise mask this as ordinary
+    // post-delete capture instead of surfacing it.
+    if (!this.snapshotDeps.reader.hasTable(type)) {
+      const err = new Error(`entity_version capture: no table resolved for type '${type}'`);
+      console.error(`[entity_version] snapshot capture failed for ${type}/${entitySlug} (op=${op}):`, err);
+      throw err;
+    }
     // For all ops (including delete), snapshot the entity *as it currently is*
     // (callers must call this BEFORE the row is deleted from its table).
     const rawEntity = this.snapshotDeps.reader.getEntity(type, entitySlug);
