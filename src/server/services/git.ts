@@ -35,6 +35,8 @@ const NOT_DETECTED: GitStatusResponse = {
   remoteUrl: null,
   branch: null,
   isDirty: false,
+  ahead: null,
+  behind: null,
 };
 
 export class GitService {
@@ -363,11 +365,23 @@ export class GitService {
    * is detected, or the branch is detached (no branch to compare). A non-null
    * result with `ahead`/`behind` both `null` means a repo + branch exist but
    * no upstream is configured — distinct from "no repo at all".
+   *
+   * `precomputedStatus` (0.1.119): pass an already-fetched `detect()` result
+   * (e.g. from the `/api/git/status` route, which now merges this in) so a
+   * single request doesn't pay for two full `detect()` probe rounds.
    */
-  async statusAheadBehind(): Promise<GitAheadBehindStatus | null> {
-    const config = readConfig(this.cwd);
+  async statusAheadBehind(precomputedStatus?: GitStatusResponse): Promise<GitAheadBehindStatus | null> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      // Class-wide contract (see file header): never throw to the caller. A
+      // malformed config.json mid-run must degrade to "can't tell", same as
+      // every other failure mode here — this route is otherwise always-200.
+      return null;
+    }
     if (!config.git?.enabled) return null;
-    const status = await this.detect();
+    const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath || !status.branch) return null;
 
     try {

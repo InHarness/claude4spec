@@ -9,7 +9,9 @@ import { useGitStatus } from '../hooks/useGitStatus.js';
  * constant height when hidden: most projects won't have git wired up, and an
  * empty reserved block would be more noise than signal for a solo dev.
  * M28 owns all git-status data; this component is a pure consumer of the
- * already-existing `useGitStatus()` hook (no new endpoint).
+ * already-existing `useGitStatus()` hook (no new endpoint — 0.1.119 folded
+ * `statusAheadBehind()`'s ahead/behind counts into the same `/api/git/status`
+ * response this hook already fetches).
  */
 export function GitStatusBadge() {
   const { data: config } = useConfig();
@@ -19,6 +21,10 @@ export function GitStatusBadge() {
   const navigate = useNavigate();
 
   if (!config?.git?.enabled || !status?.detected) return null;
+
+  const ahead = status.ahead ?? null;
+  const behind = status.behind ?? null;
+  const hasAheadBehind = ahead !== null || behind !== null;
 
   return (
     <button
@@ -31,6 +37,15 @@ export function GitStatusBadge() {
       <span className="flex-1 min-w-0 truncate text-[11.5px] font-mono" style={{ color: 'var(--c-ink)' }}>
         {status.branch ?? 'detached HEAD'}
       </span>
+      {hasAheadBehind ? (
+        <span
+          className="shrink-0 text-[10.5px] font-mono"
+          style={{ color: 'var(--c-muted)' }}
+          title={`${ahead ?? 0} commit${ahead === 1 ? '' : 's'} ahead / ${behind ?? 0} commit${behind === 1 ? '' : 's'} behind upstream`}
+        >
+          ↑{ahead ?? 0} ↓{behind ?? 0}
+        </span>
+      ) : null}
       <span
         className="inline-block rounded-full shrink-0"
         style={{

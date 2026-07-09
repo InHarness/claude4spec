@@ -26,6 +26,29 @@ export interface ReleaseFileData {
   roots: string[];
 }
 
+/**
+ * Maps a `spec_release` DB row (or row-shaped object) + a slug + the current
+ * releasable roots into the on-disk identity shape. Single source of truth
+ * for this mapping — `ReleaseService.createRelease()`/`updateRelease()` and
+ * the 0.1.119 Migration C boot backfill all call this rather than hand-rolling
+ * the same object literal, so a field added/renamed here can't silently drift
+ * between call sites.
+ */
+export function toReleaseFileData(
+  row: { name: string; description: string; created_at: string; created_by: string },
+  slug: string,
+  roots: string[],
+): ReleaseFileData {
+  return {
+    name: row.name,
+    slug,
+    description: row.description,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    roots,
+  };
+}
+
 export class ReleaseFileStore {
   readonly root: string;
 

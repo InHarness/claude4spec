@@ -378,7 +378,8 @@ function ReleaseBadge({ label }: { label: string }) {
   );
 }
 
-function ImplementedBadge({ implemented }: { implemented: boolean }) {
+/** Exported for reuse on `/releases` cards' Briefs section (0.1.119, M17). */
+export function ImplementedBadge({ implemented }: { implemented: boolean }) {
   if (implemented) {
     return (
       <span

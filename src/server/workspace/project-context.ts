@@ -21,12 +21,11 @@ import { AgentCredentialService } from '../services/agent-credential.js';
 import { SectionsService } from '../services/sections.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
+import { slugify } from '../../shared/slug.js';
 import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
-import { ProgressService } from '../services/progress.js';
-import { progressRouter } from '../routes/progress.js';
 import { PatchService } from '../services/patch.js';
 import { patchesRouter } from '../routes/patches.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -55,7 +54,7 @@ import { EntitiesWatcher } from '../fs/entities-watcher.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleasesWatcher } from '../fs/releases-watcher.js';
-import { ReleaseFileStore } from '../services/release-store.js';
+import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
@@ -767,7 +766,6 @@ async function buildInner(
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   router.use('/git', gitRouter(gitService));
   router.use('/briefs', briefsRouter(briefService, pageVersions));
-  router.use('/progress', progressRouter(new ProgressService(releaseService, briefService, gitService, cwd)));
   router.use('/patches', patchesRouter(patchService));
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
@@ -980,6 +978,60 @@ async function buildInner(
   // M29: enable slug-rename propagation into entity files (dto→endpoint
   // linked_dtos, *→ac verifies). After indexAll so the index is consistent.
   referencesService.setEntityDeps(db.handle, entityStore);
+
+  // 0.1.119: Migration C — backfill on-disk release files for pre-slug
+  // spec_release rows (created before 0.1.118 added releasesDir/<slug>.json).
+  // MUST run before releaseIndexer.indexAll() just below, so a backfilled row
+  // is picked up as a normal file-backed release on first rebuild rather than
+  // treated as a DB row with no file. `roots` isn't a spec_release column —
+  // reuse the CURRENT releasableRootIds as a best-effort snapshot, there is no
+  // historical source. Per-row try/catch so one bad row can't block the rest
+  // or the release-indexer rebuild that follows.
+  try {
+    const legacyReleases = db.handle
+      .prepare(`SELECT * FROM spec_release WHERE slug IS NULL`)
+      .all() as Array<{ id: number; name: string; description: string; created_by: string; created_at: string }>;
+    if (legacyReleases.length > 0) {
+      console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesDir} ...`);
+      backupDbBeforeMigration(dbSlotDir);
+      const setSlug = db.handle.prepare(`UPDATE spec_release SET slug = ? WHERE id = ?`);
+      for (const row of legacyReleases) {
+        try {
+          // Two legacy names can slugify to the same string (e.g. differing
+          // only by case/punctuation). Unlike `createRelease()`'s live-path
+          // conflict check (which can reject a user's request outright), a
+          // boot migration must make progress for every row — disambiguate
+          // with a numeric suffix instead of leaving the loser's slug NULL
+          // forever (which the old skip-with-warning behavior did).
+          const baseSlug = slugify(row.name);
+          let slug = baseSlug;
+          let attempt = 1;
+          while (releaseFileStore.exists(slug)) {
+            const existing = releaseFileStore.read(slug);
+            const matches =
+              existing.name === row.name &&
+              existing.description === row.description &&
+              existing.createdAt === row.created_at &&
+              existing.createdBy === row.created_by;
+            if (matches) break; // idempotent re-run of a prior backfill for THIS row
+            attempt++;
+            if (attempt > 50) {
+              throw new Error(`no free slug for '${row.name}' after ${attempt - 1} attempts`);
+            }
+            slug = `${baseSlug}-${attempt}`;
+          }
+          if (!releaseFileStore.exists(slug)) {
+            releaseFileStore.write(slug, toReleaseFileData(row, slug, releasableRootIds));
+          }
+          setSlug.run(slug, row.id);
+        } catch (err) {
+          console.error(`[m29] release backfill failed for release id=${row.id}:`, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[release-backfill] boot migration failed:', err);
+  }
 
   // 0.1.118: boot rebuild of the spec_release derived cache from releasesDir.
   // Order relative to the entity rebuild doesn't matter (independent tables).
