@@ -8,6 +8,7 @@ import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
+import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
 
 /**
  * M29: assert `(type, slug)` names an existing entity (slug is the sole
@@ -76,6 +77,35 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const detail = versions.getVersion(type, slug, version);
       if (!detail) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
       res.json(detail);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * M13/M34: version-to-version diff for the plugin-facing `useVersionDiff`
+   * hook. `entity_version.data` is already the M17 snapshot (captured via
+   * `host.snapshot` at write time), so it's fed straight into `host.diff`
+   * unchanged — the same L9 `EntitySerializer.diff`/JSON-deep-diff-fallback
+   * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
+   * Response is shaped by the same `toRawDeltaEntityChange` helper release
+   * diffing uses, including the `_serializerVersionMismatch` flag when the
+   * two captured versions span a serializer upgrade.
+   */
+  router.get('/:type/:slug/versions/:from/diff/:to', (req, res, next) => {
+    try {
+      const type = assertType(host, req.params.type);
+      const slug = req.params.slug;
+      assertExists(host, type, slug);
+      const from = versions.getVersion(type, slug, Number(req.params.from));
+      const to = versions.getVersion(type, slug, Number(req.params.to));
+      if (!from || !to) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
+      const diff = host.diff(type, from.data, to.data, slug);
+      const fromVer = from.serializerVersion ?? null;
+      const toVer = to.serializerVersion ?? null;
+      res.json(
+        toRawDeltaEntityChange(diff, fromVer !== toVer ? { type, from: fromVer, to: toVer } : null)
+      );
     } catch (err) {
       next(err);
     }

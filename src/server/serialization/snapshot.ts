@@ -21,6 +21,7 @@ import type {
   SnapshotData,
 } from './types.js';
 import { SnapshotNotImplementedError } from './types.js';
+import type { RawDeltaEntityChange } from '../../shared/entities.js';
 
 export function snapshotEntity(
   host: PluginHost,
@@ -63,6 +64,26 @@ export function diffEntity(
   const fn = module.serializer.diff;
   if (!fn) return defaultDeepDiff(type, slug, a, b);
   return fn(a, b, slug);
+}
+
+/**
+ * Shape an `EntityDiff` (from `diffEntity`) into the wire format both
+ * `ReleaseService.getReleaseDiff` and the per-entity version-diff route send
+ * to clients — one place for the `{type,slug,op,changes?,raw?}` spread so the
+ * two call sites can't drift on which optional fields they include.
+ */
+export function toRawDeltaEntityChange(
+  diff: EntityDiff,
+  serializerMismatch?: { type: string; from: string | null; to: string | null } | null
+): RawDeltaEntityChange {
+  return {
+    type: diff.type,
+    slug: diff.slug,
+    op: diff.op,
+    ...(diff.changes ? { changes: diff.changes } : {}),
+    ...(diff.raw ? { raw: diff.raw } : {}),
+    ...(serializerMismatch ? { _serializerVersionMismatch: serializerMismatch } : {}),
+  };
 }
 
 /** Compute deep-diff between two SnapshotData JSONs and wrap as EntityDiff. */

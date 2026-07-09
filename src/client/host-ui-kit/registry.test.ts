@@ -3,8 +3,8 @@ import { UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
-  it('catalogs all 28 components across the eight groups', () => {
-    expect(UI_KIT_CATALOG).toHaveLength(28);
+  it('catalogs all 29 components across the eight groups', () => {
+    expect(UI_KIT_CATALOG).toHaveLength(29);
     const byGroup = (g: string) => UI_KIT_CATALOG.filter((c) => c.group === g).map((c) => c.name);
     expect(byGroup('core')).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
     expect(byGroup('list')).toEqual([
@@ -20,6 +20,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     expect(byGroup('detail')).toEqual([
       'SegmentedControlTabs',
       'VersionHistory',
+      'DiffView',
       'EntityDetailToolbar',
       'RichTextField',
       'TagPicker',
@@ -35,7 +36,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     const stable = UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name);
     const experimental = UI_KIT_CATALOG.filter((c) => c.stability === 'experimental');
     expect(stable).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
-    expect(experimental).toHaveLength(24);
+    expect(experimental).toHaveLength(25);
     // Every Core component is stable; no other group is.
     for (const c of UI_KIT_CATALOG) {
       expect(c.stability).toBe(c.group === 'core' ? 'stable' : 'experimental');

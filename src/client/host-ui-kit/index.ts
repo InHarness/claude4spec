@@ -52,6 +52,7 @@ export {
   type SegmentedControlTabsProps,
 } from './detail/SegmentedControlTabs.js';
 export { VersionHistory, type VersionHistoryProps, type VersionHistoryItem } from './detail/VersionHistory.js';
+export { DiffView, type DiffViewProps } from './detail/DiffView.js';
 export { EntityDetailToolbar, type EntityDetailToolbarProps } from './detail/EntityDetailToolbar.js';
 export {
   RichTextField,

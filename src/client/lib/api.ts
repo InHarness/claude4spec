@@ -12,6 +12,7 @@ import type {
 } from '../../shared/page-links.js';
 import type {
   EntityType,
+  RawDeltaEntityChange,
   ReferenceHit,
   SectionIndexEntry,
   Tag,
@@ -346,6 +347,12 @@ export const versionsApi = {
       await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${version}/restore`, {
         method: 'POST',
       })
+    );
+  },
+  /** M13/M34: computed diff between two captured versions, via the L9 EntitySerializer.diff slot. */
+  async diff(type: EntityType, slug: string, from: number, to: number): Promise<RawDeltaEntityChange> {
+    return handle<RawDeltaEntityChange>(
+      await apiFetch(`/api/entities/${type}/${encodeURIComponent(slug)}/versions/${from}/diff/${to}`)
     );
   },
 };

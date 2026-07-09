@@ -27,6 +27,7 @@ import { Dialog } from './overlay/Dialog.js';
 import { FormShell } from './overlay/FormShell.js';
 import { SegmentedControlTabs } from './detail/SegmentedControlTabs.js';
 import { VersionHistory } from './detail/VersionHistory.js';
+import { DiffView } from './detail/DiffView.js';
 import { EntityDetailToolbar } from './detail/EntityDetailToolbar.js';
 import { RichTextField } from './detail/RichTextField.js';
 import { TagPicker } from './detail/TagPicker.js';
@@ -74,6 +75,7 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   { name: 'FormShell', group: 'overlay', stability: FormShell.stability },
   { name: 'SegmentedControlTabs', group: 'detail', stability: SegmentedControlTabs.stability },
   { name: 'VersionHistory', group: 'detail', stability: VersionHistory.stability },
+  { name: 'DiffView', group: 'detail', stability: DiffView.stability },
   { name: 'EntityDetailToolbar', group: 'detail', stability: EntityDetailToolbar.stability },
   { name: 'RichTextField', group: 'detail', stability: RichTextField.stability },
   { name: 'TagPicker', group: 'detail', stability: TagPicker.stability },
