@@ -25,6 +25,8 @@ import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
+import { ProgressService } from '../services/progress.js';
+import { progressRouter } from '../routes/progress.js';
 import { PatchService } from '../services/patch.js';
 import { patchesRouter } from '../routes/patches.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -765,6 +767,7 @@ async function buildInner(
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   router.use('/git', gitRouter(gitService));
   router.use('/briefs', briefsRouter(briefService, pageVersions));
+  router.use('/progress', progressRouter(new ProgressService(releaseService, briefService, gitService, cwd)));
   router.use('/patches', patchesRouter(patchService));
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));

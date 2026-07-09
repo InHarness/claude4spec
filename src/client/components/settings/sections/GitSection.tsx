@@ -5,18 +5,22 @@ import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 
 /**
- * M28 §6 — Git Sync section. Fetches `GET /api/git/status`; when no repo is
- * detected it renders a muted empty state and hides the toggles. When a repo is
- * detected it shows a repo info card (remote URL, branch, root, dirty/clean
- * badge) and two hot-reload toggles wired to `PATCH /api/config` (deep-merged
- * server-side, so one toggle can be sent without clobbering the other).
+ * M28 §6 — Git section. 0.1.118 adds `git.enabled`, a master switch for the
+ * entire git layer: an always-visible toggle renders first, regardless of
+ * loading/detection state. When off, sync/status stay local-only (empty
+ * state, sub-toggles hidden — not merely disabled). When on, this behaves as
+ * before: `GET /api/git/status` drives a repo info card (remote URL, branch,
+ * root, dirty/clean badge) and two hot-reload sync toggles, or a "No git
+ * repository detected." empty state if no repo is found. An amber banner
+ * warns when a sub-toggle was left on from before this switch existed (B1
+ * upgrade regression) — enabling now restores the old behavior.
  */
 export function GitSection() {
   const { data: config } = useConfig();
   const { data: status, isLoading } = useGitStatus();
   const patch = usePatchConfig();
 
-  const git = config?.git ?? { syncCommitOnRelease: false, syncPushOnPush: false };
+  const git = config?.git ?? { enabled: false, syncCommitOnRelease: false, syncPushOnPush: false };
 
   async function toggle(
     field: 'syncCommitOnRelease' | 'syncPushOnPush',
@@ -30,6 +34,17 @@ export function GitSection() {
     }
   }
 
+  async function toggleEnabled(next: boolean) {
+    try {
+      await patch.mutateAsync({ git: { enabled: next } });
+      toast.success(next ? 'Git integration enabled' : 'Git integration disabled');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
+    }
+  }
+
+  const showRegressionBanner = !git.enabled && (git.syncCommitOnRelease || git.syncPushOnPush);
+
   return (
     <SettingsCard
       id="git"
@@ -37,44 +52,68 @@ export function GitSection() {
       description="Mirror release activity into the git repository that holds your pages."
       badge="hot-reload"
     >
-      {isLoading ? (
-        <EmptyText>Loading…</EmptyText>
-      ) : !status?.detected ? (
-        <EmptyText>
-          Your pages directory is not inside a git repository. Git sync is unavailable.
-        </EmptyText>
-      ) : (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Row label="Remote" value={status.remoteUrl ?? 'No origin remote'} />
-            <Row label="Branch" value={status.branch ?? 'Detached HEAD'} />
-            <Row label="Root" value={status.rootPath ?? '—'} mono />
-            <div className="grid grid-cols-3 gap-2 text-[12.5px]">
-              <span style={{ color: 'var(--c-muted)' }}>Working tree</span>
-              <span className="col-span-2">
-                <DirtyBadge dirty={status.isDirty} />
-              </span>
-            </div>
-          </div>
+      <div className="flex flex-col gap-4">
+        <Toggle
+          checked={git.enabled}
+          disabled={patch.isPending}
+          onChange={(next) => void toggleEnabled(next)}
+          title="Enable Git integration"
+          hint="Master switch for commit-on-release, push-on-push, and the sidebar git-status indicator."
+        />
 
-          <div className="flex flex-col gap-3 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
-            <Toggle
-              checked={git.syncCommitOnRelease}
-              disabled={patch.isPending}
-              onChange={(next) => void toggle('syncCommitOnRelease', next)}
-              title="Commit on release"
-              hint="When you create a release, commit pages and config.json with a message from the release name and description."
-            />
-            <Toggle
-              checked={git.syncPushOnPush}
-              disabled={patch.isPending}
-              onChange={(next) => void toggle('syncPushOnPush', next)}
-              title="Push on remote push"
-              hint="After a release is pushed to the remote server, push the current branch to its upstream."
-            />
+        {showRegressionBanner && (
+          <div
+            className="rounded-md px-3 py-2 text-[12px]"
+            style={{ background: 'rgba(168, 112, 51, 0.18)', color: '#a87033' }}
+          >
+            Git sync was previously configured but is now off. Enable Git integration to restore it.
           </div>
-        </div>
-      )}
+        )}
+
+        {!git.enabled && (
+          <EmptyText>
+            Git off — using local history only. Enable to restore commit-on-release and git status.
+          </EmptyText>
+        )}
+
+        {git.enabled &&
+          (isLoading ? (
+            <EmptyText>Loading…</EmptyText>
+          ) : !status?.detected ? (
+            <EmptyText>No git repository detected.</EmptyText>
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Row label="Remote" value={status.remoteUrl ?? 'No origin remote'} />
+                <Row label="Branch" value={status.branch ?? 'Detached HEAD'} />
+                <Row label="Root" value={status.rootPath ?? '—'} mono />
+                <div className="grid grid-cols-3 gap-2 text-[12.5px]">
+                  <span style={{ color: 'var(--c-muted)' }}>Working tree</span>
+                  <span className="col-span-2">
+                    <DirtyBadge dirty={status.isDirty} />
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
+                <Toggle
+                  checked={git.syncCommitOnRelease}
+                  disabled={patch.isPending}
+                  onChange={(next) => void toggle('syncCommitOnRelease', next)}
+                  title="Commit on release"
+                  hint="When you create a release, commit pages and config.json with a message from the release name and description."
+                />
+                <Toggle
+                  checked={git.syncPushOnPush}
+                  disabled={patch.isPending}
+                  onChange={(next) => void toggle('syncPushOnPush', next)}
+                  title="Push on remote push"
+                  hint="After a release is pushed to the remote server, push the current branch to its upstream."
+                />
+              </div>
+            </div>
+          ))}
+      </div>
     </SettingsCard>
   );
 }
