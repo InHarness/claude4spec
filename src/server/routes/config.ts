@@ -8,6 +8,7 @@ import type { SkillRegistry } from '../services/skill-registry.js';
 import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import { probePathScope, type PathScopeStrength } from '@inharness-ai/agent-adapters';
+import { ensureGitignore } from '../../bin/gitignore.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -34,7 +35,7 @@ export interface ConfigRouterDeps {
   pluginSettingsSections?: () => PluginSettingsSection[];
 }
 
-const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDir', 'entities'] as const;
+const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'entities'] as const;
 
 /**
  * Single source of the GET/PATCH /config response shape (was duplicated
@@ -71,6 +72,7 @@ function configResponse(c: Config, cwd: string) {
     briefsDir: c.briefsDir,
     patchesDir: c.patchesDir,
     entitiesDir: c.entitiesDir,
+    releasesDir: c.releasesDir,
     entities: c.entities,
     agent: {
       claudeUsePreset: c.agent?.claudeUsePreset ?? true,
@@ -82,6 +84,7 @@ function configResponse(c: Config, cwd: string) {
       pathScopeStrength,
     },
     git: {
+      enabled: c.git?.enabled ?? false,
       syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
       syncPushOnPush: c.git?.syncPushOnPush ?? false,
     },
@@ -125,13 +128,14 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         briefsDir: string;
         patchesDir: string;
         entitiesDir: string;
+        releasesDir: string;
         writingStyle: string | null;
         language: string | null;
         description: string | null;
         onboardingCompleted: boolean;
         entities: string[];
         agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
-        git: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+        git: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
         plugins: Record<string, Record<string, unknown>>;
         remoteProjectId: string | null;
       }> = {};
@@ -174,7 +178,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         return value;
       };
 
-      for (const field of ['briefsDir', 'patchesDir', 'entitiesDir'] as const) {
+      for (const field of ['briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir'] as const) {
         if (field in body) {
           const result = validateDir(field, body[field]);
           if (typeof result === 'object') {
@@ -198,6 +202,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         const current = readConfig(cwd);
         const effective = {
           entitiesDir: (patch.entitiesDir ?? current.entitiesDir),
+          releasesDir: (patch.releasesDir ?? current.releasesDir),
           briefsDir: (patch.briefsDir ?? current.briefsDir),
           patchesDir: (patch.patchesDir ?? current.patchesDir),
         };
@@ -303,7 +308,13 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'git must be an object' } });
         }
         const gr = g as Record<string, unknown>;
-        const next: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean } = {};
+        const next: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean } = {};
+        if ('enabled' in gr) {
+          if (typeof gr.enabled !== 'boolean') {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.enabled must be boolean' } });
+          }
+          next.enabled = gr.enabled;
+        }
         if ('syncCommitOnRelease' in gr) {
           if (typeof gr.syncCommitOnRelease !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncCommitOnRelease must be boolean' } });
@@ -348,6 +359,19 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       }
 
       const updated = writeConfig(cwd, patch);
+      // 0.1.118: re-sync .gitignore whenever a field it depends on changes —
+      // best-effort (never fail the PATCH over a gitignore write hiccup).
+      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch) {
+        try {
+          ensureGitignore(cwd, {
+            briefsDir: updated.briefsDir,
+            patchesDir: updated.patchesDir,
+            gitEnabled: updated.git?.enabled ?? false,
+          });
+        } catch (err) {
+          console.error('[config] ensureGitignore re-sync failed:', err);
+        }
+      }
       // 0.1.56: create the deferred welcome page BEFORE invalidating the context,
       // so the lazy rebuild's indexAll() picks it up. Runs on the effective
       // post-write pagesDir (a pagesDir change in the same atomic body is already

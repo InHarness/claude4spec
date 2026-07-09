@@ -36,3 +36,29 @@ export interface GitPushResult {
   status: GitPushStatus;
   message?: string;
 }
+
+/**
+ * 0.1.118: result of `gitService.diffRefs()` — a file-level `git diff
+ * --name-status <a>..<b>` between two release-anchor commits. Gated on
+ * `config.git.enabled`; never throws (returns `null` on any failure). `path`
+ * is an ABSOLUTE filesystem path (git reports repo-root-relative paths
+ * internally, resolved here so callers never re-derive the repo root).
+ */
+export interface GitRefDiff {
+  files: Array<{ path: string; status: 'A' | 'M' | 'D' | 'R' }>;
+}
+
+/**
+ * 0.1.118: result of `gitService.statusAheadBehind()` — read-only HEAD status
+ * vs. upstream, gated on `config.git.enabled`. Distinct from
+ * `GitStatusResponse` (the `detect()` shape, unconditionally available):
+ * `null` = no repo detected or git disabled; a non-null result with
+ * `ahead`/`behind` both `null` = a repo with no upstream configured for the
+ * current branch.
+ */
+export interface GitAheadBehindStatus {
+  branch: string | null;
+  isDirty: boolean;
+  ahead: number | null;
+  behind: number | null;
+}

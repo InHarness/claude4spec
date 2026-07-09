@@ -44,6 +44,10 @@ export function CreateReleaseDialog({ onClose }: Props) {
           setError(`Name '${name}' is already taken`);
           return;
         }
+        if (err.code === 'RELEASE_SLUG_CONFLICT') {
+          setError(`Name '${name}' resolves to the same identifier as an existing release — choose a more distinct name`);
+          return;
+        }
         if (err.code === 'RELEASE_DESCRIPTION_REQUIRED') {
           setError('Description is required');
           return;

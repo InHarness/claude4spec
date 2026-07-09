@@ -203,7 +203,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         const toIdOrName = args.toIdOrName as number | string;
         const roots = args.roots as string[] | undefined;
 
-        const raw = deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
+        const raw = await deps.releaseService.getReleaseDiff(fromIdOrName, toIdOrName, { roots });
         const toSnap = deps.releaseService.getReleaseSnapshot(toIdOrName);
         const fromSnap =
           fromIdOrName === null ? null : deps.releaseService.getReleaseSnapshot(fromIdOrName);
