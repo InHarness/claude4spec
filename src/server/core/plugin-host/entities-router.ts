@@ -8,6 +8,7 @@ import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
+import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
 
 /**
  * M29: assert `(type, slug)` names an existing entity (slug is the sole
@@ -87,7 +88,9 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * `host.snapshot` at write time), so it's fed straight into `host.diff`
    * unchanged — the same L9 `EntitySerializer.diff`/JSON-deep-diff-fallback
    * path `ReleaseService.getReleaseDiff` uses for release-to-release diffs.
-   * Response shape matches `RawDeltaEntityChange` (shared/entities.ts).
+   * Response is shaped by the same `toRawDeltaEntityChange` helper release
+   * diffing uses, including the `_serializerVersionMismatch` flag when the
+   * two captured versions span a serializer upgrade.
    */
   router.get('/:type/:slug/versions/:from/diff/:to', (req, res, next) => {
     try {
@@ -98,13 +101,11 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const to = versions.getVersion(type, slug, Number(req.params.to));
       if (!from || !to) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
       const diff = host.diff(type, from.data, to.data, slug);
-      res.json({
-        type: diff.type,
-        slug: diff.slug,
-        op: diff.op,
-        ...(diff.changes ? { changes: diff.changes } : {}),
-        ...(diff.raw ? { raw: diff.raw } : {}),
-      });
+      const fromVer = from.serializerVersion ?? null;
+      const toVer = to.serializerVersion ?? null;
+      res.json(
+        toRawDeltaEntityChange(diff, fromVer !== toVer ? { type, from: fromVer, to: toVer } : null)
+      );
     } catch (err) {
       next(err);
     }

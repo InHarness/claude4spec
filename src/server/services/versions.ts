@@ -319,6 +319,7 @@ export class VersionService {
       changedBy: row.changed_by as ChangedBy,
       changeSummary: row.change_summary,
       createdAt: row.created_at,
+      serializerVersion: row.serializer_version,
       ...(row.release_id !== null ? { releaseId: row.release_id } : {}),
       ...(row.op ? { op: row.op as VersionOp } : {}),
     };

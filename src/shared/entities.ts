@@ -500,6 +500,8 @@ export interface VersionDetail extends VersionListItem {
   /** M29: slug is the sole entity identity; versions are keyed by (entityType, entitySlug, version). */
   entitySlug: string;
   data: unknown;
+  /** M17: `serializer.version` at time of capture. Null/absent for legacy rows. Lets callers detect a serializer upgrade between two captured versions (see `RawDeltaEntityChange._serializerVersionMismatch`). */
+  serializerVersion?: string | null;
 }
 
 // --- M17: Spec Snapshots & Releases ---

@@ -15,7 +15,7 @@ import type { VersionDetail } from '../../../shared/entities.js';
  * config.route.test.ts's minimal-stub style).
  */
 describe('GET /:type/:slug/versions/:from/diff/:to', () => {
-  const detail = (version: number, data: unknown): VersionDetail => ({
+  const detail = (version: number, data: unknown, serializerVersion?: string | null): VersionDetail => ({
     entityType: 'endpoint',
     entitySlug: 'my-slug',
     version,
@@ -23,6 +23,7 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     changedBy: 'user',
     changeSummary: null,
     createdAt: '2026-01-01T00:00:00.000Z',
+    ...(serializerVersion !== undefined ? { serializerVersion } : {}),
   });
 
   function app(opts: { getVersion: VersionService['getVersion']; diff: ProjectPluginHost['diff'] }) {
@@ -88,5 +89,34 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'noop' });
+  });
+
+  it('flags _serializerVersionMismatch when the two captured versions span a serializer upgrade', async () => {
+    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+    const server = app({
+      getVersion: (_t, _s, v) =>
+        v === 1 ? detail(1, { name: 'a' }, '1.0.0') : detail(2, { name: 'b' }, '1.1.0'),
+      diff,
+    });
+    const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({
+      type: 'endpoint',
+      slug: 'my-slug',
+      op: 'modified',
+      changes: { x: 1 },
+      _serializerVersionMismatch: { type: 'endpoint', from: '1.0.0', to: '1.1.0' },
+    });
+  });
+
+  it('omits _serializerVersionMismatch when both versions share the same serializer version', async () => {
+    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+    const server = app({
+      getVersion: (_t, _s, v) => detail(v, { name: v === 1 ? 'a' : 'b' }, '1.0.0'),
+      diff,
+    });
+    const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
   });
 });

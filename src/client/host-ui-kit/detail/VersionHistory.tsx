@@ -73,28 +73,40 @@ function VersionHistoryImpl({
               <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--c-ink)' }}>
                 {v.label}
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--c-muted)' }}>
-                {v.createdAt}
-                {v.author ? ` · ${v.author}` : ''}
-              </div>
+              <VersionMeta v={v} />
             </div>
-            {onRestore && !isActive && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRestore(v.id);
-                }}
-                className="rounded px-2 py-1 text-[11px] font-medium btn-ghost"
-                style={{ color: 'var(--c-accent)' }}
-              >
-                Restore
-              </button>
-            )}
+            {onRestore && !isActive && <RestoreButton id={v.id} onRestore={onRestore} />}
           </li>
         );
       })}
     </ul>
+  );
+}
+
+/** Shared "{createdAt} · {author}" line — used by both the `flat` and `timeline` renderings. */
+function VersionMeta({ v }: { v: VersionHistoryItem }) {
+  return (
+    <div className="text-[11px]" style={{ color: 'var(--c-muted)' }}>
+      {v.createdAt}
+      {v.author ? ` · ${v.author}` : ''}
+    </div>
+  );
+}
+
+/** Shared Restore action — used by both the `flat` and `timeline` renderings. */
+function RestoreButton({ id, onRestore }: { id: string; onRestore(id: string): void }) {
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onRestore(id);
+      }}
+      className="rounded px-2 py-1 text-[11px] font-medium btn-ghost"
+      style={{ color: 'var(--c-accent)' }}
+    >
+      Restore
+    </button>
   );
 }
 
@@ -148,10 +160,7 @@ function TimelineList({ versions, activeVersion, onSelect, onRestore, compareVer
                   </span>
                 )}
               </div>
-              <div className="text-[11px]" style={{ color: 'var(--c-muted)' }}>
-                {v.createdAt}
-                {v.author ? ` · ${v.author}` : ''}
-              </div>
+              <VersionMeta v={v} />
               {(onCompare || (onRestore && !isActive)) && (
                 <div className="flex gap-2 mt-1">
                   {onCompare && (
@@ -167,19 +176,7 @@ function TimelineList({ versions, activeVersion, onSelect, onRestore, compareVer
                       {isCompareTarget ? 'Comparing' : 'Compare to'}
                     </button>
                   )}
-                  {onRestore && !isActive && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onRestore(v.id);
-                      }}
-                      className="rounded px-2 py-0.5 text-[11px] font-medium btn-ghost"
-                      style={{ color: 'var(--c-accent)' }}
-                    >
-                      Restore
-                    </button>
-                  )}
+                  {onRestore && !isActive && <RestoreButton id={v.id} onRestore={onRestore} />}
                 </div>
               )}
             </div>

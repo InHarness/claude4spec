@@ -35,6 +35,7 @@ import type { PagesWatcher } from '../fs/watcher.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
+import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import type { PageSnapshotData } from './page-serializer.js';
 import {
@@ -427,14 +428,12 @@ export class ReleaseService {
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
       const bVer = toSnap.serializer_versions[sample.type] ?? null;
-      entityChanges.push({
-        type: diff.type,
-        slug: diff.slug,
-        op: diff.op,
-        ...(diff.changes ? { changes: diff.changes } : {}),
-        ...(diff.raw ? { raw: diff.raw } : {}),
-        ...(aVer !== bVer ? { _serializerVersionMismatch: { type: sample.type, from: aVer, to: bVer } } : {}),
-      });
+      entityChanges.push(
+        toRawDeltaEntityChange(
+          diff,
+          aVer !== bVer ? { type: sample.type, from: aVer, to: bVer } : null
+        )
+      );
     }
 
     const pageChanges: RawDeltaPageChange[] = [];
