@@ -20,8 +20,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { configPath, readConfig } from '../config.js';
 import type {
+  GitAheadBehindStatus,
   GitCommitResult,
   GitPushResult,
+  GitRefDiff,
   GitStatusResponse,
 } from '../../shared/git.js';
 
@@ -123,13 +125,32 @@ export class GitService {
     // root, so an unresolved symlink path reads as "outside repository". Resolve
     // to real paths and keep only those that actually live inside `root`.
     //
-    // Stage every releasable root dir; briefsDir/patchesDir are NEVER releasable
-    // and so are never staged. M29: also stage the committed entity store
-    // (<entitiesDir> contains the entity JSON files + tags.json — the source of
-    // truth). db.sqlite is gitignored, so the whole dir can be staged safely.
-    const entitiesPath = path.resolve(this.cwd, readConfig(this.cwd).entitiesDir);
+    // Stage every releasable root dir. M29: also stage the committed entity
+    // store (<entitiesDir> contains the entity JSON files + tags.json — the
+    // source of truth). db.sqlite is gitignored, so the whole dir can be
+    // staged safely. 0.1.118: also stage releasesDir so the new release's
+    // identity file lands in this same commit as its anchor (for
+    // resolveReleaseCommit later) — and, when the git master switch is on,
+    // briefsDir/patchesDir too: `ensureGitignore` un-gitignores them
+    // specifically so they "become committed and shared with the team" (see
+    // its own doc comment) — that promise is empty unless commit() actually
+    // stages them. When the switch is off they're still gitignored, so
+    // staging them here is a harmless no-op (`git add` on an ignored path
+    // adds nothing).
+    const bootConfig = readConfig(this.cwd);
+    const entitiesPath = path.resolve(this.cwd, bootConfig.entitiesDir);
+    const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
+    const briefsPath = path.resolve(this.cwd, bootConfig.briefsDir);
+    const patchesPath = path.resolve(this.cwd, bootConfig.patchesDir);
     const targets: string[] = [];
-    for (const p of [...this.releasableRootDirs, configPath(this.cwd), entitiesPath]) {
+    for (const p of [
+      ...this.releasableRootDirs,
+      configPath(this.cwd),
+      entitiesPath,
+      releasesPath,
+      briefsPath,
+      patchesPath,
+    ]) {
       let real: string;
       try {
         real = fs.realpathSync(p);
@@ -191,27 +212,183 @@ export class GitService {
   }
 
   /**
-   * Gated commit hook. `null` when commit-sync is off OR no repo detected;
-   * otherwise the `commit()` result. Reads config per-call (hot-reload).
+   * Gated commit hook. `null` when the git master switch is off, commit-sync
+   * is off, no repo is detected, or the detected repo has no branch (detached
+   * HEAD); otherwise the `commit()` result. `enabled` is checked FIRST so a
+   * disabled project never pays for the `detect()` subprocess round-trip.
+   * Reads config per-call (hot-reload).
    */
   async commitOnRelease(release: { name: string; description: string }): Promise<GitCommitResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.syncCommitOnRelease) return null;
+    if (!config.git?.enabled || !config.git?.syncCommitOnRelease) return null;
     const status = await this.detect();
-    if (!status.detected) return null;
+    if (!status.detected || !status.branch) return null;
     return this.commit(release);
   }
 
   /**
-   * Gated push hook. `null` when push-sync is off OR no repo detected;
-   * otherwise the `push()` result. Reads config per-call (hot-reload).
+   * Gated push hook. `null` when the git master switch is off, push-sync is
+   * off, no repo is detected, or the detected repo has no branch (detached
+   * HEAD); otherwise the `push()` result. Reads config per-call (hot-reload).
    */
   async pushOnPush(): Promise<GitPushResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.syncPushOnPush) return null;
+    if (!config.git?.enabled || !config.git?.syncPushOnPush) return null;
     const status = await this.detect();
-    if (!status.detected) return null;
+    if (!status.detected || !status.branch) return null;
     return this.push();
+  }
+
+  /**
+   * 0.1.118 read-only: SHA of the commit that first ADDED `absPath` — used to
+   * anchor a release's identity in git history (there are no tags/stored
+   * gitSha). `null` when git is disabled, no repo is detected, `absPath` is
+   * outside the repo, or the file has never been added (e.g.
+   * `syncCommitOnRelease` was off when it was created — B3, a known open
+   * edge). Never throws.
+   *
+   * Deliberately NOT `git log --diff-filter=A -1 --format=%H` — `git log`
+   * without `--reverse` walks history newest-first, so a bare `-1` returns
+   * the MOST RECENT add, not the first. That matters because a release's
+   * identity file can be deleted then re-created at the exact same path
+   * (rename away, then later rename back to a name that slugifies the same)
+   * — fetch every add and take the oldest so this always anchors to the
+   * ORIGINAL creation commit, matching the documented contract.
+   */
+  async resolveReleaseCommit(absPath: string): Promise<string | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    let real: string;
+    try {
+      real = fs.realpathSync(absPath);
+    } catch {
+      return null;
+    }
+    const rel = path.relative(status.rootPath, real);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    try {
+      const { stdout } = await this.git(
+        ['log', '--diff-filter=A', '--format=%H', '--', real],
+        status.rootPath,
+      );
+      const shas = stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Output is newest-first; the LAST line is the oldest — the first add.
+      return shas.length > 0 ? shas[shas.length - 1]! : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * 0.1.118 read-only: file-level diff between two commits, scoped to
+   * `paths` (releasable roots + entitiesDir + releasesDir, per the caller).
+   * Uses `--name-status` (not the brief's literal `git diff <a>..<b>`, which
+   * alone does not produce a parseable `{path, status}` shape). Renames/copies
+   * are flattened into a delete(old)+create(new) pair to keep the existing
+   * create/update/delete vocabulary intact downstream. Never throws — `null`
+   * when git is disabled or no repo is detected; an empty `{files: []}` when
+   * none of `paths` resolve inside the repo.
+   */
+  async diffRefs(shaA: string, shaB: string, paths: string[]): Promise<GitRefDiff | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    const root = status.rootPath;
+
+    const targets: string[] = [];
+    for (const p of paths) {
+      let real: string;
+      try {
+        real = fs.realpathSync(p);
+      } catch {
+        continue;
+      }
+      const rel = path.relative(root, real);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
+    }
+    if (targets.length === 0) return { files: [] };
+
+    try {
+      // `-c core.quotePath=false`: without it, git quotes+octal-escapes any
+      // path containing non-ASCII bytes (e.g. `"pages/Wydajno\305\233\304\207.md"`
+      // for an accented filename) — a real risk here, this codebase's own
+      // comments are in Polish. The naive tab-split below needs raw UTF-8
+      // paths to produce a usable `{path, status}` pair.
+      const { stdout } = await this.git(
+        ['-c', 'core.quotePath=false', 'diff', '--name-status', `${shaA}..${shaB}`, '--', ...targets],
+        root,
+      );
+      const files: GitRefDiff['files'] = [];
+      for (const line of stdout.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        const parts = trimmed.split('\t');
+        const code = parts[0]!;
+        const letter = code[0];
+        if (letter === 'R' || letter === 'C') {
+          // Rename/copy: two paths on one line — flatten to delete(old)+create(new).
+          const oldPath = parts[1];
+          const newPath = parts[2];
+          // `git diff --name-status` reports paths relative to the repo ROOT
+          // (which may sit above `cwd` in a monorepo) — resolve to absolute so
+          // callers never have to re-derive `status.rootPath` themselves.
+          if (oldPath) files.push({ path: path.join(root, oldPath), status: 'D' });
+          if (newPath) files.push({ path: path.join(root, newPath), status: 'A' });
+        } else if (letter === 'A' || letter === 'M' || letter === 'D') {
+          const filePath = parts[1];
+          if (filePath) files.push({ path: path.join(root, filePath), status: letter });
+        } else if (parts[1]) {
+          // Any other single-letter status git may emit (T type-change, U
+          // unmerged, X unknown, …) — surface as a modification rather than
+          // silently dropping the file from the diff entirely.
+          files.push({ path: path.join(root, parts[1]), status: 'M' });
+        }
+      }
+      return { files };
+    } catch (err) {
+      console.error('[git] diffRefs failed:', errMessage(err));
+      return null;
+    }
+  }
+
+  /**
+   * 0.1.118 read-only: HEAD status vs. upstream. Reuses `detect()`'s
+   * branch/dirty rather than re-probing. `null` when git is disabled, no repo
+   * is detected, or the branch is detached (no branch to compare). A non-null
+   * result with `ahead`/`behind` both `null` means a repo + branch exist but
+   * no upstream is configured — distinct from "no repo at all".
+   */
+  async statusAheadBehind(): Promise<GitAheadBehindStatus | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath || !status.branch) return null;
+
+    try {
+      const { stdout } = await this.git(
+        ['rev-list', '--left-right', '--count', `${status.branch}...@{upstream}`],
+        status.rootPath,
+      );
+      const [aheadStr, behindStr] = stdout.trim().split(/\s+/);
+      const ahead = aheadStr !== undefined ? Number(aheadStr) : NaN;
+      const behind = behindStr !== undefined ? Number(behindStr) : NaN;
+      return {
+        branch: status.branch,
+        isDirty: status.isDirty,
+        ahead: Number.isFinite(ahead) ? ahead : null,
+        behind: Number.isFinite(behind) ? behind : null,
+      };
+    } catch {
+      // No upstream configured (or another failure) — repo/branch are known,
+      // but no ahead/behind comparison is possible.
+      return { branch: status.branch, isDirty: status.isDirty, ahead: null, behind: null };
+    }
   }
 }
 

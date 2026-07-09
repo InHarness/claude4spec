@@ -264,7 +264,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
     }];
     const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
     });
     expect(errors.some((e) => e.includes('entitiesDir'))).toBe(true);
   });
@@ -276,7 +276,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
     }];
     const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
     });
     expect(errors).toContain(
       "config.json: root 'gen' dir overlaps write-target '.claude4spec/plugins'",
@@ -290,7 +290,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
     }];
     const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
     });
     expect(errors).toHaveLength(0);
   });
@@ -302,7 +302,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
       linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
     }];
     const { errors } = validateRootDirs(roots, {
-      entitiesDir: '.claude4spec/entities', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches',
     });
     expect(errors).toHaveLength(0);
   });

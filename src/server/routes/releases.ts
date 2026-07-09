@@ -89,7 +89,7 @@ export function releasesRouter(
     }
   });
 
-  router.get('/:from/diff/:to', (req, res, next) => {
+  router.get('/:from/diff/:to', async (req, res, next) => {
     try {
       const fromParam =
         req.params.from === '__INITIAL__' ? null : decodeIdOrName(req.params.from);
@@ -101,7 +101,7 @@ export function releasesRouter(
       const rawRoots = req.query.roots;
       const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
         .filter((r): r is string => typeof r === 'string');
-      const delta = releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to), {
+      const delta = await releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to), {
         roots: roots.length > 0 ? roots : undefined,
       });
       res.json(delta);

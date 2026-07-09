@@ -37,6 +37,9 @@ import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
+import { slugify } from '../../shared/slug.js';
+import type { ReleaseFileStore } from './release-store.js';
+import type { GitService } from './git.js';
 import type { PageSnapshotData } from './page-serializer.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
@@ -77,6 +80,7 @@ function assertSafeBundlePath(rel: string): void {
 interface ReleaseRow {
   id: number;
   name: string;
+  slug: string | null;
   description: string;
   created_by: string;
   created_at: string;
@@ -160,6 +164,12 @@ export class ReleaseService {
      * patch markers and non-releasable user roots fall out structurally.
      */
     private releasableRootIds: string[] = ['pages'],
+    /**
+     * 0.1.118: absolute dirs of the releasable roots, same order/index as
+     * `releasableRootIds` — needed to map a git-diff path back to a rootId in
+     * the git-anchored `getReleaseDiff` branch.
+     */
+    private releasableRootDirs: string[] = [],
   ) {}
 
   /**
@@ -170,6 +180,25 @@ export class ReleaseService {
   private entityStore: import('./entity-store.js').EntityStore | null = null;
   setEntityStore(store: import('./entity-store.js').EntityStore): void {
     this.entityStore = store;
+  }
+
+  /**
+   * 0.1.118: writes the on-disk release-identity file (`<releasesDir>/<slug>.json`)
+   * on create/update. Wired post-construction (the store is built later in boot,
+   * same reasoning as `setEntityStore`).
+   */
+  private releaseStore: ReleaseFileStore | null = null;
+  setReleaseStore(store: ReleaseFileStore): void {
+    this.releaseStore = store;
+  }
+
+  /**
+   * 0.1.118: needed by the git-anchored `getReleaseDiff` branch to resolve
+   * release-file commits. Siblings in project-context.ts, never linked before.
+   */
+  private gitService: GitService | null = null;
+  setGitService(service: GitService): void {
+    this.gitService = service;
   }
 
   // ─── Listing & retrieval ─────────────────────────────────────────────────
@@ -225,15 +254,30 @@ export class ReleaseService {
     if (!name) throw new DomainError('VALIDATION', 'release name is required');
     if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
 
+    const slug = slugify(name);
+
     const tx = this.db.transaction(() => {
       const conflict = this.db
         .prepare(`SELECT 1 FROM spec_release WHERE name = ?`)
         .get(name);
       if (conflict) throw new DomainError('RELEASE_NAME_CONFLICT', `release name '${name}' already exists`);
+      // 0.1.118: two different names can slugify to the same string, which
+      // would collide on disk (`<releasesDir>/<slug>.json`) even though the
+      // DB-unique `name` differs. Reject before insert, same posture as the
+      // name-uniqueness check above.
+      const slugConflict = this.db
+        .prepare(`SELECT name FROM spec_release WHERE slug = ?`)
+        .get(slug) as { name: string } | undefined;
+      if (slugConflict) {
+        throw new DomainError(
+          'RELEASE_SLUG_CONFLICT',
+          `release name '${name}' resolves to the same identifier as existing release '${slugConflict.name}'`,
+        );
+      }
 
       const info = this.db
-        .prepare(`INSERT INTO spec_release (name, description, created_by) VALUES (?, ?, ?)`)
-        .run(name, description, actor);
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run(name, slug, description, actor);
       const releaseId = Number(info.lastInsertRowid);
 
       this.db
@@ -247,6 +291,24 @@ export class ReleaseService {
       return row;
     });
     const releaseRow = tx();
+    // 0.1.118: write the on-disk identity file AFTER the SQLite transaction
+    // commits (best-effort — a release-store write failure must not undo an
+    // already-committed release; log and continue, mirroring the codebase's
+    // "never block a committed mutation on a secondary side-effect" posture).
+    if (this.releaseStore) {
+      try {
+        this.releaseStore.write(slug, {
+          name: releaseRow.name,
+          slug,
+          description: releaseRow.description,
+          createdAt: releaseRow.created_at,
+          createdBy: releaseRow.created_by,
+          roots: this.releasableRootIds,
+        });
+      } catch (err) {
+        console.error(`[release] failed to write release file for '${name}':`, err);
+      }
+    }
     const release = this.toRelease(releaseRow);
     return { ...release, countBreakdown: this.computeCountBreakdown(release.id) };
   }
@@ -279,6 +341,8 @@ export class ReleaseService {
 
       const nextName = input.name === undefined ? undefined : input.name.trim();
       const nextDescription = input.description === undefined ? undefined : input.description.trim();
+      const oldSlug = row.slug;
+      let nextSlug: string | undefined;
 
       if (nextName !== undefined) {
         if (!nextName) throw new DomainError('VALIDATION', 'release name is required');
@@ -288,6 +352,18 @@ export class ReleaseService {
             .get(nextName, row.id);
           if (conflict) {
             throw new DomainError('RELEASE_NAME_CONFLICT', `release name '${nextName}' already exists`);
+          }
+          nextSlug = slugify(nextName);
+          if (nextSlug !== oldSlug) {
+            const slugConflict = this.db
+              .prepare(`SELECT name FROM spec_release WHERE slug = ? AND id != ?`)
+              .get(nextSlug, row.id) as { name: string } | undefined;
+            if (slugConflict) {
+              throw new DomainError(
+                'RELEASE_SLUG_CONFLICT',
+                `release name '${nextName}' resolves to the same identifier as existing release '${slugConflict.name}'`,
+              );
+            }
           }
         }
       }
@@ -300,10 +376,11 @@ export class ReleaseService {
           .prepare(
             `UPDATE spec_release
              SET name = COALESCE(?, name),
+                 slug = COALESCE(?, slug),
                  description = COALESCE(?, description)
              WHERE id = ?`,
           )
-          .run(nextName ?? null, nextDescription ?? null, row.id);
+          .run(nextName ?? null, nextSlug ?? null, nextDescription ?? null, row.id);
       }
 
       if (input.assignUnreleased === true) {
@@ -313,9 +390,33 @@ export class ReleaseService {
         this.pageVersions.assignToRelease(row.id, this.releasableRootIds);
       }
 
-      return row.id;
+      const finalRow = this.db
+        .prepare(`SELECT * FROM spec_release WHERE id = ?`)
+        .get(row.id) as ReleaseRow;
+      return { releaseId: row.id, oldSlug, finalRow };
     });
-    const releaseId = tx();
+    const { releaseId, oldSlug, finalRow } = tx();
+    // 0.1.118: keep the on-disk identity file in sync — a rename moves it
+    // (remove old + write new), a description-only edit just rewrites content
+    // at the same slug. Legacy releases (no slug — born before this feature,
+    // never renamed since) are left without a file, tolerated gracefully.
+    if (this.releaseStore && finalRow.slug) {
+      try {
+        if (oldSlug && oldSlug !== finalRow.slug) {
+          this.releaseStore.remove(oldSlug);
+        }
+        this.releaseStore.write(finalRow.slug, {
+          name: finalRow.name,
+          slug: finalRow.slug,
+          description: finalRow.description,
+          createdAt: finalRow.created_at,
+          createdBy: finalRow.created_by,
+          roots: this.releasableRootIds,
+        });
+      } catch (err) {
+        console.error(`[release] failed to sync release file for '${finalRow.name}':`, err);
+      }
+    }
     return this.getRelease(releaseId);
   }
 
@@ -367,6 +468,131 @@ export class ReleaseService {
   }
 
   /**
+   * 0.1.118: git-anchored diff branch. Mutually exclusive with the SQL path
+   * below (confirmed against spec AC — never merged): `null` means "not
+   * usable" and the caller falls through to the existing SQL computation.
+   * Usable only when BOTH releases have a slug (legacy releases predating
+   * this feature never do) AND both resolve to a commit in git history (a
+   * release created while `syncCommitOnRelease` was off never lands in
+   * history — B3, a known open edge, per the brief).
+   *
+   * Fidelity note: this path can only produce file-level create/modified/
+   * deleted, not the rich per-field diff the SQL path produces (frontmatter,
+   * entity field diffs) — an accepted, spec-confirmed tradeoff, not a bug.
+   */
+  private async tryGitAnchoredDiff(
+    fromRow: ReleaseRow,
+    toRow: ReleaseRow,
+    opts?: { roots?: string[] },
+  ): Promise<RawDelta | null> {
+    if (!this.gitService || !this.releaseStore) return null;
+    if (!fromRow.slug || !toRow.slug) return null;
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+
+    const fromFile = nodePath.join(this.releaseStore.root, `${fromRow.slug}.json`);
+    const toFile = nodePath.join(this.releaseStore.root, `${toRow.slug}.json`);
+    const [shaA, shaB] = await Promise.all([
+      this.gitService.resolveReleaseCommit(fromFile),
+      this.gitService.resolveReleaseCommit(toFile),
+    ]);
+    if (!shaA || !shaB) return null;
+    // Both release-identity files landed in the SAME commit (e.g. a rename
+    // that skipped a commit — B3 — followed by a later release whose commit
+    // swept up both the pending rename and the new file). `diffRefs(sha,
+    // sha, ...)` would trivially return `{files: []}`, a non-null-but-empty
+    // result the caller would otherwise accept as "no changes" even though
+    // real content differs — decline so the caller falls back to the
+    // version-table-based SQL path, which is anchored on release ids, not
+    // commits, and always produces a correct diff regardless of commit shape.
+    if (shaA === shaB) return null;
+
+    // 0.1.118: `diffRefs` resolves its output paths from `git rev-parse
+    // --show-toplevel`, which is ALWAYS symlink-resolved — on macOS `cwd`
+    // itself is typically reached through `/var/folders` → `/private/var/…`,
+    // so a plain (non-realpath'd) comparison dir would silently never match
+    // any returned file (same class of bug `GitService.commit()`'s own
+    // staging-target resolution already guards against). Realpath every
+    // comparison target once, tolerating a missing dir (falls back to the
+    // as-given path — that branch just then matches nothing, not a crash).
+    const realOrSelf = (p: string): string => {
+      try {
+        return nodeFs.realpathSync(p);
+      } catch {
+        return p;
+      }
+    };
+    const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
+    const releasesAbs = realOrSelf(this.releaseStore.root);
+    const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
+      this.releasableRootIds.includes(r),
+    );
+    const rootDirsById = new Map(
+      this.releasableRootIds.map((id, i) => [id, realOrSelf(this.releasableRootDirs[i]!)]),
+    );
+    const scopedRootDirs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
+
+    const gitDiff = await this.gitService.diffRefs(shaA, shaB, [
+      ...scopedRootDirs,
+      entitiesAbs,
+      releasesAbs,
+    ]);
+    if (!gitDiff) return null;
+
+    const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'deleted'> = {
+      A: 'created',
+      M: 'modified',
+      D: 'deleted',
+      R: 'created', // diffRefs already flattens R into a D(old)+A(new) pair
+    };
+    const isInside = (parent: string, child: string): boolean => {
+      const rel = nodePath.relative(parent, child);
+      return rel !== '' && !rel.startsWith('..') && !nodePath.isAbsolute(rel);
+    };
+
+    const entities: RawDeltaEntityChange[] = [];
+    const pages: RawDeltaPageChange[] = [];
+
+    for (const file of gitDiff.files) {
+      // Release-identity files are metadata, not spec content — never surfaced.
+      if (isInside(releasesAbs, file.path)) continue;
+
+      if (isInside(entitiesAbs, file.path)) {
+        const relPath = nodePath.relative(entitiesAbs, file.path).replaceAll(nodePath.sep, '/');
+        const parsed = this.entityStore?.parseRelPath(relPath);
+        if (parsed) {
+          entities.push({ type: parsed.type, slug: parsed.slug, op: STATUS_TO_OP[file.status] });
+        }
+        continue;
+      }
+
+      for (const id of rootIds) {
+        const dir = rootDirsById.get(id);
+        if (!dir || !isInside(dir, file.path)) continue;
+        const relPath = nodePath.relative(dir, file.path).replaceAll(nodePath.sep, '/');
+        pages.push({
+          path: relPath,
+          op: STATUS_TO_OP[file.status],
+          added_sections: [],
+          removed_sections: [],
+          modified_sections: [],
+          moved_sections: [],
+          frontmatter_diff: null,
+          xml_refs_diff: null,
+        });
+        break;
+      }
+    }
+
+    return {
+      from: { id: fromRow.id, name: fromRow.name },
+      to: { id: toRow.id, name: toRow.name },
+      entities,
+      pages,
+    };
+  }
+
+  /**
    * Structured semantic diff between two releases. For each entity that
    * differs (or pages that differ), computes per-plugin `host.diff(...)`
    * (entities) or `pageSerializer.diff(...)` (pages). Falls back to
@@ -375,14 +601,27 @@ export class ReleaseService {
    * `fromIdOrName === null` ⇒ initial brief: synthetic empty `from` snapshot.
    * Wszystkie encje/strony w `to` widoczne jako `op: 'create'`. Output
    * `RawDelta.from` jest wtedy `null` (sygnal dla M21 / UI).
+   *
+   * 0.1.118: when `config.git.enabled` and both releases resolve to commits
+   * in git history, sources from `tryGitAnchoredDiff` instead (mutually
+   * exclusive with the SQL computation below, never merged — see that
+   * method's doc comment). `fromIdOrName === null` always takes the SQL path
+   * (no need to synthesize an empty-tree SHA for the initial-brief case).
    */
-  getReleaseDiff(
+  async getReleaseDiff(
     fromIdOrName: number | string | null,
     toIdOrName: number | string,
     opts?: { roots?: string[] },
-  ): RawDelta {
+  ): Promise<RawDelta> {
     const toRow = this.findReleaseRow(toIdOrName);
     if (!toRow) throw new DomainError('NOT_FOUND', `release '${toIdOrName}' not found`);
+
+    if (fromIdOrName !== null) {
+      const fromRowForGit = this.findReleaseRow(fromIdOrName);
+      if (!fromRowForGit) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+      const gitDelta = await this.tryGitAnchoredDiff(fromRowForGit, toRow, opts);
+      if (gitDelta) return gitDelta;
+    }
 
     const toSnap = this.getReleaseSnapshot(toRow.id);
 

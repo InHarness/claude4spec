@@ -18,6 +18,19 @@ interface Props {
  */
 export function PageDiffCard({ change }: Props) {
   const op = colorForOp(change.op);
+  // 0.1.118: the git-anchored release-diff path (ReleaseService.tryGitAnchoredDiff)
+  // is file-level only — it always emits empty section arrays and null
+  // frontmatter/xml diffs (an accepted, spec-confirmed fidelity tradeoff).
+  // Without this fallback the card renders a bare op badge with no body at
+  // all, indistinguishable from a real "nothing to show" bug — say so
+  // explicitly instead.
+  const hasDetail =
+    change.added_sections.length > 0 ||
+    change.removed_sections.length > 0 ||
+    change.modified_sections.length > 0 ||
+    change.moved_sections.length > 0 ||
+    change.frontmatter_diff !== null ||
+    change.xml_refs_diff !== null;
   return (
     <div
       className="rounded-md"
@@ -49,6 +62,11 @@ export function PageDiffCard({ change }: Props) {
         )}
         {change.frontmatter_diff && <FrontmatterDiffPanel diff={change.frontmatter_diff} />}
         {change.xml_refs_diff && <XmlRefsDiffPanel diff={change.xml_refs_diff} />}
+        {!hasDetail && (
+          <p className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
+            File-level change only — no section-level detail available for this comparison.
+          </p>
+        )}
       </div>
     </div>
   );

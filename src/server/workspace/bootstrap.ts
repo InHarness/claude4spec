@@ -83,9 +83,19 @@ export function bootstrapProject(
   const { config } = migrateConfigToV4(cwd);
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
-  ensureGitignore(cwd);
+  ensureGitignore(cwd, {
+    briefsDir: config.briefsDir,
+    patchesDir: config.patchesDir,
+    releasesDir: config.releasesDir,
+    gitEnabled: config.git?.enabled ?? false,
+  });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
   fs.mkdirSync(path.resolve(cwd, config.entitiesDir ?? '.claude4spec/entities'), {
+    recursive: true,
+  });
+  // 0.1.118: releasesDir — same forward-compat default as entitiesDir, so a
+  // fresh project has the dir before the ReleasesWatcher roots there.
+  fs.mkdirSync(path.resolve(cwd, config.releasesDir ?? '.claude4spec/releases'), {
     recursive: true,
   });
   ensureMcpJson({ projectAbsPath: cwd, workspace: workspace.name });

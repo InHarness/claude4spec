@@ -19,6 +19,7 @@ import {
   Settings as SettingsIcon,
   StickyNote,
   Tag,
+  TrendingUp,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -28,6 +29,7 @@ import { usePages, usePagesSearch } from '../hooks/usePages.js';
 import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
+import { GitStatusBadge } from './GitStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 
 interface SidebarProps {
@@ -136,6 +138,7 @@ export function Sidebar({
       </div>
 
       <UserSection />
+      <GitStatusBadge />
 
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         <SectionHeader
@@ -599,7 +602,7 @@ function countFiles(nodes: PageNode[]): number {
   return n;
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links'];
+const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links', '/progress'];
 
 function OthersTrigger({
   todoCount,
@@ -717,6 +720,7 @@ function OthersFlyout({
     >
       <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={onNavigate} />
       <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={onNavigate} />
+      <FlyoutLink to="/progress" icon={TrendingUp} label="Progress" onNavigate={onNavigate} />
       <FlyoutLink
         to="/todos"
         icon={StickyNote}

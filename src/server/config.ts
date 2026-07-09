@@ -33,6 +33,18 @@ export interface Config {
    * pre-M29 configs = treated as default. Additive — no `$schemaVersion` bump.
    */
   entitiesDir: string;
+  /**
+   * 0.1.118: directory of on-disk release identity files (relative to cwd,
+   * default `.claude4spec/releases`). One `<slug>.json` per release (name,
+   * slug, description, createdAt, createdBy, roots) — identity only, no
+   * version content. `spec_release` (SQLite) is a derived cache rebuilt from
+   * these files, analogous to how entities are rebuilt from `entitiesDir`.
+   * Same validation as `entitiesDir` (must be relative, must not escape cwd,
+   * included in the D4 no-overlap check). Committed to git when `git.enabled`,
+   * local-only otherwise. Forward-compat: missing = treated as default.
+   * Additive — no `$schemaVersion` bump.
+   */
+  releasesDir: string;
   writingStyle: string | null;
   /**
    * 0.1.58: one-line "elevator pitch" (0–200 chars) describing this specification.
@@ -94,6 +106,14 @@ export interface Config {
 }
 
 export interface GitSyncConfig {
+  /**
+   * 0.1.118: master switch for the entire git layer. Absent/missing ⇒ `false`
+   * (opt-in — existing projects with `syncCommitOnRelease`/`syncPushOnPush`
+   * already `true` lose commit/push-on-release after upgrading; the Settings
+   * UI surfaces an amber banner for that case). When `false`, ALL git
+   * operations no-op and return `status: 'skipped'`; `detect()` may still run.
+   */
+  enabled?: boolean;
   /** When on, creating a release best-effort `git commit`s pagesDir + config.json. */
   syncCommitOnRelease?: boolean;
   /** When on, a successful remote push best-effort `git push`es the current branch. */
@@ -184,6 +204,7 @@ export function defaults(cwd: string): Config {
     briefsDir: '.claude4spec/briefs',
     patchesDir: '.claude4spec/patches',
     entitiesDir: '.claude4spec/entities',
+    releasesDir: '.claude4spec/releases',
     writingStyle: null,
     // 0.1.51: brak dyrektywy jezykowej dla tresci spec (dotychczasowe zachowanie).
     language: null,
@@ -265,12 +286,13 @@ export function dirsOverlap(rootDir: string, otherDir: string): boolean {
  */
 export function validateRootDirs(
   roots: Root[],
-  opts: { entitiesDir: string; briefsDir: string; patchesDir: string },
+  opts: { entitiesDir: string; releasesDir: string; briefsDir: string; patchesDir: string },
 ): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
   const hardTargets: Array<{ id: string; dir: string }> = [
     { id: 'entitiesDir', dir: opts.entitiesDir },
+    { id: 'releasesDir', dir: opts.releasesDir },
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
   for (let i = 0; i < roots.length; i++) {
@@ -410,6 +432,10 @@ function validate(raw: unknown): Partial<Config> {
     if (typeof r.entitiesDir !== 'string') throw typeError('entitiesDir', 'string', r.entitiesDir);
     out.entitiesDir = r.entitiesDir;
   }
+  if ('releasesDir' in r) {
+    if (typeof r.releasesDir !== 'string') throw typeError('releasesDir', 'string', r.releasesDir);
+    out.releasesDir = r.releasesDir;
+  }
   if ('writingStyle' in r) {
     if (r.writingStyle !== null && typeof r.writingStyle !== 'string') {
       throw typeError('writingStyle', 'string | null', r.writingStyle);
@@ -536,6 +562,12 @@ function validate(raw: unknown): Partial<Config> {
     }
     const git: GitSyncConfig = {};
     const gr = g as Record<string, unknown>;
+    if ('enabled' in gr) {
+      if (typeof gr.enabled !== 'boolean') {
+        throw typeError('git.enabled', 'boolean', gr.enabled);
+      }
+      git.enabled = gr.enabled;
+    }
     if ('syncCommitOnRelease' in gr) {
       if (typeof gr.syncCommitOnRelease !== 'boolean') {
         throw typeError('git.syncCommitOnRelease', 'boolean', gr.syncCommitOnRelease);

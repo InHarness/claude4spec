@@ -115,6 +115,8 @@ export interface ConfigResponse {
   patchesDir: string;
   /** M29/M31: committed entity JSON files dir (source of truth; SQLite is derived). */
   entitiesDir: string;
+  /** 0.1.118: on-disk release identity files dir; spec_release (SQLite) is derived from it. */
+  releasesDir: string;
   /** M13: whitelist of active entity-plugin types; undefined = all registered active. */
   entities?: string[];
   /** M26: hot-reload Claude agent flags. 0.1.51 adds conversationalLanguage; 0.1.90 adds FS path scope. */
@@ -130,8 +132,8 @@ export interface ConfigResponse {
      */
     pathScopeStrength: 'hard' | 'soft' | 'none';
   };
-  /** M28: hot-reload git-sync toggles (always resolved; both default false). */
-  git: { syncCommitOnRelease: boolean; syncPushOnPush: boolean };
+  /** M28: hot-reload git-sync toggles (always resolved; all default false). 0.1.118 adds the `enabled` master switch. */
+  git: { enabled: boolean; syncCommitOnRelease: boolean; syncPushOnPush: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
@@ -149,6 +151,7 @@ export interface ConfigPatch {
   briefsDir?: string;
   patchesDir?: string;
   entitiesDir?: string;
+  releasesDir?: string;
   writingStyle?: string | null;
   /** 0.1.51: spec-authoring language; null or a SUPPORTED_LANGUAGES member. */
   language?: string | null;
@@ -164,7 +167,7 @@ export interface ConfigPatch {
     disallowedPaths?: string[];
   };
   /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
-  git?: { syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+  git?: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
   /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */
   plugins?: Record<string, Record<string, unknown>>;
   remoteProjectId?: string | null;

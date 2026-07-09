@@ -7,7 +7,7 @@
  * (and risking drift from) the server's normalization rules.
  */
 export function slugify(input: string): string {
-  return input
+  const base = input
     .toLowerCase()
     // ł nie ma dekompozycji NFD — mapujemy jawnie przed normalizacją.
     .replace(/ł/g, 'l')
@@ -17,6 +17,20 @@ export function slugify(input: string): string {
     .replace(/[̀-ͯ]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+  if (base) return base;
+  // Input outside the Latin-diacritic set this transliterates (CJK,
+  // Cyrillic, Arabic, …) or pure punctuation collapses to '' above. Callers
+  // that key a filename/URL segment off this value (e.g. ReleaseFileStore's
+  // `<slug>.json`) would otherwise silently produce an empty path segment or
+  // a leading-dot dotfile that then gets excluded by every directory listing
+  // that skips dotfiles — falling back to a short, deterministic,
+  // kebab-case-safe identifier derived from the input's codepoints keeps the
+  // result always non-empty and non-dot-prefixed.
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return `x-${hash.toString(36)}`;
 }
 
 export function tagSlug(name: string): string {

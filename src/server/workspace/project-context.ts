@@ -25,6 +25,8 @@ import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
+import { ProgressService } from '../services/progress.js';
+import { progressRouter } from '../routes/progress.js';
 import { PatchService } from '../services/patch.js';
 import { patchesRouter } from '../routes/patches.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -52,6 +54,9 @@ import { PagesWatcher } from '../fs/watcher.js';
 import { EntitiesWatcher } from '../fs/entities-watcher.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
+import { ReleasesWatcher } from '../fs/releases-watcher.js';
+import { ReleaseFileStore } from '../services/release-store.js';
+import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
@@ -248,10 +253,16 @@ async function buildInner(
   const entitiesDir = bootConfig.entitiesDir ?? '.claude4spec/entities';
   const entitiesAbs = resolveDirAbs(cwd, entitiesDir, 'entitiesDir');
 
+  // 0.1.118: releasesDir, default '.claude4spec/releases'. Same path-safety +
+  // git-committed treatment as entitiesDir — source of truth for release
+  // identity files; spec_release (SQLite) is a derived cache rebuilt from it.
+  const releasesDir = bootConfig.releasesDir ?? '.claude4spec/releases';
+  const releasesAbs = resolveDirAbs(cwd, releasesDir, 'releasesDir');
+
   // 0.1.96: cross-field root overlap validation. Hard errors abort the build
   // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
   {
-    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, briefsDir, patchesDir });
+    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir });
     for (const w of warnings) console.warn(`[config] ${w}`);
     if (errors.length > 0) throw new Error(errors[0]);
     // Briefs/patches are distinct catalogs — an identical dir double-captures every
@@ -459,6 +470,15 @@ async function buildInner(
     tagsService,
     rawReader,
   );
+  // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
+  // the entities triad above exactly (watcher rooted at releasesDir, atomic
+  // file store, upsert-by-slug indexer keeping spec_release.id stable — see
+  // ReleaseIndexerService's header comment for why it must NOT delete-all).
+  const releasesWatcher = new ReleasesWatcher(releasesAbs);
+  cleanup.push(() => releasesWatcher.close());
+  const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, releasesWatcher);
+  releaseFileStore.ensureRoot();
+  const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, releasesWatcher);
   // 0.1.96: per-behaviour root maps (gated on root PROPERTIES, not id).
   const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
   const referenceValidatedServices = new Map<string, PagesService>();
@@ -567,12 +587,17 @@ async function buildInner(
     watcher,
     cwd,
     releasableRootIds,
+    releasableRootDirs,
   );
   // M29: release restore must persist restored entities' files.
   releaseService.setEntityStore(entityStore);
+  // 0.1.118: release create/update writes the on-disk identity file.
+  releaseService.setReleaseStore(releaseFileStore);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
   // git repo. Probes the releasable roots for a worktree; reads config per-action.
   const gitService = new GitService(cwd, releasableRootDirs);
+  // 0.1.118: needed for the git-anchored getReleaseDiff branch.
+  releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
   const releasePushService = new ReleasePushService(
     db.handle,
@@ -742,6 +767,7 @@ async function buildInner(
   router.use('/release-pushes', releasePushesRouter(releasePushService));
   router.use('/git', gitRouter(gitService));
   router.use('/briefs', briefsRouter(briefService, pageVersions));
+  router.use('/progress', progressRouter(new ProgressService(releaseService, briefService, gitService, cwd)));
   router.use('/patches', patchesRouter(patchService));
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
@@ -830,6 +856,19 @@ async function buildInner(
       });
     } else {
       entityIndexer.schedulePage(relPath);
+    }
+  });
+
+  // 0.1.118: external edits / git pull of release-identity files → incremental
+  // spec_release cache reindex (upsert-by-slug, never delete-all — see
+  // ReleaseIndexerService's header comment).
+  releasesWatcher.onChange((relPath, kind) => {
+    if (kind === 'unlink') {
+      releaseIndexer.handleUnlink(relPath).catch((err) => {
+        console.error(`[release-indexer] unlink ${relPath}:`, err);
+      });
+    } else {
+      releaseIndexer.schedulePage(relPath);
     }
   });
 
@@ -941,9 +980,20 @@ async function buildInner(
   // M29: enable slug-rename propagation into entity files (dto→endpoint
   // linked_dtos, *→ac verifies). After indexAll so the index is consistent.
   referencesService.setEntityDeps(db.handle, entityStore);
+
+  // 0.1.118: boot rebuild of the spec_release derived cache from releasesDir.
+  // Order relative to the entity rebuild doesn't matter (independent tables).
+  try {
+    await releaseIndexer.indexAll();
+  } catch (err) {
+    console.error('[release-indexer] boot indexAll failed:', err);
+  }
+
   // Start the entities watcher only after the boot export/rebuild, so bulk
   // self-writes during export never race a live reindex.
   entitiesWatcher.start();
+  // 0.1.118: same reasoning — start after the boot release-cache rebuild.
+  releasesWatcher.start();
   pluginOverlayWatcher.start();
 
   const writingStyle = initialWritingStyle
