@@ -31,7 +31,6 @@ import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
 import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
-import { ProgressView } from './components/ProgressView.js';
 import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
@@ -302,12 +301,6 @@ const patchDetailRoute = createRoute({
   component: PatchDetailRoute,
 });
 
-const progressIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/progress',
-  component: ProgressIndexRoute,
-});
-
 /**
  * M33 phase 3: the host's STATIC routes — every route the host owns directly,
  * minus the de-hardcoded `/database-tables` routes (now a `RouteTreeFragment`).
@@ -347,7 +340,6 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   briefsIndexRoute,
   briefDetailRoute,
   patchDetailRoute,
-  progressIndexRoute,
 ]);
 
 export function createAppRouter(queryClient: QueryClient) {
@@ -838,14 +830,6 @@ function ReleasesIndexRoute() {
   return (
     <RoutePane>
       <ReleasesList />
-    </RoutePane>
-  );
-}
-
-function ProgressIndexRoute() {
-  return (
-    <RoutePane>
-      <ProgressView />
     </RoutePane>
   );
 }

@@ -19,7 +19,6 @@ import {
   Settings as SettingsIcon,
   StickyNote,
   Tag,
-  TrendingUp,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -602,7 +601,7 @@ function countFiles(nodes: PageNode[]): number {
   return n;
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links', '/progress'];
+const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links'];
 
 function OthersTrigger({
   todoCount,
@@ -720,7 +719,6 @@ function OthersFlyout({
     >
       <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={onNavigate} />
       <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={onNavigate} />
-      <FlyoutLink to="/progress" icon={TrendingUp} label="Progress" onNavigate={onNavigate} />
       <FlyoutLink
         to="/todos"
         icon={StickyNote}

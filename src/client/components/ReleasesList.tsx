@@ -1,14 +1,25 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { GitCommit, Plus } from 'lucide-react';
+import { ArrowUpRight, FileText, GitCommit, Plus } from 'lucide-react';
 import { useReleases } from '../hooks/useReleases.js';
 import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
+import { useBriefs } from '../hooks/useBriefs.js';
+import type { BriefListItem } from '../../shared/entities.js';
 import { CreateReleaseDialog } from './CreateReleaseDialog.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
+import { ImplementedBadge } from './BriefsList.js';
+
+/** Briefs attached to a single release card — belonging (`toRelease === name`)
+ * vs outgoing (an unreleased analysis brief authored FROM this release). */
+interface ReleaseBriefs {
+  belonging: BriefListItem[];
+  outgoing: BriefListItem[];
+}
 
 export function ReleasesList() {
   const { data: releases = [], isLoading } = useReleases();
   const { data: pushes = [] } = useAllReleasePushes();
+  const { data: briefs = [] } = useBriefs();
   const [showCreate, setShowCreate] = useState(false);
 
   // Per-release count of SUCCESSFUL pushes (dedup hits count; errors do not).
@@ -20,6 +31,33 @@ export function ReleasesList() {
     }
     return m;
   }, [pushes]);
+
+  // 0.1.119 (M17): client-side join of releases + briefs by release NAME (the
+  // brief frontmatter's from/toRelease are version strings, not release ids —
+  // no slug on the release DTO to join on, and none needed). "Belonging" =
+  // toRelease === this release's name (badge shows implemented/pending).
+  // "Outgoing" = an unreleased analysis brief (toRelease === null) authored
+  // FROM this release. Briefs with both null (degenerate) are dropped
+  // entirely — they never render on any card, only on /briefs.
+  const briefsByRelease = useMemo(() => {
+    const m = new Map<string, ReleaseBriefs>();
+    const bucket = (name: string): ReleaseBriefs => {
+      let b = m.get(name);
+      if (!b) {
+        b = { belonging: [], outgoing: [] };
+        m.set(name, b);
+      }
+      return b;
+    };
+    for (const b of briefs) {
+      if (b.toRelease !== null) {
+        bucket(b.toRelease).belonging.push(b);
+      } else if (b.source === 'analysis' && b.fromRelease !== null) {
+        bucket(b.fromRelease).outgoing.push(b);
+      }
+    }
+    return m;
+  }, [briefs]);
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -109,6 +147,7 @@ export function ReleasesList() {
                   >
                     {r.description}
                   </div>
+                  <ReleaseBriefsSection briefs={briefsByRelease.get(r.name)} />
                 </div>
               </Link>
             ))}
@@ -118,6 +157,49 @@ export function ReleasesList() {
 
       {showCreate && <CreateReleaseDialog onClose={() => setShowCreate(false)} />}
     </div>
+  );
+}
+
+/** Briefs block on a release card — visually separate from the header/description
+ * above it. Hidden entirely when the release has no belonging/outgoing briefs. */
+function ReleaseBriefsSection({ briefs }: { briefs: ReleaseBriefs | undefined }) {
+  if (!briefs || (briefs.belonging.length === 0 && briefs.outgoing.length === 0)) return null;
+  return (
+    <div className="mt-2 pt-2 flex flex-col gap-1.5" style={{ borderTop: '1px solid var(--c-hair)' }}>
+      <span className="text-[10px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
+        Briefs
+      </span>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {briefs.belonging.map((b) => (
+          <BriefPill key={b.path} brief={b} />
+        ))}
+        {briefs.outgoing.map((b) => (
+          <BriefPill key={b.path} brief={b} outgoing />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function BriefPill({ brief, outgoing }: { brief: BriefListItem; outgoing?: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 min-w-0"
+      style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)' }}
+      title={outgoing ? `Outgoing analysis brief from this release: ${brief.path}` : brief.path}
+    >
+      <FileText size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />
+      <span
+        className="font-mono text-[11px] truncate"
+        style={{ color: 'var(--c-ink)', maxWidth: 220 }}
+      >
+        {brief.path}
+      </span>
+      {outgoing ? (
+        <ArrowUpRight size={11} style={{ color: 'var(--c-muted)', flexShrink: 0 }} aria-label="outgoing" />
+      ) : null}
+      <ImplementedBadge implemented={brief.implemented} />
+    </span>
   );
 }
 

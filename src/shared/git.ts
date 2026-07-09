@@ -18,6 +18,15 @@ export interface GitStatusResponse {
   branch: string | null;
   /** `true` when `git status --porcelain` is non-empty. */
   isDirty: boolean;
+  /**
+   * 0.1.119: commits ahead of upstream (from `gitService.statusAheadBehind()`,
+   * merged in by the `/api/git/status` route only — other `detect()` callers
+   * don't populate this). Absent/`null` when not detected, detached HEAD, or
+   * no upstream configured for the branch.
+   */
+  ahead?: number | null;
+  /** 0.1.119: commits behind upstream — see `ahead`. */
+  behind?: number | null;
 }
 
 /** `'committed'` = success; `'nothing-to-commit'` = nothing staged (not an error);

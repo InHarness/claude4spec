@@ -11,6 +11,7 @@ interface DraftState {
   briefsDir: string;
   patchesDir: string;
   entitiesDir: string;
+  releasesDir: string;
 }
 
 /**
@@ -28,6 +29,7 @@ function buildDraft(config: ReturnType<typeof useConfig>['data']): DraftState {
     briefsDir: config?.briefsDir ?? '',
     patchesDir: config?.patchesDir ?? '',
     entitiesDir: config?.entitiesDir ?? '',
+    releasesDir: config?.releasesDir ?? '',
   };
 }
 
@@ -211,6 +213,7 @@ export function DirectoriesSection() {
     if (draft.briefsDir !== config.briefsDir) patchBody.briefsDir = draft.briefsDir;
     if (draft.patchesDir !== config.patchesDir) patchBody.patchesDir = draft.patchesDir;
     if (draft.entitiesDir !== config.entitiesDir) patchBody.entitiesDir = draft.entitiesDir;
+    if (draft.releasesDir !== config.releasesDir) patchBody.releasesDir = draft.releasesDir;
     if (Object.keys(patchBody).length === 0) return;
     try {
       await patch.mutateAsync(patchBody);
@@ -294,6 +297,11 @@ export function DirectoriesSection() {
             label="Entities directory"
             value={draft.entitiesDir}
             onChange={(v) => setDraft((d) => ({ ...d, entitiesDir: v }))}
+          />
+          <DirField
+            label="Releases directory"
+            value={draft.releasesDir}
+            onChange={(v) => setDraft((d) => ({ ...d, releasesDir: v }))}
           />
         </div>
 
