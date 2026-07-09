@@ -111,6 +111,7 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
 
   const hardTargets: Array<{ id: string; dir: string }> = [
     { id: 'entitiesDir', dir: draft.entitiesDir },
+    { id: 'releasesDir', dir: draft.releasesDir },
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
   for (let i = 0; i < roots.length; i++) {

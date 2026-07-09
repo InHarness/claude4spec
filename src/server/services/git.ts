@@ -371,7 +371,15 @@ export class GitService {
    * single request doesn't pay for two full `detect()` probe rounds.
    */
   async statusAheadBehind(precomputedStatus?: GitStatusResponse): Promise<GitAheadBehindStatus | null> {
-    const config = readConfig(this.cwd);
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      // Class-wide contract (see file header): never throw to the caller. A
+      // malformed config.json mid-run must degrade to "can't tell", same as
+      // every other failure mode here — this route is otherwise always-200.
+      return null;
+    }
     if (!config.git?.enabled) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath || !status.branch) return null;

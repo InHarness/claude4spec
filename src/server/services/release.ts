@@ -38,7 +38,7 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
-import type { ReleaseFileStore } from './release-store.js';
+import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { GitService } from './git.js';
 import type { PageSnapshotData } from './page-serializer.js';
 import {
@@ -297,14 +297,7 @@ export class ReleaseService {
     // "never block a committed mutation on a secondary side-effect" posture).
     if (this.releaseStore) {
       try {
-        this.releaseStore.write(slug, {
-          name: releaseRow.name,
-          slug,
-          description: releaseRow.description,
-          createdAt: releaseRow.created_at,
-          createdBy: releaseRow.created_by,
-          roots: this.releasableRootIds,
-        });
+        this.releaseStore.write(slug, toReleaseFileData(releaseRow, slug, this.releasableRootIds));
       } catch (err) {
         console.error(`[release] failed to write release file for '${name}':`, err);
       }
@@ -405,14 +398,10 @@ export class ReleaseService {
         if (oldSlug && oldSlug !== finalRow.slug) {
           this.releaseStore.remove(oldSlug);
         }
-        this.releaseStore.write(finalRow.slug, {
-          name: finalRow.name,
-          slug: finalRow.slug,
-          description: finalRow.description,
-          createdAt: finalRow.created_at,
-          createdBy: finalRow.created_by,
-          roots: this.releasableRootIds,
-        });
+        this.releaseStore.write(
+          finalRow.slug,
+          toReleaseFileData(finalRow, finalRow.slug, this.releasableRootIds),
+        );
       } catch (err) {
         console.error(`[release] failed to sync release file for '${finalRow.name}':`, err);
       }

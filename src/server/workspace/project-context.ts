@@ -54,7 +54,7 @@ import { EntitiesWatcher } from '../fs/entities-watcher.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleasesWatcher } from '../fs/releases-watcher.js';
-import { ReleaseFileStore, type ReleaseFileData } from '../services/release-store.js';
+import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
@@ -994,34 +994,36 @@ async function buildInner(
     if (legacyReleases.length > 0) {
       console.log(`[m29] backfilling ${legacyReleases.length} release(s) DB→disk into ${releasesDir} ...`);
       backupDbBeforeMigration(dbSlotDir);
+      const setSlug = db.handle.prepare(`UPDATE spec_release SET slug = ? WHERE id = ?`);
       for (const row of legacyReleases) {
         try {
-          const slug = slugify(row.name);
-          const data: ReleaseFileData = {
-            name: row.name,
-            slug,
-            description: row.description,
-            createdAt: row.created_at,
-            createdBy: row.created_by,
-            roots: releasableRootIds,
-          };
-          if (releaseFileStore.exists(slug)) {
+          // Two legacy names can slugify to the same string (e.g. differing
+          // only by case/punctuation). Unlike `createRelease()`'s live-path
+          // conflict check (which can reject a user's request outright), a
+          // boot migration must make progress for every row — disambiguate
+          // with a numeric suffix instead of leaving the loser's slug NULL
+          // forever (which the old skip-with-warning behavior did).
+          const baseSlug = slugify(row.name);
+          let slug = baseSlug;
+          let attempt = 1;
+          while (releaseFileStore.exists(slug)) {
             const existing = releaseFileStore.read(slug);
             const matches =
-              existing.name === data.name &&
-              existing.description === data.description &&
-              existing.createdAt === data.createdAt &&
-              existing.createdBy === data.createdBy;
-            if (!matches) {
-              console.warn(
-                `[m29] release file '${slug}.json' already exists with different content; skipping backfill for release id=${row.id}`,
-              );
-              continue;
+              existing.name === row.name &&
+              existing.description === row.description &&
+              existing.createdAt === row.created_at &&
+              existing.createdBy === row.created_by;
+            if (matches) break; // idempotent re-run of a prior backfill for THIS row
+            attempt++;
+            if (attempt > 50) {
+              throw new Error(`no free slug for '${row.name}' after ${attempt - 1} attempts`);
             }
-          } else {
-            releaseFileStore.write(slug, data);
+            slug = `${baseSlug}-${attempt}`;
           }
-          db.handle.prepare(`UPDATE spec_release SET slug = ? WHERE id = ?`).run(slug, row.id);
+          if (!releaseFileStore.exists(slug)) {
+            releaseFileStore.write(slug, toReleaseFileData(row, slug, releasableRootIds));
+          }
+          setSlug.run(slug, row.id);
         } catch (err) {
           console.error(`[m29] release backfill failed for release id=${row.id}:`, err);
         }
