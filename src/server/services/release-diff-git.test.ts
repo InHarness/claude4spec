@@ -206,4 +206,58 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     expect(delta.entities).toEqual([]);
     expect(delta.pages).toEqual([]);
   });
+
+  // 0.1.118 code-review fix: two adjacent releases whose identity files land
+  // in the SAME commit (e.g. a rename that skipped a commit — B3 — followed
+  // by a later release whose commit swept up both the pending rename and the
+  // new file) used to make tryGitAnchoredDiff resolve shaA === shaB, call
+  // diffRefs(sha, sha, ...) (trivially {files: []}), and accept that
+  // non-null-but-empty result as "no changes" — silently hiding any real
+  // content differences. It must now decline (return null) so the caller
+  // falls back to the SQL path instead.
+  it('declines (falls back to SQL) when both releases resolve to the SAME commit, instead of returning a falsely-empty diff', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+    // Both release-identity files AND a real content change land in one commit.
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1 and v2 land together'], dir);
+
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    const v2Id = Number(info2.lastInsertRowid);
+
+    const fromRow = db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(v1Id);
+    const toRow = db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(v2Id);
+
+    // White-box: exercise the private branch-selection method directly so
+    // this test is precise about WHAT declined, independent of whatever the
+    // (here, data-free) SQL fallback happens to compute.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const gitDelta = await (releaseService as any).tryGitAnchoredDiff(fromRow, toRow);
+    expect(gitDelta).toBeNull();
+  });
 });

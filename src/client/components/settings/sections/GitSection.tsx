@@ -17,10 +17,12 @@ import { SettingsCard } from '../SettingsCard.js';
  */
 export function GitSection() {
   const { data: config } = useConfig();
-  const { data: status, isLoading } = useGitStatus();
-  const patch = usePatchConfig();
-
   const git = config?.git ?? { enabled: false, syncCommitOnRelease: false, syncPushOnPush: false };
+  // Gated: the repo-card/sub-toggle content below only renders when
+  // git.enabled is true, so an ungated fetch when it's false (the default)
+  // would be a wasted round trip on every Settings visit.
+  const { data: status, isLoading } = useGitStatus({ enabled: git.enabled });
+  const patch = usePatchConfig();
 
   async function toggle(
     field: 'syncCommitOnRelease' | 'syncPushOnPush',

@@ -144,6 +144,35 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(byName.get('new-name.md')).toBe('A');
     });
 
+    it('diffRefs surfaces a "T" type-change (file → symlink) as modified rather than dropping it', async () => {
+      const svc = new GitService(dir, [dir]);
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const target = path.join(pagesDir, 'a.md');
+      fs.writeFileSync(target, '# A');
+      fs.writeFileSync(path.join(pagesDir, 'b.md'), '# B');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      fs.rmSync(target);
+      fs.symlinkSync('b.md', target);
+      await git(['add', '.'], dir);
+      const status = (await git(['diff', '--cached', '--name-status'], dir)).trim();
+      if (!status.startsWith('T\t')) {
+        // Some git configs/platforms report a symlink type-change as D+A
+        // instead of T — skip rather than assert a false failure on those.
+        return;
+      }
+      await git(['commit', '-m', 'typechange'], dir);
+      const shaB = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      const diff = await svc.diffRefs(shaA, shaB, [pagesDir]);
+      expect(diff).not.toBeNull();
+      const byName = new Map(diff!.files.map((f) => [path.basename(f.path), f.status]));
+      expect(byName.get('a.md')).toBe('M');
+    });
+
     it('statusAheadBehind returns branch/dirty with null ahead/behind when there is no upstream', async () => {
       const svc = new GitService(dir, [dir]);
       fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
@@ -175,6 +204,52 @@ describe('GitService — 0.1.118 read-only methods', () => {
       } finally {
         fs.rmSync(bareDir, { recursive: true, force: true });
       }
+    });
+
+    it('resolveReleaseCommit anchors to the FIRST add, not the most recent, when a file is deleted then re-created at the same path', async () => {
+      const svc = new GitService(dir, [dir]);
+      const releasesDir = path.join(dir, 'releases');
+      fs.mkdirSync(releasesDir, { recursive: true });
+      const filePath = path.join(releasesDir, 'v1.json');
+
+      fs.writeFileSync(filePath, '{"n":1}');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first add'], dir);
+      const firstAddSha = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      fs.rmSync(filePath);
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'delete'], dir);
+
+      fs.writeFileSync(filePath, '{"n":2}');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 're-add'], dir);
+
+      const resolved = await svc.resolveReleaseCommit(filePath);
+      expect(resolved).toBe(firstAddSha);
+    });
+
+    it('diffRefs correctly reports status for a file with a non-ASCII (accented) filename', async () => {
+      const svc = new GitService(dir, [dir]);
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const accentedName = 'Wydajność.md';
+      fs.writeFileSync(path.join(pagesDir, accentedName), '# v1');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      fs.writeFileSync(path.join(pagesDir, accentedName), '# v2');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'second'], dir);
+      const shaB = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      const diff = await svc.diffRefs(shaA, shaB, [pagesDir]);
+      expect(diff).not.toBeNull();
+      const byName = new Map(diff!.files.map((f) => [path.basename(f.path), f.status]));
+      expect(byName.get(accentedName)).toBe('M');
+      // No literal quote/backslash-escaped garbage path leaked through.
+      expect(diff!.files.some((f) => f.path.includes('\\') || f.path.includes('"'))).toBe(false);
     });
 
     it('statusAheadBehind returns null on detached HEAD (no branch to compare)', async () => {
@@ -212,6 +287,28 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const svc = new GitService(dir, [dir]);
       const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
       expect(result?.status).toBe('committed');
+    });
+
+    it('commitOnRelease stages briefsDir/patchesDir too, so they are actually committed once ensureGitignore un-gitignores them', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true, syncCommitOnRelease: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      // Defaults from server/config.ts: briefsDir='.claude4spec/briefs', patchesDir='.claude4spec/patches'.
+      fs.mkdirSync(path.join(dir, '.claude4spec', 'briefs'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.claude4spec', 'briefs', 'a.md'), '# brief');
+      fs.mkdirSync(path.join(dir, '.claude4spec', 'patches'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.claude4spec', 'patches', 'a.md'), '# patch');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
+      expect(result?.status).toBe('committed');
+
+      const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+      expect(tracked).toContain('.claude4spec/briefs/a.md');
+      expect(tracked).toContain('.claude4spec/patches/a.md');
     });
   });
 });

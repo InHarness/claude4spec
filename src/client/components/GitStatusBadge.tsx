@@ -13,7 +13,9 @@ import { useGitStatus } from '../hooks/useGitStatus.js';
  */
 export function GitStatusBadge() {
   const { data: config } = useConfig();
-  const { data: status } = useGitStatus();
+  // Gated: fires only once config confirms git is on, so the common (git
+  // off) case never pays for the server-side detect() subprocess spawns.
+  const { data: status } = useGitStatus({ enabled: config?.git?.enabled === true });
   const navigate = useNavigate();
 
   if (!config?.git?.enabled || !status?.detected) return null;

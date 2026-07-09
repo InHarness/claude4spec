@@ -492,9 +492,20 @@ export class ReleaseService {
 
     const fromFile = nodePath.join(this.releaseStore.root, `${fromRow.slug}.json`);
     const toFile = nodePath.join(this.releaseStore.root, `${toRow.slug}.json`);
-    const shaA = await this.gitService.resolveReleaseCommit(fromFile);
-    const shaB = await this.gitService.resolveReleaseCommit(toFile);
+    const [shaA, shaB] = await Promise.all([
+      this.gitService.resolveReleaseCommit(fromFile),
+      this.gitService.resolveReleaseCommit(toFile),
+    ]);
     if (!shaA || !shaB) return null;
+    // Both release-identity files landed in the SAME commit (e.g. a rename
+    // that skipped a commit — B3 — followed by a later release whose commit
+    // swept up both the pending rename and the new file). `diffRefs(sha,
+    // sha, ...)` would trivially return `{files: []}`, a non-null-but-empty
+    // result the caller would otherwise accept as "no changes" even though
+    // real content differs — decline so the caller falls back to the
+    // version-table-based SQL path, which is anchored on release ids, not
+    // commits, and always produces a correct diff regardless of commit shape.
+    if (shaA === shaB) return null;
 
     // 0.1.118: `diffRefs` resolves its output paths from `git rev-parse
     // --show-toplevel`, which is ALWAYS symlink-resolved — on macOS `cwd`

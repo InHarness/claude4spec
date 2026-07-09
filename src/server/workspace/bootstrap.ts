@@ -86,6 +86,7 @@ export function bootstrapProject(
   ensureGitignore(cwd, {
     briefsDir: config.briefsDir,
     patchesDir: config.patchesDir,
+    releasesDir: config.releasesDir,
     gitEnabled: config.git?.enabled ?? false,
   });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.

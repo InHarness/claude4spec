@@ -50,10 +50,22 @@ export class ReleaseIndexerService {
     const startedAt = performance.now();
     let count = 0;
     const upsert = this.db.prepare(UPSERT_SQL);
+    // 0.1.118: each file's upsert runs as its OWN nested transaction
+    // (becomes a SAVEPOINT since we're already inside the outer one) so a
+    // single bad file — e.g. two release files whose `name` collides (the
+    // UNIQUE constraint on `name` isn't covered by `ON CONFLICT(slug)`) —
+    // only skips that one file, mirroring EntityIndexerService's per-entity
+    // isolation (m29edge1) instead of rolling back every release indexed
+    // earlier in this same boot rebuild.
+    const upsertOneSavepoint = this.db.transaction((slug: string): boolean => this.upsertOne(upsert, slug));
     this.db
       .transaction(() => {
         for (const slug of this.store.listSlugs()) {
-          if (this.upsertOne(upsert, slug)) count += 1;
+          try {
+            if (upsertOneSavepoint(slug)) count += 1;
+          } catch (err) {
+            console.warn(`[release-indexer] skip ${slug}: ${(err as Error).message}`);
+          }
         }
       })();
     const ms = Math.round(performance.now() - startedAt);

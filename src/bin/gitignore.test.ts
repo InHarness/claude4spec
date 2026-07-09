@@ -125,4 +125,65 @@ describe('ensureGitignore — 0.1.118 git.enabled bidirectional toggle', () => {
     const after = fs.statSync(path.join(dir, '.gitignore')).mtimeMs;
     expect(after).toBe(new Date(0).getTime());
   });
+
+  // 0.1.118 code-review fix: releasesDir was previously never added to the
+  // managed pattern set at all, contradicting config.ts's own doc comment
+  // ("committed to git when git.enabled, local-only otherwise").
+  it('gitEnabled=false also gitignores the default releasesDir', () => {
+    ensureGitignore(dir, { gitEnabled: false });
+    expect(read()).toContain('.claude4spec/releases/');
+  });
+
+  it('gitEnabled=true OMITS releasesDir too', () => {
+    ensureGitignore(dir, { gitEnabled: true });
+    expect(read()).not.toContain('.claude4spec/releases');
+  });
+
+  it('respects a custom releasesDir value', () => {
+    ensureGitignore(dir, { gitEnabled: false, releasesDir: 'docs/releases' });
+    expect(read()).toContain('docs/releases/');
+  });
+
+  // 0.1.118 code-review fix: the regenerate-in-place rewrite used to treat
+  // EVERYTHING from the marker line to EOF as "ours" and discard it wholesale
+  // — silently dropping any user rule appended after our block (a natural
+  // place to add new ignores). An end marker now scopes exactly what we own.
+  it('preserves user-authored content appended AFTER the managed block (postamble) across a re-sync', () => {
+    fs.writeFileSync(
+      path.join(dir, '.gitignore'),
+      'node_modules/\n\n# claude4spec (auto-added)\n.claude4spec/mcp.json\n*.deprecated\n# /claude4spec (auto-added)\n\ndist/\n*.env.local\n',
+    );
+    ensureGitignore(dir, { gitEnabled: false });
+    const content = read();
+    expect(content).toContain('node_modules/');
+    expect(content).toContain('dist/');
+    expect(content).toContain('*.env.local');
+    expect(content).toContain('.claude4spec/briefs/');
+  });
+
+  it('postamble survives a full toggle round-trip (add then remove briefs/patches)', () => {
+    fs.writeFileSync(
+      path.join(dir, '.gitignore'),
+      '# claude4spec (auto-added)\n.claude4spec/mcp.json\n*.deprecated\n# /claude4spec (auto-added)\n\nmy-secret.env\n',
+    );
+    ensureGitignore(dir, { gitEnabled: false });
+    expect(read()).toContain('my-secret.env');
+
+    ensureGitignore(dir, { gitEnabled: true });
+    const content = read();
+    expect(content).toContain('my-secret.env');
+    expect(content).not.toContain('.claude4spec/briefs');
+  });
+
+  it('a legacy file with the start marker but no end marker (pre-fix format) does not crash and still produces valid output', () => {
+    fs.writeFileSync(
+      path.join(dir, '.gitignore'),
+      'node_modules/\n\n# claude4spec (auto-added)\n.claude4spec/mcp.json\n*.deprecated\n',
+    );
+    expect(() => ensureGitignore(dir, { gitEnabled: false })).not.toThrow();
+    const content = read();
+    expect(content).toContain('node_modules/');
+    expect(content).toContain('.claude4spec/mcp.json');
+    expect(content).toContain('# /claude4spec (auto-added)');
+  });
 });

@@ -125,17 +125,32 @@ export class GitService {
     // root, so an unresolved symlink path reads as "outside repository". Resolve
     // to real paths and keep only those that actually live inside `root`.
     //
-    // Stage every releasable root dir; briefsDir/patchesDir are NEVER releasable
-    // and so are never staged. M29: also stage the committed entity store
-    // (<entitiesDir> contains the entity JSON files + tags.json — the source of
-    // truth). db.sqlite is gitignored, so the whole dir can be staged safely.
-    // 0.1.118: also stage releasesDir so the new release's identity file lands
-    // in this same commit as its anchor (for resolveReleaseCommit later).
+    // Stage every releasable root dir. M29: also stage the committed entity
+    // store (<entitiesDir> contains the entity JSON files + tags.json — the
+    // source of truth). db.sqlite is gitignored, so the whole dir can be
+    // staged safely. 0.1.118: also stage releasesDir so the new release's
+    // identity file lands in this same commit as its anchor (for
+    // resolveReleaseCommit later) — and, when the git master switch is on,
+    // briefsDir/patchesDir too: `ensureGitignore` un-gitignores them
+    // specifically so they "become committed and shared with the team" (see
+    // its own doc comment) — that promise is empty unless commit() actually
+    // stages them. When the switch is off they're still gitignored, so
+    // staging them here is a harmless no-op (`git add` on an ignored path
+    // adds nothing).
     const bootConfig = readConfig(this.cwd);
     const entitiesPath = path.resolve(this.cwd, bootConfig.entitiesDir);
     const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
+    const briefsPath = path.resolve(this.cwd, bootConfig.briefsDir);
+    const patchesPath = path.resolve(this.cwd, bootConfig.patchesDir);
     const targets: string[] = [];
-    for (const p of [...this.releasableRootDirs, configPath(this.cwd), entitiesPath, releasesPath]) {
+    for (const p of [
+      ...this.releasableRootDirs,
+      configPath(this.cwd),
+      entitiesPath,
+      releasesPath,
+      briefsPath,
+      patchesPath,
+    ]) {
       let real: string;
       try {
         real = fs.realpathSync(p);
@@ -225,12 +240,20 @@ export class GitService {
   }
 
   /**
-   * 0.1.118 read-only: SHA of the commit that first ADDED `absPath` (`git log
-   * --diff-filter=A -1 --format=%H -- <path>`) — used to anchor a release's
-   * identity in git history (there are no tags/stored gitSha). `null` when git
-   * is disabled, no repo is detected, `absPath` is outside the repo, or the
-   * file has never been added (e.g. `syncCommitOnRelease` was off when it was
-   * created — B3, a known open edge). Never throws.
+   * 0.1.118 read-only: SHA of the commit that first ADDED `absPath` — used to
+   * anchor a release's identity in git history (there are no tags/stored
+   * gitSha). `null` when git is disabled, no repo is detected, `absPath` is
+   * outside the repo, or the file has never been added (e.g.
+   * `syncCommitOnRelease` was off when it was created — B3, a known open
+   * edge). Never throws.
+   *
+   * Deliberately NOT `git log --diff-filter=A -1 --format=%H` — `git log`
+   * without `--reverse` walks history newest-first, so a bare `-1` returns
+   * the MOST RECENT add, not the first. That matters because a release's
+   * identity file can be deleted then re-created at the exact same path
+   * (rename away, then later rename back to a name that slugifies the same)
+   * — fetch every add and take the oldest so this always anchors to the
+   * ORIGINAL creation commit, matching the documented contract.
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
     const config = readConfig(this.cwd);
@@ -247,11 +270,15 @@ export class GitService {
     if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
     try {
       const { stdout } = await this.git(
-        ['log', '--diff-filter=A', '-1', '--format=%H', '--', real],
+        ['log', '--diff-filter=A', '--format=%H', '--', real],
         status.rootPath,
       );
-      const sha = stdout.trim();
-      return sha || null;
+      const shas = stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      // Output is newest-first; the LAST line is the oldest — the first add.
+      return shas.length > 0 ? shas[shas.length - 1]! : null;
     } catch {
       return null;
     }
@@ -288,8 +315,13 @@ export class GitService {
     if (targets.length === 0) return { files: [] };
 
     try {
+      // `-c core.quotePath=false`: without it, git quotes+octal-escapes any
+      // path containing non-ASCII bytes (e.g. `"pages/Wydajno\305\233\304\207.md"`
+      // for an accented filename) — a real risk here, this codebase's own
+      // comments are in Polish. The naive tab-split below needs raw UTF-8
+      // paths to produce a usable `{path, status}` pair.
       const { stdout } = await this.git(
-        ['diff', '--name-status', `${shaA}..${shaB}`, '--', ...targets],
+        ['-c', 'core.quotePath=false', 'diff', '--name-status', `${shaA}..${shaB}`, '--', ...targets],
         root,
       );
       const files: GitRefDiff['files'] = [];
@@ -311,6 +343,11 @@ export class GitService {
         } else if (letter === 'A' || letter === 'M' || letter === 'D') {
           const filePath = parts[1];
           if (filePath) files.push({ path: path.join(root, filePath), status: letter });
+        } else if (parts[1]) {
+          // Any other single-letter status git may emit (T type-change, U
+          // unmerged, X unknown, …) — surface as a modification rather than
+          // silently dropping the file from the diff entirely.
+          files.push({ path: path.join(root, parts[1]), status: 'M' });
         }
       }
       return { files };

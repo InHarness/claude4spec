@@ -361,11 +361,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       const updated = writeConfig(cwd, patch);
       // 0.1.118: re-sync .gitignore whenever a field it depends on changes —
       // best-effort (never fail the PATCH over a gitignore write hiccup).
-      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch) {
+      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch || 'releasesDir' in patch) {
         try {
           ensureGitignore(cwd, {
             briefsDir: updated.briefsDir,
             patchesDir: updated.patchesDir,
+            releasesDir: updated.releasesDir,
             gitEnabled: updated.git?.enabled ?? false,
           });
         } catch (err) {

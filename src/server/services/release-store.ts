@@ -71,10 +71,6 @@ export class ReleaseFileStore {
     return JSON.parse(raw) as ReleaseFileData;
   }
 
-  readAll(): ReleaseFileData[] {
-    return this.listSlugs().map((slug) => this.read(slug));
-  }
-
   /** Write `<slug>.json` (atomic + suppress). */
   write(slug: string, data: ReleaseFileData): void {
     const relPath = this.relPathFor(slug);
