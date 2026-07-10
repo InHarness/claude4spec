@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiFetch, stripBase } from './lib/api-core.js';
+import { ApiError, apiFetch, stripBase } from './lib/api-core.js';
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { ChatEdgeAffordance } from './components/ChatEdgeAffordance.js';
 import { ChatOverlay } from './chat/ChatOverlay.js';
@@ -29,7 +29,7 @@ import type { PageNode } from '../shared/types.js';
 export function RootLayout() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { data: config } = useConfig();
+  const { data: config, isError, error, refetch } = useConfig();
   const currentPath = stripBase(location.pathname);
   const isOnboardingPath = currentPath === '/onboarding';
   // Decision #11: `/welcome` runs project-less — no config fetch, no project
@@ -65,7 +65,40 @@ export function RootLayout() {
     );
   }
 
+  // The build failure that used to deadlock the whole project (stale
+  // config.json slug) is now soft-failed server-side, but any other build
+  // failure still surfaces as PROJECT_BUILD_FAILED — show it instead of
+  // silently falling through to MainShell with `config` undefined.
+  if (isError) {
+    return <ProjectLoadError error={error} onRetry={() => void refetch()} />;
+  }
+
   return <MainShell projectName={config?.name ?? null} />;
+}
+
+function ProjectLoadError({ error, onRetry }: { error: unknown; onRetry: () => void }) {
+  const message =
+    error instanceof ApiError && error.code === 'PROJECT_BUILD_FAILED'
+      ? error.message
+      : 'Could not load this project.';
+  return (
+    <div
+      className="h-full w-full flex items-center justify-center"
+      style={{ background: 'var(--c-bg)', color: 'var(--c-ink)' }}
+    >
+      <div className="flex flex-col items-center gap-3 max-w-md px-6 text-center">
+        <p className="text-[13px]">{message}</p>
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-md px-3 py-1.5 text-[12px] font-medium"
+          style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+        >
+          Retry
+        </button>
+      </div>
+    </div>
+  );
 }
 
 function MainShell({ projectName }: { projectName: string | null }) {
@@ -204,9 +237,7 @@ function useCwdLabel(): { cwd: string; loading: boolean } {
     apiFetch('/api/meta')
       .then((r) => r.json())
       .then((d: { cwd?: string }) => d.cwd && setCwd(d.cwd))
-      .catch(() => {
-        /* keep fallback */
-      })
+      .catch((err) => console.warn('[cwd] failed to load /api/meta', err))
       .finally(() => setLoading(false));
   }, []);
   return { cwd, loading };

@@ -104,6 +104,8 @@ export interface ConfigResponse {
   /** 0.1.96 multiroot: replaces the single `pagesDir`. The mandatory `'pages'` root is always roots[0]. */
   roots: Root[];
   writingStyle: string | null;
+  /** Non-fatal degraded-state signal: `writingStyle` was skipped this session because it no longer resolves. */
+  writingStyleUnavailable: { reason: string } | null;
   /** 0.1.51: spec-authoring language (display name from SUPPORTED_LANGUAGES) or null. */
   language: string | null;
   /** 0.1.58: local one-line "elevator pitch" (0–200); surfaced to peer agents. */
