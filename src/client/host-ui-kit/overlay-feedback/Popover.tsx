@@ -19,12 +19,16 @@ export interface PopoverProps {
   anchorRef: RefObject<HTMLElement>;
   placement?: 'top' | 'bottom' | 'left' | 'right';
   children: ReactNode;
+  /** Caps the scrollable body's height; content beyond it scrolls internally instead of growing the panel. */
+  maxHeight?: number;
+  /** Optional slot rendered as a sibling below the (possibly scrollable) body, pinned outside its overflow. */
+  footer?: ReactNode;
 }
 
 const GAP = 6;
 const VIEWPORT_PAD = 8;
 
-function PopoverImpl({ open, onClose, anchorRef, placement = 'bottom', children }: PopoverProps) {
+function PopoverImpl({ open, onClose, anchorRef, placement = 'bottom', children, maxHeight, footer }: PopoverProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
 
@@ -86,7 +90,7 @@ function PopoverImpl({ open, onClose, anchorRef, placement = 'bottom', children 
     <div
       ref={panelRef}
       role="dialog"
-      className="rounded-md shadow-lg"
+      className="rounded-md shadow-lg flex flex-col"
       style={{
         position: 'fixed',
         top: pos?.top ?? -9999,
@@ -95,10 +99,18 @@ function PopoverImpl({ open, onClose, anchorRef, placement = 'bottom', children 
         visibility: pos ? 'visible' : 'hidden',
         background: 'var(--c-card)',
         border: '1px solid var(--c-hair-strong)',
-        padding: 10,
+        ...(maxHeight != null ? { maxHeight, overflow: 'hidden' } : null),
       }}
     >
-      {children}
+      <div
+        className={maxHeight != null ? 'overflow-auto nice-scroll' : undefined}
+        style={{ padding: 10, ...(maxHeight != null ? { flex: '1 1 auto', minHeight: 0 } : null) }}
+      >
+        {children}
+      </div>
+      {footer != null && (
+        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--c-hair)' }}>{footer}</div>
+      )}
     </div>
   );
 }

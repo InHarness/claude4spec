@@ -21,6 +21,12 @@ export interface GroupedRelationPickerProps {
   onAdd(groupKey: string, id: string): void;
   onRemove(groupKey: string, id: string): void;
   onSearch?(q: string): void;
+  /**
+   * Caps the height of the groups list, which then scrolls internally; a
+   * widget-level search field (backed by `onSearch`) is pinned below it.
+   * Opt-in — omitting it reproduces today's unscrolled, search-less layout.
+   */
+  maxHeight?: number;
 }
 
 function GroupRow({
@@ -129,20 +135,48 @@ function GroupRow({
   );
 }
 
-function GroupedRelationPickerImpl({ groups, selected, onAdd, onRemove, onSearch }: GroupedRelationPickerProps) {
+function GroupedRelationPickerImpl({ groups, selected, onAdd, onRemove, onSearch, maxHeight }: GroupedRelationPickerProps) {
+  const [query, setQuery] = useState('');
+  const showWidgetSearch = maxHeight != null && onSearch != null;
+
+  const rows = groups.map((group, i) => (
+    <div key={group.key} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}>
+      <GroupRow
+        group={group}
+        selectedIds={selected[group.key] ?? []}
+        onAdd={(id) => onAdd(group.key, id)}
+        onRemove={(id) => onRemove(group.key, id)}
+        onSearch={onSearch}
+      />
+    </div>
+  ));
+
   return (
-    <div className="rounded-md" style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}>
-      {groups.map((group, i) => (
-        <div key={group.key} style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}>
-          <GroupRow
-            group={group}
-            selectedIds={selected[group.key] ?? []}
-            onAdd={(id) => onAdd(group.key, id)}
-            onRemove={(id) => onRemove(group.key, id)}
-            onSearch={onSearch}
+    <div
+      className={maxHeight != null ? 'rounded-md flex flex-col' : 'rounded-md'}
+      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)', ...(maxHeight != null ? { maxHeight } : null) }}
+    >
+      {maxHeight != null ? (
+        <div className="overflow-auto nice-scroll" style={{ flex: '1 1 auto', minHeight: 0 }}>
+          {rows}
+        </div>
+      ) : (
+        rows
+      )}
+      {showWidgetSearch && (
+        <div style={{ padding: '8px 10px', borderTop: '1px solid var(--c-hair)' }}>
+          <input
+            value={query}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              onSearch!(e.target.value);
+            }}
+            placeholder="Search…"
+            className="w-full rounded px-2 py-1 text-[12px]"
+            style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
           />
         </div>
-      ))}
+      )}
     </div>
   );
 }

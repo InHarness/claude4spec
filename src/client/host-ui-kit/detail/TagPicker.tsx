@@ -23,6 +23,9 @@ export interface TagPickerProps {
   variant?: 'flat' | 'collapsed';
 }
 
+/** Height cap for the `collapsed` variant's tag-catalog `Popover`; a large catalog scrolls instead of growing unbounded. */
+const TAG_CATALOG_MAX_HEIGHT = 240;
+
 function CreateInput({ onCreate, onDone }: { onCreate: (name: string) => void; onDone: () => void }) {
   const [draft, setDraft] = useState('');
   const submit = () => {
@@ -103,20 +106,24 @@ function CollapsedTagPicker({ allTags, selected, onToggle, onCreate }: Omit<TagP
       >
         {restCount > 0 ? `+${restCount}` : '+ tag'}
       </button>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} placement="bottom">
-        <div className="flex flex-col gap-2" style={{ minWidth: 200, maxWidth: 280 }}>
-          <div className="flex flex-wrap gap-1.5">
-            {allTags.map((tag) => (
-              <Badge
-                key={tag.slug}
-                label={tag.name}
-                color={tag.color ?? undefined}
-                active={selectedSet.has(tag.slug)}
-                onClick={() => onToggle(tag.slug)}
-              />
-            ))}
-          </div>
-          {onCreate && <CreateInput onCreate={onCreate} onDone={() => setOpen(false)} />}
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={anchorRef}
+        placement="bottom"
+        maxHeight={TAG_CATALOG_MAX_HEIGHT}
+        footer={onCreate ? <CreateInput onCreate={onCreate} onDone={() => setOpen(false)} /> : undefined}
+      >
+        <div className="flex flex-wrap gap-1.5" style={{ minWidth: 200, maxWidth: 280 }}>
+          {allTags.map((tag) => (
+            <Badge
+              key={tag.slug}
+              label={tag.name}
+              color={tag.color ?? undefined}
+              active={selectedSet.has(tag.slug)}
+              onClick={() => onToggle(tag.slug)}
+            />
+          ))}
         </div>
       </Popover>
     </div>
