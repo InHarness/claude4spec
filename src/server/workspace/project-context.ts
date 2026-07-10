@@ -326,23 +326,31 @@ async function buildInner(
       (hostState.inactive.length ? `, inactive: [${hostState.inactive.join(', ')}]` : '') +
       (hostState.unknown.length ? `, unknown: [${hostState.unknown.join(', ')}]` : ''),
   );
-  const initialWritingStyle = bootConfig.writingStyle;
+  // A stale slug/value here (skill deleted, project opened on a machine
+  // without it) must not deadlock the whole per-project build — that would
+  // 500 every route under /api/projects/:id, including the Settings
+  // endpoints the user would need to pick a valid value. Soft-fail instead,
+  // matching the runtime pattern in SkillResolver.resolve(): warn and treat
+  // the value as unavailable for this session. config.json is left untouched
+  // so a later `git pull`/restore just works again with no further action.
+  let initialWritingStyle = bootConfig.writingStyle;
   if (initialWritingStyle !== null && !skillRegistry.isSelectable(initialWritingStyle)) {
-    throw new Error(
+    console.warn(
       `config.json: writingStyle "${initialWritingStyle}" ${skillRegistry.unselectableReason(initialWritingStyle)}`,
     );
+    initialWritingStyle = null;
   }
   // 0.1.51: fail fast on a hand-edited language value outside SUPPORTED_LANGUAGES so
   // a bogus display name never reaches the system prompt. PATCH /config enforces
   // the same membership at runtime.
   if (bootConfig.language !== null && !isSupportedLanguage(bootConfig.language)) {
-    throw new Error(
+    console.warn(
       `config.json: language "${bootConfig.language}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}`,
     );
   }
   const initialConvLang = bootConfig.agent?.conversationalLanguage ?? null;
   if (initialConvLang !== null && !isSupportedLanguage(initialConvLang)) {
-    throw new Error(
+    console.warn(
       `config.json: agent.conversationalLanguage "${initialConvLang}" not supported. Available: ${SUPPORTED_LANGUAGES.join(', ')}`,
     );
   }

@@ -42,7 +42,7 @@ const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDi
  * inline in startServer before the M31 carve). M31 drops port/mode (workspace
  * settings now) and serverStartedAt (nothing requires a restart anymore).
  */
-function configResponse(c: Config, cwd: string) {
+function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
   const agentAllowedPaths = c.agent?.allowedPaths ?? [];
   const agentDisallowedPaths = c.agent?.disallowedPaths ?? [];
   // 0.1.103: mirrors agent-turn.ts's exact pathScopeRequested gate — a pure
@@ -66,6 +66,12 @@ function configResponse(c: Config, cwd: string) {
     name: c.name,
     roots: c.roots,
     writingStyle: c.writingStyle,
+    // Non-fatal degraded-state signal: the configured style was skipped this
+    // session (see the soft-fail in project-context.ts buildInner) because it
+    // no longer resolves. Live check, not a boot-time snapshot.
+    writingStyleUnavailable: c.writingStyle !== null && !skillRegistry.isSelectable(c.writingStyle)
+      ? { reason: skillRegistry.unselectableReason(c.writingStyle) }
+      : null,
     language: c.language ?? null,
     description: c.description ?? null,
     onboarding: { completed: c.onboardingCompleted },
@@ -112,7 +118,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     // readConfig per-request: PATCH /config musi byc widoczny w GET bez restartu.
     // Spojne z istniejacym wzorcem SkillResolver (per-query disk read).
     const c = readConfig(cwd);
-    res.json(configResponse(c, cwd));
+    res.json(configResponse(c, cwd, skillRegistry));
   });
 
   router.patch('/config', (req, res, next) => {
@@ -402,7 +408,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       ) {
         deps.onContextConfigChanged();
       }
-      res.json(configResponse(updated, cwd));
+      res.json(configResponse(updated, cwd, skillRegistry));
     } catch (err) {
       next(err);
     }
