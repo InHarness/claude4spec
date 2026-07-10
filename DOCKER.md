@@ -57,7 +57,9 @@ C4S_ENV=myenv docker compose up app-registry   # a non-default environment
 - `ANTHROPIC_API_KEY` — optional. If set, agent chat turns authenticate
   headlessly with this key (no `claude login` needed inside the container —
   it takes precedence over local OAuth). Without it, agent chat only works
-  if a credential was already saved through the app's own Settings UI.
+  if a credential was already saved through the app's own Settings UI, or if
+  your local OAuth session is bind-mounted in — see "Using your local Claude
+  Code login instead of ANTHROPIC_API_KEY" below.
 - `PORT` — server port (default `3000`).
 - `PROJECT_DIR` — path inside the container for the fixture project
   (default `/workspace/project`).
@@ -241,6 +243,91 @@ production server's boot path entirely (it's a one-off CLI mutation of
    sibling package itself (its own `npm run build`) before rebuilding this
    image, otherwise the container still runs the old `dist/`.
 
+## Testing Git Sync (M28)
+
+The runtime image includes the `git` binary, so a container can satisfy
+`GitService`'s (`src/server/services/git.ts`) repo detection — the sole git
+shell-out in the server, powering the Git settings section and `GET
+/api/git/status`. The fixture project isn't a git repo by default; initialize
+one inside a running container with:
+
+```bash
+docker exec <container> init-git.sh
+# or, with Compose:
+docker compose exec app-registry init-git.sh
+```
+
+This runs `git init` against `$PROJECT_DIR`, configures a commit identity,
+and makes an initial commit — idempotent, safe to re-run (a no-op once the
+project is already a repo). Override the commit identity with:
+
+```bash
+docker exec -e GIT_AUTHOR_NAME="Your Name" -e GIT_AUTHOR_EMAIL="you@example.com" \
+  <container> init-git.sh
+```
+
+After running it, the app's Settings → Git section (and `GET
+/api/git/status`) should report a detected repo instead of the "not inside a
+git repository" empty state. No remote is configured, so push-sync will
+correctly report no upstream — this is only meant for exercising
+detect/commit locally.
+
+## Using your local Claude Code login instead of ANTHROPIC_API_KEY
+
+Agent turns need Anthropic credentials. The simplest option is `-e
+ANTHROPIC_API_KEY=...` (see "Env vars" above). To instead reuse your
+existing `claude login` session from the host, bind-mount your local OAuth
+files read-only into the container:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.creds.yml up app-registry
+```
+
+Or with plain `docker run`:
+
+```bash
+docker run --rm -p 3000:3000 \
+  -v "$(pwd)/docker/environments/default/runtime/registry/data:/data" \
+  -v "$(pwd)/docker/environments/default/runtime/registry/workspace:/workspace" \
+  -v ~/.claude.json:/root/.claude.json:ro \
+  -v ~/.claude/.credentials.json:/root/.claude/.credentials.json:ro \
+  claude4spec-test:registry
+```
+
+This works because the container runs as `root` (`$HOME=/root`, no `USER`
+directive in `docker/Dockerfile`), matching where
+`@anthropic-ai/claude-agent-sdk` looks for `.claude.json` / `.claude/.credentials.json`
+by default. If `ANTHROPIC_API_KEY` is also set, it takes precedence over the
+mounted OAuth session. Mounts are read-only — a token refresh inside the
+container won't propagate back to your host files; if your session expires
+mid-run, refresh it on the host and restart the container. Note
+`~/.claude.json` holds your whole local Claude Code config (all projects,
+not just this one), not just an auth token.
+
+## Troubleshooting: "Native CLI binary ... not found"
+
+If starting an agent turn fails with something like:
+
+> Failed to initialize claude-code adapter: Native CLI binary for
+> linux-arm64 not found. Reinstall @anthropic-ai/claude-agent-sdk without
+> --omit=optional, or set options.pathToClaudeCodeExecutable.
+
+this is almost always a **stale image** — `@anthropic-ai/claude-agent-sdk`
+ships its CLI binary as a platform-specific optional dependency, and either
+an old image tag was never rebuilt after a dependency change, or `docker
+compose up` reused an existing image without rebuilding (Compose doesn't
+rebuild automatically). Rebuild without cache:
+
+```bash
+docker build --no-cache -f docker/Dockerfile --build-arg DEPS_MODE=registry -t claude4spec-test:registry .
+# or: docker compose build --no-cache app-registry && docker compose up app-registry
+```
+
+The image now fails the build itself (not just at agent-start time) if the
+native binary for the target platform can't be resolved, so a fresh rebuild
+either fixes this outright or fails loudly with the same root cause instead
+of silently shipping a broken image.
+
 ## Cleanup
 
 ```bash
@@ -258,6 +345,14 @@ docker compose -f docker-compose.yml -f docker-compose.plugin.yml down
   prebuilt native binaries used by `better-sqlite3` and
   `@anthropic-ai/claude-agent-sdk` (which bundles the `claude` CLI itself as
   a platform-specific optional dependency — nothing to install separately).
+  The build now fails fast if that optional binary is missing for the
+  target platform — see "Troubleshooting" above.
+- No `USER` directive — the container runs as `root` (`$HOME=/root`). This
+  is what makes the `docker-compose.creds.yml` credential mount work
+  unmodified (see "Using your local Claude Code login" above).
+- `git` is installed in the runtime image (needed by `GitService` at
+  runtime) — see "Testing Git Sync" above for initializing a repo in the
+  fixture project.
 - `registry` mode rewrites `package.json`'s two `file:` deps to npm semver
   ranges (`--build-arg AGENT_ADAPTERS_VERSION=...` /
   `AGENT_CHAT_VERSION=...` to override) and deliberately drops
