@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.25] - 2026-07-10
+
+### Added
+- **Multiroot: `pagesDir` → `config.roots[]`.** Pages now live in any number of independently configured named roots instead of one fixed `pages` directory, each with its own lifecycle toggles (releasable, section-indexed, reference-validated, brief-target). Full UX to match: a root registry hub in Settings, a shared directory picker with a "Browse…" affordance (bounded to the project directory), per-root sidebar accordions, and root-aware navigation everywhere a page could be referenced (TODOs, section-ref chips, entity reference rows, the chat composer's "current page" chip). Brief generation can now be scoped to one or more roots — a picker in the "Generate brief" modal, `roots` frontmatter on the brief, and root-scoped `release_diff` calls in the brief-author prompt.
+- **Git Sync (M28).** An opt-in `git.enabled` master switch turns on: a `releasesDir` for on-disk release-identity files, git-anchored (file-level) release diffs computed from actual commit history when two releases resolve to real commits, a sidebar Git-status badge with ahead/behind counts, and a Briefs section on `/releases` cards.
+- **Consolidated entity CRUD onto one generic MCP server.** `entity-tools` (create/get/update/delete/list/search/describe_entity_type, type-parametrized) replaces six separate per-type MCP servers. Entity plugins move from imperative `backend.mount` to declarative `backend.{service,crud,routes,mcpServer}` slots, synthesized uniformly for built-in and external plugins.
+- **Plugin version-diff surface.** Plugin authors get the same version-history + diff experience the host's own entity panels have: a new `GET /:type/:slug/versions/:from/diff/:to` route, a `useVersionDiff` hook, a `DiffView` UI-kit component, and a `VersionHistory` `timeline` variant with a "Compare to" affordance. `entity_version` capture is now generic for any active plugin type, not just the seven built-ins.
+- **Host UI Kit growth (M34).** Two new groups — Overlay/Create (`Dialog`, `FormShell`) and Pickers (`EnumBadgePicker`, `GroupedRelationPicker`) — plus `Popover` (controlled), `ToastViewport`/`useToast`, `DocumentBody` and `DocEditor` (host-wired rich text with cross-entity mentions), a real rich-markdown `RichTextField` (was a `<textarea>` stub), and a `collapsed` `TagPicker` variant. `Popover`, `GroupedRelationPicker`, and `TagPicker` all gained an opt-in scrollable body with a pinned footer. Typography and layering tokens extended the color-only token bridge. All five built-in entity panels (dto/ac/endpoint/ui-view/design-system) now use the new components.
+- **Agent filesystem path scoping.** `agent.allowedPaths`/`agent.disallowedPaths` narrow or widen a chat agent's filesystem access (deny > allow > cwd/pages default); Settings now shows the actually-probed enforcement strength (hard/soft/none) instead of a static claim.
+- **`effort` pass-through.** An optional `low`/`medium`/`high` reasoning-level parameter on the headless agent turn, mirroring the existing `model` pass-through end-to-end (CLI `--effort`, MCP `ask`, `POST /api/threads/:id/ask`).
+- **Portable, on-demand external skills.** `c4s install-skills` (CLI) and a Settings "Download ZIP" button replace the old bootstrap step that silently wrote skills to a location Claude Code never loaded. Generated `SKILL.md` files now carry a resolved `--project`/`--workspace` identity so they work correctly when copied into a different code repo. Also adds a generated `c4s-refactor` drift-router skill for reconciling spec and code.
+- **Filesystem-only brief/patch CLI.** `c4s list-briefs`, `read-brief`, and `file-patch` resolve entirely through the workspace registry — no running server or SQLite required. New `c4s mark-brief-implemented` command flips a brief's `implemented` flag via the server.
+- **`CliCommandContribution` registry** formalizes the `c4s` CLI's command contract (typed name/execution-mode/error-codes/handler) in place of a hand-written switch; adds `--model` to `c4s agent`/`c4s ask`.
+- Project names now accept full Unicode (display-only; folder identity is unaffected) instead of being restricted to an ASCII-safe pattern.
+- Projects are now keyed by a stored, immutable id minted at registration instead of a re-derived hash of the cwd — editing a project's directory no longer changes its URL, API prefix, database slot, or local storage scope.
+- `--project <name>` on the CLI now falls back to matching a registered project's display name when no project exists at that literal filesystem path.
+- Plan-anchor `section_ref` chips in chat replies now resolve to a working link instead of always rendering as broken (plan headings weren't reachable through the pages-only anchor lookup).
+
+### Changed
+- `search_entities`/`list_entities` no longer trust each entity type's `.search()` — several implemented it as a literal whole-phrase `LIKE` match that silently returned no results for ordinary natural-language queries. Search now correctly reports `searchSupported: false` so agents fall back to listing instead of trusting a false "no matches."
+- User-authored skills under `.claude/skills`/`~/.claude/skills` are now re-scanned on demand (short TTL-coalesced) instead of only at server boot, so a new writing style is usable without a restart.
+- `mcp__c4s-tools__ask` now defaults to the calling agent's own workspace instead of throwing `AMBIGUOUS_WORKSPACE` when a project is registered under more than one workspace.
+
+### Fixed
+- A long-running headless agent turn (undici's default 300s timeout) was being misreported as `SERVER_NOT_RUNNING` instead of a real timeout; interactive chat turns paused on a human tool-approval prompt no longer time out at all (previously unbounded, now explicitly so).
+- Restoring a version that was captured as a delete tombstone crashed instead of routing through the entity's own delete path; a new project's id could collide with another project's id after a manual cwd edit; tag-creation idempotency failed on any casing/whitespace difference from the existing tag; restoring a version no longer left an open detail view showing stale data.
+- The host now actually runs a plugin's declarative `backend.migrations` — previously parsed but never executed, so a plugin's own table was never created and any query against it failed with "no such table."
+- The base-tier plugin hot-reload watcher resolved an ESM-only plugin package differently than bootstrap did, so edits to an ESM-only plugin required a full process restart instead of hot-reloading.
+
+### Removed
+- The short-lived M35 Progress view (route, endpoint, service, sidebar entry), added and removed within this same release window. Its useful parts — ahead/behind git status and a per-release brief list — were redistributed into the sidebar Git badge and the `/releases` cards instead.
+
+[1.0.25]: https://github.com/InHarness/claude4spec/compare/v1.0.24...v1.0.25
+
 ## [1.0.24] - 2026-06-28
 
 ### Changed
