@@ -1,0 +1,26 @@
+# Additive override — NOT a standalone file. Invoke together with the base
+# file:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.creds.yml up app-registry
+#
+# Bind-mounts your local Claude Code OAuth session (~/.claude.json +
+# ~/.claude/.credentials.json) into the container's $HOME (root, since the
+# image runs as root — see docker/Dockerfile), read-only, so agent turns
+# authenticate via your existing `claude login` session instead of requiring
+# ANTHROPIC_API_KEY. Read-only: a token refresh inside the container won't be
+# written back to your host files — if your local session expires mid-run,
+# refresh it on the host and restart the container.
+#
+# NOTE: ~/.claude.json holds your whole local Claude Code config (all
+# projects, not just this one) — mounting it shares that into the container.
+
+services:
+  app-registry:
+    volumes:
+      - ${HOME}/.claude.json:/root/.claude.json:ro
+      - ${HOME}/.claude/.credentials.json:/root/.claude/.credentials.json:ro
+
+  app-local:
+    volumes:
+      - ${HOME}/.claude.json:/root/.claude.json:ro
+      - ${HOME}/.claude/.credentials.json:/root/.claude/.credentials.json:ro

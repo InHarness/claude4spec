@@ -46,6 +46,16 @@ RUN npm ci
 
 FROM deps-${DEPS_MODE} AS deps
 
+# Fail fast (at build time, not when a user opens agent chat) if the
+# platform-specific optional native CLI binary didn't get installed — mirrors
+# the resolution @anthropic-ai/claude-agent-sdk itself does at runtime
+# (sdk.mjs), so a broken/stale install is caught here instead of surfacing
+# later as "Native CLI binary ... not found" in the agent chat UI.
+RUN node -e "\
+const p = \`@anthropic-ai/claude-agent-sdk-\${process.platform}-\${process.arch}/claude\`; \
+try { require.resolve(p); } \
+catch { console.error('Missing native claude-agent-sdk binary: ' + p + ' — try rebuilding with --no-cache'); process.exit(1); }"
+
 # ---- build ----
 FROM deps AS build
 COPY . .
@@ -54,6 +64,12 @@ RUN npm run build
 # ---- runtime ----
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime-base
 WORKDIR /app
+# git — required at runtime by GitService (src/server/services/git.ts), the
+# sole git shell-out in the server, for repo detection / commit-on-release /
+# push-on-push.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     C4S_HOME=/data \
     PROJECT_DIR=/workspace/project \
@@ -63,7 +79,8 @@ COPY --from=build /app/package.json /app/package-lock.json ./
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+COPY docker/init-git.sh /usr/local/bin/init-git.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/init-git.sh
 
 VOLUME ["/data", "/workspace"]
 EXPOSE 3000
