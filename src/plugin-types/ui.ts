@@ -286,6 +286,8 @@ export interface PopoverProps {
   anchorRef: { current: HTMLElement | null };
   placement?: 'top' | 'bottom' | 'left' | 'right';
   children: ReactNode;
+  maxHeight?: number;
+  footer?: ReactNode;
 }
 export declare const Popover: ComponentType<PopoverProps>;
 export declare const ToastViewport: ComponentType<Record<string, never>>;
@@ -314,6 +316,7 @@ export interface GroupedRelationPickerProps {
   onAdd(groupKey: string, id: string): void;
   onRemove(groupKey: string, id: string): void;
   onSearch?(q: string): void;
+  maxHeight?: number;
 }
 export declare const GroupedRelationPicker: ComponentType<GroupedRelationPickerProps>;
 
