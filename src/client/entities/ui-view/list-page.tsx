@@ -87,14 +87,15 @@ export function UiViewsList({
         ))}
       </ListScrollArea>
 
-      <UiViewCreateDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onCreated={(slug) => {
-          setDialogOpen(false);
-          onSelect(slug);
-        }}
-      />
+      {dialogOpen && (
+        <UiViewCreateDialog
+          onClose={() => setDialogOpen(false)}
+          onCreated={(slug) => {
+            setDialogOpen(false);
+            onSelect(slug);
+          }}
+        />
+      )}
     </ListPageLayout>
   );
 }

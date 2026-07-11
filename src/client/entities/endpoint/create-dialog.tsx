@@ -6,7 +6,6 @@ import { toast } from '../../ui/events.js';
 import type { HttpMethod } from '../../../shared/entities.js';
 
 interface Props {
-  open: boolean;
   onClose: () => void;
   onCreated: (slug: string) => void;
 }
@@ -21,7 +20,7 @@ function livePreviewSlug(method: string, path: string): string {
   return base.replace(/^-+|-+$/g, '');
 }
 
-export function EndpointCreateDialog({ open, onClose, onCreated }: Props) {
+export function EndpointCreateDialog({ onClose, onCreated }: Props) {
   const [method, setMethod] = useState<HttpMethod>('POST');
   const [path, setPath] = useState('/api/');
   const [summary, setSummary] = useState('');
@@ -46,9 +45,7 @@ export function EndpointCreateDialog({ open, onClose, onCreated }: Props) {
       onCreated(ep.slug);
       toast.success(`Endpoint ${ep.method} ${ep.path} created`);
     } catch (err) {
-      const message = (err as Error).message;
-      setFormError(message);
-      toast.error(message);
+      setFormError((err as Error).message || 'Failed to create endpoint');
     }
   }
 
@@ -59,7 +56,7 @@ export function EndpointCreateDialog({ open, onClose, onCreated }: Props) {
 
   return (
     <Dialog
-      open={open}
+      open
       onClose={onClose}
       size="sm"
       title={
@@ -81,11 +78,16 @@ export function EndpointCreateDialog({ open, onClose, onCreated }: Props) {
         error={formError}
         actions={
           <>
-            <ActionButton variant="ghost" label="Cancel" onClick={onClose} />
             <ActionButton
+              variant="ghost"
+              label="Cancel"
+              onClick={onClose}
+              disabled={create.isPending}
+            />
+            <ActionButton
+              type="submit"
               variant="primary"
               label={create.isPending ? 'Creating…' : 'Create'}
-              onClick={() => void submit()}
               disabled={!path || create.isPending}
             />
           </>

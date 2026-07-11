@@ -46,10 +46,13 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
     if (!open) return;
     // Remember what had focus so we can restore it when the dialog closes.
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    // Move focus into the panel (first focusable, else the panel itself).
+    // Move focus into the panel (first focusable, else the panel itself) —
+    // unless something inside the panel (e.g. a child's `autoFocus`) already
+    // claimed focus, in which case leave it alone.
     const t = window.setTimeout(() => {
       const panel = panelRef.current;
       if (!panel) return;
+      if (panel.contains(document.activeElement)) return;
       const first = panel.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? panel).focus();
     }, 0);

@@ -81,14 +81,15 @@ export function EndpointsList({
         ))}
       </ListScrollArea>
 
-      <EndpointCreateDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onCreated={(slug) => {
-          setDialogOpen(false);
-          onSelect(slug);
-        }}
-      />
+      {dialogOpen && (
+        <EndpointCreateDialog
+          onClose={() => setDialogOpen(false)}
+          onCreated={(slug) => {
+            setDialogOpen(false);
+            onSelect(slug);
+          }}
+        />
+      )}
     </ListPageLayout>
   );
 }

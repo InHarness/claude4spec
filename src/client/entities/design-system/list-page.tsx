@@ -89,14 +89,15 @@ export function DesignSystemsList({
         })}
       </ListScrollArea>
 
-      <DesignSystemCreateDialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        onCreated={(slug) => {
-          setDialogOpen(false);
-          onSelect(slug);
-        }}
-      />
+      {dialogOpen && (
+        <DesignSystemCreateDialog
+          onClose={() => setDialogOpen(false)}
+          onCreated={(slug) => {
+            setDialogOpen(false);
+            onSelect(slug);
+          }}
+        />
+      )}
     </ListPageLayout>
   );
 }

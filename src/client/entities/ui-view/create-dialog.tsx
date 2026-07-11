@@ -3,12 +3,11 @@ import { Dialog, FormShell, FormField, ActionButton } from '../../host-ui-kit/in
 import { useCreateUiView } from '../../hooks/useUiViews.js';
 
 interface Props {
-  open: boolean;
   onClose: () => void;
   onCreated: (slug: string) => void;
 }
 
-export function UiViewCreateDialog({ open, onClose, onCreated }: Props) {
+export function UiViewCreateDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [url, setUrl] = useState('');
   const [description, setDescription] = useState('');
@@ -29,7 +28,7 @@ export function UiViewCreateDialog({ open, onClose, onCreated }: Props) {
       });
       onCreated(view.slug);
     } catch (err) {
-      setFormError((err as Error).message ?? 'Failed to create view');
+      setFormError((err as Error).message || 'Failed to create view');
     }
   }
 
@@ -39,18 +38,23 @@ export function UiViewCreateDialog({ open, onClose, onCreated }: Props) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} size="sm" title="New UI view">
+    <Dialog open onClose={onClose} size="sm" title="New UI view">
       <FormShell
         onSubmit={handleSubmit}
         busy={create.isPending}
         error={formError}
         actions={
           <>
-            <ActionButton variant="ghost" label="Cancel" onClick={onClose} />
             <ActionButton
+              variant="ghost"
+              label="Cancel"
+              onClick={onClose}
+              disabled={create.isPending}
+            />
+            <ActionButton
+              type="submit"
               variant="primary"
               label={create.isPending ? 'Creating…' : 'Create'}
-              onClick={() => void submit()}
               disabled={create.isPending}
             />
           </>

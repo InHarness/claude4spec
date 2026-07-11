@@ -3,12 +3,11 @@ import { Dialog, FormShell, FormField, ActionButton } from '../../host-ui-kit/in
 import { useCreateDesignSystem } from '../../hooks/useDesignSystems.js';
 
 interface Props {
-  open: boolean;
   onClose: () => void;
   onCreated: (slug: string) => void;
 }
 
-export function DesignSystemCreateDialog({ open, onClose, onCreated }: Props) {
+export function DesignSystemCreateDialog({ onClose, onCreated }: Props) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
@@ -27,7 +26,7 @@ export function DesignSystemCreateDialog({ open, onClose, onCreated }: Props) {
       });
       onCreated(ds.slug);
     } catch (err) {
-      setFormError((err as Error).message ?? 'Failed to create design system');
+      setFormError((err as Error).message || 'Failed to create design system');
     }
   }
 
@@ -37,18 +36,23 @@ export function DesignSystemCreateDialog({ open, onClose, onCreated }: Props) {
   }
 
   return (
-    <Dialog open={open} onClose={onClose} size="sm" title="New design system">
+    <Dialog open onClose={onClose} size="sm" title="New design system">
       <FormShell
         onSubmit={handleSubmit}
         busy={create.isPending}
         error={formError}
         actions={
           <>
-            <ActionButton variant="ghost" label="Cancel" onClick={onClose} />
             <ActionButton
+              variant="ghost"
+              label="Cancel"
+              onClick={onClose}
+              disabled={create.isPending}
+            />
+            <ActionButton
+              type="submit"
               variant="primary"
               label={create.isPending ? 'Creating…' : 'Create'}
-              onClick={() => void submit()}
               disabled={create.isPending}
             />
           </>
