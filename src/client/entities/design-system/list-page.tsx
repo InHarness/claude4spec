@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Palette } from 'lucide-react';
 import { useDesignSystems } from '../../hooks/useDesignSystems.js';
-import { dispatchNewDesignSystem } from '../../components/NewDesignSystemPopover.js';
+import { DesignSystemCreateDialog } from './create-dialog.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';
 import { ListPageHeader } from '../_shared/ListPageHeader.js';
 import { TagFilterBar } from '../_shared/TagFilterBar.js';
@@ -29,14 +30,10 @@ export function DesignSystemsList({
     onTagToggle,
   });
   const { data: systems = [], isLoading } = useDesignSystems(query);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    dispatchNewDesignSystem({
-      x: rect.left,
-      y: rect.bottom + 6,
-      onCreated: (slug) => onSelect(slug),
-    });
+  function handleCreate() {
+    setDialogOpen(true);
   }
 
   // Alphabetical by name (list endpoint already orders by name; keep stable).
@@ -91,6 +88,15 @@ export function DesignSystemsList({
           );
         })}
       </ListScrollArea>
+
+      <DesignSystemCreateDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onCreated={(slug) => {
+          setDialogOpen(false);
+          onSelect(slug);
+        }}
+      />
     </ListPageLayout>
   );
 }

@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { ArrowRightLeft, Plus, X } from 'lucide-react';
-import { MethodBadge, METHOD_STYLE } from './atoms.js';
-import { useCreateEndpoint } from '../hooks/useEndpoints.js';
-import { toast } from '../ui/events.js';
-import type { HttpMethod } from '../../shared/entities.js';
+import { useState, type FormEvent } from 'react';
+import { MethodBadge, METHOD_STYLE } from '../../components/atoms.js';
+import { Dialog, FormShell, FormField, ActionButton } from '../../host-ui-kit/index.js';
+import { useCreateEndpoint } from '../../hooks/useEndpoints.js';
+import { toast } from '../../ui/events.js';
+import type { HttpMethod } from '../../../shared/entities.js';
 
 interface Props {
+  open: boolean;
   onClose: () => void;
   onCreated: (slug: string) => void;
 }
@@ -20,11 +21,12 @@ function livePreviewSlug(method: string, path: string): string {
   return base.replace(/^-+|-+$/g, '');
 }
 
-export function NewEndpointDialog({ onClose, onCreated }: Props) {
+export function EndpointCreateDialog({ open, onClose, onCreated }: Props) {
   const [method, setMethod] = useState<HttpMethod>('POST');
   const [path, setPath] = useState('/api/');
   const [summary, setSummary] = useState('');
   const [tagsText, setTagsText] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
   const create = useCreateEndpoint();
 
   const slug = livePreviewSlug(method, path);
@@ -44,38 +46,52 @@ export function NewEndpointDialog({ onClose, onCreated }: Props) {
       onCreated(ep.slug);
       toast.success(`Endpoint ${ep.method} ${ep.path} created`);
     } catch (err) {
-      toast.error((err as Error).message);
+      const message = (err as Error).message;
+      setFormError(message);
+      toast.error(message);
     }
   }
 
+  function handleSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    void submit();
+  }
+
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.35)' }}>
-      <div
-        className="rounded-lg shadow-2xl"
-        style={{
-          width: 440,
-          background: 'var(--c-card)',
-          border: '1px solid var(--c-accent)',
-        }}
-      >
-        <div
-          className="px-3 py-2 flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider"
-          style={{
-            color: 'var(--c-accent-ink)',
-            background: 'var(--c-accent-soft)',
-            borderBottom: '1px solid var(--c-hair)',
-          }}
-        >
-          <ArrowRightLeft size={12} />
-          New endpoint
+    <Dialog
+      open={open}
+      onClose={onClose}
+      size="sm"
+      title={
+        <div className="flex items-center gap-1.5 min-w-0">
+          <span>New endpoint</span>
           <span className="flex-1" />
-          <span style={{ color: 'var(--c-muted)' }}>slug:</span>
-          <span style={{ color: 'var(--c-ink)' }}>{slug || '—'}</span>
-          <button onClick={onClose} style={{ color: 'var(--c-muted)' }} className="ml-2">
-            <X size={13} />
-          </button>
+          <span className="font-mono text-[11px] font-normal" style={{ color: 'var(--c-muted)' }}>
+            slug:
+          </span>
+          <span className="font-mono text-[11px] font-normal truncate" style={{ color: 'var(--c-ink)' }}>
+            {slug || '—'}
+          </span>
         </div>
-        <div className="p-3 space-y-3">
+      }
+    >
+      <FormShell
+        onSubmit={handleSubmit}
+        busy={create.isPending}
+        error={formError}
+        actions={
+          <>
+            <ActionButton variant="ghost" label="Cancel" onClick={onClose} />
+            <ActionButton
+              variant="primary"
+              label={create.isPending ? 'Creating…' : 'Create'}
+              onClick={() => void submit()}
+              disabled={!path || create.isPending}
+            />
+          </>
+        }
+      >
+        <FormField label="Method & path">
           <div className="flex items-center gap-1.5">
             <div
               className="flex items-center rounded-md overflow-hidden"
@@ -84,6 +100,7 @@ export function NewEndpointDialog({ onClose, onCreated }: Props) {
               {METHODS.map((m) => (
                 <button
                   key={m}
+                  type="button"
                   onClick={() => setMethod(m)}
                   className="px-2 py-1 text-[11px] font-mono font-semibold"
                   style={{
@@ -108,6 +125,12 @@ export function NewEndpointDialog({ onClose, onCreated }: Props) {
               placeholder="/api/..."
             />
           </div>
+          <div className="flex items-center gap-1.5 text-[12px] mt-1.5" style={{ color: 'var(--c-muted)' }}>
+            <MethodBadge method={method} />
+            <span className="font-mono">{path}</span>
+          </div>
+        </FormField>
+        <FormField label="Summary">
           <input
             value={summary}
             onChange={(e) => setSummary(e.target.value)}
@@ -119,6 +142,8 @@ export function NewEndpointDialog({ onClose, onCreated }: Props) {
             }}
             placeholder="Short summary"
           />
+        </FormField>
+        <FormField label="Tags">
           <input
             value={tagsText}
             onChange={(e) => setTagsText(e.target.value)}
@@ -130,30 +155,8 @@ export function NewEndpointDialog({ onClose, onCreated }: Props) {
             }}
             placeholder="tags (comma separated, auto-created)"
           />
-          <div className="flex items-center gap-2 pt-1">
-            <div className="flex items-center gap-1.5 text-[12px]" style={{ color: 'var(--c-muted)' }}>
-              <MethodBadge method={method} />
-              <span className="font-mono">{path}</span>
-            </div>
-            <span className="flex-1" />
-            <button
-              onClick={onClose}
-              className="px-2.5 py-1 rounded-md text-[11.5px]"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={submit}
-              disabled={!path || create.isPending}
-              className="px-2.5 py-1 rounded-md text-[11.5px] font-medium inline-flex items-center gap-1.5"
-              style={{ background: 'var(--c-accent)', color: '#fff', opacity: path ? 1 : 0.5 }}
-            >
-              <Plus size={11} /> {create.isPending ? 'Creating…' : 'Create'}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
+        </FormField>
+      </FormShell>
+    </Dialog>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { ArrowRightLeft } from 'lucide-react';
 import { MethodBadge } from '../../components/atoms.js';
-import { NewEndpointDialog } from '../../components/NewEndpointDialog.js';
+import { EndpointCreateDialog } from './create-dialog.js';
 import { useEndpoints } from '../../hooks/useEndpoints.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';
 import { ListPageHeader } from '../_shared/ListPageHeader.js';
@@ -81,15 +81,14 @@ export function EndpointsList({
         ))}
       </ListScrollArea>
 
-      {dialogOpen && (
-        <NewEndpointDialog
-          onClose={() => setDialogOpen(false)}
-          onCreated={(slug) => {
-            setDialogOpen(false);
-            onSelect(slug);
-          }}
-        />
-      )}
+      <EndpointCreateDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        onCreated={(slug) => {
+          setDialogOpen(false);
+          onSelect(slug);
+        }}
+      />
     </ListPageLayout>
   );
 }
