@@ -8,18 +8,21 @@
  * OUTSIDE the version guarantee — their props may change without a major).
  *
  * Components are declared as `ComponentType<Props>` rather than re-exported from
- * the live client modules: the real components drag `lucide-react` and the whole
- * internal kit tree into emit, which would leak internal types (AC2). Prop
- * shapes are the real contracts; the only deliberate loosening is icon props
- * (`ComponentType<{ size? }>` instead of `LucideIcon`) so plugins need not
- * depend on `lucide-react`. `published-surface.test.ts` asserts the real `stable`
- * prop interfaces stay assignable to these published shapes (drift guard).
+ * the live client modules: the real components drag the whole internal kit tree
+ * into emit, which would leak internal types (AC2). Prop shapes are the real
+ * contracts. `lucide-react` (0.1.121) is a declared, externalized M33 peer (same
+ * mechanism as React/Tiptap), so icon props are typed as the real `LucideIcon`
+ * — a type-only import here doesn't pull runtime code into emit, and plugins
+ * already share the host's one `lucide-react` instance via the import map.
+ * `published-surface.test.ts` asserts the real `stable` prop interfaces stay
+ * assignable to these published shapes (drift guard).
  *
  * `Tag` and `Stability` are dep-free and RE-EXPORTED from their canonical host
  * modules (single source of truth).
  */
 
 import type { ComponentType, ReactNode, CSSProperties, FormEvent } from 'react';
+import type { LucideIcon } from 'lucide-react';
 
 export type { Tag } from '../shared/entities.js';
 export type { Stability } from '../shared/plugin-host/ui-kit-surface.js';
@@ -50,8 +53,8 @@ export interface FieldRowProps {
 export declare const FieldRow: ComponentType<FieldRowProps>;
 
 export interface EntityListHeaderProps {
-  /** Lucide-style icon component; loosely typed to avoid a `lucide-react` dep. */
-  icon?: ComponentType<{ size?: number | string }>;
+  /** Leading icon — the same `LucideIcon` type as `EntityListRow.icon`. */
+  icon?: LucideIcon;
   title: string;
   count?: number;
   search?: string;
@@ -87,6 +90,8 @@ export declare const EmptyState: ComponentType<EmptyStateProps>;
 
 export interface EntityListRowProps {
   leading: ReactNode;
+  /** Optional leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
+  icon?: LucideIcon;
   onClick: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];

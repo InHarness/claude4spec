@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import type { Tag } from '../../../shared/entities.js';
 import { Badge } from '../actions/Badge.js';
 import { withStability } from '../stability.js';
@@ -12,6 +13,12 @@ import { withStability } from '../stability.js';
  */
 export interface EntityListRowProps {
   leading: React.ReactNode;
+  /**
+   * Optional leading icon — the same `LucideIcon` type as the `stable`
+   * `EntityListHeader.icon` (M34/L12 type-consistency across tiers). Rendered
+   * before `leading`; independent of it since some rows have no icon at all.
+   */
+  icon?: LucideIcon;
   onClick: () => void;
   tags?: string[];
   tagLookup: Map<string, Tag>;
@@ -23,6 +30,7 @@ export interface EntityListRowProps {
 
 function EntityListRowImpl({
   leading,
+  icon: Icon,
   onClick,
   tags,
   tagLookup,
@@ -41,6 +49,7 @@ function EntityListRowImpl({
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair-strong)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
+      {Icon && <Icon size={16} style={{ color: 'var(--c-accent)' }} />}
       {leading}
       <div className="flex-1 min-w-0">
         {children}

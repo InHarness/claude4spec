@@ -18,6 +18,7 @@ import * as ReactDOMClient from 'react-dom/client';
 import * as TiptapCore from '@tiptap/core';
 import * as ReactQuery from '@tanstack/react-query';
 import * as ReactRouter from '@tanstack/react-router';
+import * as LucideReact from 'lucide-react';
 import * as PluginRuntime from './plugin-runtime.js';
 import * as PluginRuntimeUi from './plugin-runtime-ui.js';
 
@@ -35,6 +36,7 @@ globalThis.__c4s_shared = {
   '@tiptap/core': TiptapCore,
   '@tanstack/react-query': ReactQuery,
   '@tanstack/react-router': ReactRouter,
+  'lucide-react': LucideReact,
   '@c4s/plugin-runtime': PluginRuntime,
   '@c4s/plugin-runtime/ui': PluginRuntimeUi,
 };
