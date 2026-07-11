@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { Monitor } from 'lucide-react';
 import { useUiViews } from '../../hooks/useUiViews.js';
-import { dispatchNewUiView } from '../../components/NewUiViewPopover.js';
+import { UiViewCreateDialog } from './create-dialog.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';
 import { ListPageHeader } from '../_shared/ListPageHeader.js';
 import { TagFilterBar } from '../_shared/TagFilterBar.js';
@@ -29,14 +30,10 @@ export function UiViewsList({
     onTagToggle,
   });
   const { data: views = [], isLoading } = useUiViews(query);
+  const [dialogOpen, setDialogOpen] = useState(false);
 
-  function handleCreate(e: React.MouseEvent<HTMLButtonElement>) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    dispatchNewUiView({
-      x: rect.left,
-      y: rect.bottom + 6,
-      onCreated: (slug) => onSelect(slug),
-    });
+  function handleCreate() {
+    setDialogOpen(true);
   }
 
   return (
@@ -89,6 +86,16 @@ export function UiViewsList({
           </EntityListRow>
         ))}
       </ListScrollArea>
+
+      {dialogOpen && (
+        <UiViewCreateDialog
+          onClose={() => setDialogOpen(false)}
+          onCreated={(slug) => {
+            setDialogOpen(false);
+            onSelect(slug);
+          }}
+        />
+      )}
     </ListPageLayout>
   );
 }
