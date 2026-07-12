@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react';
-import { METHOD_STYLE } from '../../components/atoms.js';
-import { Dialog, FormShell, FormField, ActionButton, Badge } from '../../host-ui-kit/index.js';
+import { METHOD_STYLE, MethodChip } from '../../components/atoms.js';
+import { Dialog, FormShell, FormField, ActionButton } from '../../host-ui-kit/index.js';
 import { useCreateEndpoint } from '../../hooks/useEndpoints.js';
 import { toast } from '../../ui/events.js';
 import type { HttpMethod } from '../../../shared/entities.js';
@@ -128,15 +128,7 @@ export function EndpointCreateDialog({ onClose, onCreated }: Props) {
             />
           </div>
           <div className="flex items-center gap-1.5 text-[12px] mt-1.5" style={{ color: 'var(--c-muted)' }}>
-            <Badge
-              label={METHOD_STYLE[method].label}
-              color={METHOD_STYLE[method].bg}
-              foreground={METHOD_STYLE[method].fg}
-              active
-              dot={false}
-              mono
-              small
-            />
+            <MethodChip method={method} />
             <span className="font-mono">{path}</span>
           </div>
         </FormField>

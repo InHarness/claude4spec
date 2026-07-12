@@ -24,6 +24,8 @@ export interface BadgeProps {
   mono?: boolean;
   /** Show the leading color dot. Defaults to true. */
   dot?: boolean;
+  /** Minimum width in px, so badges with different label lengths (e.g. HTTP methods) align to a common column width in a list. Centers the label when set. */
+  minWidth?: number;
 }
 
 function BadgeImpl({
@@ -36,13 +38,14 @@ function BadgeImpl({
   foreground,
   mono,
   dot = true,
+  minWidth,
 }: BadgeProps) {
   const dotColor = color ?? 'var(--c-muted)';
   const textColor = foreground ?? (active ? '#fff' : 'var(--c-ink)');
   return (
     <span
       onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-full chip-hover transition${mono ? ' font-mono font-semibold tracking-wide' : ''}`}
+      className={`inline-flex items-center gap-1.5 rounded-full chip-hover transition${mono ? ' font-mono font-semibold tracking-wide' : ''}${minWidth ? ' justify-center' : ''}`}
       style={{
         padding: small ? '1px 7px' : '2px 8px',
         fontSize: small ? 10.5 : 11.5,
@@ -50,6 +53,7 @@ function BadgeImpl({
         color: textColor,
         border: `1px solid ${active ? dotColor : 'var(--c-hair)'}`,
         cursor: onClick ? 'pointer' : 'default',
+        minWidth,
       }}
     >
       {dot && <span className="rounded-full" style={{ width: 6, height: 6, background: active ? textColor : dotColor }} />}

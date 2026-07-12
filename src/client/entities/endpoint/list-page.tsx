@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { ArrowRightLeft } from 'lucide-react';
-import { METHOD_STYLE } from '../../components/atoms.js';
-import { Badge } from '../../host-ui-kit/actions/Badge.js';
+import { MethodChip } from '../../components/atoms.js';
 import { EndpointCreateDialog } from './create-dialog.js';
 import { useEndpoints } from '../../hooks/useEndpoints.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';
@@ -57,16 +56,7 @@ export function EndpointsList({
         {endpoints.map((ep) => (
           <EntityListRow
             key={ep.slug}
-            leading={
-              <Badge
-                label={METHOD_STYLE[ep.method].label}
-                color={METHOD_STYLE[ep.method].bg}
-                foreground={METHOD_STYLE[ep.method].fg}
-                active
-                dot={false}
-                mono
-              />
-            }
+            leading={<MethodChip method={ep.method} large />}
             onClick={() => onSelect(ep.slug)}
             tags={ep.tags}
             tagLookup={tagLookup}

@@ -1,7 +1,6 @@
 import { ArrowRightLeft, ChevronRight } from 'lucide-react';
 import type { Endpoint } from '../../../shared/entities.js';
-import { METHOD_STYLE } from '../../components/atoms.js';
-import { Badge } from '../../host-ui-kit/actions/Badge.js';
+import { MethodChip } from '../../components/atoms.js';
 import { useEndpoint } from '../../hooks/useEndpoints.js';
 import { endpointsApi } from './api.js';
 import {
@@ -28,15 +27,7 @@ function EndpointRow({ entity, active, onOpen }: EntityRowProps<Endpoint>) {
         if (!active) e.currentTarget.style.background = 'transparent';
       }}
     >
-      <Badge
-        label={METHOD_STYLE[entity.method].label}
-        color={METHOD_STYLE[entity.method].bg}
-        foreground={METHOD_STYLE[entity.method].fg}
-        active
-        dot={false}
-        mono
-        small
-      />
+      <MethodChip method={entity.method} />
       <span className="flex-1 min-w-0">
         <span
           className="block font-mono text-[12.5px] truncate"
@@ -79,15 +70,7 @@ function EndpointChip({ slug, entity, onOpen }: EntityChipProps<Endpoint>) {
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair-strong)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
-      <Badge
-        label={METHOD_STYLE[entity.method].label}
-        color={METHOD_STYLE[entity.method].bg}
-        foreground={METHOD_STYLE[entity.method].fg}
-        active
-        dot={false}
-        mono
-        small
-      />
+      <MethodChip method={entity.method} />
       <span className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
         {entity.path}
       </span>
@@ -122,14 +105,7 @@ function EndpointCard({ slug, entity, onOpen }: EntityCardProps<Endpoint>) {
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
       <div className="flex items-center gap-2">
-        <Badge
-          label={METHOD_STYLE[entity.method].label}
-          color={METHOD_STYLE[entity.method].bg}
-          foreground={METHOD_STYLE[entity.method].fg}
-          active
-          dot={false}
-          mono
-        />
+        <MethodChip method={entity.method} large />
         <span className="font-mono text-[14px]" style={{ color: 'var(--c-ink)', fontWeight: 600 }}>
           {entity.path}
         </span>

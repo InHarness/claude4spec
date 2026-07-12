@@ -1,7 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Braces, ChevronRight, Database, Monitor } from 'lucide-react';
-import { METHOD_STYLE } from '../../components/atoms.js';
-import { Badge } from '../../host-ui-kit/actions/Badge.js';
+import { MethodChip } from '../../components/atoms.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import { EntityViewSwitcher } from './EntityViewSwitcher.js';
 import type { EntityType, HttpMethod } from '../../../shared/entities.js';
@@ -66,17 +65,7 @@ function renderCrumb(
   if (type === 'endpoint') {
     return (
       <>
-        {method && (
-          <Badge
-            label={METHOD_STYLE[method].label}
-            color={METHOD_STYLE[method].bg}
-            foreground={METHOD_STYLE[method].fg}
-            active
-            dot={false}
-            mono
-            small
-          />
-        )}
+        {method && <MethodChip method={method} />}
         {path && <span className="font-mono">{path}</span>}
       </>
     );
