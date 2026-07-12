@@ -46,7 +46,7 @@ import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
-import { EntityDetailToolbar } from './entities/_shared/EntityDetailToolbar.js';
+import { EntityBreadcrumbBar } from './entities/_shared/EntityBreadcrumbBar.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import type { EntityType } from '../shared/entities.js';
@@ -498,7 +498,7 @@ function EndpointDetailRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar
+      <EntityBreadcrumbBar
         type="endpoint"
         slug={slug}
         method={endpoint?.method}
@@ -529,7 +529,7 @@ function EndpointHistoryRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar
+      <EntityBreadcrumbBar
         type="endpoint"
         slug={slug}
         method={endpoint?.method}
@@ -584,7 +584,7 @@ function DtoDetailRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="dto" slug={slug} name={dto?.name} view="details" hasHistory />
+      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="details" hasHistory />
       <EditorBridgeProvider bridge={bridge}>
         <DtoDetail
           key={slug}
@@ -608,7 +608,7 @@ function DtoHistoryRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
+      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
       <VersionHistory
         type="dto"
         slug={slug}
@@ -656,7 +656,7 @@ function UiViewDetailRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="ui-view" slug={slug} name={uiView?.name} view="details" />
+      <EntityBreadcrumbBar type="ui-view" slug={slug} name={uiView?.name} view="details" />
       <EditorBridgeProvider bridge={bridge}>
         <UiViewDetail
           key={slug}
@@ -715,7 +715,7 @@ function DesignSystemDetailRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="design-system" slug={slug} name={ds?.name} view="details" />
+      <EntityBreadcrumbBar type="design-system" slug={slug} name={ds?.name} view="details" />
       <EditorBridgeProvider bridge={bridge}>
         <DesignSystemDetail
           key={slug}
@@ -769,7 +769,7 @@ function AcDetailRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="ac" slug={slug} view="details" hasHistory />
+      <EntityBreadcrumbBar type="ac" slug={slug} view="details" hasHistory />
       <EditorBridgeProvider bridge={bridge}>
         <AcDetail
           key={slug}
@@ -792,7 +792,7 @@ function AcHistoryRoute() {
 
   return (
     <RoutePane>
-      <EntityDetailToolbar type="ac" slug={slug} view="history" hasHistory />
+      <EntityBreadcrumbBar type="ac" slug={slug} view="history" hasHistory />
       <VersionHistory
         type="ac"
         slug={slug}

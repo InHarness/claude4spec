@@ -17,7 +17,7 @@ interface Props {
 
 const crumbLinkClass = 'inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition';
 
-export function EntityDetailToolbar({ type, slug, method, path, name, view, hasHistory }: Props) {
+export function EntityBreadcrumbBar({ type, slug, method, path, name, view, hasHistory }: Props) {
   const navigate = useNavigate();
   const mod = clientPluginHost.getAvailable(type);
   const listLabel = mod?.labelPlural ?? 'Entities';
