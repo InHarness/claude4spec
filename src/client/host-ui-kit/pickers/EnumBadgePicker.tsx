@@ -4,10 +4,10 @@ import { Popover } from '../overlay-feedback/Popover.js';
 
 /**
  * `EnumBadgePicker` (Pickers, `experimental`) — a colored badge-with-dropdown
- * picking a value out of any enum. Generalizes the host's `MethodBadge` /
- * `METHOD_STYLE` + its `MethodPicker` dropdown (HTTP method only) to an
- * arbitrary enum. Pure-presentational; the dropdown renders through the
- * published `Popover`.
+ * picking a value out of any enum. Generalizes the host's method-badge
+ * pattern (kit `Badge` + `METHOD_STYLE`) and its `MethodPicker` dropdown
+ * (HTTP method only) to an arbitrary enum. Pure-presentational; the dropdown
+ * renders through the published `Popover`.
  */
 export interface EnumBadgePickerProps {
   options: { value: string; label: string; color?: string }[];

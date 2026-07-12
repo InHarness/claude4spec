@@ -12,18 +12,6 @@ export const METHOD_STYLE: Record<
   DELETE: { bg: 'var(--c-red-soft)', fg: 'var(--c-red)', label: 'DEL' },
 };
 
-export function MethodBadge({ method, large = false }: { method: HttpMethod; large?: boolean }) {
-  const s = METHOD_STYLE[method] ?? METHOD_STYLE.GET;
-  return (
-    <span
-      className={`inline-flex items-center justify-center font-mono font-semibold tracking-wide rounded ${large ? 'px-2 py-1 text-[12px]' : 'px-1.5 py-[1px] text-[10.5px]'}`}
-      style={{ background: s.bg, color: s.fg, minWidth: large ? 56 : 42 }}
-    >
-      {s.label}
-    </span>
-  );
-}
-
 interface TagChipProps {
   tag: Pick<Tag, 'slug' | 'name' | 'color'>;
   active?: boolean;

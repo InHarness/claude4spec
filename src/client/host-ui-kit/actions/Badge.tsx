@@ -18,24 +18,41 @@ export interface BadgeProps {
   small?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
+  /** Explicit text color; overrides the default active/inactive ink color. */
+  foreground?: string;
+  /** Render the label in monospace, bold, tracked-out type (e.g. status codes). */
+  mono?: boolean;
+  /** Show the leading color dot. Defaults to true. */
+  dot?: boolean;
 }
 
-function BadgeImpl({ label, color, active, small, onClick, onRemove }: BadgeProps) {
-  const dot = color ?? 'var(--c-muted)';
+function BadgeImpl({
+  label,
+  color,
+  active,
+  small,
+  onClick,
+  onRemove,
+  foreground,
+  mono,
+  dot = true,
+}: BadgeProps) {
+  const dotColor = color ?? 'var(--c-muted)';
+  const textColor = foreground ?? (active ? '#fff' : 'var(--c-ink)');
   return (
     <span
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-full chip-hover transition"
+      className={`inline-flex items-center gap-1.5 rounded-full chip-hover transition${mono ? ' font-mono font-semibold tracking-wide' : ''}`}
       style={{
         padding: small ? '1px 7px' : '2px 8px',
         fontSize: small ? 10.5 : 11.5,
-        background: active ? dot : 'var(--c-panel)',
-        color: active ? '#fff' : 'var(--c-ink)',
-        border: `1px solid ${active ? dot : 'var(--c-hair)'}`,
+        background: active ? dotColor : 'var(--c-panel)',
+        color: textColor,
+        border: `1px solid ${active ? dotColor : 'var(--c-hair)'}`,
         cursor: onClick ? 'pointer' : 'default',
       }}
     >
-      <span className="rounded-full" style={{ width: 6, height: 6, background: active ? '#fff' : dot }} />
+      {dot && <span className="rounded-full" style={{ width: 6, height: 6, background: active ? textColor : dotColor }} />}
       {label}
       {onRemove && (
         <button

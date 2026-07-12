@@ -1,6 +1,7 @@
 import { Plus, Trash } from 'lucide-react';
 import { Braces } from 'lucide-react';
-import { MethodBadge } from '../../components/atoms.js';
+import { METHOD_STYLE } from '../../components/atoms.js';
+import { Badge } from '../../host-ui-kit/actions/Badge.js';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
@@ -316,7 +317,15 @@ export function DtoDetail({
                     className="inline-flex items-center gap-2 hover:underline"
                     style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}
                   >
-                    <MethodBadge method={link.method} />
+                    <Badge
+                      label={METHOD_STYLE[link.method].label}
+                      color={METHOD_STYLE[link.method].bg}
+                      foreground={METHOD_STYLE[link.method].fg}
+                      active
+                      dot={false}
+                      mono
+                      small
+                    />
                     <span className="font-mono">{link.path}</span>
                   </button>
                   {link.statusCode !== null && (
