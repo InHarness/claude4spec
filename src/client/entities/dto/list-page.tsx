@@ -63,7 +63,7 @@ export function DtosList({
         {dtos.map((d) => (
           <EntityListRow
             key={d.slug}
-            leading={<Braces size={16} style={{ color: 'var(--c-accent)' }} />}
+            icon={Braces}
             onClick={() => onSelect(d.slug)}
             tags={d.tags}
             tagLookup={tagLookup}

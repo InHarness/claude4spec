@@ -21,6 +21,7 @@ import { metaApi, pluginsApi } from '../lib/api.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { mountFrontend } from '../tiptap/mountFrontend.js';
 import { registerPluginCommands } from '../tiptap/pluginCommands.js';
+import { sharedRuntimeReady } from './shared-runtime.js';
 import type { AppRouter } from '../router.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 
@@ -82,6 +83,9 @@ async function registerProjectPluginCommands(): Promise<void> {
 
 export async function bootFrontendPlugins(router: AppRouter): Promise<void> {
   activeRouter = router;
+  // The lucide-react peer is code-split (see shared-runtime.ts) — wait for it
+  // to land on window.__c4s_shared before any plugin entry can reach the shim.
+  await sharedRuntimeReady;
   let manifest: FrontendManifestResponse;
   try {
     manifest = await pluginsApi.frontendManifest();

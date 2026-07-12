@@ -56,4 +56,13 @@ describe('runtime-shims', () => {
     expect(src).toContain('export const DetailPanelShell =');
     expect(src).toContain('export const useHostTokens =');
   });
+
+  it('shares lucide-react as a curatorial peer (0.1.121, not hook-correctness-gated)', async () => {
+    const map = buildImportMap();
+    expect(map['lucide-react']).toBe('/api/plugins/runtime/lucide-react.js');
+    const src = await getRuntimeShim(PEER_SLUG['lucide-react']);
+    expect(src).toContain('globalThis.__c4s_shared');
+    // A real icon export, enumerated from the installed package like every peer.
+    expect(src).toContain('export const Search =');
+  });
 });

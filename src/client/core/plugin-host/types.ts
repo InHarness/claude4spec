@@ -10,6 +10,7 @@
  */
 
 import type { ComponentType } from 'react';
+import type { LucideIcon } from 'lucide-react';
 import type { AnyRoute } from '@tanstack/react-router';
 import type {
   EntityModuleManifest,
@@ -24,7 +25,9 @@ import type {
 import type { EditorExtensionRegistration } from '../../tiptap/registry.js';
 
 export interface SidebarTabSlot {
-  icon: ComponentType<{ className?: string; size?: number | string }>;
+  /** M33/0.1.121: `lucide-react` is a declared, externalized peer — the icon
+   * resolves to it directly, not to a copy bundled inside the plugin. */
+  icon: LucideIcon;
   label: string;
   /** Sort order — Pages = 1, Tags = 999, plugins live in between. */
   order: number;

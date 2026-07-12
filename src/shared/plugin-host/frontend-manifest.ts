@@ -58,6 +58,11 @@ export const SHARED_PEER_SPECIFIERS = [
   // TanStack Router operate on the SAME route-tree types — NOT a live singleton
   // re-exported through `@c4s/plugin-runtime`.
   '@tanstack/react-router',
+  // Icons (M33/0.1.121): a curatorial peer, not a correctness one — unlike
+  // React/Tiptap/the router, two copies of `lucide-react` share no reconciler
+  // or hook state, so there is no hook-correctness gate for it. Externalizing
+  // it is purely about one consistent icon set and a smaller plugin bundle.
+  'lucide-react',
   '@c4s/plugin-runtime',
   '@c4s/plugin-runtime/ui',
 ] as const;

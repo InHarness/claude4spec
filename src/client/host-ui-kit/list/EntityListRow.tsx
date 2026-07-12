@@ -1,3 +1,4 @@
+import type { LucideIcon } from 'lucide-react';
 import type { Tag } from '../../../shared/entities.js';
 import { Badge } from '../actions/Badge.js';
 import { withStability } from '../stability.js';
@@ -11,7 +12,15 @@ import { withStability } from '../stability.js';
  * Tag chips render via the kit's `Badge` (the single chip implementation).
  */
 export interface EntityListRowProps {
-  leading: React.ReactNode;
+  /** General-purpose leading slot; use `icon` instead for the common plain-icon case. */
+  leading?: React.ReactNode;
+  /**
+   * Leading icon, rendered before `leading` — the same `LucideIcon` type as the
+   * `stable` `EntityListHeader.icon` (M34/L12 type-consistency across tiers).
+   * The default styling (fixed size + accent color) covers the common case;
+   * a row needing custom icon styling still uses `leading` directly instead.
+   */
+  icon?: LucideIcon;
   onClick: () => void;
   tags?: string[];
   tagLookup: Map<string, Tag>;
@@ -23,6 +32,7 @@ export interface EntityListRowProps {
 
 function EntityListRowImpl({
   leading,
+  icon: Icon,
   onClick,
   tags,
   tagLookup,
@@ -41,6 +51,7 @@ function EntityListRowImpl({
       onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair-strong)')}
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
+      {Icon && <Icon size={16} style={{ color: 'var(--c-accent)' }} />}
       {leading}
       <div className="flex-1 min-w-0">
         {children}

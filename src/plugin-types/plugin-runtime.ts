@@ -31,6 +31,7 @@
  */
 
 import type { ComponentType } from 'react';
+import type { LucideIcon } from 'lucide-react';
 // Import-then-export the dep-free contract so the names are usable locally
 // (e.g. `FrontendModule extends EntityModuleManifest`) AND re-exported as the
 // published surface. A bare `export … from` would not create a local binding.
@@ -163,7 +164,9 @@ export interface EntityDetailProps {
   onBack: () => void;
 }
 export interface SidebarTabSlot {
-  icon: ComponentType<{ className?: string; size?: number | string }>;
+  /** M33/0.1.121: `lucide-react` is a declared, externalized peer — the icon
+   * resolves to it directly, not to a copy bundled inside the plugin. */
+  icon: LucideIcon;
   label: string;
   order: number;
   emptyState?: ComponentType<unknown>;

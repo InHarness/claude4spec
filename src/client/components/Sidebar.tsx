@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { stripBase } from '../lib/api-core.js';
 import { ProjectSwitcher } from './ProjectSwitcher.js';
 import { C4sLogoIcon } from './C4sLogoIcon.js';
@@ -274,7 +274,7 @@ function NavLinkRow({
   highlightCount = false,
   extra,
 }: {
-  icon: ComponentType<{ className?: string; size?: number | string }>;
+  icon: LucideIcon;
   label: string;
   count: number;
   active: boolean;
