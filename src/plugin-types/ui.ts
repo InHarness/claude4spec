@@ -89,8 +89,9 @@ export interface EmptyStateProps {
 export declare const EmptyState: ComponentType<EmptyStateProps>;
 
 export interface EntityListRowProps {
-  leading: ReactNode;
-  /** Optional leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
+  /** General-purpose leading slot; use `icon` instead for the common plain-icon case. */
+  leading?: ReactNode;
+  /** Leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
   icon?: LucideIcon;
   onClick: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */

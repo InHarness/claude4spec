@@ -59,7 +59,7 @@ export function UiViewsList({
         {views.map((v) => (
           <EntityListRow
             key={v.slug}
-            leading={<Monitor size={16} style={{ color: 'var(--c-accent)' }} />}
+            icon={Monitor}
             onClick={() => onSelect(v.slug)}
             tags={v.tags}
             tagLookup={tagLookup}

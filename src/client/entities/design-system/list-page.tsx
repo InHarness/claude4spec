@@ -64,7 +64,7 @@ export function DesignSystemsList({
           return (
             <EntityListRow
               key={ds.slug}
-              leading={<Palette size={16} style={{ color: 'var(--c-accent)' }} />}
+              icon={Palette}
               onClick={() => onSelect(ds.slug)}
               tags={ds.tags}
               tagLookup={tagLookup}

@@ -12,11 +12,13 @@ import { withStability } from '../stability.js';
  * Tag chips render via the kit's `Badge` (the single chip implementation).
  */
 export interface EntityListRowProps {
-  leading: React.ReactNode;
+  /** General-purpose leading slot; use `icon` instead for the common plain-icon case. */
+  leading?: React.ReactNode;
   /**
-   * Optional leading icon — the same `LucideIcon` type as the `stable`
-   * `EntityListHeader.icon` (M34/L12 type-consistency across tiers). Rendered
-   * before `leading`; independent of it since some rows have no icon at all.
+   * Leading icon, rendered before `leading` — the same `LucideIcon` type as the
+   * `stable` `EntityListHeader.icon` (M34/L12 type-consistency across tiers).
+   * The default styling (fixed size + accent color) covers the common case;
+   * a row needing custom icon styling still uses `leading` directly instead.
    */
   icon?: LucideIcon;
   onClick: () => void;
