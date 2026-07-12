@@ -200,6 +200,7 @@ export function EndpointDetail({
           />
         </FieldRow>
 
+        <div className="mt-6">
         <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
@@ -207,7 +208,9 @@ export function EndpointDetail({
             placeholder="Describe what this endpoint does, invariants, gotchas…"
           />
         </FieldRow>
+        </div>
 
+        <div className="mt-6">
         <FieldRow label="Linked DTOs" align="start">
           <GroupedRelationPicker
             groups={RELATIONS.map((rel) => ({
@@ -247,7 +250,9 @@ export function EndpointDetail({
             }}
           />
         </FieldRow>
+        </div>
 
+        <div className="mt-6">
         <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -283,6 +288,7 @@ export function EndpointDetail({
             </ul>
           )}
         </FieldRow>
+        </div>
       </FieldGrid>
     </div>
   );

@@ -8,6 +8,7 @@ import {
   isSupportedFormat,
 } from '../../tiptap/extensions/diagramRender.js';
 import { toast } from '../../ui/events.js';
+import { useReferences } from '../../hooks/useReferences.js';
 import { EntityDetailToolbar } from '../../host-ui-kit/detail/EntityDetailToolbar.js';
 import { FormShell } from '../../host-ui-kit/overlay/FormShell.js';
 import { FormField } from '../../host-ui-kit/form/FormField.js';
@@ -23,6 +24,7 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
   const { data: diagram, isLoading } = useDiagram(slug || null);
   const updateDiagram = useUpdateDiagram();
   const deleteDiagram = useDeleteDiagram();
+  const { data: refs = [] } = useReferences('diagram', slug || null);
 
   const [draft, setDraft] = useState<string | null>(null);
   const source = draft ?? diagram?.source ?? '';
@@ -82,6 +84,7 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
         title={`${slug} · ${format}`}
         onBack={onBack}
         onDelete={remove}
+        brokenRefs={refs.map((r) => ({ type: 'page', slug: r.pagePath }))}
         busy={deleteDiagram.isPending}
       />
 

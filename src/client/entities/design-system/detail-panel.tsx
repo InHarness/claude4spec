@@ -351,70 +351,78 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         )}
 
         {/* description */}
-        <FieldRow label="Description" align="start">
-          <DocEditor
-            value={draft.description}
-            onChange={(md) => patch({ description: md })}
-            placeholder="What this design system covers, when to use it, conventions…"
-          />
-        </FieldRow>
+        <div className="mt-6">
+          <FieldRow label="Description" align="start">
+            <DocEditor
+              value={draft.description}
+              onChange={(md) => patch({ description: md })}
+              placeholder="What this design system covers, when to use it, conventions…"
+            />
+          </FieldRow>
+        </div>
 
         {/* mode switcher */}
-        <FieldRow label="Modes" align="start">
-          <ModeSwitcher
-            modes={draft.modes}
-            activeMode={activeMode}
-            onSelect={setActiveMode}
-            onAddMode={addMode}
-          />
-          {activeModeObj && (
-            <ModeOverridesEditor
-              mode={activeModeObj}
-              tokenNames={allTokenNames}
-              onChange={(next) => updateMode(draft.modes.indexOf(activeModeObj), next)}
-              onRemove={() => removeMode(draft.modes.indexOf(activeModeObj))}
+        <div className="mt-6">
+          <FieldRow label="Modes" align="start">
+            <ModeSwitcher
+              modes={draft.modes}
+              activeMode={activeMode}
+              onSelect={setActiveMode}
+              onAddMode={addMode}
             />
-          )}
-        </FieldRow>
+            {activeModeObj && (
+              <ModeOverridesEditor
+                mode={activeModeObj}
+                tokenNames={allTokenNames}
+                onChange={(next) => updateMode(draft.modes.indexOf(activeModeObj), next)}
+                onRemove={() => removeMode(draft.modes.indexOf(activeModeObj))}
+              />
+            )}
+          </FieldRow>
+        </div>
 
         {/* token groups */}
-        <FieldRow label="Token groups" align="start">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="flex-1" />
-            <ActionButton label="add group" icon={<Plus size={11} />} variant="secondary" onClick={addGroup} />
-          </div>
-          {draft.groups.length === 0 && (
-            <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
-              No token groups yet.
+        <div className="mt-6">
+          <FieldRow label="Token groups" align="start">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="flex-1" />
+              <ActionButton label="add group" icon={<Plus size={11} />} variant="secondary" onClick={addGroup} />
             </div>
-          )}
-          {draft.groups.map((g, gIdx) => (
-            <TokenGroupEditor
-              key={gIdx}
-              group={g}
-              collapsed={collapsed.has(g.name)}
-              tokenNames={allTokenNames}
-              liveWarnings={liveWarnings}
-              onToggleCollapse={() => toggleCollapse(g.name)}
-              onRename={(name) => renameGroup(gIdx, name)}
-              onTier={(tier) => setGroupTier(gIdx, tier)}
-              onRemove={() => removeGroup(gIdx)}
-              onAddToken={() => addToken(gIdx)}
-              onUpdateToken={(tIdx, partial) => updateToken(gIdx, tIdx, partial)}
-              onRemoveToken={(tIdx) => removeToken(gIdx, tIdx)}
-            />
-          ))}
-        </FieldRow>
+            {draft.groups.length === 0 && (
+              <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+                No token groups yet.
+              </div>
+            )}
+            {draft.groups.map((g, gIdx) => (
+              <TokenGroupEditor
+                key={gIdx}
+                group={g}
+                collapsed={collapsed.has(g.name)}
+                tokenNames={allTokenNames}
+                liveWarnings={liveWarnings}
+                onToggleCollapse={() => toggleCollapse(g.name)}
+                onRename={(name) => renameGroup(gIdx, name)}
+                onTier={(tier) => setGroupTier(gIdx, tier)}
+                onRemove={() => removeGroup(gIdx)}
+                onAddToken={() => addToken(gIdx)}
+                onUpdateToken={(tIdx, partial) => updateToken(gIdx, tIdx, partial)}
+                onRemoveToken={(tIdx) => removeToken(gIdx, tIdx)}
+              />
+            ))}
+          </FieldRow>
+        </div>
 
         {/* preview */}
-        <FieldRow label="Preview" align="start">
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-              {activeMode}
-            </span>
-          </div>
-          <DesignSystemPreview groups={draft.groups} resolved={resolved} />
-        </FieldRow>
+        <div className="mt-6">
+          <FieldRow label="Preview" align="start">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+                {activeMode}
+              </span>
+            </div>
+            <DesignSystemPreview groups={draft.groups} resolved={resolved} />
+          </FieldRow>
+        </div>
 
         <datalist id="design-system-token-types">
           {TOKEN_TYPES.map((t) => (

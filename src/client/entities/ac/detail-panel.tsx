@@ -251,59 +251,65 @@ export function AcDetail({
           />
         </FieldRow>
 
-        <FieldRow label="Verifies" align="start">
-          <VerifiesPanel
-            verifies={draft.verifies}
-            brokenByKey={brokenByKey}
-            onAdd={addVerify}
-            onRemove={removeVerify}
-            onOpenEntity={onOpenEntity}
-          />
-        </FieldRow>
+        <div className="mt-6">
+          <FieldRow label="Verifies" align="start">
+            <VerifiesPanel
+              verifies={draft.verifies}
+              brokenByKey={brokenByKey}
+              onAdd={addVerify}
+              onRemove={removeVerify}
+              onOpenEntity={onOpenEntity}
+            />
+          </FieldRow>
+        </div>
 
-        <FieldRow label="Description" align="start">
-          <DocEditor
-            value={draft.description}
-            onChange={(md) => patch({ description: md })}
-            placeholder="Optional context: why this AC matters, how it's tested, related modules…"
-          />
-        </FieldRow>
+        <div className="mt-6">
+          <FieldRow label="Description" align="start">
+            <DocEditor
+              value={draft.description}
+              onChange={(md) => patch({ description: md })}
+              placeholder="Optional context: why this AC matters, how it's tested, related modules…"
+            />
+          </FieldRow>
+        </div>
 
-        <FieldRow label="Find references" align="start">
-          {refs.length === 0 ? (
-            <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
-              Not referenced by any page.
-            </div>
-          ) : (
-            <ul
-              className="rounded-md"
-              style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-            >
-              {refs.map((r, i) => (
-                <li
-                  key={`${r.pagePath}:${r.line}:${i}`}
-                  className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"
-                  style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
-                >
-                  <button
-                    onClick={() => onOpenPage?.(r.rootId, r.pagePath)}
-                    className="font-mono text-left hover:underline"
-                    style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}
+        <div className="mt-6">
+          <FieldRow label="Find references" align="start">
+            {refs.length === 0 ? (
+              <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
+                Not referenced by any page.
+              </div>
+            ) : (
+              <ul
+                className="rounded-md"
+                style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
+              >
+                {refs.map((r, i) => (
+                  <li
+                    key={`${r.pagePath}:${r.line}:${i}`}
+                    className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"
+                    style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
                   >
-                    {r.pagePath}
-                  </button>
-                  <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-                    :{r.line}
-                  </span>
-                  <span className="flex-1" />
-                  <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
-                    {r.tagType}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </FieldRow>
+                    <button
+                      onClick={() => onOpenPage?.(r.rootId, r.pagePath)}
+                      className="font-mono text-left hover:underline"
+                      style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}
+                    >
+                      {r.pagePath}
+                    </button>
+                    <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+                      :{r.line}
+                    </span>
+                    <span className="flex-1" />
+                    <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+                      {r.tagType}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </FieldRow>
+        </div>
       </FieldGrid>
     </div>
   );

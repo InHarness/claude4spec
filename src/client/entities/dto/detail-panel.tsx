@@ -191,6 +191,7 @@ export function DtoDetail({
           />
         </FieldRow>
 
+        <div className="mt-6">
         <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
@@ -198,7 +199,9 @@ export function DtoDetail({
             placeholder="What this DTO represents, which endpoints use it, invariants…"
           />
         </FieldRow>
+        </div>
 
+        <div className="mt-6">
         <FieldRow label="Fields" align="start">
           <div className="flex items-center gap-2 mb-2">
             <span className="flex-1" />
@@ -278,14 +281,18 @@ export function DtoDetail({
             </div>
           )}
         </FieldRow>
+        </div>
 
-        <ExamplesPanel
-          examples={draft.examples}
-          fields={draft.fields}
-          onChange={(examples) => patch({ examples })}
-        />
+        <div className="mt-6">
+          <ExamplesPanel
+            examples={draft.examples}
+            fields={draft.fields}
+            onChange={(examples) => patch({ examples })}
+          />
+        </div>
 
         {dto.endpoints.length > 0 && (
+          <div className="mt-6">
           <FieldRow label="Used by endpoints" align="start">
             <ul
               className="rounded-md"
@@ -323,8 +330,10 @@ export function DtoDetail({
               ))}
             </ul>
           </FieldRow>
+          </div>
         )}
 
+        <div className="mt-6">
         <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -360,6 +369,7 @@ export function DtoDetail({
             </ul>
           )}
         </FieldRow>
+        </div>
       </FieldGrid>
     </div>
   );

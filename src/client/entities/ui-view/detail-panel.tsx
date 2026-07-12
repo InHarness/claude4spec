@@ -307,6 +307,7 @@ export function UiViewDetail({
           </div>
         )}
 
+        <div className="mt-6">
         <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
@@ -314,7 +315,9 @@ export function UiViewDetail({
             placeholder="What this screen does, when it appears, key invariants…"
           />
         </FieldRow>
+        </div>
 
+        <div className="mt-6">
         <FieldRow label="Parameters" align="start">
           <div className="flex items-center gap-2 mb-2">
             <span className="flex-1" />
@@ -374,6 +377,7 @@ export function UiViewDetail({
             </div>
           )}
         </FieldRow>
+        </div>
 
         <datalist id="ui-view-param-types">
           {SUGGESTED_TYPES.map((t) => (
@@ -381,6 +385,7 @@ export function UiViewDetail({
           ))}
         </datalist>
 
+        <div className="mt-6">
         <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -416,6 +421,7 @@ export function UiViewDetail({
             </ul>
           )}
         </FieldRow>
+        </div>
         {/* allViews datalist suppress unused */}
         {allViews.length === 0 && null}
       </FieldGrid>
