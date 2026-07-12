@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronDown, Copy, GripVertical, Pencil, Plus, Trash, X } from 'lucide-react';
 import type { DtoExample, DtoField } from '../../../shared/entities.js';
 import { confirmDestructive } from '../../ui/events.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
 import { MonacoJsonEditor } from './MonacoJsonEditor.js';
 import { buildExampleTemplate, validateExampleAgainstFields } from './exampleValidation.js';
 
@@ -187,26 +188,8 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
           className="rounded-md p-3 mb-2"
           style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)' }}
         >
-          <div className="flex items-center gap-2 mb-2">
-            <input
-              autoFocus
-              value={draftName}
-              onChange={(e) => {
-                setDraftName(e.target.value);
-                if (draftError) setDraftError(null);
-              }}
-              className="font-mono text-[12.5px] bg-transparent outline-none flex-1"
-              style={{ color: 'var(--c-ink)' }}
-              placeholder='name (e.g. "minimal")'
-              spellCheck={false}
-            />
-            <input
-              value={draftSummary}
-              onChange={(e) => setDraftSummary(e.target.value)}
-              className="text-[12.5px] bg-transparent outline-none flex-1"
-              style={{ color: 'var(--c-muted)' }}
-              placeholder="summary (optional)"
-            />
+          <div className="flex items-center mb-2">
+            <span className="flex-1" />
             <button
               onClick={cancelAdd}
               className="text-[11px] px-2 py-0.5 rounded"
@@ -215,12 +198,39 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
               <X size={12} />
             </button>
           </div>
-          <MonacoJsonEditor value={draftJson} onChange={setDraftJson} height={200} />
-          {draftError && (
-            <div className="mt-1 text-[11px]" style={{ color: 'var(--c-red, #c45a3b)' }}>
-              {draftError}
-            </div>
-          )}
+          <div className="flex flex-col gap-2">
+            <FieldRow label="name">
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(e) => {
+                  setDraftName(e.target.value);
+                  if (draftError) setDraftError(null);
+                }}
+                className="font-mono text-[12.5px] bg-transparent outline-none w-full"
+                style={{ color: 'var(--c-ink)' }}
+                placeholder='name (e.g. "minimal")'
+                spellCheck={false}
+              />
+            </FieldRow>
+            <FieldRow label="summary">
+              <input
+                value={draftSummary}
+                onChange={(e) => setDraftSummary(e.target.value)}
+                className="text-[12.5px] bg-transparent outline-none w-full"
+                style={{ color: 'var(--c-muted)' }}
+                placeholder="summary (optional)"
+              />
+            </FieldRow>
+            <FieldRow label="value" align="start">
+              <MonacoJsonEditor value={draftJson} onChange={setDraftJson} height={200} />
+              {draftError && (
+                <div className="mt-1 text-[11px]" style={{ color: 'var(--c-red, #c45a3b)' }}>
+                  {draftError}
+                </div>
+              )}
+            </FieldRow>
+          </div>
           <div className="flex justify-end mt-2">
             <button
               onClick={submitAdd}
@@ -322,76 +332,72 @@ export function ExamplesPanel({ examples, fields, onChange }: Props) {
 
                 {st.expanded && (
                   <div className="px-2 pb-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className="text-[10.5px] uppercase font-mono tracking-wider"
-                        style={{ color: 'var(--c-subtle)' }}
-                      >
-                        value
-                      </span>
-                      <span className="flex-1" />
-                      {!st.editing && (
-                        <button
-                          onClick={() => setRow(i, { editing: true, rawJson: pretty(ex.value), parseError: null })}
-                          className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded"
-                          style={{ color: 'var(--c-muted)' }}
+                    <FieldRow align="start" label="value">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="flex-1" />
+                        {!st.editing && (
+                          <button
+                            onClick={() => setRow(i, { editing: true, rawJson: pretty(ex.value), parseError: null })}
+                            className="inline-flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded"
+                            style={{ color: 'var(--c-muted)' }}
+                          >
+                            <Pencil size={10} /> edit
+                          </button>
+                        )}
+                        {st.editing && (
+                          <>
+                            <button
+                              onClick={() =>
+                                setRow(i, {
+                                  editing: false,
+                                  rawJson: pretty(ex.value),
+                                  parseError: null,
+                                })
+                              }
+                              className="text-[11px] px-1.5 py-0.5 rounded"
+                              style={{ color: 'var(--c-subtle)' }}
+                            >
+                              cancel
+                            </button>
+                            <button
+                              onClick={() => commitJsonEdit(i)}
+                              className="text-[11px] px-2 py-0.5 rounded"
+                              style={{ background: 'var(--c-accent)', color: 'var(--c-paper, #fff)' }}
+                            >
+                              save
+                            </button>
+                          </>
+                        )}
+                      </div>
+                      <MonacoJsonEditor
+                        value={st.editing ? st.rawJson : pretty(ex.value)}
+                        onChange={(v) => setRow(i, { rawJson: v, parseError: null })}
+                        readOnly={!st.editing}
+                        height={220}
+                      />
+                      {st.parseError && (
+                        <div className="mt-1 text-[11px]" style={{ color: 'var(--c-red, #c45a3b)' }}>
+                          invalid JSON: {st.parseError}
+                        </div>
+                      )}
+                      {!st.editing && warnings.length > 0 && (
+                        <div
+                          className="mt-1 text-[11px] px-2 py-1 rounded"
+                          style={{
+                            background: 'var(--c-warn-bg, #fdf6e3)',
+                            color: 'var(--c-warn-ink, #8a6d3b)',
+                            border: '1px solid var(--c-warn-border, #e7d9b3)',
+                          }}
                         >
-                          <Pencil size={10} /> edit
-                        </button>
+                          Example doesn't match fields:
+                          {warnings.map((w) => (
+                            <div key={w.field}>
+                              <span className="font-mono">{w.field}</span>: expected {w.expected}, got {w.got}
+                            </div>
+                          ))}
+                        </div>
                       )}
-                      {st.editing && (
-                        <>
-                          <button
-                            onClick={() =>
-                              setRow(i, {
-                                editing: false,
-                                rawJson: pretty(ex.value),
-                                parseError: null,
-                              })
-                            }
-                            className="text-[11px] px-1.5 py-0.5 rounded"
-                            style={{ color: 'var(--c-subtle)' }}
-                          >
-                            cancel
-                          </button>
-                          <button
-                            onClick={() => commitJsonEdit(i)}
-                            className="text-[11px] px-2 py-0.5 rounded"
-                            style={{ background: 'var(--c-accent)', color: 'var(--c-paper, #fff)' }}
-                          >
-                            save
-                          </button>
-                        </>
-                      )}
-                    </div>
-                    <MonacoJsonEditor
-                      value={st.editing ? st.rawJson : pretty(ex.value)}
-                      onChange={(v) => setRow(i, { rawJson: v, parseError: null })}
-                      readOnly={!st.editing}
-                      height={220}
-                    />
-                    {st.parseError && (
-                      <div className="mt-1 text-[11px]" style={{ color: 'var(--c-red, #c45a3b)' }}>
-                        invalid JSON: {st.parseError}
-                      </div>
-                    )}
-                    {!st.editing && warnings.length > 0 && (
-                      <div
-                        className="mt-1 text-[11px] px-2 py-1 rounded"
-                        style={{
-                          background: 'var(--c-warn-bg, #fdf6e3)',
-                          color: 'var(--c-warn-ink, #8a6d3b)',
-                          border: '1px solid var(--c-warn-border, #e7d9b3)',
-                        }}
-                      >
-                        Example doesn't match fields:
-                        {warnings.map((w) => (
-                          <div key={w.field}>
-                            <span className="font-mono">{w.field}</span>: expected {w.expected}, got {w.got}
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    </FieldRow>
                   </div>
                 )}
               </div>

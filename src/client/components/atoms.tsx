@@ -12,15 +12,29 @@ export const METHOD_STYLE: Record<
   DELETE: { bg: 'var(--c-red-soft)', fg: 'var(--c-red)', label: 'DEL' },
 };
 
-export function MethodBadge({ method, large = false }: { method: HttpMethod; large?: boolean }) {
+interface MethodChipProps {
+  method: HttpMethod;
+  large?: boolean;
+}
+
+/**
+ * HTTP method chip. Delegates to the Host UI Kit's `Badge` (M34/L12,
+ * `experimental`): `Badge` owns the pill styling; this binds the method →
+ * color/label mapping (`METHOD_STYLE`) to it, mirroring `TagChip` below.
+ */
+export function MethodChip({ method, large = false }: MethodChipProps) {
   const s = METHOD_STYLE[method] ?? METHOD_STYLE.GET;
   return (
-    <span
-      className={`inline-flex items-center justify-center font-mono font-semibold tracking-wide rounded ${large ? 'px-2 py-1 text-[12px]' : 'px-1.5 py-[1px] text-[10.5px]'}`}
-      style={{ background: s.bg, color: s.fg, minWidth: large ? 56 : 42 }}
-    >
-      {s.label}
-    </span>
+    <Badge
+      label={s.label}
+      color={s.bg}
+      foreground={s.fg}
+      active
+      dot={false}
+      mono
+      small={!large}
+      minWidth={large ? 56 : 42}
+    />
   );
 }
 
