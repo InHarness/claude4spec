@@ -3,6 +3,9 @@ import { Braces } from 'lucide-react';
 import { MethodChip } from '../../components/atoms.js';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
+import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
+import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useDto, useDeleteDto, useUpdateDto } from '../../hooks/useDtos.js';
 import { useTags } from '../../hooks/useTags.js';
@@ -136,7 +139,7 @@ export function DtoDetail({
 
   return (
     <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 740, padding: '48px 56px 140px' }}>
+      <FieldGrid maxWidth={740}>
         <div className="flex items-center gap-2 mb-1 text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           <span className="font-mono">{dto.slug}</span>
           <span>·</span>
@@ -178,7 +181,7 @@ export function DtoDetail({
           />
         </div>
 
-        <div className="mt-3">
+        <FieldRow label="Tags">
           <TagPicker
             allTags={allTags}
             selected={draft.tags}
@@ -186,28 +189,23 @@ export function DtoDetail({
             onCreate={handleCreateTag}
             variant="collapsed"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-8">
-          <SectionLabel>Description</SectionLabel>
+        <div className="mt-6">
+        <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="What this DTO represents, which endpoints use it, invariants…"
           />
+        </FieldRow>
         </div>
 
-        <div className="mt-10">
+        <div className="mt-6">
+        <FieldRow label="Fields" align="start">
           <div className="flex items-center gap-2 mb-2">
-            <SectionLabel>Fields</SectionLabel>
             <span className="flex-1" />
-            <button
-              onClick={addField}
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-              style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}
-            >
-              <Plus size={11} /> add field
-            </button>
+            <ActionButton label="add field" icon={<Plus size={11} />} variant="secondary" onClick={addField} />
           </div>
           {draft.fields.length === 0 && (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -282,9 +280,10 @@ export function DtoDetail({
               ))}
             </div>
           )}
+        </FieldRow>
         </div>
 
-        <div className="mt-10">
+        <div className="mt-6">
           <ExamplesPanel
             examples={draft.examples}
             fields={draft.fields}
@@ -293,8 +292,8 @@ export function DtoDetail({
         </div>
 
         {dto.endpoints.length > 0 && (
-          <div className="mt-10">
-            <SectionLabel>Used by endpoints</SectionLabel>
+          <div className="mt-6">
+          <FieldRow label="Used by endpoints" align="start">
             <ul
               className="rounded-md"
               style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
@@ -330,11 +329,12 @@ export function DtoDetail({
                 </li>
               ))}
             </ul>
+          </FieldRow>
           </div>
         )}
 
-        <div className="mt-10">
-          <SectionLabel>Find references</SectionLabel>
+        <div className="mt-6">
+        <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
               Not referenced by any page.
@@ -368,19 +368,9 @@ export function DtoDetail({
               ))}
             </ul>
           )}
+        </FieldRow>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="text-[10.5px] uppercase font-mono tracking-wider mb-2"
-      style={{ color: 'var(--c-subtle)' }}
-    >
-      {children}
+      </FieldGrid>
     </div>
   );
 }
