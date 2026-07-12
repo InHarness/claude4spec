@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Share2, Trash2 } from 'lucide-react';
 import type { EntityDetailProps } from '../registry.js';
 import { useDiagram, useUpdateDiagram, useDeleteDiagram } from '../../hooks/useDiagrams.js';
 import {
@@ -9,6 +8,10 @@ import {
   isSupportedFormat,
 } from '../../tiptap/extensions/diagramRender.js';
 import { toast } from '../../ui/events.js';
+import { EntityDetailToolbar } from '../../host-ui-kit/detail/EntityDetailToolbar.js';
+import { FormShell } from '../../host-ui-kit/overlay/FormShell.js';
+import { FormField } from '../../host-ui-kit/form/FormField.js';
+import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 
 type Preview =
   | { status: 'idle' }
@@ -67,7 +70,6 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
   }
 
   function remove() {
-    if (!window.confirm(`Delete diagram "${slug}"? Page references to it will break.`)) return;
     deleteDiagram.mutate(slug, {
       onSuccess: () => onDeleted(),
       onError: (err) => toast.error((err as Error).message),
@@ -76,24 +78,12 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
 
   return (
     <div className="flex flex-col h-full" style={{ background: 'var(--c-bg)' }}>
-      <div
-        className="flex items-center gap-2 px-3 py-2"
-        style={{ borderBottom: '1px solid var(--c-hair)' }}
-      >
-        <button onClick={onBack} title="Back" className="p-1 rounded" style={{ color: 'var(--c-muted)' }}>
-          <ArrowLeft size={16} />
-        </button>
-        <Share2 size={15} style={{ color: 'var(--c-accent)' }} />
-        <span className="font-mono text-[13px] flex-1 min-w-0 truncate" style={{ color: 'var(--c-ink)' }}>
-          {slug}
-        </span>
-        <span className="font-mono text-[10.5px] uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
-          {format}
-        </span>
-        <button onClick={remove} title="Delete diagram" className="p-1 rounded" style={{ color: 'var(--c-red, #c45a3b)' }}>
-          <Trash2 size={15} />
-        </button>
-      </div>
+      <EntityDetailToolbar
+        title={`${slug} · ${format}`}
+        onBack={onBack}
+        onDelete={remove}
+        busy={deleteDiagram.isPending}
+      />
 
       {isLoading ? (
         <div className="p-4 text-[12px]" style={{ color: 'var(--c-subtle)' }}>
@@ -126,44 +116,42 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
             )}
           </div>
 
-          <textarea
-            value={source}
-            onChange={(e) => setDraft(e.target.value)}
-            spellCheck={false}
-            className="w-full rounded font-mono text-[12px] p-2"
-            style={{
-              background: 'var(--c-panel)',
-              color: 'var(--c-ink)',
-              border: '1px solid var(--c-hair)',
-              minHeight: 160,
-              resize: 'vertical',
+          <FormShell
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
             }}
-          />
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={save}
-              disabled={!dirty || updateDiagram.isPending}
-              className="px-3 py-1.5 rounded text-[12px]"
-              style={{
-                background: dirty ? 'var(--c-accent)' : 'var(--c-panel)',
-                color: dirty ? '#fff' : 'var(--c-subtle)',
-                border: '1px solid var(--c-hair)',
-                cursor: dirty ? 'pointer' : 'default',
-              }}
-            >
-              {updateDiagram.isPending ? 'Saving…' : 'Save source'}
-            </button>
-            {dirty && (
-              <button
-                onClick={() => setDraft(null)}
-                className="px-3 py-1.5 rounded text-[12px]"
-                style={{ background: 'var(--c-panel)', color: 'var(--c-muted)', border: '1px solid var(--c-hair)' }}
-              >
-                Revert
-              </button>
-            )}
-          </div>
+            busy={updateDiagram.isPending}
+            actions={
+              <>
+                {dirty && (
+                  <ActionButton label="Revert" variant="secondary" onClick={() => setDraft(null)} />
+                )}
+                <ActionButton
+                  label={updateDiagram.isPending ? 'Saving…' : 'Save source'}
+                  type="submit"
+                  variant="primary"
+                  disabled={!dirty || updateDiagram.isPending}
+                />
+              </>
+            }
+          >
+            <FormField label="Source">
+              <textarea
+                value={source}
+                onChange={(e) => setDraft(e.target.value)}
+                spellCheck={false}
+                className="w-full rounded font-mono text-[12px] p-2"
+                style={{
+                  background: 'var(--c-panel)',
+                  color: 'var(--c-ink)',
+                  border: '1px solid var(--c-hair)',
+                  minHeight: 160,
+                  resize: 'vertical',
+                }}
+              />
+            </FormField>
+          </FormShell>
 
           {diagram.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

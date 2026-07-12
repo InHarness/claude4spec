@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, ChevronDown, ChevronRight, Palette, Plus, Trash } from 'lucide-react';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
+import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
+import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDeleteDesignSystem,
@@ -272,7 +275,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
 
   return (
     <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 960, padding: '48px 56px 140px' }}>
+      <FieldGrid>
         {/* header meta */}
         <div className="flex items-center gap-2 mb-1 text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           <span className="font-mono">{ds.slug}</span>
@@ -317,7 +320,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         </div>
 
         {/* tags */}
-        <div className="mt-3">
+        <FieldRow label="Tags">
           <TagPicker
             allTags={allTags}
             selected={draft.tags}
@@ -325,7 +328,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
             onCreate={handleCreateTag}
             variant="collapsed"
           />
-        </div>
+        </FieldRow>
 
         {/* warnings */}
         {warnings.length > 0 && (
@@ -348,18 +351,16 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         )}
 
         {/* description */}
-        <div className="mt-8">
-          <SectionLabel>Description</SectionLabel>
+        <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="What this design system covers, when to use it, conventions…"
           />
-        </div>
+        </FieldRow>
 
         {/* mode switcher */}
-        <div className="mt-10">
-          <SectionLabel>Modes</SectionLabel>
+        <FieldRow label="Modes" align="start">
           <ModeSwitcher
             modes={draft.modes}
             activeMode={activeMode}
@@ -374,20 +375,13 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
               onRemove={() => removeMode(draft.modes.indexOf(activeModeObj))}
             />
           )}
-        </div>
+        </FieldRow>
 
         {/* token groups */}
-        <div className="mt-10">
+        <FieldRow label="Token groups" align="start">
           <div className="flex items-center gap-2 mb-2">
-            <SectionLabel>Token groups</SectionLabel>
             <span className="flex-1" />
-            <button
-              onClick={addGroup}
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-              style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}
-            >
-              <Plus size={11} /> add group
-            </button>
+            <ActionButton label="add group" icon={<Plus size={11} />} variant="secondary" onClick={addGroup} />
           </div>
           {draft.groups.length === 0 && (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
@@ -410,18 +404,17 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
               onRemoveToken={(tIdx) => removeToken(gIdx, tIdx)}
             />
           ))}
-        </div>
+        </FieldRow>
 
         {/* preview */}
-        <div className="mt-10">
+        <FieldRow label="Preview" align="start">
           <div className="flex items-center gap-2 mb-2">
-            <SectionLabel>Preview</SectionLabel>
             <span className="text-[10.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
               {activeMode}
             </span>
           </div>
           <DesignSystemPreview groups={draft.groups} resolved={resolved} />
-        </div>
+        </FieldRow>
 
         <datalist id="design-system-token-types">
           {TOKEN_TYPES.map((t) => (
@@ -433,7 +426,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
             <option key={n} value={`{${n}}`} />
           ))}
         </datalist>
-      </div>
+      </FieldGrid>
     </div>
   );
 }
@@ -473,13 +466,7 @@ function ModeSwitcher({
           </button>
         ))}
       </div>
-      <button
-        onClick={onAddMode}
-        className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded"
-        style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}
-      >
-        <Plus size={11} /> Add mode
-      </button>
+      <ActionButton label="Add mode" icon={<Plus size={11} />} variant="secondary" onClick={onAddMode} />
     </div>
   );
 }
@@ -521,9 +508,7 @@ function ModeOverridesEditor({
           spellCheck={false}
         />
         <span className="flex-1" />
-        <button onClick={addOverride} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}>
-          <Plus size={11} /> add override
-        </button>
+        <ActionButton label="add override" icon={<Plus size={11} />} variant="secondary" onClick={addOverride} />
         <button onClick={onRemove} className="text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--c-red, #c45a3b)' }}>
           remove mode
         </button>
@@ -616,9 +601,7 @@ function TokenGroupEditor({
           <option value="semantic">semantic</option>
         </select>
         <span className="flex-1" />
-        <button onClick={onAddToken} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded" style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}>
-          <Plus size={11} /> add token
-        </button>
+        <ActionButton label="add token" icon={<Plus size={11} />} variant="secondary" onClick={onAddToken} />
         <button onClick={onRemove} className="text-[12px]" style={{ color: 'var(--c-red, #c45a3b)' }} title="Delete group">
           <Trash size={12} />
         </button>
@@ -950,14 +933,6 @@ function ScaleStrip({
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[10.5px] uppercase font-mono tracking-wider mb-2" style={{ color: 'var(--c-subtle)' }}>
-      {children}
     </div>
   );
 }

@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { AlertTriangle, Monitor, Plus, Trash } from 'lucide-react';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
+import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
+import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDeleteUiView,
@@ -208,7 +211,7 @@ export function UiViewDetail({
 
   return (
     <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 960, padding: '48px 56px 140px' }}>
+      <FieldGrid>
         <div
           className="flex items-center gap-2 mb-1 text-[11px]"
           style={{ color: 'var(--c-subtle)' }}
@@ -251,39 +254,27 @@ export function UiViewDetail({
           />
         </div>
 
-        <div className="flex items-center gap-2 mt-2">
-          <span
-            className="text-[10.5px] uppercase font-mono tracking-wider"
-            style={{ color: 'var(--c-subtle)' }}
-          >
-            URL
-          </span>
+        <FieldRow label="URL">
           <input
             value={draft.url}
             onChange={(e) => patch({ url: e.target.value })}
             placeholder="/users/:id (empty = modal/drawer)"
             spellCheck={false}
-            className="flex-1 font-mono text-[13.5px] bg-transparent outline-none px-2 py-1 rounded"
+            className="w-full font-mono text-[13.5px] bg-transparent outline-none px-2 py-1 rounded"
             style={{ color: 'var(--c-ink)', border: '1px solid var(--c-hair)' }}
           />
-        </div>
+        </FieldRow>
 
-        <div className="flex items-center gap-2 mt-2">
-          <span
-            className="text-[10.5px] uppercase font-mono tracking-wider"
-            style={{ color: 'var(--c-subtle)' }}
-          >
-            Design System
-          </span>
+        <FieldRow label="Design System">
           <DesignSystemSelect
             value={draft.designSystemSlug}
             options={designSystems.map((d) => ({ slug: d.slug, name: d.name }))}
             onChange={(next) => patch({ designSystemSlug: next })}
             onOpen={onOpenEntity ? (s) => onOpenEntity('design-system', s) : undefined}
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-3">
+        <FieldRow label="Tags">
           <TagPicker
             allTags={allTags}
             selected={draft.tags}
@@ -291,7 +282,7 @@ export function UiViewDetail({
             onCreate={handleCreateTag}
             variant="collapsed"
           />
-        </div>
+        </FieldRow>
 
         {warnings.length > 0 && (
           <div
@@ -316,26 +307,18 @@ export function UiViewDetail({
           </div>
         )}
 
-        <div className="mt-8">
-          <SectionLabel>Description</SectionLabel>
+        <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="What this screen does, when it appears, key invariants…"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-10">
+        <FieldRow label="Parameters" align="start">
           <div className="flex items-center gap-2 mb-2">
-            <SectionLabel>Parameters</SectionLabel>
             <span className="flex-1" />
-            <button
-              onClick={addParam}
-              className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded"
-              style={{ color: 'var(--c-muted)', border: '1px dashed var(--c-hair-strong)' }}
-            >
-              <Plus size={11} /> add parameter
-            </button>
+            <ActionButton label="add parameter" icon={<Plus size={11} />} variant="secondary" onClick={addParam} />
           </div>
           {missingFromParams.length > 0 && (
             <div
@@ -390,7 +373,7 @@ export function UiViewDetail({
               </div>
             </div>
           )}
-        </div>
+        </FieldRow>
 
         <datalist id="ui-view-param-types">
           {SUGGESTED_TYPES.map((t) => (
@@ -398,8 +381,7 @@ export function UiViewDetail({
           ))}
         </datalist>
 
-        <div className="mt-10">
-          <SectionLabel>Find references</SectionLabel>
+        <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
               Not referenced by any page.
@@ -433,10 +415,10 @@ export function UiViewDetail({
               ))}
             </ul>
           )}
-        </div>
+        </FieldRow>
         {/* allViews datalist suppress unused */}
         {allViews.length === 0 && null}
-      </div>
+      </FieldGrid>
     </div>
   );
 }
@@ -525,17 +507,6 @@ function ParamRow({
       >
         ×
       </button>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="text-[10.5px] uppercase font-mono tracking-wider mb-2"
-      style={{ color: 'var(--c-subtle)' }}
-    >
-      {children}
     </div>
   );
 }

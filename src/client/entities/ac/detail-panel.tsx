@@ -2,6 +2,9 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { Plus, Trash, CheckSquare, X } from 'lucide-react';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
+import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
+import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useAc, useDeleteAc, useUpdateAc } from '../../hooks/useAcs.js';
 import { useTags } from '../../hooks/useTags.js';
@@ -155,7 +158,7 @@ export function AcDetail({
 
   return (
     <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 740, padding: '48px 56px 140px' }}>
+      <FieldGrid maxWidth={740}>
         <div className="flex items-center gap-2 mb-1 text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           <span className="font-mono">{ac.slug}</span>
           <span>·</span>
@@ -202,44 +205,43 @@ export function AcDetail({
           />
         </div>
 
-        <div className="mt-3 flex items-center gap-3 flex-wrap text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-          <span className="text-[10.5px] uppercase font-mono tracking-wider" style={{ color: 'var(--c-subtle)' }}>
-            kind:
-          </span>
-          <label className="flex items-center gap-1">
-            <input
-              type="radio"
-              checked={draft.kind === 'requirement'}
-              onChange={() => patch({ kind: 'requirement' })}
-            />
-            requirement
-          </label>
-          <label className="flex items-center gap-1">
-            <input
-              type="radio"
-              checked={draft.kind === 'edge-case'}
-              onChange={() => patch({ kind: 'edge-case' })}
-            />
-            edge-case
-          </label>
+        <FieldRow label="Kind">
+          <div className="flex items-center gap-3 flex-wrap text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={draft.kind === 'requirement'}
+                onChange={() => patch({ kind: 'requirement' })}
+              />
+              requirement
+            </label>
+            <label className="flex items-center gap-1">
+              <input
+                type="radio"
+                checked={draft.kind === 'edge-case'}
+                onChange={() => patch({ kind: 'edge-case' })}
+              />
+              edge-case
+            </label>
+          </div>
+        </FieldRow>
 
-          <span style={{ marginLeft: 16 }}>
-            <button
-              onClick={() => patch({ status: deprecated ? 'active' : 'deprecated' })}
-              className="rounded-full px-2 py-0.5 text-[10.5px] uppercase font-mono tracking-wider"
-              style={{
-                background: deprecated ? 'var(--c-panel)' : 'transparent',
-                color: deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-subtle)',
-                border: `1px solid ${deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-hair-strong)'}`,
-              }}
-              title={deprecated ? 'Click to reactivate' : 'Click to mark deprecated'}
-            >
-              {deprecated ? 'deprecated' : 'active'}
-            </button>
-          </span>
-        </div>
+        <FieldRow label="Status">
+          <button
+            onClick={() => patch({ status: deprecated ? 'active' : 'deprecated' })}
+            className="rounded-full px-2 py-0.5 text-[10.5px] uppercase font-mono tracking-wider"
+            style={{
+              background: deprecated ? 'var(--c-panel)' : 'transparent',
+              color: deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-subtle)',
+              border: `1px solid ${deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-hair-strong)'}`,
+            }}
+            title={deprecated ? 'Click to reactivate' : 'Click to mark deprecated'}
+          >
+            {deprecated ? 'deprecated' : 'active'}
+          </button>
+        </FieldRow>
 
-        <div className="mt-3">
+        <FieldRow label="Tags">
           <TagPicker
             allTags={allTags}
             selected={draft.tags}
@@ -247,10 +249,9 @@ export function AcDetail({
             onCreate={handleCreateTag}
             variant="collapsed"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-8">
-          <SectionLabel>Verifies</SectionLabel>
+        <FieldRow label="Verifies" align="start">
           <VerifiesPanel
             verifies={draft.verifies}
             brokenByKey={brokenByKey}
@@ -258,19 +259,17 @@ export function AcDetail({
             onRemove={removeVerify}
             onOpenEntity={onOpenEntity}
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-10">
-          <SectionLabel>Description</SectionLabel>
+        <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="Optional context: why this AC matters, how it's tested, related modules…"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-10">
-          <SectionLabel>Find references</SectionLabel>
+        <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
               Not referenced by any page.
@@ -304,19 +303,8 @@ export function AcDetail({
               ))}
             </ul>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="text-[10.5px] uppercase font-mono tracking-wider mb-2"
-      style={{ color: 'var(--c-subtle)' }}
-    >
-      {children}
+        </FieldRow>
+      </FieldGrid>
     </div>
   );
 }
@@ -431,20 +419,8 @@ function VerifiesPanel({ verifies, brokenByKey, onAdd, onRemove, onOpenEntity }:
             className="flex-1 text-[12.5px] rounded px-1.5 py-1 bg-transparent outline-none font-mono"
             style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
           />
-          <button
-            onClick={commit}
-            className="text-[11.5px] rounded px-2 py-1"
-            style={{ background: 'var(--c-accent)', color: '#fff' }}
-          >
-            Add
-          </button>
-          <button
-            onClick={() => setAdding(false)}
-            className="text-[11.5px]"
-            style={{ color: 'var(--c-subtle)' }}
-          >
-            Cancel
-          </button>
+          <ActionButton label="Add" variant="primary" onClick={commit} />
+          <ActionButton label="Cancel" variant="ghost" onClick={() => setAdding(false)} />
         </div>
       ) : (
         <button

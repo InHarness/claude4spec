@@ -5,6 +5,8 @@ import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { EnumBadgePicker } from '../../host-ui-kit/pickers/EnumBadgePicker.js';
 import { GroupedRelationPicker } from '../../host-ui-kit/pickers/GroupedRelationPicker.js';
+import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
+import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useEndpoint,
@@ -134,7 +136,7 @@ export function EndpointDetail({
 
   return (
     <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 740, padding: '48px 56px 140px' }}>
+      <FieldGrid maxWidth={740}>
         <div className="flex items-center gap-2 mb-1 text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           <span className="font-mono">{endpoint.slug}</span>
           <span>·</span>
@@ -188,7 +190,7 @@ export function EndpointDetail({
           placeholder="Short summary…"
         />
 
-        <div className="mt-5">
+        <FieldRow label="Tags">
           <TagPicker
             allTags={allTags}
             selected={draft.tags}
@@ -196,19 +198,17 @@ export function EndpointDetail({
             onCreate={handleCreateTag}
             variant="collapsed"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-8">
-          <SectionLabel>Description</SectionLabel>
+        <FieldRow label="Description" align="start">
           <DocEditor
             value={draft.description}
             onChange={(md) => patch({ description: md })}
             placeholder="Describe what this endpoint does, invariants, gotchas…"
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-10">
-          <SectionLabel>Linked DTOs</SectionLabel>
+        <FieldRow label="Linked DTOs" align="start">
           <GroupedRelationPicker
             groups={RELATIONS.map((rel) => ({
               key: rel,
@@ -246,10 +246,9 @@ export function EndpointDetail({
               unlinkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode: link?.statusCode ?? null });
             }}
           />
-        </div>
+        </FieldRow>
 
-        <div className="mt-10">
-          <SectionLabel>Find references</SectionLabel>
+        <FieldRow label="Find references" align="start">
           {refs.length === 0 ? (
             <div className="text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
               Not referenced by any page.
@@ -283,19 +282,8 @@ export function EndpointDetail({
               ))}
             </ul>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div
-      className="text-[10.5px] uppercase font-mono tracking-wider mb-2"
-      style={{ color: 'var(--c-subtle)' }}
-    >
-      {children}
+        </FieldRow>
+      </FieldGrid>
     </div>
   );
 }
