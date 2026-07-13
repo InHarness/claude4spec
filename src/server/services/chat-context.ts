@@ -407,7 +407,7 @@ Plan Mode is ACTIVE. Investigate and propose — do not modify.
 The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure Skill(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
 
 Forbidden (mutating):
-  - Built-in: Edit, Write, MultiEdit, Bash (writing), NotebookEdit
+  - Built-in: Edit, Write, Bash (writing), NotebookEdit
   - MCP: any create_*, update_*, delete_*, link_*, unlink_*, tag_entity, untag_entity
 
 Allowed (read-only):
@@ -432,7 +432,7 @@ function buildEntityToolsLine(): string {
 function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin>Read, Write, Edit, MultiEdit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
+    `  <builtin>Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
     buildEntityToolsLine(),
   ];
   for (const m of pluginHost.listEntities()) {
