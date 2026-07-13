@@ -205,5 +205,24 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
         expect.objectContaining({ code: 'VALIDATION' }),
       );
     });
+
+    it('updateRelease resubmitting an unchanged legacy "current" name does not throw (0.1.122 code-review fix)', () => {
+      // createRelease now blocks new 'current' releases, but legacy/pre-
+      // migration data (or a release-identity file synced before the indexer
+      // guard existed) could already hold that name — insert directly to
+      // simulate it, bypassing createRelease's validation.
+      db.prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('current', 'current', 'legacy', 'user');
+
+      const updated = releases.updateRelease({ idOrName: 'current', name: 'current', description: 'new desc' });
+      expect(updated.description).toBe('new desc');
+    });
+
+    it('updateRelease still rejects an ACTUAL rename to "current"', () => {
+      releases.createRelease({ name: 'v1', description: 'first' }, 'user');
+      expect(() => releases.updateRelease({ idOrName: 'v1', name: 'current', description: 'x' })).toThrow(
+        expect.objectContaining({ code: 'RELEASE_NAME_RESERVED' }),
+      );
+    });
   });
 });

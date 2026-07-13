@@ -3,6 +3,7 @@ import { GitCompare } from 'lucide-react';
 import { useReleases, useReleaseDiff, useReleaseSnapshot } from '../hooks/useReleases.js';
 import { EmptyState } from '../host-ui-kit/list/EmptyState.js';
 import { DeltaSection } from './release/DeltaSection.js';
+import { ReleaseSelect } from './release/ReleaseSelect.js';
 
 /**
  * `/releases` Compare tab (0.1.122) — diff a chosen release against the live
@@ -40,23 +41,12 @@ export function ReleasesCompareTab() {
         <div className="flex items-center gap-2 mb-4 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
           <GitCompare size={14} style={{ color: 'var(--c-accent)' }} />
           <span>Compare:</span>
-          <select
+          <ReleaseSelect
+            releases={releases}
             value={activeName ?? ''}
-            onChange={(e) => setSelectedName(e.target.value || null)}
-            className="rounded-md px-2 py-1 text-[12.5px] font-mono"
-            style={{
-              background: 'var(--c-card)',
-              border: '1px solid var(--c-hair)',
-              color: 'var(--c-ink)',
-            }}
-          >
-            {releases.map((r) => (
-              <option key={r.id} value={r.name}>
-                {r.name}
-                {r.id === maxReleaseId ? ' (latest)' : ''}
-              </option>
-            ))}
-          </select>
+            onChange={(v) => setSelectedName(v || null)}
+            latestId={maxReleaseId ?? undefined}
+          />
           {activeName && (
             <span className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
               {activeName} → current

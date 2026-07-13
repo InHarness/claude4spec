@@ -54,6 +54,19 @@ import {
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
 
+/**
+ * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
+ * (`GET /api/releases/:from/diff/current`). Single source of truth — checked
+ * by `createRelease`/`updateRelease` AND by `ReleaseIndexerService` (which
+ * upserts `spec_release` rows straight from on-disk release-identity files,
+ * a write path the two API-layer methods never see).
+ */
+const RESERVED_RELEASE_NAMES = new Set(['current']);
+
+export function isReservedReleaseName(name: string): boolean {
+  return RESERVED_RELEASE_NAMES.has(name);
+}
+
 /** Recursively list files under `dir` as posix-style relative paths (read direction). */
 function listBundleFiles(dir: string): string[] {
   if (!nodeFs.existsSync(dir)) return [];
@@ -252,7 +265,7 @@ export class ReleaseService {
     const name = (input.name ?? '').trim();
     const description = (input.description ?? '').trim();
     if (!name) throw new DomainError('VALIDATION', 'release name is required');
-    if (name === 'current') throw new DomainError('RELEASE_NAME_RESERVED', "release name 'current' is reserved");
+    if (isReservedReleaseName(name)) throw new DomainError('RELEASE_NAME_RESERVED', `release name '${name}' is reserved`);
     if (!description) throw new DomainError('RELEASE_DESCRIPTION_REQUIRED', 'release description is required');
 
     const slug = slugify(name);
@@ -340,8 +353,14 @@ export class ReleaseService {
 
       if (nextName !== undefined) {
         if (!nextName) throw new DomainError('VALIDATION', 'release name is required');
-        if (nextName === 'current') throw new DomainError('RELEASE_NAME_RESERVED', "release name 'current' is reserved");
+        // Only reject 'current' when the name is actually CHANGING to it — a
+        // no-op resubmit of an already-reserved legacy name (pre-migration
+        // data, or synced from disk) must not block unrelated edits like a
+        // description update (0.1.122 code-review fix).
         if (nextName !== row.name) {
+          if (isReservedReleaseName(nextName)) {
+            throw new DomainError('RELEASE_NAME_RESERVED', `release name '${nextName}' is reserved`);
+          }
           const conflict = this.db
             .prepare(`SELECT 1 FROM spec_release WHERE name = ? AND id != ?`)
             .get(nextName, row.id);
@@ -421,41 +440,7 @@ export class ReleaseService {
   getReleaseSnapshot(idOrName: number | string): SpecSnapshot {
     const row = this.findReleaseRow(idOrName);
     if (!row) throw new DomainError('NOT_FOUND', `release '${idOrName}' not found`);
-    const release = this.toRelease(row);
-
-    const entities: SpecSnapshotEntityRow[] = [];
-    const serializerVersions: Record<string, string> = {};
-    for (const type of ENTITY_TYPES) {
-      const module = this.host.getEntity(type);
-      if (!module) continue;
-      serializerVersions[type] = module.serializer.version;
-      const rows = this.latestEntityRowsAtOrBefore(type, row.id);
-      for (const r of rows) {
-        if (!r.op) continue;
-        const slug = r.entity_slug;
-        if (!slug) continue;
-        entities.push({
-          type,
-          slug,
-          op: r.op as 'create' | 'update' | 'delete',
-          data: safeJsonParse(r.data),
-        });
-      }
-    }
-    serializerVersions.page = this.pageSerializer.version;
-
-    const pages: SpecSnapshotPageRow[] = this.latestPageRowsAtOrBefore(row.id).map((p) => ({
-      path: p.path,
-      op: p.op as 'create' | 'update' | 'delete',
-      data: safeJsonParse(p.data),
-    }));
-
-    return {
-      release,
-      serializer_versions: serializerVersions,
-      entities,
-      pages,
-    };
+    return this.buildSnapshot(this.toRelease(row), row.id);
   }
 
   /**
@@ -466,13 +451,26 @@ export class ReleaseService {
    * as its "to" side.
    */
   getCurrentSnapshot(): SpecSnapshot {
+    return this.buildSnapshot(
+      { id: 0, name: '__current__', description: '', createdBy: 'user', createdAt: '' },
+      null,
+    );
+  }
+
+  /**
+   * Shared snapshot-building body for `getReleaseSnapshot`/`getCurrentSnapshot`
+   * (0.1.122 code-review fix — was duplicated between the two): per (type, slug)
+   * the latest entity_version row, and per (rootId, path) the latest page_version
+   * row, either bounded at-or-before `releaseId` or (releaseId === null) unbounded.
+   */
+  private buildSnapshot(release: Release, releaseId: number | null): SpecSnapshot {
     const entities: SpecSnapshotEntityRow[] = [];
     const serializerVersions: Record<string, string> = {};
     for (const type of ENTITY_TYPES) {
       const module = this.host.getEntity(type);
       if (!module) continue;
       serializerVersions[type] = module.serializer.version;
-      const rows = this.latestEntityRowsCurrent(type);
+      const rows = this.latestEntityRowsAtOrBefore(type, releaseId);
       for (const r of rows) {
         if (!r.op) continue;
         const slug = r.entity_slug;
@@ -487,14 +485,14 @@ export class ReleaseService {
     }
     serializerVersions.page = this.pageSerializer.version;
 
-    const pages: SpecSnapshotPageRow[] = this.latestPageRowsCurrent().map((p) => ({
+    const pages: SpecSnapshotPageRow[] = this.latestPageRowsAtOrBefore(releaseId).map((p) => ({
       path: p.path,
       op: p.op as 'create' | 'update' | 'delete',
       data: safeJsonParse(p.data),
     }));
 
     return {
-      release: { id: 0, name: '__current__', description: '', createdBy: 'user', createdAt: '' },
+      release,
       serializer_versions: serializerVersions,
       entities,
       pages,
@@ -658,30 +656,11 @@ export class ReleaseService {
     }
 
     const toSnap = this.getReleaseSnapshot(toRow.id);
-
-    let fromSnap: SpecSnapshot;
-    let fromMeta: { id: number; name: string } | null;
     // 0.1.96: pages are correlated by (rootId, path), narrowed by opts.roots
     // (default: all releasable roots) via latestPageRowsAtOrBefore, which carries
     // rootId. Entities are unaffected by the roots narrowing.
     const toPageRows = this.latestPageRowsAtOrBefore(toRow.id, opts?.roots);
-    let fromPageRows: PageVersionRow[];
-    if (fromIdOrName === null) {
-      fromSnap = {
-        release: { id: 0, name: '__initial__', description: '', createdBy: 'user', createdAt: '' },
-        serializer_versions: toSnap.serializer_versions,
-        entities: [],
-        pages: [],
-      };
-      fromMeta = null;
-      fromPageRows = [];
-    } else {
-      const fromRow = this.findReleaseRow(fromIdOrName);
-      if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
-      fromSnap = this.getReleaseSnapshot(fromRow.id);
-      fromMeta = { id: fromRow.id, name: fromRow.name };
-      fromPageRows = this.latestPageRowsAtOrBefore(fromRow.id, opts?.roots);
-    }
+    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
 
     return this.computeDelta(
       fromSnap,
@@ -704,30 +683,45 @@ export class ReleaseService {
     opts?: { roots?: string[] },
   ): Promise<RawDelta> {
     const toSnap = this.getCurrentSnapshot();
-    const toPageRows = this.latestPageRowsCurrent(opts?.roots);
+    const toPageRows = this.latestPageRowsAtOrBefore(null, opts?.roots);
     const toMeta = { id: 0, name: 'current' };
-
-    let fromSnap: SpecSnapshot;
-    let fromMeta: { id: number; name: string } | null;
-    let fromPageRows: PageVersionRow[];
-    if (fromIdOrName === null) {
-      fromSnap = {
-        release: { id: 0, name: '__initial__', description: '', createdBy: 'user', createdAt: '' },
-        serializer_versions: toSnap.serializer_versions,
-        entities: [],
-        pages: [],
-      };
-      fromMeta = null;
-      fromPageRows = [];
-    } else {
-      const fromRow = this.findReleaseRow(fromIdOrName);
-      if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
-      fromSnap = this.getReleaseSnapshot(fromRow.id);
-      fromMeta = { id: fromRow.id, name: fromRow.name };
-      fromPageRows = this.latestPageRowsAtOrBefore(fromRow.id, opts?.roots);
-    }
+    const { fromSnap, fromMeta, fromPageRows } = this.resolveFromSide(fromIdOrName, toSnap, opts);
 
     return this.computeDelta(fromSnap, fromPageRows, toSnap, toPageRows, fromMeta, toMeta);
+  }
+
+  /**
+   * Shared "from" side resolution for `getReleaseDiff`/`getUnreleasedDiff`
+   * (0.1.122 code-review fix — was duplicated between the two): `null` ⇒
+   * synthetic empty snapshot (the initial-brief case, `fromMeta = null`),
+   * else a resolved release's snapshot/pages, throwing NOT_FOUND if it
+   * doesn't exist. `toSnap` only supplies `serializer_versions` for the
+   * synthetic-empty case.
+   */
+  private resolveFromSide(
+    fromIdOrName: number | string | null,
+    toSnap: SpecSnapshot,
+    opts?: { roots?: string[] },
+  ): { fromSnap: SpecSnapshot; fromMeta: { id: number; name: string } | null; fromPageRows: PageVersionRow[] } {
+    if (fromIdOrName === null) {
+      return {
+        fromSnap: {
+          release: { id: 0, name: '__initial__', description: '', createdBy: 'user', createdAt: '' },
+          serializer_versions: toSnap.serializer_versions,
+          entities: [],
+          pages: [],
+        },
+        fromMeta: null,
+        fromPageRows: [],
+      };
+    }
+    const fromRow = this.findReleaseRow(fromIdOrName);
+    if (!fromRow) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+    return {
+      fromSnap: this.getReleaseSnapshot(fromRow.id),
+      fromMeta: { id: fromRow.id, name: fromRow.name },
+      fromPageRows: this.latestPageRowsAtOrBefore(fromRow.id, opts?.roots),
+    };
   }
 
   /**
@@ -1231,32 +1225,38 @@ export class ReleaseService {
    * For each entity_slug seen in the release range, return the latest version
    * row at-or-before `releaseId`. Rows where the underlying entity table has
    * since been DELETEd appear as op='delete' tombstones (data carries the
-   * last snapshot before deletion).
+   * last snapshot before deletion). `releaseId === null` (0.1.122) drops the
+   * upper bound entirely — "latest version per slug, right now", including
+   * `release_id IS NULL` (unreleased) rows when they're the newest. Backs
+   * both `getReleaseSnapshot` (bounded) and `getCurrentSnapshot` (unbounded).
    */
-  private latestEntityRowsAtOrBefore(type: RawEntityType, releaseId: number): EntityVersionRow[] {
+  private latestEntityRowsAtOrBefore(type: RawEntityType, releaseId: number | null): EntityVersionRow[] {
     return this.db
       .prepare(
         `SELECT ev1.* FROM entity_version ev1
           WHERE ev1.entity_type = ?
-            AND ev1.release_id IS NOT NULL AND ev1.release_id <= ?
+            AND (? IS NULL OR (ev1.release_id IS NOT NULL AND ev1.release_id <= ?))
             AND ev1.version = (
               SELECT MAX(ev2.version) FROM entity_version ev2
                WHERE ev2.entity_type = ev1.entity_type
                  AND ev2.entity_slug = ev1.entity_slug
-                 AND ev2.release_id IS NOT NULL AND ev2.release_id <= ?
+                 AND (? IS NULL OR (ev2.release_id IS NOT NULL AND ev2.release_id <= ?))
             )
           ORDER BY ev1.entity_slug`,
       )
-      .all(type, releaseId, releaseId) as EntityVersionRow[];
+      .all(type, releaseId, releaseId, releaseId, releaseId) as EntityVersionRow[];
   }
 
   /**
    * 0.1.96: latest page_version rows per `(rootId, path)` at-or-before a release,
    * restricted to releasable roots (optionally narrowed further by `roots`). The
    * correlated subquery matches on both rootId and path so the same relative path
-   * in different roots has an independent timeline.
+   * in different roots has an independent timeline. `releaseId === null` (0.1.122)
+   * drops the upper bound — "latest per (rootId, path), right now", including
+   * `release_id IS NULL` rows. Backs both `getReleaseSnapshot` (bounded) and
+   * `getCurrentSnapshot` (unbounded).
    */
-  private latestPageRowsAtOrBefore(releaseId: number, roots?: string[]): PageVersionRow[] {
+  private latestPageRowsAtOrBefore(releaseId: number | null, roots?: string[]): PageVersionRow[] {
     const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
     if (rootIds.length === 0) return [];
     const placeholders = rootIds.map(() => '?').join(', ');
@@ -1264,60 +1264,16 @@ export class ReleaseService {
       .prepare(
         `SELECT pv1.* FROM page_version pv1
           WHERE pv1.rootId IN (${placeholders})
-            AND pv1.release_id IS NOT NULL AND pv1.release_id <= ?
+            AND (? IS NULL OR (pv1.release_id IS NOT NULL AND pv1.release_id <= ?))
             AND pv1.version = (
               SELECT MAX(pv2.version) FROM page_version pv2
                WHERE pv2.rootId = pv1.rootId
                  AND pv2.path = pv1.path
-                 AND pv2.release_id IS NOT NULL AND pv2.release_id <= ?
+                 AND (? IS NULL OR (pv2.release_id IS NOT NULL AND pv2.release_id <= ?))
             )
           ORDER BY pv1.rootId, pv1.path`,
       )
-      .all(...rootIds, releaseId, releaseId) as PageVersionRow[];
-  }
-
-  /**
-   * 0.1.122: latest entity_version row per `entity_slug`, right now — no
-   * upper bound on `release_id` (unlike `latestEntityRowsAtOrBefore`), so
-   * this also picks up `release_id IS NULL` (unreleased) rows when they are
-   * the newest version for their slug. Backs `getCurrentSnapshot()`.
-   */
-  private latestEntityRowsCurrent(type: RawEntityType): EntityVersionRow[] {
-    return this.db
-      .prepare(
-        `SELECT ev1.* FROM entity_version ev1
-          WHERE ev1.entity_type = ?
-            AND ev1.version = (
-              SELECT MAX(ev2.version) FROM entity_version ev2
-               WHERE ev2.entity_type = ev1.entity_type
-                 AND ev2.entity_slug = ev1.entity_slug
-            )
-          ORDER BY ev1.entity_slug`,
-      )
-      .all(type) as EntityVersionRow[];
-  }
-
-  /**
-   * 0.1.122: latest page_version row per `(rootId, path)`, right now — no
-   * upper bound on `release_id`, including `release_id IS NULL` rows.
-   * Backs `getCurrentSnapshot()`.
-   */
-  private latestPageRowsCurrent(roots?: string[]): PageVersionRow[] {
-    const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
-    if (rootIds.length === 0) return [];
-    const placeholders = rootIds.map(() => '?').join(', ');
-    return this.db
-      .prepare(
-        `SELECT pv1.* FROM page_version pv1
-          WHERE pv1.rootId IN (${placeholders})
-            AND pv1.version = (
-              SELECT MAX(pv2.version) FROM page_version pv2
-               WHERE pv2.rootId = pv1.rootId
-                 AND pv2.path = pv1.path
-            )
-          ORDER BY pv1.rootId, pv1.path`,
-      )
-      .all(...rootIds) as PageVersionRow[];
+      .all(...rootIds, releaseId, releaseId, releaseId, releaseId) as PageVersionRow[];
   }
 
 }

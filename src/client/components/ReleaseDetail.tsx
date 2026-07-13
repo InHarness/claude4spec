@@ -12,6 +12,7 @@ import {
 import { useReleasePushes } from '../hooks/useReleasePushes.js';
 import { listReleaseActions } from '../lib/release-actions/registry.js';
 import { DeltaSection } from './release/DeltaSection.js';
+import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
@@ -326,26 +327,16 @@ export function ReleaseDetail({ idOrName }: Props) {
           {/* Compare-to selector */}
           <div className="flex items-center gap-2 mb-4 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
             <span>Compare to:</span>
-            <select
+            <ReleaseSelect
+              releases={allReleases}
               value={activeCompare ?? ''}
-              onChange={(e) => setCompareTo(e.target.value || null)}
-              className="rounded-md px-2 py-1 text-[12.5px] font-mono"
-              style={{
-                background: 'var(--c-card)',
-                border: '1px solid var(--c-hair)',
-                color: 'var(--c-ink)',
-              }}
-            >
-              <option value="">— none —</option>
-              <option value="__INITIAL__">— initial state —</option>
-              {allReleases
-                .filter((r) => r.name !== release.name)
-                .map((r) => (
-                  <option key={r.id} value={r.name}>
-                    {r.name}
-                  </option>
-                ))}
-            </select>
+              onChange={(v) => setCompareTo(v || null)}
+              leadingOptions={[
+                { value: '', label: '— none —' },
+                { value: '__INITIAL__', label: '— initial state —' },
+              ]}
+              excludeName={release.name}
+            />
             {activeCompare && (
               <span className="text-[11.5px]" style={{ color: 'var(--c-subtle)' }}>
                 {activeCompare === '__INITIAL__' ? 'initial state' : activeCompare} → {release.name}
