@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS } from '../shared/types.js';
+import { hasDotSegment } from '../shared/page-files.js';
 
 export interface Config {
   $schemaVersion: number;
@@ -251,11 +252,6 @@ function isInsideDir(parent: string, child: string): boolean {
   if (parent === child) return true;
   if (parent === '') return true; // cwd root contains everything
   return child.startsWith(parent + path.sep);
-}
-
-/** True when any segment of a relative path starts with '.' (dot-dir the pages walker skips). */
-function hasDotSegment(rel: string): boolean {
-  return rel.split(path.sep).some((s) => s.startsWith('.'));
 }
 
 /**

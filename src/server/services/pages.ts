@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type { PageContent, PageNode, PageWriteInput, PageSearchHit } from '../../shared/types.js';
-import { isMarkdownPath } from '../../shared/page-files.js';
+import { hasDotSegment, isMarkdownPath } from '../../shared/page-files.js';
 
 export class PagesService {
   readonly root: string;
@@ -122,7 +122,7 @@ export class PagesService {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     const out: string[] = [];
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      if (hasDotSegment(entry.name)) continue;
       const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         out.push(...(await this.collectMd(path.join(dir, entry.name), rel)));
@@ -140,7 +140,7 @@ export class PagesService {
     // mechanism and .html files are excluded from indexing.
     const items: { node: PageNode; order: number }[] = [];
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      if (hasDotSegment(entry.name)) continue;
       const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         const children = await this.walk(path.join(dir, entry.name), rel);
