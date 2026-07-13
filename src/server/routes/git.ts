@@ -42,10 +42,13 @@ export function gitRouter(gitService: GitService, opts: { onSwitched?: () => voi
   // reloads the project route and refetches `/status` fresh.
   router.post('/checkout', async (req, res, next) => {
     try {
-      const branch = req.body?.branch;
-      if (typeof branch !== 'string' || branch.trim() === '') {
+      const rawBranch = req.body?.branch;
+      if (typeof rawBranch !== 'string' || rawBranch.trim() === '') {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'branch must be a non-empty string' } });
       }
+      // Trim before comparing — gitService.checkout() matches against branch
+      // names from `git branch`, which are already whitespace-free.
+      const branch = rawBranch.trim();
       const result = await gitService.checkout(branch);
       if (result.status === 'switched') opts.onSwitched?.();
       res.json(result);

@@ -101,6 +101,13 @@ export function useFileWatcher() {
                 batcher.queue(['briefs', 'detail', data.path]);
               }
             }
+          } else if (data.kind === 'project:disposed') {
+            // M31: this project's ProjectContext was invalidated (config
+            // change, workspace detach, or 0.1.123 a branch checkout in
+            // ANOTHER tab) and the room is about to close. Every cached query
+            // now points at a stale/about-to-be-torn-down context — reload
+            // rather than let this tab keep reading/writing stale state.
+            window.location.reload();
           }
         } catch {
           /* ignore */

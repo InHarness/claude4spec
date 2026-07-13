@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { GitBranch } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { GitBranch, Settings } from 'lucide-react';
 import { useConfig } from '../hooks/useConfig.js';
 import { useGitStatus } from '../hooks/useGitStatus.js';
 import { useGitBranches } from '../hooks/useGitBranches.js';
@@ -25,11 +26,11 @@ export function GitStatusBadge() {
   // off) case never pays for the server-side detect() subprocess spawns.
   const { data: status } = useGitStatus({ enabled: config?.git?.enabled === true });
   const [open, setOpen] = useState(false);
-  const [hint, setHint] = useState<string | null>(null);
   const anchorRef = useRef<HTMLButtonElement>(null);
   // Only fetch the branch list while the dropdown is actually open.
   const { data: branchesData } = useGitBranches({ enabled: open && config?.git?.enabled === true });
   const checkout = useGitCheckout();
+  const navigate = useNavigate();
 
   if (!config?.git?.enabled || !status?.detected) return null;
 
@@ -38,7 +39,6 @@ export function GitStatusBadge() {
   const hasAheadBehind = ahead !== null || behind !== null;
 
   function onPick(branch: string) {
-    setHint(null);
     checkout.mutate(branch, {
       onSuccess: (result) => {
         switch (result.status) {
@@ -49,7 +49,11 @@ export function GitStatusBadge() {
             return;
           case 'dirty-blocked':
           case 'busy':
-            setHint(result.message);
+            // toast rather than an inline hint: the dropdown may already be
+            // closed by the time this resolves (click-outside/Escape while
+            // the request was in flight), and a toast survives that. Leave
+            // the dropdown open so the user can immediately try another pick.
+            toast.warning(result.message ?? 'Branch switch was blocked.');
             return;
           case 'not-found':
             toast.error(result.message ?? `Branch "${branch}" was not found.`);
@@ -103,13 +107,23 @@ export function GitStatusBadge() {
       </button>
       <Popover
         open={open}
-        onClose={() => {
-          setOpen(false);
-          setHint(null);
-        }}
+        onClose={() => setOpen(false)}
         anchorRef={anchorRef}
         placement="bottom"
-        footer={hint ? <span className="text-[11px]" style={{ color: 'var(--c-muted)' }}>{hint}</span> : undefined}
+        footer={
+          <button
+            type="button"
+            onClick={() => {
+              setOpen(false);
+              navigate({ to: '/settings', hash: 'git' });
+            }}
+            className="w-full flex items-center gap-1.5 text-[11px]"
+            style={{ color: 'var(--c-muted)' }}
+          >
+            <Settings size={11} />
+            Git settings
+          </button>
+        }
       >
         <div className="flex flex-col" style={{ minWidth: 180, maxWidth: 260 }}>
           {(branchesData?.branches ?? []).map((branch) => {
@@ -118,14 +132,17 @@ export function GitStatusBadge() {
               <button
                 key={branch}
                 type="button"
-                disabled={checkout.isPending}
-                onClick={() => onPick(branch)}
+                disabled={checkout.isPending || isCurrent}
+                onClick={() => {
+                  if (isCurrent) return;
+                  onPick(branch);
+                }}
                 className="px-2 py-1 text-left rounded text-[11.5px] font-mono truncate"
                 style={{
                   color: isCurrent ? 'var(--c-accent)' : 'var(--c-ink)',
                   fontWeight: isCurrent ? 600 : 400,
                   opacity: checkout.isPending ? 0.5 : 1,
-                  cursor: checkout.isPending ? 'default' : 'pointer',
+                  cursor: checkout.isPending || isCurrent ? 'default' : 'pointer',
                 }}
               >
                 {branch}

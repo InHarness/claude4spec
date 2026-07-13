@@ -70,13 +70,14 @@ export class GitService {
   }
 
   /**
-   * Probe the releasable roots for a git worktree. Detected when ANY releasable
-   * root is inside a worktree; the first such root wins. Never throws — git
-   * missing (ENOENT), no repo, or a root outside any worktree (exit 128) all map
-   * to `detected: false`.
+   * Probe the releasable roots for a git worktree root path. Detected when ANY
+   * releasable root is inside a worktree; the first such root wins. Never
+   * throws — git missing (ENOENT), no repo, or a root outside any worktree
+   * (exit 128) all resolve to `null`. Shared by `detect()` and every
+   * lighter-weight caller (`listBranches()`, `checkout()`) that only needs the
+   * root, not the full `remote get-url`/`status --porcelain` probe.
    */
-  async detect(): Promise<GitStatusResponse> {
-    let rootPath: string | null = null;
+  private async probeRoot(): Promise<string | null> {
     for (const dir of this.releasableRootDirs) {
       let real: string;
       try {
@@ -87,14 +88,32 @@ export class GitService {
       try {
         const { stdout } = await this.git(['rev-parse', '--show-toplevel'], real);
         const top = stdout.trim();
-        if (top) {
-          rootPath = top;
-          break;
-        }
+        if (top) return top;
       } catch {
         // not inside a worktree (or git missing) — try the next root
       }
     }
+    return null;
+  }
+
+  /** Current branch at an already-probed `rootPath`; `null` on detached HEAD. */
+  private async currentBranch(rootPath: string): Promise<string | null> {
+    return this.git(['rev-parse', '--abbrev-ref', 'HEAD'], rootPath)
+      .then((r) => {
+        const b = r.stdout.trim();
+        // Detached HEAD reports the literal "HEAD" — surface as no branch.
+        return b && b !== 'HEAD' ? b : null;
+      })
+      .catch(() => null);
+  }
+
+  /**
+   * Probe the releasable roots for a git worktree. Never throws — git
+   * missing, no repo, or a root outside any worktree all map to
+   * `detected: false`.
+   */
+  async detect(): Promise<GitStatusResponse> {
+    const rootPath = await this.probeRoot();
     if (!rootPath) return NOT_DETECTED;
 
     // Inside a worktree — the remaining probes are individually best-effort.
@@ -102,13 +121,7 @@ export class GitService {
       .then((r) => r.stdout.trim() || null)
       .catch(() => null);
 
-    const branch = await this.git(['rev-parse', '--abbrev-ref', 'HEAD'], rootPath)
-      .then((r) => {
-        const b = r.stdout.trim();
-        // Detached HEAD reports the literal "HEAD" — surface as no branch.
-        return b && b !== 'HEAD' ? b : null;
-      })
-      .catch(() => null);
+    const branch = await this.currentBranch(rootPath);
 
     const isDirty = await this.git(['status', '--porcelain'], rootPath)
       .then((r) => r.stdout.trim().length > 0)
@@ -427,10 +440,12 @@ export class GitService {
 
   /**
    * 0.1.123 read-only: local branches for the interactive git badge dropdown +
-   * the release-plan commit-target picker. `current` is `detect()`'s `branch`
-   * (already `null` on detached HEAD). `branches` is non-empty even in detached
-   * HEAD, so the UI can offer a way out. Never throws — degrades to
-   * `{ current: null, branches: [] }` when git is disabled or no repo is detected.
+   * the release-plan commit-target picker. `current` is `null` on detached
+   * HEAD. `branches` is non-empty even in detached HEAD, so the UI can offer a
+   * way out. Never throws — degrades to `{ current: null, branches: [] }` when
+   * git is disabled or no repo is detected. Uses `probeRoot()`/`currentBranch()`
+   * rather than the full `detect()` — this doesn't need the remote URL or a
+   * working-tree status probe.
    */
   async listBranches(): Promise<GitBranchesResponse> {
     let config: ReturnType<typeof readConfig>;
@@ -440,9 +455,10 @@ export class GitService {
       return { current: null, branches: [] };
     }
     if (!config.git?.enabled) return { current: null, branches: [] };
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return { current: null, branches: [] };
-    return { current: status.branch, branches: await this.listBranchesAt(status.rootPath) };
+    const rootPath = await this.probeRoot();
+    if (!rootPath) return { current: null, branches: [] };
+    const [current, branches] = await Promise.all([this.currentBranch(rootPath), this.listBranchesAt(rootPath)]);
+    return { current, branches };
   }
 
   /**
@@ -467,9 +483,10 @@ export class GitService {
     }
     if (!config.git?.enabled) return { status: 'skipped', branch: null, message: null };
 
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return { status: 'skipped', branch: null, message: null };
-    const root = status.rootPath;
+    // Doesn't need detect()'s remote-URL/status probe — just the root, plus
+    // its own dirty check below (narrower than detect()'s isDirty).
+    const root = await this.probeRoot();
+    if (!root) return { status: 'skipped', branch: null, message: null };
 
     if (this.hasInFlightTurn()) {
       return { status: 'busy', branch: null, message: 'A background task is running — try again in a moment.' };
