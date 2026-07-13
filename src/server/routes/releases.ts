@@ -101,6 +101,15 @@ export function releasesRouter(
       const rawRoots = req.query.roots;
       const roots = (Array.isArray(rawRoots) ? rawRoots : rawRoots === undefined ? [] : [rawRoots])
         .filter((r): r is string => typeof r === 'string');
+      // 0.1.122: reserved literal `:to === 'current'` resolved BEFORE the
+      // nameOrId lookup — diff `:from` against the live/unreleased spec state.
+      if (req.params.to === 'current') {
+        const delta = await releases.getUnreleasedDiff(fromParam, {
+          roots: roots.length > 0 ? roots : undefined,
+        });
+        res.json(delta);
+        return;
+      }
       const delta = await releases.getReleaseDiff(fromParam, decodeIdOrName(req.params.to), {
         roots: roots.length > 0 ? roots : undefined,
       });

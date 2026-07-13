@@ -26,7 +26,7 @@ import { TagsList } from './components/TagsList.js';
 import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
 import { PlanPage } from './components/PlanPage.js';
-import { ReleasesList } from './components/ReleasesList.js';
+import { ReleasesPage } from './components/ReleasesPage.js';
 import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
 import { BriefsList } from './components/BriefsList.js';
@@ -98,6 +98,13 @@ export interface RouterContext {
 export const listSearchSchema = z.object({
   q: z.string().optional(),
   tag: z.string().optional(),
+});
+
+// 0.1.122: `/releases` gained a Compare tab (release vs. current unreleased
+// state) alongside the existing releases list — deep-linkable via `?tab=compare`
+// (the unreleased-changes counter links here, presetting `latest → current`).
+const releasesSearchSchema = z.object({
+  tab: z.enum(['list', 'compare']).optional(),
 });
 
 /**
@@ -274,6 +281,7 @@ const settingsRoute = createRoute({
 const releasesIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
+  validateSearch: releasesSearchSchema,
   component: ReleasesIndexRoute,
 });
 
@@ -827,9 +835,17 @@ function LinksIndexRoute() {
 }
 
 function ReleasesIndexRoute() {
+  const search = useSearch({ from: '/releases' });
+  const navigate = useNavigate();
+  const tab = search.tab ?? 'list';
   return (
     <RoutePane>
-      <ReleasesList />
+      <ReleasesPage
+        tab={tab}
+        onTabChange={(id) =>
+          navigate({ to: '/releases', search: (prev) => ({ ...prev, tab: id === 'list' ? undefined : 'compare' }) })
+        }
+      />
     </RoutePane>
   );
 }

@@ -158,6 +158,45 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     expect(after[0]!.slug).toBe('v2');
   });
 
+  it('indexAll skips a release-identity file reserved-named "current" (0.1.122 code-review fix)', async () => {
+    store.write('current', {
+      name: 'current',
+      slug: 'current',
+      description: 'Would shadow the :to=current diff-route sentinel forever',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    store.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First release',
+      createdAt: '2026-01-02T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await indexer.indexAll();
+
+    const all = rows();
+    expect(all).toHaveLength(1);
+    expect(all[0]!.slug).toBe('v1');
+  });
+
+  it('schedulePage skips an incremental upsert reserved-named "current"', async () => {
+    store.write('current', {
+      name: 'current',
+      slug: 'current',
+      description: 'Synced after boot, via file-watch instead of a full rebuild',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    indexer.schedulePage('current.json');
+    await new Promise((resolve) => setTimeout(resolve, 350));
+
+    expect(rows()).toHaveLength(0);
+  });
+
   it('schedulePage debounces and upserts a single new file incrementally', async () => {
     store.write('v1', {
       name: 'v1',

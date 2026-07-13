@@ -23,6 +23,7 @@
 import type Database from 'better-sqlite3';
 import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
 import type { ReleasesWatcher } from '../fs/releases-watcher.js';
+import { isReservedReleaseName } from './release.js';
 
 const UPSERT_SQL = `
   INSERT INTO spec_release (name, slug, description, created_by, created_at)
@@ -119,6 +120,15 @@ export class ReleaseIndexerService {
       data = this.store.read(slug);
     } catch (err) {
       console.warn(`[release-indexer] skip ${slug}: ${(err as Error).message}`);
+      return false;
+    }
+    // 0.1.122 code-review fix: this upsert is the only spec_release write path
+    // that doesn't go through createRelease/updateRelease's reserved-name
+    // guard — without this check, a hand-edited or synced release-identity
+    // file named 'current' would silently shadow the diff route's `:to=current`
+    // sentinel forever (see isReservedReleaseName's doc comment in release.ts).
+    if (isReservedReleaseName(data.name)) {
+      console.warn(`[release-indexer] skip ${slug}: release name '${data.name}' is reserved`);
       return false;
     }
     upsert.run(data.name, data.slug, data.description, data.createdBy, data.createdAt);

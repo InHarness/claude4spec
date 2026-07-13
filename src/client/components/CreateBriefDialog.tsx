@@ -7,6 +7,7 @@ import { useRoots } from '../hooks/useConfig.js';
 import { useChatStore } from '../state/chat.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { BriefScopeFields, type BriefScope } from './briefs/BriefScopeModal.js';
+import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { projectKey } from '../state/persisted.js';
 
 /**
@@ -69,7 +70,6 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
   const [scope, setScope] = useState<BriefScope>({ kind: 'whole-release' });
   const [error, setError] = useState<string | null>(null);
 
-  const candidates = allReleases.filter((r) => r.name !== toReleaseName);
   // `from` for the per-root changed-page count probe: null for the initial brief.
   const probeFrom =
     fromReleaseName === INITIAL_FROM_VALUE ? null : fromReleaseName || null;
@@ -155,25 +155,18 @@ export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
         <div className="space-y-3 text-[12.5px]">
           <label className="block">
             <span style={{ color: 'var(--c-muted)' }}>From release</span>
-            <select
+            <ReleaseSelect
+              releases={allReleases}
               value={fromReleaseName}
-              onChange={(e) => setFromReleaseName(e.target.value)}
-              className="mt-1 w-full rounded-md px-2 py-1.5 font-mono text-[12.5px]"
-              style={{
-                background: 'var(--c-card)',
-                border: '1px solid var(--c-hair)',
-                color: 'var(--c-ink)',
-              }}
+              onChange={setFromReleaseName}
+              leadingOptions={[
+                { value: '', label: '— pick a release —' },
+                { value: INITIAL_FROM_VALUE, label: '— initial state (no previous release) —' },
+              ]}
+              excludeName={toReleaseName}
               required
-            >
-              <option value="">— pick a release —</option>
-              <option value={INITIAL_FROM_VALUE}>— initial state (no previous release) —</option>
-              {candidates.map((r) => (
-                <option key={r.id} value={r.name}>
-                  {r.name}
-                </option>
-              ))}
-            </select>
+              className="mt-1 w-full rounded-md px-2 py-1.5 font-mono text-[12.5px]"
+            />
           </label>
 
           <label className="block">
