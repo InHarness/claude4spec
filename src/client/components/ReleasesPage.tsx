@@ -30,6 +30,10 @@ export function ReleasesPage({ tab, onTabChange }: Props) {
         style={{ borderBottom: '1px solid var(--c-hair)' }}
       >
         <GitCommit size={18} style={{ color: 'var(--c-accent)' }} />
+        <h2 className="text-[18px] font-semibold tracking-tight" style={{ color: 'var(--c-ink)' }}>
+          Releases
+        </h2>
+        <span className="flex-1" />
         <SegmentedControlTabs
           tabs={[
             { id: 'list', label: 'Releases' },
@@ -38,7 +42,6 @@ export function ReleasesPage({ tab, onTabChange }: Props) {
           active={tab}
           onChange={(id) => onTabChange(id as ReleasesTab)}
         />
-        <span className="flex-1" />
         <button
           onClick={() => setShowCreate(true)}
           className="rounded-md flex items-center gap-1.5 px-2.5 py-1 text-[12.5px]"
