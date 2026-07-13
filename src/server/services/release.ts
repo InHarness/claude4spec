@@ -557,6 +557,11 @@ export class ReleaseService {
     };
     const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
     const releasesAbs = realOrSelf(this.releaseStore.root);
+    // `readConfig` only type-checks briefsDir/patchesDir as strings (unlike the stricter
+    // PATCH /api/config route) — a hand-edited config.json with `briefsDir: ''` (or '.')
+    // would otherwise resolve briefsAbs to cwd itself, making isInside(briefsAbs, ...) match
+    // every file in the diff. Guard against that degenerate case explicitly.
+    const cwdAbs = realOrSelf(this.cwd);
     const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, config.briefsDir));
     const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, config.patchesDir));
     const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
@@ -592,7 +597,12 @@ export class ReleaseService {
       // Release-identity files are metadata, not spec content — never surfaced.
       if (isInside(releasesAbs, file.path)) continue;
       // Briefs/patches are never releasable page content (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma).
-      if (isInside(briefsAbs, file.path) || isInside(patchesAbs, file.path)) continue;
+      if (
+        (briefsAbs !== cwdAbs && isInside(briefsAbs, file.path)) ||
+        (patchesAbs !== cwdAbs && isInside(patchesAbs, file.path))
+      ) {
+        continue;
+      }
 
       if (isInside(entitiesAbs, file.path)) {
         const relPath = nodePath.relative(entitiesAbs, file.path).replaceAll(nodePath.sep, '/');
@@ -608,8 +618,11 @@ export class ReleaseService {
         if (!dir || !isInside(dir, file.path)) continue;
         const relPath = nodePath.relative(dir, file.path).replaceAll(nodePath.sep, '/');
         // General backstop: any other non-page file under `.claude4spec/` (config.json,
-        // mcp.json, future additions) — same convention the page walker applies.
-        if (hasDotSegment(relPath)) break;
+        // mcp.json, future additions) — same convention the page walker applies. `continue`
+        // (not `break`): this root's dir just happens to contain a dot-prefixed subtree that
+        // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
+        // trying remaining roots instead of abandoning attribution for this file entirely.
+        if (hasDotSegment(relPath)) continue;
         pages.push({
           path: relPath,
           op: STATUS_TO_OP[file.status],

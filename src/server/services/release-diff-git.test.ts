@@ -90,6 +90,34 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     return { releaseService, releaseStore };
   }
 
+  function buildReleaseServiceMultiRoot(
+    rootIds: string[],
+    rootDirs: string[],
+  ): { releaseService: ReleaseService; releaseStore: ReleaseFileStore } {
+    const releasesWatcher = new ReleasesWatcher(path.join(dir, '.claude4spec/releases'));
+    const releaseStore = new ReleaseFileStore(dir, '.claude4spec/releases', releasesWatcher);
+    releaseStore.ensureRoot();
+    const gitService = new GitService(dir, rootDirs);
+
+    const releaseService = new ReleaseService(
+      db,
+      fakeHost,
+      fakeVersions,
+      fakePageVersions,
+      fakePageSerializer,
+      fakeRawReader,
+      fakeTagsService,
+      fakePagesService,
+      null,
+      dir,
+      rootIds,
+      rootDirs,
+    );
+    releaseService.setReleaseStore(releaseStore);
+    releaseService.setGitService(gitService);
+    return { releaseService, releaseStore };
+  }
+
   it('sources from git history when both releases are anchored, producing file-level page changes', async () => {
     const pagesDir = path.join(dir, 'pages');
     fs.mkdirSync(pagesDir, { recursive: true });
@@ -315,5 +343,108 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     const paths = delta.pages.map((p) => p.path);
     expect(paths).toContain('real-page.md');
     expect(paths.some((p) => p.startsWith('.claude4spec/'))).toBe(false);
+  });
+
+  // code-review fix (0-1-123-to-next): a dot-prefixed subtree can legitimately belong to a
+  // MORE SPECIFIC releasable root nested inside a less-specific one (config.ts's dirsOverlap
+  // explicitly allows this — the walker never reaches dot-dirs from the outer root, so it's
+  // not a hazard). The attribution loop must keep trying other roots instead of dropping the
+  // file the moment the first containing root's relPath has a dot segment.
+  it('attributes a file to a more specific nested root instead of silently dropping it', async () => {
+    const hiddenDir = path.join(dir, '.docs');
+    const { releaseService, releaseStore } = buildReleaseServiceMultiRoot(
+      ['pages', 'hidden'],
+      [dir, hiddenDir],
+    );
+
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages', 'hidden'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    fs.mkdirSync(hiddenDir, { recursive: true });
+    fs.writeFileSync(path.join(hiddenDir, 'foo.md'), '# Foo');
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v2Id = Number(info2.lastInsertRowid);
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages', 'hidden'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+    const byPath = new Map(delta.pages.map((p) => [p.path, p.op]));
+    expect(byPath.get('foo.md')).toBe('created');
+    expect(delta.pages.some((p) => p.path.startsWith('.docs/'))).toBe(false);
+  });
+
+  // code-review fix (0-1-123-to-next): readConfig() only type-checks briefsDir/patchesDir as
+  // strings — an empty string (e.g. a careless hand-edit of config.json) must not resolve
+  // briefsAbs/patchesAbs to cwd itself, which would make isInside() match every file and
+  // silently empty the whole diff.
+  it('does not silently drop every page when briefsDir is an empty string', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    fs.mkdirSync(pagesDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '.claude4spec/config.json'),
+      JSON.stringify(
+        { $schemaVersion: 4, name: 'test', git: { enabled: true }, briefsDir: '' },
+        null,
+        2,
+      ),
+    );
+    const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v2Id = Number(info2.lastInsertRowid);
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+    expect(delta.pages.some((p) => p.path === 'a.md' && p.op === 'modified')).toBe(true);
   });
 });
