@@ -71,3 +71,36 @@ export interface GitAheadBehindStatus {
   ahead: number | null;
   behind: number | null;
 }
+
+/**
+ * 0.1.123: result of `gitService.listBranches()`, exposed by `GET /api/git/branches`.
+ * Local branches only — no remote-tracking `origin/*`. Never throws; degrades to
+ * `{ current: null, branches: [] }` when git is disabled or no repo is detected.
+ */
+export interface GitBranchesResponse {
+  /** `git rev-parse --abbrev-ref HEAD`; `null` on detached HEAD, no repo, or git disabled. */
+  current: string | null;
+  /** `git branch --format=%(refname:short)`. Non-empty in detached HEAD — branches
+   *  still exist, there's just no current one, so the UI can offer a way out. */
+  branches: string[];
+}
+
+/**
+ * 0.1.123: result of `gitService.checkout()`, exposed by `POST /api/git/checkout`.
+ * `'switched'` = success; `'dirty-blocked'` = tracked modified/staged files exist
+ * (a pre-check, NOT derived from the actual checkout's exit code); `'not-found'` =
+ * branch doesn't exist locally; `'busy'` = an in-flight agent turn is mutating disk;
+ * `'skipped'` = git master switch off or no repo detected; `'error'` = git itself
+ * failed the checkout (e.g. an untracked-file collision) despite the pre-checks
+ * passing. Never a non-200 HTTP response — every outcome, including failure, rides
+ * `status`/`message` here.
+ */
+export type GitCheckoutStatus = 'switched' | 'dirty-blocked' | 'not-found' | 'skipped' | 'busy' | 'error';
+
+export interface GitCheckoutResponse {
+  status: GitCheckoutStatus;
+  /** New current branch on `'switched'`; `null` for every other status. */
+  branch: string | null;
+  /** Human-readable detail for a toast/hint; `null` on `'switched'` and `'skipped'`. */
+  message: string | null;
+}
