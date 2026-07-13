@@ -264,7 +264,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
 
   const describe = mcpTool(
     'describe',
-    'Get JSON Schemas for one entity type, per view, on demand. Returns { type, version, views, schemas }. Omit view for all of the type\'s views; pass view to narrow to one. Schemas are custom (from the serializer) or auto-derived from SQLite reflection (flagged "_auto").',
+    'Get JSON Schemas for one entity type, per view, on demand. Returns { type, version, views, schemas }. Omit view for all of the type\'s views; pass view to narrow to one. Schemas are custom (from the serializer) or auto-derived from schema reflection (flagged "_auto").',
     {
       type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
       view: z

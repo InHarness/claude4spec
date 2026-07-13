@@ -172,7 +172,7 @@ export class SerializationEngine {
    * the type is unknown or deactivated (caller maps to INVALID_TYPE). When
    * `view` is given the response is narrowed to that single view; otherwise
    * all of the type's supported views are returned. Schemas come from
-   * `serializer.schema(view)` or, when absent, SQLite reflection (`_auto`).
+   * `serializer.schema(view)` or, when absent, schema reflection (`_auto`).
    */
   describe(type: string, view: ViewKind | undefined, db: Database): DescribeResult | null {
     const m = this.host.listEntities().find((e) => e.type === type);

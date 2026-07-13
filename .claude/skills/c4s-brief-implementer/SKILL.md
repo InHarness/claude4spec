@@ -11,6 +11,8 @@ This skill describes how to implement a release brief in **your code repository*
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 
+**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. `c4s agent`/`c4s ask` calls in this skill (the optional spec-check in step 2, the env-runner order in step 5) and `c4s mark-brief-implemented` (step 9) all talk to it — `c4s read-brief`/`list-briefs`/`file-patch` do not (see filesystem-scoped note above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8). The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
+
 ## Workflow
 
 ### 1. Discover
@@ -80,7 +82,7 @@ Standard code flow in your target repository: read existing code, plan, edit, te
 
 ### 5. Smoke-test via env-runner
 
-Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Never run Docker yourself for this (`docker/setup-env.sh`, `docker compose up`, etc.) — every environment, including a plain brief smoke-test, goes through the centralized `env-runner` broker. You place an order describing what you need; the operator translates it into a manifest and stands up an isolated, port-bumped environment for you.
+Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Never run Docker yourself for this (`docker/setup-env.sh`, `docker compose up`, etc.) — every environment, including a plain brief smoke-test, goes through the centralized `env-runner` broker. You place an order describing what you need; the operator translates it into a manifest and stands up an isolated, port-bumped environment for you — nothing more; it does not exercise or test the change for you.
 
 Push the branch first — env-runner clones by git ref, so it needs something on `origin` to check out:
 
@@ -112,7 +114,7 @@ c4s agent "<order>" --project 'env-runner' --workspace 'default'
 
 The operator replies with the env name, its port map/URL, and a `threadId` — record the `threadId`, you'll need it for every follow-up (re-create after a new push, destroy at the end). Exercise the change at the returned URL. Report back to the user: the env name, the URL/ports, and the `threadId` — the user gets their own hands-on look at the same environment you just exercised. Leave it running; don't ask the operator to destroy it unless the user requests a teardown.
 
-This channel needs `c4s` installed and a running `npx @inharness-ai/claude4spec` server (same precondition as the step 2 synchronous-ask path). If either is missing, **stop and ask the user** to start it — do not fall back to running `docker compose`/`docker/setup-env.sh` yourself; that self-service path is retired.
+This channel needs `c4s` installed and a running `npx @inharness-ai/claude4spec` server (see terminology note above — same precondition as the step 2 synchronous-ask path). If either is missing, **stop and ask the user** to start it — do not fall back to running `docker compose`/`docker/setup-env.sh` yourself; that self-service path is retired.
 
 If you push new commits later (a fixup, or a change made while investigating drift), push again and message the **same thread** so the operator can re-create the environment — don't file a brand-new order:
 
@@ -188,7 +190,7 @@ If the `envr destroy` request above didn't go through for some reason, follow up
 c4s mark-brief-implemented <brief-path> --project 'app-spec' --workspace 'default'
 ```
 
-Unlike the filesystem-scoped `c4s list-briefs` / `read-brief` / `file-patch`, this command **requires a running `npx @inharness-ai/claude4spec` server** — if it isn't up, ask the user to start it. There is no by-hand file edit: this skill is CLI-only.
+Unlike the filesystem-scoped `c4s list-briefs` / `read-brief` / `file-patch`, this command **requires the claude4spec server** (see terminology note above — not the env-runner sandbox you may have just destroyed in step 8). If the server isn't up, ask the user to start it. There is no by-hand file edit: this skill is CLI-only.
 
 ### 10. Hand-off
 
