@@ -26,11 +26,9 @@ import { TagsList } from './components/TagsList.js';
 import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
 import { PlanPage } from './components/PlanPage.js';
-import { ReleasesList } from './components/ReleasesList.js';
-import { ReleasesCompareTab } from './components/ReleasesCompareTab.js';
+import { ReleasesPage } from './components/ReleasesPage.js';
 import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
-import { SegmentedControlTabs } from './host-ui-kit/detail/SegmentedControlTabs.js';
 import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
 import { PatchDetail } from './components/PatchDetail.js';
@@ -842,24 +840,12 @@ function ReleasesIndexRoute() {
   const tab = search.tab ?? 'list';
   return (
     <RoutePane>
-      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-        <div
-          className="flex items-center px-8 py-2"
-          style={{ borderBottom: '1px solid var(--c-hair)' }}
-        >
-          <SegmentedControlTabs
-            tabs={[
-              { id: 'list', label: 'List' },
-              { id: 'compare', label: 'Compare' },
-            ]}
-            active={tab}
-            onChange={(id) =>
-              navigate({ to: '/releases', search: (prev) => ({ ...prev, tab: id === 'list' ? undefined : (id as 'compare') }) })
-            }
-          />
-        </div>
-        {tab === 'compare' ? <ReleasesCompareTab /> : <ReleasesList />}
-      </div>
+      <ReleasesPage
+        tab={tab}
+        onTabChange={(id) =>
+          navigate({ to: '/releases', search: (prev) => ({ ...prev, tab: id === 'list' ? undefined : 'compare' }) })
+        }
+      />
     </RoutePane>
   );
 }
