@@ -390,12 +390,28 @@ export class GitService {
    * relative-to-root split in that case). Returns `null` when the file
    * doesn't exist at that commit (e.g. the created/deleted boundary of a
    * change), the path falls outside the repo, or git/repo detection fails —
-   * never throws.
+   * never throws (class-wide contract, see file header — a malformed
+   * config.json mid-run degrades to "can't tell", same as `statusAheadBehind`).
+   *
+   * `precomputedStatus` (0.1.124, same idea as `statusAheadBehind`'s): pass an
+   * already-fetched `detect()` result so a caller reading many files at the
+   * same two commits (e.g. `tryGitAnchoredDiff` diffing every changed page in
+   * a release) doesn't pay for a repeated `detect()` probe — several git
+   * subprocesses — per file.
    */
-  async showFile(sha: string, absPath: string): Promise<string | null> {
-    const config = readConfig(this.cwd);
+  async showFile(
+    sha: string,
+    absPath: string,
+    precomputedStatus?: GitStatusResponse,
+  ): Promise<string | null> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return null;
+    }
     if (!config.git?.enabled) return null;
-    const status = await this.detect();
+    const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     let real: string;
     try {

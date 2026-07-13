@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { ReleaseFileStore } from './release-store.js';
@@ -68,6 +68,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
   function buildReleaseService(pagesDir: string): {
     releaseService: ReleaseService;
     releaseStore: ReleaseFileStore;
+    gitService: GitService;
   } {
     const releasesWatcher = new ReleasesWatcher(path.join(dir, '.claude4spec/releases'));
     const releaseStore = new ReleaseFileStore(dir, '.claude4spec/releases', releasesWatcher);
@@ -90,7 +91,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     );
     releaseService.setReleaseStore(releaseStore);
     releaseService.setGitService(gitService);
-    return { releaseService, releaseStore };
+    return { releaseService, releaseStore, gitService };
   }
 
   function buildReleaseServiceMultiRoot(
@@ -225,6 +226,110 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     expect(byPath.get('old-name.md')?.removed_sections[0]?.content).toBe('# Content');
     expect(byPath.get('new-name.md')?.op).toBe('created');
     expect(byPath.get('new-name.md')?.added_sections[0]?.content).toBe('# Content');
+  });
+
+  it('degrades a page with malformed historical frontmatter to file-level status instead of crashing the whole diff', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    // Malformed YAML frontmatter (unbalanced flow sequence) — gray-matter
+    // throws parsing this. Simulates content committed before/outside the
+    // app's own write-time validation.
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '---\nfoo: [1, 2\n---\n# A v2');
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v2Id = Number(info2.lastInsertRowid);
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+
+    const aChange = delta.pages.find((p) => p.path === 'a.md');
+    expect(aChange?.op).toBe('modified');
+    expect(aChange?.modified_sections).toEqual([]);
+    expect(aChange?.added_sections).toEqual([]);
+  });
+
+  it('degrades a real modification to file-level status (not a false "created") when reading one side\'s content fails', async () => {
+    const pagesDir = path.join(dir, 'pages');
+    fs.mkdirSync(pagesDir, { recursive: true });
+    const { releaseService, releaseStore, gitService } = buildReleaseService(pagesDir);
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+    const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+    fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v2Id = Number(info2.lastInsertRowid);
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    // Simulate a transient read failure on the OLD side only (a.md at v1 is
+    // a real, existing commit — this is NOT a legitimate create/delete
+    // boundary). `showFile`'s contract can't distinguish "doesn't exist at
+    // this commit" from "failed for some other reason", so tryGitAnchoredDiff
+    // must not trust pageSerializer.diff's null-based op inference here.
+    const original = gitService.showFile.bind(gitService);
+    vi.spyOn(gitService, 'showFile').mockImplementation(async (sha, absPath, precomputed) => {
+      if (sha === shaA) return null;
+      return original(sha, absPath, precomputed);
+    });
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+
+    const aChange = delta.pages.find((p) => p.path === 'a.md');
+    expect(aChange?.op).toBe('modified'); // NOT 'created'
+    expect(aChange?.added_sections).toEqual([]); // degraded, not a false full-content add
   });
 
   it('falls back to the SQL path when a release predates git history (no backing file, slug = NULL)', async () => {

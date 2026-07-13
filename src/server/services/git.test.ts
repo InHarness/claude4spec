@@ -194,6 +194,20 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(await svc.showFile(shaB, filePath)).toBe('# A v2');
     });
 
+    it('showFile accepts a precomputed detect() status to skip its own probe', async () => {
+      const svc = new GitService(dir, [dir]);
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const filePath = path.join(pagesDir, 'a.md');
+      fs.writeFileSync(filePath, '# A v1');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      const precomputed = await svc.detect();
+      expect(await svc.showFile(shaA, filePath, precomputed)).toBe('# A v1');
+    });
+
     it('showFile returns null (not throw) for a path that did not exist at that commit', async () => {
       const svc = new GitService(dir, [dir]);
       const pagesDir = path.join(dir, 'pages');
