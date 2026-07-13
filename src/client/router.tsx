@@ -27,8 +27,10 @@ import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
 import { PlanPage } from './components/PlanPage.js';
 import { ReleasesList } from './components/ReleasesList.js';
+import { ReleasesCompareTab } from './components/ReleasesCompareTab.js';
 import { PlansListPage } from './components/PlansListPage.js';
 import { ReleaseDetail } from './components/ReleaseDetail.js';
+import { SegmentedControlTabs } from './host-ui-kit/detail/SegmentedControlTabs.js';
 import { BriefsList } from './components/BriefsList.js';
 import { BriefDetail } from './components/BriefDetail.js';
 import { PatchDetail } from './components/PatchDetail.js';
@@ -98,6 +100,13 @@ export interface RouterContext {
 export const listSearchSchema = z.object({
   q: z.string().optional(),
   tag: z.string().optional(),
+});
+
+// 0.1.122: `/releases` gained a Compare tab (release vs. current unreleased
+// state) alongside the existing releases list — deep-linkable via `?tab=compare`
+// (the unreleased-changes counter links here, presetting `latest → current`).
+const releasesSearchSchema = z.object({
+  tab: z.enum(['list', 'compare']).optional(),
 });
 
 /**
@@ -274,6 +283,7 @@ const settingsRoute = createRoute({
 const releasesIndexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/releases',
+  validateSearch: releasesSearchSchema,
   component: ReleasesIndexRoute,
 });
 
@@ -827,9 +837,29 @@ function LinksIndexRoute() {
 }
 
 function ReleasesIndexRoute() {
+  const search = useSearch({ from: '/releases' });
+  const navigate = useNavigate();
+  const tab = search.tab ?? 'list';
   return (
     <RoutePane>
-      <ReleasesList />
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+        <div
+          className="flex items-center px-8 py-2"
+          style={{ borderBottom: '1px solid var(--c-hair)' }}
+        >
+          <SegmentedControlTabs
+            tabs={[
+              { id: 'list', label: 'List' },
+              { id: 'compare', label: 'Compare' },
+            ]}
+            active={tab}
+            onChange={(id) =>
+              navigate({ to: '/releases', search: (prev) => ({ ...prev, tab: id === 'list' ? undefined : (id as 'compare') }) })
+            }
+          />
+        </div>
+        {tab === 'compare' ? <ReleasesCompareTab /> : <ReleasesList />}
+      </div>
     </RoutePane>
   );
 }

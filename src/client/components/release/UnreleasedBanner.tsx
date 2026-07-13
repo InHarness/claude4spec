@@ -1,12 +1,19 @@
+import { Link } from '@tanstack/react-router';
 import { useUnreleasedCount } from '../../hooks/useReleases.js';
 
-/** "You have N unreleased changes" — self-hides when there is nothing unreleased. */
+/**
+ * "You have N unreleased changes" — self-hides when there is nothing
+ * unreleased. Links to the `/releases` Compare tab (0.1.122), presetting
+ * `latest → current` (the tab's own default).
+ */
 export function UnreleasedBanner() {
   const { data: count = 0 } = useUnreleasedCount();
   if (count <= 0) return null;
   return (
-    <div
-      className="mb-4 px-4 py-2.5 rounded-md text-[12.5px]"
+    <Link
+      to="/releases"
+      search={{ tab: 'compare' }}
+      className="block mb-4 px-4 py-2.5 rounded-md text-[12.5px]"
       style={{
         background: 'var(--c-accent-soft)',
         border: '1px solid var(--c-accent)',
@@ -14,6 +21,6 @@ export function UnreleasedBanner() {
       }}
     >
       You have {count} unreleased {count === 1 ? 'change' : 'changes'} not in any release.
-    </div>
+    </Link>
   );
 }
