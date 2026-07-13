@@ -41,7 +41,7 @@ import { slugify } from '../../shared/slug.js';
 import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { GitService } from './git.js';
-import type { PageSnapshotData } from './page-serializer.js';
+import type { PageDiff, PageSnapshotData } from './page-serializer.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -509,9 +509,11 @@ export class ReleaseService {
    * release created while `syncCommitOnRelease` was off never lands in
    * history — B3, a known open edge, per the brief).
    *
-   * Fidelity note: this path can only produce file-level create/modified/
-   * deleted, not the rich per-field diff the SQL path produces (frontmatter,
-   * entity field diffs) — an accepted, spec-confirmed tradeoff, not a bug.
+   * 0.1.124: for each changed page, the old/new content is read directly from
+   * the two resolved commits (`GitService.showFile`) and run through
+   * `pageSerializer.diff`, the same section/line-diff algorithm `computeDelta`
+   * (the SQL path) uses — this path now produces the same section-level +
+   * `line_diff` fidelity as every other diff path, not a degraded subset.
    */
   private async tryGitAnchoredDiff(
     fromRow: ReleaseRow,
@@ -519,6 +521,7 @@ export class ReleaseService {
     opts?: { roots?: string[] },
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
+    const gitService = this.gitService;
     if (!fromRow.slug || !toRow.slug) return null;
     const config = readConfig(this.cwd);
     if (!config.git?.enabled) return null;
@@ -526,8 +529,8 @@ export class ReleaseService {
     const fromFile = nodePath.join(this.releaseStore.root, `${fromRow.slug}.json`);
     const toFile = nodePath.join(this.releaseStore.root, `${toRow.slug}.json`);
     const [shaA, shaB] = await Promise.all([
-      this.gitService.resolveReleaseCommit(fromFile),
-      this.gitService.resolveReleaseCommit(toFile),
+      gitService.resolveReleaseCommit(fromFile),
+      gitService.resolveReleaseCommit(toFile),
     ]);
     if (!shaA || !shaB) return null;
     // Both release-identity files landed in the SAME commit (e.g. a rename
@@ -572,7 +575,7 @@ export class ReleaseService {
     );
     const scopedRootDirs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
 
-    const gitDiff = await this.gitService.diffRefs(shaA, shaB, [
+    const gitDiff = await gitService.diffRefs(shaA, shaB, [
       ...scopedRootDirs,
       entitiesAbs,
       releasesAbs,
@@ -591,7 +594,7 @@ export class ReleaseService {
     };
 
     const entities: RawDeltaEntityChange[] = [];
-    const pages: RawDeltaPageChange[] = [];
+    const pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }> = [];
 
     for (const file of gitDiff.files) {
       // Release-identity files are metadata, not spec content — never surfaced.
@@ -623,19 +626,76 @@ export class ReleaseService {
         // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
         // trying remaining roots instead of abandoning attribution for this file entirely.
         if (hasDotSegment(relPath)) continue;
-        pages.push({
-          path: relPath,
-          op: STATUS_TO_OP[file.status],
-          added_sections: [],
-          removed_sections: [],
-          modified_sections: [],
-          moved_sections: [],
-          frontmatter_diff: null,
-          xml_refs_diff: null,
-        });
+        pageCandidates.push({ relPath, absPath: file.path, status: file.status });
         break;
       }
     }
+
+    // Read old/new content per changed page directly from the two resolved
+    // commits and run it through the same section/line-diff algorithm the SQL
+    // path (`computeDelta`) uses. `gitStatus` is probed once (rather than
+    // per-file inside `showFile`) since a release can touch many pages, each
+    // needing up to two `showFile` calls — `detect()` alone is several git
+    // subprocesses, so reusing one probe avoids fanning that out per file.
+    const gitStatus = await gitService.detect();
+
+    // `op` for the pushed entry is git's own status letter (STATUS_TO_OP),
+    // not inferred from content presence: `pageSerializer.diff` reports
+    // op:'created' whenever the OLD side is `null`, but `showFile` also
+    // returns `null` on any unrelated read failure (transient git error,
+    // resource limits) — trusting that inference would silently relabel a
+    // modification as a creation, or (if both sides fail) drop the page
+    // entirely as a false noop. Content is only used for section-level
+    // fidelity; a side git says should exist that still comes back `null`,
+    // or any error while parsing/diffing it (e.g. malformed historical
+    // frontmatter), degrades that single page to file-level-only detail
+    // (this path's pre-0.1.124 fidelity) rather than failing the request.
+    const degradedPageChange = (c: (typeof pageCandidates)[number], op: RawDeltaPageChange['op']): RawDeltaPageChange => ({
+      path: c.relPath,
+      op,
+      added_sections: [],
+      removed_sections: [],
+      modified_sections: [],
+      moved_sections: [],
+      frontmatter_diff: null,
+      xml_refs_diff: null,
+    });
+
+    const pages: RawDeltaPageChange[] = (
+      await Promise.all(
+        pageCandidates.map(async (c): Promise<RawDeltaPageChange | null> => {
+          const op = STATUS_TO_OP[c.status];
+          const wantOld = op !== 'created';
+          const wantNew = op !== 'deleted';
+          try {
+            const [oldContent, newContent] = await Promise.all([
+              wantOld ? gitService.showFile(shaA, c.absPath, gitStatus) : Promise.resolve(null),
+              wantNew ? gitService.showFile(shaB, c.absPath, gitStatus) : Promise.resolve(null),
+            ]);
+            if ((wantOld && oldContent == null) || (wantNew && newContent == null)) {
+              console.error(
+                `[release] tryGitAnchoredDiff: could not read git content for page '${c.relPath}' (status ${c.status}) — degrading to file-level status only`,
+              );
+              return degradedPageChange(c, op);
+            }
+            const aData = oldContent != null
+              ? this.pageSerializer.snapshotFromContent(c.relPath, oldContent)
+              : null;
+            const bData = newContent != null
+              ? this.pageSerializer.snapshotFromContent(c.relPath, newContent)
+              : null;
+            const diff = this.pageSerializer.diff(aData, bData, c.relPath);
+            return diff.op === 'noop' ? null : toRawDeltaPageChange(diff);
+          } catch (err) {
+            console.error(
+              `[release] tryGitAnchoredDiff: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
+              err instanceof Error ? err.message : String(err),
+            );
+            return degradedPageChange(c, op);
+          }
+        }),
+      )
+    ).filter((d): d is RawDeltaPageChange => d !== null);
 
     return {
       from: { id: fromRow.id, name: fromRow.name },
@@ -803,16 +863,7 @@ export class ReleaseService {
         : null;
       const diff = this.pageSerializer.diff(aData, bData, path);
       if (diff.op === 'noop') continue;
-      pageChanges.push({
-        path: diff.path,
-        op: diff.op,
-        added_sections: diff.added_sections,
-        removed_sections: diff.removed_sections,
-        modified_sections: diff.modified_sections,
-        moved_sections: diff.moved_sections,
-        frontmatter_diff: diff.frontmatter_diff,
-        xml_refs_diff: diff.xml_refs_diff,
-      });
+      pageChanges.push(toRawDeltaPageChange(diff));
     }
 
     return {
@@ -1305,4 +1356,18 @@ function safeJsonParse(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+/** Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of PageDiff's fields. */
+function toRawDeltaPageChange(diff: PageDiff): RawDeltaPageChange {
+  return {
+    path: diff.path,
+    op: diff.op,
+    added_sections: diff.added_sections,
+    removed_sections: diff.removed_sections,
+    modified_sections: diff.modified_sections,
+    moved_sections: diff.moved_sections,
+    frontmatter_diff: diff.frontmatter_diff,
+    xml_refs_diff: diff.xml_refs_diff,
+  };
 }

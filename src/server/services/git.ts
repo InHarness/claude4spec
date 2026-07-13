@@ -381,6 +381,55 @@ export class GitService {
   }
 
   /**
+   * 0.1.124 read-only: a file's content at a specific commit (`git show
+   * <sha>:<path>`). `status.rootPath` (from `detect()`, via `git rev-parse
+   * --show-toplevel`) is always symlink-resolved, so `absPath` is realpath'd
+   * first — same reasoning as `diffRefs`'s own per-target realpath loop —
+   * tolerating a missing file (it may not exist in the CURRENT working tree
+   * at all, e.g. deleted since; the as-given path is still usable for the
+   * relative-to-root split in that case). Returns `null` when the file
+   * doesn't exist at that commit (e.g. the created/deleted boundary of a
+   * change), the path falls outside the repo, or git/repo detection fails —
+   * never throws (class-wide contract, see file header — a malformed
+   * config.json mid-run degrades to "can't tell", same as `statusAheadBehind`).
+   *
+   * `precomputedStatus` (0.1.124, same idea as `statusAheadBehind`'s): pass an
+   * already-fetched `detect()` result so a caller reading many files at the
+   * same two commits (e.g. `tryGitAnchoredDiff` diffing every changed page in
+   * a release) doesn't pay for a repeated `detect()` probe — several git
+   * subprocesses — per file.
+   */
+  async showFile(
+    sha: string,
+    absPath: string,
+    precomputedStatus?: GitStatusResponse,
+  ): Promise<string | null> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return null;
+    }
+    if (!config.git?.enabled) return null;
+    const status = precomputedStatus ?? (await this.detect());
+    if (!status.detected || !status.rootPath) return null;
+    let real: string;
+    try {
+      real = fs.realpathSync(absPath);
+    } catch {
+      real = absPath;
+    }
+    const rel = path.relative(status.rootPath, real);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    try {
+      const { stdout } = await this.git(['show', `${sha}:${rel}`], status.rootPath);
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 0.1.118 read-only: HEAD status vs. upstream. Reuses `detect()`'s
    * branch/dirty rather than re-probing. `null` when git is disabled, no repo
    * is detected, or the branch is detached (no branch to compare). A non-null
