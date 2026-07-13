@@ -19,3 +19,9 @@ export function markdownExtension(name: string): 'md' | 'mdx' | null {
   if (name.endsWith('.md')) return 'md';
   return null;
 }
+
+/** True when any `/`-separated segment of a path starts with `.` — the convention
+ *  page walking, watching, and release diffing all use to mean "not a page". */
+export function hasDotSegment(relPath: string): boolean {
+  return relPath.split('/').some((seg) => seg.startsWith('.'));
+}

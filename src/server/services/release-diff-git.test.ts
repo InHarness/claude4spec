@@ -260,4 +260,60 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     const gitDelta = await (releaseService as any).tryGitAnchoredDiff(fromRow, toRow);
     expect(gitDelta).toBeNull();
   });
+
+  // M17 defect (brief 0-1-123-to-next.md): when the `pages` root is configured
+  // with dir='.' (the builtin default), it scopes the entire project root — so
+  // the file-to-root attribution loop must not sweep .claude4spec/briefs,
+  // .claude4spec/patches, or other internal .claude4spec/* files into the page
+  // diff (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma: briefs/patches are never
+  // releasable page content).
+  it('excludes .claude4spec/* internal files when the pages root is the project root (dir=".")', async () => {
+    // pages root IS the project root — reproduces the offending configuration.
+    const { releaseService, releaseStore } = buildReleaseService(dir);
+
+    const info1 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v1', 'v1', 'First', 'user');
+    const v1Id = Number(info1.lastInsertRowid);
+    releaseStore.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First',
+      createdAt: new Date(0).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v1'], dir);
+
+    fs.writeFileSync(path.join(dir, 'real-page.md'), '# Real page');
+    fs.mkdirSync(path.join(dir, '.claude4spec/briefs'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.claude4spec/briefs/some-brief.md'), '# Brief');
+    fs.mkdirSync(path.join(dir, '.claude4spec/patches'), { recursive: true });
+    fs.writeFileSync(path.join(dir, '.claude4spec/patches/some-patch.md'), '# Patch');
+    fs.writeFileSync(
+      path.join(dir, '.claude4spec/config.json'),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', git: { enabled: true }, note: 'changed' }, null, 2),
+    );
+    const info2 = db
+      .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+      .run('v2', 'v2', 'Second', 'user');
+    const v2Id = Number(info2.lastInsertRowid);
+    releaseStore.write('v2', {
+      name: 'v2',
+      slug: 'v2',
+      description: 'Second',
+      createdAt: new Date(1).toISOString(),
+      createdBy: 'user',
+      roots: ['pages'],
+    });
+    await git(['add', '.'], dir);
+    await git(['commit', '-m', 'v2'], dir);
+
+    const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+
+    const paths = delta.pages.map((p) => p.path);
+    expect(paths).toContain('real-page.md');
+    expect(paths.some((p) => p.startsWith('.claude4spec/'))).toBe(false);
+  });
 });

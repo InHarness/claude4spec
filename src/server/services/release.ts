@@ -38,6 +38,7 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
+import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { GitService } from './git.js';
 import type { PageSnapshotData } from './page-serializer.js';
@@ -556,6 +557,8 @@ export class ReleaseService {
     };
     const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
     const releasesAbs = realOrSelf(this.releaseStore.root);
+    const briefsAbs = realOrSelf(nodePath.resolve(this.cwd, config.briefsDir));
+    const patchesAbs = realOrSelf(nodePath.resolve(this.cwd, config.patchesDir));
     const rootIds = (opts?.roots ?? this.releasableRootIds).filter((r) =>
       this.releasableRootIds.includes(r),
     );
@@ -588,6 +591,8 @@ export class ReleaseService {
     for (const file of gitDiff.files) {
       // Release-identity files are metadata, not spec content — never surfaced.
       if (isInside(releasesAbs, file.path)) continue;
+      // Briefs/patches are never releasable page content (ac-korze-tar-bundle-a-zawiera-wy-cznie-ma).
+      if (isInside(briefsAbs, file.path) || isInside(patchesAbs, file.path)) continue;
 
       if (isInside(entitiesAbs, file.path)) {
         const relPath = nodePath.relative(entitiesAbs, file.path).replaceAll(nodePath.sep, '/');
@@ -602,6 +607,9 @@ export class ReleaseService {
         const dir = rootDirsById.get(id);
         if (!dir || !isInside(dir, file.path)) continue;
         const relPath = nodePath.relative(dir, file.path).replaceAll(nodePath.sep, '/');
+        // General backstop: any other non-page file under `.claude4spec/` (config.json,
+        // mcp.json, future additions) — same convention the page walker applies.
+        if (hasDotSegment(relPath)) break;
         pages.push({
           path: relPath,
           op: STATUS_TO_OP[file.status],
