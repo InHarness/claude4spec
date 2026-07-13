@@ -36,15 +36,48 @@ export type GitCommitStatus = 'committed' | 'nothing-to-commit' | 'skipped' | 'e
 
 export type GitPushStatus = 'pushed' | 'nothing-to-push' | 'skipped' | 'error';
 
+/**
+ * 0.1.124: additive payload of a `status: 'error'` `GitCommitResult`/
+ * `GitPushResult` — everything the client needs to render the
+ * `GitErrorRecoveryModal` and seed a "Fix it with Agent" chat thread.
+ * `intentPrompt` is fully composed server-side (operation, paths/roots, the
+ * raw git error, and safe-recovery instructions); the client only has to pass
+ * it verbatim to `startSeededThread`.
+ */
+export interface GitErrorRecovery {
+  operation: 'commit-on-release' | 'pull' | 'push';
+  /** Short human-readable summary of what went wrong (for the modal's collapsed state). */
+  reason: string;
+  /** Raw stderr from the failed git invocation (for the modal's expandable detail block). */
+  gitStderr: string;
+  /** Pre-composed prompt for `startSeededThread(recovery.intentPrompt, { autoSubmit: true })`. */
+  intentPrompt: string;
+}
+
 export interface GitCommitResult {
   status: GitCommitStatus;
   message?: string;
+  /** Present only when `status === 'error'`. */
+  recovery?: GitErrorRecovery;
 }
 
 export interface GitPushResult {
   status: GitPushStatus;
   message?: string;
+  /** Present only when `status === 'error'`. */
+  recovery?: GitErrorRecovery;
 }
+
+/**
+ * 0.1.124: shared shape for the `gitSync` field riding the synchronous
+ * create/update-release and push responses — `CreateReleaseResponse`,
+ * `UpdateReleaseResponse`, `ReleasePushResponse`. `null` when git is off, no
+ * repo was detected, or (update) the request didn't trigger a git operation
+ * at all (e.g. a rename with no `assignUnreleased`).
+ */
+export type GitSyncField<TStatus extends string> =
+  | { status: TStatus; message?: string; recovery?: GitErrorRecovery }
+  | null;
 
 /**
  * 0.1.118: result of `gitService.diffRefs()` — a file-level `git diff

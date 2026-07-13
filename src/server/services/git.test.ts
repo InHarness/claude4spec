@@ -332,17 +332,17 @@ describe('GitService — 0.1.118 read-only methods', () => {
   });
 
   describe('commitOnRelease / pushOnPush gating (0.1.118 master switch)', () => {
-    it('commitOnRelease returns null when enabled is false even if syncCommitOnRelease is true (B1 regression)', async () => {
+    it('commitOnRelease returns null when enabled is false', async () => {
       await initRepo(dir);
-      writeConfigJson(dir, { enabled: false, syncCommitOnRelease: true });
+      writeConfigJson(dir, { enabled: false });
       const svc = new GitService(dir, [dir]);
       const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
       expect(result).toBeNull();
     });
 
-    it('commitOnRelease proceeds when enabled and syncCommitOnRelease are both true', async () => {
+    it('commitOnRelease proceeds when enabled is true (0.1.124: enabled alone is the gate, no separate sub-toggle)', async () => {
       await initRepo(dir);
-      writeConfigJson(dir, { enabled: true, syncCommitOnRelease: true });
+      writeConfigJson(dir, { enabled: true });
       // detect()'s branch probe (`rev-parse --abbrev-ref HEAD`) fails on an
       // unborn branch (zero commits) — seed an initial commit first, same as
       // the other detect()-dependent tests above.
@@ -358,7 +358,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
 
     it('commitOnRelease stages briefsDir/patchesDir too, so they are actually committed once ensureGitignore un-gitignores them', async () => {
       await initRepo(dir);
-      writeConfigJson(dir, { enabled: true, syncCommitOnRelease: true });
+      writeConfigJson(dir, { enabled: true });
       fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
       await git(['add', '.'], dir);
       await git(['commit', '-m', 'seed'], dir);
@@ -376,6 +376,169 @@ describe('GitService — 0.1.118 read-only methods', () => {
       const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
       expect(tracked).toContain('.claude4spec/briefs/a.md');
       expect(tracked).toContain('.claude4spec/patches/a.md');
+    });
+  });
+
+  describe('commitPull (0.1.124)', () => {
+    it('returns skipped when enabled is false', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: false });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.commitPull({ name: 'v2' })).toEqual({ status: 'skipped' });
+    });
+
+    it('returns skipped when enabled but no repo exists', async () => {
+      fs.mkdirSync(dir, { recursive: true });
+      writeConfigJson(dir, { enabled: true });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.commitPull({ name: 'v2' })).toEqual({ status: 'skipped' });
+    });
+
+    it('commits the working tree with a "Pull to <name>" message', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.commitPull({ name: 'v2' });
+      expect(result.status).toBe('committed');
+      const lastMessage = (await git(['log', '-1', '--format=%s'], dir)).trim();
+      expect(lastMessage).toBe('Pull to v2');
+    });
+
+    it('returns nothing-to-commit on a clean working tree', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.commitPull({ name: 'v2' })).toEqual({ status: 'nothing-to-commit' });
+    });
+  });
+
+  /** Install a pre-commit hook that always rejects — deterministically forces `git commit` to fail, independent of any ambient global git config (unlike unsetting user.name/email, which can silently fall back to it). */
+  function installFailingPreCommitHook(repoDir: string): void {
+    const hooksDir = path.join(repoDir, '.git', 'hooks');
+    fs.mkdirSync(hooksDir, { recursive: true });
+    const hookPath = path.join(hooksDir, 'pre-commit');
+    fs.writeFileSync(hookPath, '#!/bin/sh\necho "rejected by test hook" >&2\nexit 1\n');
+    fs.chmodSync(hookPath, 0o755);
+  }
+
+  describe('GitErrorRecovery (0.1.124)', () => {
+    it('commit failure populates recovery with operation "commit-on-release", reason, gitStderr, and an intentPrompt', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      installFailingPreCommitHook(dir);
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.commitOnRelease({ name: 'v1', description: 'desc' });
+      expect(result?.status).toBe('error');
+      expect(result?.recovery?.operation).toBe('commit-on-release');
+      expect(result?.recovery?.reason).toBeTruthy();
+      expect(result?.recovery?.gitStderr).toContain('rejected by test hook');
+      expect(result?.recovery?.intentPrompt).toContain('committing the spec on release');
+      expect(result?.recovery?.intentPrompt.toLowerCase()).toContain('--force');
+    });
+
+    it('commitPull failure populates recovery with operation "pull"', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      installFailingPreCommitHook(dir);
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.commitPull({ name: 'v2' });
+      expect(result.status).toBe('error');
+      expect(result.recovery?.operation).toBe('pull');
+    });
+
+    it('push failure (no upstream) populates recovery with operation "push"', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.push();
+      expect(result.status).toBe('error');
+      expect(result.recovery?.operation).toBe('push');
+      expect(result.recovery?.gitStderr).toBeTruthy();
+    });
+  });
+
+  describe('isAncestorOfHead (0.1.124)', () => {
+    it('returns false when enabled is false', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: false });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.isAncestorOfHead('HEAD')).toBe(false);
+    });
+
+    it('returns true for a commit reachable from HEAD, false for one that is not', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'a.txt'), 'a');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const reachable = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      // A commit on an unrelated branch, never merged into main, is NOT an
+      // ancestor of main's HEAD.
+      await git(['checkout', '-b', 'side'], dir);
+      fs.writeFileSync(path.join(dir, 'b.txt'), 'b');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'side commit'], dir);
+      const unreachableFromMain = (await git(['rev-parse', 'HEAD'], dir)).trim();
+      await git(['checkout', 'main'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.isAncestorOfHead(reachable)).toBe(true);
+      expect(await svc.isAncestorOfHead(unreachableFromMain)).toBe(false);
+    });
+  });
+
+  describe('diffRefToWorkingTree (0.1.124)', () => {
+    it('reports uncommitted working-tree changes against a commit', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      // Uncommitted: a.md modified, b.md created — never committed.
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+      fs.writeFileSync(path.join(pagesDir, 'b.md'), '# B v1');
+
+      const svc = new GitService(dir, [dir]);
+      const diff = await svc.diffRefToWorkingTree(shaA, [pagesDir]);
+      expect(diff).not.toBeNull();
+      const byPath = new Map(diff!.files.map((f) => [path.basename(f.path), f.status]));
+      expect(byPath.get('a.md')).toBe('M');
+      expect(byPath.get('b.md')).toBe('A');
+    });
+
+    it('returns null when git.enabled is false', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: false });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.diffRefToWorkingTree('HEAD', [dir])).toBeNull();
     });
   });
 

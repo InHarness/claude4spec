@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCreateRelease } from '../hooks/useReleases.js';
 import { ApiError } from '../lib/api-core.js';
-import { toast } from '../ui/events.js';
+import { showGitErrorModal } from '../ui/events.js';
 
 interface Props {
   onClose: () => void;
@@ -31,10 +31,11 @@ export function CreateReleaseDialog({ onClose }: Props) {
         name: name.trim(),
         description: description.trim(),
       });
-      // M28: git commit-sync is best-effort — a failure never blocks creation,
-      // it only warns.
-      if (release.gitSync?.status === 'error') {
-        toast.warning(`Git commit failed: ${release.gitSync.message ?? 'unknown error'}`);
+      // M28: git commit-sync is best-effort — a failure never blocks creation.
+      // 0.1.124: surfaced via GitErrorRecoveryModal (with a "Fix it with
+      // Agent" action) rather than a toast.
+      if (release.gitSync?.status === 'error' && release.gitSync.recovery) {
+        showGitErrorModal(release.gitSync.recovery);
       }
       onClose();
       navigate({ to: '/releases/$idOrName', params: { idOrName: release.name } });

@@ -23,6 +23,7 @@ import type {
   SpecSnapshot,
   SpecSnapshotEntityRow,
   SpecSnapshotPageRow,
+  UpdateReleaseResponse,
 } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
@@ -41,6 +42,7 @@ import { slugify } from '../../shared/slug.js';
 import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { GitService } from './git.js';
+import type { GitRefDiff } from '../../shared/git.js';
 import type { PageDiff, PageSnapshotData } from './page-serializer.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
@@ -54,6 +56,14 @@ import {
 } from './release-bundle.js';
 
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
+
+/** Shared by `classifyGitDiffFiles`/`diffPageCandidates` — `diffRefs`/`diffRefToWorkingTree` already flatten renames (R) into a D(old)+A(new) pair. */
+const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'deleted'> = {
+  A: 'created',
+  M: 'modified',
+  D: 'deleted',
+  R: 'created',
+};
 
 /**
  * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
@@ -326,13 +336,26 @@ export class ReleaseService {
    * Older releases are frozen — `id != MAX(id)` ⇒ 409 RELEASE_FROZEN.
    * Optionally pulls all `release_id IS NULL` rows from entity_version /
    * page_version into this release (decyzja 14, no untie).
+   *
+   * 0.1.124 commit-then-assign: when `assignUnreleased` is set AND a
+   * `GitService` is wired, a best-effort `commitPull()` of the working tree
+   * runs BEFORE the SQLite `release_id` cache is touched — the assignment
+   * only happens once that commit resolves to something other than
+   * `'error'` (`'committed'`/`'nothing-to-commit'`/`'skipped'` all proceed).
+   * On `'error'`, the assignment is skipped entirely so the cache and git
+   * stay in agreement: the work is still "unreleased". This is why the
+   * method is async and split into two DB transactions (name/description
+   * edit, then — conditionally — the assignment) rather than one; a git
+   * commit can't run inside a synchronous better-sqlite3 transaction. When
+   * no `GitService` is wired, or `assignUnreleased` is falsy, assignment
+   * behaves exactly as before (no gating, `gitSync: null`).
    */
-  updateRelease(input: {
+  async updateRelease(input: {
     idOrName: number | string;
     name?: string;
     description?: string;
     assignUnreleased?: boolean;
-  }): ReleaseDetail {
+  }): Promise<UpdateReleaseResponse> {
     const tx = this.db.transaction(() => {
       const row = this.findReleaseRow(input.idOrName);
       if (!row) throw new DomainError('NOT_FOUND', `release '${input.idOrName}' not found`);
@@ -398,19 +421,32 @@ export class ReleaseService {
           .run(nextName ?? null, nextSlug ?? null, nextDescription ?? null, row.id);
       }
 
-      if (input.assignUnreleased === true) {
-        this.db
-          .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
-          .run(row.id);
-        this.pageVersions.assignToRelease(row.id, this.releasableRootIds);
-      }
-
-      const finalRow = this.db
+      const editedRow = this.db
         .prepare(`SELECT * FROM spec_release WHERE id = ?`)
         .get(row.id) as ReleaseRow;
-      return { releaseId: row.id, oldSlug, finalRow };
+      return { releaseId: row.id, oldSlug, editedRow };
     });
-    const { releaseId, oldSlug, finalRow } = tx();
+    const { releaseId, oldSlug, editedRow } = tx();
+
+    let gitSync: UpdateReleaseResponse['gitSync'] = null;
+    let shouldAssign = input.assignUnreleased === true;
+    if (shouldAssign && this.gitService) {
+      const result = await this.gitService.commitPull(this.toRelease(editedRow));
+      gitSync = result;
+      if (result.status === 'error') shouldAssign = false;
+    }
+
+    let finalRow = editedRow;
+    if (shouldAssign) {
+      finalRow = this.db.transaction(() => {
+        this.db
+          .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
+          .run(releaseId);
+        this.pageVersions.assignToRelease(releaseId, this.releasableRootIds);
+        return this.db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(releaseId) as ReleaseRow;
+      })();
+    }
+
     // 0.1.118: keep the on-disk identity file in sync — a rename moves it
     // (remove old + write new), a description-only edit just rewrites content
     // at the same slug. Legacy releases (no slug — born before this feature,
@@ -428,7 +464,7 @@ export class ReleaseService {
         console.error(`[release] failed to sync release file for '${finalRow.name}':`, err);
       }
     }
-    return this.getRelease(releaseId);
+    return { ...this.getRelease(releaseId), gitSync };
   }
 
   // ─── Snapshots & diffs ───────────────────────────────────────────────────
@@ -501,16 +537,52 @@ export class ReleaseService {
   }
 
   /**
+   * 0.1.124 "reign" model: the git snapshot boundary for release `row` is the
+   * commit right before the NEXT release's marker (`M_next~1`, found by
+   * looking ahead to the next `spec_release` row by id), or the literal ref
+   * `'HEAD'` when `row` is the latest release (no next row — its reign
+   * extends to HEAD). Returns `null` when not usable, so the caller falls
+   * back to the SQL/version-table path:
+   *   - no `GitService`/`ReleaseFileStore` wired, or `config.git.enabled` is
+   *     off;
+   *   - `row` is frozen (has a next release) but that next release has no
+   *     slug (legacy release, predates the identity-file feature) or its
+   *     marker commit can't be resolved (e.g. it was created while
+   *     `git.enabled` was off — B3, a known open edge);
+   *   - the resolved marker isn't an ancestor of current HEAD (e.g. an
+   *     implicit-pull commit later rebased away) — trusting a marker outside
+   *     HEAD's history would produce a nonsensical diff.
+   *
+   * Note `row` itself needs no slug/marker of its own — only the NEXT
+   * release's marker matters (or none, for the latest release) — so a
+   * legacy, marker-less release can still be reign-diffed as long as its
+   * successor has one.
+   */
+  private async resolveReignRef(row: ReleaseRow): Promise<string | null> {
+    if (!this.gitService || !this.releaseStore) return null;
+    const nextRow = this.db
+      .prepare(`SELECT * FROM spec_release WHERE id > ? ORDER BY id ASC LIMIT 1`)
+      .get(row.id) as ReleaseRow | undefined;
+    if (!nextRow) return 'HEAD';
+    if (!nextRow.slug) return null;
+    const nextFile = nodePath.join(this.releaseStore.root, `${nextRow.slug}.json`);
+    const markerSha = await this.gitService.resolveReleaseCommit(nextFile);
+    if (!markerSha) return null;
+    if (!(await this.gitService.isAncestorOfHead(markerSha))) return null;
+    return `${markerSha}~1`;
+  }
+
+  /**
    * 0.1.118: git-anchored diff branch. Mutually exclusive with the SQL path
    * below (confirmed against spec AC — never merged): `null` means "not
    * usable" and the caller falls through to the existing SQL computation.
-   * Usable only when BOTH releases have a slug (legacy releases predating
-   * this feature never do) AND both resolve to a commit in git history (a
-   * release created while `syncCommitOnRelease` was off never lands in
-   * history — B3, a known open edge, per the brief).
+   *
+   * 0.1.124: sources both sides' boundaries from `resolveReignRef` (the
+   * "reign" model — see its doc comment) rather than each release's own
+   * marker commit directly.
    *
    * 0.1.124: for each changed page, the old/new content is read directly from
-   * the two resolved commits (`GitService.showFile`) and run through
+   * the two resolved refs (`GitService.showFile`) and run through
    * `pageSerializer.diff`, the same section/line-diff algorithm `computeDelta`
    * (the SQL path) uses — this path now produces the same section-level +
    * `line_diff` fidelity as every other diff path, not a degraded subset.
@@ -522,35 +594,140 @@ export class ReleaseService {
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
     const gitService = this.gitService;
-    if (!fromRow.slug || !toRow.slug) return null;
     const config = readConfig(this.cwd);
     if (!config.git?.enabled) return null;
 
-    const fromFile = nodePath.join(this.releaseStore.root, `${fromRow.slug}.json`);
-    const toFile = nodePath.join(this.releaseStore.root, `${toRow.slug}.json`);
-    const [shaA, shaB] = await Promise.all([
-      gitService.resolveReleaseCommit(fromFile),
-      gitService.resolveReleaseCommit(toFile),
+    const [refA, refB] = await Promise.all([
+      this.resolveReignRef(fromRow),
+      this.resolveReignRef(toRow),
     ]);
-    if (!shaA || !shaB) return null;
-    // Both release-identity files landed in the SAME commit (e.g. a rename
-    // that skipped a commit — B3 — followed by a later release whose commit
-    // swept up both the pending rename and the new file). `diffRefs(sha,
-    // sha, ...)` would trivially return `{files: []}`, a non-null-but-empty
-    // result the caller would otherwise accept as "no changes" even though
-    // real content differs — decline so the caller falls back to the
-    // version-table-based SQL path, which is anchored on release ids, not
-    // commits, and always produces a correct diff regardless of commit shape.
-    if (shaA === shaB) return null;
+    if (!refA || !refB) return null;
+    // Both releases resolved to the SAME reign boundary (e.g. two adjacent
+    // releases with no git-visible change between their markers).
+    // `diffRefs(ref, ref, ...)` would trivially return `{files: []}`, a
+    // non-null-but-empty result the caller would otherwise accept as "no
+    // changes" even though real content differs — decline so the caller
+    // falls back to the version-table-based SQL path, which is keyed on
+    // release ids, not commits, and always produces a correct diff
+    // regardless of commit shape.
+    if (refA === refB) return null;
 
-    // 0.1.118: `diffRefs` resolves its output paths from `git rev-parse
-    // --show-toplevel`, which is ALWAYS symlink-resolved — on macOS `cwd`
-    // itself is typically reached through `/var/folders` → `/private/var/…`,
-    // so a plain (non-realpath'd) comparison dir would silently never match
-    // any returned file (same class of bug `GitService.commit()`'s own
-    // staging-target resolution already guards against). Realpath every
-    // comparison target once, tolerating a missing dir (falls back to the
-    // as-given path — that branch just then matches nothing, not a crash).
+    const scope = this.resolveGitDiffScope(config, opts);
+    const gitDiff = await gitService.diffRefs(refA, refB, [
+      ...scope.scopedRootDirs,
+      scope.entitiesAbs,
+      scope.releasesAbs,
+    ]);
+    if (!gitDiff) return null;
+
+    const { entities, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
+
+    // Read old/new content per changed page directly from the two resolved
+    // refs and run it through the same section/line-diff algorithm the SQL
+    // path (`computeDelta`) uses. `gitStatus` is probed once (rather than
+    // per-file inside `showFile`) since a release can touch many pages, each
+    // needing up to two `showFile` calls — `detect()` alone is several git
+    // subprocesses, so reusing one probe avoids fanning that out per file.
+    const gitStatus = await gitService.detect();
+    const pages = await this.diffPageCandidates(
+      pageCandidates,
+      (absPath) => gitService.showFile(refA, absPath, gitStatus),
+      (absPath) => gitService.showFile(refB, absPath, gitStatus),
+      'tryGitAnchoredDiff',
+    );
+
+    return {
+      from: { id: fromRow.id, name: fromRow.name },
+      to: { id: toRow.id, name: toRow.name },
+      entities,
+      pages,
+    };
+  }
+
+  /**
+   * 0.1.124 "reign" model git-anchored fast path for `getUnreleasedDiff`
+   * (`:to='current'`) — mirrors `tryGitAnchoredDiff` but the "to" side is the
+   * live working tree, not a second release: uses `diffRefToWorkingTree`
+   * instead of `diffRefs`, and reads NEW-side page content directly off disk
+   * (the working tree) rather than via `GitService.showFile` (which only
+   * reads committed content). OLD-side content still comes from `showFile`
+   * at the resolved `refA`. `null` ⇒ caller falls back to the SQL/
+   * version-table path (`getCurrentSnapshot`-based), same contract as
+   * `tryGitAnchoredDiff`.
+   */
+  private async tryGitAnchoredUnreleasedDiff(
+    fromRow: ReleaseRow,
+    opts?: { roots?: string[] },
+  ): Promise<RawDelta | null> {
+    if (!this.gitService || !this.releaseStore) return null;
+    const gitService = this.gitService;
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+
+    const refA = await this.resolveReignRef(fromRow);
+    if (!refA) return null;
+
+    const scope = this.resolveGitDiffScope(config, opts);
+    const gitDiff = await gitService.diffRefToWorkingTree(refA, [
+      ...scope.scopedRootDirs,
+      scope.entitiesAbs,
+      scope.releasesAbs,
+    ]);
+    if (!gitDiff) return null;
+
+    const { entities, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
+
+    const readWorkingTreeFile = (absPath: string): Promise<string | null> => {
+      try {
+        return Promise.resolve(nodeFs.readFileSync(absPath, 'utf8'));
+      } catch {
+        return Promise.resolve(null);
+      }
+    };
+    const pages = await this.diffPageCandidates(
+      pageCandidates,
+      (absPath) => gitService.showFile(refA, absPath),
+      readWorkingTreeFile,
+      'tryGitAnchoredUnreleasedDiff',
+    );
+
+    return {
+      from: { id: fromRow.id, name: fromRow.name },
+      to: { id: 0, name: 'current' },
+      entities,
+      pages,
+    };
+  }
+
+  /**
+   * Shared path-scoping for the git-anchored diff branches
+   * (`tryGitAnchoredDiff`/`tryGitAnchoredUnreleasedDiff`): realpath'd
+   * entities/releases/briefs/patches dirs plus the (optionally
+   * `opts.roots`-narrowed) releasable root dirs, keyed by rootId.
+   *
+   * 0.1.118: `diffRefs`/`diffRefToWorkingTree` resolve their output paths
+   * from `git rev-parse --show-toplevel`, which is ALWAYS symlink-resolved —
+   * on macOS `cwd` itself is typically reached through `/var/folders` →
+   * `/private/var/…`, so a plain (non-realpath'd) comparison dir would
+   * silently never match any returned file (same class of bug
+   * `GitService.commit()`'s own staging-target resolution already guards
+   * against). Realpath every comparison target once, tolerating a missing
+   * dir (falls back to the as-given path — that branch just then matches
+   * nothing, not a crash).
+   */
+  private resolveGitDiffScope(
+    config: ReturnType<typeof readConfig>,
+    opts?: { roots?: string[] },
+  ): {
+    entitiesAbs: string;
+    releasesAbs: string;
+    briefsAbs: string;
+    patchesAbs: string;
+    cwdAbs: string;
+    rootIds: string[];
+    rootDirsById: Map<string, string>;
+    scopedRootDirs: string[];
+  } {
     const realOrSelf = (p: string): string => {
       try {
         return nodeFs.realpathSync(p);
@@ -559,7 +736,7 @@ export class ReleaseService {
       }
     };
     const entitiesAbs = realOrSelf(this.entityStore?.root ?? nodePath.resolve(this.cwd, config.entitiesDir));
-    const releasesAbs = realOrSelf(this.releaseStore.root);
+    const releasesAbs = realOrSelf(this.releaseStore!.root);
     // `readConfig` only type-checks briefsDir/patchesDir as strings (unlike the stricter
     // PATCH /api/config route) — a hand-edited config.json with `briefsDir: ''` (or '.')
     // would otherwise resolve briefsAbs to cwd itself, making isInside(briefsAbs, ...) match
@@ -574,24 +751,29 @@ export class ReleaseService {
       this.releasableRootIds.map((id, i) => [id, realOrSelf(this.releasableRootDirs[i]!)]),
     );
     const scopedRootDirs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
+    return { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById, scopedRootDirs };
+  }
 
-    const gitDiff = await gitService.diffRefs(shaA, shaB, [
-      ...scopedRootDirs,
-      entitiesAbs,
-      releasesAbs,
-    ]);
-    if (!gitDiff) return null;
-
-    const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'deleted'> = {
-      A: 'created',
-      M: 'modified',
-      D: 'deleted',
-      R: 'created', // diffRefs already flattens R into a D(old)+A(new) pair
-    };
+  /**
+   * Shared `GitRefDiff.files` classification for the git-anchored diff
+   * branches: splits into entity changes (no content diffing needed — just
+   * `{type, slug, op}`, same as the SQL path's entity handling elsewhere)
+   * and page candidates (path attributed to a releasable root, content
+   * diffed separately by the caller). Release-identity files and
+   * briefs/patches are never surfaced as spec content.
+   */
+  private classifyGitDiffFiles(
+    gitDiff: GitRefDiff,
+    scope: ReturnType<typeof this.resolveGitDiffScope>,
+  ): {
+    entities: RawDeltaEntityChange[];
+    pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }>;
+  } {
     const isInside = (parent: string, child: string): boolean => {
       const rel = nodePath.relative(parent, child);
       return rel !== '' && !rel.startsWith('..') && !nodePath.isAbsolute(rel);
     };
+    const { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById } = scope;
 
     const entities: RawDeltaEntityChange[] = [];
     const pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }> = [];
@@ -630,26 +812,36 @@ export class ReleaseService {
         break;
       }
     }
+    return { entities, pageCandidates };
+  }
 
-    // Read old/new content per changed page directly from the two resolved
-    // commits and run it through the same section/line-diff algorithm the SQL
-    // path (`computeDelta`) uses. `gitStatus` is probed once (rather than
-    // per-file inside `showFile`) since a release can touch many pages, each
-    // needing up to two `showFile` calls — `detect()` alone is several git
-    // subprocesses, so reusing one probe avoids fanning that out per file.
-    const gitStatus = await gitService.detect();
-
-    // `op` for the pushed entry is git's own status letter (STATUS_TO_OP),
-    // not inferred from content presence: `pageSerializer.diff` reports
-    // op:'created' whenever the OLD side is `null`, but `showFile` also
-    // returns `null` on any unrelated read failure (transient git error,
-    // resource limits) — trusting that inference would silently relabel a
-    // modification as a creation, or (if both sides fail) drop the page
-    // entirely as a false noop. Content is only used for section-level
-    // fidelity; a side git says should exist that still comes back `null`,
-    // or any error while parsing/diffing it (e.g. malformed historical
-    // frontmatter), degrades that single page to file-level-only detail
-    // (this path's pre-0.1.124 fidelity) rather than failing the request.
+  /**
+   * Shared per-page content diffing for the git-anchored diff branches:
+   * reads old/new content via `readOld`/`readNew` for each candidate and
+   * runs it through the same section/line-diff algorithm the SQL path
+   * (`computeDelta`) uses. `tryGitAnchoredDiff` wires both to `showFile` at
+   * its two resolved refs; `tryGitAnchoredUnreleasedDiff` wires `readOld` to
+   * `showFile` at `refA` and `readNew` to a plain working-tree disk read.
+   *
+   * `op` for each page is git's own status letter (`STATUS_TO_OP`), not
+   * inferred from content presence: `pageSerializer.diff` reports
+   * `op:'created'` whenever the OLD side is `null`, but a content read can
+   * also return `null` on any unrelated failure (transient git error,
+   * resource limits, or — for the working-tree branch — a genuinely deleted
+   * file) — trusting that inference would silently relabel a modification as
+   * a creation, or (if both sides fail) drop the page entirely as a false
+   * noop. Content is only used for section-level fidelity; a side that
+   * should exist per git's status but still comes back `null`, or any error
+   * while parsing/diffing it (e.g. malformed historical frontmatter),
+   * degrades that single page to file-level-only detail rather than failing
+   * the whole request.
+   */
+  private async diffPageCandidates(
+    pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }>,
+    readOld: (absPath: string) => Promise<string | null>,
+    readNew: (absPath: string) => Promise<string | null>,
+    logLabel: string,
+  ): Promise<RawDeltaPageChange[]> {
     const degradedPageChange = (c: (typeof pageCandidates)[number], op: RawDeltaPageChange['op']): RawDeltaPageChange => ({
       path: c.relPath,
       op,
@@ -661,7 +853,7 @@ export class ReleaseService {
       xml_refs_diff: null,
     });
 
-    const pages: RawDeltaPageChange[] = (
+    return (
       await Promise.all(
         pageCandidates.map(async (c): Promise<RawDeltaPageChange | null> => {
           const op = STATUS_TO_OP[c.status];
@@ -669,12 +861,12 @@ export class ReleaseService {
           const wantNew = op !== 'deleted';
           try {
             const [oldContent, newContent] = await Promise.all([
-              wantOld ? gitService.showFile(shaA, c.absPath, gitStatus) : Promise.resolve(null),
-              wantNew ? gitService.showFile(shaB, c.absPath, gitStatus) : Promise.resolve(null),
+              wantOld ? readOld(c.absPath) : Promise.resolve(null),
+              wantNew ? readNew(c.absPath) : Promise.resolve(null),
             ]);
             if ((wantOld && oldContent == null) || (wantNew && newContent == null)) {
               console.error(
-                `[release] tryGitAnchoredDiff: could not read git content for page '${c.relPath}' (status ${c.status}) — degrading to file-level status only`,
+                `[release] ${logLabel}: could not read content for page '${c.relPath}' (status ${c.status}) — degrading to file-level status only`,
               );
               return degradedPageChange(c, op);
             }
@@ -688,7 +880,7 @@ export class ReleaseService {
             return diff.op === 'noop' ? null : toRawDeltaPageChange(diff);
           } catch (err) {
             console.error(
-              `[release] tryGitAnchoredDiff: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
+              `[release] ${logLabel}: failed to diff page '${c.relPath}' — degrading to file-level status only:`,
               err instanceof Error ? err.message : String(err),
             );
             return degradedPageChange(c, op);
@@ -696,13 +888,6 @@ export class ReleaseService {
         }),
       )
     ).filter((d): d is RawDeltaPageChange => d !== null);
-
-    return {
-      from: { id: fromRow.id, name: fromRow.name },
-      to: { id: toRow.id, name: toRow.name },
-      entities,
-      pages,
-    };
   }
 
   /**
@@ -756,13 +941,28 @@ export class ReleaseService {
   /**
    * 0.1.122: diff a release (or the initial/empty state, for `fromIdOrName
    * === null`) against the *current* unreleased spec state (`getCurrentSnapshot`).
-   * Same shape/algorithm as `getReleaseDiff`'s SQL path — no git-anchored fast
-   * path here, since "current" isn't a persisted, git-anchorable release.
+   * Same shape/algorithm as `getReleaseDiff`'s SQL path.
+   *
+   * 0.1.124: when `config.git.enabled` and `fromIdOrName` resolves to a
+   * reign-diffable release, sources from `tryGitAnchoredUnreleasedDiff`
+   * instead (mutually exclusive with the SQL computation below, same
+   * "never merged" contract as `getReleaseDiff`'s git-anchored branch) — `git
+   * diff snapshot(:from)..working-tree`: for the latest release this is just
+   * the uncommitted working-tree diff, for an older/frozen release it also
+   * picks up every intermediate reign. `fromIdOrName === null` always takes
+   * the SQL path (no release to resolve a reign boundary from).
    */
   async getUnreleasedDiff(
     fromIdOrName: number | string | null,
     opts?: { roots?: string[] },
   ): Promise<RawDelta> {
+    if (fromIdOrName !== null) {
+      const fromRowForGit = this.findReleaseRow(fromIdOrName);
+      if (!fromRowForGit) throw new DomainError('NOT_FOUND', `release '${fromIdOrName}' not found`);
+      const gitDelta = await this.tryGitAnchoredUnreleasedDiff(fromRowForGit, opts);
+      if (gitDelta) return gitDelta;
+    }
+
     const toSnap = this.getCurrentSnapshot();
     const toPageRows = this.latestPageRowsAtOrBefore(null, opts?.roots);
     const toMeta = { id: 0, name: 'current' };

@@ -6,6 +6,7 @@ import type {
   HttpMethod,
   TagCreateInput,
 } from '../../shared/entities.js';
+import type { GitErrorRecovery } from '../../shared/git.js';
 
 // ---------- Toasts ----------
 
@@ -66,6 +67,26 @@ export function confirmDestructive(input: ConfirmInput): Promise<boolean> {
     const detail: ConfirmRequest = { ...input, resolve };
     window.dispatchEvent(new CustomEvent<ConfirmRequest>(CONFIRM_EVENT, { detail }));
   });
+}
+
+// ---------- Git error recovery modal ----------
+
+export interface GitErrorModalRequest {
+  recovery: GitErrorRecovery;
+}
+
+const GIT_ERROR_EVENT = 'c4s:git-error-open';
+
+/**
+ * 0.1.124: replaces the old `toast.warning('Git commit/push failed: ...')`
+ * pattern — a `gitSync.status === 'error'` result now opens a persistent
+ * `GitErrorRecoveryModal` (mounted once in `App.tsx`, same event-bus
+ * singleton pattern as `confirmDestructive`/`ModalHost`) with a "Fix it with
+ * Agent" action, instead of a fire-and-forget toast.
+ */
+export function showGitErrorModal(recovery: GitErrorRecovery): void {
+  const detail: GitErrorModalRequest = { recovery };
+  window.dispatchEvent(new CustomEvent<GitErrorModalRequest>(GIT_ERROR_EVENT, { detail }));
 }
 
 // ---------- Popovers ----------
@@ -175,6 +196,7 @@ export const UI_EVENTS = {
   TOAST: TOAST_EVENT,
   CONFIRM: CONFIRM_EVENT,
   POPOVER: POPOVER_EVENT,
+  GIT_ERROR: GIT_ERROR_EVENT,
 } as const;
 
 export const ENTITY_TYPES: readonly EntityType[] = ['endpoint', 'dto', 'database-table'];

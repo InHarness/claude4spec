@@ -9,9 +9,14 @@
  * look like". `commit()` / `push()` perform the two sync actions. `commitOnRelease()`
  * / `pushOnPush()` are the gated entry points the hooks call: they read the
  * (hot-reloaded) config flag, detect the repo, and either act or return `null`
- * (flag off OR no repo).
+ * (flag off OR no repo). `commitPull()` is the 0.1.124 sibling of
+ * `commitOnRelease()` for the "pull unreleased changes" flow — gated the same
+ * way, but always returns a `GitCommitResult` (never `null`) since its caller
+ * (`releaseService.updateRelease`) needs a result to decide whether to assign
+ * the SQLite `release_id` cache.
  *
- * Spec: brief 0-1-37-to-0-1-38.md (M28).
+ * Spec: brief 0-1-37-to-0-1-38.md (M28); 0-1-123-to-0-1-124.md (commitPull,
+ * error recovery).
  */
 
 import { execFile } from 'node:child_process';
@@ -24,6 +29,7 @@ import type {
   GitBranchesResponse,
   GitCheckoutResponse,
   GitCommitResult,
+  GitErrorRecovery,
   GitPushResult,
   GitRefDiff,
   GitStatusResponse,
@@ -131,35 +137,28 @@ export class GitService {
   }
 
   /**
-   * Stage every releasable root dir + `config.json` and commit. Assumes a repo
-   * is detected (callers gate via `commitOnRelease`). Returns `'skipped'` on
-   * detached HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on
-   * any git failure.
+   * Canonicalize the staging targets shared by `commit()` and `commitPull()`:
+   * every releasable root dir + `config.json` + entitiesDir/releasesDir/
+   * briefsDir/patchesDir, realpath'd and filtered to those actually inside
+   * `root`. Root dirs / configPath may be reached through a symlink (e.g.
+   * `.claude/skills/specyfikacja` → another repo's worktree). `git add`
+   * matches pathspecs lexically against the real worktree root, so an
+   * unresolved symlink path reads as "outside repository" — resolve to real
+   * paths first.
+   *
+   * M29: also stages the committed entity store (<entitiesDir> contains the
+   * entity JSON files + tags.json — the source of truth). db.sqlite is
+   * gitignored, so the whole dir can be staged safely. 0.1.118: also stages
+   * releasesDir so a new release's identity file lands in the same commit as
+   * its marker (for `resolveReleaseCommit` later) — and, when the git master
+   * switch is on, briefsDir/patchesDir too: `ensureGitignore` un-gitignores
+   * them specifically so they "become committed and shared with the team"
+   * (see its own doc comment) — that promise is empty unless staging actually
+   * includes them. When the switch is off they're still gitignored, so
+   * staging them here is a harmless no-op (`git add` on an ignored path adds
+   * nothing).
    */
-  async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return { status: 'skipped' };
-    if (!status.branch) return { status: 'skipped', message: 'detached HEAD' };
-    const root = status.rootPath;
-
-    // Canonicalize staging targets. Root dirs / configPath may be reached
-    // through a symlink (e.g. `.claude/skills/specyfikacja` → another repo's
-    // worktree). `git add` matches pathspecs lexically against the real worktree
-    // root, so an unresolved symlink path reads as "outside repository". Resolve
-    // to real paths and keep only those that actually live inside `root`.
-    //
-    // Stage every releasable root dir. M29: also stage the committed entity
-    // store (<entitiesDir> contains the entity JSON files + tags.json — the
-    // source of truth). db.sqlite is gitignored, so the whole dir can be
-    // staged safely. 0.1.118: also stage releasesDir so the new release's
-    // identity file lands in this same commit as its anchor (for
-    // resolveReleaseCommit later) — and, when the git master switch is on,
-    // briefsDir/patchesDir too: `ensureGitignore` un-gitignores them
-    // specifically so they "become committed and shared with the team" (see
-    // its own doc comment) — that promise is empty unless commit() actually
-    // stages them. When the switch is off they're still gitignored, so
-    // staging them here is a harmless no-op (`git add` on an ignored path
-    // adds nothing).
+  private resolveStagingTargets(root: string): string[] {
     const bootConfig = readConfig(this.cwd);
     const entitiesPath = path.resolve(this.cwd, bootConfig.entitiesDir);
     const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
@@ -183,6 +182,25 @@ export class GitService {
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
     }
+    return targets;
+  }
+
+  /**
+   * Stage `resolveStagingTargets()` and commit with `message`. Assumes a repo
+   * is detected (callers gate via `commitOnRelease`/`commitPull`). Returns
+   * `'skipped'` on detached HEAD, `'nothing-to-commit'` when nothing is
+   * staged, `'error'` (with `recovery`) on any git failure.
+   */
+  private async stageAndCommit(
+    status: GitStatusResponse,
+    message: string,
+    operation: GitErrorRecovery['operation'],
+  ): Promise<GitCommitResult> {
+    if (!status.detected || !status.rootPath) return { status: 'skipped' };
+    if (!status.branch) return { status: 'skipped', message: 'detached HEAD' };
+    const root = status.rootPath;
+
+    const targets = this.resolveStagingTargets(root);
     if (targets.length === 0) {
       return {
         status: 'skipped',
@@ -193,7 +211,7 @@ export class GitService {
     try {
       await this.git(['add', '--', ...targets], root);
     } catch (err) {
-      return { status: 'error', message: errMessage(err) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root) };
     }
 
     // `git diff --cached --quiet` exits 0 when nothing is staged, 1 otherwise.
@@ -204,13 +222,45 @@ export class GitService {
       // non-zero ⇒ there are staged changes; fall through to commit.
     }
 
-    const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     try {
       await this.git(['commit', '-m', message], root);
       return { status: 'committed' };
     } catch (err) {
-      return { status: 'error', message: errMessage(err) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery(operation, err, root) };
     }
+  }
+
+  /**
+   * Stage every releasable root dir + `config.json` and commit with a
+   * `name`/`description`-derived message. Assumes a repo is detected
+   * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached
+   * HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on any git
+   * failure.
+   */
+  async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
+    const status = await this.detect();
+    const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
+    return this.stageAndCommit(status, message, 'commit-on-release');
+  }
+
+  /**
+   * 0.1.124: best-effort commit of the working tree when pulling unreleased
+   * changes into the latest release (`releaseService.updateRelease({
+   * assignUnreleased: true })`). Same staging scope as `commit()` — no
+   * exclusion of `releasesDir` is needed: this method is never called
+   * alongside a NEW release-identity-file write, so no new marker file ever
+   * lands in this commit; staging `releasesDir` here is harmless. Gate:
+   * `config.git.enabled` + a detected repo with a branch (mirrors
+   * `commitOnRelease`/`pushOnPush`) — on gate failure returns `{ status:
+   * 'skipped' }` rather than `null` (unlike the other two hooks, this method
+   * always returns a result, never throws).
+   */
+  async commitPull(latest: { name: string }): Promise<GitCommitResult> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return { status: 'skipped' };
+    const status = await this.detect();
+    if (!status.detected || !status.branch) return { status: 'skipped' };
+    return this.stageAndCommit(status, `Pull to ${latest.name}`, 'pull');
   }
 
   /**
@@ -230,20 +280,25 @@ export class GitService {
       }
       return { status: 'pushed' };
     } catch (err) {
-      return { status: 'error', message: errMessage(err) };
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery('push', err, status.rootPath) };
     }
   }
 
   /**
-   * Gated commit hook. `null` when the git master switch is off, commit-sync
-   * is off, no repo is detected, or the detected repo has no branch (detached
-   * HEAD); otherwise the `commit()` result. `enabled` is checked FIRST so a
-   * disabled project never pays for the `detect()` subprocess round-trip.
-   * Reads config per-call (hot-reload).
+   * Gated commit hook. `null` when the git master switch is off, no repo is
+   * detected, or the detected repo has no branch (detached HEAD); otherwise
+   * the `commit()` result. `enabled` is checked FIRST so a disabled project
+   * never pays for the `detect()` subprocess round-trip. Reads config
+   * per-call (hot-reload).
+   *
+   * 0.1.124: the gate no longer also checks a separate commit-sync toggle —
+   * `git.enabled` alone now means "commit on release too" (the
+   * `syncCommitOnRelease` sub-toggle was removed; there is no longer a "git
+   * on, but doesn't commit" state).
    */
   async commitOnRelease(release: { name: string; description: string }): Promise<GitCommitResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled || !config.git?.syncCommitOnRelease) return null;
+    if (!config.git?.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.branch) return null;
     return this.commit(release);
@@ -263,19 +318,53 @@ export class GitService {
   }
 
   /**
-   * 0.1.118 read-only: SHA of the commit that first ADDED `absPath` — used to
-   * anchor a release's identity in git history (there are no tags/stored
-   * gitSha). `null` when git is disabled, no repo is detected, `absPath` is
-   * outside the repo, or the file has never been added (e.g.
-   * `syncCommitOnRelease` was off when it was created — B3, a known open
-   * edge). Never throws.
+   * 0.1.124: compose the `GitErrorRecovery` payload for a failed git
+   * operation — `reason` (short human summary, via `errMessage`) + raw
+   * `gitStderr` + a backend-composed `intentPrompt` for `startSeededThread`.
+   * The prompt instructs the agent to use only safe, non-destructive git
+   * operations (`status`/`stash`/`commit`) via its built-in Bash tool — never
+   * `--force`/`reset --hard`/anything that could discard work.
+   */
+  private buildRecovery(operation: GitErrorRecovery['operation'], err: unknown, rootPath: string): GitErrorRecovery {
+    const reason = errMessage(err);
+    const gitStderr = rawStderr(err);
+    const opLabel =
+      operation === 'commit-on-release'
+        ? 'committing the spec on release'
+        : operation === 'pull'
+          ? 'committing pulled changes into the latest release'
+          : 'pushing the current branch to its remote';
+    const intentPrompt = [
+      `claude4spec's git sync failed while ${opLabel}, in the repository at ${rootPath}.`,
+      '',
+      `Git error:\n${gitStderr || reason}`,
+      '',
+      'Please investigate and fix this safely. Only use non-destructive git operations ' +
+        '(e.g. `git status`, `git stash`, `git commit`) via your Bash tool — never `--force`, ' +
+        '`reset --hard`, or anything else that could discard uncommitted work. Report back what ' +
+        'you found and what you did.',
+    ].join('\n');
+    return { operation, reason, gitStderr, intentPrompt };
+  }
+
+  /**
+   * 0.1.118 read-only: SHA of the commit that first ADDED `absPath` — this is
+   * a release's "marker" commit (0.1.124 terminology; previously "anchor").
+   * `null` when git is disabled, no repo is detected, `absPath` is outside
+   * the repo, or the file has never been added (e.g. `git.enabled` was off
+   * when it was created — B3, a known open edge). Never throws.
+   *
+   * 0.1.124: the marker itself is no longer used directly as a diff boundary
+   * — `ReleaseService.resolveReignRef` derives the actual "reign" snapshot
+   * boundary from it (the commit before the NEXT release's marker, or `HEAD`
+   * for the latest release).
    *
    * Deliberately NOT `git log --diff-filter=A -1 --format=%H` — `git log`
    * without `--reverse` walks history newest-first, so a bare `-1` returns
    * the MOST RECENT add, not the first. That matters because a release's
    * identity file can be deleted then re-created at the exact same path
    * (rename away, then later rename back to a name that slugifies the same)
-   * — fetch every add and take the oldest so this always anchors to the
+   * — fetch every add and take the oldest so this always resolves to the
    * ORIGINAL creation commit, matching the documented contract.
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
@@ -307,23 +396,8 @@ export class GitService {
     }
   }
 
-  /**
-   * 0.1.118 read-only: file-level diff between two commits, scoped to
-   * `paths` (releasable roots + entitiesDir + releasesDir, per the caller).
-   * Uses `--name-status` (not the brief's literal `git diff <a>..<b>`, which
-   * alone does not produce a parseable `{path, status}` shape). Renames/copies
-   * are flattened into a delete(old)+create(new) pair to keep the existing
-   * create/update/delete vocabulary intact downstream. Never throws — `null`
-   * when git is disabled or no repo is detected; an empty `{files: []}` when
-   * none of `paths` resolve inside the repo.
-   */
-  async diffRefs(shaA: string, shaB: string, paths: string[]): Promise<GitRefDiff | null> {
-    const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return null;
-    const status = await this.detect();
-    if (!status.detected || !status.rootPath) return null;
-    const root = status.rootPath;
-
+  /** Canonicalize `paths` to realpaths inside `root` — shared by `diffRefs`/`diffRefToWorkingTree`. */
+  private resolveDiffTargets(root: string, paths: string[]): string[] {
     const targets: string[] = [];
     for (const p of paths) {
       let real: string;
@@ -335,6 +409,64 @@ export class GitService {
       const rel = path.relative(root, real);
       if (!rel.startsWith('..') && !path.isAbsolute(rel)) targets.push(real);
     }
+    return targets;
+  }
+
+  /**
+   * Parse `git diff --name-status` output into `{path, status}` pairs,
+   * resolved to absolute paths under `root`. Shared by `diffRefs`/
+   * `diffRefToWorkingTree`. Renames/copies are flattened into a
+   * delete(old)+create(new) pair to keep the existing create/update/delete
+   * vocabulary intact downstream.
+   */
+  private parseNameStatus(stdout: string, root: string): GitRefDiff['files'] {
+    const files: GitRefDiff['files'] = [];
+    for (const line of stdout.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      const parts = trimmed.split('\t');
+      const code = parts[0]!;
+      const letter = code[0];
+      if (letter === 'R' || letter === 'C') {
+        // Rename/copy: two paths on one line — flatten to delete(old)+create(new).
+        const oldPath = parts[1];
+        const newPath = parts[2];
+        // `git diff --name-status` reports paths relative to the repo ROOT
+        // (which may sit above `cwd` in a monorepo) — resolve to absolute so
+        // callers never have to re-derive `status.rootPath` themselves.
+        if (oldPath) files.push({ path: path.join(root, oldPath), status: 'D' });
+        if (newPath) files.push({ path: path.join(root, newPath), status: 'A' });
+      } else if (letter === 'A' || letter === 'M' || letter === 'D') {
+        const filePath = parts[1];
+        if (filePath) files.push({ path: path.join(root, filePath), status: letter });
+      } else if (parts[1]) {
+        // Any other single-letter status git may emit (T type-change, U
+        // unmerged, X unknown, …) — surface as a modification rather than
+        // silently dropping the file from the diff entirely.
+        files.push({ path: path.join(root, parts[1]), status: 'M' });
+      }
+    }
+    return files;
+  }
+
+  /**
+   * 0.1.118 read-only: file-level diff between two commits (or, more
+   * generally, two git revision expressions — a bare SHA, `HEAD`, or a
+   * relative form like `<sha>~1`, all valid here), scoped to `paths`
+   * (releasable roots + entitiesDir + releasesDir, per the caller). Uses
+   * `--name-status` (not the brief's literal `git diff <a>..<b>`, which
+   * alone does not produce a parseable `{path, status}` shape). Never throws
+   * — `null` when git is disabled or no repo is detected; an empty
+   * `{files: []}` when none of `paths` resolve inside the repo.
+   */
+  async diffRefs(shaA: string, shaB: string, paths: string[]): Promise<GitRefDiff | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    const root = status.rootPath;
+
+    const targets = this.resolveDiffTargets(root, paths);
     if (targets.length === 0) return { files: [] };
 
     try {
@@ -347,36 +479,84 @@ export class GitService {
         ['-c', 'core.quotePath=false', 'diff', '--name-status', `${shaA}..${shaB}`, '--', ...targets],
         root,
       );
-      const files: GitRefDiff['files'] = [];
-      for (const line of stdout.split('\n')) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const parts = trimmed.split('\t');
-        const code = parts[0]!;
-        const letter = code[0];
-        if (letter === 'R' || letter === 'C') {
-          // Rename/copy: two paths on one line — flatten to delete(old)+create(new).
-          const oldPath = parts[1];
-          const newPath = parts[2];
-          // `git diff --name-status` reports paths relative to the repo ROOT
-          // (which may sit above `cwd` in a monorepo) — resolve to absolute so
-          // callers never have to re-derive `status.rootPath` themselves.
-          if (oldPath) files.push({ path: path.join(root, oldPath), status: 'D' });
-          if (newPath) files.push({ path: path.join(root, newPath), status: 'A' });
-        } else if (letter === 'A' || letter === 'M' || letter === 'D') {
-          const filePath = parts[1];
-          if (filePath) files.push({ path: path.join(root, filePath), status: letter });
-        } else if (parts[1]) {
-          // Any other single-letter status git may emit (T type-change, U
-          // unmerged, X unknown, …) — surface as a modification rather than
-          // silently dropping the file from the diff entirely.
-          files.push({ path: path.join(root, parts[1]), status: 'M' });
-        }
-      }
-      return { files };
+      return { files: this.parseNameStatus(stdout, root) };
     } catch (err) {
       console.error('[git] diffRefs failed:', errMessage(err));
       return null;
+    }
+  }
+
+  /**
+   * 0.1.124 read-only: file-level diff between a commit/revision and the
+   * CURRENT working tree (`git diff --name-status <sha> -- <paths>`, no
+   * second ref — includes both staged and unstaged changes to TRACKED
+   * paths), PLUS untracked new files under `paths` surfaced as `'A'`. Used
+   * by the reign-model `getUnreleasedDiff` git-anchored fast path
+   * (`:to='current'`).
+   *
+   * `git diff <ref>` alone never reports untracked files — that's a git
+   * quirk (diff only compares tracked/staged content), not a bug — so a page
+   * created in the editor but never `git add`ed would otherwise silently
+   * vanish from a "current" diff. Rather than mutate the index (`git add -N`)
+   * to make plain `diff` see it — invasive for a read-only method — run a
+   * separate `git ls-files --others --exclude-standard` and merge its
+   * results in as `'A'` entries; no overlap with the tracked diff is
+   * possible by construction (an untracked path can never also appear in
+   * `git diff`'s tracked-only output). Same scoping/parsing/never-throws
+   * contract as `diffRefs` otherwise.
+   */
+  async diffRefToWorkingTree(sha: string, paths: string[]): Promise<GitRefDiff | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    const root = status.rootPath;
+
+    const targets = this.resolveDiffTargets(root, paths);
+    if (targets.length === 0) return { files: [] };
+
+    try {
+      const [trackedResult, untrackedResult] = await Promise.all([
+        this.git(['-c', 'core.quotePath=false', 'diff', '--name-status', sha, '--', ...targets], root),
+        this.git(
+          ['-c', 'core.quotePath=false', 'ls-files', '--others', '--exclude-standard', '--', ...targets],
+          root,
+        ),
+      ]);
+      const files = this.parseNameStatus(trackedResult.stdout, root);
+      for (const line of untrackedResult.stdout.split('\n')) {
+        const relPath = line.trim();
+        if (relPath) files.push({ path: path.join(root, relPath), status: 'A' });
+      }
+      return { files };
+    } catch (err) {
+      console.error('[git] diffRefToWorkingTree failed:', errMessage(err));
+      return null;
+    }
+  }
+
+  /**
+   * 0.1.124 read-only: is `sha` an ancestor of (or equal to) the current
+   * branch's HEAD (`git merge-base --is-ancestor <sha> HEAD`)? Used by the
+   * "reign" snapshot resolution (`ReleaseService.resolveReignRef`) to guard
+   * against a release marker that's no longer reachable from HEAD (e.g. an
+   * implicit-pull commit later rebased away) — the reign-model diff must
+   * fall back to the SQL/version-table path rather than trust a stale
+   * marker. Gated on `config.git.enabled`; never throws — any failure (git
+   * disabled, no repo, `sha` doesn't exist, `sha` genuinely isn't an
+   * ancestor) all resolve to `false`, the conservative "don't trust it"
+   * answer.
+   */
+  async isAncestorOfHead(sha: string): Promise<boolean> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return false;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return false;
+    try {
+      await this.git(['merge-base', '--is-ancestor', sha, 'HEAD'], status.rootPath);
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -578,7 +758,12 @@ export class GitService {
 function errMessage(err: unknown): string {
   // execFile rejections carry the combined stderr; prefer it over the generic
   // "Command failed" wrapper for a useful warning toast.
-  const stderr = (err as { stderr?: string })?.stderr?.trim();
+  const stderr = rawStderr(err);
   if (stderr) return stderr;
   return err instanceof Error ? err.message : String(err);
+}
+
+/** Raw stderr from an `execFile` rejection, or `''` when the failure carries none. */
+function rawStderr(err: unknown): string {
+  return (err as { stderr?: string })?.stderr?.trim() ?? '';
 }

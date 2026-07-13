@@ -16,6 +16,7 @@ import { ReleaseSelect } from './release/ReleaseSelect.js';
 import { ReleasePushesList } from './release/ReleasePushesList.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { CreateBriefDialog } from './CreateBriefDialog.js';
+import { showGitErrorModal } from '../ui/events.js';
 // Side-effect import: registers the M25 "Push to remote" action in the registry.
 import './release/push-to-remote-action.js';
 
@@ -109,7 +110,13 @@ export function ReleaseDetail({ idOrName }: Props) {
   async function pullUnreleased() {
     if (!release || !isLatest) return;
     try {
-      await updateRelease.mutateAsync({ idOrName: release.id, assignUnreleased: true });
+      const updated = await updateRelease.mutateAsync({ idOrName: release.id, assignUnreleased: true });
+      // M28: git commit-sync is best-effort — never blocks the pull itself.
+      // 0.1.124: surfaced via GitErrorRecoveryModal (with a "Fix it with
+      // Agent" action) rather than a toast.
+      if (updated.gitSync?.status === 'error' && updated.gitSync.recovery) {
+        showGitErrorModal(updated.gitSync.recovery);
+      }
     } catch (err) {
       alert((err as Error).message);
     }

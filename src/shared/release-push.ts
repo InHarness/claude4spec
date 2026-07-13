@@ -6,6 +6,8 @@
  * meta (so the UI does not need a second fetch).
  */
 
+import type { GitPushStatus, GitSyncField } from './git.js';
+
 /** Body of `POST /api/release-pushes`. */
 export interface ReleasePushRequest {
   /** FK to `spec_release.id` — the local release to push. */
@@ -49,7 +51,7 @@ export interface ReleasePushResponse {
    * `POST /api/release-pushes` response — `GET /api/release-pushes/:id`
    * (audit replay) always returns `null` (this result is not persisted).
    */
-  gitSync?: { status: 'pushed' | 'nothing-to-push' | 'skipped' | 'error'; message?: string } | null;
+  gitSync?: GitSyncField<GitPushStatus>;
 }
 
 /** Response of `GET /api/release-pushes`. */

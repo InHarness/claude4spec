@@ -135,7 +135,7 @@ export interface ConfigResponse {
     pathScopeStrength: 'hard' | 'soft' | 'none';
   };
   /** M28: hot-reload git-sync toggles (always resolved; all default false). 0.1.118 adds the `enabled` master switch. */
-  git: { enabled: boolean; syncCommitOnRelease: boolean; syncPushOnPush: boolean };
+  git: { enabled: boolean; syncPushOnPush: boolean };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
@@ -169,7 +169,7 @@ export interface ConfigPatch {
     disallowedPaths?: string[];
   };
   /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
-  git?: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+  git?: { enabled?: boolean; syncPushOnPush?: boolean };
   /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */
   plugins?: Record<string, Record<string, unknown>>;
   remoteProjectId?: string | null;

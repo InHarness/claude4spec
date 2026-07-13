@@ -4,6 +4,7 @@ import type {
   Release,
   ReleaseDetail,
   SpecSnapshot,
+  UpdateReleaseResponse,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
 
@@ -48,8 +49,8 @@ export const releasesApi = {
   async update(
     idOrName: string | number,
     input: { name?: string; description?: string; assignUnreleased?: boolean },
-  ): Promise<ReleaseDetail> {
-    return handle<ReleaseDetail>(
+  ): Promise<UpdateReleaseResponse> {
+    return handle<UpdateReleaseResponse>(
       await apiFetch(`/api/releases/${encodeURIComponent(String(idOrName))}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

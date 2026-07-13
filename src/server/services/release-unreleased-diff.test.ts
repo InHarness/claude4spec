@@ -193,11 +193,11 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       );
     });
 
-    it('updateRelease rejects renaming the latest release to "current"', () => {
+    it('updateRelease rejects renaming the latest release to "current"', async () => {
       releases.createRelease({ name: 'v1', description: 'first' }, 'user');
-      expect(() => releases.updateRelease({ idOrName: 'v1', name: 'current' })).toThrow(
-        expect.objectContaining({ code: 'RELEASE_NAME_RESERVED' }),
-      );
+      await expect(releases.updateRelease({ idOrName: 'v1', name: 'current' })).rejects.toMatchObject({
+        code: 'RELEASE_NAME_RESERVED',
+      });
     });
 
     it('still rejects an empty name before checking the reserved name (unchanged precedence)', () => {
@@ -206,7 +206,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       );
     });
 
-    it('updateRelease resubmitting an unchanged legacy "current" name does not throw (0.1.122 code-review fix)', () => {
+    it('updateRelease resubmitting an unchanged legacy "current" name does not throw (0.1.122 code-review fix)', async () => {
       // createRelease now blocks new 'current' releases, but legacy/pre-
       // migration data (or a release-identity file synced before the indexer
       // guard existed) could already hold that name — insert directly to
@@ -214,15 +214,15 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       db.prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
         .run('current', 'current', 'legacy', 'user');
 
-      const updated = releases.updateRelease({ idOrName: 'current', name: 'current', description: 'new desc' });
+      const updated = await releases.updateRelease({ idOrName: 'current', name: 'current', description: 'new desc' });
       expect(updated.description).toBe('new desc');
     });
 
-    it('updateRelease still rejects an ACTUAL rename to "current"', () => {
+    it('updateRelease still rejects an ACTUAL rename to "current"', async () => {
       releases.createRelease({ name: 'v1', description: 'first' }, 'user');
-      expect(() => releases.updateRelease({ idOrName: 'v1', name: 'current', description: 'x' })).toThrow(
-        expect.objectContaining({ code: 'RELEASE_NAME_RESERVED' }),
-      );
+      await expect(
+        releases.updateRelease({ idOrName: 'v1', name: 'current', description: 'x' }),
+      ).rejects.toMatchObject({ code: 'RELEASE_NAME_RESERVED' });
     });
   });
 });

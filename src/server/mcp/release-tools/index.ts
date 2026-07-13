@@ -237,7 +237,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
     },
     async (args) => {
       try {
-        const release = deps.releaseService.updateRelease({
+        const release = await deps.releaseService.updateRelease({
           idOrName: args.idOrName as number | string,
           name: args.name as string | undefined,
           description: args.description as string | undefined,

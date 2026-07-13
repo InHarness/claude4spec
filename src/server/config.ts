@@ -109,14 +109,18 @@ export interface Config {
 export interface GitSyncConfig {
   /**
    * 0.1.118: master switch for the entire git layer. Absent/missing ⇒ `false`
-   * (opt-in — existing projects with `syncCommitOnRelease`/`syncPushOnPush`
-   * already `true` lose commit/push-on-release after upgrading; the Settings
-   * UI surfaces an amber banner for that case). When `false`, ALL git
-   * operations no-op and return `status: 'skipped'`; `detect()` may still run.
+   * (opt-in — existing projects with `syncPushOnPush` already `true` lose
+   * push-on-release after upgrading; the Settings UI surfaces an amber banner
+   * for that case). When `false`, ALL git operations no-op and return
+   * `status: 'skipped'`; `detect()` may still run.
+   *
+   * 0.1.124: `enabled` alone now also gates commit-on-release/commit-on-pull —
+   * the separate `syncCommitOnRelease` sub-toggle was removed (there is no
+   * longer a "git on, but doesn't commit" state). Any `config.json` still
+   * carrying `syncCommitOnRelease` has it silently dropped on load (no
+   * migration, no `$schemaVersion` bump).
    */
   enabled?: boolean;
-  /** When on, creating a release best-effort `git commit`s pagesDir + config.json. */
-  syncCommitOnRelease?: boolean;
   /** When on, a successful remote push best-effort `git push`es the current branch. */
   syncPushOnPush?: boolean;
 }
@@ -564,12 +568,9 @@ function validate(raw: unknown): Partial<Config> {
       }
       git.enabled = gr.enabled;
     }
-    if ('syncCommitOnRelease' in gr) {
-      if (typeof gr.syncCommitOnRelease !== 'boolean') {
-        throw typeError('git.syncCommitOnRelease', 'boolean', gr.syncCommitOnRelease);
-      }
-      git.syncCommitOnRelease = gr.syncCommitOnRelease;
-    }
+    // 0.1.124: `syncCommitOnRelease` is no longer a field — an existing
+    // config.json that still carries it is silently dropped here (not copied
+    // into `git`), no error, no `$schemaVersion` bump.
     if ('syncPushOnPush' in gr) {
       if (typeof gr.syncPushOnPush !== 'boolean') {
         throw typeError('git.syncPushOnPush', 'boolean', gr.syncPushOnPush);
