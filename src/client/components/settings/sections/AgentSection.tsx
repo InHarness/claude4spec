@@ -113,7 +113,6 @@ export function AgentSection() {
       id="agent"
       title="Agent"
       description="Tweaks applied to chat turns powered by Claude Code."
-      badge="hot-reload"
     >
       <div className="flex flex-col gap-4">
         <label className="flex items-start gap-3">

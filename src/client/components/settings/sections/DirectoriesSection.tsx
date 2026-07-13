@@ -229,7 +229,6 @@ export function DirectoriesSection() {
       id="directories"
       title="Directories"
       description="Page roots and project directory layout — applied immediately (the project context rebuilds on the next request)."
-      badge="hot-reload"
     >
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3">
