@@ -89,8 +89,7 @@ export function EntitiesSection() {
     <SettingsCard
       id="entities"
       title="Entities"
-      description="Which entity types are active in this project. Disabling a type hides it from the sidebar immediately (no restart). This edits activation only — see Plugin pool below for what's available."
-      badge="hot-reload"
+      description="Which entity types are active in this project. Disabling a type hides it from the sidebar immediately. This edits activation only — see Plugin pool below for what's available."
     >
       <div className="flex flex-col gap-2">
         {poolTypes.length === 0 ? (

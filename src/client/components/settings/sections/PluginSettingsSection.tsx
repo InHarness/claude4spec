@@ -54,17 +54,11 @@ function PluginCard({
     }
   }
 
-  // Only label the whole card "Hot reload" when EVERY field is hot-reload;
-  // if any field is `executive` the card badge is dropped (the per-field
-  // KindBadge disambiguates) so the card never mislabels a rebuild field.
-  const allHotReload = fields.every((f) => f.kind === 'hot-reload');
-
   return (
     <SettingsCard
       id={`plugin-${name}`}
       title={name}
       description={`Settings contributed by ${name} v${version}.`}
-      badge={allHotReload ? 'hot-reload' : undefined}
     >
       <div className="flex flex-col gap-4">
         {fields.map((field) => (
@@ -99,7 +93,6 @@ function FieldRow({
           <span className="text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
             {field.label}
           </span>
-          <KindBadge kind={field.kind} />
         </div>
         {field.help ? (
           <p className="text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
@@ -204,22 +197,5 @@ function FieldControl({
       className="rounded-md px-2 py-1 text-[12.5px] w-48"
       style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
     />
-  );
-}
-
-function KindBadge({ kind }: { kind: PluginSettingField['kind'] }) {
-  const label = kind === 'executive' ? 'rebuild' : 'hot-reload';
-  return (
-    <span
-      className="rounded-full px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-wide"
-      style={{ background: 'var(--c-accent-soft)', color: 'var(--c-accent)' }}
-      title={
-        kind === 'executive'
-          ? 'Changing this rebuilds the project context (no restart).'
-          : 'Takes effect from the next turn / new thread (no rebuild).'
-      }
-    >
-      {label}
-    </span>
   );
 }

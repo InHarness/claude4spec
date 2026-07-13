@@ -94,7 +94,6 @@ export function ProjectSection() {
       id="project"
       title="Project"
       description="Name shown in the sidebar and used as the remote project label on first push."
-      badge="next-new-thread"
     >
       <div className="flex flex-col gap-4">
         <Field label="Name">
@@ -179,7 +178,7 @@ export function ProjectSection() {
               {writingStyleError}
             </span>
           ) : (
-            <Hint>Applied from the first turn of your next new thread — no restart needed.</Hint>
+            <Hint>Applied from the first turn of your next new thread.</Hint>
           )}
         </Field>
 

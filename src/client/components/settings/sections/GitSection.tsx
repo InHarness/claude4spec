@@ -52,7 +52,6 @@ export function GitSection() {
       id="git"
       title="Git"
       description="Mirror release activity into the git repository that holds your pages."
-      badge="hot-reload"
     >
       <div className="flex flex-col gap-4">
         <Toggle
