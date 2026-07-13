@@ -49,6 +49,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(await svc.resolveReleaseCommit(path.join(dir, 'foo.json'))).toBeNull();
       expect(await svc.diffRefs('HEAD~1', 'HEAD', [dir])).toBeNull();
       expect(await svc.statusAheadBehind()).toBeNull();
+      expect(await svc.showFile('HEAD', path.join(dir, 'foo.md'))).toBeNull();
     });
 
     it('all three return null (not throw) when git.enabled is true but no repo exists', async () => {
@@ -59,6 +60,7 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(await svc.resolveReleaseCommit(path.join(dir, 'foo.json'))).toBeNull();
       expect(await svc.diffRefs('HEAD~1', 'HEAD', [dir])).toBeNull();
       expect(await svc.statusAheadBehind()).toBeNull();
+      expect(await svc.showFile('HEAD', path.join(dir, 'foo.md'))).toBeNull();
     });
   });
 
@@ -171,6 +173,57 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(diff).not.toBeNull();
       const byName = new Map(diff!.files.map((f) => [path.basename(f.path), f.status]));
       expect(byName.get('a.md')).toBe('M');
+    });
+
+    it('showFile returns a file\'s content at a given commit, verbatim', async () => {
+      const svc = new GitService(dir, [dir]);
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const filePath = path.join(pagesDir, 'a.md');
+      fs.writeFileSync(filePath, '# A v1');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      fs.writeFileSync(filePath, '# A v2');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'second'], dir);
+      const shaB = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      expect(await svc.showFile(shaA, filePath)).toBe('# A v1');
+      expect(await svc.showFile(shaB, filePath)).toBe('# A v2');
+    });
+
+    it('showFile returns null (not throw) for a path that did not exist at that commit', async () => {
+      const svc = new GitService(dir, [dir]);
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      const newFile = path.join(pagesDir, 'b.md');
+      fs.writeFileSync(newFile, '# B');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'second'], dir);
+
+      expect(await svc.showFile(shaA, newFile)).toBeNull();
+    });
+
+    it('showFile returns null for a path outside the repo', async () => {
+      const svc = new GitService(dir, [dir]);
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'x');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'first'], dir);
+      const shaA = (await git(['rev-parse', 'HEAD'], dir)).trim();
+
+      const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-outside-'));
+      try {
+        expect(await svc.showFile(shaA, path.join(outside, 'x.txt'))).toBeNull();
+      } finally {
+        fs.rmSync(outside, { recursive: true, force: true });
+      }
     });
 
     it('statusAheadBehind returns branch/dirty with null ahead/behind when there is no upstream', async () => {

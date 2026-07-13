@@ -509,9 +509,11 @@ export class ReleaseService {
    * release created while `syncCommitOnRelease` was off never lands in
    * history — B3, a known open edge, per the brief).
    *
-   * Fidelity note: this path can only produce file-level create/modified/
-   * deleted, not the rich per-field diff the SQL path produces (frontmatter,
-   * entity field diffs) — an accepted, spec-confirmed tradeoff, not a bug.
+   * 0.1.124: for each changed page, the old/new content is read directly from
+   * the two resolved commits (`GitService.showFile`) and run through
+   * `pageSerializer.diff`, the same section/line-diff algorithm `computeDelta`
+   * (the SQL path) uses — this path now produces the same section-level +
+   * `line_diff` fidelity as every other diff path, not a degraded subset.
    */
   private async tryGitAnchoredDiff(
     fromRow: ReleaseRow,
@@ -519,6 +521,7 @@ export class ReleaseService {
     opts?: { roots?: string[] },
   ): Promise<RawDelta | null> {
     if (!this.gitService || !this.releaseStore) return null;
+    const gitService = this.gitService;
     if (!fromRow.slug || !toRow.slug) return null;
     const config = readConfig(this.cwd);
     if (!config.git?.enabled) return null;
@@ -526,8 +529,8 @@ export class ReleaseService {
     const fromFile = nodePath.join(this.releaseStore.root, `${fromRow.slug}.json`);
     const toFile = nodePath.join(this.releaseStore.root, `${toRow.slug}.json`);
     const [shaA, shaB] = await Promise.all([
-      this.gitService.resolveReleaseCommit(fromFile),
-      this.gitService.resolveReleaseCommit(toFile),
+      gitService.resolveReleaseCommit(fromFile),
+      gitService.resolveReleaseCommit(toFile),
     ]);
     if (!shaA || !shaB) return null;
     // Both release-identity files landed in the SAME commit (e.g. a rename
@@ -572,7 +575,7 @@ export class ReleaseService {
     );
     const scopedRootDirs = rootIds.map((id) => rootDirsById.get(id)!).filter(Boolean);
 
-    const gitDiff = await this.gitService.diffRefs(shaA, shaB, [
+    const gitDiff = await gitService.diffRefs(shaA, shaB, [
       ...scopedRootDirs,
       entitiesAbs,
       releasesAbs,
@@ -591,7 +594,7 @@ export class ReleaseService {
     };
 
     const entities: RawDeltaEntityChange[] = [];
-    const pages: RawDeltaPageChange[] = [];
+    const pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }> = [];
 
     for (const file of gitDiff.files) {
       // Release-identity files are metadata, not spec content — never surfaced.
@@ -623,19 +626,49 @@ export class ReleaseService {
         // ANOTHER, more specific root may legitimately own (e.g. a root at '.docs') — keep
         // trying remaining roots instead of abandoning attribution for this file entirely.
         if (hasDotSegment(relPath)) continue;
-        pages.push({
-          path: relPath,
-          op: STATUS_TO_OP[file.status],
-          added_sections: [],
-          removed_sections: [],
-          modified_sections: [],
-          moved_sections: [],
-          frontmatter_diff: null,
-          xml_refs_diff: null,
-        });
+        pageCandidates.push({ relPath, absPath: file.path, status: file.status });
         break;
       }
     }
+
+    // Read old/new content per changed page directly from the two resolved
+    // commits and run it through the same section/line-diff algorithm the SQL
+    // path (`computeDelta`) uses — mirrors computeDelta's snapshotFromContent
+    // → diff → copy-fields pattern (release.ts computeDelta, below). `op` on
+    // the pushed entry comes from the diff itself (not STATUS_TO_OP): this is
+    // what makes a rename — flattened by diffRefs into a D(old)+A(new) pair —
+    // resolve correctly, since the "D" candidate's new-side content naturally
+    // doesn't exist at the new path's old name, and vice versa for the "A" side.
+    const pages: RawDeltaPageChange[] = (
+      await Promise.all(
+        pageCandidates.map(async (c) => {
+          const op = STATUS_TO_OP[c.status];
+          const [oldContent, newContent] = await Promise.all([
+            op !== 'created' ? gitService.showFile(shaA, c.absPath) : Promise.resolve(null),
+            op !== 'deleted' ? gitService.showFile(shaB, c.absPath) : Promise.resolve(null),
+          ]);
+          const aData = oldContent != null
+            ? this.pageSerializer.snapshotFromContent(c.relPath, oldContent)
+            : null;
+          const bData = newContent != null
+            ? this.pageSerializer.snapshotFromContent(c.relPath, newContent)
+            : null;
+          const diff = this.pageSerializer.diff(aData, bData, c.relPath);
+          return diff.op === 'noop' ? null : diff;
+        }),
+      )
+    )
+      .filter((d): d is NonNullable<typeof d> => d !== null)
+      .map((diff) => ({
+        path: diff.path,
+        op: diff.op,
+        added_sections: diff.added_sections,
+        removed_sections: diff.removed_sections,
+        modified_sections: diff.modified_sections,
+        moved_sections: diff.moved_sections,
+        frontmatter_diff: diff.frontmatter_diff,
+        xml_refs_diff: diff.xml_refs_diff,
+      }));
 
     return {
       from: { id: fromRow.id, name: fromRow.name },

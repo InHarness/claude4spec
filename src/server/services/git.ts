@@ -381,6 +381,39 @@ export class GitService {
   }
 
   /**
+   * 0.1.124 read-only: a file's content at a specific commit (`git show
+   * <sha>:<path>`). `status.rootPath` (from `detect()`, via `git rev-parse
+   * --show-toplevel`) is always symlink-resolved, so `absPath` is realpath'd
+   * first — same reasoning as `diffRefs`'s own per-target realpath loop —
+   * tolerating a missing file (it may not exist in the CURRENT working tree
+   * at all, e.g. deleted since; the as-given path is still usable for the
+   * relative-to-root split in that case). Returns `null` when the file
+   * doesn't exist at that commit (e.g. the created/deleted boundary of a
+   * change), the path falls outside the repo, or git/repo detection fails —
+   * never throws.
+   */
+  async showFile(sha: string, absPath: string): Promise<string | null> {
+    const config = readConfig(this.cwd);
+    if (!config.git?.enabled) return null;
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    let real: string;
+    try {
+      real = fs.realpathSync(absPath);
+    } catch {
+      real = absPath;
+    }
+    const rel = path.relative(status.rootPath, real);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    try {
+      const { stdout } = await this.git(['show', `${sha}:${rel}`], status.rootPath);
+      return stdout;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * 0.1.118 read-only: HEAD status vs. upstream. Reuses `detect()`'s
    * branch/dirty rather than re-probing. `null` when git is disabled, no repo
    * is detected, or the branch is detached (no branch to compare). A non-null
