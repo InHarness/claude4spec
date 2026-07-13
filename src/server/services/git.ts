@@ -21,6 +21,8 @@ import path from 'node:path';
 import { configPath, readConfig } from '../config.js';
 import type {
   GitAheadBehindStatus,
+  GitBranchesResponse,
+  GitCheckoutResponse,
   GitCommitResult,
   GitPushResult,
   GitRefDiff,
@@ -48,10 +50,16 @@ export class GitService {
    * @param releasableRootDirs dirs of the releasable roots (absolute or
    *                           cwd-relative) — the probe locations for repo
    *                           detection (a release may live in a sub-worktree).
+   * @param hasInFlightTurn    0.1.123: reports whether an agent turn is
+   *                           currently mutating disk — `checkout()` hard-blocks
+   *                           on this (a branch switch would race live writes).
+   *                           Defaults to "never busy" so every existing
+   *                           `new GitService(cwd, dirs)` call site keeps working.
    */
   constructor(
     private cwd: string,
     releasableRootDirs: string[],
+    private hasInFlightTurn: () => boolean = () => false,
   ) {
     this.releasableRootDirs = releasableRootDirs.map((d) => path.resolve(cwd, d));
   }
@@ -402,6 +410,101 @@ export class GitService {
       // No upstream configured (or another failure) — repo/branch are known,
       // but no ahead/behind comparison is possible.
       return { branch: status.branch, isDirty: status.isDirty, ahead: null, behind: null };
+    }
+  }
+
+  /** Local branch names (`git branch --format=%(refname:short)`) at an already-detected `rootPath`. */
+  private async listBranchesAt(rootPath: string): Promise<string[]> {
+    return this.git(['branch', '--format=%(refname:short)'], rootPath)
+      .then((r) =>
+        r.stdout
+          .split('\n')
+          .map((s) => s.trim())
+          .filter(Boolean),
+      )
+      .catch(() => []);
+  }
+
+  /**
+   * 0.1.123 read-only: local branches for the interactive git badge dropdown +
+   * the release-plan commit-target picker. `current` is `detect()`'s `branch`
+   * (already `null` on detached HEAD). `branches` is non-empty even in detached
+   * HEAD, so the UI can offer a way out. Never throws — degrades to
+   * `{ current: null, branches: [] }` when git is disabled or no repo is detected.
+   */
+  async listBranches(): Promise<GitBranchesResponse> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return { current: null, branches: [] };
+    }
+    if (!config.git?.enabled) return { current: null, branches: [] };
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return { current: null, branches: [] };
+    return { current: status.branch, branches: await this.listBranchesAt(status.rootPath) };
+  }
+
+  /**
+   * 0.1.123: switch HEAD/working tree to an EXISTING local branch. Never
+   * throws — every failure maps to a `status`, no HTTP error. Does not create
+   * branches or tags. Guard chain, first match wins:
+   *   1. `'skipped'`   — git master switch off or no repo.
+   *   2. `'busy'`      — an in-flight agent turn is mutating disk.
+   *   3. `'dirty-blocked'` — tracked modified/staged files exist (untracked
+   *      files alone do NOT block — checked via `--untracked-files=no`).
+   *   4. `'not-found'` — `branch` isn't a local branch.
+   *   5. `'switched'`  — success. `'error'` if git itself refuses the checkout
+   *      (e.g. an untracked-file collision) despite the pre-checks passing —
+   *      that case must NOT be reported as `'dirty-blocked'`.
+   */
+  async checkout(branch: string): Promise<GitCheckoutResponse> {
+    let config: ReturnType<typeof readConfig>;
+    try {
+      config = readConfig(this.cwd);
+    } catch {
+      return { status: 'skipped', branch: null, message: null };
+    }
+    if (!config.git?.enabled) return { status: 'skipped', branch: null, message: null };
+
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return { status: 'skipped', branch: null, message: null };
+    const root = status.rootPath;
+
+    if (this.hasInFlightTurn()) {
+      return { status: 'busy', branch: null, message: 'A background task is running — try again in a moment.' };
+    }
+
+    // Tracked modified/staged files only — `--untracked-files=no` excludes
+    // bare `??` entries, so an untracked file alone never blocks the switch.
+    const dirty = await this.git(['status', '--porcelain', '--untracked-files=no'], root)
+      .then((r) => r.stdout.trim().length > 0)
+      .catch(() => false);
+    if (dirty) {
+      return {
+        status: 'dirty-blocked',
+        branch: null,
+        message: 'Commit or stash your changes before switching branches.',
+      };
+    }
+
+    const branches = await this.listBranchesAt(root);
+    if (!branches.includes(branch)) {
+      return { status: 'not-found', branch: null, message: `Branch "${branch}" was not found.` };
+    }
+
+    // Best-effort re-check immediately before the mutating call: narrows (does
+    // not close) the TOCTOU window between the busy-check above and the actual
+    // checkout — the guard chain is explicitly "first match wins", not a lock.
+    if (this.hasInFlightTurn()) {
+      return { status: 'busy', branch: null, message: 'A background task is running — try again in a moment.' };
+    }
+
+    try {
+      await this.git(['checkout', branch], root);
+      return { status: 'switched', branch, message: null };
+    } catch (err) {
+      return { status: 'error', branch: null, message: errMessage(err) };
     }
   }
 }

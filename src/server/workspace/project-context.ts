@@ -602,7 +602,9 @@ async function buildInner(
   releaseService.setReleaseStore(releaseFileStore);
   // M28 Git Sync — best-effort mirroring of release create/push into the user's
   // git repo. Probes the releasable roots for a worktree; reads config per-action.
-  const gitService = new GitService(cwd, releasableRootDirs);
+  // 0.1.123: `checkout()` hard-blocks while a turn is live, so it shares the
+  // same `activeAdapters` predicate as `ProjectContext.hasInFlightTurn` below.
+  const gitService = new GitService(cwd, releasableRootDirs, () => activeAdapters.size > 0);
   // 0.1.118: needed for the git-anchored getReleaseDiff branch.
   releaseService.setGitService(gitService);
   // M25 Release Push — coordinates M17 bundle build + M24 transport; owns release_push.
@@ -772,7 +774,9 @@ async function buildInner(
   router.use('/plans', plansRouter(planService));
   router.use('/releases', releasesRouter(releaseService, ws, gitService));
   router.use('/release-pushes', releasePushesRouter(releasePushService));
-  router.use('/git', gitRouter(gitService));
+  // 0.1.123: on a successful checkout, reuse the same invalidate path as a
+  // context-defining config change — no new M31 reload machinery needed.
+  router.use('/git', gitRouter(gitService, { onSwitched: onContextConfigChanged }));
   router.use('/briefs', briefsRouter(briefService, pageVersions));
   router.use('/patches', patchesRouter(patchService));
   router.use('/agent', agentRouter(agentCredentialService));

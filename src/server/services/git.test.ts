@@ -311,4 +311,171 @@ describe('GitService — 0.1.118 read-only methods', () => {
       expect(tracked).toContain('.claude4spec/patches/a.md');
     });
   });
+
+  describe('listBranches (0.1.123)', () => {
+    it('returns {current: null, branches: []} when git.enabled is false', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: false });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.listBranches()).toEqual({ current: null, branches: [] });
+    });
+
+    it('returns {current: null, branches: []} when enabled but no repo exists', async () => {
+      fs.mkdirSync(dir, { recursive: true });
+      writeConfigJson(dir, { enabled: true });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.listBranches()).toEqual({ current: null, branches: [] });
+    });
+
+    it('lists local branches with the correct current branch', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      await git(['checkout', '-b', 'feature'], dir);
+      await git(['checkout', 'main'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.listBranches();
+      expect(result.current).toBe('main');
+      expect(result.branches.sort()).toEqual(['feature', 'main']);
+    });
+
+    it('is non-empty in detached HEAD, with current: null', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      const sha = (await git(['rev-parse', 'HEAD'], dir)).trim();
+      await git(['checkout', sha], dir);
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.listBranches();
+      expect(result.current).toBeNull();
+      expect(result.branches).toContain('main');
+    });
+  });
+
+  describe('checkout (0.1.123)', () => {
+    it('returns skipped when git.enabled is false', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: false });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.checkout('main')).toEqual({ status: 'skipped', branch: null, message: null });
+    });
+
+    it('returns skipped when enabled but no repo exists', async () => {
+      fs.mkdirSync(dir, { recursive: true });
+      writeConfigJson(dir, { enabled: true });
+      const svc = new GitService(dir, [dir]);
+      expect(await svc.checkout('main')).toEqual({ status: 'skipped', branch: null, message: null });
+    });
+
+    it('returns busy when an agent turn is in flight, before any git mutation', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      await git(['checkout', '-b', 'feature'], dir);
+      await git(['checkout', 'main'], dir);
+
+      const svc = new GitService(dir, [dir], () => true);
+      const result = await svc.checkout('feature');
+      expect(result.status).toBe('busy');
+      expect(result.message).toMatch(/background task/i);
+      // HEAD did not move.
+      expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('main');
+    });
+
+    it('returns dirty-blocked when a tracked file is modified (uncommitted)', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'v1');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      await git(['checkout', '-b', 'feature'], dir);
+      await git(['checkout', 'main'], dir);
+      fs.writeFileSync(path.join(dir, 'tracked.txt'), 'v2 (uncommitted)');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.checkout('feature');
+      expect(result.status).toBe('dirty-blocked');
+      expect(result.message).toMatch(/commit or stash/i);
+    });
+
+    it('does NOT block on an untracked file alone (regression)', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      await git(['checkout', '-b', 'feature'], dir);
+      await git(['checkout', 'main'], dir);
+      fs.writeFileSync(path.join(dir, 'untracked.txt'), 'never added');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.checkout('feature');
+      expect(result.status).toBe('switched');
+      expect(result.branch).toBe('feature');
+    });
+
+    it('returns not-found for a nonexistent branch', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.checkout('does-not-exist');
+      expect(result).toEqual({
+        status: 'not-found',
+        branch: null,
+        message: 'Branch "does-not-exist" was not found.',
+      });
+    });
+
+    it('switches HEAD on the happy path', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      await git(['checkout', '-b', 'feature'], dir);
+      await git(['checkout', 'main'], dir);
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.checkout('feature');
+      expect(result).toEqual({ status: 'switched', branch: 'feature', message: null });
+      expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('feature');
+    });
+
+    it('returns error (not dirty-blocked) when git refuses the checkout due to an untracked-file collision', async () => {
+      await initRepo(dir);
+      writeConfigJson(dir, { enabled: true });
+      // main: seed commit.
+      fs.writeFileSync(path.join(dir, 'seed.txt'), 'seed');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'seed'], dir);
+      // feature: tracks x.txt with content A.
+      await git(['checkout', '-b', 'feature'], dir);
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'content on feature');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'add x on feature'], dir);
+      // Back on main: x.txt is untracked here, with DIFFERENT content — git
+      // refuses to check out feature because it would overwrite it.
+      await git(['checkout', 'main'], dir);
+      fs.writeFileSync(path.join(dir, 'x.txt'), 'different untracked content on main');
+
+      const svc = new GitService(dir, [dir]);
+      const result = await svc.checkout('feature');
+      expect(result.status).toBe('error');
+      expect(result.message).toBeTruthy();
+      // Still on main — the checkout never happened.
+      expect((await git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)).trim()).toBe('main');
+    });
+  });
 });
