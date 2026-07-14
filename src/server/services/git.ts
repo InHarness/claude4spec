@@ -22,8 +22,9 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { configPath, readConfig } from '../config.js';
+import { configPath, readConfig, type GitCommitTargetConfig } from '../config.js';
 import type {
   GitAheadBehindStatus,
   GitBranchesResponse,
@@ -34,8 +35,24 @@ import type {
   GitRefDiff,
   GitStatusResponse,
 } from '../../shared/git.js';
+import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
 
 const pexec = promisify(execFile);
+
+/**
+ * 0.1.125: is `name` a valid git ref (branch) name (`git check-ref-format
+ * --branch <name>`)? Doesn't need a repo — git validates the syntax alone.
+ * Used by the PATCH /api/config route (preview-render check on a `new`-mode
+ * template) and available for any other ref-safety check. Never throws.
+ */
+export async function isValidGitRefName(name: string): Promise<boolean> {
+  try {
+    await pexec('git', ['check-ref-format', '--branch', name]);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const NOT_DETECTED: GitStatusResponse = {
   detected: false,
@@ -70,9 +87,18 @@ export class GitService {
     this.releasableRootDirs = releasableRootDirs.map((d) => path.resolve(cwd, d));
   }
 
-  /** Run `git <args>` in `dir`. Throws on non-zero exit or a missing binary. */
-  private async git(args: string[], dir: string): Promise<{ stdout: string; stderr: string }> {
-    return pexec('git', args, { cwd: dir });
+  /**
+   * Run `git <args>` in `dir`. Throws on non-zero exit or a missing binary.
+   * 0.1.125: optional `env` override — used by the temp-index commit-target
+   * flow (`GIT_INDEX_FILE`) so `read-tree`/`add`/`write-tree` operate on a
+   * scratch index instead of the repo's real one.
+   */
+  private async git(
+    args: string[],
+    dir: string,
+    env?: NodeJS.ProcessEnv,
+  ): Promise<{ stdout: string; stderr: string }> {
+    return pexec('git', args, { cwd: dir, ...(env ? { env } : {}) });
   }
 
   /**
@@ -111,6 +137,27 @@ export class GitService {
         return b && b !== 'HEAD' ? b : null;
       })
       .catch(() => null);
+  }
+
+  /**
+   * 0.1.125: read-only, never-throw resolution of the "default" base branch
+   * for `commitTarget.mode === 'new'` when `base` is `null` (auto-detect).
+   * Order: `origin/HEAD` symref (stripped of the `origin/` prefix) → local
+   * `main` → local `master` → current branch (`null` on detached HEAD or a
+   * repo with no commits at all — the caller maps that to `base-missing`).
+   */
+  private async resolveDefaultBranch(root: string): Promise<string | null> {
+    const originHead = await this.git(['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'], root)
+      .then((r) => r.stdout.trim().replace(/^origin\//, ''))
+      .catch(() => '');
+    if (originHead) return originHead;
+    for (const candidate of ['main', 'master']) {
+      const exists = await this.git(['rev-parse', '--verify', `refs/heads/${candidate}`], root)
+        .then(() => true)
+        .catch(() => false);
+      if (exists) return candidate;
+    }
+    return this.currentBranch(root);
   }
 
   /**
@@ -236,11 +283,342 @@ export class GitService {
    * (callers gate via `commitOnRelease`). Returns `'skipped'` on detached
    * HEAD, `'nothing-to-commit'` when nothing is staged, `'error'` on any git
    * failure.
+   *
+   * 0.1.125: dispatches on `config.git.commitTarget.mode`:
+   *   - `'current'` (default, absent): unchanged — stage + commit on the
+   *     real index/HEAD via `stageAndCommit`.
+   *   - `'named'`: commit onto an EXISTING branch's tip via a temp index —
+   *     never touches HEAD, the working tree, or the real index.
+   *   - `'new'`: commit onto a NEW branch grown from a base branch's tip
+   *     (never from HEAD) — same temp-index mechanism.
+   * For `'named'`/`'new'`, when `switchAfterRelease` is on, attempts a
+   * post-commit switch (bypassing the dirty/busy pre-guards `checkout()`
+   * enforces — see `switchAfterCommit`). The commit itself is already
+   * durable by the time a switch is attempted, so a switch failure is
+   * reported as `status: 'error'` (with `recovery.kind`) while still
+   * carrying `branch` — the caller can tell the commit landed even though
+   * the switch didn't.
    */
   async commit(opts: { name: string; description: string }): Promise<GitCommitResult> {
     const status = await this.detect();
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
-    return this.stageAndCommit(status, message, 'commit-on-release');
+    const config = readConfig(this.cwd);
+    const commitTarget: GitCommitTargetConfig = config.git?.commitTarget ?? {};
+    const mode = commitTarget.mode ?? 'current';
+
+    let result: GitCommitResult;
+    if (mode === 'named' && status.detected && status.rootPath && commitTarget.branch) {
+      if (commitTarget.branch === status.branch) {
+        // The "named" target IS the currently checked-out branch — commit
+        // via the real index/HEAD path instead of the scratch-index one.
+        // Advancing the current branch's ref through a scratch index while
+        // never touching the real index/working tree would leave `git
+        // status` permanently confused (the just-committed file would show
+        // as both staged-deleted and untracked, even though its on-disk
+        // content matches the commit exactly) — this produces the identical
+        // outcome (a commit lands on `status.branch`) via the safe path.
+        result = await this.stageAndCommit(status, message, 'commit-on-release');
+        if (result.status === 'committed') result = { ...result, branch: status.branch };
+      } else {
+        result = await this.commitToNamedBranch(status, message, commitTarget.branch);
+      }
+    } else if (mode === 'new' && status.detected && status.rootPath && commitTarget.template) {
+      result = await this.commitToNewBranch(status, message, {
+        template: commitTarget.template,
+        base: commitTarget.base ?? null,
+        releaseName: opts.name,
+        date: localDateYYYYMMDD(new Date()),
+      });
+    } else {
+      // 'current' mode, OR a 'named'/'new' config missing its required
+      // sub-field (e.g. a hand-edited config.json) — defensively fall back
+      // to the always-safe legacy behavior rather than failing the release.
+      result = await this.stageAndCommit(status, message, 'commit-on-release');
+    }
+
+    if (
+      result.status === 'committed' &&
+      mode !== 'current' &&
+      config.git?.switchAfterRelease &&
+      result.branch &&
+      status.rootPath
+    ) {
+      const { switched, recovery } = await this.switchAfterCommit(status.rootPath, result.branch);
+      if (!switched) {
+        return { status: 'error', branch: result.branch, recovery };
+      }
+      return { ...result, switched: true };
+    }
+    return result;
+  }
+
+  /**
+   * 0.1.125: commit-target `'named'` — commit the staged spec deltas onto
+   * an EXISTING branch's tip via a temporary index, without touching HEAD,
+   * the working tree, or the real index. `branch-missing` when it doesn't
+   * resolve as a local branch.
+   */
+  private async commitToNamedBranch(
+    status: GitStatusResponse,
+    message: string,
+    branch: string,
+  ): Promise<GitCommitResult> {
+    const root = status.rootPath!;
+    const tipSha = await this.git(['rev-parse', '--verify', `refs/heads/${branch}`], root)
+      .then((r) => r.stdout.trim())
+      .catch(() => null);
+    if (!tipSha) {
+      const err = new Error(`Branch "${branch}" was not found.`);
+      return {
+        status: 'error',
+        message: err.message,
+        recovery: this.buildRecovery('commit-on-release', err, root, 'branch-missing'),
+      };
+    }
+    return this.commitOntoTipViaTempIndex(root, message, tipSha, branch);
+  }
+
+  /**
+   * 0.1.125: commit-target `'new'` — commit onto a brand-new branch grown
+   * from a base branch's tip (never HEAD), via the same temp-index
+   * mechanism. `base-missing` when the base can't be resolved (explicit
+   * `base` gone, or auto-detection finds nothing — e.g. a repo with no
+   * commits). A rendered name colliding with an existing branch gets a `-2`,
+   * `-3`, … suffix until one is free.
+   */
+  private async commitToNewBranch(
+    status: GitStatusResponse,
+    message: string,
+    target: { template: string; base: string | null; releaseName: string; date: string },
+  ): Promise<GitCommitResult> {
+    const root = status.rootPath!;
+    const baseBranch = target.base ?? (await this.resolveDefaultBranch(root));
+    if (!baseBranch) {
+      const err = new Error('Could not resolve a base branch (repository has no commits).');
+      return {
+        status: 'error',
+        message: err.message,
+        recovery: this.buildRecovery('commit-on-release', err, root, 'base-missing'),
+      };
+    }
+    const baseTipSha = await this.git(['rev-parse', '--verify', `refs/heads/${baseBranch}`], root)
+      .then((r) => r.stdout.trim())
+      .catch(() => null);
+    if (!baseTipSha) {
+      const err = new Error(`Base branch "${baseBranch}" was not found.`);
+      return {
+        status: 'error',
+        message: err.message,
+        recovery: this.buildRecovery('commit-on-release', err, root, 'base-missing'),
+      };
+    }
+
+    const renderedName = renderCommitTargetTemplate(target.template, {
+      releaseName: target.releaseName,
+      date: target.date,
+    });
+    let finalName = renderedName;
+    let suffix = 2;
+    while (
+      await this.git(['rev-parse', '--verify', `refs/heads/${finalName}`], root)
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      finalName = `${renderedName}-${suffix}`;
+      suffix += 1;
+    }
+
+    return this.commitOntoTipViaTempIndex(root, message, baseTipSha, finalName);
+  }
+
+  /**
+   * 0.1.125: shared plumbing for `commitToNamedBranch`/`commitToNewBranch`.
+   *
+   * Two phases, each in its own SCRATCH index (`GIT_INDEX_FILE`, never the
+   * repo's real one) — never touches HEAD or the working tree:
+   *
+   * 1. Compute a "capture tree" for `resolveStagingTargets()` seeded from
+   *    CURRENT HEAD (not `parentSha`) + a working-tree `git add` overlay —
+   *    IDENTICAL to what a normal `'current'`-mode commit would produce for
+   *    these same paths. Seeding from HEAD (rather than the foreign
+   *    `parentSha`) matters: `git add <pathspec>` also stages a DELETION for
+   *    anything tracked-in-index-but-missing-on-disk, so seeding from
+   *    `parentSha` would silently delete any content the target/base branch
+   *    has under these paths that the CURRENT branch's history never had —
+   *    unrelated content divergence (e.g. a page that exists on a long-lived
+   *    named branch's own accumulated history but was never on the current
+   *    branch) would be destroyed. Scoping the deletion-sensitive `add` to
+   *    HEAD keeps deletions meaningful only relative to the CURRENT branch's
+   *    own history, exactly as `stageAndCommit` already does for `'current'`
+   *    mode.
+   * 2. Graft the capture tree's blobs at each staging-target path onto a
+   *    FRESH index seeded from `parentSha` (the named/base branch's tip),
+   *    via `git update-index --add --cacheinfo` per blob (enumerated with
+   *    `git ls-tree -r`) — NEVER a wholesale `git rm`/replace of the path
+   *    first. This only ever ADDS/UPDATES paths the capture actually has;
+   *    anything parentSha already has under a staging-target path that the
+   *    capture DOESN'T have (unrelated content — e.g. a page that exists on
+   *    a long-lived named branch's own accumulated history but was never on
+   *    the current branch) is left completely untouched, never deleted.
+   *    The one asymmetric trade-off: an outright removal (current branch no
+   *    longer has a file ANYWHERE) does not propagate as a deletion onto
+   *    the named/new target — accepted deliberately, since silently
+   *    destroying unrelated target content is a far worse failure mode than
+   *    occasionally leaving a stale file on a side branch.
+   *
+   * `'nothing-to-commit'` when the resulting tree equals `parentSha`'s tree.
+   */
+  private async commitOntoTipViaTempIndex(
+    root: string,
+    message: string,
+    parentSha: string,
+    targetBranch: string,
+  ): Promise<GitCommitResult> {
+    const targets = this.resolveStagingTargets(root);
+    if (targets.length === 0) {
+      return {
+        status: 'skipped',
+        message: 'releasable roots / config.json are outside the detected repository',
+      };
+    }
+    const relTargets = targets.map((abs) => path.relative(root, abs).split(path.sep).join('/'));
+
+    let captureTree: string;
+    try {
+      captureTree = await this.buildCaptureTree(root, targets);
+    } catch (err) {
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery('commit-on-release', err, root) };
+    }
+
+    const tmpIndex = tmpIndexPath();
+    const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+    try {
+      await this.git(['read-tree', parentSha], root, env);
+      for (const rel of relTargets) {
+        // rel === '' (a releasable root configured as the repo root itself)
+        // means the capture's ENTIRE tree is in scope — `ls-tree -r <tree>`
+        // with no pathspec lists everything; `-- ''` would be a malformed
+        // empty pathspec, so omit `--`/the pathspec entirely in that case.
+        const lsArgs = rel === '' ? ['ls-tree', '-r', captureTree] : ['ls-tree', '-r', captureTree, '--', rel];
+        const lsOut = await this.git(lsArgs, root).then((r) => r.stdout).catch(() => '');
+        for (const line of lsOut.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          // `<mode> blob <sha>\t<path>` — non-recursive subdir entries never
+          // appear since `-r` recurses fully into blobs only.
+          const m = trimmed.match(/^(\d+) blob ([0-9a-f]+)\t(.+)$/);
+          if (m) {
+            await this.git(['update-index', '--add', '--cacheinfo', `${m[1]},${m[2]},${m[3]}`], root, env);
+          }
+        }
+      }
+      const treeSha = (await this.git(['write-tree'], root, env)).stdout.trim();
+      return this.finishCommitOntoTip(root, message, parentSha, targetBranch, treeSha);
+    } catch (err) {
+      return { status: 'error', message: errMessage(err), recovery: this.buildRecovery('commit-on-release', err, root) };
+    } finally {
+      cleanupTmpIndex(tmpIndex);
+    }
+  }
+
+  /**
+   * Build the "capture tree" described in `commitOntoTipViaTempIndex`'s doc
+   * comment: `read-tree HEAD` (or an empty tree on unborn HEAD — a repo with
+   * no commits yet) + `git add -- <targets>`, in its own scratch index.
+   */
+  private async buildCaptureTree(root: string, targets: string[]): Promise<string> {
+    const tmpIndex = tmpIndexPath();
+    const env = { ...process.env, GIT_INDEX_FILE: tmpIndex };
+    try {
+      const headExists = await this.git(['rev-parse', '--verify', 'HEAD'], root)
+        .then(() => true)
+        .catch(() => false);
+      if (headExists) {
+        await this.git(['read-tree', 'HEAD'], root, env);
+      }
+      await this.git(['add', '--', ...targets], root, env);
+      return (await this.git(['write-tree'], root, env)).stdout.trim();
+    } finally {
+      cleanupTmpIndex(tmpIndex);
+    }
+  }
+
+  /** Compare `treeSha` to `parentSha`'s tree; commit-tree + update-ref if different, else 'nothing-to-commit'. */
+  private async finishCommitOntoTip(
+    root: string,
+    message: string,
+    parentSha: string,
+    targetBranch: string,
+    treeSha: string,
+  ): Promise<GitCommitResult> {
+    const parentTreeSha = (await this.git(['rev-parse', `${parentSha}^{tree}`], root)).stdout.trim();
+    if (treeSha === parentTreeSha) {
+      return { status: 'nothing-to-commit' };
+    }
+    const commitSha = (await this.git(['commit-tree', treeSha, '-p', parentSha, '-m', message], root)).stdout.trim();
+    await this.git(['update-ref', `refs/heads/${targetBranch}`, commitSha], root);
+    return { status: 'committed', branch: targetBranch };
+  }
+
+  /**
+   * 0.1.125: post-commit branch switch for `switchAfterRelease`, run only
+   * after a `'named'`/`'new'` commit already succeeded. Deliberately does
+   * NOT reuse the public `checkout()`'s dirty/busy pre-guards, which the
+   * brief specifically wants bypassed here (the commit is already durable; a
+   * failed switch must not be reported as if nothing happened) — EXCEPT the
+   * `hasInFlightTurn()` busy check, which is NOT a pre-guard about this
+   * switch's own state (unlike dirty) but a guard against racing a
+   * concurrent agent turn's disk writes — the exact class of corruption
+   * `hasInFlightTurn` was added in 0.1.123 to prevent for `checkout()`, and
+   * equally applicable here (this method calls `git checkout` too).
+   * Classifies a checkout failure by git's own stderr: a real working-tree
+   * conflict → `'switch-dirty'`, anything else → `'switch-failed'`.
+   */
+  private async switchAfterCommit(
+    root: string,
+    branch: string,
+  ): Promise<{ switched: boolean; recovery?: GitErrorRecovery }> {
+    if (this.hasInFlightTurn()) {
+      const err = new Error('A background task is running — try again in a moment.');
+      return { switched: false, recovery: this.buildRecovery('commit-on-release', err, root, 'switch-failed') };
+    }
+    // Stage the same in-scope targets into the REAL index first. The
+    // temp-index commit above never touched the real index, so these files
+    // are still untracked here — and git's checkout unconditionally refuses
+    // to overwrite ANY untracked file it would need to create, even one
+    // whose content is byte-identical to the target branch's. Staging them
+    // (relative to current HEAD) makes checkout compare them as ordinary
+    // identical adds instead of untracked collisions. A genuine
+    // out-of-scope conflict (a file NOT in resolveStagingTargets) still
+    // blocks the checkout as intended — see `commitOntoTipViaTempIndex`.
+    const targets = this.resolveStagingTargets(root);
+    try {
+      if (targets.length > 0) {
+        await this.git(['add', '--', ...targets], root);
+      }
+      // Force English/portable git messages — the `switch-dirty` vs
+      // `switch-failed` classification below pattern-matches git's stderr
+      // text, which would otherwise misclassify under a non-English git
+      // diagnostic locale (e.g. LANG=pl_PL.UTF-8).
+      await this.git(['checkout', branch], root, { ...process.env, LC_ALL: 'C', LANG: 'C' });
+      return { switched: true };
+    } catch (err) {
+      // Roll back the staging above so a failed switch never leaves the
+      // real index holding release files staged on the ORIGINAL branch
+      // (invisible to the caller, and a trap for a later unrelated `git
+      // commit` there). `git reset` only touches the index, never the
+      // working tree.
+      if (targets.length > 0) {
+        await this.git(['reset', '--', ...targets], root).catch(() => {});
+      }
+      const stderr = rawStderr(err);
+      const kind: GitErrorRecovery['kind'] = /would be overwritten by checkout|commit your changes or stash/i.test(
+        stderr,
+      )
+        ? 'switch-dirty'
+        : 'switch-failed';
+      return { switched: false, recovery: this.buildRecovery('commit-on-release', err, root, kind) };
+    }
   }
 
   /**
@@ -264,23 +642,68 @@ export class GitService {
   }
 
   /**
-   * Push the current branch to its upstream. Assumes a repo is detected.
+   * Push a branch to its remote. Assumes a repo is detected.
    * `'nothing-to-push'` when git reports "Everything up-to-date", `'skipped'`
    * on detached HEAD, `'error'` on a missing upstream or any other failure.
+   *
+   * 0.1.125: optional `branch` — when given and it differs from the current
+   * branch, pushes it explicitly (`git push origin <branch>`, the remote
+   * name this codebase already assumes elsewhere — see `detect()`'s `git
+   * remote get-url origin`). Omitted (or equal to the current branch): the
+   * original bare `git push` (current branch's configured upstream) —
+   * unchanged default behavior. An EXPLICIT `branch` has nothing to do with
+   * current HEAD, so the detached-HEAD skip only applies when there's no
+   * explicit branch to push — otherwise a caller resolving a specific branch
+   * (e.g. `ReleasePushService`, which finds the branch actually carrying a
+   * release's marker commit) would be silently ignored whenever the
+   * currently checked-out ref happened to be detached for any unrelated
+   * reason.
    */
-  async push(): Promise<GitPushResult> {
+  async push(branch?: string): Promise<GitPushResult> {
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return { status: 'skipped' };
-    if (!status.branch) return { status: 'skipped', message: 'detached HEAD' };
+
+    const explicit = !!branch && branch !== status.branch;
+    if (!explicit && !status.branch) return { status: 'skipped', message: 'detached HEAD' };
+    const targetBranch = branch ?? status.branch!;
+    const args = explicit ? ['push', 'origin', branch!] : ['push'];
 
     try {
-      const { stdout, stderr } = await this.git(['push'], status.rootPath);
+      const { stdout, stderr } = await this.git(args, status.rootPath);
       if (/Everything up-to-date/i.test(`${stdout}\n${stderr}`)) {
-        return { status: 'nothing-to-push' };
+        return { status: 'nothing-to-push', branch: targetBranch };
       }
-      return { status: 'pushed' };
+      return { status: 'pushed', branch: targetBranch };
     } catch (err) {
       return { status: 'error', message: errMessage(err), recovery: this.buildRecovery('push', err, status.rootPath) };
+    }
+  }
+
+  /**
+   * 0.1.125 read-only: local branch(es) containing `sha`
+   * (`git branch --contains <sha>`). Used by the push step to find the
+   * branch that actually carries a release's marker commit, so push targets
+   * that branch rather than blind current HEAD. Prefers the current branch
+   * when it's among the matches (stability); otherwise the first match.
+   * `null` on no match, no repo, or any failure.
+   */
+  async branchContainingCommit(sha: string): Promise<string | null> {
+    const status = await this.detect();
+    if (!status.detected || !status.rootPath) return null;
+    try {
+      const { stdout } = await this.git(
+        ['branch', '--contains', sha, '--format=%(refname:short)'],
+        status.rootPath,
+      );
+      const branches = stdout
+        .split('\n')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      if (branches.length === 0) return null;
+      if (status.branch && branches.includes(status.branch)) return status.branch;
+      return branches[0]!;
+    } catch {
+      return null;
     }
   }
 
@@ -295,12 +718,21 @@ export class GitService {
    * `git.enabled` alone now means "commit on release too" (the
    * `syncCommitOnRelease` sub-toggle was removed; there is no longer a "git
    * on, but doesn't commit" state).
+   *
+   * 0.1.125: the `!status.branch` (detached HEAD) part of the gate only
+   * applies to `commitTarget.mode === 'current'` — that mode commits via the
+   * real index/HEAD, which genuinely needs a branch to advance. `'named'`/
+   * `'new'` commit onto a DIFFERENT ref via a scratch index and never read
+   * `status.branch` at all, so requiring one here would silently no-op the
+   * very modes built to not need current HEAD on a branch.
    */
   async commitOnRelease(release: { name: string; description: string }): Promise<GitCommitResult | null> {
     const config = readConfig(this.cwd);
     if (!config.git?.enabled) return null;
     const status = await this.detect();
-    if (!status.detected || !status.branch) return null;
+    if (!status.detected) return null;
+    const mode = config.git.commitTarget?.mode ?? 'current';
+    if (mode === 'current' && !status.branch) return null;
     return this.commit(release);
   }
 
@@ -308,13 +740,18 @@ export class GitService {
    * Gated push hook. `null` when the git master switch is off, push-sync is
    * off, no repo is detected, or the detected repo has no branch (detached
    * HEAD); otherwise the `push()` result. Reads config per-call (hot-reload).
+   *
+   * 0.1.125: optional `branch` — forwarded to `push()` so the caller (e.g.
+   * `ReleasePushService`, which resolves the branch actually carrying the
+   * release's marker commit) can direct the push there instead of blind
+   * current HEAD.
    */
-  async pushOnPush(): Promise<GitPushResult | null> {
+  async pushOnPush(branch?: string): Promise<GitPushResult | null> {
     const config = readConfig(this.cwd);
     if (!config.git?.enabled || !config.git?.syncPushOnPush) return null;
     const status = await this.detect();
     if (!status.detected || !status.branch) return null;
-    return this.push();
+    return this.push(branch);
   }
 
   /**
@@ -324,8 +761,18 @@ export class GitService {
    * The prompt instructs the agent to use only safe, non-destructive git
    * operations (`status`/`stash`/`commit`) via its built-in Bash tool — never
    * `--force`/`reset --hard`/anything that could discard work.
+   *
+   * 0.1.125: optional `kind` — narrows WHY, for the new branch-related
+   * failure modes (`branch-missing`/`base-missing`/`switch-failed`/
+   * `switch-dirty`). Omitted for ordinary git failures (pre-existing 3 call
+   * sites keep working unchanged).
    */
-  private buildRecovery(operation: GitErrorRecovery['operation'], err: unknown, rootPath: string): GitErrorRecovery {
+  private buildRecovery(
+    operation: GitErrorRecovery['operation'],
+    err: unknown,
+    rootPath: string,
+    kind?: GitErrorRecovery['kind'],
+  ): GitErrorRecovery {
     const reason = errMessage(err);
     const gitStderr = rawStderr(err);
     const opLabel =
@@ -344,7 +791,7 @@ export class GitService {
         '`reset --hard`, or anything else that could discard uncommitted work. Report back what ' +
         'you found and what you did.',
     ].join('\n');
-    return { operation, reason, gitStderr, intentPrompt };
+    return { operation, reason, gitStderr, intentPrompt, ...(kind ? { kind } : {}) };
   }
 
   /**
@@ -366,6 +813,18 @@ export class GitService {
    * (rename away, then later rename back to a name that slugifies the same)
    * — fetch every add and take the oldest so this always resolves to the
    * ORIGINAL creation commit, matching the documented contract.
+   *
+   * 0.1.125: a commit-target `'named'`/`'new'` commit may land on a branch
+   * other than the current one, so the marker must be findable regardless
+   * of which branch it's actually reachable from now — but searching `--all`
+   * (every ref) unconditionally would risk resolving a same-slug marker on a
+   * totally unrelated branch (e.g. two independent long-lived commit-target
+   * branches that each happen to carry an identically-slugged release file).
+   * So: try the narrow, HEAD-scoped search FIRST (identical to pre-0.1.125
+   * behavior, unambiguous for the default `'current'` mode and any marker
+   * that's still reachable from HEAD) — only widen to `--all` when that
+   * comes up empty, which is exactly the new 0.1.125 need (a `'named'`/`'new'`
+   * marker that was never reachable from current HEAD to begin with).
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
     const config = readConfig(this.cwd);
@@ -380,10 +839,21 @@ export class GitService {
     }
     const rel = path.relative(status.rootPath, real);
     if (rel.startsWith('..') || path.isAbsolute(rel)) return null;
+    const onHead = await this.findFirstAdd(status.rootPath, real, false);
+    if (onHead) return onHead;
+    return this.findFirstAdd(status.rootPath, real, true);
+  }
+
+  /**
+   * `git log [--all] --diff-filter=A -- <absPath>`, oldest add wins (see
+   * `resolveReleaseCommit`'s doc comment for why NOT `-1` without `--reverse`).
+   * `null` on any failure (missing repo, git error, no add found).
+   */
+  private async findFirstAdd(rootPath: string, absPath: string, all: boolean): Promise<string | null> {
     try {
       const { stdout } = await this.git(
-        ['log', '--diff-filter=A', '--format=%H', '--', real],
-        status.rootPath,
+        ['log', ...(all ? ['--all'] : []), '--diff-filter=A', '--format=%H', '--', absPath],
+        rootPath,
       );
       const shas = stdout
         .split('\n')
@@ -752,6 +1222,23 @@ export class GitService {
     } catch (err) {
       return { status: 'error', branch: null, message: errMessage(err) };
     }
+  }
+}
+
+/** Fresh scratch-index path under the OS tmpdir — never the repo's real `.git/index`. */
+function tmpIndexPath(): string {
+  return path.join(
+    os.tmpdir(),
+    `c4s-git-index-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  );
+}
+
+/** Best-effort delete of a scratch index file — a leaked one is harmless. */
+function cleanupTmpIndex(p: string): void {
+  try {
+    fs.rmSync(p, { force: true });
+  } catch {
+    // best-effort cleanup
   }
 }
 

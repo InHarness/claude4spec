@@ -125,3 +125,148 @@ describe('GET/PATCH /config — agent.pathScopeStrength (0.1.103)', () => {
     expect(res.body.agent.pathScopeStrength).toBe('hard');
   });
 });
+
+// 0.1.125 — commit-target validation. `commitTarget`/`switchAfterRelease`
+// default to `{mode:'current', branch:null, template:null, base:null}`/
+// `false`; PATCH deep-merges `commitTarget` one level deeper (precedent:
+// `plugins[<name>]`) and rejects semantically-invalid `named`/`new` bodies.
+describe('PATCH /config — git.commitTarget (0.1.125)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-route-git-'));
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'test' }));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const router = configRouter({ cwd: dir, skillRegistry: {} as unknown as SkillRegistry });
+    return express().use(express.json()).use(router);
+  };
+
+  it('GET /config defaults commitTarget to mode "current" and switchAfterRelease to false', async () => {
+    const res = await request(app()).get('/config');
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget).toEqual({ mode: 'current', branch: null, template: null, base: null });
+    expect(res.body.git.switchAfterRelease).toBe(false);
+  });
+
+  it('rejects an unknown commitTarget.mode with 400', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'bogus' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects mode "named" with no branch', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects mode "named" with an empty-string branch', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: '' } } });
+    expect(res.status).toBe(400);
+  });
+
+  it('accepts mode "named" with a branch', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: 'release' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget).toEqual({ mode: 'named', branch: 'release', template: null, base: null });
+  });
+
+  it('rejects mode "new" with no template', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'new' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects mode "new" whose rendered template is not a valid git ref name', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'new', template: 'bad ref name' } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('accepts mode "new" with a valid placeholder template and optional base', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'new', template: 'release/{release_slug}', base: 'main' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget).toEqual({
+      mode: 'new',
+      branch: null,
+      template: 'release/{release_slug}',
+      base: 'main',
+    });
+  });
+
+  it('deep-merges commitTarget — patching only branch preserves a previously-set mode', async () => {
+    await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: 'release' } } });
+
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { branch: 'release-v2' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget).toEqual({
+      mode: 'named',
+      branch: 'release-v2',
+      template: null,
+      base: null,
+    });
+  });
+
+  it('accepts switchAfterRelease and rejects a non-boolean value', async () => {
+    const ok = await request(app()).patch('/config').send({ git: { switchAfterRelease: true } });
+    expect(ok.status).toBe(200);
+    expect(ok.body.git.switchAfterRelease).toBe(true);
+
+    const bad = await request(app()).patch('/config').send({ git: { switchAfterRelease: 'yes' } });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error.code).toBe('VALIDATION');
+  });
+
+  it('rejects a partial PATCH that would null out `branch` while a saved mode:"named" survives (code review regression)', async () => {
+    const first = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: 'release' } } });
+    expect(first.status).toBe(200);
+
+    // `mode` omitted — validated against the EFFECTIVE (merged) commitTarget,
+    // not just this request's body, so this must still be rejected: the
+    // persisted mode stays 'named', which requires a non-empty branch.
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { branch: null } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+
+    // And the original setting must be untouched by the rejected request.
+    const after = await request(app()).get('/config');
+    expect(after.body.git.commitTarget).toEqual({ mode: 'named', branch: 'release', template: null, base: null });
+  });
+
+  it('accepts a mode "new" template using the documented {release_name} placeholder (code review regression)', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'new', template: 'release-{release_name}' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget.template).toBe('release-{release_name}');
+  });
+});

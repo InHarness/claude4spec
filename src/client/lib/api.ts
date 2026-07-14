@@ -134,8 +134,22 @@ export interface ConfigResponse {
      */
     pathScopeStrength: 'hard' | 'soft' | 'none';
   };
-  /** M28: hot-reload git-sync toggles (always resolved; all default false). 0.1.118 adds the `enabled` master switch. */
-  git: { enabled: boolean; syncPushOnPush: boolean };
+  /**
+   * M28: hot-reload git-sync toggles (always resolved; all default false).
+   * 0.1.118 adds the `enabled` master switch. 0.1.125 adds `commitTarget`
+   * (where a release commit lands) and `switchAfterRelease`.
+   */
+  git: {
+    enabled: boolean;
+    syncPushOnPush: boolean;
+    commitTarget: {
+      mode: 'current' | 'named' | 'new';
+      branch: string | null;
+      template: string | null;
+      base: string | null;
+    };
+    switchAfterRelease: boolean;
+  };
   /** M25: UUID of this project on the remote; null ⇒ next push is a first push. */
   remoteProjectId: string | null;
   /** M24: explicit remote-API override; null = production constant. UI hides this. */
@@ -168,8 +182,22 @@ export interface ConfigPatch {
     allowedPaths?: string[];
     disallowedPaths?: string[];
   };
-  /** M28: hot-reload — deep-merged server-side, so one toggle can be sent alone. */
-  git?: { enabled?: boolean; syncPushOnPush?: boolean };
+  /**
+   * M28: hot-reload — deep-merged server-side, so one toggle can be sent
+   * alone. 0.1.125: `commitTarget` deep-merges one level deeper too (a
+   * single sub-field patch preserves the others).
+   */
+  git?: {
+    enabled?: boolean;
+    syncPushOnPush?: boolean;
+    commitTarget?: {
+      mode?: 'current' | 'named' | 'new';
+      branch?: string | null;
+      template?: string | null;
+      base?: string | null;
+    };
+    switchAfterRelease?: boolean;
+  };
   /** M33 phase 3: plugin settings — deep-merged server-side per `plugins[<name>]`. */
   plugins?: Record<string, Record<string, unknown>>;
   remoteProjectId?: string | null;

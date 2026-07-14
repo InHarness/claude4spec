@@ -9,6 +9,8 @@ import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import { probePathScope, type PathScopeStrength } from '@inharness-ai/agent-adapters';
 import { ensureGitignore } from '../../bin/gitignore.js';
+import { isValidGitRefName } from '../services/git.js';
+import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -92,6 +94,13 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
     git: {
       enabled: c.git?.enabled ?? false,
       syncPushOnPush: c.git?.syncPushOnPush ?? false,
+      commitTarget: {
+        mode: c.git?.commitTarget?.mode ?? 'current',
+        branch: c.git?.commitTarget?.branch ?? null,
+        template: c.git?.commitTarget?.template ?? null,
+        base: c.git?.commitTarget?.base ?? null,
+      },
+      switchAfterRelease: c.git?.switchAfterRelease ?? false,
     },
     // M33 phase 3: persisted plugin settings namespace (absent ⇒ {}).
     plugins: c.plugins ?? {},
@@ -120,7 +129,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
     res.json(configResponse(c, cwd, skillRegistry));
   });
 
-  router.patch('/config', (req, res, next) => {
+  router.patch('/config', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as Record<string, unknown>;
       // All fields hot-reload now (M31 killed "Restart required") and share one
@@ -140,7 +149,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         onboardingCompleted: boolean;
         entities: string[];
         agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
-        git: { enabled?: boolean; syncPushOnPush?: boolean };
+        git: {
+          enabled?: boolean;
+          syncPushOnPush?: boolean;
+          commitTarget?: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null };
+          switchAfterRelease?: boolean;
+        };
         plugins: Record<string, Record<string, unknown>>;
         remoteProjectId: string | null;
       }> = {};
@@ -313,7 +327,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'git must be an object' } });
         }
         const gr = g as Record<string, unknown>;
-        const next: { enabled?: boolean; syncPushOnPush?: boolean } = {};
+        const next: {
+          enabled?: boolean;
+          syncPushOnPush?: boolean;
+          commitTarget?: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null };
+          switchAfterRelease?: boolean;
+        } = {};
         if ('enabled' in gr) {
           if (typeof gr.enabled !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.enabled must be boolean' } });
@@ -325,6 +344,87 @@ export function configRouter(deps: ConfigRouterDeps): Router {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncPushOnPush must be boolean' } });
           }
           next.syncPushOnPush = gr.syncPushOnPush;
+        }
+        // 0.1.125: commit-target — semantic checks beyond shape (non-empty
+        // branch/template for the active mode, ref-safe rendered template
+        // name) live here, not in config.ts's validate() (see that file's
+        // comment — validate() is also reused by readConfig() on every boot,
+        // which must tolerate an inactive mode's field being unset).
+        if ('commitTarget' in gr) {
+          const ct = gr.commitTarget;
+          if (ct === null || typeof ct !== 'object' || Array.isArray(ct)) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.commitTarget must be an object' } });
+          }
+          const ctr = ct as Record<string, unknown>;
+          const nextCt: { mode?: 'current' | 'named' | 'new'; branch?: string | null; template?: string | null; base?: string | null } = {};
+          if ('mode' in ctr) {
+            if (ctr.mode !== 'current' && ctr.mode !== 'named' && ctr.mode !== 'new') {
+              return res.status(400).json({
+                error: { code: 'VALIDATION', message: "git.commitTarget.mode must be 'current' | 'named' | 'new'" },
+              });
+            }
+            nextCt.mode = ctr.mode;
+          }
+          for (const field of ['branch', 'template', 'base'] as const) {
+            if (field in ctr) {
+              const v = ctr[field];
+              if (v !== null && typeof v !== 'string') {
+                return res
+                  .status(400)
+                  .json({ error: { code: 'VALIDATION', message: `git.commitTarget.${field} must be string | null` } });
+              }
+              nextCt[field] = v;
+            }
+          }
+          // 0.1.125 (code review): validate against the EFFECTIVE post-merge
+          // commitTarget, not just this request's `nextCt` — writeConfig
+          // deep-merges `commitTarget` one level deep, so a request that
+          // patches `branch` alone (mode omitted) would otherwise sail past
+          // an `nextCt.mode === 'named'` check that never fires, silently
+          // persisting `{mode:'named', branch:null}` and falling back to
+          // legacy 'current'-mode semantics at commit time with no error
+          // anywhere. Same precedent as the `roots` validation above
+          // (effective entitiesDir/releasesDir/etc.).
+          const currentCommitTarget = readConfig(cwd).git?.commitTarget;
+          const effectiveCt = { ...currentCommitTarget, ...nextCt };
+          if (effectiveCt.mode === 'named' && !effectiveCt.branch) {
+            return res
+              .status(400)
+              .json({ error: { code: 'VALIDATION', message: "git.commitTarget.branch is required when mode is 'named'" } });
+          }
+          if (effectiveCt.mode === 'new') {
+            if (!effectiveCt.template) {
+              return res
+                .status(400)
+                .json({ error: { code: 'VALIDATION', message: "git.commitTarget.template is required when mode is 'new'" } });
+            }
+            // Ref-safe dummy release name for the preview render — a space
+            // (as in e.g. "Preview Release") is itself an invalid git ref
+            // character, which would make ANY template using the documented
+            // `{release_name}` placeholder fail this check unconditionally,
+            // regardless of what real release names look like.
+            const preview = renderCommitTargetTemplate(effectiveCt.template, {
+              releaseName: 'preview-release',
+              date: localDateYYYYMMDD(new Date()),
+            });
+            if (!(await isValidGitRefName(preview))) {
+              return res.status(400).json({
+                error: {
+                  code: 'VALIDATION',
+                  message: `git.commitTarget.template renders to an invalid branch name: "${preview}"`,
+                },
+              });
+            }
+          }
+          next.commitTarget = nextCt;
+        }
+        if ('switchAfterRelease' in gr) {
+          if (typeof gr.switchAfterRelease !== 'boolean') {
+            return res
+              .status(400)
+              .json({ error: { code: 'VALIDATION', message: 'git.switchAfterRelease must be boolean' } });
+          }
+          next.switchAfterRelease = gr.switchAfterRelease;
         }
         patch.git = next;
       }

@@ -9,6 +9,17 @@ const OPERATION_LABEL: Record<GitErrorModalRequest['recovery']['operation'], str
 };
 
 /**
+ * 0.1.125: narrows WHY a commit-target/switch operation failed — orthogonal
+ * to `OPERATION_LABEL` (WHAT was running). Absent for ordinary git failures.
+ */
+const KIND_HINT: Record<NonNullable<GitErrorModalRequest['recovery']['kind']>, string> = {
+  'branch-missing': 'The configured target branch no longer exists.',
+  'base-missing': 'The configured base branch no longer exists (or the repository has no commits).',
+  'switch-dirty': 'The commit succeeded, but uncommitted changes blocked switching to the target branch.',
+  'switch-failed': 'The commit succeeded, but switching to the target branch failed.',
+};
+
+/**
  * 0.1.124: M28 git-sync error recovery. Replaces the old
  * `toast.warning('Git commit/push failed: ...')` pattern on
  * `gitSync.status === 'error'` — a persistent modal instead of a
@@ -92,11 +103,24 @@ export function GitErrorRecoveryModal() {
             fontSize: 13.5,
             color: 'var(--c-muted)',
             lineHeight: 1.5,
-            marginBottom: 12,
+            marginBottom: recovery.kind ? 4 : 12,
           }}
         >
           {OPERATION_LABEL[recovery.operation]} failed: {recovery.reason}
         </div>
+
+        {recovery.kind && (
+          <div
+            style={{
+              fontSize: 12.5,
+              color: 'var(--c-subtle)',
+              lineHeight: 1.5,
+              marginBottom: 12,
+            }}
+          >
+            {KIND_HINT[recovery.kind]}
+          </div>
+        )}
 
         <button
           onClick={() => setExpanded((v) => !v)}
@@ -126,6 +150,7 @@ export function GitErrorRecoveryModal() {
             }}
           >
             <div style={{ marginBottom: 6 }}>operation: {recovery.operation}</div>
+            {recovery.kind && <div style={{ marginBottom: 6 }}>kind: {recovery.kind}</div>}
             <div style={{ marginBottom: 6 }}>reason: {recovery.reason}</div>
             <div>gitStderr:{'\n'}{recovery.gitStderr || '(empty)'}</div>
           </div>
