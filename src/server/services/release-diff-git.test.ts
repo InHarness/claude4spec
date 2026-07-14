@@ -35,7 +35,7 @@ const fakeHost = { getEntity: () => null } as unknown as PluginHost;
 const fakePagesService = {} as unknown as PagesService;
 const fakePageSerializer = new PageSerializer(fakePagesService);
 const fakeVersions = {} as unknown as VersionService;
-const fakePageVersions = {} as unknown as PageVersionService;
+const fakePageVersions = { assignToRelease: () => {} } as unknown as PageVersionService;
 const fakeRawReader = {} as unknown as RawEntityReader;
 const fakeTagsService = {} as unknown as TagsService;
 
@@ -610,5 +610,244 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
 
     const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
     expect(delta.pages.some((p) => p.path === 'a.md' && p.op === 'modified')).toBe(true);
+  });
+
+  describe('0.1.124 "reign" model', () => {
+    it('an implicit plain `git commit` between two release markers is absorbed into the OLDER release\'s reign, not left out', async () => {
+      // This is the behavior that distinguishes the reign model from the old
+      // anchor model: snapshot(v2) = M_v3~1 (the commit right before v3's
+      // marker), not v2's own marker commit — so a plain terminal `git
+      // commit` made after v2 but before v3 counts as part of v2's reign and
+      // shows up in a v1..v2 diff.
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      const info1 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v1', 'v1', 'First', 'user');
+      const v1Id = Number(info1.lastInsertRowid);
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'First',
+        createdAt: new Date(0).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1'], dir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+      const info2 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v2', 'v2', 'Second', 'user');
+      const v2Id = Number(info2.lastInsertRowid);
+      releaseStore.write('v2', {
+        name: 'v2',
+        slug: 'v2',
+        description: 'Second',
+        createdAt: new Date(1).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v2 (its own marker commit)'], dir);
+
+      // Implicit pull: a plain terminal commit, no release created for it —
+      // this lands BETWEEN v2's marker and v3's marker.
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2.5 (implicit)');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'implicit terminal commit, no release'], dir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v3');
+      const info3 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v3', 'v3', 'Third', 'user');
+      releaseStore.write('v3', {
+        name: 'v3',
+        slug: 'v3',
+        description: 'Third',
+        createdAt: new Date(2).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v3 (its own marker commit)'], dir);
+
+      const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+      const aChange = delta.pages.find((p) => p.path === 'a.md');
+      expect(aChange?.op).toBe('modified');
+      const lines = aChange?.modified_sections[0]?.line_diff.lines ?? [];
+      // The diff runs all the way to the implicit commit's content, NOT v2's
+      // own commit content — proving snapshot(v2) resolved to M_v3~1.
+      expect(lines.some((l) => l.op === 'added' && l.content === '# A v2.5 (implicit)')).toBe(true);
+      expect(lines.some((l) => l.op === 'added' && l.content === '# A v2')).toBe(false);
+    });
+
+    it('the LATEST release\'s reign extends to HEAD, including uncommitted-at-release-time but since-committed changes', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      const info1 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v1', 'v1', 'First', 'user');
+      const v1Id = Number(info1.lastInsertRowid);
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'First',
+        createdAt: new Date(0).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1'], dir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v2');
+      const info2 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v2', 'v2', 'Second', 'user');
+      const v2Id = Number(info2.lastInsertRowid);
+      releaseStore.write('v2', {
+        name: 'v2',
+        slug: 'v2',
+        description: 'Second',
+        createdAt: new Date(1).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v2 (its own marker commit)'], dir);
+
+      // v2 IS the latest release — one more implicit commit after it, still
+      // counts as part of v2's reign since there is no v3 yet.
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A latest (post-v2 implicit commit)');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'implicit terminal commit after latest release'], dir);
+
+      const delta = await releaseService.getReleaseDiff(v1Id, v2Id);
+      const aChange = delta.pages.find((p) => p.path === 'a.md');
+      const lines = aChange?.modified_sections[0]?.line_diff.lines ?? [];
+      expect(lines.some((l) => l.op === 'added' && l.content === '# A latest (post-v2 implicit commit)')).toBe(true);
+    });
+
+    it('getUnreleasedDiff git-anchored fast path: `:to=current` picks up UNCOMMITTED working-tree changes since the reign boundary, including a brand-new untracked page', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, releaseStore } = buildReleaseService(pagesDir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A v1');
+      const info1 = db
+        .prepare(`INSERT INTO spec_release (name, slug, description, created_by) VALUES (?, ?, ?, ?)`)
+        .run('v1', 'v1', 'First', 'user');
+      const v1Id = Number(info1.lastInsertRowid);
+      releaseStore.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'First',
+        createdAt: new Date(0).toISOString(),
+        createdBy: 'user',
+        roots: ['pages'],
+      });
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'v1 (latest — reign extends to HEAD)'], dir);
+
+      // Uncommitted since v1's marker: a.md modified, b.md created and never
+      // `git add`ed (must still surface via the untracked-file merge in
+      // diffRefToWorkingTree).
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A working tree');
+      fs.writeFileSync(path.join(pagesDir, 'b.md'), '# B new, untracked');
+
+      const delta = await releaseService.getUnreleasedDiff(v1Id);
+      expect(delta.from).toEqual({ id: v1Id, name: 'v1' });
+      expect(delta.to).toEqual({ id: 0, name: 'current' });
+      const byPath = new Map(delta.pages.map((p) => [p.path, p]));
+      expect(byPath.get('a.md')?.op).toBe('modified');
+      expect(byPath.get('b.md')?.op).toBe('created');
+    });
+  });
+
+  describe('0.1.124 updateRelease commit-then-assign race guard (code-review fix)', () => {
+    it('re-checks the frozen/latest invariant after the awaited commitPull — a release created during that window blocks assignment instead of silently misattributing fresh work', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, gitService } = buildReleaseService(pagesDir);
+
+      const v1 = releaseService.createRelease({ name: 'v1', description: 'First' }, 'user');
+
+      // Work already queued for v1's pull.
+      db.prepare(
+        `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+         VALUES ('endpoint', 'e1', 1, '{}', 'user', NULL, 'v1', 'create')`,
+      ).run();
+
+      // Simulate a concurrent client creating v2 DURING v1's awaited
+      // commitPull(), followed by fresh work landing right after — exactly
+      // the race window the code-review fix closes. commitPull() is a real
+      // async git subprocess call in production; here it's stubbed to
+      // synchronously inject the race before resolving. Note: v2's own
+      // createRelease() legitimately sweeps up e1 (release_id IS NULL at
+      // that point) — that's correct, expected behavior, not part of the bug.
+      let v2Id = -1;
+      vi.spyOn(gitService, 'commitPull').mockImplementation(async () => {
+        v2Id = releaseService.createRelease({ name: 'v2', description: 'Second (concurrent)' }, 'user').id;
+        db.prepare(
+          `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+           VALUES ('endpoint', 'e2', 1, '{}', 'user', NULL, 'v1', 'create')`,
+        ).run();
+        return { status: 'nothing-to-commit' };
+      });
+
+      await expect(
+        releaseService.updateRelease({ idOrName: v1.id, assignUnreleased: true }),
+      ).rejects.toMatchObject({ code: 'RELEASE_FROZEN' });
+
+      // e1 was legitimately swept into v2 by v2's OWN createRelease() (it was
+      // release_id IS NULL at that point — correct behavior). e2 landed after
+      // v2 was created, so it's still unclaimed, pending the next release.
+      // The bug this guards against is either one ending up on v1 — frozen,
+      // and no longer the actual latest release.
+      const rows = db
+        .prepare(`SELECT entity_slug, release_id FROM entity_version WHERE entity_slug IN ('e1', 'e2')`)
+        .all() as Array<{ entity_slug: string; release_id: number | null }>;
+      const bySlug = new Map(rows.map((r) => [r.entity_slug, r.release_id]));
+      expect(bySlug.get('e1')).toBe(v2Id);
+      expect(bySlug.get('e2')).toBeNull();
+      expect(rows.some((r) => r.release_id === v1.id)).toBe(false);
+    });
+
+    it('a combined rename + assignUnreleased request commits the RENAMED identity file, leaving a clean working tree (code-review fix)', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService } = buildReleaseService(pagesDir);
+
+      const v1 = releaseService.createRelease({ name: 'v1', description: 'First' }, 'user');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'baseline (v1 identity file)'], dir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A');
+
+      const result = await releaseService.updateRelease({
+        idOrName: v1.id,
+        name: 'v1-renamed',
+        assignUnreleased: true,
+      });
+      expect(result.gitSync?.status).toBe('committed');
+
+      // Before the fix, commitPull() ran BEFORE the identity-file rename hit
+      // disk — the rename (old file removed, new file added) would still
+      // show up here as an uncommitted change even though gitSync claimed
+      // 'committed'.
+      const status = (await git(['status', '--porcelain'], dir)).trim();
+      expect(status).toBe('');
+
+      const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+      expect(tracked).toContain('.claude4spec/releases/v1-renamed.json');
+      expect(tracked).not.toContain('.claude4spec/releases/v1.json');
+    });
   });
 });

@@ -91,7 +91,6 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
     },
     git: {
       enabled: c.git?.enabled ?? false,
-      syncCommitOnRelease: c.git?.syncCommitOnRelease ?? false,
       syncPushOnPush: c.git?.syncPushOnPush ?? false,
     },
     // M33 phase 3: persisted plugin settings namespace (absent ⇒ {}).
@@ -141,7 +140,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         onboardingCompleted: boolean;
         entities: string[];
         agent: { claudeUsePreset?: boolean; conversationalLanguage?: string | null };
-        git: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean };
+        git: { enabled?: boolean; syncPushOnPush?: boolean };
         plugins: Record<string, Record<string, unknown>>;
         remoteProjectId: string | null;
       }> = {};
@@ -314,18 +313,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'git must be an object' } });
         }
         const gr = g as Record<string, unknown>;
-        const next: { enabled?: boolean; syncCommitOnRelease?: boolean; syncPushOnPush?: boolean } = {};
+        const next: { enabled?: boolean; syncPushOnPush?: boolean } = {};
         if ('enabled' in gr) {
           if (typeof gr.enabled !== 'boolean') {
             return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.enabled must be boolean' } });
           }
           next.enabled = gr.enabled;
-        }
-        if ('syncCommitOnRelease' in gr) {
-          if (typeof gr.syncCommitOnRelease !== 'boolean') {
-            return res.status(400).json({ error: { code: 'VALIDATION', message: 'git.syncCommitOnRelease must be boolean' } });
-          }
-          next.syncCommitOnRelease = gr.syncCommitOnRelease;
         }
         if ('syncPushOnPush' in gr) {
           if (typeof gr.syncPushOnPush !== 'boolean') {

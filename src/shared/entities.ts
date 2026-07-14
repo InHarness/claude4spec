@@ -1,4 +1,5 @@
 import type { TodoItem, UsageStats } from '@inharness-ai/agent-adapters';
+import type { GitCommitStatus, GitSyncField } from './git.js';
 
 export type { TodoItem, UsageStats };
 
@@ -527,11 +528,22 @@ export interface ReleaseDetail extends Release {
 /**
  * M28: body of `POST /api/releases` and the MCP `release_create` result.
  * `ReleaseDetail` plus the best-effort `git commit` outcome — `null` when
- * commit-sync is off or no repo was detected. Not persisted (no column on the
+ * git is off or no repo was detected. Not persisted (no column on the
  * `release` table); present only on the synchronous create response.
  */
 export interface CreateReleaseResponse extends ReleaseDetail {
-  gitSync?: { status: 'committed' | 'nothing-to-commit' | 'skipped' | 'error'; message?: string } | null;
+  gitSync?: GitSyncField<GitCommitStatus>;
+}
+
+/**
+ * 0.1.124: body of `PATCH /api/releases/:idOrName`. `ReleaseDetail` plus the
+ * best-effort `git commit` outcome of `commitPull()` — populated ONLY when
+ * the request set `assignUnreleased: true` (the only update path that
+ * triggers a git commit); a plain rename/description edit returns
+ * `gitSync: null`, same as when git is off or no repo was detected.
+ */
+export interface UpdateReleaseResponse extends ReleaseDetail {
+  gitSync?: GitSyncField<GitCommitStatus>;
 }
 
 export interface SpecSnapshotEntityRow {

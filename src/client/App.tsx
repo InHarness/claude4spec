@@ -17,6 +17,7 @@ import { NewDesignSystemPopover } from './components/NewDesignSystemPopover.js';
 import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ConfirmModal.js';
+import { GitErrorRecoveryModal } from './ui/GitErrorRecoveryModal.js';
 import { ToastHost } from './ui/ToastHost.js';
 import { TrustPluginsModal } from './components/TrustPluginsModal.js';
 import { PageRefPopoverHost } from './tiptap/extensions/PageRefPopover.js';
@@ -210,6 +211,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
       <PageRefPopoverHost />
       <TrustPluginsModal />
       <ModalHost />
+      <GitErrorRecoveryModal />
       <ToastHost />
     </div>
     </ThreadListProvider>

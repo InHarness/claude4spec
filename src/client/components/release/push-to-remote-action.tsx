@@ -6,7 +6,7 @@ import {
 import { useConfig } from '../../hooks/useConfig.js';
 import { useRemoteAccount } from '../../hooks/useRemoteAccount.js';
 import { usePushRelease } from '../../hooks/useReleasePushes.js';
-import { confirmDestructive, toast } from '../../ui/events.js';
+import { confirmDestructive, showGitErrorModal, toast } from '../../ui/events.js';
 
 /**
  * M25 "Push to remote" — a release action rendered as an item in the release
@@ -49,10 +49,11 @@ function PushToRemoteMenuItem({ release, onClose }: ReleaseActionContext) {
       const seq = res.remoteReleaseSequence;
       if (res.deduplicated) toast.info(`Already pushed as release #${seq}`);
       else toast.success(`Pushed as release #${seq}`);
-      // M28: git push-sync is best-effort — surface a warning on failure without
-      // contradicting the successful remote push above.
-      if (res.gitSync?.status === 'error') {
-        toast.warning(`Git push failed: ${res.gitSync.message ?? 'unknown error'}`);
+      // M28: git push-sync is best-effort — never contradicts the successful
+      // remote push above. 0.1.124: surfaced via GitErrorRecoveryModal (with
+      // a "Fix it with Agent" action) rather than a toast.
+      if (res.gitSync?.status === 'error' && res.gitSync.recovery) {
+        showGitErrorModal(res.gitSync.recovery);
       }
     } catch (err) {
       toast.error((err as Error).message);

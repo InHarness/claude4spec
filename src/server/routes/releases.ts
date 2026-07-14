@@ -54,14 +54,18 @@ export function releasesRouter(
     }
   });
 
-  router.patch('/:idOrName', (req, res, next) => {
+  router.patch('/:idOrName', async (req, res, next) => {
     try {
       const body = (req.body ?? {}) as {
         name?: string;
         description?: string;
         assignUnreleased?: boolean;
       };
-      const release = releases.updateRelease({
+      // 0.1.124: async — assignUnreleased may run a best-effort `commitPull`
+      // BEFORE assigning the SQLite release_id cache (commit-then-assign, see
+      // ReleaseService.updateRelease's doc comment); gitSync rides this
+      // response the same way it does on `POST /api/releases`.
+      const release = await releases.updateRelease({
         idOrName: decodeIdOrName(req.params.idOrName),
         name: body.name,
         description: body.description,

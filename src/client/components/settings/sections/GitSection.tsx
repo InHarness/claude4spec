@@ -8,26 +8,27 @@ import { SettingsCard } from '../SettingsCard.js';
  * M28 §6 — Git section. 0.1.118 adds `git.enabled`, a master switch for the
  * entire git layer: an always-visible toggle renders first, regardless of
  * loading/detection state. When off, sync/status stay local-only (empty
- * state, sub-toggles hidden — not merely disabled). When on, this behaves as
+ * state, sub-toggle hidden — not merely disabled). When on, this behaves as
  * before: `GET /api/git/status` drives a repo info card (remote URL, branch,
- * root, dirty/clean badge) and two hot-reload sync toggles, or a "No git
- * repository detected." empty state if no repo is found. An amber banner
- * warns when a sub-toggle was left on from before this switch existed (B1
- * upgrade regression) — enabling now restores the old behavior.
+ * root, dirty/clean badge) and a hot-reload push sync toggle, or a "No git
+ * repository detected." empty state if no repo is found.
+ *
+ * 0.1.124: `syncCommitOnRelease` was removed — `git.enabled` alone now also
+ * gates commit-on-release/commit-on-pull, so there is no longer a "git on,
+ * but doesn't commit" state and no separate checkbox for it. The amber
+ * regression banner (B1) now only fires for a stale `syncPushOnPush: true`
+ * left on from before the master switch existed.
  */
 export function GitSection() {
   const { data: config } = useConfig();
-  const git = config?.git ?? { enabled: false, syncCommitOnRelease: false, syncPushOnPush: false };
+  const git = config?.git ?? { enabled: false, syncPushOnPush: false };
   // Gated: the repo-card/sub-toggle content below only renders when
   // git.enabled is true, so an ungated fetch when it's false (the default)
   // would be a wasted round trip on every Settings visit.
   const { data: status, isLoading } = useGitStatus({ enabled: git.enabled });
   const patch = usePatchConfig();
 
-  async function toggle(
-    field: 'syncCommitOnRelease' | 'syncPushOnPush',
-    next: boolean,
-  ) {
+  async function toggle(field: 'syncPushOnPush', next: boolean) {
     try {
       await patch.mutateAsync({ git: { [field]: next } });
       toast.success('Git settings updated');
@@ -45,7 +46,7 @@ export function GitSection() {
     }
   }
 
-  const showRegressionBanner = !git.enabled && (git.syncCommitOnRelease || git.syncPushOnPush);
+  const showRegressionBanner = !git.enabled && git.syncPushOnPush;
 
   return (
     <SettingsCard
@@ -59,7 +60,7 @@ export function GitSection() {
           disabled={patch.isPending}
           onChange={(next) => void toggleEnabled(next)}
           title="Enable Git integration"
-          hint="Master switch for commit-on-release, push-on-push, and the sidebar git-status indicator."
+          hint="When enabled, creating a release or pulling unreleased changes automatically git commits the pages, entities, releases and config."
         />
 
         {showRegressionBanner && (
@@ -97,13 +98,6 @@ export function GitSection() {
               </div>
 
               <div className="flex flex-col gap-3 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
-                <Toggle
-                  checked={git.syncCommitOnRelease}
-                  disabled={patch.isPending}
-                  onChange={(next) => void toggle('syncCommitOnRelease', next)}
-                  title="Commit on release"
-                  hint="When you create a release, commit pages and config.json with a message from the release name and description."
-                />
                 <Toggle
                   checked={git.syncPushOnPush}
                   disabled={patch.isPending}
