@@ -9,6 +9,7 @@ import path from 'node:path';
 import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
+import { CLAUDE_CODE_READONLY_BUILTINS, CLAUDE_CODE_MUTATING_BUILTINS } from '@inharness-ai/agent-adapters/claude-code';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
  * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
@@ -401,17 +402,22 @@ You also have read-only release-tools (get_release, get_release_diff, list_relea
 You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief content flows through get_brief / update_brief only.
 </brief_tools_usage>`;
 
+// Interpolated from agent-adapters' real CLAUDE_CODE_READONLY_BUILTINS /
+// CLAUDE_CODE_MUTATING_BUILTINS — these ARE the exact values the adapter
+// assigns to options.tools/disallowedTools when planMode is true, so this is
+// a 1:1 mirror of actual gating, not a hand-maintained paraphrase that can
+// drift (see 0-1-125-to-next follow-up).
 const PLAN_MODE = `<claude4spec_plan_mode>
 Plan Mode is ACTIVE. Investigate and propose — do not modify.
 
 The plan you draft must conform to the project skill referenced in <project_skill/>. Before drafting or updating the plan, ensure Skill(slug) has been called this turn — its conventions (module/layer structure, naming, file layout, quality rules) constrain every line of the plan. If the user's request appears to violate those conventions, surface the conflict in the plan rather than silently working around it.
 
 Forbidden (mutating):
-  - Built-in: Edit, Write, Bash (writing), NotebookEdit
+  - Built-in: ${CLAUDE_CODE_MUTATING_BUILTINS.join(', ')}
   - MCP: any create_*, update_*, delete_*, link_*, unlink_*, tag_entity, untag_entity
 
 Allowed (read-only):
-  - Built-in: Read, Grep, Glob, WebFetch, WebSearch, Task, and a task-tracking tool if one is available in this environment
+  - Built-in: ${CLAUDE_CODE_READONLY_BUILTINS.join(', ')}
   - MCP: list_*, get_*, find_*, check_consistency
 
 plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXEMPT — use update_plan to persist the plan rather than writing it as prose in your reply.
@@ -429,10 +435,17 @@ function buildEntityToolsLine(): string {
   return `  <mcp name="entity-tools">create_entities, get_entities, update_entities, delete_entities, list_entities, search_entities, describe_entity_type</mcp>`;
 }
 
+// Deduped union of agent-adapters' real read-only + mutating builtin arrays —
+// a sourced, generated list rather than a hand-maintained one (see
+// 0-1-125-to-next follow-up). Not necessarily exhaustive for the unrestricted
+// non-plan-mode catalog (agent-adapters doesn't export a "full SDK catalog"
+// constant), but every name in it is real and confirmed.
+const CLAUDE_CODE_ALL_BUILTINS = Array.from(new Set([...CLAUDE_CODE_READONLY_BUILTINS, ...CLAUDE_CODE_MUTATING_BUILTINS]));
+
 function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin>Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, and a task-tracking tool if one is available in this environment</builtin>`,
+    `  <builtin>${CLAUDE_CODE_ALL_BUILTINS.join(', ')}</builtin>`,
     buildEntityToolsLine(),
   ];
   for (const m of pluginHost.listEntities()) {
