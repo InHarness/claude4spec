@@ -411,7 +411,7 @@ Forbidden (mutating):
   - MCP: any create_*, update_*, delete_*, link_*, unlink_*, tag_entity, untag_entity
 
 Allowed (read-only):
-  - Built-in: Read, Grep, Glob, WebFetch, WebSearch, Task, TodoWrite
+  - Built-in: Read, Grep, Glob, WebFetch, WebSearch, Task, and a task-tracking tool if one is available in this environment
   - MCP: list_*, get_*, find_*, check_consistency
 
 plan-tools (get_plan, update_plan, list_plan_versions, get_plan_version) are EXEMPT — use update_plan to persist the plan rather than writing it as prose in your reply.
@@ -432,7 +432,7 @@ function buildEntityToolsLine(): string {
 function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean, c4sToolsAvailable: boolean): string {
   const lines: string[] = [
     `<tooling>`,
-    `  <builtin>Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Task, TodoWrite, Skill</builtin>`,
+    `  <builtin>Read, Write, Edit, Glob, Grep, Bash, WebFetch, WebSearch, Task, Skill, and a task-tracking tool if one is available in this environment</builtin>`,
     buildEntityToolsLine(),
   ];
   for (const m of pluginHost.listEntities()) {
