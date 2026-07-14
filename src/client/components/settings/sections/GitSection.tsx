@@ -1,8 +1,11 @@
+import { useEffect, useState } from 'react';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { useGitStatus } from '../../../hooks/useGitStatus.js';
-import { ApiError } from '../../../lib/api.js';
+import { useGitBranches } from '../../../hooks/useGitBranches.js';
+import { ApiError, type ConfigPatch } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
+import { slugify } from '../../../../shared/slug.js';
 
 /**
  * M28 §6 — Git section. 0.1.118 adds `git.enabled`, a master switch for the
@@ -18,17 +21,28 @@ import { SettingsCard } from '../SettingsCard.js';
  * but doesn't commit" state and no separate checkbox for it. The amber
  * regression banner (B1) now only fires for a stale `syncPushOnPush: true`
  * left on from before the master switch existed.
+ *
+ * 0.1.125: adds the "Commit target" selector (current / specific / new
+ * branch, `config.git.commitTarget`) and the "Switch to branch after
+ * release" checkbox (`config.git.switchAfterRelease`) — see `CommitTarget`.
  */
+const DEFAULT_GIT = {
+  enabled: false,
+  syncPushOnPush: false,
+  commitTarget: { mode: 'current' as const, branch: null, template: null, base: null },
+  switchAfterRelease: false,
+};
+
 export function GitSection() {
   const { data: config } = useConfig();
-  const git = config?.git ?? { enabled: false, syncPushOnPush: false };
+  const git = config?.git ?? DEFAULT_GIT;
   // Gated: the repo-card/sub-toggle content below only renders when
   // git.enabled is true, so an ungated fetch when it's false (the default)
   // would be a wasted round trip on every Settings visit.
   const { data: status, isLoading } = useGitStatus({ enabled: git.enabled });
   const patch = usePatchConfig();
 
-  async function toggle(field: 'syncPushOnPush', next: boolean) {
+  async function toggle(field: 'syncPushOnPush' | 'switchAfterRelease', next: boolean) {
     try {
       await patch.mutateAsync({ git: { [field]: next } });
       toast.success('Git settings updated');
@@ -41,6 +55,15 @@ export function GitSection() {
     try {
       await patch.mutateAsync({ git: { enabled: next } });
       toast.success(next ? 'Git integration enabled' : 'Git integration disabled');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Update failed');
+    }
+  }
+
+  async function saveCommitTarget(commitTarget: NonNullable<ConfigPatch['git']>['commitTarget']) {
+    try {
+      await patch.mutateAsync({ git: { commitTarget } });
+      toast.success('Git settings updated');
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Update failed');
     }
@@ -106,10 +129,251 @@ export function GitSection() {
                   hint="After a release is pushed to the remote server, push the current branch to its upstream."
                 />
               </div>
+
+              <div className="flex flex-col gap-3 pt-3" style={{ borderTop: '1px solid var(--c-hair)' }}>
+                <CommitTargetSection
+                  commitTarget={git.commitTarget}
+                  switchAfterRelease={git.switchAfterRelease}
+                  disabled={patch.isPending}
+                  onSaveCommitTarget={saveCommitTarget}
+                  onToggleSwitchAfterRelease={(next) => void toggle('switchAfterRelease', next)}
+                />
+              </div>
             </div>
           ))}
       </div>
     </SettingsCard>
+  );
+}
+
+type CommitTargetValue = {
+  mode: 'current' | 'named' | 'new';
+  branch: string | null;
+  template: string | null;
+  base: string | null;
+};
+type CommitTargetPatch = NonNullable<ConfigPatch['git']>['commitTarget'];
+
+/**
+ * 0.1.125 — "Commit target" selector + "Switch to branch after release"
+ * checkbox. A local `mode` tracks the RADIO selection independent of the
+ * saved config: switching to "Specific"/"New" only updates the local UI
+ * (revealing the branch-select / template-input) — the actual PATCH fires
+ * once the user picks a concrete branch or fills in a template, matching
+ * the server's requirement that `named`/`new` carry a non-empty
+ * `branch`/`template`. This avoids a 400 round trip on an incomplete
+ * selection. Branch/base dropdowns reuse `useGitBranches` (already built for
+ * the sidebar git badge and, per its own doc comment, anticipated for this
+ * exact picker) rather than a new endpoint.
+ */
+function CommitTargetSection({
+  commitTarget,
+  switchAfterRelease,
+  disabled,
+  onSaveCommitTarget,
+  onToggleSwitchAfterRelease,
+}: {
+  commitTarget: CommitTargetValue;
+  switchAfterRelease: boolean;
+  disabled: boolean;
+  onSaveCommitTarget: (next: CommitTargetPatch) => void;
+  onToggleSwitchAfterRelease: (next: boolean) => void;
+}) {
+  const [mode, setMode] = useState(commitTarget.mode);
+  useEffect(() => setMode(commitTarget.mode), [commitTarget.mode]);
+
+  const [branchDraft, setBranchDraft] = useState(commitTarget.branch ?? '');
+  useEffect(() => setBranchDraft(commitTarget.branch ?? ''), [commitTarget.branch]);
+
+  const [templateDraft, setTemplateDraft] = useState(commitTarget.template ?? '');
+  useEffect(() => setTemplateDraft(commitTarget.template ?? ''), [commitTarget.template]);
+
+  const [baseDraft, setBaseDraft] = useState(commitTarget.base ?? '');
+  useEffect(() => setBaseDraft(commitTarget.base ?? ''), [commitTarget.base]);
+
+  const { data: branches } = useGitBranches({ enabled: mode !== 'current' });
+
+  function selectMode(next: 'current' | 'named' | 'new') {
+    setMode(next);
+    if (next === 'current') {
+      onSaveCommitTarget({ mode: 'current' });
+    } else if (next === 'named' && branchDraft) {
+      onSaveCommitTarget({ mode: 'named', branch: branchDraft });
+    } else if (next === 'new' && templateDraft) {
+      onSaveCommitTarget({ mode: 'new', template: templateDraft, base: baseDraft || null });
+    }
+    // 'named'/'new' with no draft value yet — just reveal the picker; the
+    // PATCH fires once the user actually chooses a branch / types a template.
+  }
+
+  const preview = templateDraft ? renderTemplatePreview(templateDraft) : '';
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+          Commit target
+        </span>
+        <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
+          Where a release commit lands.
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <RadioRow
+          checked={mode === 'current'}
+          disabled={disabled}
+          onChange={() => selectMode('current')}
+          label="Current branch"
+          hint="Commit on whatever branch HEAD is currently on (previous behavior)."
+        />
+        <RadioRow
+          checked={mode === 'named'}
+          disabled={disabled}
+          onChange={() => selectMode('named')}
+          label="Specific branch"
+          hint="Commit onto an existing branch's tip, without switching HEAD."
+        />
+        {mode === 'named' && (
+          <div className="ml-7 flex flex-col gap-1">
+            <select
+              value={branchDraft}
+              disabled={disabled}
+              onChange={(e) => {
+                setBranchDraft(e.target.value);
+                onSaveCommitTarget({ mode: 'named', branch: e.target.value });
+              }}
+              className="rounded-md px-2 py-1 text-[12.5px] w-56"
+              style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+            >
+              <option value="" disabled>
+                Select a branch…
+              </option>
+              {(branches?.branches ?? []).map((b) => (
+                <option key={b} value={b}>
+                  {b === branches?.current ? `${b} (current)` : b}
+                </option>
+              ))}
+            </select>
+            {commitTarget.branch && branches && !branches.branches.includes(commitTarget.branch) && (
+              <span className="text-[11.5px]" style={{ color: '#a87033' }}>
+                Saved branch "{commitTarget.branch}" no longer exists.
+              </span>
+            )}
+          </div>
+        )}
+
+        <RadioRow
+          checked={mode === 'new'}
+          disabled={disabled}
+          onChange={() => selectMode('new')}
+          label="New branch"
+          hint="Create a new branch from a base branch's tip for each release."
+        />
+        {mode === 'new' && (
+          <div className="ml-7 flex flex-col gap-2">
+            <div className="flex flex-col gap-1">
+              <input
+                type="text"
+                value={templateDraft}
+                disabled={disabled}
+                placeholder="release/{release_slug}"
+                onChange={(e) => setTemplateDraft(e.target.value)}
+                onBlur={() => {
+                  if (templateDraft && templateDraft !== (commitTarget.template ?? '')) {
+                    onSaveCommitTarget({ mode: 'new', template: templateDraft, base: baseDraft || null });
+                  }
+                }}
+                className="rounded-md px-2 py-1 text-[12.5px] w-56"
+                style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+              />
+              <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+                Placeholders: {'{release_slug}'}, {'{release_name}'}, {'{date}'}
+                {preview && (
+                  <>
+                    {' '}
+                    — preview: <span className="font-mono">{preview}</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
+                Base branch
+              </span>
+              <select
+                value={baseDraft}
+                disabled={disabled}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setBaseDraft(next);
+                  if (templateDraft) {
+                    onSaveCommitTarget({ mode: 'new', template: templateDraft, base: next || null });
+                  }
+                }}
+                className="rounded-md px-2 py-1 text-[12.5px] w-56"
+                style={{ background: 'var(--c-bg)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
+              >
+                <option value="">(default)</option>
+                {(branches?.branches ?? []).map((b) => (
+                  <option key={b} value={b}>
+                    {b === branches?.current ? `${b} (current)` : b}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {mode !== 'current' && (
+        <Toggle
+          checked={switchAfterRelease}
+          disabled={disabled}
+          onChange={onToggleSwitchAfterRelease}
+          title="Switch to branch after release"
+          hint="After a successful commit, switch HEAD/working tree to the target branch."
+        />
+      )}
+    </div>
+  );
+}
+
+/** Client-side mirror of the server's `renderCommitTargetTemplate` (git.ts) — used only for the live preview; the authoritative ref-format check happens server-side on PATCH. */
+function renderTemplatePreview(template: string): string {
+  const releaseName = 'Preview Release';
+  const date = new Date().toISOString().slice(0, 10);
+  return template
+    .replace(/\{release_slug\}/g, slugify(releaseName))
+    .replace(/\{release_name\}/g, releaseName)
+    .replace(/\{date\}/g, date);
+}
+
+function RadioRow({
+  checked,
+  disabled,
+  onChange,
+  label,
+  hint,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: () => void;
+  label: string;
+  hint: string;
+}) {
+  return (
+    <label className="flex items-start gap-3">
+      <input type="radio" checked={checked} disabled={disabled} onChange={onChange} className="mt-0.5 h-4 w-4" />
+      <span className="flex-1">
+        <span className="block text-[13px] font-medium" style={{ color: 'var(--c-ink)' }}>
+          {label}
+        </span>
+        <span className="block text-[11.5px] mt-0.5" style={{ color: 'var(--c-subtle)' }}>
+          {hint}
+        </span>
+      </span>
+    </label>
   );
 }
 

@@ -52,6 +52,14 @@ export interface GitErrorRecovery {
   gitStderr: string;
   /** Pre-composed prompt for `startSeededThread(recovery.intentPrompt, { autoSubmit: true })`. */
   intentPrompt: string;
+  /**
+   * 0.1.125: additive — narrows WHY a commit-target/switch operation failed,
+   * orthogonal to `operation` (WHAT action was running). Absent for ordinary
+   * git failures (e.g. a plain commit/push error) predating commit-target
+   * support. All kinds still map onto `status: 'error'` — no new status
+   * values were introduced.
+   */
+  kind?: 'branch-missing' | 'base-missing' | 'switch-failed' | 'switch-dirty';
 }
 
 export interface GitCommitResult {
@@ -59,6 +67,16 @@ export interface GitCommitResult {
   message?: string;
   /** Present only when `status === 'error'`. */
   recovery?: GitErrorRecovery;
+  /**
+   * 0.1.125: branch the commit actually landed on (or was targeting when a
+   * post-commit switch failed). Populated on `status: 'committed'`, and also
+   * on `status: 'error'` when the commit itself succeeded but a subsequent
+   * `switchAfterRelease` attempt failed (`recovery.kind` is
+   * `'switch-failed'`/`'switch-dirty'` in that case — the commit is durable).
+   */
+  branch?: string;
+  /** 0.1.125: whether HEAD was switched to `branch` after the commit (`config.git.switchAfterRelease`). */
+  switched?: boolean;
 }
 
 export interface GitPushResult {
@@ -66,6 +84,8 @@ export interface GitPushResult {
   message?: string;
   /** Present only when `status === 'error'`. */
   recovery?: GitErrorRecovery;
+  /** 0.1.125: the branch that was pushed. */
+  branch?: string;
 }
 
 /**
@@ -74,10 +94,15 @@ export interface GitPushResult {
  * `UpdateReleaseResponse`, `ReleasePushResponse`. `null` when git is off, no
  * repo was detected, or (update) the request didn't trigger a git operation
  * at all (e.g. a rename with no `assignUnreleased`).
+ *
+ * 0.1.125: `branch`/`switched` added — see `GitCommitResult`/`GitPushResult`.
  */
 export type GitSyncField<TStatus extends string> =
-  | { status: TStatus; message?: string; recovery?: GitErrorRecovery }
+  | { status: TStatus; message?: string; recovery?: GitErrorRecovery; branch?: string; switched?: boolean }
   | null;
+
+/** 0.1.125: `config.git.commitTarget.mode` — see `GitCommitTargetConfig` in server config. */
+export type GitCommitTargetMode = 'current' | 'named' | 'new';
 
 /**
  * 0.1.118: result of `gitService.diffRefs()` — a file-level `git diff

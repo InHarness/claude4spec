@@ -173,7 +173,16 @@ export class ReleasePushService {
       // a git failure surfaces as gitSync.status='error' (warning toast) and
       // never alters the recorded push status. Attached to this synchronous
       // response only; not persisted (getById() carries gitSync: null).
-      const gitSync = await this.gitService.pushOnPush();
+      //
+      // 0.1.125: resolve the branch actually carrying this release's marker
+      // commit and push THAT branch (a commit-target 'named'/'new' commit may
+      // not be on current HEAD anymore) — falls back to current HEAD
+      // (branch left undefined) when commit-on-release was off or the marker
+      // can't be resolved, same as the pre-0.1.125 behavior.
+      const filePath = this.releaseService.getReleaseFilePath(releaseId);
+      const markerSha = filePath ? await this.gitService.resolveReleaseCommit(filePath) : null;
+      const branch = markerSha ? (await this.gitService.branchContainingCommit(markerSha)) ?? undefined : undefined;
+      const gitSync = await this.gitService.pushOnPush(branch);
       return { ...this.getById(id)!, gitSync };
     } finally {
       // 6. ALWAYS clean up the bundle the consumer owns.

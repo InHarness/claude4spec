@@ -123,6 +123,36 @@ export interface GitSyncConfig {
   enabled?: boolean;
   /** When on, a successful remote push best-effort `git push`es the current branch. */
   syncPushOnPush?: boolean;
+  /**
+   * 0.1.125: where a release commit lands. Absent/missing ⇒
+   * `{ mode: 'current', branch: null, template: null, base: null }` (prior
+   * behavior — commit on current HEAD). Additive — no `$schemaVersion` bump.
+   */
+  commitTarget?: GitCommitTargetConfig;
+  /**
+   * 0.1.125: after a `named`/`new` commit-target commit succeeds, switch
+   * HEAD/working tree to the target branch. Absent/missing ⇒ `false`. Has no
+   * effect when `commitTarget.mode === 'current'`.
+   */
+  switchAfterRelease?: boolean;
+}
+
+/**
+ * 0.1.125: `config.git.commitTarget` — see `GitSyncConfig.commitTarget`.
+ * Conditional-required fields (`branch` for `named`, `template` for `new`)
+ * are typed loosely here (`string | null`) — semantic "non-empty when this
+ * mode is active" validation lives in the PATCH /api/config route, not here
+ * (this shape must also tolerate a config.json where the inactive mode's
+ * field was never set, e.g. `mode: 'current'` with `branch: null`).
+ */
+export interface GitCommitTargetConfig {
+  mode?: 'current' | 'named' | 'new';
+  /** Used only when `mode === 'named'`. */
+  branch?: string | null;
+  /** Used only when `mode === 'new'`. Supports `{release_slug}`/`{release_name}`/`{date}`. */
+  template?: string | null;
+  /** Used only when `mode === 'new'`. `null` = auto-detect via `resolveDefaultBranch()`. */
+  base?: string | null;
 }
 
 export type ConsistencySeverity = 'off' | 'warn' | 'error';
@@ -577,6 +607,40 @@ function validate(raw: unknown): Partial<Config> {
       }
       git.syncPushOnPush = gr.syncPushOnPush;
     }
+    // 0.1.125: shape-only validation — semantic checks (non-empty branch/template
+    // for the active mode, ref-format) live in the PATCH /api/config route, since
+    // this function is also reused by readConfig() on every boot, which must
+    // tolerate a config.json where the inactive mode's field was never set.
+    if ('commitTarget' in gr) {
+      const ct = gr.commitTarget;
+      if (ct === null || typeof ct !== 'object' || Array.isArray(ct)) {
+        throw typeError('git.commitTarget', 'object', ct);
+      }
+      const ctr = ct as Record<string, unknown>;
+      const commitTarget: GitCommitTargetConfig = {};
+      if ('mode' in ctr) {
+        if (ctr.mode !== 'current' && ctr.mode !== 'named' && ctr.mode !== 'new') {
+          throw typeError('git.commitTarget.mode', "'current' | 'named' | 'new'", ctr.mode);
+        }
+        commitTarget.mode = ctr.mode;
+      }
+      for (const field of ['branch', 'template', 'base'] as const) {
+        if (field in ctr) {
+          const v = ctr[field];
+          if (v !== null && typeof v !== 'string') {
+            throw typeError(`git.commitTarget.${field}`, 'string | null', v);
+          }
+          commitTarget[field] = v;
+        }
+      }
+      git.commitTarget = commitTarget;
+    }
+    if ('switchAfterRelease' in gr) {
+      if (typeof gr.switchAfterRelease !== 'boolean') {
+        throw typeError('git.switchAfterRelease', 'boolean', gr.switchAfterRelease);
+      }
+      git.switchAfterRelease = gr.switchAfterRelease;
+    }
     out.git = git;
   }
   // M33 phase 3: `plugins` is a namespace of opaque per-plugin sub-objects. We
@@ -828,6 +892,12 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
   // (shallow spread would replace the whole object and drop the untouched flag).
   if (validated.git) {
     merged.git = { ...current.git, ...validated.git };
+    // 0.1.125: one level deeper for `commitTarget` — same nested precedent as
+    // `plugins[<name>]` below — so patching e.g. just `mode` preserves the
+    // previously-saved `branch`/`template`/`base`.
+    if (validated.git.commitTarget) {
+      merged.git.commitTarget = { ...current.git?.commitTarget, ...validated.git.commitTarget };
+    }
   }
   // 0.1.51: same deep-merge precedent for `agent` — patching `conversationalLanguage`
   // alone must preserve `claudeUsePreset` (and vice versa).

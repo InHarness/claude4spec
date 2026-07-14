@@ -266,6 +266,22 @@ export class ReleaseService {
   }
 
   /**
+   * 0.1.125: absolute path of `releaseId`'s identity file, for
+   * `gitService.resolveReleaseCommit()` — same computation `resolveReignRef`
+   * already does inline for the NEXT release's marker (line ~616), exposed
+   * here so `ReleasePushService` can resolve the branch carrying ITS OWN
+   * release's marker before pushing. `null` when no `ReleaseFileStore` is
+   * wired, the release doesn't exist, or it has no slug (legacy release,
+   * predates the identity-file feature).
+   */
+  getReleaseFilePath(releaseId: number): string | null {
+    if (!this.releaseStore) return null;
+    const row = this.findReleaseRow(releaseId);
+    if (!row?.slug) return null;
+    return nodePath.join(this.releaseStore.root, `${row.slug}.json`);
+  }
+
+  /**
    * Count of captures still queued at HEAD — entity_version + page_version rows
    * with `release_id IS NULL`. Drives the M25 "You have N unreleased changes"
    * banner shown only on the latest (mutable) release card.
