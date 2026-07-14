@@ -241,4 +241,32 @@ describe('PATCH /config — git.commitTarget (0.1.125)', () => {
     expect(bad.status).toBe(400);
     expect(bad.body.error.code).toBe('VALIDATION');
   });
+
+  it('rejects a partial PATCH that would null out `branch` while a saved mode:"named" survives (code review regression)', async () => {
+    const first = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'named', branch: 'release' } } });
+    expect(first.status).toBe(200);
+
+    // `mode` omitted — validated against the EFFECTIVE (merged) commitTarget,
+    // not just this request's body, so this must still be rejected: the
+    // persisted mode stays 'named', which requires a non-empty branch.
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { branch: null } } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+
+    // And the original setting must be untouched by the rejected request.
+    const after = await request(app()).get('/config');
+    expect(after.body.git.commitTarget).toEqual({ mode: 'named', branch: 'release', template: null, base: null });
+  });
+
+  it('accepts a mode "new" template using the documented {release_name} placeholder (code review regression)', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ git: { commitTarget: { mode: 'new', template: 'release-{release_name}' } } });
+    expect(res.status).toBe(200);
+    expect(res.body.git.commitTarget.template).toBe('release-{release_name}');
+  });
 });

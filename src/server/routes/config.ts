@@ -9,7 +9,8 @@ import type { PluginSettingsSection } from '../../shared/plugin-host/manifest.js
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import { probePathScope, type PathScopeStrength } from '@inharness-ai/agent-adapters';
 import { ensureGitignore } from '../../bin/gitignore.js';
-import { isValidGitRefName, renderCommitTargetTemplate } from '../services/git.js';
+import { isValidGitRefName } from '../services/git.js';
+import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../shared/git.js';
 
 export interface ConfigRouterDeps {
   cwd: string;
@@ -375,20 +376,36 @@ export function configRouter(deps: ConfigRouterDeps): Router {
               nextCt[field] = v;
             }
           }
-          if (nextCt.mode === 'named' && !nextCt.branch) {
+          // 0.1.125 (code review): validate against the EFFECTIVE post-merge
+          // commitTarget, not just this request's `nextCt` — writeConfig
+          // deep-merges `commitTarget` one level deep, so a request that
+          // patches `branch` alone (mode omitted) would otherwise sail past
+          // an `nextCt.mode === 'named'` check that never fires, silently
+          // persisting `{mode:'named', branch:null}` and falling back to
+          // legacy 'current'-mode semantics at commit time with no error
+          // anywhere. Same precedent as the `roots` validation above
+          // (effective entitiesDir/releasesDir/etc.).
+          const currentCommitTarget = readConfig(cwd).git?.commitTarget;
+          const effectiveCt = { ...currentCommitTarget, ...nextCt };
+          if (effectiveCt.mode === 'named' && !effectiveCt.branch) {
             return res
               .status(400)
               .json({ error: { code: 'VALIDATION', message: "git.commitTarget.branch is required when mode is 'named'" } });
           }
-          if (nextCt.mode === 'new') {
-            if (!nextCt.template) {
+          if (effectiveCt.mode === 'new') {
+            if (!effectiveCt.template) {
               return res
                 .status(400)
                 .json({ error: { code: 'VALIDATION', message: "git.commitTarget.template is required when mode is 'new'" } });
             }
-            const preview = renderCommitTargetTemplate(nextCt.template, {
-              releaseName: 'Preview Release',
-              date: new Date().toISOString().slice(0, 10),
+            // Ref-safe dummy release name for the preview render — a space
+            // (as in e.g. "Preview Release") is itself an invalid git ref
+            // character, which would make ANY template using the documented
+            // `{release_name}` placeholder fail this check unconditionally,
+            // regardless of what real release names look like.
+            const preview = renderCommitTargetTemplate(effectiveCt.template, {
+              releaseName: 'preview-release',
+              date: localDateYYYYMMDD(new Date()),
             });
             if (!(await isValidGitRefName(preview))) {
               return res.status(400).json({

@@ -5,7 +5,7 @@ import { useGitBranches } from '../../../hooks/useGitBranches.js';
 import { ApiError, type ConfigPatch } from '../../../lib/api.js';
 import { toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
-import { slugify } from '../../../../shared/slug.js';
+import { renderCommitTargetTemplate, localDateYYYYMMDD } from '../../../../shared/git.js';
 
 /**
  * M28 §6 — Git section. 0.1.118 adds `git.enabled`, a master switch for the
@@ -339,14 +339,9 @@ function CommitTargetSection({
   );
 }
 
-/** Client-side mirror of the server's `renderCommitTargetTemplate` (git.ts) — used only for the live preview; the authoritative ref-format check happens server-side on PATCH. */
+/** Live preview only — shares `renderCommitTargetTemplate` (src/shared/git.ts) with the server so the two never drift out of sync; the authoritative ref-format check still happens server-side on PATCH. */
 function renderTemplatePreview(template: string): string {
-  const releaseName = 'Preview Release';
-  const date = new Date().toISOString().slice(0, 10);
-  return template
-    .replace(/\{release_slug\}/g, slugify(releaseName))
-    .replace(/\{release_name\}/g, releaseName)
-    .replace(/\{date\}/g, date);
+  return renderCommitTargetTemplate(template, { releaseName: 'Preview Release', date: localDateYYYYMMDD(new Date()) });
 }
 
 function RadioRow({

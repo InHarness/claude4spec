@@ -6,6 +6,8 @@
  * fields ride the synchronous create/push responses only (see brief 0.1.38).
  */
 
+import { slugify } from './slug.js';
+
 /** Result of `gitService.detect()`, exposed by `GET /api/git/status`. */
 export interface GitStatusResponse {
   /** `true` when a releasable root is inside a git worktree and `git` is on PATH. */
@@ -101,9 +103,6 @@ export type GitSyncField<TStatus extends string> =
   | { status: TStatus; message?: string; recovery?: GitErrorRecovery; branch?: string; switched?: boolean }
   | null;
 
-/** 0.1.125: `config.git.commitTarget.mode` — see `GitCommitTargetConfig` in server config. */
-export type GitCommitTargetMode = 'current' | 'named' | 'new';
-
 /**
  * 0.1.118: result of `gitService.diffRefs()` — a file-level `git diff
  * --name-status <a>..<b>` between two release-anchor commits. Gated on
@@ -161,4 +160,55 @@ export interface GitCheckoutResponse {
   branch: string | null;
   /** Human-readable detail for a toast/hint; `null` on `'switched'` and `'skipped'`. */
   message: string | null;
+}
+
+/** 0.1.125: `config.git.commitTarget.mode` — see `GitCommitTargetConfig` in server config. */
+export type GitCommitTargetMode = 'current' | 'named' | 'new';
+
+/**
+ * 0.1.125: substitute `{release_slug}`/`{release_name}`/`{date}` into a
+ * `commitTarget.template`. Pure, isomorphic — shared between the server
+ * (`git.ts`'s real `'new'`-mode branch naming, and the PATCH /api/config
+ * route's preview-render check) and the client (`GitSection.tsx`'s live
+ * template preview), so the two never drift out of sync. Only dependency is
+ * `slugify`, also shared.
+ *
+ * A SINGLE regex pass over the ORIGINAL `template` string — critical: naive
+ * sequential `.replace()` calls would let one placeholder's substituted text
+ * get re-matched by a later `.replace()` (e.g. a release named
+ * `Sprint {date} Wrapup` would have its own literal `{date}` text rewritten
+ * a second time by the `{date}` substitution). A single `String.replace`
+ * with a global regex only ever matches against the ORIGINAL input, never
+ * against already-substituted output, so this is immune to that.
+ */
+export function renderCommitTargetTemplate(
+  template: string,
+  ctx: { releaseName: string; date: string },
+): string {
+  return template.replace(/\{release_slug\}|\{release_name\}|\{date\}/g, (token) => {
+    switch (token) {
+      case '{release_slug}':
+        return slugify(ctx.releaseName);
+      case '{release_name}':
+        return ctx.releaseName;
+      case '{date}':
+        return ctx.date;
+      default:
+        return token;
+    }
+  });
+}
+
+/**
+ * 0.1.125: local (NOT UTC) calendar date as `YYYY-MM-DD`, for the `{date}`
+ * commit-target placeholder — a user's "today" shouldn't flip a day
+ * early/late just because UTC has already turned over (e.g. `toISOString()`
+ * at 9pm US Pacific already reports the next UTC day). Shared so the
+ * server's real commit and the client's live template preview always agree.
+ */
+export function localDateYYYYMMDD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
