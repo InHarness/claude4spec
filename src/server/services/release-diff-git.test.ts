@@ -35,7 +35,7 @@ const fakeHost = { getEntity: () => null } as unknown as PluginHost;
 const fakePagesService = {} as unknown as PagesService;
 const fakePageSerializer = new PageSerializer(fakePagesService);
 const fakeVersions = {} as unknown as VersionService;
-const fakePageVersions = {} as unknown as PageVersionService;
+const fakePageVersions = { assignToRelease: () => {} } as unknown as PageVersionService;
 const fakeRawReader = {} as unknown as RawEntityReader;
 const fakeTagsService = {} as unknown as TagsService;
 
@@ -768,6 +768,86 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       const byPath = new Map(delta.pages.map((p) => [p.path, p]));
       expect(byPath.get('a.md')?.op).toBe('modified');
       expect(byPath.get('b.md')?.op).toBe('created');
+    });
+  });
+
+  describe('0.1.124 updateRelease commit-then-assign race guard (code-review fix)', () => {
+    it('re-checks the frozen/latest invariant after the awaited commitPull — a release created during that window blocks assignment instead of silently misattributing fresh work', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService, gitService } = buildReleaseService(pagesDir);
+
+      const v1 = releaseService.createRelease({ name: 'v1', description: 'First' }, 'user');
+
+      // Work already queued for v1's pull.
+      db.prepare(
+        `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+         VALUES ('endpoint', 'e1', 1, '{}', 'user', NULL, 'v1', 'create')`,
+      ).run();
+
+      // Simulate a concurrent client creating v2 DURING v1's awaited
+      // commitPull(), followed by fresh work landing right after — exactly
+      // the race window the code-review fix closes. commitPull() is a real
+      // async git subprocess call in production; here it's stubbed to
+      // synchronously inject the race before resolving. Note: v2's own
+      // createRelease() legitimately sweeps up e1 (release_id IS NULL at
+      // that point) — that's correct, expected behavior, not part of the bug.
+      let v2Id = -1;
+      vi.spyOn(gitService, 'commitPull').mockImplementation(async () => {
+        v2Id = releaseService.createRelease({ name: 'v2', description: 'Second (concurrent)' }, 'user').id;
+        db.prepare(
+          `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, release_id, serializer_version, op)
+           VALUES ('endpoint', 'e2', 1, '{}', 'user', NULL, 'v1', 'create')`,
+        ).run();
+        return { status: 'nothing-to-commit' };
+      });
+
+      await expect(
+        releaseService.updateRelease({ idOrName: v1.id, assignUnreleased: true }),
+      ).rejects.toMatchObject({ code: 'RELEASE_FROZEN' });
+
+      // e1 was legitimately swept into v2 by v2's OWN createRelease() (it was
+      // release_id IS NULL at that point — correct behavior). e2 landed after
+      // v2 was created, so it's still unclaimed, pending the next release.
+      // The bug this guards against is either one ending up on v1 — frozen,
+      // and no longer the actual latest release.
+      const rows = db
+        .prepare(`SELECT entity_slug, release_id FROM entity_version WHERE entity_slug IN ('e1', 'e2')`)
+        .all() as Array<{ entity_slug: string; release_id: number | null }>;
+      const bySlug = new Map(rows.map((r) => [r.entity_slug, r.release_id]));
+      expect(bySlug.get('e1')).toBe(v2Id);
+      expect(bySlug.get('e2')).toBeNull();
+      expect(rows.some((r) => r.release_id === v1.id)).toBe(false);
+    });
+
+    it('a combined rename + assignUnreleased request commits the RENAMED identity file, leaving a clean working tree (code-review fix)', async () => {
+      const pagesDir = path.join(dir, 'pages');
+      fs.mkdirSync(pagesDir, { recursive: true });
+      const { releaseService } = buildReleaseService(pagesDir);
+
+      const v1 = releaseService.createRelease({ name: 'v1', description: 'First' }, 'user');
+      await git(['add', '.'], dir);
+      await git(['commit', '-m', 'baseline (v1 identity file)'], dir);
+
+      fs.writeFileSync(path.join(pagesDir, 'a.md'), '# A');
+
+      const result = await releaseService.updateRelease({
+        idOrName: v1.id,
+        name: 'v1-renamed',
+        assignUnreleased: true,
+      });
+      expect(result.gitSync?.status).toBe('committed');
+
+      // Before the fix, commitPull() ran BEFORE the identity-file rename hit
+      // disk — the rename (old file removed, new file added) would still
+      // show up here as an uncommitted change even though gitSync claimed
+      // 'committed'.
+      const status = (await git(['status', '--porcelain'], dir)).trim();
+      expect(status).toBe('');
+
+      const tracked = (await git(['ls-tree', '-r', '--name-only', 'HEAD'], dir)).split('\n');
+      expect(tracked).toContain('.claude4spec/releases/v1-renamed.json');
+      expect(tracked).not.toContain('.claude4spec/releases/v1.json');
     });
   });
 });

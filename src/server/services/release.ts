@@ -110,6 +110,22 @@ interface ReleaseRow {
   created_at: string;
 }
 
+/**
+ * Shared frozen-release guard (decyzja 13: implicit last = mutable) — throws
+ * `RELEASE_FROZEN` unless `row` is the current latest release (`id ===
+ * MAX(id)`). Callable from inside a `db.transaction()` (synchronous, no
+ * await) — `updateRelease`'s two-transaction split (0.1.124, commit-then-
+ * assign) calls this from BOTH transactions: once up front, and once again
+ * immediately before the release_id assignment, to catch a release created
+ * concurrently during the awaited `commitPull()` in between.
+ */
+function assertLatestMutable(db: Database.Database, row: ReleaseRow): void {
+  const maxRow = db.prepare(`SELECT MAX(id) AS maxId FROM spec_release`).get() as { maxId: number | null };
+  if (row.id !== maxRow.maxId) {
+    throw new DomainError('RELEASE_FROZEN', `release '${row.name}' is frozen — only the latest release is mutable`);
+  }
+}
+
 interface EntityVersionRow {
   entity_type: string;
   entity_slug: string;
@@ -349,6 +365,31 @@ export class ReleaseService {
    * commit can't run inside a synchronous better-sqlite3 transaction. When
    * no `GitService` is wired, or `assignUnreleased` is falsy, assignment
    * behaves exactly as before (no gating, `gitSync: null`).
+   *
+   * Two ordering subtleties this split introduces (code-review fix,
+   * 2026-07-14):
+   *
+   * 1. The on-disk release-identity file is synced (renamed/rewritten) right
+   *    after the FIRST transaction, before `commitPull()` runs — not after
+   *    the assignment, like `createRelease` does. `commitPull()` stages
+   *    `releasesDir` as part of its working-tree commit; syncing the file
+   *    first ensures a combined rename+`assignUnreleased` request actually
+   *    captures the rename in that commit, instead of leaving it as a stray
+   *    uncommitted change that silently rides into some later, unrelated
+   *    commit while the response claims `gitSync.status: 'committed'`.
+   * 2. The assignment transaction RE-CHECKS `id === MAX(id)` itself (not
+   *    just the first transaction) — `commitPull()` is an awaited git
+   *    subprocess call, which yields the event loop for real time. A
+   *    concurrent `createRelease()` during that window would otherwise go
+   *    undetected: the first transaction's frozen-check is stale by the time
+   *    the assignment runs, so newly-`release_id IS NULL` rows captured
+   *    after the concurrent release was created could get silently
+   *    misattributed to this now-frozen release instead. Throwing
+   *    `RELEASE_FROZEN` here (rather than proceeding) is safe — the git
+   *    commit itself is best-effort/non-transactional, same as every other
+   *    `GitService` action, so an extra harmless "Pull to X" commit in that
+   *    rare race is an acceptable trade for never corrupting the DB's
+   *    release_id attribution.
    */
   async updateRelease(input: {
     idOrName: number | string;
@@ -360,15 +401,7 @@ export class ReleaseService {
       const row = this.findReleaseRow(input.idOrName);
       if (!row) throw new DomainError('NOT_FOUND', `release '${input.idOrName}' not found`);
 
-      const maxRow = this.db
-        .prepare(`SELECT MAX(id) AS maxId FROM spec_release`)
-        .get() as { maxId: number | null };
-      if (row.id !== maxRow.maxId) {
-        throw new DomainError(
-          'RELEASE_FROZEN',
-          `release '${row.name}' is frozen — only the latest release is mutable`,
-        );
-      }
+      assertLatestMutable(this.db, row);
 
       const nextName = input.name === undefined ? undefined : input.name.trim();
       const nextDescription = input.description === undefined ? undefined : input.description.trim();
@@ -428,6 +461,30 @@ export class ReleaseService {
     });
     const { releaseId, oldSlug, editedRow } = tx();
 
+    // 0.1.118: keep the on-disk identity file in sync — a rename moves it
+    // (remove old + write new), a description-only edit just rewrites content
+    // at the same slug. Legacy releases (no slug — born before this feature,
+    // never renamed since) are left without a file, tolerated gracefully.
+    //
+    // Runs BEFORE commitPull() below (code-review fix, 2026-07-14): a
+    // combined rename+assignUnreleased request must have the renamed
+    // identity file on disk before commitPull() stages/commits releasesDir,
+    // or the rename is left uncommitted while the response still claims
+    // gitSync.status: 'committed'.
+    if (this.releaseStore && editedRow.slug) {
+      try {
+        if (oldSlug && oldSlug !== editedRow.slug) {
+          this.releaseStore.remove(oldSlug);
+        }
+        this.releaseStore.write(
+          editedRow.slug,
+          toReleaseFileData(editedRow, editedRow.slug, this.releasableRootIds),
+        );
+      } catch (err) {
+        console.error(`[release] failed to sync release file for '${editedRow.name}':`, err);
+      }
+    }
+
     let gitSync: UpdateReleaseResponse['gitSync'] = null;
     let shouldAssign = input.assignUnreleased === true;
     if (shouldAssign && this.gitService) {
@@ -436,34 +493,25 @@ export class ReleaseService {
       if (result.status === 'error') shouldAssign = false;
     }
 
-    let finalRow = editedRow;
     if (shouldAssign) {
-      finalRow = this.db.transaction(() => {
+      // Re-check id === MAX(id) INSIDE this transaction (code-review fix,
+      // 2026-07-14) — commitPull() above is an awaited git subprocess call
+      // that yields the event loop for real time; a concurrent
+      // createRelease() during that window would otherwise go undetected,
+      // and this assignment would misattribute newly-unreleased rows to a
+      // release that's no longer actually the latest. See the method's doc
+      // comment for the full rationale.
+      this.db.transaction(() => {
+        const row = this.findReleaseRow(releaseId);
+        if (!row) throw new DomainError('NOT_FOUND', `release '${releaseId}' not found`);
+        assertLatestMutable(this.db, row);
         this.db
           .prepare(`UPDATE entity_version SET release_id = ? WHERE release_id IS NULL`)
           .run(releaseId);
         this.pageVersions.assignToRelease(releaseId, this.releasableRootIds);
-        return this.db.prepare(`SELECT * FROM spec_release WHERE id = ?`).get(releaseId) as ReleaseRow;
       })();
     }
 
-    // 0.1.118: keep the on-disk identity file in sync — a rename moves it
-    // (remove old + write new), a description-only edit just rewrites content
-    // at the same slug. Legacy releases (no slug — born before this feature,
-    // never renamed since) are left without a file, tolerated gracefully.
-    if (this.releaseStore && finalRow.slug) {
-      try {
-        if (oldSlug && oldSlug !== finalRow.slug) {
-          this.releaseStore.remove(oldSlug);
-        }
-        this.releaseStore.write(
-          finalRow.slug,
-          toReleaseFileData(finalRow, finalRow.slug, this.releasableRootIds),
-        );
-      } catch (err) {
-        console.error(`[release] failed to sync release file for '${finalRow.name}':`, err);
-      }
-    }
     return { ...this.getRelease(releaseId), gitSync };
   }
 
