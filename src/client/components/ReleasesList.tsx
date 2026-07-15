@@ -4,15 +4,15 @@ import { ArrowUpRight, FileText, GitCommit, Plus } from 'lucide-react';
 import { useReleases } from '../hooks/useReleases.js';
 import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
 import { useBriefs } from '../hooks/useBriefs.js';
-import type { BriefListItem } from '../../shared/entities.js';
+import type { BriefListItemView } from '../lib/briefs-api.js';
 import { UnreleasedBanner } from './release/UnreleasedBanner.js';
 import { ImplementedBadge } from './BriefsList.js';
 
 /** Briefs attached to a single release card — belonging (`toRelease === name`)
  * vs outgoing (an unreleased analysis brief authored FROM this release). */
 interface ReleaseBriefs {
-  belonging: BriefListItem[];
-  outgoing: BriefListItem[];
+  belonging: BriefListItemView[];
+  outgoing: BriefListItemView[];
 }
 
 interface Props {
@@ -159,7 +159,7 @@ function ReleaseBriefsSection({ briefs }: { briefs: ReleaseBriefs | undefined })
   );
 }
 
-function BriefPill({ brief, outgoing }: { brief: BriefListItem; outgoing?: boolean }) {
+function BriefPill({ brief, outgoing }: { brief: BriefListItemView; outgoing?: boolean }) {
   return (
     <span
       className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 min-w-0"

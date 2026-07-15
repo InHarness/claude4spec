@@ -7,6 +7,7 @@ import {
   useCreateBriefThread,
   useSetBriefImplemented,
 } from '../hooks/useBriefs.js';
+import type { BriefFrontmatterView } from '../lib/briefs-api.js';
 import { useChatStore } from '../state/chat.js';
 import { BriefEditor } from './BriefEditor.js';
 import { BriefVersionHistory } from './BriefVersionHistory.js';
@@ -44,7 +45,7 @@ export function BriefDetail({ briefPath }: Props) {
     );
   }
 
-  const fm = brief.frontmatter;
+  const fm = brief.frontmatter as BriefFrontmatterView;
 
   const handleNewThread = async () => {
     const result = await createThread.mutateAsync(undefined);

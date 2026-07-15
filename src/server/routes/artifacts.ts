@@ -5,7 +5,12 @@ import type { PatchService } from '../services/patch.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
-import type { ArtifactListItem, ArtifactResponse, PatchStatus } from '../../shared/entities.js';
+import type {
+  ArtifactListItem,
+  ArtifactResponse,
+  BriefThreadSummary,
+  PatchStatus,
+} from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 
 /**
@@ -21,6 +26,10 @@ import { DomainError } from '../services/tags.js';
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
   get(path: string): Promise<ArtifactResponse>;
+  /** Both kinds' old detail routes merged `threads` into the response body
+   *  (`{ ...detail, threads }`) — preserved here rather than dropped, since
+   *  client detail pages read `.threads` off the same call. */
+  listThreads(path: string): BriefThreadSummary[];
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
@@ -90,6 +99,9 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     createThread(path, name) {
       return Promise.resolve(briefs.createThreadForBrief({ path, name: name ?? null }));
     },
+    listThreads(path) {
+      return briefs.listThreadsForBrief(path);
+    },
   };
 }
 
@@ -129,6 +141,9 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     },
     createThread(path, name) {
       return patches.createThreadForPatch(path, name ?? null);
+    },
+    listThreads(path) {
+      return patches.listThreadsForPatch(path);
     },
   };
 }
@@ -258,7 +273,8 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
       const data = await adapters[kind].get(path);
-      res.json({ data });
+      const threads = adapters[kind].listThreads(path);
+      res.json({ data: { ...data, threads } });
     } catch (err) {
       next(err);
     }

@@ -1,12 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { FileText, FileWarning, MessageSquarePlus, ChevronDown, ChevronRight } from 'lucide-react';
-import type { BriefListItem, PatchListItem } from '../../shared/entities.js';
 import { useBriefs, useCreateBriefThread } from '../hooks/useBriefs.js';
 import { useReleases } from '../hooks/useReleases.js';
 import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
-import { encodeBriefPath } from '../lib/briefs-api.js';
-import { encodePatchPath } from '../lib/patches-api.js';
+import { encodeBriefPath, type BriefListItemView } from '../lib/briefs-api.js';
+import { encodePatchPath, type PatchListItemView } from '../lib/patches-api.js';
 import { useChatStore } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { SegmentedControl } from './SegmentedControl.js';
@@ -72,15 +71,20 @@ export function BriefsList() {
     });
   }, [briefs, releaseRank]);
 
-  // Group patches by their resolved brief; unresolved ⇒ orphan.
-  const briefPathSet = new Set(briefs.map((b) => b.path));
-  const patchesByBrief = new Map<string, PatchListItem[]>();
-  const orphans: PatchListItem[] = [];
+  // Group patches by their resolved brief; unresolved ⇒ orphan. `ArtifactListItem`
+  // has no top-level `briefPath` (only raw `frontmatter` survives at the list
+  // level, see patches-api.ts) — the server's by-filename-prefix fallback
+  // (`PatchService.resolveBriefPath`) is reimplemented here since this is the
+  // only place that still needs the resolved grouping.
+  const briefPaths = briefs.map((b) => b.path);
+  const patchesByBrief = new Map<string, PatchListItemView[]>();
+  const orphans: PatchListItemView[] = [];
   for (const p of patches) {
-    if (p.briefPath && briefPathSet.has(p.briefPath)) {
-      const arr = patchesByBrief.get(p.briefPath) ?? [];
+    const briefPath = resolvePatchBriefPath(p.path, p.briefRef, briefPaths);
+    if (briefPath) {
+      const arr = patchesByBrief.get(briefPath) ?? [];
       arr.push(p);
-      patchesByBrief.set(p.briefPath, arr);
+      patchesByBrief.set(briefPath, arr);
     } else {
       orphans.push(p);
     }
@@ -204,7 +208,7 @@ function BriefRow({
   isCollapsed,
   onToggleCollapsed,
 }: {
-  brief: BriefListItem;
+  brief: BriefListItemView;
   patchCount: number;
   isCollapsed: boolean;
   onToggleCollapsed(): void;
@@ -289,7 +293,7 @@ function BriefRow({
  * Tytuł = `patch.path` (font-mono). Ikoniczny „Run new thread" zamiast długiego
  * tekstowego przycisku; usunięto informację o thread count.
  */
-function PatchRow({ patch }: { patch: PatchListItem }) {
+function PatchRow({ patch }: { patch: PatchListItemView }) {
   const createThread = useCreatePatchThread(patch.path);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -457,6 +461,35 @@ function InitialBadge() {
   );
 }
 
+
+/**
+ * Client-side mirror of the server's `PatchService.resolveBriefPath`: the
+ * `brief` frontmatter field if it names an existing brief, else the brief
+ * whose filename stem is the longest prefix of the patch filename stem, else
+ * `null` (orphan). Reimplemented here (not sourced from the server) since the
+ * generic artifact list no longer resolves this server-side — see the
+ * `patchesByBrief` grouping above.
+ */
+function resolvePatchBriefPath(
+  patchPath: string,
+  briefRef: string | undefined,
+  briefPaths: string[],
+): string | null {
+  if (briefRef && briefPaths.includes(briefRef)) return briefRef;
+  const patchStem = stem(patchPath);
+  let best: string | null = null;
+  for (const bp of briefPaths) {
+    const briefStem = stem(bp);
+    if (patchStem === briefStem || patchStem.startsWith(briefStem + '-')) {
+      if (best === null || stem(bp).length > stem(best).length) best = bp;
+    }
+  }
+  return best;
+}
+
+function stem(p: string): string {
+  return p.replace(/^.*\//, '').replace(/\.md$/i, '');
+}
 
 function formatRelative(iso: string): string {
   if (!iso) return 'unknown';
