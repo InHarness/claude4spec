@@ -325,7 +325,22 @@ function scanRootInto(root: SkillRoot, meta: Map<string, SkillMetadata>, skips: 
     return;
   }
   for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
+    // A symlink whose target is a directory counts as a directory: a symlinked style dir
+    // dropped into `.claude/skills` must be discoverable exactly like a real dir (it is
+    // already editable via the config content-root path). `entry.isDirectory()` is false
+    // for a symlink even when the target is a dir, so resolve it with `statSync`, guarded
+    // so a broken link is skipped rather than throwing.
+    const isDir =
+      entry.isDirectory() ||
+      (entry.isSymbolicLink() &&
+        (() => {
+          try {
+            return fs.statSync(path.join(root.dir, entry.name)).isDirectory();
+          } catch {
+            return false; // broken symlink → skip
+          }
+        })());
+    if (!isDir) continue;
     const slug = entry.name;
     // Higher-precedence root already claimed this slug.
     if (meta.has(slug)) continue;
