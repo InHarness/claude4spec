@@ -7,8 +7,26 @@ import { PluginRegistryImpl } from './registry.js';
 import { loadWorkspacePlugins } from './loader.js';
 import { loadProjectOverlay } from './overlay-loader.js';
 import { clearExtensionReferenceTypes, getExtensionReferenceType } from '../../../shared/reference-extensions.js';
-import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
+import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import type { BackendModule } from './types.js';
+
+function entity(type: string): EntityContribution {
+  return {
+    type,
+    table: type,
+    label: type,
+    labelPlural: `${type}s`,
+    displayOrder: 100,
+    slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? type),
+    pathPrefix: `/${type}s`,
+    serializer: {},
+    systemPrompt: {
+      roleNoun: type,
+      countStat: { placeholder: `${type}Count`, sqlQuery: 'SELECT 0 AS count', label: type },
+      mcpToolsLine: `${type}-tools: ...`,
+    },
+  };
+}
 
 /**
  * v0.1.129 (M19 extensible reference types) — the two declarative
@@ -114,6 +132,50 @@ describe('Slot A — PluginManifest.contributes.referenceTypes', () => {
     expect(bRecord?.reason).toMatch(/already registered/);
     // The first package's registration survives; the process never crashed.
     expect(getExtensionReferenceType('figure_ref')).toMatchObject({ tag: 'figure_ref' });
+  });
+});
+
+describe('registerPlugin atomicity — a reference-type conflict rolls back the WHOLE manifest, not just the tag', () => {
+  it('a Slot A conflict leaves the manifest\'s entity modules unregistered too (no split-brain "package failed but entity is live")', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(manifestWithRefType({ name: '@acme/base-figure' })); // claims figure_ref first
+
+    const conflicting = manifestWithRefType({
+      name: '@acme/plugin-with-entity-and-conflict',
+      contributes: {
+        entities: [entity('gadget')],
+        referenceTypes: [{ tag: 'figure_ref', attrOrder: ['id'] }], // different attrOrder ⇒ genuine conflict
+      },
+    });
+
+    expect(() => registry.registerPlugin(conflicting)).toThrow(/already registered/);
+
+    // Neither the entity type nor the plugin record were committed — a
+    // process restart is NOT required to recover, and a later call to
+    // unregisterPlugin('@acme/plugin-with-entity-and-conflict') would have
+    // been a no-op against orphaned state before this fix.
+    expect(registry.getAvailable('gadget')).toBeNull();
+    expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@acme/base-figure']);
+    // The original tag is untouched by the failed attempt.
+    expect(getExtensionReferenceType('figure_ref')).toEqual({ tag: 'figure_ref', attrOrder: ['id', 'caption'] });
+  });
+
+  it('two referenceTypes entries in the SAME manifest that redeclare the same tag differently both fail atomically', () => {
+    const registry = new PluginRegistryImpl();
+    const manifest = manifestWithRefType({
+      name: '@acme/self-conflicting',
+      contributes: {
+        entities: [entity('gadget')],
+        referenceTypes: [
+          { tag: 'figure_ref', attrOrder: ['id'] },
+          { tag: 'figure_ref', attrOrder: ['id', 'caption'] },
+        ],
+      },
+    });
+
+    expect(() => registry.registerPlugin(manifest)).toThrow(/declared twice with different definitions/);
+    expect(registry.getAvailable('gadget')).toBeNull();
+    expect(getExtensionReferenceType('figure_ref')).toBeUndefined();
   });
 });
 

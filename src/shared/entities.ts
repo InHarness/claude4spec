@@ -1026,10 +1026,6 @@ export interface BriefCreateResult {
   initialThreadId: string;
 }
 
-export interface BriefContentUpdateResult {
-  newHash: string;
-}
-
 export interface BriefThreadSummary {
   id: string;
   title: string | null;

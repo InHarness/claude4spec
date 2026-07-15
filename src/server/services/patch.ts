@@ -16,7 +16,6 @@
  *     absent — by filename prefix. Unresolvable ⇒ orphan (`briefPath: null`).
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -31,6 +30,7 @@ import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { FileVersionService } from './file-version.js';
+import { hashContent, toIso } from './artifact-content.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
@@ -50,6 +50,14 @@ export interface PatchListOpts {
   /** Filter to a single brief (its briefsDir-relative path). */
   brief?: string;
   status?: PatchStatus;
+  /**
+   * v0.1.129 fix: `threadCount` costs one extra `chatService` query per row —
+   * the generic `/api/artifacts/patch` REST route never reads it off
+   * `PatchListItem` (the wire `ArtifactListItem` doesn't carry the field at
+   * all), so that query used to run on every list call regardless. Default
+   * `false` skips it; pass `true` for a caller that actually needs the count.
+   */
+  includeThreadInfo?: boolean;
 }
 
 export interface PatchUpdateContentOpts {
@@ -168,7 +176,7 @@ export class PatchService {
         createdAt,
         createdBy: String(fm.created_by ?? ''),
         lastModified: lastVersion?.createdAt ?? createdAt,
-        threadCount: this.deps.chatService.threadCountForPatch(rec.path),
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForPatch(rec.path) : 0,
         frontmatter: fm,
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
@@ -290,15 +298,6 @@ export class PatchService {
   }
 }
 
-/**
- * YAML auto-parses ISO timestamps into JS `Date` objects — normalize back to
- * an ISO 8601 string for DTO fields (`PatchListItem.createdAt`).
- */
-function toIso(v: unknown): string {
-  if (v instanceof Date) return v.toISOString();
-  return v == null ? '' : String(v);
-}
-
 function stem(p: string): string {
   return path.basename(p).replace(/\.md$/i, '');
 }
@@ -316,8 +315,4 @@ function extractTitle(body: string, fm: PatchFrontmatter, relPath: string): stri
 function extractTitleFromFrontmatter(fm: PatchFrontmatter, relPath: string): string {
   if (typeof fm.title === 'string' && fm.title.length > 0) return fm.title;
   return stem(relPath);
-}
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }

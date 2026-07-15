@@ -10,6 +10,37 @@ interface LegacyPlanRow {
 }
 
 /**
+ * Searches the same candidate sequence the write-side disambiguation loop
+ * uses (`${base}.md`, `${base}-2.md`, ...) for a file whose content already
+ * matches `title`/`content` — that would be THIS row's own prior write from
+ * an interrupted migration attempt, not a different plan that happens to
+ * slugify the same way. Stops at the first candidate that doesn't exist (the
+ * same point the write-side loop would use as its target), since every
+ * existing candidate up to that point has already been searched.
+ *
+ * Body comparison trims trailing whitespace — `PagesService.write()` (via
+ * gray-matter's `matter.stringify`) always appends a trailing newline, so a
+ * strict `===` against the raw DB `content` (which carries none) would never
+ * match even for a genuine round-trip of the exact same write.
+ */
+async function findExistingMigratedFile(
+  plansPages: PagesService,
+  base: string,
+  title: string,
+  content: string,
+): Promise<string | null> {
+  for (let attempt = 1; attempt <= 50; attempt++) {
+    const candidate = attempt === 1 ? `${base}.md` : `${base}-${attempt}.md`;
+    if (!(await plansPages.exists(candidate))) return null;
+    const existing = await plansPages.read(candidate);
+    if (existing.body.trimEnd() === content.trimEnd() && existing.frontmatter.title === title) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+/**
  * 0.1.127 (brief 0-1-126-to-0-1-127): one-time boot cutover of the Plan
  * artifact from SQLite (`plan`/`plan_version`) to `plansDir/<slug>.md` files.
  * Guarded on the `plan` table still existing — a no-op on every subsequent
@@ -57,6 +88,23 @@ export async function backfillPlansToFilesystem(params: {
   const slugById = new Map<number, string>();
   for (const row of rows) {
     const base = (row.title && slugify(row.title)) || `plan-${row.id}`;
+    const title = row.title ?? base;
+
+    // Idempotency on retry: a crash between this write loop and the DB
+    // transaction below leaves already-written files on disk (writes aren't
+    // rolled back on crash), while `plan` stays fully intact (the transaction
+    // never committed) — so a retry re-processes the SAME rows. Without this
+    // check, the disambiguation loop below would mistake THIS ROW'S OWN prior
+    // write for a collision with a DIFFERENT plan and write a duplicate
+    // `-2`-suffixed file, orphaning the original (contradicting this
+    // function's documented "idempotent on retry" contract). Detect a prior
+    // write by content match (title + body), not just filename existence.
+    const alreadyMigrated = await findExistingMigratedFile(plansPages, base, title, row.content);
+    if (alreadyMigrated) {
+      slugById.set(row.id, alreadyMigrated);
+      continue;
+    }
+
     let slug = base;
     let attempt = 1;
     // Two migrated titles can slugify to the same string — disambiguate with a
@@ -73,7 +121,7 @@ export async function backfillPlansToFilesystem(params: {
         type: 'plan',
         // created_by has no source in the old `plan` table (it never tracked a
         // creator) — best-judgment default, flagged as a `missing`-kind patch.
-        title: row.title ?? slug,
+        title,
         created_at: row.created_at,
         created_by: 'user',
       },

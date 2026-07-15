@@ -33,7 +33,12 @@ import {
   synthesizeMount,
   validateWritingStyle,
 } from './manifest-adapter.js';
-import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
+import {
+  registerExtensionReferenceType,
+  sameExtensionReferenceSpec,
+  wouldConflictExtensionReferenceType,
+  type ExtensionReferenceType,
+} from '../../../shared/reference-extensions.js';
 
 /** Internal record: the public one plus the styles + the registered module
  *  instances, so unregister can drop styles and delete ONLY the modules this
@@ -60,6 +65,17 @@ export class PluginRegistryImpl implements PluginRegistry {
     if (!module.type) {
       throw new Error('plugin-registry: module.type is required');
     }
+    // v0.1.129 fix: validate the Slot B reference type BEFORE committing the
+    // module to `this.modules` — a caller invoking this directly (a built-in's
+    // `onRegister`, not routed through `registerPlugin`) must not end up with
+    // a live-but-half-registered module if the M19 registration would fail.
+    const slotB = module.frontend?.referenceType
+      ? { ...module.frontend.referenceType, entityType: module.type }
+      : null;
+    if (slotB) {
+      const conflict = wouldConflictExtensionReferenceType(slotB);
+      if (conflict) throw new Error(conflict);
+    }
     // M13: lower declarative backend slots (service/crud/routes/mcpServer) into
     // an equivalent `mount` for every module — in-repo entities build a
     // `BackendModule` directly (never touching `EntityContribution`), so this
@@ -68,8 +84,8 @@ export class PluginRegistryImpl implements PluginRegistry {
     // v0.1.129 (M19 Slot B) — a module owning its own XML reference tag (e.g.
     // diagram) declares it here instead of a standalone bootstrap side-effect
     // call; entityType is always the module's own type, never author-supplied.
-    if (module.frontend?.referenceType) {
-      registerExtensionReferenceType({ ...module.frontend.referenceType, entityType: module.type });
+    if (slotB) {
+      registerExtensionReferenceType(slotB);
     }
   }
 
@@ -143,6 +159,33 @@ export class PluginRegistryImpl implements PluginRegistry {
 
   registerPlugin(manifest: PluginManifest): void {
     const { record } = this.validateAndLower(manifest);
+    // v0.1.129 fix: pre-validate EVERY reference-type contribution in this
+    // manifest — Slot A (record.referenceTypes) AND each entity module's own
+    // Slot B — against the live M19 registry AND against each other within
+    // this same batch, BEFORE committing anything below. Previously entity-
+    // module registration and M19 registration interleaved with no rollback:
+    // a conflict partway through a multi-entity/multi-tag manifest left
+    // earlier entity types/tags live in `this.modules`/the M19 registry with
+    // no owning `this.plugins` record — `unregisterPlugin` became a permanent
+    // no-op for them despite the whole package being reported "failed" by the
+    // loader's per-package try/catch (loader.ts / overlay-loader.ts).
+    const slotBReferenceTypes: ExtensionReferenceType[] = record.entityModules.flatMap((m) =>
+      m.frontend?.referenceType ? [{ ...m.frontend.referenceType, entityType: m.type }] : [],
+    );
+    const allReferenceTypes = [...record.referenceTypes, ...slotBReferenceTypes];
+    const batchTags = new Map<string, ExtensionReferenceType>();
+    for (const refType of allReferenceTypes) {
+      const batchDup = batchTags.get(refType.tag);
+      if (batchDup && !sameExtensionReferenceSpec(batchDup, refType)) {
+        throw new PluginManifestError(
+          `plugin "${manifest.name}" — extension reference tag "${refType.tag}" is declared twice with different definitions in the same manifest`,
+        );
+      }
+      const conflict = wouldConflictExtensionReferenceType(refType);
+      if (conflict) throw new PluginManifestError(`plugin "${manifest.name}" — ${conflict}`);
+      batchTags.set(refType.tag, refType);
+    }
+
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
     }

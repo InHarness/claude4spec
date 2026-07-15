@@ -915,6 +915,15 @@ async function buildInner(
           // need this explicit broadcast. `external` → reload-or-confirm like Pages.
           // Patches have no open-editor-refresh equivalent, so this stays brief-only.
           ws.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' });
+        } else if (entry.kind === 'plan') {
+          // v0.1.129 fix: plans are user/agent-edited the same way briefs are
+          // (external tool, git pull, another process writing plansDir
+          // directly) but had no equivalent live-refresh broadcast — an open
+          // PlanPage kept showing stale content until navigated away and back.
+          // `plans:changed` has no `origin` field (unlike `briefs:changed`) —
+          // plans don't have the reload-or-confirm dialog flow briefs do, so
+          // this is a plain "go refetch" signal the client invalidates on.
+          ws.broadcast({ kind: 'plans:changed', path: relPath });
         }
       }
     });

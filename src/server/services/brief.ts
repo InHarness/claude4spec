@@ -14,7 +14,6 @@
  *     generated_at/generator_version. Mutation attempt → DomainError.
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -28,6 +27,7 @@ import type {
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
+import { hashContent } from './artifact-content.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
@@ -97,6 +97,15 @@ export interface BriefUpdateFrontmatterOpts {
 
 export interface BriefListOpts {
   implemented?: boolean;
+  /**
+   * v0.1.129 fix: `threadCount` costs one extra `chatService` query per row —
+   * the generic `/api/artifacts/brief` REST route (routes/artifacts.ts's
+   * `buildBriefAdapter.list()`) never reads it off `BriefListItem` (the wire
+   * `ArtifactListItem` doesn't carry the field at all), so that query used to
+   * run on every list call regardless. Default `false` skips it; pass `true`
+   * for a caller that actually needs the count (e.g. a direct-service test).
+   */
+  includeThreadInfo?: boolean;
 }
 
 /**
@@ -180,7 +189,7 @@ export class BriefService {
         implemented,
         generatedAt: String(fm.generated_at ?? ''),
         lastModifiedAt: lastVersion?.createdAt ?? null,
-        threadCount: this.deps.chatService.threadCountForBrief(rec.path),
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForBrief(rec.path) : 0,
         frontmatter: fm,
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
@@ -441,8 +450,4 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'brief';
-}
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }

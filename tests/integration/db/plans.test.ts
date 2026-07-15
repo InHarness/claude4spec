@@ -1,7 +1,7 @@
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { beforeEach, afterEach, describe, expect, it } from 'vitest';
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createTestDb } from '../../helpers/test-db.js';
 import { PlanService } from '../../../src/server/services/plan.js';
@@ -30,7 +30,9 @@ interface Harness {
   plansPages: PagesService;
 }
 
-async function setup(): Promise<Harness> {
+/** `ws` overrides only the PlanService-level dep — the watcher/indexer stay on
+ *  `noopWs` so tests asserting on broadcasts see just PlanService's own calls. */
+async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-plans-test-'));
   const db = createTestDb();
   const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
@@ -50,7 +52,7 @@ async function setup(): Promise<Harness> {
     pageVersions,
     chatService,
     frontmatterIndexer,
-    ws: noopWs,
+    ws,
   });
   return { cwd, db, service, plansPages };
 }
@@ -220,12 +222,97 @@ describe('PlanService.listPlans', () => {
       .run(freshPlan.path);
     h.db.prepare(`UPDATE chat_thread SET updated_at = datetime('now', '-1 hour') WHERE id = 'thread-1'`).run();
 
-    const list = h.service.listPlans();
+    const list = h.service.listPlans({ includeThreadInfo: true });
     expect(list.map((p) => p.path)).toEqual([freshPlan.path, oldPlan.path]);
     const fresh = list[0]!;
     expect(fresh.threadCount).toBe(2);
     expect(fresh.lastThreadId).toBe('thread-2');
     expect(list[1]!.threadCount).toBe(1);
     expect(list[1]!.lastThreadId).toBe('seed-old');
+  });
+});
+
+describe('PlanService.update — concurrent first-time creation (regression)', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  it('two DIFFERENT threads creating a first plan with the SAME title concurrently both survive as distinct files (no silent clobber)', async () => {
+    // Regression: allocatePath's collision search used to run unprotected
+    // across threads — the per-call lock was keyed by `thread:${threadId}`,
+    // which only serializes calls FROM THE SAME thread. Two different threads
+    // racing on the same title could both observe "no existing file" and both
+    // write to the exact same candidate path, with the second write silently
+    // destroying the first thread's content.
+    seedThread(h.db, 'thread-a');
+    seedThread(h.db, 'thread-b');
+
+    const [resultA, resultB] = await Promise.all([
+      h.service.update({
+        threadId: 'thread-a',
+        title: 'Race Plan',
+        action: 'replace',
+        content: 'content from thread A',
+        changedBy: 'agent',
+      }),
+      h.service.update({
+        threadId: 'thread-b',
+        title: 'Race Plan',
+        action: 'replace',
+        content: 'content from thread B',
+        changedBy: 'agent',
+      }),
+    ]);
+
+    // Neither write clobbered the other — two distinct plan files exist.
+    expect(resultA.plan.path).not.toBe(resultB.plan.path);
+    const files = await h.plansPages.listMarkdownFiles();
+    expect(files).toHaveLength(2);
+
+    // Each thread's own content survived under its own path, unmodified by
+    // the other thread's concurrent write.
+    const planA = (await h.service.getByThread('thread-a'))!;
+    const planB = (await h.service.getByThread('thread-b'))!;
+    expect(planA.body.trim()).toBe('content from thread A');
+    expect(planB.body.trim()).toBe('content from thread B');
+  });
+});
+
+describe('PlanService.updateContent — broadcasts plans:changed (regression)', () => {
+  it('a body-only save (no frontmatter change) still broadcasts, so other open tabs/viewers refresh', async () => {
+    // Regression: the indexer only broadcasts `plans:changed` when
+    // *frontmatter* differs — a body-only PlanEditor save (the common case)
+    // used to emit nothing at all, leaving every other viewer of this plan
+    // silently stale until manual reload.
+    const broadcast = vi.fn();
+    const h = await setup({ broadcast });
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Broadcast plan',
+        action: 'replace',
+        content: 'original body',
+        changedBy: 'agent',
+      });
+      broadcast.mockClear(); // drop the create-time plan:updated call — only asserting on updateContent below
+
+      const plan = (await h.service.getByThread('thread-1'))!;
+      await h.service.updateContent({
+        path: plan.path,
+        content: plan.content.replace('original body', 'edited body'),
+        changedBy: 'user',
+      });
+
+      expect(broadcast).toHaveBeenCalledWith({ kind: 'plans:changed', path: plan.path });
+    } finally {
+      await teardown(h);
+    }
   });
 });

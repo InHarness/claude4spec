@@ -96,4 +96,56 @@ describe('backfillPlansToFilesystem', () => {
     ).resolves.toBeUndefined();
     expect(await h.plansPages.listMarkdownFiles()).toEqual([]);
   });
+
+  it('is idempotent on a retry after a crash between the file-write loop and the DB transaction (regression)', async () => {
+    // Simulates an interrupted first attempt: the plan file was already
+    // written to disk (writes aren't rolled back on crash) but the `plan`
+    // table is still fully intact (the destructive DB transaction never
+    // committed) — exactly the state a mid-migration crash leaves behind.
+    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
+    const planId = h.db
+      .prepare(
+        `INSERT INTO plan (title, content, created_at) VALUES ('Crash Retry Plan', '# body from first attempt', datetime('now'))`,
+      )
+      .run().lastInsertRowid as number;
+    h.db.prepare(`UPDATE chat_thread SET plan_id = ? WHERE id = 't1'`).run(planId);
+    // The prior (interrupted) attempt's own write, pre-seeded directly.
+    await h.plansPages.write('crash-retry-plan.md', {
+      frontmatter: { type: 'plan', title: 'Crash Retry Plan', created_at: '2026-01-01T00:00:00.000Z', created_by: 'user' },
+      body: '# body from first attempt',
+    });
+
+    await backfillPlansToFilesystem({ db: h.db, plansPages: h.plansPages, backupDb: () => {} });
+
+    // No duplicate '-2' file — the retry recognized its own prior write by
+    // content match instead of mistaking it for a different plan's collision.
+    const files = await h.plansPages.listMarkdownFiles();
+    expect(files).toEqual(['crash-retry-plan.md']);
+
+    const row = h.db.prepare(`SELECT plan_path FROM chat_thread WHERE id = 't1'`).get() as {
+      plan_path: string | null;
+    };
+    expect(row.plan_path).toBe('crash-retry-plan.md');
+  });
+
+  it('two DIFFERENT plans that slugify to the same title are still disambiguated with a numeric suffix', async () => {
+    // Guards against the idempotency fix above over-matching: two rows with
+    // the same title but genuinely different content must NOT be treated as
+    // the same prior write.
+    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t1')`).run();
+    h.db.prepare(`INSERT INTO chat_thread (id) VALUES ('t2')`).run();
+    const id1 = h.db
+      .prepare(`INSERT INTO plan (title, content, created_at) VALUES ('Same Title', 'first plan body', datetime('now'))`)
+      .run().lastInsertRowid as number;
+    const id2 = h.db
+      .prepare(`INSERT INTO plan (title, content, created_at) VALUES ('Same Title', 'second plan body', datetime('now'))`)
+      .run().lastInsertRowid as number;
+    h.db.prepare(`UPDATE chat_thread SET plan_id = ? WHERE id = 't1'`).run(id1);
+    h.db.prepare(`UPDATE chat_thread SET plan_id = ? WHERE id = 't2'`).run(id2);
+
+    await backfillPlansToFilesystem({ db: h.db, plansPages: h.plansPages, backupDb: () => {} });
+
+    const files = await h.plansPages.listMarkdownFiles();
+    expect(files.sort()).toEqual(['same-title-2.md', 'same-title.md']);
+  });
 });

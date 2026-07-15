@@ -32,7 +32,6 @@
 
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import matter from 'gray-matter';
 import { customAlphabet } from 'nanoid';
 import type {
@@ -58,6 +57,7 @@ import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
 import { ConflictError } from './brief.js';
+import { hashContent, toIso } from './artifact-content.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -159,8 +159,8 @@ export class PlanService {
       content: raw,
       hash: hashContent(raw),
       currentVersion: this.currentVersionFor(planPath),
-      createdAt: String(frontmatter.created_at ?? ''),
-      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? String(frontmatter.created_at ?? ''),
+      createdAt: toIso(frontmatter.created_at),
+      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
     };
   }
 
@@ -200,7 +200,16 @@ export class PlanService {
     return null;
   }
 
-  listPlans(opts: { search?: string } = {}): PlanListItem[] {
+  /**
+   * `includeThreadInfo` (v0.1.129 fix, default `false`) gates `threadCount`/
+   * `lastThreadId` — 2 extra `chatService` queries PER plan. The generic
+   * `/api/artifacts/plan` REST route (routes/artifacts.ts's
+   * `buildPlanAdapter.list()`) never reads either field off `PlanListItem`
+   * (the wire `ArtifactListItem` doesn't carry them at all), so both used to
+   * run on every list call — 2N wasted queries for N plans on every page load
+   * / search keystroke. Pass `true` for a caller that actually needs them.
+   */
+  listPlans(opts: { search?: string; includeThreadInfo?: boolean } = {}): PlanListItem[] {
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: PLAN_ROOT_MARKER });
     const search = opts.search?.trim().toLowerCase();
     const out: PlanListItem[] = [];
@@ -214,9 +223,9 @@ export class PlanService {
       out.push({
         path: rec.path,
         title,
-        threadCount: this.deps.chatService.threadCountForPlan(rec.path),
-        lastThreadId: this.deps.chatService.findLastThreadIdForPlan(rec.path),
-        updatedAt: lastVersion?.createdAt ?? String(fm.created_at ?? ''),
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForPlan(rec.path) : 0,
+        lastThreadId: opts.includeThreadInfo ? this.deps.chatService.findLastThreadIdForPlan(rec.path) : null,
+        updatedAt: lastVersion?.createdAt ?? toIso(fm.created_at),
         frontmatter: fm,
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
@@ -279,33 +288,48 @@ export class PlanService {
         if (!trimmedTitle) {
           throw new DomainError('MISSING_TITLE', 'title is required on the first update_plan call in a thread');
         }
-        const planPath = await this.allocatePath(trimmedTitle);
-        const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
-        const frontmatter: PlanFrontmatter = {
-          type: 'plan',
-          title: trimmedTitle,
-          created_at: new Date().toISOString(),
-          created_by: changedBy,
-        };
-        const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
-        const abs = this.absPath(planPath);
-        await fs.mkdir(path.dirname(abs), { recursive: true });
-        this.deps.plansWatcher.suppress(planPath);
-        await fs.writeFile(abs, fullContent, 'utf-8');
-        await this.deps.pageVersions.recordVersion(
-          planPath,
-          'create',
-          toFileChangedBy(changedBy),
-          undefined,
-          this.deps.plansSerializer,
-          PLAN_ROOT_MARKER,
-          changeSummary,
-        );
-        await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, planPath);
+        const base = slugify(trimmedTitle) || 'plan';
+        // v0.1.129 fix: the OUTER lock (keyed `thread:${threadId}`) only
+        // serializes calls from the SAME thread — it does nothing when two
+        // DIFFERENT threads race to create a first plan with the same title
+        // at the same time, since they compute different outer lock keys and
+        // would otherwise run allocatePath's collision search + the write
+        // that reserves the winning candidate fully in parallel, racing on
+        // the same filename. Nest a lock keyed by the actual contended
+        // resource — the slug `base` every racing candidate is derived from —
+        // so only genuinely colliding titles serialize; different titles
+        // never look at the same candidates and proceed unblocked.
+        const { planPath, version, plan } = await this.withLock(`new-plan:${base}`, async () => {
+          const allocated = await this.allocatePath(base);
+          const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
+          const frontmatter: PlanFrontmatter = {
+            type: 'plan',
+            title: trimmedTitle,
+            created_at: new Date().toISOString(),
+            created_by: changedBy,
+          };
+          const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
+          const abs = this.absPath(allocated);
+          await fs.mkdir(path.dirname(abs), { recursive: true });
+          this.deps.plansWatcher.suppress(allocated);
+          await fs.writeFile(abs, fullContent, 'utf-8');
+          await this.deps.pageVersions.recordVersion(
+            allocated,
+            'create',
+            toFileChangedBy(changedBy),
+            undefined,
+            this.deps.plansSerializer,
+            PLAN_ROOT_MARKER,
+            changeSummary,
+          );
+          await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, allocated);
+          return {
+            planPath: allocated,
+            version: this.currentVersionFor(allocated),
+            plan: await this.getByPath(allocated),
+          };
+        });
         this.deps.chatService.attachPlanToThread(threadId, planPath);
-
-        const version = this.currentVersionFor(planPath);
-        const plan = await this.getByPath(planPath);
         this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
         return { plan, version };
       }
@@ -361,6 +385,12 @@ export class PlanService {
         opts.changeSummary,
       );
       await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      // v0.1.129 fix: the indexer only broadcasts `plans:changed` when
+      // *frontmatter* changes; a body-only save (the common editor case) would
+      // otherwise emit nothing and leave every OTHER open tab/viewer on this
+      // plan silently stale — mirrors brief.ts's updateContent, which
+      // broadcasts `briefs:changed` explicitly for the exact same reason.
+      this.deps.ws.broadcast({ kind: 'plans:changed', path: opts.path });
       return { newHash: hashContent(opts.content) };
     });
   }
@@ -439,8 +469,10 @@ export class PlanService {
     return this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.version ?? 0;
   }
 
-  private async allocatePath(title: string): Promise<string> {
-    const base = slugify(title) || 'plan';
+  /** `base` is the already-slugified filename stem (caller computes it — see
+   *  the `withLock('new-plan:' + base, ...)` call site, which needs the same
+   *  value to key its lock). */
+  private async allocatePath(base: string): Promise<string> {
     let candidate = `${base}.md`;
     let n = 2;
     while (await this.deps.plansPages.exists(candidate)) {
@@ -554,10 +586,6 @@ function injectAnchors(content: string): string {
     out.push(line);
   }
   return out.join('\n');
-}
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
 /**
