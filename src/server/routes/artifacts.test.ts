@@ -185,6 +185,15 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.body.currentContent).toContain('Brief: v1 -> v2');
     });
 
+    it('PUT .../content 400s VALIDATION (not a 409) when expectedHash is omitted', async () => {
+      const res = await request(app)
+        .put('/api/artifacts/brief/v1-to-v2.md/content')
+        .send({ content: 'irrelevant' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+    });
+
     it('PATCH .../frontmatter accepts the mutable `implemented` key', async () => {
       const res = await request(app)
         .patch('/api/artifacts/brief/v1-to-v2.md/frontmatter')

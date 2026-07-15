@@ -83,9 +83,6 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
     },
     async updateContent(path, content, expectedHash) {
-      if (typeof expectedHash !== 'string') {
-        throw new DomainError('VALIDATION', 'expectedHash is required for brief content updates');
-      }
       await briefs.updateContent({ path, content, expectedHash, changedBy: 'user' });
       const b = await briefs.getBrief(path);
       return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
@@ -126,9 +123,6 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
     async updateContent(path, content, expectedHash) {
-      if (typeof expectedHash !== 'string') {
-        throw new DomainError('VALIDATION', 'expectedHash is required for patch content updates');
-      }
       const p = await patches.updateContent({ path, content, expectedHash });
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
@@ -223,7 +217,10 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       if (typeof body.content !== 'string') {
         throw new DomainError('VALIDATION', 'content is required');
       }
-      const out = await adapters[kind].updateContent(path, body.content, body.expectedHash ?? '');
+      if (typeof body.expectedHash !== 'string') {
+        throw new DomainError('VALIDATION', 'expectedHash is required for content updates');
+      }
+      const out = await adapters[kind].updateContent(path, body.content, body.expectedHash);
       res.json({ data: out });
     } catch (err) {
       next(err);
