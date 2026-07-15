@@ -760,8 +760,8 @@ export interface ChatThread {
   planMode: boolean;
   usage: UsageStats | null;
   contextSize: number | null;
-  planId: number | null;
-  lastSeenPlanVersion: number | null;
+  /** 0.1.127: N:1 attach — path relative to plansDir, no FK (dangling = graceful-degrade). */
+  planPath: string | null;
   hasSystemPrompt: boolean;
   contextType: ChatContextType;
   briefPath: string | null;
@@ -854,7 +854,7 @@ export interface ClearedQueueResponse {
   clearedTexts: string[];
 }
 
-// --- M10: Plans ---
+// --- M10: Plans (filesystem-backed as of 0.1.127 — see brief 0-1-126-to-0-1-127) ---
 
 export type PlanExecuteMode = 'new-session' | 'continue';
 export type PlanAction =
@@ -865,27 +865,53 @@ export type PlanAction =
   | 'system_duplicate';
 export type PlanChangedBy = 'agent' | 'user' | 'system';
 
+/** Reserved frontmatter keys set at file-creation time, immutable from the claude4spec side. Only `title` is mutable. */
+export const PLAN_IMMUTABLE_FRONTMATTER_KEYS = ['type', 'created_at', 'created_by'] as const;
+
+export interface PlanFrontmatter {
+  type: 'plan';
+  /** Required on create; `slug = slugify(title)` is derived once and then immutable — later title edits don't rename the file. */
+  title: string;
+  created_at: string;
+  created_by: string;
+  [key: string]: unknown;
+}
+
 export interface Plan {
-  id: number;
-  title: string | null;
+  /** Path relative to plansDir, e.g. "add-dark-mode.md" (slug = slugify(title), immutable once created). */
+  path: string;
+  frontmatter: PlanFrontmatter;
+  body: string;
+  /** Full file content (frontmatter + body, byte-faithful) — mirrors Brief/Patch. */
   content: string;
+  /** sha256 hex of `content` — used for optimistic concurrency. */
+  hash: string;
+  /** Derived from `file_version` (MAX(version) for this path under rootId='plan'), not a stored column. */
   currentVersion: number;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Internal list-item shape for `PlanService.listPlans()` — like `BriefListItem`/
+ * `PatchListItem` (pre-M36), this stays a service-internal type that
+ * `routes/artifacts.ts`'s plan adapter maps to the generic `ArtifactListItem`
+ * at the REST boundary (the bespoke `GET /api/plans` list route is gone —
+ * superseded by `GET /api/artifacts/plan`).
+ */
 export interface PlanListItem {
-  id: number;
+  path: string;
   title: string | null;
-  currentVersion: number;
   threadCount: number;
   lastThreadId: string | null;
   updatedAt: string;
+  frontmatter: PlanFrontmatter;
+  hash: string;
 }
 
 /**
  * Lightweight projection of a thread attached to a plan, served by
- * `GET /api/plans/:planId/threads`. PlanPage uses this dedicated projection
+ * `GET /api/plans/:slug/threads`. PlanPage uses this dedicated projection
  * (not the paginated `GET /api/threads` list) so its "Used by N threads"
  * dropdown is unaffected by thread-list pagination.
  */
@@ -895,38 +921,11 @@ export interface PlanThreadItem {
   updatedAt: string;
 }
 
-export interface PlanVersion {
-  id: number;
-  planId: number;
-  version: number;
-  content: string;
-  action: PlanAction;
-  actionParams: Record<string, unknown> | null;
-  changeSummary: string | null;
-  changedBy: PlanChangedBy;
-  createdAt: string;
-}
-
-export interface PlanVersionMeta {
-  version: number;
-  action: PlanAction;
-  actionParams: Record<string, unknown> | null;
-  changeSummary: string | null;
-  changedBy: PlanChangedBy;
-  createdAt: string;
-}
-
-export interface BlameBlock {
-  blockIndex: number;
-  markdownFragment: string;
-  addedInVersion: number;
-}
-
 export type PlanExecuteResult =
   | {
       mode: 'new-session';
       newThreadId: string;
-      planId: number;
+      planPath: string;
       firstMessage: string;
     }
   | {
@@ -934,6 +933,18 @@ export type PlanExecuteResult =
       threadId: string;
       firstMessage: string;
     };
+
+export interface CreateThreadFromPlanRequest {
+  initialMessage?: string;
+}
+
+export interface CreateThreadFromPlanResponse {
+  threadId: string;
+}
+
+export interface LastThreadForPlanResponse {
+  threadId: string | null;
+}
 
 // --- M21: Briefs ---
 

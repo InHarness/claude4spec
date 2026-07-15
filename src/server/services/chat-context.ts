@@ -1008,9 +1008,9 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildAnnotations(annotations));
   }
 
-  if (currentPlan && currentPlan.content.trim().length > 0) {
+  if (currentPlan && currentPlan.body.trim().length > 0) {
     parts.push(
-      `<current_plan ${attrs({ version: currentPlan.currentVersion })}>\n${currentPlan.content}\n</current_plan>`,
+      `<current_plan ${attrs({ version: currentPlan.currentVersion })}>\n${currentPlan.body}\n</current_plan>`,
     );
   }
 

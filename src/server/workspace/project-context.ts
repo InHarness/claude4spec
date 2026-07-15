@@ -24,6 +24,7 @@ import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages
 import { slugify } from '../../shared/slug.js';
 import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
+import { backfillPlansToFilesystem } from './plan-migration.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { PatchService } from '../services/patch.js';
@@ -112,9 +113,11 @@ registerExtensionReferenceType({
  * M29: one-time best-effort backup of the derived SQLite before a DB→text
  * export / divergent-rebuild, so the prior index is recoverable. Idempotent —
  * skips if the `.pre-migration.bak` already exists. M31: follows the workspace
- * slot path (the DB no longer lives in the project dir).
+ * slot path (the DB no longer lives in the project dir). Exported (0.1.127) so
+ * `workspace/plan-migration.ts`'s boot-time cutover can reuse it ahead of its
+ * own destructive DROP TABLE plan/plan_version.
  */
-function backupDbBeforeMigration(slotDir: string): void {
+export function backupDbBeforeMigration(slotDir: string): void {
   const src = path.join(slotDir, 'db.sqlite');
   const bak = path.join(slotDir, 'db.sqlite.pre-migration.bak');
   try {
@@ -246,6 +249,10 @@ async function buildInner(
   // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
   const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
   resolveDirAbs(cwd, patchesDir, 'patchesDir');
+  // 0.1.127 M10/M36: plansDir, default '.claude4spec/plans'. Same validation as
+  // briefsDir/patchesDir.
+  const plansDir = bootConfig.plansDir ?? '.claude4spec/plans';
+  resolveDirAbs(cwd, plansDir, 'plansDir');
 
   // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
   // briefsDir/patchesDir — but this directory is COMMITTED to git (source of
@@ -262,15 +269,22 @@ async function buildInner(
   // 0.1.96: cross-field root overlap validation. Hard errors abort the build
   // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
   {
-    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir });
+    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir, plansDir });
     for (const w of warnings) console.warn(`[config] ${w}`);
     if (errors.length > 0) throw new Error(errors[0]);
-    // Briefs/patches are distinct catalogs — an identical dir double-captures every
-    // file into file_version under both markers. Warn (the PATCH route hard-400s).
-    if (path.resolve(cwd, briefsDir) === path.resolve(cwd, patchesDir)) {
-      console.warn(
-        `[config] briefsDir === patchesDir ("${briefsDir}") — brief/patch files will be double-indexed`,
-      );
+    // Artifact catalogs are distinct — an identical dir double-captures every
+    // file into file_version under two markers. Warn (the PATCH route hard-400s).
+    const artifactDirPairs: Array<[string, string, string, string]> = [
+      ['briefsDir', briefsDir, 'patchesDir', patchesDir],
+      ['briefsDir', briefsDir, 'plansDir', plansDir],
+      ['patchesDir', patchesDir, 'plansDir', plansDir],
+    ];
+    for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
+      if (path.resolve(cwd, aDir) === path.resolve(cwd, bDir)) {
+        console.warn(
+          `[config] ${aName} === ${bName} ("${aDir}") — files will be double-indexed`,
+        );
+      }
     }
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
@@ -414,6 +428,7 @@ async function buildInner(
   const artifactDirs: Record<ArtifactRegistryEntry['dirConfigKey'], string> = {
     briefsDir,
     patchesDir,
+    plansDir,
   };
   const artifactMounts = new Map<ArtifactKind, ArtifactMount>();
   await Promise.all(
@@ -432,6 +447,16 @@ async function buildInner(
   );
   const briefsMount = artifactMounts.get('brief')!;
   const patchesMount = artifactMounts.get('patch')!;
+  const plansMount = artifactMounts.get('plan')!;
+  // 0.1.127: one-time boot cutover of legacy SQLite plan rows to
+  // `plansDir/*.md` — must run before the M36 initial-sync IIFE below (~line
+  // 962) so its file_version capture picks up these files, and before
+  // PlanService is constructed since it reads exclusively through plansMount now.
+  await backfillPlansToFilesystem({
+    db: db.handle,
+    plansPages: plansMount.pages,
+    backupDb: () => backupDbBeforeMigration(dbSlotDir),
+  });
 
   const tagsService = new TagsService(db.handle);
   tagsService.setHost(pluginHost);
@@ -533,7 +558,6 @@ async function buildInner(
   const sectionsService = new SectionsService(db.handle);
   sectionsService.setWriteDeps(sectionIndexedRoots);
 
-  const planService = new PlanService(db.handle, ws, chatService);
   const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
   const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
   // pages-link indexer covers every page root (autocomplete/meta), resolving links
@@ -700,6 +724,19 @@ async function buildInner(
     frontmatterIndexer: pagesFrontmatterIndexer,
   });
 
+  // 0.1.127 M10: PlanService — filesystem-backed as of the plan -> file
+  // migration (brief 0-1-126-to-0-1-127), same top-level/consumer-slice
+  // pattern as BriefService/PatchService above.
+  const planService = new PlanService({
+    plansPages: plansMount.pages,
+    plansWatcher: plansMount.watcher,
+    plansSerializer: plansMount.serializer,
+    pageVersions,
+    chatService,
+    frontmatterIndexer: pagesFrontmatterIndexer,
+    ws,
+  });
+
   // Per-context config/meta/writing-styles (carved out of startServer inline
   // handlers — single response builder in routes/config.ts).
   router.use(
@@ -811,6 +848,7 @@ async function buildInner(
     artifactsRouter({
       brief: briefService,
       patch: patchService,
+      plan: planService,
       pageVersions,
     }),
   );

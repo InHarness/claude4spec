@@ -5,8 +5,8 @@ import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
 import {
   usePlan,
-  usePlanBlame,
   usePlanThreads,
+  usePlanVersions,
   useSavePlan,
   useExecutePlan,
   useUpdatePlanTitle,
@@ -20,21 +20,30 @@ import { useOutlineStore } from '../state/outline.js';
 import type { PlanExecuteMode } from '../../shared/entities.js';
 
 interface Props {
-  planId: number;
+  planPath: string;
 }
 
-type PlanView = 'plan' | 'blame' | 'compare';
+// 0.1.127: Blame removed along with the plan_version table it was built from
+// (see brief 0-1-126-to-0-1-127) — Compare stays, backed by the generic
+// file_version log.
+type PlanView = 'plan' | 'compare';
 
-export function PlanPage({ planId }: Props) {
+export function PlanPage({ planPath }: Props) {
   const navigate = useNavigate();
-  const { data: plan, isLoading } = usePlan(planId);
-  const { data: blame = [] } = usePlanBlame(planId);
+  const { data: plan, isLoading } = usePlan(planPath);
   const savePlan = useSavePlan();
   const executePlan = useExecutePlan();
   const updateTitle = useUpdatePlanTitle();
-  // P2: a plan's threads come from the dedicated GET /api/plans/:planId/threads
+  // P2: a plan's threads come from the dedicated GET /api/plans/:slug/threads
   // projection, not from filtering the paginated GET /api/threads list.
-  const { data: attachedThreads = [] } = usePlanThreads(planId);
+  const { data: attachedThreads = [] } = usePlanThreads(planPath);
+  // currentVersion isn't part of the generic artifact detail response (no
+  // stored column backs it anymore) — derive it from the version log's most
+  // recent entry (listVersions sorts DESC).
+  const { data: versionsData } = usePlanVersions(planPath);
+  const currentVersion = versionsData?.versions[0]?.version ?? 0;
+  const threadCount = attachedThreads.length;
+  const lastThreadId = attachedThreads[0]?.id ?? null;
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -50,8 +59,8 @@ export function PlanPage({ planId }: Props) {
     ) {
       return activeChatThreadId;
     }
-    return plan.lastThreadId;
-  }, [plan, activeChatThreadId, attachedThreads]);
+    return lastThreadId;
+  }, [plan, activeChatThreadId, attachedThreads, lastThreadId]);
 
   const [dirtyContent, setDirtyContent] = useState<string | null>(null);
   const [view, setView] = useState<PlanView>('plan');
@@ -63,14 +72,15 @@ export function PlanPage({ planId }: Props) {
   // Reset dirty when plan refetches to newer version.
   useEffect(() => {
     setDirtyContent(null);
-  }, [plan?.currentVersion]);
+  }, [currentVersion]);
 
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
     try {
       await savePlan.mutateAsync({
-        planId: plan.id,
+        planPath: plan.path,
         content: dirtyContent,
+        expectedHash: plan.hash,
       });
       setDirtyContent(null);
       setError(null);
@@ -90,7 +100,7 @@ export function PlanPage({ planId }: Props) {
           return;
         }
         const result = await executePlan.mutateAsync({
-          planId: plan.id,
+          planPath: plan.path,
           mode,
           threadId: threadIdForContinue,
         });
@@ -102,8 +112,8 @@ export function PlanPage({ planId }: Props) {
           setChatOpen(true);
           dispatchPrefill(result.firstMessage);
           navigate({
-            to: '/plans/$planId',
-            params: { planId: String(result.planId) },
+            to: '/plans/$planPath',
+            params: { planPath: result.planPath },
           });
         } else {
           setChatThreadId(result.threadId);
@@ -126,19 +136,19 @@ export function PlanPage({ planId }: Props) {
 
   const handleStartEditTitle = useCallback(() => {
     if (!plan) return;
-    setTitleDraft(plan.title ?? '');
+    setTitleDraft(plan.frontmatter.title);
     setEditingTitle(true);
   }, [plan]);
 
   const handleSaveTitle = useCallback(async () => {
     if (!plan) return;
-    const next = titleDraft.trim() || null;
-    if (next === plan.title) {
+    const next = titleDraft.trim();
+    if (!next || next === plan.frontmatter.title) {
       setEditingTitle(false);
       return;
     }
     try {
-      await updateTitle.mutateAsync({ planId: plan.id, title: next });
+      await updateTitle.mutateAsync({ planPath: plan.path, title: next });
       setEditingTitle(false);
       setError(null);
     } catch (err) {
@@ -165,9 +175,9 @@ export function PlanPage({ planId }: Props) {
     );
   }
 
-  const isDirty = dirtyContent !== null && dirtyContent !== plan.content;
-  const displayContent = dirtyContent ?? plan.content;
-  const canExecute = plan.content.trim().length > 0;
+  const isDirty = dirtyContent !== null && dirtyContent !== plan.body;
+  const displayContent = dirtyContent ?? plan.body;
+  const canExecute = plan.body.trim().length > 0;
 
   return (
     <div className="flex-1 flex flex-col min-w-0 min-h-0">
@@ -191,7 +201,7 @@ export function PlanPage({ planId }: Props) {
                   setEditingTitle(false);
                 }
               }}
-              placeholder={`Plan #${plan.id}`}
+              placeholder={plan.path}
               className="text-[13px] font-semibold bg-transparent outline-none"
               style={{
                 color: 'var(--c-ink)',
@@ -207,7 +217,7 @@ export function PlanPage({ planId }: Props) {
               title="Click to rename plan"
             >
               <span className="truncate" style={{ maxWidth: 360 }}>
-                {plan.title ?? `Plan #${plan.id}`}
+                {plan.frontmatter.title}
               </span>
               <Pencil size={10} style={{ color: 'var(--c-subtle)' }} />
             </button>
@@ -219,9 +229,9 @@ export function PlanPage({ planId }: Props) {
               color: 'var(--c-muted)',
             }}
           >
-            v{plan.currentVersion}
+            v{currentVersion}
           </span>
-          {plan.threadCount > 1 ? (
+          {threadCount > 1 ? (
             <div className="relative">
               <button
                 onClick={() => setShowThreadDropdown((v) => !v)}
@@ -230,10 +240,10 @@ export function PlanPage({ planId }: Props) {
                   background: 'var(--c-accent)',
                   color: '#fff',
                 }}
-                title={`Plan referenced by ${plan.threadCount} threads — click to choose one`}
+                title={`Plan referenced by ${threadCount} threads — click to choose one`}
               >
                 <Users size={10} />
-                Used by {plan.threadCount} threads
+                Used by {threadCount} threads
               </button>
               {showThreadDropdown ? (
                 <div
@@ -267,9 +277,9 @@ export function PlanPage({ planId }: Props) {
                 </div>
               ) : null}
             </div>
-          ) : plan.lastThreadId ? (
+          ) : lastThreadId ? (
             <button
-              onClick={() => handleOpenThread(plan.lastThreadId!)}
+              onClick={() => handleOpenThread(lastThreadId)}
               className="flex items-center gap-1 text-[12px] btn-ghost rounded px-1.5 py-0.5 min-w-0"
               title="Open attached thread in chat"
               style={{ color: 'var(--c-muted)' }}
@@ -287,7 +297,6 @@ export function PlanPage({ planId }: Props) {
           onChange={setView}
           options={[
             { value: 'plan', label: 'Plan' },
-            { value: 'blame', label: 'Blame' },
             { value: 'compare', label: 'Compare' },
           ]}
         />
@@ -313,14 +322,12 @@ export function PlanPage({ planId }: Props) {
 
       <div className="flex-1 flex min-w-0 min-h-0">
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {view === 'plan' || view === 'blame' ? (
+          {view === 'plan' ? (
             <>
               <PlanEditor
                 content={displayContent}
                 onChange={(md, dirty) => setDirtyContent(dirty ? md : null)}
-                blame={blame}
-                blameOn={view === 'blame'}
-                currentPage={`/plans/${plan.id}`}
+                currentPage={`/plans/${plan.path}`}
               />
               {(isDirty || canExecute) && (
                 <footer
@@ -393,7 +400,7 @@ export function PlanPage({ planId }: Props) {
               )}
             </>
           ) : (
-            <ComparePanel planId={plan.id} currentVersion={plan.currentVersion} />
+            <ComparePanel planPath={plan.path} currentVersion={currentVersion} />
           )}
         </div>
       </div>

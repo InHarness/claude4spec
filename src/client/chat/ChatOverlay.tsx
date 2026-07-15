@@ -146,7 +146,7 @@ export function ChatOverlay() {
   const activeTitle = activeThread?.contextType === 'brief' && activeThread.briefPath
     ? `Brief: ${activeThread.briefPath.replace(/\.md$/, '')}`
     : activeThread?.title ?? 'New conversation';
-  const { data: activePlan } = usePlan(activeThread?.planId ?? null);
+  const { data: activePlan } = usePlan(activeThread?.planPath ?? null);
   const { data: activeBrief } = useBrief(
     activeThread?.contextType === 'brief' ? activeThread.briefPath : null,
   );
@@ -555,34 +555,15 @@ export function ChatOverlay() {
         {/* Input — hidden while a user_input_request is pending (answer via the card instead) */}
         {pendingUserInputs.length === 0 && !systemPromptViewOpen && (
         <div className="p-2.5 relative" style={{ borderTop: '1px solid var(--c-hair)' }}>
-          {activeThread?.planId != null && (
+          {activeThread?.planPath != null && (
             <ContextLinkBar
               icon={<ClipboardList size={11} style={{ color: 'var(--c-accent)', flexShrink: 0 }} />}
-              label={activePlan?.title ? `Plan: ${activePlan.title}` : 'Plan'}
-              title={
-                activePlan?.currentVersion
-                  ? `${activePlan.title ?? 'Plan'} · v${activePlan.currentVersion}`
-                  : 'Open plan'
-              }
-              badge={
-                activePlan?.currentVersion ? (
-                  <span
-                    className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-                    style={{
-                      background: 'var(--c-hair)',
-                      color: 'var(--c-muted)',
-                      flexShrink: 0,
-                      marginLeft: 'auto',
-                    }}
-                  >
-                    v{activePlan.currentVersion}
-                  </span>
-                ) : null
-              }
+              label={activePlan?.frontmatter.title ? `Plan: ${activePlan.frontmatter.title}` : 'Plan'}
+              title={activePlan?.frontmatter.title ?? 'Open plan'}
               onClick={() =>
                 navigate({
-                  to: '/plans/$planId',
-                  params: { planId: String(activeThread.planId) },
+                  to: '/plans/$planPath',
+                  params: { planPath: activeThread.planPath! },
                 })
               }
             />

@@ -20,7 +20,7 @@ export interface StartSeededThreadOptions {
  *    seed as a normal user message (persisted in `chat_message`).
  *
  * Distinct from M10 plan execution, which goes through the dedicated
- * `post-api-plans-planid-execute` endpoint with a `plan_id`.
+ * `post-api-plans-slug-execute` endpoint with a `plan_path`.
  */
 export function startSeededThread(prompt: string, opts: StartSeededThreadOptions = {}): void {
   const store = useChatStore.getState();

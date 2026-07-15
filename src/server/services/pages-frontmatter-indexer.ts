@@ -47,7 +47,7 @@ export class PagesFrontmatterIndexer {
   constructor(
     private roots: Map<string, PagesService>,
     private ws: WsEmitter,
-    private artifactEvents: Map<string, 'briefs:changed' | 'patches:changed'> = new Map(),
+    private artifactEvents: Map<string, 'briefs:changed' | 'patches:changed' | 'plans:changed'> = new Map(),
   ) {}
 
   private rootFor(rootId: string): PagesService | undefined {

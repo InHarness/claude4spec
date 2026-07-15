@@ -45,7 +45,7 @@ export type WsEvent =
   | { kind: 'page:renamed'; from: string; to: string }
   | {
       kind: 'plan:updated';
-      planId: number;
+      planPath: string;
       threadId: string;
       version: number;
       changedBy: 'agent' | 'user' | 'system';
@@ -57,6 +57,8 @@ export type WsEvent =
   | { kind: 'briefs:changed'; path?: string; origin?: 'server' | 'external' }
   // M23 Patches
   | { kind: 'patches:changed'; path?: string }
+  // 0.1.127 M36/M10: plans, filesystem-backed like briefs/patches.
+  | { kind: 'plans:changed'; path?: string }
   | { kind: 'hello'; ts: number }
   // M31: sent to a room right before its sockets close (context invalidated/evicted/removed).
   | { kind: 'project:disposed' }
@@ -70,13 +72,15 @@ export type WsEvent =
 
 /**
  * 0.1.96 multiroot: a page is keyed by `(rootId, path)`. `rootId` is a DYNAMIC
- * string — the built-in `'pages'` root, user-defined root slugs, plus the two
- * fixed markers below for briefs/patches (which are NOT roots but reuse the same
- * PagesService/PagesWatcher primitive and carry these literal rootId markers on
- * their `file_version` rows).
+ * string — the built-in `'pages'` root, user-defined root slugs, plus the three
+ * fixed markers below for briefs/patches/plans (which are NOT roots but reuse the
+ * same PagesService/PagesWatcher primitive and carry these literal rootId markers
+ * on their `file_version` rows).
  */
 export const BRIEF_ROOT_MARKER = 'brief';
 export const PATCH_ROOT_MARKER = 'patch';
+/** 0.1.127 M10: plan artifact, filesystem-backed as of the plan → file migration. */
+export const PLAN_ROOT_MARKER = 'plan';
 
 /** 0.1.96: how a root's page tree is surfaced in the sidebar. */
 export type RootSidebar = 'accordion' | 'hidden';

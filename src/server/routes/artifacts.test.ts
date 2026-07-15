@@ -15,9 +15,10 @@ import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.j
 import { ChatService } from '../services/chat.js';
 import { BriefService } from '../services/brief.js';
 import { PatchService } from '../services/patch.js';
+import { PlanService } from '../services/plan.js';
 import { artifactsRouter } from './artifacts.js';
 import { errorHandler } from './errors.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
+import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../shared/types.js';
 import type { ReleaseService } from '../services/release.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 
@@ -35,6 +36,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
 
   const briefsDir = 'briefs';
   const patchesDir = 'patches';
+  const plansDir = 'plans';
 
   async function writeArtifact(
     kind: 'brief' | 'patch',
@@ -61,14 +63,19 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     await briefsPages.ensureRoot();
     const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
     await patchesPages.ensureRoot();
+    const plansPages = new PagesService(cwd, plansDir, PLAN_ROOT_MARKER);
+    await plansPages.ensureRoot();
     const briefsWatcher = new PagesWatcher(briefsPages.root, fakeWs, BRIEF_ROOT_MARKER);
     const patchesWatcher = new PagesWatcher(patchesPages.root, fakeWs, PATCH_ROOT_MARKER);
+    const plansWatcher = new PagesWatcher(plansPages.root, fakeWs, PLAN_ROOT_MARKER);
     briefsSerializer = new FileSerializer(briefsPages);
     patchesSerializer = new FileSerializer(patchesPages);
+    const plansSerializer = new FileSerializer(plansPages);
     pageVersions = new FileVersionService(db, briefsSerializer);
     const frontmatterRoots = new Map([
       [BRIEF_ROOT_MARKER, briefsPages],
       [PATCH_ROOT_MARKER, patchesPages],
+      [PLAN_ROOT_MARKER, plansPages],
     ]);
     frontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, fakeWs);
     const chatService = new ChatService(db);
@@ -91,12 +98,21 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       chatService,
       frontmatterIndexer,
     });
+    const planService = new PlanService({
+      plansPages,
+      plansWatcher,
+      plansSerializer,
+      pageVersions,
+      chatService,
+      frontmatterIndexer,
+      ws: fakeWs,
+    });
 
     app = express()
       .use(express.json())
       .use(
         '/api/artifacts',
-        artifactsRouter({ brief: briefService, patch: patchService, pageVersions, frontmatterIndexer }),
+        artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions }),
       )
       .use(errorHandler);
   });
@@ -107,7 +123,7 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
   });
 
   it('404s an unknown :kind with UNKNOWN_ARTIFACT_KIND', async () => {
-    const res = await request(app).get('/api/artifacts/plan');
+    const res = await request(app).get('/api/artifacts/bogus');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('UNKNOWN_ARTIFACT_KIND');
   });

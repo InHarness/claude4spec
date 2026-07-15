@@ -462,11 +462,11 @@ export async function runAgentTurn(
       }
     }
 
-    // Stale-plan reminder MUSI byc sprawdzony PRZED markPlanSeenByThread —
-    // ten ostatni bumpuje last_seen_plan_version i zapodaje sygnal "synced".
-    const isFirstTurn = !thread.hasSystemPrompt;
-    const stalePlanReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
-    const currentPlan = isBriefFrame ? null : deps.planService.getByThread(thread.id);
+    // 0.1.127: stale-plan reminder pipeline removed along with `plan_id`/
+    // `last_seen_plan_version` — plans no longer track a "last seen version"
+    // per thread (see brief 0-1-126-to-0-1-127). `currentPlan` (shown in the
+    // system prompt) is unrelated and stays.
+    const currentPlan = isBriefFrame ? null : await deps.planService.getByThread(thread.id);
 
     // Skill resolution: writing-style (config.writingStyle, M15) ladowany
     // niezaleznie od kontekstu. Dla brief context dokladamy bundled `brief-author`.
@@ -574,16 +574,13 @@ export async function runAgentTurn(
       architectureConfig: snapshotArchitectureConfig,
     });
 
-    if (isFirstTurn && currentPlan) {
-      deps.planService.markPlanSeenByThread(thread.id);
-    }
-
     // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
     // `mcp` descriptor — each server mounts iff its registry flag is set.
     const planTools = ctx.mcp.planTools
       ? buildPlanToolsServer({
           threadId: thread.id,
           planService: deps.planService,
+          pageVersions: deps.pageVersions,
         })
       : null;
     const briefTools = ctx.mcp.briefTools && thread.briefPath
@@ -835,8 +832,7 @@ export async function runAgentTurn(
       }
     };
 
-    const effectivePrompt = stalePlanReminder ? `${stalePlanReminder}\n\n${prompt}` : prompt;
-    await consume(effectivePrompt);
+    await consume(prompt);
 
     // After-turn merged dispatch: whatever piled up in the queue while the turn
     // ran (push declined, or a non-streaming architecture) is delivered now as a
@@ -867,9 +863,7 @@ export async function runAgentTurn(
       replay.turnStart = mergedTurnStart;
       replay.events = [];
       emit(mergedTurnStart);
-      // Stale-plan reminder is applied at DISPATCH (here), not at enqueue.
-      const mergedReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
-      await consume(mergedReminder ? `${mergedReminder}\n\n${merged}` : merged);
+      await consume(merged);
       batch = deps.chatService.popAllQueued(thread.id);
     }
 

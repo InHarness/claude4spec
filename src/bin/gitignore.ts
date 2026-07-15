@@ -11,10 +11,12 @@ export interface EnsureGitignoreOpts {
   briefsDir?: string;
   /** Default `.claude4spec/patches`. */
   patchesDir?: string;
+  /** 0.1.127: default `.claude4spec/plans`. */
+  plansDir?: string;
   /** Default `.claude4spec/releases`. */
   releasesDir?: string;
   /**
-   * 0.1.118: the git master switch. `false` (default) ⇒ briefs/patches/
+   * 0.1.118: the git master switch. `false` (default) ⇒ briefs/patches/plans/
    * releases stay local-only (gitignored). `true` ⇒ `ensureGitignore` OMITS
    * those entries so they become committed and shared with the team.
    */
@@ -55,18 +57,23 @@ function dirPatternSpec(dir: string): PatternSpec {
 }
 
 /**
- * 0.1.118: briefs/patches/releases are gitignored ONLY when the git master
+ * 0.1.118: briefs/patches/plans/releases are gitignored ONLY when the git master
  * switch is off (the default) — local-only, per-solo-dev. When on, they
  * become committed and shared with the team (see `GitService.commit()`'s
- * staging scope, which stages all three the same way), so this returns []
+ * staging scope, which stages them all the same way), so this returns []
  * and the managed block simply omits them. `releasesDir` is included here to
  * match its own doc comment in `config.ts` ("committed to git when
- * git.enabled, local-only otherwise") — briefsDir/patchesDir alone would
- * silently contradict that.
+ * git.enabled, local-only otherwise") — briefsDir/patchesDir/plansDir alone
+ * would silently contradict that.
  */
 function dynamicPatterns(opts: Required<EnsureGitignoreOpts>): PatternSpec[] {
   if (opts.gitEnabled) return [];
-  return [dirPatternSpec(opts.briefsDir), dirPatternSpec(opts.patchesDir), dirPatternSpec(opts.releasesDir)];
+  return [
+    dirPatternSpec(opts.briefsDir),
+    dirPatternSpec(opts.patchesDir),
+    dirPatternSpec(opts.plansDir),
+    dirPatternSpec(opts.releasesDir),
+  ];
 }
 
 /** Trim leading AND trailing blank lines from a line array, in place semantics via slice. */
@@ -106,6 +113,7 @@ export function ensureGitignore(cwd: string, opts: EnsureGitignoreOpts = {}): vo
   const resolved: Required<EnsureGitignoreOpts> = {
     briefsDir: opts.briefsDir ?? '.claude4spec/briefs',
     patchesDir: opts.patchesDir ?? '.claude4spec/patches',
+    plansDir: opts.plansDir ?? '.claude4spec/plans',
     releasesDir: opts.releasesDir ?? '.claude4spec/releases',
     gitEnabled: opts.gitEnabled ?? false,
   };

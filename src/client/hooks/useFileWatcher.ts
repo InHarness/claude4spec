@@ -68,9 +68,8 @@ export function useFileWatcher() {
           } else if (data.kind === 'pageLinks:changed') {
             batcher.queue(['pageLinks']);
           } else if (data.kind === 'plan:updated') {
-            batcher.queue(['plan', 'detail', data.planId]);
-            batcher.queue(['plan', 'versions', data.planId]);
-            batcher.queue(['plan', 'blame', data.planId]);
+            batcher.queue(['plan', 'detail', data.planPath]);
+            batcher.queue(['plan', 'versions', data.planPath]);
             batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);

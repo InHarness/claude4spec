@@ -115,6 +115,8 @@ export interface ConfigResponse {
   briefsDir: string;
   /** M23: catalog of patch files. */
   patchesDir: string;
+  /** 0.1.127 M10/M36: catalog of plan files. */
+  plansDir: string;
   /** M29/M31: committed entity JSON files dir (source of truth; SQLite is derived). */
   entitiesDir: string;
   /** 0.1.118: on-disk release identity files dir; spec_release (SQLite) is derived from it. */
@@ -166,6 +168,7 @@ export interface ConfigPatch {
   roots?: Root[];
   briefsDir?: string;
   patchesDir?: string;
+  plansDir?: string;
   entitiesDir?: string;
   releasesDir?: string;
   writingStyle?: string | null;
@@ -488,7 +491,7 @@ export const sectionsApi = {
 };
 
 export interface PlanAnchorRef {
-  planId: number;
+  planPath: string;
   threadId: string | null;
 }
 

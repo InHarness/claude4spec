@@ -26,6 +26,14 @@ export interface Config {
    */
   patchesDir: string;
   /**
+   * 0.1.127 M10/M36: catalog of plan files (relative to cwd, default
+   * `.claude4spec/plans`). Same validation as `briefsDir`/`patchesDir` (must be
+   * relative, must not escape cwd). Active once the plan → filesystem migration
+   * lands (see brief 0-1-126-to-0-1-127). Forward-compat: missing = treated as
+   * default. Additive — no `$schemaVersion` bump.
+   */
+  plansDir: string;
+  /**
    * M29: directory of committed entity JSON files + tags.json (relative to cwd,
    * default `.claude4spec/entities`). Source of truth for entities; SQLite is a
    * derived index rebuilt from these files at boot. Same validation as
@@ -238,6 +246,7 @@ export function defaults(cwd: string): Config {
     roots: [builtinPagesRoot()],
     briefsDir: '.claude4spec/briefs',
     patchesDir: '.claude4spec/patches',
+    plansDir: '.claude4spec/plans',
     entitiesDir: '.claude4spec/entities',
     releasesDir: '.claude4spec/releases',
     writingStyle: null,
@@ -316,7 +325,7 @@ export function dirsOverlap(rootDir: string, otherDir: string): boolean {
  */
 export function validateRootDirs(
   roots: Root[],
-  opts: { entitiesDir: string; releasesDir: string; briefsDir: string; patchesDir: string },
+  opts: { entitiesDir: string; releasesDir: string; briefsDir: string; patchesDir: string; plansDir: string },
 ): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
@@ -340,12 +349,15 @@ export function validateRootDirs(
         errors.push(`config.json: root '${r.id}' dir overlaps write-target '${t.id}'`);
       }
     }
-    // overlap vs briefsDir / patchesDir (warning). '.claude/skills' overlap is allowed.
+    // overlap vs briefsDir / patchesDir / plansDir (warning). '.claude/skills' overlap is allowed.
     if (dirsOverlap(r.dir, opts.briefsDir)) {
       warnings.push(`config.json: root '${r.id}' dir overlaps briefsDir — pages may appear in both`);
     }
     if (dirsOverlap(r.dir, opts.patchesDir)) {
       warnings.push(`config.json: root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
+    }
+    if (dirsOverlap(r.dir, opts.plansDir)) {
+      warnings.push(`config.json: root '${r.id}' dir overlaps plansDir — pages may appear in both`);
     }
   }
   return { errors, warnings };
@@ -457,6 +469,10 @@ function validate(raw: unknown): Partial<Config> {
   if ('patchesDir' in r) {
     if (typeof r.patchesDir !== 'string') throw typeError('patchesDir', 'string', r.patchesDir);
     out.patchesDir = r.patchesDir;
+  }
+  if ('plansDir' in r) {
+    if (typeof r.plansDir !== 'string') throw typeError('plansDir', 'string', r.plansDir);
+    out.plansDir = r.plansDir;
   }
   if ('entitiesDir' in r) {
     if (typeof r.entitiesDir !== 'string') throw typeError('entitiesDir', 'string', r.entitiesDir);

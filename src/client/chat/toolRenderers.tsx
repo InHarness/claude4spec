@@ -492,17 +492,17 @@ const planRenderers: Record<string, ToolRenderer> = {
     },
     renderResult(r) {
       const { result } = cx2({}, r);
-      const planId = result?.planId;
+      const planPath = result?.planPath;
       const version = result?.version;
-      if (typeof planId !== 'number' || typeof version !== 'number') return null;
+      if (typeof planPath !== 'string' || typeof version !== 'number') return null;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <div className="text-[12px]" style={{ color: 'var(--c-ink)' }}>
             Updated to v{version}
           </div>
           <Link
-            to="/plans/$planId"
-            params={{ planId: String(planId) }}
+            to="/plans/$planPath"
+            params={{ planPath }}
             className="text-[11.5px] underline"
             style={{ color: 'var(--c-accent)' }}
           >

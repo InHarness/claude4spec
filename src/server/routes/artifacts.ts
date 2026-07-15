@@ -1,25 +1,33 @@
 import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
+import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
   ArtifactListItem,
   ArtifactResponse,
-  BriefThreadSummary,
   PatchStatus,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 
 /**
  * M36 — generic REST family replacing the per-kind `/api/briefs/*`/`/api/patches/*`
- * routes (7 endpoints, parametrized by `:kind`). `BriefService`/`PatchService`
- * stay the kind-specific implementations (each has its own creation flow /
- * query-filter semantics that don't generalize cleanly) — this router is a
- * thin adapter layer translating each service's internal shape to the generic
- * `ArtifactResponse`/`ArtifactListItem` DTOs at the REST boundary. Adding a
- * future kind (e.g. `plan`, see 0-1-126-to-0-1-127) means adding one entry to
- * `adapters` below, not touching the route handlers.
+ * routes (7 endpoints, parametrized by `:kind`). `BriefService`/`PatchService`/
+ * `PlanService` stay the kind-specific implementations (each has its own
+ * creation flow / query-filter semantics that don't generalize cleanly) — this
+ * router is a thin adapter layer translating each service's internal shape to
+ * the generic `ArtifactResponse`/`ArtifactListItem` DTOs at the REST boundary.
+ *
+ * `plan`'s generic `/api/artifacts/plan/*` endpoints (list/detail/versions/
+ * content/frontmatter) replace the pre-0.1.127 bespoke `GET /api/plans`,
+ * `GET/PUT/PATCH /api/plans/:planId` routes — but `plan`'s own thread-binding
+ * flows (`create-thread`, `execute`, `last-thread`, `by-thread`) stay bespoke
+ * in `routes/plans.ts` (richer semantics than the generic `POST .../threads`:
+ * `execute`'s two modes, `initialMessage`, etc.), so this adapter's
+ * `createThread`/`listThreads` exist only to satisfy `ArtifactKindAdapter` —
+ * they delegate to the exact same `PlanService` methods `routes/plans.ts`
+ * calls, so there's no behavior fork between the two paths.
  */
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
@@ -27,7 +35,7 @@ interface ArtifactKindAdapter {
   /** Both kinds' old detail routes merged `threads` into the response body
    *  (`{ ...detail, threads }`) — preserved here rather than dropped, since
    *  client detail pages read `.threads` off the same call. */
-  listThreads(path: string): BriefThreadSummary[];
+  listThreads(path: string): Array<{ id: string; title: string | null; updatedAt: string; messageCount?: number }>;
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
@@ -36,6 +44,7 @@ interface ArtifactKindAdapter {
 export interface ArtifactsRouterDeps {
   brief: BriefService;
   patch: PatchService;
+  plan: PlanService;
   pageVersions: FileVersionService;
 }
 
@@ -133,6 +142,46 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   };
 }
 
+function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
+  const { plan: plans } = deps;
+  return {
+    list(query) {
+      const search = typeof query.search === 'string' ? query.search : undefined;
+      // Maps listPlans()'s already-fetched frontmatter/hash directly — no
+      // second frontmatter-indexer lookup or file_version query per row.
+      return plans.listPlans({ search }).map((item) => ({
+        path: item.path,
+        frontmatter: item.frontmatter,
+        hash: item.hash,
+        updatedAt: item.updatedAt,
+      }));
+    },
+    async get(path) {
+      const p = await plans.getByPath(path);
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    async updateContent(path, content, expectedHash) {
+      await plans.updateContent({ path, content, expectedHash, changedBy: 'user' });
+      const p = await plans.getByPath(path);
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    async updateFrontmatter(path, frontmatter) {
+      const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
+      const p = await plans.updateFrontmatter({ path, patch: { title }, changedBy: 'user' });
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    // Not the client's actual creation path (see file header) — delegates to
+    // the same PlanService method the bespoke POST /api/plans/:slug/create-thread
+    // route uses, so there's no behavior fork if a caller does reach this route.
+    createThread(path) {
+      return Promise.resolve(plans.attachThreadToPlan(path));
+    },
+    listThreads(path) {
+      return plans.listThreadsForPlan(path);
+    },
+  };
+}
+
 /**
  * Express splat (`/*`) puts ONLY the matched wildcard portion in
  * `req.params[0]`. Literal segments (`/versions`, `:version`, etc.) are
@@ -148,6 +197,7 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
   const adapters: Record<ArtifactKind, ArtifactKindAdapter> = {
     brief: buildBriefAdapter(deps),
     patch: buildPatchAdapter(deps),
+    plan: buildPlanAdapter(deps),
   };
 
   const router = Router();

@@ -255,7 +255,7 @@ const plansIndexRoute = createRoute({
 
 const planDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/plans/$planId',
+  path: '/plans/$planPath',
   component: PlanRoute,
 });
 
@@ -906,7 +906,10 @@ function SettingsRoute() {
 }
 
 function PlanRoute() {
-  const { planId } = useParams({ from: '/plans/$planId' });
+  const { planPath } = useParams({ from: '/plans/$planPath' });
+  // Mirrors BriefDetailRoute's defensive decode (encodeArtifactPath encodes
+  // per-segment; plan paths are flat/single-segment, so one decode suffices).
+  const decoded = decodeURIComponent(planPath);
   const navigate = useNavigate();
   const bridge = useMemo(
     () => ({
@@ -915,26 +918,13 @@ function PlanRoute() {
     }),
     [navigate]
   );
-  const id = Number(planId);
-  if (!Number.isInteger(id)) {
-    return (
-      <RoutePane>
-        <div
-          className="flex-1 flex items-center justify-center text-[13px]"
-          style={{ color: 'var(--c-muted)' }}
-        >
-          Invalid plan id.
-        </div>
-      </RoutePane>
-    );
-  }
   return (
     <main
       className="flex-1 flex flex-col min-w-0 h-full"
       style={{ background: 'var(--c-bg)' }}
     >
       <EditorBridgeProvider bridge={bridge}>
-        <PlanPage key={id} planId={id} />
+        <PlanPage key={decoded} planPath={decoded} />
       </EditorBridgeProvider>
     </main>
   );

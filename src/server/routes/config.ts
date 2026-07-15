@@ -37,7 +37,7 @@ export interface ConfigRouterDeps {
   pluginSettingsSections?: () => PluginSettingsSection[];
 }
 
-const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir', 'entities'] as const;
+const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir', 'entities'] as const;
 
 /**
  * Single source of the GET/PATCH /config response shape (was duplicated
@@ -79,6 +79,7 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
     onboarding: { completed: c.onboardingCompleted },
     briefsDir: c.briefsDir,
     patchesDir: c.patchesDir,
+    plansDir: c.plansDir,
     entitiesDir: c.entitiesDir,
     releasesDir: c.releasesDir,
     entities: c.entities,
@@ -141,6 +142,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         roots: Root[];
         briefsDir: string;
         patchesDir: string;
+        plansDir: string;
         entitiesDir: string;
         releasesDir: string;
         writingStyle: string | null;
@@ -197,7 +199,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         return value;
       };
 
-      for (const field of ['briefsDir', 'patchesDir', 'entitiesDir', 'releasesDir'] as const) {
+      for (const field of ['briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir'] as const) {
         if (field in body) {
           const result = validateDir(field, body[field]);
           if (typeof result === 'object') {
@@ -224,9 +226,19 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           releasesDir: (patch.releasesDir ?? current.releasesDir),
           briefsDir: (patch.briefsDir ?? current.briefsDir),
           patchesDir: (patch.patchesDir ?? current.patchesDir),
+          plansDir: (patch.plansDir ?? current.plansDir),
         };
-        if (effective.briefsDir === effective.patchesDir) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: 'briefsDir and patchesDir must differ' } });
+        const artifactDirPairs: Array<[string, string, string, string]> = [
+          ['briefsDir', effective.briefsDir, 'patchesDir', effective.patchesDir],
+          ['briefsDir', effective.briefsDir, 'plansDir', effective.plansDir],
+          ['patchesDir', effective.patchesDir, 'plansDir', effective.plansDir],
+        ];
+        for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
+          if (aDir === bDir) {
+            return res
+              .status(400)
+              .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
+          }
         }
         const { errors } = validateRootDirs(roots, effective);
         if (errors.length > 0) {
@@ -460,11 +472,12 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       const updated = writeConfig(cwd, patch);
       // 0.1.118: re-sync .gitignore whenever a field it depends on changes —
       // best-effort (never fail the PATCH over a gitignore write hiccup).
-      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch || 'releasesDir' in patch) {
+      if ('git' in patch || 'briefsDir' in patch || 'patchesDir' in patch || 'plansDir' in patch || 'releasesDir' in patch) {
         try {
           ensureGitignore(cwd, {
             briefsDir: updated.briefsDir,
             patchesDir: updated.patchesDir,
+            plansDir: updated.plansDir,
             releasesDir: updated.releasesDir,
             gitEnabled: updated.git?.enabled ?? false,
           });
