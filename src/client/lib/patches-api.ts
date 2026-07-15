@@ -20,13 +20,12 @@ import type {
   PatchStatus,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
+import { encodeArtifactPath, stem } from './artifact-path.js';
 
 type Envelope<T> = { data: T };
 
 /** Splat-safe path encoding — preserves `/` separators, escapes special chars per segment. */
-function encodePatchPath(patchPath: string): string {
-  return patchPath.split('/').map(encodeURIComponent).join('/');
-}
+const encodePatchPath = encodeArtifactPath;
 
 /**
  * Reconstructed list-item view — field-compatible with the old (removed)
@@ -61,10 +60,6 @@ export interface PatchDetailResponse extends PatchArtifactView {
 }
 
 const VALID_PATCH_KINDS: ReadonlySet<string> = new Set(['drift', 'missing', 'incorrect', 'clarification']);
-
-function stem(p: string): string {
-  return p.replace(/^.*\//, '').replace(/\.md$/i, '');
-}
 
 function deriveTitle(path: string, frontmatter: Record<string, unknown>, body: string): string {
   const h1 = body.match(/^#\s+(.+)$/m);

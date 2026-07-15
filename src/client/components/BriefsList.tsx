@@ -6,6 +6,7 @@ import { useReleases } from '../hooks/useReleases.js';
 import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
 import { encodeBriefPath, type BriefListItemView } from '../lib/briefs-api.js';
 import { encodePatchPath, type PatchListItemView } from '../lib/patches-api.js';
+import { stem } from '../lib/artifact-path.js';
 import { useChatStore } from '../state/chat.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
 import { SegmentedControl } from './SegmentedControl.js';
@@ -485,10 +486,6 @@ function resolvePatchBriefPath(
     }
   }
   return best;
-}
-
-function stem(p: string): string {
-  return p.replace(/^.*\//, '').replace(/\.md$/i, '');
 }
 
 function formatRelative(iso: string): string {

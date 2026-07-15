@@ -121,6 +121,13 @@ export interface BriefListItem {
   lastModifiedAt: string | null;
   /** 0.1.69 B4: count of top-level (non-banka) brief threads for this brief. */
   threadCount: number;
+  /** Raw parsed frontmatter — lets routes/artifacts.ts build `ArtifactListItem`
+   *  without a second frontmatter-indexer lookup for the same record. */
+  frontmatter: BriefFrontmatter;
+  /** sha256 of the latest captured version's content — reuses the version
+   *  lookup this method already does for `lastModifiedAt`, instead of the
+   *  router re-querying `file_version` and re-hashing per row. */
+  hash: string;
 }
 
 export class BriefService {
@@ -174,6 +181,8 @@ export class BriefService {
         generatedAt: String(fm.generated_at ?? ''),
         lastModifiedAt: lastVersion?.createdAt ?? null,
         threadCount: this.deps.chatService.threadCountForBrief(rec.path),
+        frontmatter: fm,
+        hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
     return out;

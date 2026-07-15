@@ -1,9 +1,7 @@
-import crypto from 'node:crypto';
 import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { FileVersionService } from '../services/file-version.js';
-import type { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
 import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
   ArtifactListItem,
@@ -39,31 +37,11 @@ export interface ArtifactsRouterDeps {
   brief: BriefService;
   patch: PatchService;
   pageVersions: FileVersionService;
-  frontmatterIndexer: PagesFrontmatterIndexer;
 }
 
-function sha256Hex(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
-}
-
-function toArtifactListItem(
-  path: string,
-  rootId: string,
-  deps: Pick<ArtifactsRouterDeps, 'frontmatterIndexer' | 'pageVersions'>,
-): ArtifactListItem {
-  const frontmatter = deps.frontmatterIndexer.getFrontmatter(rootId, path) ?? {};
-  const lastVersion = deps.pageVersions.getLatestForPath(path, undefined, rootId);
-  return {
-    path,
-    frontmatter,
-    hash: lastVersion ? sha256Hex(lastVersion.data.content) : '',
-    updatedAt: lastVersion?.createdAt ?? null,
-  };
-}
 
 function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   const { brief: briefs } = deps;
-  const rootId = artifactRegistry.brief.rootId;
   return {
     list(query) {
       let implemented: boolean | undefined;
@@ -76,7 +54,14 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       } else {
         throw new DomainError('VALIDATION', `?implemented must be 'true' or 'false' (omit for all)`);
       }
-      return briefs.listBriefs({ implemented }).map((item) => toArtifactListItem(item.path, rootId, deps));
+      // Maps listBriefs()'s already-fetched frontmatter/hash directly — no
+      // second frontmatter-indexer lookup or file_version query per row.
+      return briefs.listBriefs({ implemented }).map((item) => ({
+        path: item.path,
+        frontmatter: item.frontmatter,
+        hash: item.hash,
+        updatedAt: item.lastModifiedAt,
+      }));
     },
     async get(path) {
       const b = await briefs.getBrief(path);
@@ -104,7 +89,6 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
 
 function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   const { patch: patches } = deps;
-  const rootId = artifactRegistry.patch.rootId;
   return {
     list(query) {
       const brief = typeof query.brief === 'string' ? query.brief : undefined;
@@ -116,7 +100,14 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       } else {
         throw new DomainError('VALIDATION', `?status must be 'awaiting' or 'completed' (omit for all)`);
       }
-      return patches.listPatches({ brief, status }).map((item) => toArtifactListItem(item.path, rootId, deps));
+      // Maps listPatches()'s already-fetched frontmatter/hash directly — no
+      // second frontmatter-indexer lookup or file_version query per row.
+      return patches.listPatches({ brief, status }).map((item) => ({
+        path: item.path,
+        frontmatter: item.frontmatter,
+        hash: item.hash,
+        updatedAt: item.lastModified,
+      }));
     },
     async get(path) {
       const p = await patches.getPatch(path);

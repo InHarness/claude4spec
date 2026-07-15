@@ -100,6 +100,13 @@ export interface PatchListItem {
   lastModified: string;
   /** Count of chat threads with context_type='patch' pointing at this patch. */
   threadCount: number;
+  /** Raw parsed frontmatter — lets routes/artifacts.ts build `ArtifactListItem`
+   *  without a second frontmatter-indexer lookup for the same record. */
+  frontmatter: PatchFrontmatter;
+  /** sha256 of the latest captured version's content — reuses the version
+   *  lookup this method already does for `lastModified`, instead of the
+   *  router re-querying `file_version` and re-hashing per row. */
+  hash: string;
 }
 
 const VALID_PATCH_KINDS: ReadonlySet<string> = new Set([
@@ -162,6 +169,8 @@ export class PatchService {
         createdBy: String(fm.created_by ?? ''),
         lastModified: lastVersion?.createdAt ?? createdAt,
         threadCount: this.deps.chatService.threadCountForPatch(rec.path),
+        frontmatter: fm,
+        hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
     return out;

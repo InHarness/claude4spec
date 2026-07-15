@@ -21,13 +21,12 @@ import type {
   BriefThreadSummary,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
+import { encodeArtifactPath } from './artifact-path.js';
 
 type Envelope<T> = { data: T };
 
 /** Splat-safe path encoding — preserves `/` separators, escapes special chars per segment. */
-function encodeBriefPath(briefPath: string): string {
-  return briefPath.split('/').map(encodeURIComponent).join('/');
-}
+const encodeBriefPath = encodeArtifactPath;
 
 /**
  * Reconstructed list-item view — field-compatible with the old (removed)

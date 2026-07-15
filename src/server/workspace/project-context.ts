@@ -416,18 +416,20 @@ async function buildInner(
     patchesDir,
   };
   const artifactMounts = new Map<ArtifactKind, ArtifactMount>();
-  for (const entry of Object.values(artifactRegistry)) {
-    const mountPages = new PagesService(cwd, artifactDirs[entry.dirConfigKey], entry.rootId);
-    await mountPages.ensureRoot();
-    const mountWatcher = new PagesWatcher(mountPages.root, ws, entry.rootId);
-    cleanup.push(() => mountWatcher.close());
-    artifactMounts.set(entry.kind, {
-      entry,
-      pages: mountPages,
-      watcher: mountWatcher,
-      serializer: new FileSerializer(mountPages),
-    });
-  }
+  await Promise.all(
+    Object.values(artifactRegistry).map(async (entry) => {
+      const mountPages = new PagesService(cwd, artifactDirs[entry.dirConfigKey], entry.rootId);
+      await mountPages.ensureRoot();
+      const mountWatcher = new PagesWatcher(mountPages.root, ws, entry.rootId);
+      cleanup.push(() => mountWatcher.close());
+      artifactMounts.set(entry.kind, {
+        entry,
+        pages: mountPages,
+        watcher: mountWatcher,
+        serializer: new FileSerializer(mountPages),
+      });
+    }),
+  );
   const briefsMount = artifactMounts.get('brief')!;
   const patchesMount = artifactMounts.get('patch')!;
 
@@ -810,7 +812,6 @@ async function buildInner(
       brief: briefService,
       patch: patchService,
       pageVersions,
-      frontmatterIndexer: pagesFrontmatterIndexer,
     }),
   );
   router.use('/agent', agentRouter(agentCredentialService));
