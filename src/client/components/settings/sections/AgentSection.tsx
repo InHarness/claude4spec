@@ -197,8 +197,8 @@ function ArtifactDenyList({ config }: { config: ConfigResponse | undefined }) {
         Always excluded — C4S artifact dirs
       </span>
       <ul className="flex flex-col gap-0.5">
-        {dirs.map((d) => (
-          <li key={d} className="text-[12.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+        {dirs.map((d, i) => (
+          <li key={i} className="text-[12.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
             {d}
           </li>
         ))}
