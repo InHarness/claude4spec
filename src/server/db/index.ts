@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runMigrations } from './migrate.js';
-import { backfillPlanTitles } from './fixups/backfill-plan-titles.js';
 import { slotDirFor } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
 
@@ -31,11 +30,6 @@ export function openDbAt(dbPath: string): Db {
   const applied = runMigrations(handle);
   if (applied.length) {
     console.log(`  migrations applied: ${applied.join(', ')}`);
-  }
-
-  const titlesBackfilled = backfillPlanTitles(handle);
-  if (titlesBackfilled > 0) {
-    console.log(`  plan titles backfilled: ${titlesBackfilled}`);
   }
 
   return {
