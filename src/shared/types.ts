@@ -31,7 +31,7 @@ export interface PageSearchHit {
 }
 
 export type WsEvent =
-  | { kind: 'page:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
+  | { kind: 'file:changed'; event: 'add' | 'change' | 'unlink'; path: string; rootId: string; origin: 'server' | 'external' }
   | { kind: 'entity:changed'; entityType: string; slug: string }
   // M29: emitted by EntityIndexerService after a file-watch reindex (external
   // edit / git pull / self-write that slipped past suppress). `op: 'delete'`

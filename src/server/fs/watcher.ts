@@ -47,12 +47,12 @@ export class PagesWatcher {
 
   /**
    * Broadcast a server-origin change event for a programmatic write.
-   * Clients receive `page:changed { origin: 'server' }` and should silently reload
+   * Clients receive `file:changed { origin: 'server' }` and should silently reload
    * without showing the "file changed externally" dialog.
    * Does NOT fire the callback chain (callbacks are for external-origin indexing).
    */
   emitServerWrite(relPath: string): void {
-    this.gateway.broadcast({ kind: 'page:changed', event: 'change', path: relPath, rootId: this.rootId, origin: 'server' });
+    this.gateway.broadcast({ kind: 'file:changed', event: 'change', path: relPath, rootId: this.rootId, origin: 'server' });
   }
 
   private emit(kind: EventKind, absPath: string): void {
@@ -67,7 +67,7 @@ export class PagesWatcher {
       this.suppressUntil.delete(relPath);
       return;
     }
-    this.gateway.broadcast({ kind: 'page:changed', event: kind, path: relPath, rootId: this.rootId, origin: 'external' });
+    this.gateway.broadcast({ kind: 'file:changed', event: kind, path: relPath, rootId: this.rootId, origin: 'external' });
     // Indexer callbacks (M06 section index) run for .md only — .html is never indexed/versioned.
     if (!isMd) return;
     for (const cb of this.callbacks) {

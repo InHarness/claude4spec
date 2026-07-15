@@ -38,7 +38,7 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
-          if (data.kind === 'page:changed') {
+          if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
             if (data.origin === 'external') {
