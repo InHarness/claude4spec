@@ -78,7 +78,7 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): McpServerInstance
       'Any frontmatter mutation attempt → BRIEF_FRONTMATTER_IMMUTABLE.',
       'Optional `expectedHash` (sha256 from get_brief) enables optimistic concurrency —',
       'mismatch → BRIEF_CONFLICT (re-read brief before retrying).',
-      'Each mutation captures a row in page_version with changed_by="agent".',
+      'Each mutation captures a row in file_version with changed_by="agent".',
     ].join(' '),
     {
       action: AGENT_ACTIONS,

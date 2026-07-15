@@ -51,7 +51,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
   const releaseCreate = mcpTool(
     'release_create',
-    'Create a named release (snapshot of current spec state). Assigns release_id to all unreleased entity_version + page_version rows in one transaction. Always manual — there are no auto-triggers (M17 decyzja 9). Both name (UNIQUE) and description (non-empty) are required.',
+    'Create a named release (snapshot of current spec state). Assigns release_id to all unreleased entity_version + file_version rows in one transaction. Always manual — there are no auto-triggers (M17 decyzja 9). Both name (UNIQUE) and description (non-empty) are required.',
     {
       name: z.string().describe('Release name, must be unique. e.g. "v1.0.0", "pre-launch"'),
       description: z.string().describe('Non-empty intent of the release — surfaced to M18 brief-builder'),
@@ -99,7 +99,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
   const releaseShow = mcpTool(
     'release_show',
-    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Accepts numeric id or release name. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`page_version.kind='brief'`) are excluded from `pages` (L2 invariant).",
+    "Show a release's identification surface (release metadata + lists of entity slugs/page paths present at the release). Returns `MCPSpecSnapshot` — IDENTIFICATION only, not full entity/page data. To inspect the data, call `release_diff` (with this release as `to` and any earlier release — or `null` — as `from`). Accepts numeric id or release name. Filters: `include` (defaults to ['pages','entities']) trims the dimensions returned; `entityTypes` restricts entity types. Brief versions (`file_version.kind='brief'`) are excluded from `pages` (L2 invariant).",
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       include: z
@@ -174,7 +174,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         .array(z.string())
         .optional()
         .describe(
-          'Narrow the PAGES dimension to these page root ids (page_version.rootId). Default: all releasable roots. Does not affect the entities dimension.',
+          'Narrow the PAGES dimension to these page root ids (file_version.rootId). Default: all releasable roots. Does not affect the entities dimension.',
         ),
       limit: z
         .number()
@@ -223,7 +223,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
 
   const releaseUpdate = mcpTool(
     'release_update',
-    'Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + page_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if id != MAX(id). 409 RELEASE_NAME_CONFLICT on rename collision.',
+    'Update the LATEST release only — older releases are frozen. Mutates name/description in-place and optionally pulls all unreleased entity_version + file_version rows (release_id IS NULL) into this release. 409 RELEASE_FROZEN if id != MAX(id). 409 RELEASE_NAME_CONFLICT on rename collision.',
     {
       idOrName: z.union([z.string(), z.number()]).describe('Numeric id or release name'),
       name: z.string().optional().describe('New name (must be unique). Omit to leave unchanged.'),
@@ -232,7 +232,7 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
         .boolean()
         .optional()
         .describe(
-          'When true, assigns all entity_version/page_version rows where release_id IS NULL to this release. No-op when queue is empty.',
+          'When true, assigns all entity_version/file_version rows where release_id IS NULL to this release. No-op when queue is empty.',
         ),
     },
     async (args) => {

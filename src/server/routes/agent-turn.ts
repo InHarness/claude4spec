@@ -36,7 +36,7 @@ import type { PatchService } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
-import type { PageVersionService } from '../services/page-version.js';
+import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
 import type { Annotation, Brief, ChatMessage, ChatThread, PatchResponse } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
@@ -71,7 +71,7 @@ export interface AgentTurnDeps {
   patchService: PatchService;
   /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
   releaseService: ReleaseService;
-  pageVersions: PageVersionService;
+  pageVersions: FileVersionService;
   skillResolver: SkillResolver;
   skillRegistry: SkillRegistry;
   ws: WsEmitter;

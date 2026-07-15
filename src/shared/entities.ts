@@ -1110,7 +1110,7 @@ export interface PatchListItem {
   status: PatchStatus;
   createdAt: string;
   createdBy: string;
-  /** `created_at` of the latest page_version row with kind='patch'. */
+  /** `created_at` of the latest file_version row with kind='patch'. */
   lastModified: string;
   /** Count of chat threads with context_type='patch' pointing at this patch. */
   threadCount: number;

@@ -5,7 +5,7 @@
  * itself is the source of truth (consumed both by humans in UI and by coding
  * agents in terminal). DB participation is limited to:
  *   - `chat_thread.brief_path` (M05) for editorial threads
- *   - `page_version` (M17 Phase 4) — automatic via shared PageVersionService
+ *   - `file_version` (M17 Phase 4) — automatic via shared FileVersionService
  *
  * Design notes:
  *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
@@ -31,8 +31,8 @@ import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { PageVersionService } from './page-version.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileVersionService } from './file-version.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { ReleaseService } from './release.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
@@ -43,8 +43,8 @@ const GENERATOR_VERSION = 'brief-author@0.1';
 export interface BriefServiceDeps {
   briefsPages: PagesService;
   briefsWatcher: PagesWatcher;
-  briefsSerializer: PageSerializer;
-  pageVersions: PageVersionService;
+  briefsSerializer: FileSerializer;
+  pageVersions: FileVersionService;
   chatService: ChatService;
   releaseService: ReleaseService;
   frontmatterIndexer: PagesFrontmatterIndexer;
@@ -168,7 +168,7 @@ export class BriefService {
   // ─── Mutations ──────────────────────────────────────────────────────────
 
   /**
-   * 0.1.69: file-only brief creation (writes file + page_version + index, NO
+   * 0.1.69: file-only brief creation (writes file + file_version + index, NO
    * thread). Callers pair this with {@link createThreadForBrief}. `content`
    * carries a pre-synthesized body for analysis briefs; else a generated stub.
    *

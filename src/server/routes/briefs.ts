@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { BriefService } from '../services/brief.js';
-import type { PageVersionService } from '../services/page-version.js';
+import type { FileVersionService } from '../services/file-version.js';
 import { DomainError } from '../services/tags.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 
@@ -10,7 +10,7 @@ import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
  */
 export function briefsRouter(
   briefs: BriefService,
-  pageVersions: PageVersionService,
+  pageVersions: FileVersionService,
 ): Router {
   const router = Router();
 

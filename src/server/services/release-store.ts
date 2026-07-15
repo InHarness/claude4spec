@@ -6,7 +6,7 @@
  * (`name`, `slug`, `description`, `createdAt`, `createdBy`, `roots`) — no
  * version content, no tree, no gitSha. `spec_release` (SQLite) is a derived
  * cache rebuilt from these files (see `ReleaseIndexerService`); release→version
- * links (`entity_version.release_id` / `page_version.release_id`) live
+ * links (`entity_version.release_id` / `file_version.release_id`) live
  * EXCLUSIVELY in SQLite and are never reconstructed from disk.
  *
  * Writes are atomic (temp→rename) and `suppress()` the dedicated releases

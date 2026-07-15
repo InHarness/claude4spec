@@ -28,8 +28,8 @@ import type {
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
 import type { VersionService } from './versions.js';
-import type { PageVersionService } from './page-version.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileVersionService } from './file-version.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
@@ -43,7 +43,7 @@ import { hasDotSegment } from '../../shared/page-files.js';
 import { toReleaseFileData, type ReleaseFileStore } from './release-store.js';
 import type { GitService } from './git.js';
 import type { GitRefDiff } from '../../shared/git.js';
-import type { PageDiff, PageSnapshotData } from './page-serializer.js';
+import type { FileDiff, FileSnapshotData } from './file-serializer.js';
 import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
@@ -139,7 +139,7 @@ interface EntityVersionRow {
   op: string | null;
 }
 
-interface PageVersionRow {
+interface FileVersionRow {
   id: number;
   path: string;
   version: number;
@@ -191,8 +191,8 @@ export class ReleaseService {
     private db: Database.Database,
     private host: PluginHost,
     private versions: VersionService,
-    private pageVersions: PageVersionService,
-    private pageSerializer: PageSerializer,
+    private pageVersions: FileVersionService,
+    private pageSerializer: FileSerializer,
     private rawReader: RawEntityReader,
     private tagsService: TagsService,
     private pagesService: PagesService,
@@ -200,7 +200,7 @@ export class ReleaseService {
     private cwd: string = process.cwd(),
     /**
      * 0.1.96: ids of the releasable roots (config.roots filtered by `releasable`).
-     * Only these roots' `page_version` rows enter releases/bundles/diffs; brief/
+     * Only these roots' `file_version` rows enter releases/bundles/diffs; brief/
      * patch markers and non-releasable user roots fall out structurally.
      */
     private releasableRootIds: string[] = ['pages'],
@@ -282,7 +282,7 @@ export class ReleaseService {
   }
 
   /**
-   * Count of captures still queued at HEAD — entity_version + page_version rows
+   * Count of captures still queued at HEAD — entity_version + file_version rows
    * with `release_id IS NULL`. Drives the M25 "You have N unreleased changes"
    * banner shown only on the latest (mutable) release card.
    */
@@ -299,7 +299,7 @@ export class ReleaseService {
    * Manual release creation (decyzja 9: zero auto-trigger). Validates
    * non-empty + UNIQUE name and non-empty description; in a single
    * transaction inserts spec_release and assigns all unreleased
-   * entity_version + page_version rows.
+   * entity_version + file_version rows.
    */
   createRelease(
     input: { name: string; description: string },
@@ -367,7 +367,7 @@ export class ReleaseService {
    * Mutate the LATEST release only (decyzja 13: implicit last = mutable).
    * Older releases are frozen — `id != MAX(id)` ⇒ 409 RELEASE_FROZEN.
    * Optionally pulls all `release_id IS NULL` rows from entity_version /
-   * page_version into this release (decyzja 14, no untie).
+   * file_version into this release (decyzja 14, no untie).
    *
    * 0.1.124 commit-then-assign: when `assignUnreleased` is set AND a
    * `GitService` is wired, a best-effort `commitPull()` of the working tree
@@ -546,7 +546,7 @@ export class ReleaseService {
 
   /**
    * 0.1.122: cumulative state right now — per (type, slug)/(rootId, path), the
-   * latest entity_version/page_version row with NO upper bound on
+   * latest entity_version/file_version row with NO upper bound on
    * `release_id`, including `release_id IS NULL` (unreleased/dangling)
    * mutations. Same *version-tables-latest* source `getUnreleasedDiff` uses
    * as its "to" side.
@@ -561,7 +561,7 @@ export class ReleaseService {
   /**
    * Shared snapshot-building body for `getReleaseSnapshot`/`getCurrentSnapshot`
    * (0.1.122 code-review fix — was duplicated between the two): per (type, slug)
-   * the latest entity_version row, and per (rootId, path) the latest page_version
+   * the latest entity_version row, and per (rootId, path) the latest file_version
    * row, either bounded at-or-before `releaseId` or (releaseId === null) unbounded.
    */
   private buildSnapshot(release: Release, releaseId: number | null): SpecSnapshot {
@@ -1047,7 +1047,7 @@ export class ReleaseService {
     fromIdOrName: number | string | null,
     toSnap: SpecSnapshot,
     opts?: { roots?: string[] },
-  ): { fromSnap: SpecSnapshot; fromMeta: { id: number; name: string } | null; fromPageRows: PageVersionRow[] } {
+  ): { fromSnap: SpecSnapshot; fromMeta: { id: number; name: string } | null; fromPageRows: FileVersionRow[] } {
     if (fromIdOrName === null) {
       return {
         fromSnap: {
@@ -1076,9 +1076,9 @@ export class ReleaseService {
    */
   private computeDelta(
     fromSnap: SpecSnapshot,
-    fromPageRows: PageVersionRow[],
+    fromPageRows: FileVersionRow[],
     toSnap: SpecSnapshot,
-    toPageRows: PageVersionRow[],
+    toPageRows: FileVersionRow[],
     fromMeta: { id: number; name: string } | null,
     toMeta: { id: number; name: string },
   ): RawDelta {
@@ -1111,7 +1111,7 @@ export class ReleaseService {
     const pageChanges: RawDeltaPageChange[] = [];
     // Key by (rootId, path) so the same relative path in two roots keeps an
     // independent timeline and is never cross-diffed.
-    const pageKey = (p: PageVersionRow): string => `${p.rootId}\u0000${p.path}`;
+    const pageKey = (p: FileVersionRow): string => `${p.rootId}\u0000${p.path}`;
     const aPagesMap = new Map(fromPageRows.map((p) => [pageKey(p), p]));
     const bPagesMap = new Map(toPageRows.map((p) => [pageKey(p), p]));
     const allPageKeys = new Set([...aPagesMap.keys(), ...bPagesMap.keys()]);
@@ -1120,10 +1120,10 @@ export class ReleaseService {
       const b = bPagesMap.get(key);
       const path = (a ?? b)!.path;
       const aData = a && a.op !== 'delete'
-        ? (safeJsonParse(a.data) as ReturnType<PageSerializer['snapshotFromContent']>)
+        ? (safeJsonParse(a.data) as ReturnType<FileSerializer['snapshotFromContent']>)
         : null;
       const bData = b && b.op !== 'delete'
-        ? (safeJsonParse(b.data) as ReturnType<PageSerializer['snapshotFromContent']>)
+        ? (safeJsonParse(b.data) as ReturnType<FileSerializer['snapshotFromContent']>)
         : null;
       const diff = this.pageSerializer.diff(aData, bData, path);
       if (diff.op === 'noop') continue;
@@ -1203,10 +1203,10 @@ export class ReleaseService {
   }
 
   /**
-   * Restore a single page. Looks up the latest page_version snapshot at-or-
+   * Restore a single page. Looks up the latest file_version snapshot at-or-
    * before the release and writes its content via PagesService. The watcher
    * suppresses the resulting chokidar event; the REST capture path then
-   * records a fresh page_version row with `release_id = NULL` and
+   * records a fresh file_version row with `release_id = NULL` and
    * `changed_by = 'user'`.
    */
   async restorePage(input: RestorePageInput, _actor: ChangedBy = 'user'): Promise<RestorePageResult> {
@@ -1341,14 +1341,14 @@ export class ReleaseService {
   async buildBundleArchive(releaseId: number): Promise<BuildBundleResult> {
     const snapshot = this.getReleaseSnapshot(releaseId); // throws NOT_FOUND if missing
     const release = this.getRelease(releaseId);
-    // 0.1.96: resolve rootId per page straight from page_version (the snapshot's
+    // 0.1.96: resolve rootId per page straight from file_version (the snapshot's
     // page rows don't carry it) so the bundle can lay pages out as <rootId>/<path>.md
     // across every releasable root.
     const pageRows: BundlePageInput[] = this.latestPageRowsAtOrBefore(release.id).map((p) => ({
       rootId: p.rootId,
       path: p.path,
       op: p.op as 'create' | 'update' | 'delete',
-      content: (safeJsonParse(p.data) as PageSnapshotData).content,
+      content: (safeJsonParse(p.data) as FileSnapshotData).content,
     }));
     return buildBundleArchiveImpl(snapshot, release, readConfig(this.cwd), pageRows);
   }
@@ -1394,7 +1394,7 @@ export class ReleaseService {
       }
 
       // 3. Pages — write byte-for-byte per root, then capture an unreleased
-      //    page_version tagged with its rootId. v2 lays pages out under
+      //    file_version tagged with its rootId. v2 lays pages out under
       //    `<rootId>/…`; a v1 bundle (flat `pages/`, no `manifest.roots`) is read
       //    as the built-in 'pages' root — the flat `pages/` dir IS that root's
       //    subdir, and the bundled v1 config's `pagesDir` is mapped to a root by
@@ -1525,7 +1525,7 @@ export class ReleaseService {
       ? { n: 0 }
       : (this.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM page_version
+            `SELECT COUNT(*) AS n FROM file_version
               WHERE release_id = ? AND rootId IN (${pagePlaceholders})`,
           )
           .get(releaseId, ...this.releasableRootIds) as { n: number });
@@ -1584,7 +1584,7 @@ export class ReleaseService {
   }
 
   /**
-   * 0.1.96: latest page_version rows per `(rootId, path)` at-or-before a release,
+   * 0.1.96: latest file_version rows per `(rootId, path)` at-or-before a release,
    * restricted to releasable roots (optionally narrowed further by `roots`). The
    * correlated subquery matches on both rootId and path so the same relative path
    * in different roots has an independent timeline. `releaseId === null` (0.1.122)
@@ -1592,24 +1592,24 @@ export class ReleaseService {
    * `release_id IS NULL` rows. Backs both `getReleaseSnapshot` (bounded) and
    * `getCurrentSnapshot` (unbounded).
    */
-  private latestPageRowsAtOrBefore(releaseId: number | null, roots?: string[]): PageVersionRow[] {
+  private latestPageRowsAtOrBefore(releaseId: number | null, roots?: string[]): FileVersionRow[] {
     const rootIds = (roots ?? this.releasableRootIds).filter((r) => this.releasableRootIds.includes(r));
     if (rootIds.length === 0) return [];
     const placeholders = rootIds.map(() => '?').join(', ');
     return this.db
       .prepare(
-        `SELECT pv1.* FROM page_version pv1
+        `SELECT pv1.* FROM file_version pv1
           WHERE pv1.rootId IN (${placeholders})
             AND (? IS NULL OR (pv1.release_id IS NOT NULL AND pv1.release_id <= ?))
             AND pv1.version = (
-              SELECT MAX(pv2.version) FROM page_version pv2
+              SELECT MAX(pv2.version) FROM file_version pv2
                WHERE pv2.rootId = pv1.rootId
                  AND pv2.path = pv1.path
                  AND (? IS NULL OR (pv2.release_id IS NOT NULL AND pv2.release_id <= ?))
             )
           ORDER BY pv1.rootId, pv1.path`,
       )
-      .all(...rootIds, releaseId, releaseId, releaseId, releaseId) as PageVersionRow[];
+      .all(...rootIds, releaseId, releaseId, releaseId, releaseId) as FileVersionRow[];
   }
 
 }
@@ -1622,8 +1622,8 @@ function safeJsonParse(raw: string): unknown {
   }
 }
 
-/** Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of PageDiff's fields. */
-function toRawDeltaPageChange(diff: PageDiff): RawDeltaPageChange {
+/** Shared by computeDelta and tryGitAnchoredDiff — the wire shape is a 1:1 copy of FileDiff's fields. */
+function toRawDeltaPageChange(diff: FileDiff): RawDeltaPageChange {
   return {
     path: diff.path,
     op: diff.op,

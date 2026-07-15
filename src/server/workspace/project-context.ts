@@ -37,8 +37,8 @@ import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.j
 import { SectionIndexerService } from '../services/section-indexer.js';
 import { TodosIndexerService } from '../services/todos-indexer.js';
 import { PagesLinkIndexerService } from '../services/pages-link-indexer.js';
-import { PageSerializer } from '../services/page-serializer.js';
-import { PageVersionService } from '../services/page-version.js';
+import { FileSerializer } from '../services/file-serializer.js';
+import { FileVersionService } from '../services/file-version.js';
 import { RawEntityReader } from '../domain/raw-entity-reader.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
@@ -265,7 +265,7 @@ async function buildInner(
     for (const w of warnings) console.warn(`[config] ${w}`);
     if (errors.length > 0) throw new Error(errors[0]);
     // Briefs/patches are distinct catalogs — an identical dir double-captures every
-    // file into page_version under both markers. Warn (the PATCH route hard-400s).
+    // file into file_version under both markers. Warn (the PATCH route hard-400s).
     if (path.resolve(cwd, briefsDir) === path.resolve(cwd, patchesDir)) {
       console.warn(
         `[config] briefsDir === patchesDir ("${briefsDir}") — brief/patch files will be double-indexed`,
@@ -361,7 +361,7 @@ async function buildInner(
   const dbSlotDir = registry.slotDir(workspace, projectId);
 
   // 0.1.96: one runtime (PagesService + StaticHtmlService + PagesWatcher +
-  // PageSerializer) per configured page root. The built-in 'pages' root is
+  // FileSerializer) per configured page root. The built-in 'pages' root is
   // always present; user roots are additive. Every per-directory behaviour is
   // gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
   interface RootRuntime {
@@ -369,7 +369,7 @@ async function buildInner(
     pages: PagesService;
     staticHtml: StaticHtmlService;
     watcher: PagesWatcher;
-    serializer: PageSerializer;
+    serializer: FileSerializer;
   }
   const rootRuntimes: RootRuntime[] = [];
   for (const root of effectiveRoots) {
@@ -383,12 +383,12 @@ async function buildInner(
       pages: pagesSvc,
       staticHtml: staticSvc,
       watcher: rootWatcher,
-      serializer: new PageSerializer(pagesSvc),
+      serializer: new FileSerializer(pagesSvc),
     });
   }
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The built-in 'pages' runtime backs the many single-root consumers that still
-  // take one PagesService/PagesWatcher/PageSerializer (release restore, entity
+  // take one PagesService/PagesWatcher/FileSerializer (release restore, entity
   // reference-tools, current-page fetch, etc.).
   const pagesRuntime = rootById.get('pages')!;
   const pages = pagesRuntime.pages;
@@ -396,7 +396,7 @@ async function buildInner(
   const pageSerializer = pagesRuntime.serializer;
 
   // M21/M23: briefs & patches are NOT roots — they reuse the same primitive on
-  // dedicated instances and carry the fixed 'brief'/'patch' page_version markers.
+  // dedicated instances and carry the fixed 'brief'/'patch' file_version markers.
   const briefsPages = new PagesService(cwd, briefsDir, BRIEF_ROOT_MARKER);
   await briefsPages.ensureRoot();
   const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
@@ -513,10 +513,10 @@ async function buildInner(
   // within each root (self-scope); cross-root @-scope is applied client-side.
   const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws);
   // M21/M23 serializers for briefs/patches (own PagesService-bound instances).
-  const briefsSerializer = new PageSerializer(briefsPages);
-  const patchesSerializer = new PageSerializer(patchesPages);
+  const briefsSerializer = new FileSerializer(briefsPages);
+  const patchesSerializer = new FileSerializer(patchesPages);
   // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
-  const pageVersions = new PageVersionService(db.handle, pageSerializer);
+  const pageVersions = new FileVersionService(db.handle, pageSerializer);
   // M21/M23: in-memory frontmatter indexer over every page root + the brief/patch markers.
   const frontmatterRoots = new Map<string, PagesService>(allRootServices);
   frontmatterRoots.set(BRIEF_ROOT_MARKER, briefsPages);
@@ -787,7 +787,7 @@ async function buildInner(
 
   // 0.1.96: one fan-out per root. Indexers are invoked only when the root's
   // property gates them (sectionIndexed / sidebar-visible / referenceValidated);
-  // page_version + frontmatter always capture, with the root's id + serializer.
+  // file_version + frontmatter always capture, with the root's id + serializer.
   for (const rt of rootRuntimes) {
     const rootId = rt.root.id;
     rt.watcher.onChange((relPath, kind) => {
@@ -802,7 +802,7 @@ async function buildInner(
         pagesFrontmatterIndexer.handleUnlink(rootId, relPath);
         // M17: capture filesystem-origin delete (chokidar saw external rm)
         pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[page-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
         });
       } else {
         if (rt.root.sectionIndexed) sectionIndexer.schedulePage(rootId, relPath);
@@ -813,27 +813,27 @@ async function buildInner(
         // real new file (op=create) or a re-detection — pageVersions.hasAny distinguishes.
         const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, rootId) ? 'create' : 'update';
         pageVersions.recordVersion(relPath, op, 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[page-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
         });
       }
     });
   }
 
   // M21 m02multidir: drugi watcher dla briefsDir. Tylko frontmatter indexer
-  // + page_version (z dedykowanym briefsSerializer). Section/todos/pages-link
+  // + file_version (z dedykowanym briefsSerializer). Section/todos/pages-link
   // indexery NIE pracuja na briefsDir (briefs to nie pages w sensie M02 →
   // nie czesc nawigowalnego drzewa, nie agreguja section_ref/todo'ow do tabel).
   briefsWatcher.onChange((relPath, kind) => {
     if (kind === 'unlink') {
       pagesFrontmatterIndexer.handleUnlink(BRIEF_ROOT_MARKER, relPath);
       pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] brief delete capture for ${relPath}:`, (err as Error).message);
+        console.warn(`[file-version] brief delete capture for ${relPath}:`, (err as Error).message);
       });
     } else {
       pagesFrontmatterIndexer.schedulePage(BRIEF_ROOT_MARKER, relPath);
       const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, BRIEF_ROOT_MARKER) ? 'create' : 'update';
       pageVersions.recordVersion(relPath, op, 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] brief capture for ${relPath}:`, (err as Error).message);
+        console.warn(`[file-version] brief capture for ${relPath}:`, (err as Error).message);
       });
       // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
       // only fires `briefs:changed` on frontmatter changes, so body-only edits
@@ -847,13 +847,13 @@ async function buildInner(
     if (kind === 'unlink') {
       pagesFrontmatterIndexer.handleUnlink(PATCH_ROOT_MARKER, relPath);
       pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] patch delete capture for ${relPath}:`, (err as Error).message);
+        console.warn(`[file-version] patch delete capture for ${relPath}:`, (err as Error).message);
       });
     } else {
       pagesFrontmatterIndexer.schedulePage(PATCH_ROOT_MARKER, relPath);
       const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, PATCH_ROOT_MARKER) ? 'create' : 'update';
       pageVersions.recordVersion(relPath, op, 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] patch capture for ${relPath}:`, (err as Error).message);
+        console.warn(`[file-version] patch capture for ${relPath}:`, (err as Error).message);
       });
     }
   });
@@ -898,7 +898,7 @@ async function buildInner(
     console.error('[pages-link-indexer] initial indexAll failed:', err);
   });
 
-  // M17: initial sync of page_version. For each markdown file with no captured
+  // M17: initial sync of file_version. For each markdown file with no captured
   // version — or whose latest captured version is a `delete` tombstone while the
   // file is back on disk — write an `op = 'create'` baseline. The latter case
   // covers delete+recreate that happened while the server wasn't watching
@@ -914,12 +914,12 @@ async function buildInner(
           await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, rt.serializer, rt.root.id);
         }
       } catch (err) {
-        console.warn(`[page-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
+        console.warn(`[file-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
       }
     }
   })();
 
-  // M21: initial sync — page_version baseline dla briefów + frontmatter indexer.
+  // M21: initial sync — file_version baseline dla briefów + frontmatter indexer.
   (async () => {
     try {
       const files = await briefsPages.listMarkdownFiles();
@@ -928,9 +928,9 @@ async function buildInner(
         await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER);
       }
     } catch (err) {
-      console.warn('[page-version] briefs initial sync failed:', (err as Error).message);
+      console.warn('[file-version] briefs initial sync failed:', (err as Error).message);
     }
-    // M23: initial sync — page_version baseline dla patchy.
+    // M23: initial sync — file_version baseline dla patchy.
     try {
       const files = await patchesPages.listMarkdownFiles();
       for (const relPath of files) {
@@ -938,7 +938,7 @@ async function buildInner(
         await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER);
       }
     } catch (err) {
-      console.warn('[page-version] patches initial sync failed:', (err as Error).message);
+      console.warn('[file-version] patches initial sync failed:', (err as Error).message);
     }
     try {
       await pagesFrontmatterIndexer.indexAll();

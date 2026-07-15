@@ -73,7 +73,7 @@ export type WsEvent =
  * string — the built-in `'pages'` root, user-defined root slugs, plus the two
  * fixed markers below for briefs/patches (which are NOT roots but reuse the same
  * PagesService/PagesWatcher primitive and carry these literal rootId markers on
- * their `page_version` rows).
+ * their `file_version` rows).
  */
 export const BRIEF_ROOT_MARKER = 'brief';
 export const PATCH_ROOT_MARKER = 'patch';

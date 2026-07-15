@@ -32,8 +32,8 @@ import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
-import type { PageVersionService } from './page-version.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileVersionService } from './file-version.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
@@ -42,8 +42,8 @@ import { ConflictError } from './brief.js';
 export interface PatchServiceDeps {
   patchesPages: PagesService;
   patchesWatcher: PagesWatcher;
-  patchesSerializer: PageSerializer;
-  pageVersions: PageVersionService;
+  patchesSerializer: FileSerializer;
+  pageVersions: FileVersionService;
   chatService: ChatService;
   frontmatterIndexer: PagesFrontmatterIndexer;
 }

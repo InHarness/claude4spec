@@ -6,7 +6,7 @@ const ANCHOR_LINE_RE = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
 const CODE_FENCE_RE = /^\s*```/m;
 
 /**
- * Client-side mirror of `computeLineDiff` from server page-serializer.
+ * Client-side mirror of `computeLineDiff` from server file-serializer.
  * Used for ad-hoc inline diff between two arbitrary text snapshots
  * (e.g. entity versions in VersionHistory). Output shape matches
  * `LineDiffLite` so it can be passed to `LineDiffViewer`.
