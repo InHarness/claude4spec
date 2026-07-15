@@ -1,15 +1,17 @@
 /**
  * M21 / M02 (m02fmidx): in-memory index of YAML frontmatter for every markdown
- * file across ALL page roots (`config.roots[]`) plus the briefs/patches
- * directories. Fed by every root's `PagesWatcher` plus the dedicated
- * briefs/patches watchers. Provides synchronous lookups for:
+ * file across ALL page roots (`config.roots[]`) plus the M36 artifact mounts
+ * (briefs/patches). Fed by every root's `PagesWatcher` plus the dedicated
+ * artifact watchers. Provides synchronous lookups for:
  *   - hidden-tree filter (`pagesRouter` excludes pages with `frontmatter.type === 'brief'`)
  *   - `briefService.listBriefs()` (find by `frontmatter.type === 'brief'`)
  *   - any future module that wants to discover pages by frontmatter type
  *
  * 0.1.96: keyed by a dynamic `rootId` (built-in 'pages' root, user root slugs,
- * and the 'brief'/'patch' markers) instead of the fixed pages/briefs/patches
- * triple.
+ * and the artifact markers) instead of the fixed pages/briefs/patches triple.
+ * M36: the artifact-specific WS broadcast (briefs:changed/patches:changed) is
+ * driven by a caller-supplied rootId → event map (`artifactRegistry`-derived),
+ * not a hardcoded per-kind if/else — see `broadcastRootChange`.
  */
 
 import matter from 'gray-matter';
@@ -17,7 +19,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 
 export interface FrontmatterRecord {
   rootId: string;
@@ -37,21 +38,26 @@ export class PagesFrontmatterIndexer {
 
   /**
    * @param roots resolver from rootId → PagesService, covering every page root
-   *   plus the 'brief'/'patch' marker instances.
+   *   plus the artifact (brief/patch/...) marker instances.
+   * @param artifactEvents M36: rootId → WS event kind to broadcast on change,
+   *   built by the caller from `artifactRegistry` (`e.rootId -> e.changedEvent`).
+   *   A rootId absent from this map (e.g. an ordinary page root) broadcasts
+   *   nothing extra here — only the shared `pages:frontmatter-changed` event.
    */
   constructor(
     private roots: Map<string, PagesService>,
     private ws: WsEmitter,
+    private artifactEvents: Map<string, 'briefs:changed' | 'patches:changed'> = new Map(),
   ) {}
 
   private rootFor(rootId: string): PagesService | undefined {
     return this.roots.get(rootId);
   }
 
-  /** Broadcast the marker-specific change event (briefs:changed / patches:changed). */
+  /** Broadcast the artifact-specific change event (briefs:changed / patches:changed), if any. */
   private broadcastRootChange(rootId: string, relPath: string): void {
-    if (rootId === BRIEF_ROOT_MARKER) this.ws.broadcast({ kind: 'briefs:changed', path: relPath });
-    else if (rootId === PATCH_ROOT_MARKER) this.ws.broadcast({ kind: 'patches:changed', path: relPath });
+    const kind = this.artifactEvents.get(rootId);
+    if (kind) this.ws.broadcast({ kind, path: relPath });
   }
 
   private key(rootId: string, relPath: string): string {
