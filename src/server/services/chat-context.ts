@@ -140,12 +140,14 @@ export interface SystemPromptInput {
   /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
   conversationalLanguage?: string;
   /**
-   * 0.1.90: config-level agent FS path scope (the raw `allowedPaths`/`disallowedPaths`,
-   * NOT the resolved/absolute lists). Drives the soft `<agent_path_scope>` block, which
-   * is emitted only when at least one list is non-empty and only in chat/patch/ask frames
-   * (absent in brief). The block renders cwd + every root dir itself.
+   * 0.1.90: config-level agent FS path scope. `allowedPaths`/`disallowedPaths` are the raw
+   * config lists (NOT the resolved/absolute lists) and drive the block's ALLOWED/DISALLOWED
+   * lines. 0.1.130: `artifactDenyDirs` (absolute, from the resolver's implicit deny-set) is
+   * always non-empty, so the `<agent_path_scope>` block is now emitted in every chat/patch/ask
+   * frame (still absent in brief) — it carries the unconditional ALWAYS-DISALLOWED line for
+   * the C4S artifact dirs. The block renders cwd + every root dir itself for ALLOWED.
    */
-  agentPathScope?: { allowedPaths: string[]; disallowedPaths: string[] };
+  agentPathScope?: { allowedPaths: string[]; disallowedPaths: string[]; artifactDenyDirs: string[] };
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
@@ -651,11 +653,15 @@ function buildConversationalLanguage(lang: string): string {
  * The HARD boundary is enforced natively by the agent-adapters sandbox; this block is the
  * directional guide and the only layer for adapters without a sandbox. ALLOWED lists `cwd`,
  * every root dir (only when outside `cwd`), then the configured `allowedPaths`; DISALLOWED
- * lists the configured `disallowedPaths` (precedence). Empty lists are omitted from their line.
- * Caller gates on `allowedPaths.length || disallowedPaths.length` and on a non-brief frame.
+ * lists the configured `disallowedPaths` (precedence). Empty allowed/disallowed lists are
+ * omitted from their line.
+ * 0.1.130: `artifactDenyDirs` (always non-empty) adds an unconditional ALWAYS-DISALLOWED
+ * line for the C4S artifact dirs — hard-locked at the sandbox level, editable only via the
+ * MCP tools (plan-tools/brief-tools/entity-tools/release-tools). This makes the block always
+ * present; the caller now gates only on `agentPathScope` being set (still non-brief only).
  */
 function buildAgentPathScope(
-  scope: { allowedPaths: string[]; disallowedPaths: string[] },
+  scope: { allowedPaths: string[]; disallowedPaths: string[]; artifactDenyDirs: string[] },
   cwd: string,
   roots: Root[],
 ): string {
@@ -675,8 +681,13 @@ function buildAgentPathScope(
   if (scope.disallowedPaths.length) {
     lines.push(`  DISALLOWED (never read/write here, takes precedence): ${scope.disallowedPaths.join(', ')}`);
   }
+  // 0.1.130: unconditional hard-lock on the C4S artifact dirs. Absolute paths; edit ONLY
+  // via the dedicated MCP tools — the built-in FS tools are blocked at the sandbox level.
   lines.push(
-    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it.`,
+    `  ALWAYS DISALLOWED — C4S artifact dirs (edit ONLY via MCP tools, never with built-in Read/Write/Edit/Bash): ${scope.artifactDenyDirs.join(', ')}`,
+  );
+  lines.push(
+    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — use plan-tools / brief-tools / entity-tools / release-tools instead.`,
     `</agent_path_scope>`,
   );
   return lines.join('\n');
@@ -982,10 +993,11 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   }
 
   // 0.1.90 step 6c: soft agent path-scope directive, right after the language
-  // directives and before <current_patch>. Gated on at least one configured list
-  // (base-only ⇒ no block). This sits on the non-brief path (brief frame returned
-  // early above), so the block is present in chat/patch/ask and absent in brief.
-  if (agentPathScope && (agentPathScope.allowedPaths.length || agentPathScope.disallowedPaths.length)) {
+  // directives and before <current_patch>. 0.1.130: gated only on `agentPathScope` being
+  // present — the block is now always emitted (its `artifactDenyDirs` ALWAYS-DISALLOWED
+  // line is unconditional). This sits on the non-brief path (brief frame returned early
+  // above), so the block is present in chat/patch/ask and absent in brief.
+  if (agentPathScope) {
     parts.push(buildAgentPathScope(agentPathScope, cwd, roots));
   }
 

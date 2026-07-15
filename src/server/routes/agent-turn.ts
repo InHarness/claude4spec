@@ -514,21 +514,27 @@ export async function runAgentTurn(
     // turn of a new thread (the prompt is persisted once by setInitialSystemPrompt).
     const cfg = readConfig(deps.cwd);
     // 0.1.90 (M05): agent FS path scope, read per-turn (hot-reload, same as
-    // conversationalLanguage). Scoping only ACTIVATES when the user configured at
-    // least one path — empty config behaves exactly as before (no sandbox change).
-    // When active, the resolver folds in the implicit base (each root dir-if-outside-cwd)
-    // and normalizes everything to absolute, so the agent never loses root access.
+    // conversationalLanguage). The resolver folds in the implicit base (each root
+    // dir-if-outside-cwd) and normalizes everything to absolute, so the agent never
+    // loses root access.
+    // 0.1.130: scoping is now UNCONDITIONAL — the resolver always injects the implicit
+    // artifact deny-set (plans/briefs/patches/entities/releases), so every turn is scoped
+    // even when the user configured nothing. The library keeps `cwd` writable as its base
+    // (deny > allow > cwd), so an empty user allow-list means "cwd writable, artifact dirs
+    // denied" — the agent can still touch its own project, just never hand-edit artifacts.
     const agentAllowedPaths = cfg.agent?.allowedPaths ?? [];
     const agentDisallowedPaths = cfg.agent?.disallowedPaths ?? [];
-    const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
-    const resolvedPathScope = pathScopeRequested
-      ? resolveAgentPathScope({
-          cwd: deps.cwd,
-          roots: deps.roots,
-          allowedPaths: agentAllowedPaths,
-          disallowedPaths: agentDisallowedPaths,
-        })
-      : { allowedPaths: [], disallowedPaths: [] };
+    const resolvedPathScope = resolveAgentPathScope({
+      cwd: deps.cwd,
+      roots: deps.roots,
+      allowedPaths: agentAllowedPaths,
+      disallowedPaths: agentDisallowedPaths,
+      plansDir: cfg.plansDir,
+      briefsDir: cfg.briefsDir,
+      patchesDir: cfg.patchesDir,
+      entitiesDir: cfg.entitiesDir,
+      releasesDir: cfg.releasesDir,
+    });
     const systemPrompt = buildSystemPrompt({
       host: deps.pluginHost,
       projectName: cfg.name,
@@ -565,8 +571,14 @@ export async function runAgentTurn(
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
-      // presence (base-only ⇒ no block). The block renders cwd + every root dir itself.
-      agentPathScope: { allowedPaths: agentAllowedPaths, disallowedPaths: agentDisallowedPaths },
+      // ALLOWED/DISALLOWED lines (rendered from the raw config lists). 0.1.130: the block
+      // is now always emitted (non-brief) because `artifactDenyDirs` is always non-empty —
+      // it carries the absolute artifact deny-set for the unconditional ALWAYS-DISALLOWED line.
+      agentPathScope: {
+        allowedPaths: agentAllowedPaths,
+        disallowedPaths: agentDisallowedPaths,
+        artifactDenyDirs: resolvedPathScope.artifactDenyDirs,
+      },
       contextType: thread.contextType,
       brief: briefSnapshot,
       patch: patchSnapshot,
@@ -646,26 +658,27 @@ export async function runAgentTurn(
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).
     // Opt-in per architecture capability; one-shot path unchanged for the rest.
     const streamingInput = architectureCapabilities('claude-code').midTurnPush;
-    // 0.1.103: when a scope is configured, request HARD (OS-syscall) enforcement so
-    // agent-adapters' probePathScope() can return strength:'hard' on hosts with
-    // bubblewrap/seatbelt — previously only the soft (prompt + SDK deny-list) layer
-    // was ever requested. Built as a copy, not a mutation of input.architectureConfig:
-    // that object is also read above for the session-lock snapshot and passed into
-    // TransagentDispatcher for child turns, each of which recomputes its own scope
-    // independently via its own runAgentTurn recursion.
-    const architectureConfigForExecute = pathScopeRequested
-      ? {
-          ...input.architectureConfig,
-          claude_sandbox: {
-            enabled: true,
-            filesystem: {
-              denyRead: resolvedPathScope.disallowedPaths,
-              denyWrite: resolvedPathScope.disallowedPaths,
-              allowWrite: resolvedPathScope.allowedPaths,
-            },
-          },
-        }
-      : input.architectureConfig;
+    // 0.1.103: request HARD (OS-syscall) enforcement so agent-adapters' probePathScope()
+    // can return strength:'hard' on hosts with bubblewrap/seatbelt — previously only the
+    // soft (prompt + SDK deny-list) layer was ever requested. Built as a copy, not a
+    // mutation of input.architectureConfig: that object is also read above for the
+    // session-lock snapshot and passed into TransagentDispatcher for child turns, each of
+    // which recomputes its own scope independently via its own runAgentTurn recursion.
+    // 0.1.130: unconditional — the artifact deny-set is always present in
+    // resolvedPathScope.disallowedPaths, so the sandbox is built every turn. `allowWrite`
+    // may be empty (no user allow-list, roots inside cwd); the library keeps `cwd`
+    // writable as its base, so empty allowWrite means "cwd writable, artifact dirs denied".
+    const architectureConfigForExecute = {
+      ...input.architectureConfig,
+      claude_sandbox: {
+        enabled: true,
+        filesystem: {
+          denyRead: resolvedPathScope.disallowedPaths,
+          denyWrite: resolvedPathScope.disallowedPaths,
+          allowWrite: resolvedPathScope.allowedPaths,
+        },
+      },
+    };
     const baseExecuteArgs = {
       systemPrompt,
       model: input.model,
@@ -681,13 +694,11 @@ export async function runAgentTurn(
       ...(input.timeoutMs ? { timeoutMs: input.timeoutMs } : {}),
       ...(streamingInput ? { streamingInput: true } : {}),
       // 0.1.90 hard layer: resolved, absolute scope handed to the native sandbox
-      // every turn (hot-reload). Empty when scoping isn't requested ⇒ library no-op.
-      ...(pathScopeRequested
-        ? {
-            allowedPaths: resolvedPathScope.allowedPaths,
-            disallowedPaths: resolvedPathScope.disallowedPaths,
-          }
-        : {}),
+      // every turn (hot-reload). 0.1.130: always present — disallowedPaths always carries
+      // the implicit artifact deny-set, so the library's path-scope enforcement always
+      // engages (its own gate is `allowed.length || disallowed.length`).
+      allowedPaths: resolvedPathScope.allowedPaths,
+      disallowedPaths: resolvedPathScope.disallowedPaths,
     };
     // Resume anchor threaded across turns of THIS request (merged dispatch resumes
     // the just-finished session). `setLastSessionId` only writes the DB, so we

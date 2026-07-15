@@ -5,7 +5,7 @@ import {
   useSetAgentCredential,
   useRemoveAgentCredential,
 } from '../../../hooks/useAgentCredentials.js';
-import { ApiError } from '../../../lib/api.js';
+import { ApiError, type ConfigResponse } from '../../../lib/api.js';
 import { confirmDestructive, toast } from '../../../ui/events.js';
 import { SettingsCard } from '../SettingsCard.js';
 import { SUPPORTED_LANGUAGES } from '../../../../shared/languages.js';
@@ -178,6 +178,39 @@ export function AgentSection() {
  * (exclusion wins). Saved via PATCH /api/config — deep-merged server-side, so each
  * field is sent alone and the other agent flags are preserved. Hot-reload per turn.
  */
+/**
+ * 0.1.130: read-only, informational list of the C4S artifact dirs that are ALWAYS excluded
+ * from the agent's built-in FS channel (hard-locked at the sandbox level, editable only via
+ * the agent's MCP tools). Values come straight from `GET /api/config`; this is NOT part of
+ * `agent.disallowedPaths` and is never written back — it cannot be disabled.
+ */
+function ArtifactDenyList({ config }: { config: ConfigResponse | undefined }) {
+  const dirs = config
+    ? [config.plansDir, config.briefsDir, config.patchesDir, config.entitiesDir, config.releasesDir]
+    : [];
+  return (
+    <div
+      className="flex flex-col gap-1.5 rounded-md px-3 py-2"
+      style={{ background: 'var(--c-bg)', border: '1px dashed var(--c-hair)', opacity: 0.85 }}
+    >
+      <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
+        Always excluded — C4S artifact dirs
+      </span>
+      <ul className="flex flex-col gap-0.5">
+        {dirs.map((d, i) => (
+          <li key={i} className="text-[12.5px] font-mono" style={{ color: 'var(--c-subtle)' }}>
+            {d}
+          </li>
+        ))}
+      </ul>
+      <span className="text-[11px]" style={{ color: 'var(--c-subtle)' }}>
+        Artifact editing is only possible via the agent&apos;s MCP tools (plan-tools, brief-tools,
+        entity-tools, release-tools). This cannot be disabled.
+      </span>
+    </div>
+  );
+}
+
 function PathScopeFields() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
@@ -251,6 +284,8 @@ function PathScopeFields() {
           </button>
         </div>
       </label>
+
+      <ArtifactDenyList config={config} />
 
       <label className="flex flex-col gap-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: 'var(--c-subtle)' }}>
