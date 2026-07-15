@@ -14,7 +14,7 @@ import type {
   SpecSnapshotEntityRow,
   SpecSnapshotPageRow,
 } from '../../../shared/entities.js';
-import { parseSections } from '../../services/page-serializer.js';
+import { parseSections } from '../../services/file-serializer.js';
 import type {
   EntitySnapshot,
   EntityTypeFilter,
@@ -152,7 +152,7 @@ function projectPages(
       });
     }
     // Pure moves only — M02 invariant: anchor jest w `moved_sections` XOR
-    // w `modified_sections` (patrz `page-serializer.ts` w `PageSerializer.diff`),
+    // w `modified_sections` (patrz `file-serializer.ts` w `FileSerializer.diff`),
     // ale filtrujemy defensywnie. Heading wyciągamy parsując `toPage.content`,
     // bo `MovedSectionLite` nie niesie heading'u.
     if (p.moved_sections.length > 0) {

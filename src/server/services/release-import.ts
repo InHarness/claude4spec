@@ -215,7 +215,7 @@ export class ReleaseImportService {
         `SELECT
            (SELECT COUNT(*) FROM spec_release)  AS releases,
            (SELECT COUNT(*) FROM entity_version) AS entities,
-           (SELECT COUNT(*) FROM page_version)   AS pages`,
+           (SELECT COUNT(*) FROM file_version)   AS pages`,
       )
       .get() as { releases: number; entities: number; pages: number };
     if (c.releases > 0 || c.entities > 0 || c.pages > 0) {

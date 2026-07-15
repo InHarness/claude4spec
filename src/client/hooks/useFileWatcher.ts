@@ -38,7 +38,7 @@ export function useFileWatcher() {
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data) as WsEvent;
-          if (data.kind === 'page:changed') {
+          if (data.kind === 'file:changed') {
             // 0.1.96 multiroot: page trees + documents are keyed by rootId.
             batcher.queue(['pages', data.rootId]);
             if (data.origin === 'external') {
@@ -68,9 +68,8 @@ export function useFileWatcher() {
           } else if (data.kind === 'pageLinks:changed') {
             batcher.queue(['pageLinks']);
           } else if (data.kind === 'plan:updated') {
-            batcher.queue(['plan', 'detail', data.planId]);
-            batcher.queue(['plan', 'versions', data.planId]);
-            batcher.queue(['plan', 'blame', data.planId]);
+            batcher.queue(['plan', 'detail', data.planPath]);
+            batcher.queue(['plan', 'versions', data.planPath]);
             batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
@@ -100,6 +99,18 @@ export function useFileWatcher() {
                 // Our own save (origin 'server' / undefined) — silently reconcile.
                 batcher.queue(['briefs', 'detail', data.path]);
               }
+            }
+          } else if (data.kind === 'plans:changed') {
+            // v0.1.129 fix: previously unhandled — parsed then silently
+            // dropped, so a plan title/frontmatter change or an external edit
+            // (via project-context.ts's watcher fan-out) never invalidated
+            // the plans list or that plan's detail/versions queries in any
+            // OTHER open tab. Mirrors `briefs:changed`, minus the
+            // reload-or-confirm dialog flow (plans don't have one).
+            batcher.queue(['plans-list']);
+            if (data.path) {
+              batcher.queue(['plan', 'detail', data.path]);
+              batcher.queue(['plan', 'versions', data.path]);
             }
           } else if (data.kind === 'project:disposed') {
             // M31: this project's ProjectContext was invalidated (config

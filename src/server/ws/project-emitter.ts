@@ -4,7 +4,7 @@ import type { WsGateway } from './gateway.js';
 /**
  * M31: the broadcast surface consumed by services/indexers/routes. Pre-M31
  * they held the process-wide WsGateway; now they hold a per-project emitter,
- * so `page:changed`, `entity:indexed`, `plan:updated`, … reach only the
+ * so `file:changed`, `entity:indexed`, `plan:updated`, … reach only the
  * source project's room. Signature-compatible: `broadcast(event)`.
  */
 export interface WsEmitter {

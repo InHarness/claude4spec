@@ -7,9 +7,9 @@ import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from './releases.js';
 import { errorHandler } from './errors.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
-import type { PageSerializer } from '../services/page-serializer.js';
+import type { FileSerializer } from '../services/file-serializer.js';
 import type { VersionService } from '../services/versions.js';
-import type { PageVersionService } from '../services/page-version.js';
+import type { FileVersionService } from '../services/file-version.js';
 import type { RawEntityReader } from '../domain/raw-entity-reader.js';
 import type { TagsService } from '../services/tags.js';
 import type { PagesService } from '../services/pages.js';
@@ -19,9 +19,9 @@ import type { PagesService } from '../services/pages.js';
 // (release.ts's diffing algorithm itself is covered by
 // release-unreleased-diff.test.ts), so bare fakes suffice.
 const fakeHost = { getEntity: () => null } as unknown as PluginHost;
-const fakePageSerializer = { version: 'v1' } as unknown as PageSerializer;
+const fakeFileSerializer = { version: 'v1' } as unknown as FileSerializer;
 const fakeVersions = {} as unknown as VersionService;
-const fakePageVersions = { assignToRelease: () => {} } as unknown as PageVersionService;
+const fakeFileVersions = { assignToRelease: () => {} } as unknown as FileVersionService;
 const fakeRawReader = {} as unknown as RawEntityReader;
 const fakeTagsService = {} as unknown as TagsService;
 const fakePagesService = {} as unknown as PagesService;
@@ -37,8 +37,8 @@ describe('GET /api/releases/:from/diff/:to — "current" sentinel (0.1.122)', ()
       db,
       fakeHost,
       fakeVersions,
-      fakePageVersions,
-      fakePageSerializer,
+      fakeFileVersions,
+      fakeFileSerializer,
       fakeRawReader,
       fakeTagsService,
       fakePagesService,

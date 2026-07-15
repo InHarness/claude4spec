@@ -32,13 +32,13 @@ import { readConfig } from '../config.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
-import type { PatchService } from '../services/patch.js';
+import type { PatchService, PatchDetail } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
-import type { PageVersionService } from '../services/page-version.js';
+import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
-import type { Annotation, Brief, ChatMessage, ChatThread, PatchResponse } from '../../shared/entities.js';
+import type { Annotation, Brief, ChatMessage, ChatThread, Plan } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
@@ -71,7 +71,7 @@ export interface AgentTurnDeps {
   patchService: PatchService;
   /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
   releaseService: ReleaseService;
-  pageVersions: PageVersionService;
+  pageVersions: FileVersionService;
   skillResolver: SkillResolver;
   skillRegistry: SkillRegistry;
   ws: WsEmitter;
@@ -438,7 +438,7 @@ export async function runAgentTurn(
     // M23: patch threads keep the FULL spec-editing toolset — their job is to edit the
     // spec; only the system prompt differs (the patch snapshot is injected). `patch_path`
     // is set iff context_type='patch' (chat.ts invariant), so its presence IS the gate.
-    let patchSnapshot: PatchResponse | null = null;
+    let patchSnapshot: PatchDetail | null = null;
     if (thread.patchPath) {
       try {
         patchSnapshot = await deps.patchService.getPatch(thread.patchPath);
@@ -462,11 +462,24 @@ export async function runAgentTurn(
       }
     }
 
-    // Stale-plan reminder MUSI byc sprawdzony PRZED markPlanSeenByThread —
-    // ten ostatni bumpuje last_seen_plan_version i zapodaje sygnal "synced".
-    const isFirstTurn = !thread.hasSystemPrompt;
-    const stalePlanReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
-    const currentPlan = isBriefFrame ? null : deps.planService.getByThread(thread.id);
+    // 0.1.127: stale-plan reminder pipeline removed along with `plan_id`/
+    // `last_seen_plan_version` — plans no longer track a "last seen version"
+    // per thread (see brief 0-1-126-to-0-1-127). `currentPlan` (shown in the
+    // system prompt) is unrelated and stays.
+    //
+    // `plan`'s registry entry declares `danglingPolicy: 'graceful-degrade'` —
+    // a thread can point at a plan_path whose file was deleted out-of-band, and
+    // that must not fail the whole turn, so this mirrors the try/catch already
+    // used above for patchSnapshot/currentPageBody instead of letting
+    // getByThread's NOT_FOUND propagate uncaught.
+    let currentPlan: Plan | null = null;
+    if (!isBriefFrame) {
+      try {
+        currentPlan = await deps.planService.getByThread(thread.id);
+      } catch (err) {
+        console.warn(`[chat] plan read failed for thread ${thread.id}:`, (err as Error).message);
+      }
+    }
 
     // Skill resolution: writing-style (config.writingStyle, M15) ladowany
     // niezaleznie od kontekstu. Dla brief context dokladamy bundled `brief-author`.
@@ -574,16 +587,13 @@ export async function runAgentTurn(
       architectureConfig: snapshotArchitectureConfig,
     });
 
-    if (isFirstTurn && currentPlan) {
-      deps.planService.markPlanSeenByThread(thread.id);
-    }
-
     // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
     // `mcp` descriptor — each server mounts iff its registry flag is set.
     const planTools = ctx.mcp.planTools
       ? buildPlanToolsServer({
           threadId: thread.id,
           planService: deps.planService,
+          pageVersions: deps.pageVersions,
         })
       : null;
     const briefTools = ctx.mcp.briefTools && thread.briefPath
@@ -835,8 +845,7 @@ export async function runAgentTurn(
       }
     };
 
-    const effectivePrompt = stalePlanReminder ? `${stalePlanReminder}\n\n${prompt}` : prompt;
-    await consume(effectivePrompt);
+    await consume(prompt);
 
     // After-turn merged dispatch: whatever piled up in the queue while the turn
     // ran (push declined, or a non-streaming architecture) is delivered now as a
@@ -867,9 +876,7 @@ export async function runAgentTurn(
       replay.turnStart = mergedTurnStart;
       replay.events = [];
       emit(mergedTurnStart);
-      // Stale-plan reminder is applied at DISPATCH (here), not at enqueue.
-      const mergedReminder = isBriefFrame ? null : deps.planService.getStalePlanReminder(thread.id);
-      await consume(mergedReminder ? `${mergedReminder}\n\n${merged}` : merged);
+      await consume(merged);
       batch = deps.chatService.popAllQueued(thread.id);
     }
 

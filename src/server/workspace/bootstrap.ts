@@ -86,6 +86,7 @@ export function bootstrapProject(
   ensureGitignore(cwd, {
     briefsDir: config.briefsDir,
     patchesDir: config.patchesDir,
+    plansDir: config.plansDir,
     releasesDir: config.releasesDir,
     gitEnabled: config.git?.enabled ?? false,
   });

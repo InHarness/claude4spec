@@ -117,7 +117,7 @@ export interface BuildBundleResult {
 /**
  * One page to lay out in the bundle, carrying its `rootId` (the snapshot's
  * `SpecSnapshotPageRow` does not — the caller resolves `rootId` straight from
- * `page_version`). Delete tombstones are skipped by the writer.
+ * `file_version`). Delete tombstones are skipped by the writer.
  */
 export interface BundlePageInput {
   rootId: string;

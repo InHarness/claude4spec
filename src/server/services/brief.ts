@@ -5,7 +5,7 @@
  * itself is the source of truth (consumed both by humans in UI and by coding
  * agents in terminal). DB participation is limited to:
  *   - `chat_thread.brief_path` (M05) for editorial threads
- *   - `page_version` (M17 Phase 4) — automatic via shared PageVersionService
+ *   - `file_version` (M17 Phase 4) — automatic via shared FileVersionService
  *
  * Design notes:
  *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
@@ -14,7 +14,6 @@
  *     generated_at/generator_version. Mutation attempt → DomainError.
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -22,17 +21,17 @@ import type {
   Brief,
   BriefChangedBy,
   BriefFrontmatter,
-  BriefListItem,
   BriefSource,
   BriefThreadSummary,
 } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
+import { hashContent } from './artifact-content.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { PageVersionService } from './page-version.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileVersionService } from './file-version.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { ReleaseService } from './release.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
@@ -43,8 +42,8 @@ const GENERATOR_VERSION = 'brief-author@0.1';
 export interface BriefServiceDeps {
   briefsPages: PagesService;
   briefsWatcher: PagesWatcher;
-  briefsSerializer: PageSerializer;
-  pageVersions: PageVersionService;
+  briefsSerializer: FileSerializer;
+  pageVersions: FileVersionService;
   chatService: ChatService;
   releaseService: ReleaseService;
   frontmatterIndexer: PagesFrontmatterIndexer;
@@ -98,6 +97,46 @@ export interface BriefUpdateFrontmatterOpts {
 
 export interface BriefListOpts {
   implemented?: boolean;
+  /**
+   * v0.1.129 fix: `threadCount` costs one extra `chatService` query per row —
+   * the generic `/api/artifacts/brief` REST route (routes/artifacts.ts's
+   * `buildBriefAdapter.list()`) never reads it off `BriefListItem` (the wire
+   * `ArtifactListItem` doesn't carry the field at all), so that query used to
+   * run on every list call regardless. Default `false` skips it; pass `true`
+   * for a caller that actually needs the count (e.g. a direct-service test).
+   */
+  includeThreadInfo?: boolean;
+}
+
+/**
+ * Internal list-item shape for `BriefService.listBriefs()`. Was previously the
+ * shared `BriefListItem` DTO; M36 replaced the wire-level list shape with the
+ * generic `ArtifactListItem` (no top-level title/source/threadCount — those
+ * live in `frontmatter` or are dropped), so this stays a service-internal type
+ * that `routes/artifacts.ts`'s brief adapter maps to `ArtifactListItem` at the
+ * REST boundary.
+ */
+export interface BriefListItem {
+  path: string;
+  title: string | null;
+  /** 0.1.69: brief provenance ('release-diff' | 'analysis'). */
+  source: string;
+  /** `null` = initial brief. */
+  fromRelease: string | null;
+  /** `null` = analysis brief (no target release; state relative to HEAD). */
+  toRelease: string | null;
+  implemented: boolean;
+  generatedAt: string;
+  lastModifiedAt: string | null;
+  /** 0.1.69 B4: count of top-level (non-banka) brief threads for this brief. */
+  threadCount: number;
+  /** Raw parsed frontmatter — lets routes/artifacts.ts build `ArtifactListItem`
+   *  without a second frontmatter-indexer lookup for the same record. */
+  frontmatter: BriefFrontmatter;
+  /** sha256 of the latest captured version's content — reuses the version
+   *  lookup this method already does for `lastModifiedAt`, instead of the
+   *  router re-querying `file_version` and re-hashing per row. */
+  hash: string;
 }
 
 export class BriefService {
@@ -150,7 +189,9 @@ export class BriefService {
         implemented,
         generatedAt: String(fm.generated_at ?? ''),
         lastModifiedAt: lastVersion?.createdAt ?? null,
-        threadCount: this.deps.chatService.threadCountForBrief(rec.path),
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForBrief(rec.path) : 0,
+        frontmatter: fm,
+        hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
     return out;
@@ -168,7 +209,7 @@ export class BriefService {
   // ─── Mutations ──────────────────────────────────────────────────────────
 
   /**
-   * 0.1.69: file-only brief creation (writes file + page_version + index, NO
+   * 0.1.69: file-only brief creation (writes file + file_version + index, NO
    * thread). Callers pair this with {@link createThreadForBrief}. `content`
    * carries a pre-synthesized body for analysis briefs; else a generated stub.
    *
@@ -271,7 +312,7 @@ export class BriefService {
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
     const current = await this.getBrief(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
-      throw new ConflictError('BRIEF_CONFLICT', 'brief changed since last read', current.hash);
+      throw new ConflictError('BRIEF_CONFLICT', 'brief changed since last read', current.hash, current.content);
     }
     // Validate immutable frontmatter has not been altered in incoming content.
     const incoming = matter(opts.content);
@@ -290,7 +331,7 @@ export class BriefService {
     }
     if (violated.length > 0) {
       throw new DomainError(
-        'BRIEF_FRONTMATTER_IMMUTABLE',
+        'IMMUTABLE_FIELD',
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }
@@ -391,11 +432,13 @@ export class BriefService {
 export class ConflictError extends Error {
   readonly code: string;
   readonly currentHash: string;
-  constructor(code: string, message: string, currentHash: string) {
+  readonly currentContent?: string;
+  constructor(code: string, message: string, currentHash: string, currentContent?: string) {
     super(message);
     this.name = 'ConflictError';
     this.code = code;
     this.currentHash = currentHash;
+    this.currentContent = currentContent;
   }
 }
 
@@ -407,8 +450,4 @@ function slugify(input: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'brief';
-}
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }

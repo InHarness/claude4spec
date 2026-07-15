@@ -15,7 +15,7 @@ interface Props {
  *
  * Resolution is page-first: a page-section hit wins outright. Only when the page
  * lookup resolves to a genuine miss (404 → `null`, not a still-loading `undefined`)
- * do we fall back to a plan-anchor lookup, so a plan citation opens `/plans/$planId`
+ * do we fall back to a plan-anchor lookup, so a plan citation opens `/plans/$planPath`
  * and scrolls to the heading. The broken chip renders only when both lookups miss.
  */
 export function SectionRefChipWithData({ anchor }: Props) {
@@ -52,8 +52,8 @@ export function SectionRefChipWithData({ anchor }: Props) {
     }
     if (plan) {
       void navigate({
-        to: '/plans/$planId',
-        params: { planId: String(plan.planId) },
+        to: '/plans/$planPath',
+        params: { planPath: plan.planPath },
         hash: `anchor-${anchor}`,
       } as never);
     }

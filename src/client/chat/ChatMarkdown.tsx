@@ -8,9 +8,9 @@ import { XmlChipDispatcher } from './XmlChipDispatcher.js';
 import { ChatCodeBlock } from './ChatCodeBlock.js';
 
 /**
- * Shared <Markdown> factory used by chat assistant text, system prompt
- * preview, plan blame view, and annotation popups. Single source of truth for
- * XML chip rendering (5 M19 core types + section_ref extension).
+ * Shared <Markdown> factory used by chat assistant text (BlockRenderer.tsx)
+ * and the subagent summary panel (SubagentPanel.tsx). Single source of truth
+ * for XML chip rendering (5 M19 core types + section_ref extension).
  *
  * Pipeline: preprocessXmlChips replaces XML tags with placeholder markdown
  * links before parsing; the `a` component override intercepts those hrefs and

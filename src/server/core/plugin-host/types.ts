@@ -36,6 +36,16 @@ import type { VersionService } from '../../services/versions.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { EntityStore } from '../../services/entity-store.js';
+import type { ExtensionReferenceType } from '../../../shared/reference-extensions.js';
+
+/**
+ * v0.1.129 (M19 Slot B) — an entity module's own self-closing XML reference
+ * tag (e.g. `<diagram/>`), everything `ExtensionReferenceType` needs EXCEPT
+ * `entityType`: `registerEntityModule` injects `entityType = module.type`
+ * itself when forwarding to the M19 registry, so a module can't declare a
+ * mismatched one.
+ */
+export type EntityReferenceType = Omit<ExtensionReferenceType, 'entityType'>;
 
 export type SqlMigration = {
   /** Per-plugin sequential version. Starts at 1 (post-baseline). */
@@ -144,6 +154,17 @@ export interface BackendModule extends EntityModuleManifest {
     };
     /** Custom `${type}-tools` server factory for this type's non-CRUD tools. */
     mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
+  };
+
+  /**
+   * v0.1.129 (M19 Slot B) — declarative frontend contributions. Currently just
+   * `referenceType`, forwarded by `registerEntityModule` to
+   * `M19.registerExtensionReferenceType` with `entityType` auto-injected.
+   * Additive/optional — folds into the `1.0.0` host API baseline, same as the
+   * `backend.{service,crud,routes,mcpServer}` declarative slots above.
+   */
+  frontend?: {
+    referenceType?: EntityReferenceType;
   };
 }
 

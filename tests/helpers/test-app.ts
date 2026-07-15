@@ -7,7 +7,10 @@ import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.j
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
+import { artifactsRouter } from '../../src/server/routes/artifacts.js';
 import { PlanService } from '../../src/server/services/plan.js';
+import { BriefService } from '../../src/server/services/brief.js';
+import { PatchService } from '../../src/server/services/patch.js';
 import { ChatService } from '../../src/server/services/chat.js';
 import { TagsService } from '../../src/server/services/tags.js';
 import { VersionService } from '../../src/server/services/versions.js';
@@ -15,10 +18,15 @@ import { ReferencesService } from '../../src/server/services/references.js';
 import { RawEntityReader } from '../../src/server/domain/raw-entity-reader.js';
 import { PagesService } from '../../src/server/services/pages.js';
 import { PagesWatcher } from '../../src/server/fs/watcher.js';
+import { FileSerializer } from '../../src/server/services/file-serializer.js';
+import { FileVersionService } from '../../src/server/services/file-version.js';
+import { PagesFrontmatterIndexer } from '../../src/server/services/pages-frontmatter-indexer.js';
+import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../src/shared/types.js';
 import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
+import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
 import type Database from 'better-sqlite3';
 
@@ -31,6 +39,11 @@ export interface TestApp {
   referencesService: ReferencesService;
   entityStore: EntityStore;
   cwd: string;
+  /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
+  plansPages: PagesService;
+  plansSerializer: FileSerializer;
+  pageVersions: FileVersionService;
+  frontmatterIndexer: PagesFrontmatterIndexer;
   cleanup: () => void;
 }
 
@@ -91,8 +104,61 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     registerEntityService: (type, service) => host.registerEntityService(type, service),
   });
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader));
-  const planService = new PlanService(db, ws, new ChatService(db));
+
+  // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
+  // exercise the generic /api/artifacts/:kind/* family alongside each kind's
+  // bespoke routes (e.g. plansRouter's create-thread/execute).
+  const chatService = new ChatService(db);
+  const briefsPages = new PagesService(cwd, 'briefs', BRIEF_ROOT_MARKER);
+  await briefsPages.ensureRoot();
+  const patchesPages = new PagesService(cwd, 'patches', PATCH_ROOT_MARKER);
+  await patchesPages.ensureRoot();
+  const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
+  await plansPages.ensureRoot();
+  const briefsWatcher = new PagesWatcher(briefsPages.root, ws, BRIEF_ROOT_MARKER);
+  const patchesWatcher = new PagesWatcher(patchesPages.root, ws, PATCH_ROOT_MARKER);
+  const plansWatcher = new PagesWatcher(plansPages.root, ws, PLAN_ROOT_MARKER);
+  const briefsSerializer = new FileSerializer(briefsPages);
+  const patchesSerializer = new FileSerializer(patchesPages);
+  const plansSerializer = new FileSerializer(plansPages);
+  const pageVersions = new FileVersionService(db, briefsSerializer);
+  const frontmatterIndexer = new PagesFrontmatterIndexer(
+    new Map([
+      [BRIEF_ROOT_MARKER, briefsPages],
+      [PATCH_ROOT_MARKER, patchesPages],
+      [PLAN_ROOT_MARKER, plansPages],
+    ]),
+    ws,
+  );
+  const briefService = new BriefService({
+    briefsPages,
+    briefsWatcher,
+    briefsSerializer,
+    pageVersions,
+    chatService,
+    releaseService: {} as unknown as ReleaseService,
+    frontmatterIndexer,
+    ws,
+  });
+  const patchService = new PatchService({
+    patchesPages,
+    patchesWatcher,
+    patchesSerializer,
+    pageVersions,
+    chatService,
+    frontmatterIndexer,
+  });
+  const planService = new PlanService({
+    plansPages,
+    plansWatcher,
+    plansSerializer,
+    pageVersions,
+    chatService,
+    frontmatterIndexer,
+    ws,
+  });
   router.use('/plans', plansRouter(planService));
+  router.use('/artifacts', artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions }));
   router.use(errorHandler);
 
   const app = express();
@@ -108,6 +174,10 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     referencesService,
     entityStore,
     cwd,
+    plansPages,
+    plansSerializer,
+    pageVersions,
+    frontmatterIndexer,
     cleanup: () => {
       db.close();
       fs.rmSync(cwd, { recursive: true, force: true });

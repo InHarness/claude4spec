@@ -39,6 +39,9 @@ export function useUpdatePatchStatus(patchPath: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (status: PatchStatus) => patchesApi.updateFrontmatter(patchPath, { status }),
+    // ^ patchesApi.updateFrontmatter now takes a raw frontmatter bag
+    //   (Record<string, unknown>) matching ArtifactFrontmatterUpdateRequest —
+    //   `{ status }` still satisfies that shape structurally, no change needed.
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(patchPath) });
       qc.invalidateQueries({ queryKey: ['patches', 'list'] });

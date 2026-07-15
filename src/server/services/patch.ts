@@ -16,7 +16,6 @@
  *     absent — by filename prefix. Unresolvable ⇒ orphan (`briefPath: null`).
  */
 
-import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -24,16 +23,15 @@ import type {
   BriefThreadSummary,
   PatchFrontmatter,
   PatchKind,
-  PatchListItem,
-  PatchResponse,
   PatchStatus,
 } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
-import type { PageVersionService } from './page-version.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileVersionService } from './file-version.js';
+import { hashContent, toIso } from './artifact-content.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
 import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
@@ -42,8 +40,8 @@ import { ConflictError } from './brief.js';
 export interface PatchServiceDeps {
   patchesPages: PagesService;
   patchesWatcher: PagesWatcher;
-  patchesSerializer: PageSerializer;
-  pageVersions: PageVersionService;
+  patchesSerializer: FileSerializer;
+  pageVersions: FileVersionService;
   chatService: ChatService;
   frontmatterIndexer: PagesFrontmatterIndexer;
 }
@@ -52,6 +50,14 @@ export interface PatchListOpts {
   /** Filter to a single brief (its briefsDir-relative path). */
   brief?: string;
   status?: PatchStatus;
+  /**
+   * v0.1.129 fix: `threadCount` costs one extra `chatService` query per row —
+   * the generic `/api/artifacts/patch` REST route never reads it off
+   * `PatchListItem` (the wire `ArtifactListItem` doesn't carry the field at
+   * all), so that query used to run on every list call regardless. Default
+   * `false` skips it; pass `true` for a caller that actually needs the count.
+   */
+  includeThreadInfo?: boolean;
 }
 
 export interface PatchUpdateContentOpts {
@@ -63,6 +69,52 @@ export interface PatchUpdateContentOpts {
 export interface PatchUpdateFrontmatterOpts {
   path: string;
   status: PatchStatus;
+}
+
+/**
+ * Internal detail shape for `getPatch()`/`updateContent()`/`updateFrontmatter()`.
+ * Was previously the shared `PatchResponse` DTO; M36 replaced the wire-level
+ * detail shape with the generic `ArtifactResponse` (no top-level `title` — the
+ * client derives it from the body's first heading), so this stays a
+ * service-internal type that `routes/artifacts.ts`'s patch adapter maps to
+ * `ArtifactResponse` at the REST boundary.
+ */
+export interface PatchDetail {
+  /** Path relative to patchesDir. */
+  path: string;
+  title: string;
+  frontmatter: PatchFrontmatter;
+  body: string;
+  /** Full file content (frontmatter + body, byte-faithful). */
+  content: string;
+  /** sha256 hex of `content` — used for optimistic concurrency. */
+  hash: string;
+}
+
+/**
+ * Internal list-item shape for `listPatches()`. Was previously the shared
+ * `PatchListItem` DTO — see `PatchDetail`'s doc comment for why this moved.
+ */
+export interface PatchListItem {
+  path: string;
+  title: string;
+  /** `null` = orphan (no resolvable brief). */
+  briefPath: string | null;
+  patchKind: PatchKind;
+  status: PatchStatus;
+  createdAt: string;
+  createdBy: string;
+  /** `created_at` of the latest file_version row with kind='patch'. */
+  lastModified: string;
+  /** Count of chat threads with context_type='patch' pointing at this patch. */
+  threadCount: number;
+  /** Raw parsed frontmatter — lets routes/artifacts.ts build `ArtifactListItem`
+   *  without a second frontmatter-indexer lookup for the same record. */
+  frontmatter: PatchFrontmatter;
+  /** sha256 of the latest captured version's content — reuses the version
+   *  lookup this method already does for `lastModified`, instead of the
+   *  router re-querying `file_version` and re-hashing per row. */
+  hash: string;
 }
 
 const VALID_PATCH_KINDS: ReadonlySet<string> = new Set([
@@ -77,7 +129,7 @@ export class PatchService {
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
-  async getPatch(relPath: string): Promise<PatchResponse> {
+  async getPatch(relPath: string): Promise<PatchDetail> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
       throw new DomainError('NOT_FOUND', `patch '${relPath}' not found`);
     }
@@ -124,7 +176,9 @@ export class PatchService {
         createdAt,
         createdBy: String(fm.created_by ?? ''),
         lastModified: lastVersion?.createdAt ?? createdAt,
-        threadCount: this.deps.chatService.threadCountForPatch(rec.path),
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForPatch(rec.path) : 0,
+        frontmatter: fm,
+        hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
     return out;
@@ -141,10 +195,10 @@ export class PatchService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
-  async updateContent(opts: PatchUpdateContentOpts): Promise<PatchResponse> {
+  async updateContent(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
-      throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash);
+      throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash, current.content);
     }
     const incoming = matter(opts.content);
     const incomingFm = (incoming.data ?? {}) as PatchFrontmatter;
@@ -153,7 +207,7 @@ export class PatchService {
     );
     if (violated.length > 0) {
       throw new DomainError(
-        'PATCH_FRONTMATTER_IMMUTABLE',
+        'IMMUTABLE_FIELD',
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }
@@ -172,7 +226,7 @@ export class PatchService {
     return this.getPatch(opts.path);
   }
 
-  async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchResponse> {
+  async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     const next: PatchFrontmatter = { ...current.frontmatter, status: opts.status };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
@@ -244,15 +298,6 @@ export class PatchService {
   }
 }
 
-/**
- * YAML auto-parses ISO timestamps into JS `Date` objects — normalize back to
- * an ISO 8601 string for DTO fields (`PatchListItem.createdAt`).
- */
-function toIso(v: unknown): string {
-  if (v instanceof Date) return v.toISOString();
-  return v == null ? '' : String(v);
-}
-
 function stem(p: string): string {
   return path.basename(p).replace(/\.md$/i, '');
 }
@@ -270,8 +315,4 @@ function extractTitle(body: string, fm: PatchFrontmatter, relPath: string): stri
 function extractTitleFromFrontmatter(fm: PatchFrontmatter, relPath: string): string {
   if (typeof fm.title === 'string' && fm.title.length > 0) return fm.title;
   return stem(relPath);
-}
-
-function hashContent(content: string): string {
-  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
 }

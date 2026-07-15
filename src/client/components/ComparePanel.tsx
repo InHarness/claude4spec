@@ -3,29 +3,31 @@ import { createPatch } from 'diff';
 import { usePlanVersion, usePlanVersions } from '../hooks/usePlan.js';
 
 interface Props {
-  planId: number;
+  planPath: string;
   currentVersion: number;
 }
 
-export function ComparePanel({ planId, currentVersion }: Props) {
-  const { data: versionsMeta } = usePlanVersions(planId);
+export function ComparePanel({ planPath, currentVersion }: Props) {
+  const { data: versionsMeta } = usePlanVersions(planPath);
+  // 0.1.127: the generic file_version log lists DESC (newest first) — the
+  // reverse of the old plan_version table's ASC order this replaces.
   const versions = versionsMeta?.versions ?? [];
   const [a, setA] = useState<number>(1);
   const [b, setB] = useState<number>(currentVersion);
 
   useEffect(() => {
     if (versions.length > 0) {
-      setA(versions[0]!.version);
-      setB(versions[versions.length - 1]!.version);
+      setA(versions[versions.length - 1]!.version);
+      setB(versions[0]!.version);
     }
   }, [versions.length]);
 
-  const { data: versionA } = usePlanVersion(planId, a);
-  const { data: versionB } = usePlanVersion(planId, b);
+  const { data: versionA } = usePlanVersion(planPath, a);
+  const { data: versionB } = usePlanVersion(planPath, b);
 
   const patch = useMemo(() => {
     if (!versionA || !versionB) return '';
-    return createPatch(`plan v${a} → v${b}`, versionA.content, versionB.content, '', '', {
+    return createPatch(`plan v${a} → v${b}`, versionA.data.content, versionB.data.content, '', '', {
       context: 3,
     });
   }, [versionA, versionB, a, b]);

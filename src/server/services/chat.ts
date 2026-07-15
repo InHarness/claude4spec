@@ -25,8 +25,8 @@ interface ChatThreadRow {
   plan_mode: number;
   last_usage_json: string | null;
   last_context_size: number | null;
-  plan_id: number | null;
-  last_seen_plan_version: number | null;
+  /** 0.1.127: N:1 attach — path relative to plansDir, no FK. */
+  plan_path: string | null;
   has_system_prompt: number;
   context_type: string;
   brief_path: string | null;
@@ -94,7 +94,7 @@ export const QUEUE_LIMIT = 20;
  */
 const THREAD_META_COLUMNS = `t.id, t.title, t.last_session_id,
         t.initial_architecture_config_json, t.current_todo_items, t.plan_mode,
-        t.last_usage_json, t.last_context_size, t.plan_id, t.last_seen_plan_version,
+        t.last_usage_json, t.last_context_size, t.plan_path,
         t.context_type, t.brief_path, t.patch_path, t.parent_thread_id,
         t.spawned_by_tool_use_id, t.created_at, t.updated_at,
         (t.initial_system_prompt IS NOT NULL) AS has_system_prompt`;
@@ -190,6 +190,85 @@ export class ChatService {
       )
       .get(briefPath) as { n: number };
     return row.n;
+  }
+
+  /**
+   * 0.1.127 M10: plan attach is N:1/optional and NOT tied to a `context_type`
+   * (unlike brief/patch's `anchor` mode) — any thread kind can carry a
+   * `plan_path`. `attachPlanToThread`/`listThreadsForPlan`/`threadCountForPlan`/
+   * `findLastThreadIdForPlan` mirror the brief/patch path-keyed lookups above,
+   * minus the `context_type` filter.
+   */
+  attachPlanToThread(threadId: string, planPath: string): void {
+    const info = this.db
+      .prepare(`UPDATE chat_thread SET plan_path = ?, updated_at = datetime('now') WHERE id = ?`)
+      .run(planPath, threadId);
+    if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
+  }
+
+  listThreadsForPlan(planPath: string): ChatThreadMeta[] {
+    const rows = this.db
+      .prepare(
+        `SELECT ${THREAD_META_COLUMNS},
+                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
+           FROM chat_thread t
+          WHERE t.plan_path = ? AND t.parent_thread_id IS NULL
+          ORDER BY t.updated_at DESC`,
+      )
+      .all(planPath) as Array<ChatThreadRow & { message_count: number }>;
+    return rows.map((r) => ({
+      ...this.hydrateThread(r),
+      messageCount: r.message_count,
+    }));
+  }
+
+  threadCountForPlan(planPath: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COUNT(*) AS n FROM chat_thread WHERE plan_path = ? AND parent_thread_id IS NULL`,
+      )
+      .get(planPath) as { n: number };
+    return row.n;
+  }
+
+  findLastThreadIdForPlan(planPath: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM chat_thread
+          WHERE plan_path = ? AND parent_thread_id IS NULL
+          ORDER BY updated_at DESC
+          LIMIT 1`,
+      )
+      .get(planPath) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
+  /**
+   * Oldest attached thread — a stable reference point, unlike
+   * {@link findLastThreadIdForPlan} (most-recently-updated, used for
+   * `PlanListItem.lastThreadId`). Anchor-chip resolution (`getByAnchor`) uses
+   * this one: a heading anchor should always resolve back to the thread the
+   * plan was originally drafted in, not whichever thread most recently
+   * touched it (which would make the same anchor link resolve to a different
+   * thread over time as other threads keep editing the plan).
+   */
+  findOldestThreadIdForPlan(planPath: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM chat_thread
+          WHERE plan_path = ? AND parent_thread_id IS NULL
+          ORDER BY created_at ASC
+          LIMIT 1`,
+      )
+      .get(planPath) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
+  getThreadPlanPath(threadId: string): string | null {
+    const row = this.db
+      .prepare(`SELECT plan_path FROM chat_thread WHERE id = ?`)
+      .get(threadId) as { plan_path: string | null } | undefined;
+    return row?.plan_path ?? null;
   }
 
   /**
@@ -612,8 +691,7 @@ export class ChatService {
       planMode: row.plan_mode === 1,
       usage,
       contextSize,
-      planId: row.plan_id ?? null,
-      lastSeenPlanVersion: row.last_seen_plan_version ?? null,
+      planPath: row.plan_path ?? null,
       hasSystemPrompt: row.has_system_prompt === 1,
       contextType: hydrateContextType(row.context_type),
       briefPath: row.brief_path,

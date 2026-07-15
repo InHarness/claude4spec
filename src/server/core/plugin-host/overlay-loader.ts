@@ -29,6 +29,7 @@ import {
   type PluginLoadRecord,
 } from './loader.js';
 import { lowerEntityContribution, synthesizeMount, validateWritingStyle } from './manifest-adapter.js';
+import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
 import type {
   PluginCommandContribution,
@@ -218,6 +219,23 @@ export async function loadProjectOverlay(
       const reason = `type "${conflict.type}" already provided by another project-local plugin (origin ${originByType.get(conflict.type)})`;
       console.warn(`[overlay-loader] PLUGIN_TYPE_CONFLICT ${pkg}: ${reason}`);
       records.push({ ...base, status: 'failed', code: 'PLUGIN_TYPE_CONFLICT', reason });
+      continue;
+    }
+
+    // v0.1.129 (M19 Slot A) — reference tags this plugin contributes.
+    // Registered BEFORE entity modules are committed to `modules` below, so a
+    // duplicate-tag failure here fails the whole package atomically — same
+    // shape as the PLUGIN_TYPE_CONFLICT check above, just against the
+    // separate M19 process-global registry instead of this loader's own
+    // per-overlay `modules` map.
+    try {
+      for (const refType of manifest.contributes?.referenceTypes ?? []) {
+        registerExtensionReferenceType(refType);
+      }
+    } catch (err) {
+      const reason = (err as Error).message;
+      console.warn(`[overlay-loader] PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
+      records.push({ ...base, status: 'failed', code: 'PLUGIN_INVALID_MANIFEST', reason });
       continue;
     }
 

@@ -1,22 +1,63 @@
-import crypto from 'node:crypto';
+/**
+ * 0.1.127 M10 PlanService — filesystem-backed, mirrors BriefService/PatchService
+ * (M36 consumer-slice pattern) instead of the pre-0.1.127 SQLite `plan`/
+ * `plan_version` tables (see brief 0-1-126-to-0-1-127). A plan is a markdown
+ * file in `plansDir` with mandatory frontmatter (`type: plan`, `title`,
+ * `created_at`, `created_by`); identity is the file path (`slug =
+ * slugify(title)`, immutable once created — a later title edit changes
+ * frontmatter only, never the filename/route).
+ *
+ * DB participation is limited to:
+ *   - `chat_thread.plan_path` (M05) — N:1 attach, optional, no FK
+ *     (`danglingPolicy: graceful-degrade`: deleting the file leaves attached
+ *     threads pointing nowhere; the UI degrades to a banner instead of the
+ *     invariant brief/patch enforce).
+ *   - `file_version` (M17) — automatic via the shared FileVersionService,
+ *     keyed by `rootId = PLAN_ROOT_MARKER`. `currentVersion` is derived from
+ *     this table (MAX(version) for the path), NOT a stored column — the old
+ *     `plan.current_version` DB column no longer exists.
+ *
+ * Design notes (mirrors brief.ts):
+ *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
+ *   - **Optimistic concurrency** by sha256 hash of full content (frontmatter+body).
+ *   - **Immutable frontmatter** keys protected: type/created_at/created_by.
+ *     Only `title` is mutable.
+ *   - Anchor injection (`<!-- anchor: xxxxxxxx -->` before headings) stays a
+ *     local pure function here rather than a shared M06 utility — no such
+ *     shared utility exists in this codebase yet (checked section-indexer.ts);
+ *     `plan` is still the only registry entry with `anchorInjection: true`, so
+ *     there is nothing else to share it with. Flagged as a `clarification`
+ *     patch for the spec author.
+ */
+
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import matter from 'gray-matter';
 import { customAlphabet } from 'nanoid';
-import type Database from 'better-sqlite3';
 import type {
-  BlameBlock,
   Plan,
   PlanAction,
   PlanChangedBy,
   PlanExecuteMode,
   PlanExecuteResult,
+  PlanFrontmatter,
   PlanListItem,
   PlanThreadItem,
-  PlanVersion,
-  PlanVersionMeta,
 } from '../../shared/entities.js';
+import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
+import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import { slugify } from './slug.js';
+import type { PagesService } from './pages.js';
+import type { PagesWatcher } from '../fs/watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import type { FileVersionService } from './file-version.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { ChatService } from './chat.js';
+import type { PagesFrontmatterIndexer } from './pages-frontmatter-indexer.js';
 import { DomainError } from './tags.js';
+import { ConflictError } from './brief.js';
+import { hashContent, toIso } from './artifact-content.js';
 
 // Generator stays strict 8 (per M06 spec `15u7sazr` — auto-inject contract).
 const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
@@ -24,30 +65,14 @@ const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const PLAN_HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 
-interface PlanRow {
-  id: number;
-  title: string | null;
-  content: string;
-  current_version: number;
-  created_at: string;
-  updated_at: string;
-}
-
-interface PlanVersionRow {
-  id: number;
-  plan_id: number;
-  version: number;
-  content: string;
-  action: string;
-  action_params: string | null;
-  change_summary: string | null;
-  changed_by: string;
-  created_at: string;
-}
-
-interface PlanListRow extends PlanRow {
-  thread_count: number;
-  last_thread_id: string | null;
+export interface PlanServiceDeps {
+  plansPages: PagesService;
+  plansWatcher: PagesWatcher;
+  plansSerializer: FileSerializer;
+  pageVersions: FileVersionService;
+  chatService: ChatService;
+  frontmatterIndexer: PagesFrontmatterIndexer;
+  ws: WsEmitter;
 }
 
 export interface PlanUpdateInput {
@@ -56,9 +81,10 @@ export interface PlanUpdateInput {
   content: string;
   anchor?: string;
   heading?: string;
+  /** Required on the first call in a thread (creates the file) — MISSING_TITLE otherwise. */
+  title?: string;
   changeSummary?: string;
   changedBy: PlanChangedBy;
-  actionParams?: Record<string, unknown>;
 }
 
 export interface PlanUpdateResult {
@@ -66,481 +92,399 @@ export interface PlanUpdateResult {
   version: number;
 }
 
+export interface PlanUpdateContentOpts {
+  path: string;
+  content: string;
+  expectedHash?: string;
+  changedBy: PlanChangedBy;
+  changeSummary?: string;
+}
+
+export interface PlanUpdateFrontmatterOpts {
+  path: string;
+  patch: { title?: string };
+  changedBy: PlanChangedBy;
+}
+
 export class PlanService {
-  constructor(
-    private db: Database.Database,
-    private ws: WsEmitter,
-    private chat: ChatService
-  ) {}
+  constructor(private deps: PlanServiceDeps) {}
 
-  getByThread(threadId: string): Plan | null {
-    const row = this.db
-      .prepare(
-        `SELECT p.*
-           FROM plan p
-           JOIN chat_thread t ON t.plan_id = p.id
-          WHERE t.id = ?`
-      )
-      .get(threadId) as PlanRow | undefined;
-    return row ? this.hydrate(row) : null;
-  }
-
-  getById(planId: number): Plan {
-    const row = this.db.prepare(`SELECT * FROM plan WHERE id = ?`).get(planId) as
-      | PlanRow
-      | undefined;
-    if (!row) throw new DomainError('NOT_FOUND', `plan ${planId} not found`);
-    return this.hydrate(row);
-  }
+  /** Per-key (plan path, or thread while the plan doesn't exist yet) write queue. */
+  private locks = new Map<string, Promise<unknown>>();
 
   /**
-   * Resolve a heading anchor (the `<!-- anchor: xxxxxxxx -->` marker injected by
-   * {@link injectAnchors}) back to the plan that contains it. Plans are not indexed in
-   * `section_index`, so a small `content LIKE` scan is used instead — acceptable given
-   * the low plan count. The `[a-z0-9]{6,12}` guard both validates the id and neutralizes
-   * LIKE metacharacters. `threadId` is best-effort (the plan's oldest thread, or null);
-   * callers navigate by `planId`.
+   * Serializes read-modify-write cycles per `key` — the filesystem gives no
+   * transaction to provide this, unlike the SQLite `BEGIN IMMEDIATE` the
+   * pre-0.1.127 implementation relied on. Queued via chained promises rather
+   * than a real mutex library since this only needs to serialize calls within
+   * this single process/service instance.
    */
-  getByAnchor(anchor: string): { planId: number; threadId: string | null } | null {
-    if (!/^[a-z0-9]{6,12}$/.test(anchor)) return null;
-    const row = this.db
-      .prepare(`SELECT id FROM plan WHERE content LIKE ? LIMIT 1`)
-      .get(`%<!-- anchor: ${anchor} -->%`) as { id: number } | undefined;
-    if (!row) return null;
-    const thread = this.db
-      .prepare(`SELECT id FROM chat_thread WHERE plan_id = ? ORDER BY created_at LIMIT 1`)
-      .get(row.id) as { id: string } | undefined;
-    return { planId: row.id, threadId: thread?.id ?? null };
-  }
-
-  threadCount(planId: number): number {
-    const row = this.db
-      .prepare(`SELECT COUNT(*) AS n FROM chat_thread WHERE plan_id = ? AND parent_thread_id IS NULL`)
-      .get(planId) as { n: number };
-    return row.n;
-  }
-
-  listPlans(opts: { limit?: number; offset?: number; search?: string } = {}): {
-    plans: PlanListItem[];
-    total: number;
-  } {
-    const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
-    const search = opts.search?.trim();
-
-    const where = search
-      ? `WHERE p.title LIKE ? OR p.content LIKE ?`
-      : '';
-    const params: (string | number)[] = [];
-    if (search) {
-      const like = `%${search}%`;
-      params.push(like, like);
-    }
-
-    const total = (this.db
-      .prepare(`SELECT COUNT(*) AS n FROM plan p ${where}`)
-      .get(...params) as { n: number }).n;
-
-    const rows = this.db
-      .prepare(
-        `SELECT p.*,
-                COUNT(t.id) AS thread_count,
-                (SELECT id FROM chat_thread
-                  WHERE plan_id = p.id AND parent_thread_id IS NULL
-                  ORDER BY updated_at DESC
-                  LIMIT 1) AS last_thread_id
-           FROM plan p
-           LEFT JOIN chat_thread t ON t.plan_id = p.id AND t.parent_thread_id IS NULL
-           ${where}
-          GROUP BY p.id
-          ORDER BY p.updated_at DESC
-          LIMIT ? OFFSET ?`
-      )
-      .all(...params, limit, offset) as PlanListRow[];
-
-    const plans = rows.map((r) => ({
-      id: r.id,
-      title: r.title,
-      currentVersion: r.current_version,
-      threadCount: r.thread_count,
-      lastThreadId: r.last_thread_id,
-      updatedAt: r.updated_at,
-    }));
-
-    return { plans, total };
-  }
-
-  attachThreadToPlan(planId: number): { threadId: string } {
-    const plan = this.getById(planId);
-    const newThread = this.chat.createThread(
-      plan.title ?? plan.content.split('\n')[0]?.slice(0, 60) ?? null
+  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.locks.get(key) ?? Promise.resolve();
+    const settled = prior.then(
+      () => undefined,
+      () => undefined,
     );
-    this.db
-      .prepare(
-        `UPDATE chat_thread
-            SET plan_id = ?,
-                last_seen_plan_version = ?,
-                updated_at = datetime('now')
-          WHERE id = ?`
-      )
-      .run(plan.id, plan.currentVersion, newThread.id);
-    return { threadId: newThread.id };
+    const run = settled.then(fn);
+    this.locks.set(
+      key,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
   }
 
-  findLastThreadIdForPlan(planId: number): string | null {
-    const row = this.db
-      .prepare(
-        `SELECT id FROM chat_thread
-          WHERE plan_id = ? AND parent_thread_id IS NULL
-          ORDER BY updated_at DESC
-          LIMIT 1`
-      )
-      .get(planId) as { id: string } | undefined;
-    return row?.id ?? null;
-  }
+  // ─── Reads ───────────────────────────────────────────────────────────────
 
-  /**
-   * P2: dedicated projection of a plan's threads for PlanPage. Bounded by the
-   * threads attached to ONE plan (small), so no pagination — and independent of
-   * the paginated `GET /api/threads` list, which PlanPage no longer filters.
-   */
-  listThreadsForPlan(planId: number): PlanThreadItem[] {
-    const rows = this.db
-      .prepare(
-        `SELECT id, title, updated_at FROM chat_thread
-          WHERE plan_id = ? AND parent_thread_id IS NULL
-          ORDER BY updated_at DESC`
-      )
-      .all(planId) as Array<{ id: string; title: string | null; updated_at: string }>;
-    return rows.map((r) => ({ id: r.id, title: r.title, updatedAt: r.updated_at }));
-  }
-
-  updatePlanTitle(planId: number, title: string | null): Plan {
-    const trimmed = title?.trim() || null;
-    const info = this.db
-      .prepare(`UPDATE plan SET title = ?, updated_at = datetime('now') WHERE id = ?`)
-      .run(trimmed, planId);
-    if (info.changes === 0) throw new DomainError('NOT_FOUND', `plan ${planId} not found`);
-    const plan = this.getById(planId);
-    this.ws.broadcast({
-      kind: 'plan:updated',
-      planId,
-      threadId: this.findLastThreadIdForPlan(planId) ?? '',
-      version: plan.currentVersion,
-      changedBy: 'user',
-    });
-    return plan;
-  }
-
-  markPlanSeenByThread(threadId: string): void {
-    this.db
-      .prepare(
-        `UPDATE chat_thread
-            SET last_seen_plan_version = (
-              SELECT current_version FROM plan WHERE id = chat_thread.plan_id
-            )
-          WHERE id = ?
-            AND plan_id IS NOT NULL`
-      )
-      .run(threadId);
-  }
-
-  /** Returns the `<system-reminder>` block to prepend to user message when plan is stale, or null. */
-  getStalePlanReminder(threadId: string): string | null {
-    const row = this.db
-      .prepare(
-        `SELECT t.last_seen_plan_version AS last_seen,
-                p.current_version       AS current_version
-           FROM chat_thread t
-           JOIN plan p ON p.id = t.plan_id
-          WHERE t.id = ?`
-      )
-      .get(threadId) as { last_seen: number | null; current_version: number } | undefined;
-    if (!row) return null;
-    const lastSeen = row.last_seen;
-    if (lastSeen === null) return null;
-    if (row.current_version <= lastSeen) return null;
-    return [
-      '<system-reminder>',
-      'The plan was updated in another thread.',
-      `Last version seen in this thread: v${lastSeen}.`,
-      `Current version: v${row.current_version}.`,
-      'Run get_plan to fetch the current plan before continuing.',
-      '</system-reminder>',
-    ].join('\n');
-  }
-
-  update(input: PlanUpdateInput): PlanUpdateResult {
-    const {
-      threadId,
-      action,
-      content,
-      anchor,
-      heading,
-      changeSummary,
-      changedBy,
-      actionParams,
-    } = input;
-
-    const tx = this.db.transaction(() => {
-      const existing = this.db
-        .prepare(
-          `SELECT p.*
-             FROM plan p
-             JOIN chat_thread t ON t.plan_id = p.id
-            WHERE t.id = ?`
-        )
-        .get(threadId) as PlanRow | undefined;
-
-      const priorContent = existing?.content ?? '';
-      const newContent = composeContent(
-        priorContent,
-        action,
-        content,
-        anchor,
-        heading
+  async getByPath(planPath: string): Promise<Plan> {
+    if (!(await this.deps.plansPages.exists(planPath))) {
+      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
+    }
+    const abs = this.absPath(planPath);
+    const raw = await fs.readFile(abs, 'utf-8');
+    const parsed = matter(raw);
+    const frontmatter = (parsed.data ?? {}) as PlanFrontmatter;
+    if (frontmatter.type !== 'plan') {
+      throw new DomainError(
+        'PLAN_INVALID_FRONTMATTER',
+        `file '${planPath}' is not a plan (frontmatter.type=${JSON.stringify(frontmatter.type)})`,
       );
-      const finalContent = injectAnchors(newContent);
-
-      let planId: number;
-      if (!existing) {
-        const info = this.db
-          .prepare(
-            `INSERT INTO plan (title, content, current_version, updated_at)
-             VALUES (NULL, ?, 1, datetime('now'))`
-          )
-          .run(finalContent);
-        planId = Number(info.lastInsertRowid);
-        this.db
-          .prepare(
-            `UPDATE chat_thread
-                SET plan_id = ?,
-                    updated_at = datetime('now')
-              WHERE id = ?`
-          )
-          .run(planId, threadId);
-      } else {
-        planId = existing.id;
-        this.db
-          .prepare(
-            `UPDATE plan
-                SET content = ?,
-                    current_version = current_version + 1,
-                    updated_at = datetime('now')
-              WHERE id = ?`
-          )
-          .run(finalContent, planId);
-      }
-
-      const row = this.db
-        .prepare(`SELECT * FROM plan WHERE id = ?`)
-        .get(planId) as PlanRow;
-
-      const version = row.current_version;
-      this.db
-        .prepare(
-          `INSERT INTO plan_version
-             (plan_id, version, content, action, action_params, change_summary, changed_by)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`
-        )
-        .run(
-          planId,
-          version,
-          finalContent,
-          action,
-          actionParams ? JSON.stringify(actionParams) : null,
-          changeSummary ?? null,
-          changedBy
-        );
-
-      this.db
-        .prepare(
-          `UPDATE chat_thread
-              SET last_seen_plan_version = ?
-            WHERE id = ?`
-        )
-        .run(version, threadId);
-
-      return { plan: this.hydrate(row), version };
-    });
-
-    // BEGIN IMMEDIATE — anti-race przy konkurencyjnych edycjach z roznych watkow.
-    const result = tx.immediate();
-
-    this.ws.broadcast({
-      kind: 'plan:updated',
-      planId: result.plan.id,
-      threadId,
-      version: result.version,
-      changedBy,
-    });
-
-    return result;
-  }
-
-  listVersions(
-    planId: number,
-    opts: { limit?: number; offset?: number } = {}
-  ): { versions: PlanVersionMeta[]; total: number } {
-    const limit = opts.limit ?? 50;
-    const offset = opts.offset ?? 0;
-    const total = (this.db
-      .prepare(`SELECT COUNT(*) AS n FROM plan_version WHERE plan_id = ?`)
-      .get(planId) as { n: number }).n;
-    const rows = this.db
-      .prepare(
-        `SELECT * FROM plan_version
-          WHERE plan_id = ?
-          ORDER BY version ASC
-          LIMIT ? OFFSET ?`
-      )
-      .all(planId, limit, offset) as PlanVersionRow[];
+    }
     return {
-      versions: rows.map((r) => this.hydrateVersionMeta(r)),
-      total,
+      path: planPath,
+      frontmatter,
+      body: parsed.content,
+      content: raw,
+      hash: hashContent(raw),
+      currentVersion: this.currentVersionFor(planPath),
+      createdAt: toIso(frontmatter.created_at),
+      updatedAt: this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.createdAt ?? toIso(frontmatter.created_at),
     };
   }
 
-  getVersion(planId: number, version: number): PlanVersion {
-    const row = this.db
-      .prepare(`SELECT * FROM plan_version WHERE plan_id = ? AND version = ?`)
-      .get(planId, version) as PlanVersionRow | undefined;
-    if (!row) {
-      throw new DomainError(
-        'VERSION_NOT_FOUND',
-        `plan ${planId} version ${version} not found`
-      );
-    }
-    return this.hydrateVersion(row);
+  async getByThread(threadId: string): Promise<Plan | null> {
+    const planPath = this.deps.chatService.getThreadPlanPath(threadId);
+    if (!planPath) return null;
+    return this.getByPath(planPath);
   }
 
-  blame(planId: number): BlameBlock[] {
-    const plan = this.getById(planId);
-    const versions = this.db
-      .prepare(
-        `SELECT version, content FROM plan_version
-          WHERE plan_id = ?
-          ORDER BY version ASC`
-      )
-      .all(planId) as Array<{ version: number; content: string }>;
-
-    const firstSeen = new Map<string, number>();
-    for (const v of versions) {
-      const blocks = splitBlocks(v.content);
-      for (const block of blocks) {
-        const hash = hashBlock(block);
-        if (!firstSeen.has(hash)) firstSeen.set(hash, v.version);
+  /**
+   * Resolve a heading anchor (the `<!-- anchor: xxxxxxxx -->` marker injected
+   * by {@link injectAnchors}) back to the plan that contains it. Plans are not
+   * indexed in `section_index` (`sectionIndexed: false`), so a brute-force
+   * scan over `plansDir`'s files is used instead — acceptable given the low
+   * plan count (same justification as the pre-0.1.127 DB `content LIKE` scan
+   * this replaces). `threadId` is best-effort (the plan's OLDEST attached
+   * thread, or null) — a stable reference point so the same anchor link keeps
+   * resolving to the same thread even as other threads keep editing the plan;
+   * callers otherwise navigate by `planPath`.
+   */
+  async getByAnchor(anchor: string): Promise<{ planPath: string; threadId: string | null } | null> {
+    if (!/^[a-z0-9]{6,12}$/.test(anchor)) return null;
+    const needle = `<!-- anchor: ${anchor} -->`;
+    const files = await this.deps.plansPages.listMarkdownFiles();
+    for (const relPath of files) {
+      const abs = this.absPath(relPath);
+      let raw: string;
+      try {
+        raw = await fs.readFile(abs, 'utf-8');
+      } catch {
+        continue; // deleted between listMarkdownFiles() and read
+      }
+      if (raw.includes(needle)) {
+        return { planPath: relPath, threadId: this.deps.chatService.findOldestThreadIdForPlan(relPath) };
       }
     }
+    return null;
+  }
 
-    const currentBlocks = splitBlocks(plan.content);
-    return currentBlocks.map((block, idx) => ({
-      blockIndex: idx,
-      markdownFragment: block,
-      addedInVersion: firstSeen.get(hashBlock(block)) ?? plan.currentVersion,
+  /**
+   * `includeThreadInfo` (v0.1.129 fix, default `false`) gates `threadCount`/
+   * `lastThreadId` — 2 extra `chatService` queries PER plan. The generic
+   * `/api/artifacts/plan` REST route (routes/artifacts.ts's
+   * `buildPlanAdapter.list()`) never reads either field off `PlanListItem`
+   * (the wire `ArtifactListItem` doesn't carry them at all), so both used to
+   * run on every list call — 2N wasted queries for N plans on every page load
+   * / search keystroke. Pass `true` for a caller that actually needs them.
+   */
+  listPlans(opts: { search?: string; includeThreadInfo?: boolean } = {}): PlanListItem[] {
+    const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: PLAN_ROOT_MARKER });
+    const search = opts.search?.trim().toLowerCase();
+    const out: PlanListItem[] = [];
+    for (const rec of records) {
+      const fm = rec.frontmatter as PlanFrontmatter;
+      const title = typeof fm.title === 'string' ? fm.title : null;
+      if (search && !(title?.toLowerCase().includes(search) ?? false) && !rec.path.toLowerCase().includes(search)) {
+        continue;
+      }
+      const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, PLAN_ROOT_MARKER);
+      out.push({
+        path: rec.path,
+        title,
+        threadCount: opts.includeThreadInfo ? this.deps.chatService.threadCountForPlan(rec.path) : 0,
+        lastThreadId: opts.includeThreadInfo ? this.deps.chatService.findLastThreadIdForPlan(rec.path) : null,
+        updatedAt: lastVersion?.createdAt ?? toIso(fm.created_at),
+        frontmatter: fm,
+        hash: lastVersion ? hashContent(lastVersion.data.content) : '',
+      });
+    }
+    out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return out;
+  }
+
+  listThreadsForPlan(planPath: string): PlanThreadItem[] {
+    return this.deps.chatService.listThreadsForPlan(planPath).map((t) => ({
+      id: t.id,
+      title: t.title,
+      updatedAt: t.updatedAt,
     }));
   }
 
-  execute(
-    planId: number,
+  findLastThreadIdForPlan(planPath: string): string | null {
+    return this.deps.chatService.findLastThreadIdForPlan(planPath);
+  }
+
+  // ─── Mutations ──────────────────────────────────────────────────────────
+
+  async attachThreadToPlan(planPath: string): Promise<{ threadId: string }> {
+    // Resolve existence via getByPath (a direct filesystem check), not the
+    // in-memory frontmatter index — the index is populated asynchronously
+    // (file watcher / boot-time indexAll()), so a plan written moments ago
+    // (e.g. by the boot-time SQLite->filesystem backfill) can otherwise be
+    // reported NOT_FOUND here even though it's fully readable on disk.
+    const plan = await this.getByPath(planPath);
+    const title = typeof plan.frontmatter.title === 'string' ? plan.frontmatter.title : planPath;
+    const newThread = this.deps.chatService.createThread(title);
+    this.deps.chatService.attachPlanToThread(newThread.id, planPath);
+    return { threadId: newThread.id };
+  }
+
+  /**
+   * MCP `update_plan` handler logic. First call in a thread (`plan_path IS
+   * NULL`) requires `title`, creates the file (`slug = slugify(title)`,
+   * disambiguated on collision, then immutable) and attaches the thread.
+   * Subsequent calls compose against the existing content and overwrite.
+   *
+   * The whole read-modify-write cycle runs inside {@link withLock}, keyed by
+   * the target plan path (or by thread while the plan doesn't exist yet) —
+   * filesystem writes have no transaction to serialize concurrent editors the
+   * way the pre-0.1.127 SQLite `BEGIN IMMEDIATE` transaction did, so two
+   * threads attached to the same plan calling `update_plan` back-to-back
+   * would otherwise silently clobber each other.
+   */
+  async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
+    const { threadId, action, content, anchor, heading, title, changeSummary, changedBy } = input;
+    const lockKey = this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
+
+    return this.withLock(lockKey, async () => {
+      // Re-resolve inside the lock: another call for the same thread may have
+      // created the plan while this call was waiting its turn.
+      const existingPath = this.deps.chatService.getThreadPlanPath(threadId);
+
+      if (!existingPath) {
+        const trimmedTitle = title?.trim();
+        if (!trimmedTitle) {
+          throw new DomainError('MISSING_TITLE', 'title is required on the first update_plan call in a thread');
+        }
+        const base = slugify(trimmedTitle) || 'plan';
+        // v0.1.129 fix: the OUTER lock (keyed `thread:${threadId}`) only
+        // serializes calls from the SAME thread — it does nothing when two
+        // DIFFERENT threads race to create a first plan with the same title
+        // at the same time, since they compute different outer lock keys and
+        // would otherwise run allocatePath's collision search + the write
+        // that reserves the winning candidate fully in parallel, racing on
+        // the same filename. Nest a lock keyed by the actual contended
+        // resource — the slug `base` every racing candidate is derived from —
+        // so only genuinely colliding titles serialize; different titles
+        // never look at the same candidates and proceed unblocked.
+        const { planPath, version, plan } = await this.withLock(`new-plan:${base}`, async () => {
+          const allocated = await this.allocatePath(base);
+          const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
+          const frontmatter: PlanFrontmatter = {
+            type: 'plan',
+            title: trimmedTitle,
+            created_at: new Date().toISOString(),
+            created_by: changedBy,
+          };
+          const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
+          const abs = this.absPath(allocated);
+          await fs.mkdir(path.dirname(abs), { recursive: true });
+          this.deps.plansWatcher.suppress(allocated);
+          await fs.writeFile(abs, fullContent, 'utf-8');
+          await this.deps.pageVersions.recordVersion(
+            allocated,
+            'create',
+            toFileChangedBy(changedBy),
+            undefined,
+            this.deps.plansSerializer,
+            PLAN_ROOT_MARKER,
+            changeSummary,
+          );
+          await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, allocated);
+          return {
+            planPath: allocated,
+            version: this.currentVersionFor(allocated),
+            plan: await this.getByPath(allocated),
+          };
+        });
+        this.deps.chatService.attachPlanToThread(threadId, planPath);
+        this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
+        return { plan, version };
+      }
+
+      const current = await this.getByPath(existingPath);
+      const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
+      const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
+      const abs = this.absPath(existingPath);
+      this.deps.plansWatcher.suppress(existingPath);
+      await fs.writeFile(abs, fullContent, 'utf-8');
+      await this.deps.pageVersions.recordVersion(
+        existingPath,
+        'update',
+        toFileChangedBy(changedBy),
+        undefined,
+        this.deps.plansSerializer,
+        PLAN_ROOT_MARKER,
+        changeSummary,
+      );
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, existingPath);
+
+      const version = this.currentVersionFor(existingPath);
+      const plan = await this.getByPath(existingPath);
+      this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
+      return { plan, version };
+    });
+  }
+
+  async updateContent(opts: PlanUpdateContentOpts): Promise<{ newHash: string }> {
+    return this.withLock(opts.path, async () => {
+      const current = await this.getByPath(opts.path);
+      if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
+        throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
+      }
+      const incoming = matter(opts.content);
+      const incomingFm = (incoming.data ?? {}) as PlanFrontmatter;
+      const violated = PLAN_IMMUTABLE_FRONTMATTER_KEYS.filter(
+        (k) => JSON.stringify(incomingFm[k]) !== JSON.stringify(current.frontmatter[k]),
+      );
+      if (violated.length > 0) {
+        throw new DomainError('IMMUTABLE_FIELD', `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`);
+      }
+      const abs = this.absPath(opts.path);
+      this.deps.plansWatcher.suppress(opts.path);
+      await fs.writeFile(abs, opts.content, 'utf-8');
+      await this.deps.pageVersions.recordVersion(
+        opts.path,
+        'update',
+        toFileChangedBy(opts.changedBy),
+        undefined,
+        this.deps.plansSerializer,
+        PLAN_ROOT_MARKER,
+        opts.changeSummary,
+      );
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      // v0.1.129 fix: the indexer only broadcasts `plans:changed` when
+      // *frontmatter* changes; a body-only save (the common editor case) would
+      // otherwise emit nothing and leave every OTHER open tab/viewer on this
+      // plan silently stale — mirrors brief.ts's updateContent, which
+      // broadcasts `briefs:changed` explicitly for the exact same reason.
+      this.deps.ws.broadcast({ kind: 'plans:changed', path: opts.path });
+      return { newHash: hashContent(opts.content) };
+    });
+  }
+
+  async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
+    return this.withLock(opts.path, async () => {
+      const current = await this.getByPath(opts.path);
+      const next: PlanFrontmatter = { ...current.frontmatter };
+      const summaries: string[] = [];
+      if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
+        next.title = opts.patch.title;
+        summaries.push(`set title=${opts.patch.title}`);
+      }
+      const newContent = matter.stringify(current.body, next as Record<string, unknown>);
+      const abs = this.absPath(opts.path);
+      this.deps.plansWatcher.suppress(opts.path);
+      await fs.writeFile(abs, newContent, 'utf-8');
+      await this.deps.pageVersions.recordVersion(
+        opts.path,
+        'update',
+        toFileChangedBy(opts.changedBy),
+        undefined,
+        this.deps.plansSerializer,
+        PLAN_ROOT_MARKER,
+        summaries.length > 0 ? summaries.join('; ') : null,
+      );
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      return this.getByPath(opts.path);
+    });
+  }
+
+  async execute(
+    planPath: string,
     mode: PlanExecuteMode,
-    opts: { threadId?: string } = {}
-  ): PlanExecuteResult {
-    const plan = this.getById(planId);
-    if (plan.content.trim().length === 0) {
+    opts: { threadId?: string } = {},
+  ): Promise<PlanExecuteResult> {
+    const plan = await this.getByPath(planPath);
+    if (plan.body.trim().length === 0) {
       throw new DomainError('VALIDATION', 'cannot execute an empty plan');
     }
 
     if (mode === 'new-session') {
-      const { threadId: newThreadId } = this.attachThreadToPlan(plan.id);
-      this.chat.updateThreadSettings(newThreadId, { planMode: false });
-      const firstMessage = `Executing plan v${plan.currentVersion} — disabling planMode and proceeding with implementation.`;
-      return {
-        mode: 'new-session',
-        newThreadId,
-        planId: plan.id,
-        firstMessage,
-      };
+      const { threadId: newThreadId } = await this.attachThreadToPlan(plan.path);
+      this.deps.chatService.updateThreadSettings(newThreadId, { planMode: false });
+      const firstMessage = `Executing plan "${plan.frontmatter.title}" — disabling planMode and proceeding with implementation.`;
+      return { mode: 'new-session', newThreadId, planPath: plan.path, firstMessage };
     }
 
     // mode === 'continue'
     const threadId = opts.threadId;
     if (!threadId) {
-      throw new DomainError(
-        'VALIDATION',
-        "mode='continue' requires `threadId` in body"
-      );
+      throw new DomainError('VALIDATION', "mode='continue' requires `threadId` in body");
     }
-    const attached = this.db
-      .prepare(`SELECT plan_id FROM chat_thread WHERE id = ?`)
-      .get(threadId) as { plan_id: number | null } | undefined;
-    if (!attached) {
+    const attachedThread = this.deps.chatService.getThreadMeta(threadId);
+    if (!attachedThread) {
       throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
     }
-    if (attached.plan_id !== plan.id) {
+    if (attachedThread.planPath !== plan.path) {
       throw new DomainError(
         'THREAD_NOT_ATTACHED_TO_PLAN',
-        `thread '${threadId}' is not attached to plan ${plan.id}`
+        `thread '${threadId}' is not attached to plan '${plan.path}'`,
       );
     }
-
-    this.db
-      .prepare(`UPDATE chat_thread SET plan_mode = 0, updated_at = datetime('now') WHERE id = ?`)
-      .run(threadId);
-
-    const firstMessage = `Executing plan v${plan.currentVersion} — disabling planMode and proceeding with implementation.`;
-
-    return {
-      mode: 'continue',
-      threadId,
-      firstMessage,
-    };
+    this.deps.chatService.updateThreadSettings(threadId, { planMode: false });
+    const firstMessage = `Executing plan "${plan.frontmatter.title}" — disabling planMode and proceeding with implementation.`;
+    return { mode: 'continue', threadId, firstMessage };
   }
 
-  private hydrate(row: PlanRow): Plan {
-    return {
-      id: row.id,
-      title: row.title,
-      content: row.content,
-      currentVersion: row.current_version,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
-    };
+  // ─── Internals ──────────────────────────────────────────────────────────
+
+  private absPath(relPath: string): string {
+    return path.join(this.deps.plansPages.root, relPath);
   }
 
-  private hydrateVersion(row: PlanVersionRow): PlanVersion {
-    return {
-      id: row.id,
-      planId: row.plan_id,
-      version: row.version,
-      content: row.content,
-      action: row.action as PlanAction,
-      actionParams: parseJson(row.action_params),
-      changeSummary: row.change_summary,
-      changedBy: row.changed_by as PlanChangedBy,
-      createdAt: row.created_at,
-    };
+  private currentVersionFor(planPath: string): number {
+    return this.deps.pageVersions.getLatestForPath(planPath, undefined, PLAN_ROOT_MARKER)?.version ?? 0;
   }
 
-  private hydrateVersionMeta(row: PlanVersionRow): PlanVersionMeta {
-    return {
-      version: row.version,
-      action: row.action as PlanAction,
-      actionParams: parseJson(row.action_params),
-      changeSummary: row.change_summary,
-      changedBy: row.changed_by as PlanChangedBy,
-      createdAt: row.created_at,
-    };
+  /** `base` is the already-slugified filename stem (caller computes it — see
+   *  the `withLock('new-plan:' + base, ...)` call site, which needs the same
+   *  value to key its lock). */
+  private async allocatePath(base: string): Promise<string> {
+    let candidate = `${base}.md`;
+    let n = 2;
+    while (await this.deps.plansPages.exists(candidate)) {
+      candidate = `${base}-${n}.md`;
+      n++;
+      if (n > 1000) throw new DomainError('VALIDATION', 'plan filename collision overflow');
+    }
+    return candidate;
   }
 }
 
-function composeContent(
-  prior: string,
-  action: PlanAction,
-  input: string,
-  anchor?: string,
-  heading?: string
-): string {
+function composeContent(prior: string, action: PlanAction, input: string, anchor?: string, heading?: string): string {
   switch (action) {
     case 'replace':
     case 'user_edit':
@@ -553,25 +497,16 @@ function composeContent(
     }
     case 'insert_after_section': {
       if (!anchor && !heading) {
-        throw new DomainError(
-          'MISSING_TARGET',
-          'insert_after_section requires anchor or heading'
-        );
+        throw new DomainError('MISSING_TARGET', 'insert_after_section requires anchor or heading');
       }
       return insertAfterSection(prior, input, anchor, heading);
     }
   }
 }
 
-function insertAfterSection(
-  prior: string,
-  fragment: string,
-  anchor?: string,
-  heading?: string
-): string {
+function insertAfterSection(prior: string, fragment: string, anchor?: string, heading?: string): string {
   const lines = prior.split('\n');
 
-  // Znajdz linie naglowka docelowego + jego poziom.
   let targetLine = -1;
   let targetLevel = -1;
   const matches: Array<{ line: number; level: number }> = [];
@@ -583,7 +518,6 @@ function insertAfterSection(
     const level = m[1]!.length;
     const text = m[2]!.trim();
 
-    // Preferuj anchor (stabilny).
     if (anchor) {
       const prev = i > 0 ? lines[i - 1]! : '';
       const anchorMatch = prev.match(ANCHOR_RE);
@@ -601,16 +535,10 @@ function insertAfterSection(
 
   if (targetLine === -1 && heading && !anchor) {
     if (matches.length === 0) {
-      throw new DomainError(
-        'SECTION_NOT_FOUND',
-        `section with heading "${heading}" not found`
-      );
+      throw new DomainError('SECTION_NOT_FOUND', `section with heading "${heading}" not found`);
     }
     if (matches.length > 1) {
-      throw new DomainError(
-        'AMBIGUOUS_HEADING',
-        `heading "${heading}" matches ${matches.length} sections`
-      );
+      throw new DomainError('AMBIGUOUS_HEADING', `heading "${heading}" matches ${matches.length} sections`);
     }
     targetLine = matches[0]!.line;
     targetLevel = matches[0]!.level;
@@ -619,13 +547,10 @@ function insertAfterSection(
   if (targetLine === -1) {
     throw new DomainError(
       'SECTION_NOT_FOUND',
-      anchor
-        ? `section with anchor "${anchor}" not found`
-        : `section not found`
+      anchor ? `section with anchor "${anchor}" not found` : `section not found`,
     );
   }
 
-  // Znajdz koniec ciala sekcji: pierwszy nast. naglowek <= targetLevel, albo EOF.
   let endLine = lines.length;
   for (let i = targetLine + 1; i < lines.length; i++) {
     const m = lines[i]!.match(PLAN_HEADING_RE);
@@ -663,25 +588,13 @@ function injectAnchors(content: string): string {
   return out.join('\n');
 }
 
-function splitBlocks(content: string): string[] {
-  if (!content) return [];
-  return content
-    .split(/\n\s*\n/)
-    .map((b) => b.trim())
-    .filter((b) => b.length > 0);
-}
-
-function hashBlock(block: string): string {
-  const normalized = block.trim().toLowerCase().replace(/\s+/g, ' ');
-  return crypto.createHash('sha1').update(normalized).digest('hex');
-}
-
-function parseJson(raw: string | null): Record<string, unknown> | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
+/**
+ * `PlanChangedBy` ('agent'|'user'|'system') is the plan-domain WS/frontmatter
+ * concept; `FileChangedBy` ('user'|'agent'|'filesystem') is the storage-level
+ * concept `FileVersionService.recordVersion` expects. Only 'system' has no
+ * direct match — mapped to 'filesystem' (non-user/non-agent origin), the
+ * closest existing meaning.
+ */
+function toFileChangedBy(changedBy: PlanChangedBy): 'user' | 'agent' | 'filesystem' {
+  return changedBy === 'system' ? 'filesystem' : changedBy;
 }

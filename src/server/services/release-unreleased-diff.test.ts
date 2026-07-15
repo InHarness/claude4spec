@@ -4,9 +4,9 @@ import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { defaultDeepDiff } from '../serialization/snapshot.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
-import type { PageSerializer } from './page-serializer.js';
+import type { FileSerializer } from './file-serializer.js';
 import type { VersionService } from './versions.js';
-import type { PageVersionService } from './page-version.js';
+import type { FileVersionService } from './file-version.js';
 import type { RawEntityReader } from '../domain/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
@@ -29,7 +29,7 @@ const emptyPageDiffFields = {
   xml_refs_diff: null,
 };
 
-const fakePageSerializer = {
+const fakeFileSerializer = {
   version: 'v1',
   diff: (a: unknown, b: unknown, path: string) => {
     if (a == null && b == null) return { path, op: 'noop', ...emptyPageDiffFields };
@@ -37,12 +37,12 @@ const fakePageSerializer = {
     if (b == null) return { path, op: 'deleted', ...emptyPageDiffFields };
     return { path, op: JSON.stringify(a) === JSON.stringify(b) ? 'noop' : 'modified', ...emptyPageDiffFields };
   },
-} as unknown as PageSerializer;
+} as unknown as FileSerializer;
 
 const fakeVersions = {} as unknown as VersionService;
-const fakePageVersions = {
+const fakeFileVersions = {
   assignToRelease: () => {},
-} as unknown as PageVersionService;
+} as unknown as FileVersionService;
 const fakeRawReader = {} as unknown as RawEntityReader;
 const fakeTagsService = {} as unknown as TagsService;
 const fakePagesService = {} as unknown as PagesService;
@@ -58,8 +58,8 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       db,
       fakeHost,
       fakeVersions,
-      fakePageVersions,
-      fakePageSerializer,
+      fakeFileVersions,
+      fakeFileSerializer,
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
@@ -99,7 +99,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
     op?: string;
   }): void {
     db.prepare(
-      `INSERT INTO page_version
+      `INSERT INTO file_version
         (path, version, data, serializer_version, op, release_id, changed_by, rootId)
        VALUES (?, ?, ?, 'v1', ?, ?, 'user', 'pages')`,
     ).run(opts.path, opts.version, JSON.stringify(opts.data), opts.op ?? 'create', opts.releaseId);

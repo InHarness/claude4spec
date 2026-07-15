@@ -1,15 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  BriefCreateRequest,
-  BriefFrontmatterUpdateRequest,
-} from '../../shared/entities.js';
+import type { BriefCreateRequest } from '../../shared/entities.js';
 import { briefsApi, encodeBriefPath } from '../lib/briefs-api.js';
 import { handle, apiFetch } from '../lib/api-core.js';
 
 const keys = {
   list: (implemented?: boolean) => ['briefs', 'list', implemented ?? null] as const,
   detail: (path: string) => ['briefs', 'detail', path] as const,
-  threads: (path: string) => ['briefs', 'threads', path] as const,
   versions: (path: string) => ['briefs', 'versions', path] as const,
 };
 
@@ -28,14 +24,6 @@ export function useBrief(briefPath: string | null) {
   });
 }
 
-export function useBriefThreads(briefPath: string | null) {
-  return useQuery({
-    enabled: !!briefPath,
-    queryKey: keys.threads(briefPath ?? ''),
-    queryFn: () => briefsApi.listThreads(briefPath as string),
-  });
-}
-
 export function useCreateBrief() {
   const qc = useQueryClient();
   return useMutation({
@@ -49,7 +37,7 @@ export function useCreateBrief() {
 export function useUpdateBriefContent(briefPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (input: { content: string; expectedHash: string; changeSummary?: string }) =>
+    mutationFn: (input: { content: string; expectedHash: string }) =>
       briefsApi.updateContent(briefPath, input),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
@@ -61,8 +49,8 @@ export function useUpdateBriefContent(briefPath: string) {
 export function useUpdateBriefFrontmatter(briefPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (patch: BriefFrontmatterUpdateRequest) =>
-      briefsApi.updateFrontmatter(briefPath, patch),
+    mutationFn: (frontmatter: Record<string, unknown>) =>
+      briefsApi.updateFrontmatter(briefPath, frontmatter),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
       qc.invalidateQueries({ queryKey: ['briefs', 'list'] });
@@ -99,7 +87,7 @@ export function useBriefVersions(briefPath: string | null) {
     enabled: !!briefPath,
     queryKey: keys.versions(briefPath ?? ''),
     queryFn: async () => {
-      const res = await apiFetch(`/api/briefs/${encodeBriefPath(briefPath as string)}/versions`);
+      const res = await apiFetch(`/api/artifacts/brief/${encodeBriefPath(briefPath as string)}/versions`);
       const env = await handle<{ data: BriefVersionListItem[] }>(res);
       return env.data;
     },
@@ -111,7 +99,6 @@ export function useCreateBriefThread(briefPath: string) {
   return useMutation({
     mutationFn: (name?: string) => briefsApi.createThread(briefPath, name),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: keys.threads(briefPath) });
       qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
     },
   });

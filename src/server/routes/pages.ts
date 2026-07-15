@@ -4,7 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PagesService } from '../services/pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
-import type { PageVersionService } from '../services/page-version.js';
+import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
 
 /** 0.1.96: per-root runtime resolved from the `:rootId` path segment. */
@@ -17,12 +17,12 @@ export interface PageRootRuntime {
 /**
  * 0.1.96: pages router is mounted at `/pages/:rootId`. Each handler resolves the
  * target root's runtime via `resolveRoot(req.params.rootId)`; an unknown id →
- * 404 ROOT_NOT_FOUND (no fallback). The `page_version` store is shared across
+ * 404 ROOT_NOT_FOUND (no fallback). The `file_version` store is shared across
  * roots and keyed by (rootId, path).
  */
 export function pagesRouter(
   resolveRoot: (rootId: string) => PageRootRuntime | undefined,
-  pageVersions: PageVersionService | null = null,
+  pageVersions: FileVersionService | null = null,
 ): Router {
   // mergeParams so the mount-level `:rootId` is visible inside this router.
   const router = Router({ mergeParams: true });
@@ -78,7 +78,7 @@ export function pagesRouter(
         try {
           await pageVersions.recordVersion(relPath, 'create', 'user', undefined, undefined, rt.root.id);
         } catch (err) {
-          console.warn(`[page-version] create capture failed for ${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] create capture failed for ${relPath}:`, (err as Error).message);
         }
       }
       const writtenAbs = path.join(rt.pages.root, relPath);
@@ -152,7 +152,7 @@ export function pagesRouter(
         try {
           await pageVersions.recordVersion(relPath, existed ? 'update' : 'create', 'user', undefined, undefined, rt.root.id);
         } catch (err) {
-          console.warn(`[page-version] capture failed for ${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] capture failed for ${relPath}:`, (err as Error).message);
         }
       }
       const writtenAbs = path.join(rt.pages.root, relPath);
@@ -184,7 +184,7 @@ export function pagesRouter(
         try {
           await pageVersions.recordVersion(relPath, 'delete', 'user', lastContent, undefined, rt.root.id);
         } catch (err) {
-          console.warn(`[page-version] delete capture failed for ${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] delete capture failed for ${relPath}:`, (err as Error).message);
         }
       }
       res.json({ ok: true });

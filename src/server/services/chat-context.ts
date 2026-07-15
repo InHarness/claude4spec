@@ -2,9 +2,9 @@ import type {
   Annotation,
   Brief,
   ChatContextType,
-  PatchResponse,
   Plan,
 } from '../../shared/entities.js';
+import type { PatchDetail } from './patch.js';
 import path from 'node:path';
 import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -151,7 +151,7 @@ export interface SystemPromptInput {
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
   brief?: Brief | null;
   /** M23: snapshot of the patch attached to this thread (only when contextType='patch'). */
-  patch?: PatchResponse | null;
+  patch?: PatchDetail | null;
 }
 
 function escapeAttr(v: string): string {
@@ -869,7 +869,7 @@ function buildAnnotations(annotations: Annotation[]): string {
  * `<current_brief>` — full file content verbatim plus a directive framing the
  * task (apply the patch's findings to the spec).
  */
-function buildCurrentPatch(patch: PatchResponse): string {
+function buildCurrentPatch(patch: PatchDetail): string {
   const fm = patch.frontmatter;
   return [
     `<current_patch ${attrs({
@@ -1008,9 +1008,9 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildAnnotations(annotations));
   }
 
-  if (currentPlan && currentPlan.content.trim().length > 0) {
+  if (currentPlan && currentPlan.body.trim().length > 0) {
     parts.push(
-      `<current_plan ${attrs({ version: currentPlan.currentVersion })}>\n${currentPlan.content}\n</current_plan>`,
+      `<current_plan ${attrs({ version: currentPlan.currentVersion })}>\n${currentPlan.body}\n</current_plan>`,
     );
   }
 

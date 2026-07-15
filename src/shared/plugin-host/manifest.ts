@@ -13,6 +13,17 @@
  */
 
 import type { EntityModuleManifest, SystemPromptContribution } from './types.js';
+import type { ExtensionReferenceType } from '../reference-extensions.js';
+
+/**
+ * v0.1.129 (M19 Slot A) — a self-closing XML reference tag contributed at the
+ * plugin-manifest level (external / entity-less tags, e.g. a plugin's own
+ * `<section_ref/>`-like tag with no backing entity). Identical shape to
+ * {@link ExtensionReferenceType} — unlike Slot B (`EntityModule.frontend.referenceType`),
+ * `entityType` is author-supplied here since there's no entity module for the
+ * host to infer it from.
+ */
+export type ReferenceTypeContribution = ExtensionReferenceType;
 
 /**
  * The Host API version this build advertises. Bumped on a breaking change to
@@ -230,6 +241,13 @@ export interface PluginManifest {
     settings?: PluginSettingsModule;
     /** M33 — declarative editor slash-commands (entity-less plugins). */
     commands?: PluginCommandContribution[];
+    /**
+     * v0.1.129 (M19 Slot A) — self-closing XML reference tags this plugin
+     * contributes, dispatched to `M19.registerExtensionReferenceType`. Additive
+     * to the `1.0.0` baseline (see `HOST_API_VERSION` above) — same precedent
+     * as M13's declarative backend slots, no version bump.
+     */
+    referenceTypes?: ReferenceTypeContribution[];
   };
 }
 

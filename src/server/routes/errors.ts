@@ -19,14 +19,20 @@ const STATUS_FOR_CODE: Record<string, number> = {
   NOT_IMPLEMENTED: 501,
   // M21 Briefs
   BRIEF_SAME_RELEASE: 400,
-  BRIEF_FRONTMATTER_IMMUTABLE: 400,
   BRIEF_INVALID_FRONTMATTER: 400,
   BRIEF_CONFLICT: 409,
   PAGE_CONFLICT: 409,
   // M23 Patches
   PATCH_CONFLICT: 409,
-  PATCH_FRONTMATTER_IMMUTABLE: 400,
   PATCH_INVALID_FRONTMATTER: 400,
+  // M36 chat artifacts (brief/patch/plan, shared)
+  IMMUTABLE_FIELD: 400,
+  UNKNOWN_ARTIFACT_KIND: 404,
+  // 0.1.127 M10 Plans (filesystem-backed)
+  PLAN_CONFLICT: 409,
+  PLAN_INVALID_FRONTMATTER: 400,
+  MISSING_TITLE: 400,
+  THREAD_NOT_ATTACHED_TO_PLAN: 400,
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,
@@ -52,6 +58,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
     return res.status(409).json({
       error: { code: err.code, message: err.message },
       currentHash: err.currentHash,
+      ...(err.currentContent !== undefined ? { currentContent: err.currentContent } : {}),
     });
   }
   if (err instanceof DomainError) {

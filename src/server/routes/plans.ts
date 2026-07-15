@@ -3,24 +3,24 @@ import type { PlanExecuteMode } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
 import { DomainError } from '../services/tags.js';
 
+/**
+ * 0.1.127 M10: plan CRUD/versioning/blame moved to the generic
+ * `/api/artifacts/plan/*` family (routes/artifacts.ts) — `GET /api/plans`,
+ * `GET/PUT/PATCH /api/plans/:planId`, `GET /api/plans/:planId/versions[/:version]`,
+ * `GET /api/plans/:planId/blame` are all GONE. What stays here is plan's
+ * bespoke thread-binding behavior (`binding.mode: 'attach'`), re-pathed
+ * `:planId` (integer) → `:slug` (string, the file path relative to plansDir):
+ * `create-thread`/`execute` have richer semantics than the generic
+ * `POST .../threads` (execute's two modes, initialMessage), and
+ * `last-thread`/`by-thread`/`by-anchor`/`threads` are plan-specific queries
+ * with no generic-family equivalent.
+ */
 export function plansRouter(plan: PlanService): Router {
   const router = Router();
 
-  router.get('/', (req, res, next) => {
+  router.get('/by-thread/:threadId', async (req, res, next) => {
     try {
-      const limit = req.query.limit ? Math.max(1, Number(req.query.limit)) : undefined;
-      const offset = req.query.offset ? Math.max(0, Number(req.query.offset)) : undefined;
-      const search = typeof req.query.search === 'string' ? req.query.search : undefined;
-      const result = plan.listPlans({ limit, offset, search });
-      res.json({ data: result });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/by-thread/:threadId', (req, res, next) => {
-    try {
-      const row = plan.getByThread(req.params.threadId);
+      const row = await plan.getByThread(req.params.threadId);
       res.json({ data: row });
     } catch (err) {
       next(err);
@@ -28,11 +28,11 @@ export function plansRouter(plan: PlanService): Router {
   });
 
   // Resolve a plan heading anchor to its plan, mirroring GET /api/sections/:anchor.
-  // Returns the raw { planId, threadId } (no data envelope) or 404, so the client chip
-  // can fall back from a page-section miss to a plan lookup.
-  router.get('/by-anchor/:anchor', (req, res, next) => {
+  // Returns the raw { planPath, threadId } (no data envelope) or 404, so the client
+  // chip can fall back from a page-section miss to a plan lookup.
+  router.get('/by-anchor/:anchor', async (req, res, next) => {
     try {
-      const row = plan.getByAnchor(req.params.anchor);
+      const row = await plan.getByAnchor(req.params.anchor);
       if (!row)
         return res
           .status(404)
@@ -43,188 +43,40 @@ export function plansRouter(plan: PlanService): Router {
     }
   });
 
-  router.get('/:planId', (req, res, next) => {
+  router.get('/:slug/threads', (req, res, next) => {
     try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const row = plan.getById(planId);
-      const { versions, total } = plan.listVersions(planId);
-      const threadCount = plan.threadCount(planId);
-      const lastThreadId = plan.findLastThreadIdForPlan(planId);
-      res.json({
-        data: {
-          ...row,
-          versions,
-          versionsTotal: total,
-          threadCount,
-          lastThreadId,
-        },
-      });
+      res.json({ data: plan.listThreadsForPlan(req.params.slug) });
     } catch (err) {
       next(err);
     }
   });
 
-  router.get('/:planId/versions', (req, res, next) => {
+  router.get('/:slug/last-thread', (req, res, next) => {
     try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const limit = req.query.limit ? Math.max(1, Number(req.query.limit)) : undefined;
-      const offset = req.query.offset ? Math.max(0, Number(req.query.offset)) : undefined;
-      plan.getById(planId);
-      const result = plan.listVersions(planId, { limit, offset });
-      res.json({ data: result.versions, total: result.total });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:planId/versions/:version', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      const version = Number(req.params.version);
-      if (!Number.isInteger(planId) || !Number.isInteger(version)) {
-        throw new DomainError('VALIDATION', 'planId and version must be integers');
-      }
-      const row = plan.getVersion(planId, version);
-      res.json({ data: row });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:planId/blame', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const blocks = plan.blame(planId);
-      res.json({ data: blocks });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:planId/threads', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      plan.getById(planId); // 404 if the plan does not exist
-      res.json({ data: plan.listThreadsForPlan(planId) });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:planId/last-thread', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      plan.getById(planId);
-      const threadId = plan.findLastThreadIdForPlan(planId);
+      const threadId = plan.findLastThreadIdForPlan(req.params.slug);
       res.json({ data: { threadId } });
     } catch (err) {
       next(err);
     }
   });
 
-  router.patch('/:planId', (req, res, next) => {
+  router.post('/:slug/create-thread', async (req, res, next) => {
     try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const titleRaw = req.body?.title;
-      if (typeof titleRaw !== 'string' && titleRaw !== null) {
-        throw new DomainError('VALIDATION', 'title must be a string or null');
-      }
-      const updated = plan.updatePlanTitle(planId, titleRaw);
-      res.json({ data: updated });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.put('/:planId', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const content = req.body?.content;
-      if (typeof content !== 'string') {
-        throw new DomainError('VALIDATION', 'content (string) required');
-      }
-      const changeSummary =
-        typeof req.body?.changeSummary === 'string' ? req.body.changeSummary : 'User edit';
-      const explicitThreadId =
-        typeof req.body?.threadId === 'string' ? req.body.threadId : null;
-
-      plan.getById(planId);
-      const threadId = explicitThreadId ?? plan.findLastThreadIdForPlan(planId);
-      if (!threadId) {
-        throw new DomainError(
-          'VALIDATION',
-          'plan has no attached thread; cannot record user_edit (pass `threadId` in body)'
-        );
-      }
-
-      const result = plan.update({
-        threadId,
-        action: 'user_edit',
-        content,
-        changeSummary,
-        changedBy: 'user',
-      });
-      res.json({
-        data: {
-          plan: result.plan,
-          version: result.version,
-        },
-      });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.post('/:planId/create-thread', (req, res, next) => {
-    try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
-      const result = plan.attachThreadToPlan(planId);
+      const result = await plan.attachThreadToPlan(req.params.slug);
       res.status(201).json({ data: result });
     } catch (err) {
       next(err);
     }
   });
 
-  router.post('/:planId/execute', (req, res, next) => {
+  router.post('/:slug/execute', async (req, res, next) => {
     try {
-      const planId = Number(req.params.planId);
-      if (!Number.isInteger(planId)) {
-        throw new DomainError('VALIDATION', 'planId must be an integer');
-      }
       const mode = req.body?.mode as PlanExecuteMode | undefined;
       if (mode !== 'new-session' && mode !== 'continue') {
-        throw new DomainError(
-          'VALIDATION',
-          "mode must be 'new-session' or 'continue'"
-        );
+        throw new DomainError('VALIDATION', "mode must be 'new-session' or 'continue'");
       }
-      const threadId =
-        typeof req.body?.threadId === 'string' ? req.body.threadId : undefined;
-      const result = plan.execute(planId, mode, { threadId });
+      const threadId = typeof req.body?.threadId === 'string' ? req.body.threadId : undefined;
+      const result = await plan.execute(req.params.slug, mode, { threadId });
       res.json({ data: result });
     } catch (err) {
       next(err);

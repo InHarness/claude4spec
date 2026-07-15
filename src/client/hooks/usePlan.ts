@@ -1,40 +1,61 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api-core.js';
+import { encodeArtifactPath } from '../lib/artifact-path.js';
 import type {
-  BlameBlock,
   Plan,
   PlanExecuteMode,
   PlanExecuteResult,
-  PlanListItem,
+  PlanFrontmatter,
   PlanThreadItem,
-  PlanVersion,
-  PlanVersionMeta,
 } from '../../shared/entities.js';
 
 type Envelope<T> = { data: T };
 
-const keys = {
-  list: (opts: { search?: string; limit?: number; offset?: number } | undefined) =>
-    ['plans-list', opts ?? {}] as const,
-  byThread: (threadId: string) => ['plan', 'by-thread', threadId] as const,
-  threads: (planId: number) => ['plan', 'threads', planId] as const,
-  detail: (planId: number) => ['plan', 'detail', planId] as const,
-  versions: (planId: number) => ['plan', 'versions', planId] as const,
-  version: (planId: number, version: number) =>
-    ['plan', 'version', planId, version] as const,
-  blame: (planId: number) => ['plan', 'blame', planId] as const,
-};
-
-export interface PlanDetailResponse extends Plan {
-  versions: PlanVersionMeta[];
-  versionsTotal: number;
-  threadCount: number;
-  lastThreadId: string | null;
+interface ArtifactListItem {
+  path: string;
+  frontmatter: Record<string, unknown>;
+  hash: string;
+  updatedAt: string | null;
 }
 
-interface PlansListResponse {
-  plans: PlanListItem[];
-  total: number;
+interface PlanArtifactResponse {
+  path: string;
+  frontmatter: PlanFrontmatter;
+  body: string;
+  content: string;
+  hash: string;
+}
+
+export interface FileVersionListItem {
+  id: number;
+  path: string;
+  version: number;
+  op: 'create' | 'update' | 'delete';
+  changedBy: 'user' | 'agent' | 'filesystem';
+  releaseId: number | null;
+  serializerVersion: string;
+  createdAt: string;
+  rootId: string;
+  changeSummary: string | null;
+}
+
+const keys = {
+  list: (opts: { search?: string } | undefined) => ['plans-list', opts ?? {}] as const,
+  byThread: (threadId: string) => ['plan', 'by-thread', threadId] as const,
+  threads: (planPath: string) => ['plan', 'threads', planPath] as const,
+  detail: (planPath: string) => ['plan', 'detail', planPath] as const,
+  versions: (planPath: string) => ['plan', 'versions', planPath] as const,
+  version: (planPath: string, version: number) => ['plan', 'version', planPath, version] as const,
+};
+
+export interface PlanDetailResponse extends PlanArtifactResponse {
+  threads: PlanThreadItem[];
+}
+
+export interface PlanListEntry {
+  path: string;
+  title: string | null;
+  updatedAt: string | null;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -49,50 +70,49 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export function usePlans(opts: { search?: string; limit?: number; offset?: number } = {}) {
+/** 0.1.127: plan listing moved to the generic M36 family (`GET /api/plans` is gone). */
+export function usePlans(opts: { search?: string } = {}) {
   return useQuery({
     queryKey: keys.list(opts),
-    queryFn: async () => {
+    queryFn: async (): Promise<PlanListEntry[]> => {
       const params = new URLSearchParams();
       if (opts.search) params.set('search', opts.search);
-      if (typeof opts.limit === 'number') params.set('limit', String(opts.limit));
-      if (typeof opts.offset === 'number') params.set('offset', String(opts.offset));
       const qs = params.toString();
-      const url = qs ? `/api/plans?${qs}` : `/api/plans`;
-      const body = await fetchJson<Envelope<PlansListResponse>>(url);
-      return body.data;
+      const url = qs ? `/api/artifacts/plan?${qs}` : `/api/artifacts/plan`;
+      const body = await fetchJson<Envelope<ArtifactListItem[]>>(url);
+      return body.data.map((item) => ({
+        path: item.path,
+        title: typeof item.frontmatter.title === 'string' ? item.frontmatter.title : null,
+        updatedAt: item.updatedAt,
+      }));
     },
   });
 }
 
-export function usePlan(planId: number | null) {
+/** 0.1.127: identity is now the file path (slug), not a numeric id — mirrors briefs/patches. */
+export function usePlan(planPath: string | null) {
   return useQuery({
-    queryKey: planId === null ? ['plan', 'detail', 'none'] : keys.detail(planId),
+    queryKey: planPath === null ? ['plan', 'detail', 'none'] : keys.detail(planPath),
     queryFn: async () => {
       const body = await fetchJson<Envelope<PlanDetailResponse>>(
-        `/api/plans/${planId}`,
+        `/api/artifacts/plan/${encodeArtifactPath(planPath!)}`,
       );
       return body.data;
     },
-    enabled: planId !== null,
+    enabled: planPath !== null,
   });
 }
 
-/**
- * P2: a plan's attached threads via the dedicated `GET /api/plans/:planId/threads`
- * projection — independent of the paginated `GET /api/threads` list, so PlanPage's
- * "Used by N threads" dropdown shows every attached thread regardless of pagination.
- */
-export function usePlanThreads(planId: number | null) {
+export function usePlanThreads(planPath: string | null) {
   return useQuery({
-    queryKey: planId === null ? ['plan', 'threads', 'none'] : keys.threads(planId),
+    queryKey: planPath === null ? ['plan', 'threads', 'none'] : keys.threads(planPath),
     queryFn: async () => {
       const body = await fetchJson<Envelope<PlanThreadItem[]>>(
-        `/api/plans/${planId}/threads`,
+        `/api/plans/${encodeArtifactPath(planPath!)}/threads`,
       );
       return body.data;
     },
-    enabled: planId !== null,
+    enabled: planPath !== null,
   });
 }
 
@@ -110,74 +130,59 @@ export function usePlanByThread(threadId: string | null) {
   });
 }
 
-export function usePlanVersions(planId: number | null) {
+/** 0.1.127: version history moved to the generic M36 family + `file_version` — no more per-action metadata (see brief 0-1-126-to-0-1-127 drift notes). */
+export function usePlanVersions(planPath: string | null) {
   return useQuery({
-    queryKey: planId === null ? ['plan', 'versions', 'none'] : keys.versions(planId),
+    queryKey: planPath === null ? ['plan', 'versions', 'none'] : keys.versions(planPath),
     queryFn: async () => {
-      const body = await fetchJson<{ data: PlanVersionMeta[]; total: number }>(
-        `/api/plans/${planId}/versions`,
+      const body = await fetchJson<Envelope<FileVersionListItem[]>>(
+        `/api/artifacts/plan/${encodeArtifactPath(planPath!)}/versions`,
       );
-      return { versions: body.data, total: body.total };
+      return { versions: body.data, total: body.data.length };
     },
-    enabled: planId !== null,
+    enabled: planPath !== null,
   });
 }
 
-export function usePlanVersion(planId: number | null, version: number | null) {
+export function usePlanVersion(planPath: string | null, version: number | null) {
   return useQuery({
     queryKey:
-      planId === null || version === null
+      planPath === null || version === null
         ? ['plan', 'version', 'none']
-        : keys.version(planId, version),
+        : keys.version(planPath, version),
     queryFn: async () => {
-      const body = await fetchJson<Envelope<PlanVersion>>(
-        `/api/plans/${planId}/versions/${version}`,
+      const body = await fetchJson<Envelope<FileVersionListItem & { data: { content: string } }>>(
+        `/api/artifacts/plan/${encodeArtifactPath(planPath!)}/versions/${version}`,
       );
       return body.data;
     },
-    enabled: planId !== null && version !== null,
+    enabled: planPath !== null && version !== null,
   });
 }
 
-export function usePlanBlame(planId: number | null) {
-  return useQuery({
-    queryKey: planId === null ? ['plan', 'blame', 'none'] : keys.blame(planId),
-    queryFn: async () => {
-      const body = await fetchJson<Envelope<BlameBlock[]>>(
-        `/api/plans/${planId}/blame`,
-      );
-      return body.data;
-    },
-    enabled: planId !== null,
-  });
-}
-
+/**
+ * 0.1.127: full-content save now goes through the generic
+ * `PUT /api/artifacts/plan/:path/content` — optimistic concurrency via
+ * `expectedHash` (409 on conflict), same contract as briefs/patches. The old
+ * `PUT /api/plans/:planId` (no hash required, always won) is gone.
+ */
 export function useSavePlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: {
-      planId: number;
-      content: string;
-      changeSummary?: string;
-      threadId?: string;
-    }) => {
-      const body = await fetchJson<
-        Envelope<{ plan: Plan; version: number }>
-      >(`/api/plans/${input.planId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content: input.content,
-          changeSummary: input.changeSummary,
-          threadId: input.threadId,
-        }),
-      });
+    mutationFn: async (input: { planPath: string; content: string; expectedHash: string }) => {
+      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+        `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/content`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: input.content, expectedHash: input.expectedHash }),
+        },
+      );
       return body.data;
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: keys.detail(data.plan.id) });
-      qc.invalidateQueries({ queryKey: keys.versions(data.plan.id) });
-      qc.invalidateQueries({ queryKey: keys.blame(data.plan.id) });
+      qc.invalidateQueries({ queryKey: keys.detail(data.path) });
+      qc.invalidateQueries({ queryKey: keys.versions(data.path) });
       qc.invalidateQueries({ queryKey: ['plan', 'by-thread'] });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
@@ -187,19 +192,19 @@ export function useSavePlan() {
 export function useUpdatePlanTitle() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { planId: number; title: string | null }) => {
-      const body = await fetchJson<Envelope<Plan>>(
-        `/api/plans/${input.planId}`,
+    mutationFn: async (input: { planPath: string; title: string }) => {
+      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+        `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/frontmatter`,
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: input.title }),
+          body: JSON.stringify({ frontmatter: { title: input.title } }),
         },
       );
       return body.data;
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: keys.detail(data.id) });
+      qc.invalidateQueries({ queryKey: keys.detail(data.path) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
   });
@@ -208,9 +213,9 @@ export function useUpdatePlanTitle() {
 export function useCreateThreadFromPlan() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: { planId: number }) => {
+    mutationFn: async (input: { planPath: string }) => {
       const body = await fetchJson<Envelope<{ threadId: string }>>(
-        `/api/plans/${input.planId}/create-thread`,
+        `/api/plans/${encodeArtifactPath(input.planPath)}/create-thread`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -219,8 +224,8 @@ export function useCreateThreadFromPlan() {
       return body.data;
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: keys.detail(vars.planId) });
-      qc.invalidateQueries({ queryKey: keys.threads(vars.planId) });
+      qc.invalidateQueries({ queryKey: keys.detail(vars.planPath) });
+      qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
       qc.invalidateQueries({ queryKey: ['threads'] });
     },
@@ -231,12 +236,12 @@ export function useExecutePlan() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: {
-      planId: number;
+      planPath: string;
       mode: PlanExecuteMode;
       threadId?: string;
     }) => {
       const body = await fetchJson<Envelope<PlanExecuteResult>>(
-        `/api/plans/${input.planId}/execute`,
+        `/api/plans/${encodeArtifactPath(input.planPath)}/execute`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -246,8 +251,8 @@ export function useExecutePlan() {
       return body.data;
     },
     onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: keys.detail(vars.planId) });
-      qc.invalidateQueries({ queryKey: keys.threads(vars.planId) });
+      qc.invalidateQueries({ queryKey: keys.detail(vars.planPath) });
+      qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
       qc.invalidateQueries({ queryKey: ['threads'] });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },

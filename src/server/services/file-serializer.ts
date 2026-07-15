@@ -1,9 +1,9 @@
 /**
- * PageSerializer — M02 stays out of L9 plugin host (M17 decyzja 1).
+ * FileSerializer — M02 stays out of L9 plugin host (M17 decyzja 1).
  * Lives outside `EntitySerializer` registry; provides parallel
- * snapshot/restore/diff for markdown pages.
+ * snapshot/restore/diff for markdown files (pages, briefs, patches).
  *
- * Snapshot shape — `PageSnapshotData` per `db-m17-snapshots.md` (`dbm17shp01`).
+ * Snapshot shape — `FileSnapshotData` per `db-m17-snapshots.md` (`dbm17shp01`).
  * Diff variant C (M17 decyzja 10): section-level operations + mandatory
  * `line_diff` inside each `section_modified` + `frontmatter_diff` /
  * `xml_refs_diff` side-channels.
@@ -17,7 +17,7 @@ import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
 
-export const PAGE_SERIALIZER_VERSION = '1.1.0';
+export const FILE_SERIALIZER_VERSION = '1.1.0';
 
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
 const ANCHOR_LINE_RE = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
@@ -25,21 +25,21 @@ const ANCHOR_INLINE_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const CODE_FENCE_RE = /^\s*```/m;
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
-export interface PageXmlRef {
+export interface FileXmlRef {
   tagType: string;
   attributes: Record<string, string>;
   position: number;
 }
 
-export interface PageSnapshotData {
+export interface FileSnapshotData {
   path: string;
   content: string;
   frontmatter: Record<string, unknown>;
   anchors: string[];
-  xml_refs: PageXmlRef[];
+  xml_refs: FileXmlRef[];
 }
 
-export interface PageSection {
+export interface FileSection {
   anchor: string;
   heading: string;
   level: number;
@@ -54,8 +54,8 @@ export interface FrontmatterDiff {
 }
 
 export interface XmlRefsDiff {
-  added: PageXmlRef[];
-  removed: PageXmlRef[];
+  added: FileXmlRef[];
+  removed: FileXmlRef[];
 }
 
 /** Per-line diff inside a modified section (M17 decyzja 10 wariant C). */
@@ -76,11 +76,11 @@ export interface ModifiedSection {
   line_diff: LineDiff;
 }
 
-export interface PageDiff {
+export interface FileDiff {
   path: string;
   op: 'created' | 'deleted' | 'modified' | 'noop';
-  added_sections: PageSection[];
-  removed_sections: PageSection[];
+  added_sections: FileSection[];
+  removed_sections: FileSection[];
   modified_sections: ModifiedSection[];
   moved_sections: Array<{ anchor: string; from_position: number; to_position: number }>;
   frontmatter_diff: FrontmatterDiff | null;
@@ -131,8 +131,8 @@ export function extractAnchorsInOrder(content: string): string[] {
   return out;
 }
 
-export class PageSerializer {
-  readonly version = PAGE_SERIALIZER_VERSION;
+export class FileSerializer {
+  readonly version = FILE_SERIALIZER_VERSION;
 
   constructor(private pages: PagesService) {}
 
@@ -140,14 +140,14 @@ export class PageSerializer {
    * Read the file from disk and produce a deterministic, byte-faithful
    * snapshot. Reads `content` byte-for-byte (preserves BOM, line endings).
    */
-  async snapshot(relPath: string): Promise<PageSnapshotData> {
+  async snapshot(relPath: string): Promise<FileSnapshotData> {
     const abs = path.join(this.pages.root, relPath);
     const raw = await fs.readFile(abs, 'utf-8');
     return this.snapshotFromContent(relPath, raw);
   }
 
   /** Build snapshot from already-read content (used for delete tombstones). */
-  snapshotFromContent(relPath: string, content: string): PageSnapshotData {
+  snapshotFromContent(relPath: string, content: string): FileSnapshotData {
     const parsed = matter(content);
     const anchors = extractAnchorsInOrder(content);
     const xml_refs = parseXmlTagsExcludingCode(content).map((t) => ({
@@ -171,8 +171,8 @@ export class PageSerializer {
    * of section content in our parser). Each `modified` section carries a
    * mandatory `line_diff` computed via Myers diff over section bodies.
    */
-  diff(a: PageSnapshotData | null, b: PageSnapshotData | null, relPath: string): PageDiff {
-    const empty: Pick<PageDiff, 'added_sections' | 'removed_sections' | 'modified_sections' | 'moved_sections'> = {
+  diff(a: FileSnapshotData | null, b: FileSnapshotData | null, relPath: string): FileDiff {
+    const empty: Pick<FileDiff, 'added_sections' | 'removed_sections' | 'modified_sections' | 'moved_sections'> = {
       added_sections: [],
       removed_sections: [],
       modified_sections: [],
@@ -213,8 +213,8 @@ export class PageSerializer {
     const aMap = new Map(aSec.map((s) => [s.anchor, s]));
     const bMap = new Map(bSec.map((s) => [s.anchor, s]));
 
-    const added: PageSection[] = [];
-    const removed: PageSection[] = [];
+    const added: FileSection[] = [];
+    const removed: FileSection[] = [];
     const modified: ModifiedSection[] = [];
     const moved: Array<{ anchor: string; from_position: number; to_position: number }> = [];
 
@@ -273,9 +273,9 @@ export class PageSerializer {
  * level. Content without an anchor is grouped under an implicit root section
  * keyed by `__root__`.
  */
-export function parseSections(content: string): PageSection[] {
+export function parseSections(content: string): FileSection[] {
   const lines = content.split('\n');
-  const sections: PageSection[] = [];
+  const sections: FileSection[] = [];
 
   let position = 0;
   let currentAnchor: string | null = null;
@@ -387,17 +387,17 @@ function frontmatterDiff(
   return { added, removed, changed };
 }
 
-function xmlRefsDiff(a: PageXmlRef[], b: PageXmlRef[]): XmlRefsDiff | null {
+function xmlRefsDiff(a: FileXmlRef[], b: FileXmlRef[]): XmlRefsDiff | null {
   // Identity = (tagType, canonical attrs). Position is EXCLUDED on purpose:
   // inserting text above a tag shifts its byte offset, which would otherwise
   // surface as a fake `removed @ oldPos + added @ newPos` pair for a tag that
   // didn't actually change. Identical-attribute occurrences are deduped by
   // multiset count (not by Set membership), so duplicates are tracked correctly:
   // 2 occurrences before, 1 after → exactly 1 reported as removed.
-  const keyOf = (r: PageXmlRef) =>
+  const keyOf = (r: FileXmlRef) =>
     `${r.tagType}|${JSON.stringify(canonicalAttrs(r.attributes))}`;
-  const groupBy = (refs: PageXmlRef[]): Map<string, PageXmlRef[]> => {
-    const m = new Map<string, PageXmlRef[]>();
+  const groupBy = (refs: FileXmlRef[]): Map<string, FileXmlRef[]> => {
+    const m = new Map<string, FileXmlRef[]>();
     for (const r of refs) {
       const k = keyOf(r);
       const bucket = m.get(k);
@@ -408,8 +408,8 @@ function xmlRefsDiff(a: PageXmlRef[], b: PageXmlRef[]): XmlRefsDiff | null {
   };
   const aByKey = groupBy(a);
   const bByKey = groupBy(b);
-  const added: PageXmlRef[] = [];
-  const removed: PageXmlRef[] = [];
+  const added: FileXmlRef[] = [];
+  const removed: FileXmlRef[] = [];
   const allKeys = new Set([...aByKey.keys(), ...bByKey.keys()]);
   for (const k of allKeys) {
     const aArr = aByKey.get(k) ?? [];

@@ -4,10 +4,6 @@ import { useQueryClient } from '@tanstack/react-query';
 import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
-import {
-  BlameDecoration,
-  refreshBlame,
-} from '../tiptap/extensions/BlameDecoration.js';
 import { refreshAnnotations } from '../tiptap/extensions/AnnotationHighlight.js';
 import { AnnotationBubble } from '../tiptap/AnnotationBubble.js';
 import { OutlineFloater } from './OutlineFloater.js';
@@ -15,37 +11,26 @@ import { useChatStore } from '../state/chat.js';
 import { useOutlineStore } from '../state/outline.js';
 import { usePagesIndex } from '../hooks/usePagesIndex.js';
 import { useScrollToAnchor } from '../hooks/useScrollToAnchor.js';
-import type { BlameBlock } from '../../shared/entities.js';
 
 interface Props {
   content: string;
   onChange(markdown: string, dirty: boolean): void;
-  blame: BlameBlock[];
-  blameOn: boolean;
   currentPage: string;
 }
 
-export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: Props) {
+export function PlanEditor({ content, onChange, currentPage }: Props) {
   const lastServerBodyRef = useRef<string>(content);
-  const blameRef = useRef<BlameBlock[]>(blame);
-  const blameOnRef = useRef<boolean>(blameOn);
   const annotations = useChatStore((s) => s.annotations);
   const qc = useQueryClient();
   const pagesIndex = usePagesIndex();
 
-  useEffect(() => {
-    blameRef.current = blame;
-  }, [blame]);
-  useEffect(() => {
-    blameOnRef.current = blameOn;
-  }, [blameOn]);
-
   // Same registry-driven extension set as the page editor (chips, slash-commands,
-  // @-mention, annotation highlighting), plus the plan-only BlameDecoration which
-  // is not part of the shared registry.
+  // @-mention, annotation highlighting). 0.1.127: the plan-only BlameDecoration
+  // extension is gone along with the plan_version table it read from (see brief
+  // 0-1-126-to-0-1-127) — plan_mode's active decorations are annotations only now.
   const extensions = useMemo(
-    () => [
-      ...EditorFactory.buildExtensions(
+    () =>
+      EditorFactory.buildExtensions(
         'plan',
         {
           qc,
@@ -59,11 +44,6 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
             'The plan is empty. The agent will fill it via update_plan during the conversation in PLAN MODE.',
         },
       ),
-      BlameDecoration.configure({
-        getBlame: () => blameRef.current,
-        getBlameOn: () => blameOnRef.current,
-      }),
-    ],
     [qc, currentPage],
   );
 
@@ -108,11 +88,6 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
     });
   }, [editor, pagesIndex, content, currentPage]);
 
-  // Refresh blame decorations whenever data or toggle change.
-  useEffect(() => {
-    if (editor) refreshBlame(editor.view);
-  }, [editor, blame, blameOn]);
-
   // Refresh annotation highlights when global annotations change.
   useEffect(() => {
     if (editor) refreshAnnotations(editor.view);
@@ -128,7 +103,7 @@ export function PlanEditor({ content, onChange, blame, blameOn, currentPage }: P
   }, [editor]);
 
   // Scroll to a cited plan heading when the URL carries a #anchor-<id> hash. `content`
-  // gates on the plan being loaded; `currentPage` (/plans/<id>) resets on plan switch.
+  // gates on the plan being loaded; `currentPage` (/plans/<slug>) resets on plan switch.
   useScrollToAnchor(editor, !!content, currentPage);
 
   const outlineOpen = useOutlineStore((s) => s.outlineOpen);

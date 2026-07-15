@@ -2,17 +2,23 @@ import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/
 import { z } from 'zod';
 import type { PlanAction } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
+import type { FileVersionService } from '../services/file-version.js';
+import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { DomainError } from '../services/tags.js';
 
 export interface PlanToolsContext {
   threadId: string;
   planService: PlanService;
+  /** 0.1.127: list_plan_versions/get_plan_version now read the shared M17
+   *  file_version log (keyed rootId='plan') instead of the dropped
+   *  `plan_version` table. */
+  pageVersions: FileVersionService;
 }
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 
 export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
-  const { threadId, planService } = ctx;
+  const { threadId, planService, pageVersions } = ctx;
 
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
@@ -28,13 +34,22 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
 
   const getPlan = mcpTool(
     'get_plan',
-    'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating — especially when a <system-reminder> notes the plan was edited in another thread.',
+    'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating.',
     {},
     async () => {
       try {
-        const plan = planService.getByThread(threadId);
-        if (plan) planService.markPlanSeenByThread(threadId);
-        return ok({ plan });
+        const plan = await planService.getByThread(threadId);
+        if (!plan) return ok({ plan: null });
+        return ok({
+          plan: {
+            path: plan.path,
+            title: plan.frontmatter.title,
+            content: plan.body,
+            currentVersion: plan.currentVersion,
+            createdAt: plan.createdAt,
+            updatedAt: plan.updatedAt,
+          },
+        });
       } catch (err) {
         return fail(err);
       }
@@ -50,8 +65,8 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
       '- append: append a fragment at the end of the plan (separator added automatically).',
       '- insert_after_section: insert a fragment after a target section (body of that section ends before the next heading of equal/higher level). Requires `anchor` or `heading`.',
       'Section anchors (nanoid-8 HTML comments) are auto-injected into new headings before persisting.',
-      'Each call creates an immutable snapshot in plan_version and bumps current_version GLOBALLY for the plan (model N:1 — versions are linear, last-write-wins; if another thread bumped the plan since you last saw it, the user message that triggered this turn will contain a <system-reminder> noting the new version — call get_plan first to refresh).',
-      'On first call in a thread without a plan, this upserts a new plan and attaches it to the thread.',
+      'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` on the first call fails with MISSING_TITLE.',
+      'Each call captures a new version in the shared file_version log and bumps `currentVersion`. Versions are linear, last-write-wins.',
       'Available in plan_mode=true (preferred) and plan_mode=false.',
     ].join('\n'),
     {
@@ -59,22 +74,24 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
       content: z.string(),
       anchor: z.string().optional(),
       heading: z.string().optional(),
+      title: z.string().optional(),
       changeSummary: z.string(),
     },
     async (args) => {
       try {
         const action = args.action as PlanAction;
-        const result = planService.update({
+        const result = await planService.update({
           threadId,
           action,
           content: String(args.content ?? ''),
           anchor: typeof args.anchor === 'string' ? args.anchor : undefined,
           heading: typeof args.heading === 'string' ? args.heading : undefined,
+          title: typeof args.title === 'string' ? args.title : undefined,
           changeSummary: String(args.changeSummary ?? ''),
           changedBy: 'agent',
         });
         return ok({
-          planId: result.plan.id,
+          planPath: result.plan.path,
           version: result.version,
           currentVersion: result.plan.currentVersion,
         });
@@ -86,20 +103,24 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
 
   const listPlanVersions = mcpTool(
     'list_plan_versions',
-    "List all versions of this thread's plan (metadata only, no full content). Use for audit / timeline rendering or before calling get_plan_version.",
+    "List all versions of this thread's plan (metadata only, no full content), oldest first — offset 0 is version 1. Use for audit / timeline rendering or before calling get_plan_version.",
     {
       limit: z.number().int().positive().optional(),
       offset: z.number().int().nonnegative().optional(),
     },
     async (args) => {
       try {
-        const plan = planService.getByThread(threadId);
+        const plan = await planService.getByThread(threadId);
         if (!plan) return ok({ versions: [], total: 0 });
-        const result = planService.listVersions(plan.id, {
-          limit: typeof args.limit === 'number' ? args.limit : undefined,
-          offset: typeof args.offset === 'number' ? args.offset : undefined,
-        });
-        return ok(result);
+        // FileVersionService.listVersions returns newest-first (shared with
+        // brief/patch/the client's version-history view) — reverse to
+        // oldest-first here so this tool's offset/limit contract (offset 0 =
+        // version 1, increasing offset walks forward in time) stays what it
+        // was under the old plan_version-table-backed implementation.
+        const all = [...pageVersions.listVersions(plan.path, PLAN_ROOT_MARKER)].reverse();
+        const offset = typeof args.offset === 'number' ? args.offset : 0;
+        const limit = typeof args.limit === 'number' ? args.limit : all.length;
+        return ok({ versions: all.slice(offset, offset + limit), total: all.length });
       } catch (err) {
         return fail(err);
       }
@@ -114,11 +135,12 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
     },
     async (args) => {
       try {
-        const plan = planService.getByThread(threadId);
+        const plan = await planService.getByThread(threadId);
         if (!plan) {
           return fail(new DomainError('VERSION_NOT_FOUND', 'thread has no plan'));
         }
-        const v = planService.getVersion(plan.id, Number(args.version));
+        const v = pageVersions.getVersion(plan.path, Number(args.version), PLAN_ROOT_MARKER);
+        if (!v) return fail(new DomainError('VERSION_NOT_FOUND', `version ${args.version} not found`));
         return ok(v);
       } catch (err) {
         return fail(err);

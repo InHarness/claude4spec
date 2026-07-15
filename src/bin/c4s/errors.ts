@@ -33,8 +33,9 @@ export type CliErrorCode =
   // 0.1.103 M11 — filesystem-only brief/patch command family.
   | 'BRIEF_NOT_FOUND'
   | 'PATCH_WRITE_FAILED'
-  // 0.1.106 M11 — `c4s mark-brief-implemented` (server-delegating).
-  | 'BRIEF_FRONTMATTER_IMMUTABLE'
+  // 0.1.106 M11 — `c4s mark-brief-implemented` (server-delegating; M36 renamed
+  // BRIEF_FRONTMATTER_IMMUTABLE -> IMMUTABLE_FIELD, shared with patch).
+  | 'IMMUTABLE_FIELD'
   // 0.1.104 M22 — `c4s install-skills`.
   | 'SKILLS_WRITE_FAILED'
   // 0.1.104 — `c4s agent --ct brief` create-mode error propagation.

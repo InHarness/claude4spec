@@ -104,9 +104,9 @@ function makeDeps() {
     tagsService: { list: () => [] },
     sectionsService: { count: () => 0 },
     planService: {
-      getStalePlanReminder: () => null,
-      getByThread: () => null,
-      markPlanSeenByThread: () => {},
+      // 0.1.127: stale-plan reminder pipeline removed (brief 0-1-126-to-0-1-127) —
+      // getByThread is the only method the turn-loop still calls, and it's async now.
+      getByThread: async () => null,
     },
     briefService: {},
     patchService: {},

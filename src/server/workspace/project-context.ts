@@ -2,7 +2,7 @@ import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
-import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, type Root } from '../../shared/types.js';
+import type { Root } from '../../shared/types.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
@@ -24,10 +24,11 @@ import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages
 import { slugify } from '../../shared/slug.js';
 import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
+import { backfillPlansToFilesystem } from './plan-migration.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { PatchService } from '../services/patch.js';
-import { patchesRouter } from '../routes/patches.js';
+import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
 import { RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
@@ -37,8 +38,9 @@ import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.j
 import { SectionIndexerService } from '../services/section-indexer.js';
 import { TodosIndexerService } from '../services/todos-indexer.js';
 import { PagesLinkIndexerService } from '../services/pages-link-indexer.js';
-import { PageSerializer } from '../services/page-serializer.js';
-import { PageVersionService } from '../services/page-version.js';
+import { FileSerializer } from '../services/file-serializer.js';
+import { FileVersionService } from '../services/file-version.js';
+import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
 import { RawEntityReader } from '../domain/raw-entity-reader.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
@@ -97,23 +99,23 @@ registerExtensionReferenceType({
   attrOrder: ['anchor'],
 });
 
-// v0.1.64 registers <diagram/> as the 7th XML reference type via the M19
-// extension slot. `caption` is a per-reference attribute (not stored on the
-// entity); `slug` identifies the diagram entity. No validate closure — broken
-// diagram references surface through the generic entity-reference matching
-// (tagMatchesEntity) like any other static reference.
-registerExtensionReferenceType({
-  tag: 'diagram',
-  attrOrder: ['slug', 'caption'],
-});
+// v0.1.64 originally registered <diagram/> as the 7th XML reference type here
+// too, as a standalone bootstrap side-effect call. v0.1.129 (M19 Slot B)
+// moved that registration onto diagramBackendModule.frontend.referenceType
+// (src/server/entities/diagram/plugin.ts) — it now happens automatically as
+// part of the existing registerEntityModule(diagramBackendModule) call in
+// registerAllPlugins, with `entityType` auto-injected as the module's own
+// type. No standalone call needed here anymore.
 
 /**
  * M29: one-time best-effort backup of the derived SQLite before a DB→text
  * export / divergent-rebuild, so the prior index is recoverable. Idempotent —
  * skips if the `.pre-migration.bak` already exists. M31: follows the workspace
- * slot path (the DB no longer lives in the project dir).
+ * slot path (the DB no longer lives in the project dir). Exported (0.1.127) so
+ * `workspace/plan-migration.ts`'s boot-time cutover can reuse it ahead of its
+ * own destructive DROP TABLE plan/plan_version.
  */
-function backupDbBeforeMigration(slotDir: string): void {
+export function backupDbBeforeMigration(slotDir: string): void {
   const src = path.join(slotDir, 'db.sqlite');
   const bak = path.join(slotDir, 'db.sqlite.pre-migration.bak');
   try {
@@ -245,6 +247,10 @@ async function buildInner(
   // M23: patchesDir, default '.claude4spec/patches'. Same validation as briefsDir.
   const patchesDir = bootConfig.patchesDir ?? '.claude4spec/patches';
   resolveDirAbs(cwd, patchesDir, 'patchesDir');
+  // 0.1.127 M10/M36: plansDir, default '.claude4spec/plans'. Same validation as
+  // briefsDir/patchesDir.
+  const plansDir = bootConfig.plansDir ?? '.claude4spec/plans';
+  resolveDirAbs(cwd, plansDir, 'plansDir');
 
   // M29: entitiesDir, default '.claude4spec/entities'. Same path-safety as
   // briefsDir/patchesDir — but this directory is COMMITTED to git (source of
@@ -261,15 +267,22 @@ async function buildInner(
   // 0.1.96: cross-field root overlap validation. Hard errors abort the build
   // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
   {
-    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir });
+    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir, plansDir });
     for (const w of warnings) console.warn(`[config] ${w}`);
     if (errors.length > 0) throw new Error(errors[0]);
-    // Briefs/patches are distinct catalogs — an identical dir double-captures every
-    // file into page_version under both markers. Warn (the PATCH route hard-400s).
-    if (path.resolve(cwd, briefsDir) === path.resolve(cwd, patchesDir)) {
-      console.warn(
-        `[config] briefsDir === patchesDir ("${briefsDir}") — brief/patch files will be double-indexed`,
-      );
+    // Artifact catalogs are distinct — an identical dir double-captures every
+    // file into file_version under two markers. Warn (the PATCH route hard-400s).
+    const artifactDirPairs: Array<[string, string, string, string]> = [
+      ['briefsDir', briefsDir, 'patchesDir', patchesDir],
+      ['briefsDir', briefsDir, 'plansDir', plansDir],
+      ['patchesDir', patchesDir, 'plansDir', plansDir],
+    ];
+    for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
+      if (path.resolve(cwd, aDir) === path.resolve(cwd, bDir)) {
+        console.warn(
+          `[config] ${aName} === ${bName} ("${aDir}") — files will be double-indexed`,
+        );
+      }
     }
   }
   // M01 (0.1.36): resolve the remote base URL with precedence
@@ -361,7 +374,7 @@ async function buildInner(
   const dbSlotDir = registry.slotDir(workspace, projectId);
 
   // 0.1.96: one runtime (PagesService + StaticHtmlService + PagesWatcher +
-  // PageSerializer) per configured page root. The built-in 'pages' root is
+  // FileSerializer) per configured page root. The built-in 'pages' root is
   // always present; user roots are additive. Every per-directory behaviour is
   // gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
   interface RootRuntime {
@@ -369,7 +382,7 @@ async function buildInner(
     pages: PagesService;
     staticHtml: StaticHtmlService;
     watcher: PagesWatcher;
-    serializer: PageSerializer;
+    serializer: FileSerializer;
   }
   const rootRuntimes: RootRuntime[] = [];
   for (const root of effectiveRoots) {
@@ -383,24 +396,65 @@ async function buildInner(
       pages: pagesSvc,
       staticHtml: staticSvc,
       watcher: rootWatcher,
-      serializer: new PageSerializer(pagesSvc),
+      serializer: new FileSerializer(pagesSvc),
     });
   }
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The built-in 'pages' runtime backs the many single-root consumers that still
-  // take one PagesService/PagesWatcher/PageSerializer (release restore, entity
+  // take one PagesService/PagesWatcher/FileSerializer (release restore, entity
   // reference-tools, current-page fetch, etc.).
   const pagesRuntime = rootById.get('pages')!;
   const pages = pagesRuntime.pages;
   const watcher = pagesRuntime.watcher;
   const pageSerializer = pagesRuntime.serializer;
 
-  // M21/M23: briefs & patches are NOT roots — they reuse the same primitive on
-  // dedicated instances and carry the fixed 'brief'/'patch' page_version markers.
-  const briefsPages = new PagesService(cwd, briefsDir, BRIEF_ROOT_MARKER);
-  await briefsPages.ensureRoot();
-  const patchesPages = new PagesService(cwd, patchesDir, PATCH_ROOT_MARKER);
-  await patchesPages.ensureRoot();
+  // M36: artifact mounts — one {PagesService, PagesWatcher, FileSerializer} per
+  // `artifactRegistry` entry (brief/patch today; a follow-up brief adds 'plan').
+  // Briefs & patches are NOT roots — `Root`'s releasable/referenceValidated/
+  // linkTargets/sidebar/briefTarget flags have no meaning for artifacts — so
+  // this stays a separate map (`artifactMounts`), never folded into
+  // `rootRuntimes`/`rootById`. Resolving each entry's directory through this
+  // lookup (rather than a hardcoded per-kind branch) is what lets a future
+  // `plan` entry be "add one key to `artifactDirs` + one registry entry",
+  // not a rewrite of this loop.
+  interface ArtifactMount {
+    entry: ArtifactRegistryEntry;
+    pages: PagesService;
+    watcher: PagesWatcher;
+    serializer: FileSerializer;
+  }
+  const artifactDirs: Record<ArtifactRegistryEntry['dirConfigKey'], string> = {
+    briefsDir,
+    patchesDir,
+    plansDir,
+  };
+  const artifactMounts = new Map<ArtifactKind, ArtifactMount>();
+  await Promise.all(
+    Object.values(artifactRegistry).map(async (entry) => {
+      const mountPages = new PagesService(cwd, artifactDirs[entry.dirConfigKey], entry.rootId);
+      await mountPages.ensureRoot();
+      const mountWatcher = new PagesWatcher(mountPages.root, ws, entry.rootId);
+      cleanup.push(() => mountWatcher.close());
+      artifactMounts.set(entry.kind, {
+        entry,
+        pages: mountPages,
+        watcher: mountWatcher,
+        serializer: new FileSerializer(mountPages),
+      });
+    }),
+  );
+  const briefsMount = artifactMounts.get('brief')!;
+  const patchesMount = artifactMounts.get('patch')!;
+  const plansMount = artifactMounts.get('plan')!;
+  // 0.1.127: one-time boot cutover of legacy SQLite plan rows to
+  // `plansDir/*.md` — must run before the M36 initial-sync IIFE below (~line
+  // 962) so its file_version capture picks up these files, and before
+  // PlanService is constructed since it reads exclusively through plansMount now.
+  await backfillPlansToFilesystem({
+    db: db.handle,
+    plansPages: plansMount.pages,
+    backupDb: () => backupDbBeforeMigration(dbSlotDir),
+  });
 
   const tagsService = new TagsService(db.handle);
   tagsService.setHost(pluginHost);
@@ -420,12 +474,8 @@ async function buildInner(
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
 
-  // Per-root PagesWatchers live in rootRuntimes (created above). Briefs/patches
-  // keep their own dedicated watchers, carrying the 'brief'/'patch' markers.
-  const briefsWatcher = new PagesWatcher(briefsPages.root, ws, BRIEF_ROOT_MARKER);
-  cleanup.push(() => briefsWatcher.close());
-  const patchesWatcher = new PagesWatcher(patchesPages.root, ws, PATCH_ROOT_MARKER);
-  cleanup.push(() => patchesWatcher.close());
+  // Per-root PagesWatchers live in rootRuntimes (created above); artifact
+  // watchers (brief/patch) live in `artifactMounts` (created above).
   // M29: dedicated watcher + file store + indexer for the committed entity store.
   // The page-family watchers above are rooted outside `.claude4spec/`, so this
   // watcher owns `<entitiesDir>` exclusively.
@@ -506,22 +556,22 @@ async function buildInner(
   const sectionsService = new SectionsService(db.handle);
   sectionsService.setWriteDeps(sectionIndexedRoots);
 
-  const planService = new PlanService(db.handle, ws, chatService);
   const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
   const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
   // pages-link indexer covers every page root (autocomplete/meta), resolving links
   // within each root (self-scope); cross-root @-scope is applied client-side.
   const pagesLinkIndexer = new PagesLinkIndexerService(allRootServices, ws);
-  // M21/M23 serializers for briefs/patches (own PagesService-bound instances).
-  const briefsSerializer = new PageSerializer(briefsPages);
-  const patchesSerializer = new PageSerializer(patchesPages);
   // M17: page versioning — shared instance; per-root serializer + rootId passed per recordVersion.
-  const pageVersions = new PageVersionService(db.handle, pageSerializer);
-  // M21/M23: in-memory frontmatter indexer over every page root + the brief/patch markers.
+  const pageVersions = new FileVersionService(db.handle, pageSerializer);
+  // M36: in-memory frontmatter indexer over every page root + the artifact mounts.
   const frontmatterRoots = new Map<string, PagesService>(allRootServices);
-  frontmatterRoots.set(BRIEF_ROOT_MARKER, briefsPages);
-  frontmatterRoots.set(PATCH_ROOT_MARKER, patchesPages);
-  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws);
+  for (const m of artifactMounts.values()) frontmatterRoots.set(m.entry.rootId, m.pages);
+  // rootId -> WS event kind, derived from the registry (replaces a hardcoded
+  // per-kind if/else inside PagesFrontmatterIndexer.broadcastRootChange).
+  const artifactChangedEvents = new Map(
+    Object.values(artifactRegistry).map((e) => [e.rootId, e.changedEvent] as const),
+  );
+  const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws, artifactChangedEvents);
 
   // Mount all active backend modules — each plugin constructs its own service,
   // mounts its router, registers its MCP server, and registers its entity
@@ -651,9 +701,9 @@ async function buildInner(
   // M21: BriefService — top-level (nie plugin), wzorzec analogiczny do
   // PlanService. Mountowany router /briefs poniżej.
   const briefService = new BriefService({
-    briefsPages,
-    briefsWatcher,
-    briefsSerializer,
+    briefsPages: briefsMount.pages,
+    briefsWatcher: briefsMount.watcher,
+    briefsSerializer: briefsMount.serializer,
     pageVersions,
     chatService,
     releaseService,
@@ -664,12 +714,25 @@ async function buildInner(
   // M23: PatchService — top-level (nie plugin), wzorzec analogiczny do
   // BriefService. Mountowany router /patches poniżej.
   const patchService = new PatchService({
-    patchesPages,
-    patchesWatcher,
-    patchesSerializer,
+    patchesPages: patchesMount.pages,
+    patchesWatcher: patchesMount.watcher,
+    patchesSerializer: patchesMount.serializer,
     pageVersions,
     chatService,
     frontmatterIndexer: pagesFrontmatterIndexer,
+  });
+
+  // 0.1.127 M10: PlanService — filesystem-backed as of the plan -> file
+  // migration (brief 0-1-126-to-0-1-127), same top-level/consumer-slice
+  // pattern as BriefService/PatchService above.
+  const planService = new PlanService({
+    plansPages: plansMount.pages,
+    plansWatcher: plansMount.watcher,
+    plansSerializer: plansMount.serializer,
+    pageVersions,
+    chatService,
+    frontmatterIndexer: pagesFrontmatterIndexer,
+    ws,
   });
 
   // Per-context config/meta/writing-styles (carved out of startServer inline
@@ -777,8 +840,16 @@ async function buildInner(
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
   router.use('/git', gitRouter(gitService, { onSwitched: onContextConfigChanged }));
-  router.use('/briefs', briefsRouter(briefService, pageVersions));
-  router.use('/patches', patchesRouter(patchService));
+  router.use('/briefs', briefsRouter(briefService));
+  router.use(
+    '/artifacts',
+    artifactsRouter({
+      brief: briefService,
+      patch: patchService,
+      plan: planService,
+      pageVersions,
+    }),
+  );
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
   router.use('/remote-project', remoteProjectRouter(remoteAuthService, cwd));
@@ -787,7 +858,7 @@ async function buildInner(
 
   // 0.1.96: one fan-out per root. Indexers are invoked only when the root's
   // property gates them (sectionIndexed / sidebar-visible / referenceValidated);
-  // page_version + frontmatter always capture, with the root's id + serializer.
+  // file_version + frontmatter always capture, with the root's id + serializer.
   for (const rt of rootRuntimes) {
     const rootId = rt.root.id;
     rt.watcher.onChange((relPath, kind) => {
@@ -802,7 +873,7 @@ async function buildInner(
         pagesFrontmatterIndexer.handleUnlink(rootId, relPath);
         // M17: capture filesystem-origin delete (chokidar saw external rm)
         pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[page-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
         });
       } else {
         if (rt.root.sectionIndexed) sectionIndexer.schedulePage(rootId, relPath);
@@ -813,50 +884,50 @@ async function buildInner(
         // real new file (op=create) or a re-detection — pageVersions.hasAny distinguishes.
         const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, rootId) ? 'create' : 'update';
         pageVersions.recordVersion(relPath, op, 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[page-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
+          console.warn(`[file-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
         });
       }
     });
   }
 
-  // M21 m02multidir: drugi watcher dla briefsDir. Tylko frontmatter indexer
-  // + page_version (z dedykowanym briefsSerializer). Section/todos/pages-link
-  // indexery NIE pracuja na briefsDir (briefs to nie pages w sensie M02 →
-  // nie czesc nawigowalnego drzewa, nie agreguja section_ref/todo'ow do tabel).
-  briefsWatcher.onChange((relPath, kind) => {
-    if (kind === 'unlink') {
-      pagesFrontmatterIndexer.handleUnlink(BRIEF_ROOT_MARKER, relPath);
-      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] brief delete capture for ${relPath}:`, (err as Error).message);
-      });
-    } else {
-      pagesFrontmatterIndexer.schedulePage(BRIEF_ROOT_MARKER, relPath);
-      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, BRIEF_ROOT_MARKER) ? 'create' : 'update';
-      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] brief capture for ${relPath}:`, (err as Error).message);
-      });
-      // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
-      // only fires `briefs:changed` on frontmatter changes, so body-only edits
-      // need this explicit broadcast. `external` → reload-or-confirm like Pages.
-      ws.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' });
-    }
-  });
-
-  // M23: trzeci watcher dla patchesDir — analogicznie do briefsWatcher.
-  patchesWatcher.onChange((relPath, kind) => {
-    if (kind === 'unlink') {
-      pagesFrontmatterIndexer.handleUnlink(PATCH_ROOT_MARKER, relPath);
-      pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] patch delete capture for ${relPath}:`, (err as Error).message);
-      });
-    } else {
-      pagesFrontmatterIndexer.schedulePage(PATCH_ROOT_MARKER, relPath);
-      const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, PATCH_ROOT_MARKER) ? 'create' : 'update';
-      pageVersions.recordVersion(relPath, op, 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER).catch((err) => {
-        console.warn(`[page-version] patch capture for ${relPath}:`, (err as Error).message);
-      });
-    }
-  });
+  // M36: one watcher fan-out per artifact mount. Only frontmatter indexer +
+  // file_version capture — section/todos/pages-link indexers NEVER run on
+  // artifact mounts (briefs/patches are not pages in the M02 sense: not part
+  // of the navigable tree, don't aggregate section_ref/todos into tables;
+  // `sectionIndexed: false` on every registry entry formalizes this).
+  for (const m of artifactMounts.values()) {
+    const { entry, watcher: artifactWatcher, serializer: artifactSerializer } = m;
+    artifactWatcher.onChange((relPath, kind) => {
+      if (kind === 'unlink') {
+        pagesFrontmatterIndexer.handleUnlink(entry.rootId, relPath);
+        pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, artifactSerializer, entry.rootId).catch((err) => {
+          console.warn(`[file-version] ${entry.kind} delete capture for ${relPath}:`, (err as Error).message);
+        });
+      } else {
+        pagesFrontmatterIndexer.schedulePage(entry.rootId, relPath);
+        const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, entry.rootId) ? 'create' : 'update';
+        pageVersions.recordVersion(relPath, op, 'filesystem', undefined, artifactSerializer, entry.rootId).catch((err) => {
+          console.warn(`[file-version] ${entry.kind} capture for ${relPath}:`, (err as Error).message);
+        });
+        if (entry.kind === 'brief') {
+          // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
+          // only fires `briefs:changed` on frontmatter changes, so body-only edits
+          // need this explicit broadcast. `external` → reload-or-confirm like Pages.
+          // Patches have no open-editor-refresh equivalent, so this stays brief-only.
+          ws.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' });
+        } else if (entry.kind === 'plan') {
+          // v0.1.129 fix: plans are user/agent-edited the same way briefs are
+          // (external tool, git pull, another process writing plansDir
+          // directly) but had no equivalent live-refresh broadcast — an open
+          // PlanPage kept showing stale content until navigated away and back.
+          // `plans:changed` has no `origin` field (unlike `briefs:changed`) —
+          // plans don't have the reload-or-confirm dialog flow briefs do, so
+          // this is a plain "go refetch" signal the client invalidates on.
+          ws.broadcast({ kind: 'plans:changed', path: relPath });
+        }
+      }
+    });
+  }
 
   // M29: external edits / git pull of entity files → incremental reindex.
   entitiesWatcher.onChange((relPath, kind) => {
@@ -883,8 +954,7 @@ async function buildInner(
   });
 
   for (const rt of rootRuntimes) rt.watcher.start();
-  briefsWatcher.start();
-  patchesWatcher.start();
+  for (const m of artifactMounts.values()) m.watcher.start();
 
   sectionIndexer.indexAll().catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
@@ -898,7 +968,7 @@ async function buildInner(
     console.error('[pages-link-indexer] initial indexAll failed:', err);
   });
 
-  // M17: initial sync of page_version. For each markdown file with no captured
+  // M17: initial sync of file_version. For each markdown file with no captured
   // version — or whose latest captured version is a `delete` tombstone while the
   // file is back on disk — write an `op = 'create'` baseline. The latter case
   // covers delete+recreate that happened while the server wasn't watching
@@ -914,31 +984,23 @@ async function buildInner(
           await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, rt.serializer, rt.root.id);
         }
       } catch (err) {
-        console.warn(`[page-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
+        console.warn(`[file-version] initial sync failed for root '${rt.root.id}':`, (err as Error).message);
       }
     }
   })();
 
-  // M21: initial sync — page_version baseline dla briefów + frontmatter indexer.
+  // M36: initial sync — file_version baseline per artifact mount + frontmatter indexer.
   (async () => {
-    try {
-      const files = await briefsPages.listMarkdownFiles();
-      for (const relPath of files) {
-        if (pageVersions.hasAny(relPath, BRIEF_ROOT_MARKER)) continue;
-        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, briefsSerializer, BRIEF_ROOT_MARKER);
+    for (const m of artifactMounts.values()) {
+      try {
+        const files = await m.pages.listMarkdownFiles();
+        for (const relPath of files) {
+          if (pageVersions.hasAny(relPath, m.entry.rootId)) continue;
+          await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, m.serializer, m.entry.rootId);
+        }
+      } catch (err) {
+        console.warn(`[file-version] ${m.entry.kind}s initial sync failed:`, (err as Error).message);
       }
-    } catch (err) {
-      console.warn('[page-version] briefs initial sync failed:', (err as Error).message);
-    }
-    // M23: initial sync — page_version baseline dla patchy.
-    try {
-      const files = await patchesPages.listMarkdownFiles();
-      for (const relPath of files) {
-        if (pageVersions.hasAny(relPath, PATCH_ROOT_MARKER)) continue;
-        await pageVersions.recordVersion(relPath, 'create', 'filesystem', undefined, patchesSerializer, PATCH_ROOT_MARKER);
-      }
-    } catch (err) {
-      console.warn('[page-version] patches initial sync failed:', (err as Error).message);
     }
     try {
       await pagesFrontmatterIndexer.indexAll();
@@ -1080,8 +1142,7 @@ async function buildInner(
     // M31 dispose sequence: watchers → MCP factories → room → db handle.
     dispose: async () => {
       for (const rt of rootRuntimes) await rt.watcher.close();
-      await briefsWatcher.close();
-      await patchesWatcher.close();
+      for (const m of artifactMounts.values()) await m.watcher.close();
       await entitiesWatcher.close();
       await pluginOverlayWatcher.close();
       pluginHost.clearMcpFactories();

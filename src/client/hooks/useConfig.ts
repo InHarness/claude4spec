@@ -13,6 +13,7 @@ const CONTEXT_DEFINING_FIELDS = [
   'roots',
   'briefsDir',
   'patchesDir',
+  'plansDir',
   'entitiesDir',
   'entities',
 ] as const satisfies readonly (keyof ConfigPatch)[];

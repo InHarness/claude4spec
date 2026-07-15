@@ -100,7 +100,7 @@ export class SectionsService {
   /**
    * Rewrite all `<section_ref anchor="oldAnchor"/>` occurrences to newAnchor across
    * EVERY section-indexed root (0.1.96). Atomic per-file with rollback on error.
-   * Emits page:changed via watcher suppress on each write. `changed` entries are
+   * Emits file:changed via watcher suppress on each write. `changed` entries are
    * `${rootId}:${relPath}` so a path present in two roots stays disambiguated.
    * Page links `@path.md#anchor` (M14) live elsewhere — handled by M14's link rewriter.
    */

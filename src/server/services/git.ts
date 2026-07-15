@@ -186,9 +186,9 @@ export class GitService {
   /**
    * Canonicalize the staging targets shared by `commit()` and `commitPull()`:
    * every releasable root dir + `config.json` + entitiesDir/releasesDir/
-   * briefsDir/patchesDir, realpath'd and filtered to those actually inside
-   * `root`. Root dirs / configPath may be reached through a symlink (e.g.
-   * `.claude/skills/specyfikacja` → another repo's worktree). `git add`
+   * briefsDir/patchesDir/plansDir, realpath'd and filtered to those actually
+   * inside `root`. Root dirs / configPath may be reached through a symlink
+   * (e.g. `.claude/skills/specyfikacja` → another repo's worktree). `git add`
    * matches pathspecs lexically against the real worktree root, so an
    * unresolved symlink path reads as "outside repository" — resolve to real
    * paths first.
@@ -198,12 +198,12 @@ export class GitService {
    * gitignored, so the whole dir can be staged safely. 0.1.118: also stages
    * releasesDir so a new release's identity file lands in the same commit as
    * its marker (for `resolveReleaseCommit` later) — and, when the git master
-   * switch is on, briefsDir/patchesDir too: `ensureGitignore` un-gitignores
-   * them specifically so they "become committed and shared with the team"
-   * (see its own doc comment) — that promise is empty unless staging actually
-   * includes them. When the switch is off they're still gitignored, so
-   * staging them here is a harmless no-op (`git add` on an ignored path adds
-   * nothing).
+   * switch is on, briefsDir/patchesDir/plansDir too: `ensureGitignore`
+   * un-gitignores them specifically so they "become committed and shared with
+   * the team" (see its own doc comment) — that promise is empty unless
+   * staging actually includes them. When the switch is off they're still
+   * gitignored, so staging them here is a harmless no-op (`git add` on an
+   * ignored path adds nothing).
    */
   private resolveStagingTargets(root: string): string[] {
     const bootConfig = readConfig(this.cwd);
@@ -211,6 +211,7 @@ export class GitService {
     const releasesPath = path.resolve(this.cwd, bootConfig.releasesDir);
     const briefsPath = path.resolve(this.cwd, bootConfig.briefsDir);
     const patchesPath = path.resolve(this.cwd, bootConfig.patchesDir);
+    const plansPath = path.resolve(this.cwd, bootConfig.plansDir);
     const targets: string[] = [];
     for (const p of [
       ...this.releasableRootDirs,
@@ -219,6 +220,7 @@ export class GitService {
       releasesPath,
       briefsPath,
       patchesPath,
+      plansPath,
     ]) {
       let real: string;
       try {

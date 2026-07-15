@@ -10,10 +10,10 @@ import { ReleaseService } from './release.js';
 import { ReleaseFileStore } from './release-store.js';
 import { ReleasesWatcher } from '../fs/releases-watcher.js';
 import { GitService } from './git.js';
-import { PageSerializer } from './page-serializer.js';
+import { FileSerializer } from './file-serializer.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { VersionService } from './versions.js';
-import type { PageVersionService } from './page-version.js';
+import type { FileVersionService } from './file-version.js';
 import type { RawEntityReader } from '../domain/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
@@ -33,9 +33,9 @@ async function git(args: string[], cwd: string): Promise<string> {
 // (here-unused) `snapshot()` does, so a shapeless fake PagesService is safe.
 const fakeHost = { getEntity: () => null } as unknown as PluginHost;
 const fakePagesService = {} as unknown as PagesService;
-const fakePageSerializer = new PageSerializer(fakePagesService);
+const fakeFileSerializer = new FileSerializer(fakePagesService);
 const fakeVersions = {} as unknown as VersionService;
-const fakePageVersions = { assignToRelease: () => {} } as unknown as PageVersionService;
+const fakeFileVersions = { assignToRelease: () => {} } as unknown as FileVersionService;
 const fakeRawReader = {} as unknown as RawEntityReader;
 const fakeTagsService = {} as unknown as TagsService;
 
@@ -79,8 +79,8 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       db,
       fakeHost,
       fakeVersions,
-      fakePageVersions,
-      fakePageSerializer,
+      fakeFileVersions,
+      fakeFileSerializer,
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
@@ -107,8 +107,8 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       db,
       fakeHost,
       fakeVersions,
-      fakePageVersions,
-      fakePageSerializer,
+      fakeFileVersions,
+      fakeFileSerializer,
       fakeRawReader,
       fakeTagsService,
       fakePagesService,
@@ -350,7 +350,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
       Number(info1.lastInsertRowid),
       Number(info2.lastInsertRowid),
     );
-    // SQL fallback taken (no entity_version/page_version rows exist for these
+    // SQL fallback taken (no entity_version/file_version rows exist for these
     // ids either) — proves tryGitAnchoredDiff correctly declined on slug=null.
     expect(delta.entities).toEqual([]);
     expect(delta.pages).toEqual([]);

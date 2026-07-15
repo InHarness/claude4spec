@@ -1,21 +1,19 @@
 import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ClipboardList, MessageSquare, MessageSquarePlus, Search } from 'lucide-react';
+import { ClipboardList, MessageSquarePlus, Search } from 'lucide-react';
 import { useChatStore } from '../state/chat.js';
 import { useCreateThreadFromPlan, usePlans } from '../hooks/usePlan.js';
 
 export function PlansListPage() {
   const [search, setSearch] = useState('');
-  const { data, isLoading } = usePlans({ search: search.trim() || undefined });
+  const { data: plans = [], isLoading } = usePlans({ search: search.trim() || undefined });
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const createThread = useCreateThreadFromPlan();
 
-  const plans = data?.plans ?? [];
-
-  const handleCreateThread = (planId: number) => {
+  const handleCreateThread = (planPath: string) => {
     createThread.mutate(
-      { planId },
+      { planPath },
       {
         onSuccess: ({ threadId }) => {
           setChatThreadId(threadId);
@@ -23,11 +21,6 @@ export function PlansListPage() {
         },
       },
     );
-  };
-
-  const handleOpenLastThread = (threadId: string) => {
-    setChatThreadId(threadId);
-    setChatOpen(true);
   };
 
   return (
@@ -88,11 +81,10 @@ export function PlansListPage() {
           )}
           <div className="space-y-2">
             {plans.map((p) => {
-              const title = p.title ?? `Plan #${p.id}`;
-              const isShared = p.threadCount > 1;
+              const title = p.title ?? p.path;
               return (
                 <div
-                  key={p.id}
+                  key={p.path}
                   className="flex items-start gap-3 px-4 py-3 rounded-md"
                   style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
                 >
@@ -103,50 +95,26 @@ export function PlansListPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <Link
-                        to="/plans/$planId"
-                        params={{ planId: String(p.id) }}
+                        to="/plans/$planPath"
+                        params={{ planPath: p.path }}
                         className="text-[14px] font-semibold"
                         style={{ color: 'var(--c-ink)' }}
                       >
                         {title}
                       </Link>
-                      <span
-                        className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-                        style={{
-                          background: 'var(--c-hair)',
-                          color: 'var(--c-muted)',
-                        }}
-                      >
-                        v{p.currentVersion}
-                      </span>
-                      <span
-                        className="font-mono text-[11px] px-1.5 py-0.5 rounded"
-                        style={{
-                          background: isShared ? 'var(--c-accent)' : 'transparent',
-                          color: isShared ? '#fff' : 'var(--c-subtle)',
-                          border: isShared ? 'none' : '1px solid var(--c-hair)',
-                        }}
-                        title={
-                          isShared
-                            ? `Plan referenced by ${p.threadCount} threads`
-                            : 'Single thread'
-                        }
-                      >
-                        {p.threadCount === 0
-                          ? 'orphan'
-                          : `${p.threadCount} ${p.threadCount === 1 ? 'thread' : 'threads'}`}
-                      </span>
-                      <span
-                        className="text-[11px]"
-                        style={{ color: 'var(--c-subtle)' }}
-                      >
-                        updated {formatRelative(p.updatedAt)}
-                      </span>
+                      {p.updatedAt ? (
+                        <span
+                          className="text-[11px]"
+                          style={{ color: 'var(--c-subtle)' }}
+                        >
+                          updated {formatRelative(p.updatedAt)}
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <button
-                      onClick={() => handleCreateThread(p.id)}
+                      onClick={() => handleCreateThread(p.path)}
                       disabled={createThread.isPending}
                       className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px]"
                       style={{
@@ -158,29 +126,6 @@ export function PlansListPage() {
                     >
                       <MessageSquarePlus size={11} />
                       New thread
-                    </button>
-                    <button
-                      onClick={() =>
-                        p.lastThreadId && handleOpenLastThread(p.lastThreadId)
-                      }
-                      disabled={p.lastThreadId === null}
-                      className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px]"
-                      style={{
-                        background: 'transparent',
-                        color: p.lastThreadId
-                          ? 'var(--c-ink)'
-                          : 'var(--c-subtle)',
-                        border: '1px solid var(--c-hair)',
-                        cursor: p.lastThreadId ? 'pointer' : 'not-allowed',
-                      }}
-                      title={
-                        p.lastThreadId
-                          ? 'Open most recently active thread for this plan'
-                          : 'No threads attached to this plan'
-                      }
-                    >
-                      <MessageSquare size={11} />
-                      Last thread
                     </button>
                   </div>
                 </div>

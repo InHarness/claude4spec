@@ -4,7 +4,7 @@
  * (M29) — with one critical divergence, spelled out below.
  *
  * `spec_release.id` is an AUTOINCREMENT surrogate key referenced by a loose
- * app-level FK from `entity_version.release_id` / `page_version.release_id`.
+ * app-level FK from `entity_version.release_id` / `file_version.release_id`.
  * Unlike `EntityIndexerService.indexAll()` (which safely DELETE-alls every
  * entity table because entities are keyed by a natural `slug`, not a
  * surrogate id anything else points at), this indexer must NEVER delete-all-
@@ -16,7 +16,7 @@
  * feature (no backing file, `slug IS NULL`) are never touched by any of this
  * — SQLite's `UNIQUE` allows multiple `NULL`s.
  *
- * This service never writes to `entity_version`/`page_version`; those
+ * This service never writes to `entity_version`/`file_version`; those
  * `release_id` columns are runtime-only and are not reconstructed from disk.
  */
 
@@ -98,7 +98,7 @@ export class ReleaseIndexerService {
     const slug = this.store.parseRelPath(relPath);
     if (!slug) return;
     // No DB-level FK cascade exists (spec_release.id is only a loose
-    // app-level reference from entity_version/page_version.release_id) — this
+    // app-level reference from entity_version/file_version.release_id) — this
     // intentionally leaves those columns dangling for the removed release,
     // matching the brief's accepted-risk framing for a deleted release file.
     this.db.prepare(`DELETE FROM spec_release WHERE slug = ?`).run(slug);
