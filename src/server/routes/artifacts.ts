@@ -1,0 +1,268 @@
+import crypto from 'node:crypto';
+import { Router } from 'express';
+import type { BriefService } from '../services/brief.js';
+import type { PatchService } from '../services/patch.js';
+import type { FileVersionService } from '../services/file-version.js';
+import type { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
+import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
+import type { ArtifactListItem, ArtifactResponse, PatchStatus } from '../../shared/entities.js';
+import { DomainError } from '../services/tags.js';
+
+/**
+ * M36 — generic REST family replacing the per-kind `/api/briefs/*`/`/api/patches/*`
+ * routes (7 endpoints, parametrized by `:kind`). `BriefService`/`PatchService`
+ * stay the kind-specific implementations (each has its own creation flow /
+ * query-filter semantics that don't generalize cleanly) — this router is a
+ * thin adapter layer translating each service's internal shape to the generic
+ * `ArtifactResponse`/`ArtifactListItem` DTOs at the REST boundary. Adding a
+ * future kind (e.g. `plan`, see 0-1-126-to-0-1-127) means adding one entry to
+ * `adapters` below, not touching the route handlers.
+ */
+interface ArtifactKindAdapter {
+  list(query: Record<string, unknown>): ArtifactListItem[];
+  get(path: string): Promise<ArtifactResponse>;
+  updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
+  updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
+  createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
+}
+
+export interface ArtifactsRouterDeps {
+  brief: BriefService;
+  patch: PatchService;
+  pageVersions: FileVersionService;
+  frontmatterIndexer: PagesFrontmatterIndexer;
+}
+
+function sha256Hex(content: string): string {
+  return crypto.createHash('sha256').update(content, 'utf-8').digest('hex');
+}
+
+function toArtifactListItem(
+  path: string,
+  rootId: string,
+  deps: Pick<ArtifactsRouterDeps, 'frontmatterIndexer' | 'pageVersions'>,
+): ArtifactListItem {
+  const frontmatter = deps.frontmatterIndexer.getFrontmatter(rootId, path) ?? {};
+  const lastVersion = deps.pageVersions.getLatestForPath(path, undefined, rootId);
+  return {
+    path,
+    frontmatter,
+    hash: lastVersion ? sha256Hex(lastVersion.data.content) : '',
+    updatedAt: lastVersion?.createdAt ?? null,
+  };
+}
+
+function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
+  const { brief: briefs } = deps;
+  const rootId = artifactRegistry.brief.rootId;
+  return {
+    list(query) {
+      let implemented: boolean | undefined;
+      if (query.implemented === undefined) {
+        implemented = undefined;
+      } else if (query.implemented === 'true') {
+        implemented = true;
+      } else if (query.implemented === 'false') {
+        implemented = false;
+      } else {
+        throw new DomainError('VALIDATION', `?implemented must be 'true' or 'false' (omit for all)`);
+      }
+      return briefs.listBriefs({ implemented }).map((item) => toArtifactListItem(item.path, rootId, deps));
+    },
+    async get(path) {
+      const b = await briefs.getBrief(path);
+      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+    },
+    async updateContent(path, content, expectedHash) {
+      if (typeof expectedHash !== 'string') {
+        throw new DomainError('VALIDATION', 'expectedHash is required for brief content updates');
+      }
+      await briefs.updateContent({ path, content, expectedHash, changedBy: 'user' });
+      const b = await briefs.getBrief(path);
+      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+    },
+    async updateFrontmatter(path, frontmatter) {
+      const implemented =
+        typeof frontmatter.implemented === 'boolean' ? frontmatter.implemented : undefined;
+      const b = await briefs.updateFrontmatter({ path, patch: { implemented }, changedBy: 'user' });
+      return { path: b.path, frontmatter: b.frontmatter, body: b.body, content: b.content, hash: b.hash };
+    },
+    createThread(path, name) {
+      return Promise.resolve(briefs.createThreadForBrief({ path, name: name ?? null }));
+    },
+  };
+}
+
+function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
+  const { patch: patches } = deps;
+  const rootId = artifactRegistry.patch.rootId;
+  return {
+    list(query) {
+      const brief = typeof query.brief === 'string' ? query.brief : undefined;
+      let status: PatchStatus | undefined;
+      if (query.status === undefined) {
+        status = undefined;
+      } else if (query.status === 'awaiting' || query.status === 'completed') {
+        status = query.status;
+      } else {
+        throw new DomainError('VALIDATION', `?status must be 'awaiting' or 'completed' (omit for all)`);
+      }
+      return patches.listPatches({ brief, status }).map((item) => toArtifactListItem(item.path, rootId, deps));
+    },
+    async get(path) {
+      const p = await patches.getPatch(path);
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    async updateContent(path, content, expectedHash) {
+      if (typeof expectedHash !== 'string') {
+        throw new DomainError('VALIDATION', 'expectedHash is required for patch content updates');
+      }
+      const p = await patches.updateContent({ path, content, expectedHash });
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    async updateFrontmatter(path, frontmatter) {
+      if (frontmatter.status !== 'awaiting' && frontmatter.status !== 'completed') {
+        throw new DomainError('VALIDATION', "status must be 'awaiting' or 'completed'");
+      }
+      const p = await patches.updateFrontmatter({ path, status: frontmatter.status });
+      return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
+    },
+    createThread(path, name) {
+      return patches.createThreadForPatch(path, name ?? null);
+    },
+  };
+}
+
+/**
+ * Express splat (`/*`) puts ONLY the matched wildcard portion in
+ * `req.params[0]`. Literal segments (`/versions`, `:version`, etc.) are
+ * stripped automatically.
+ */
+function extractPath(params: unknown): string {
+  const splat = (params as Record<string, string>)[0];
+  if (!splat) throw new DomainError('VALIDATION', 'missing artifact path');
+  return splat;
+}
+
+export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
+  const adapters: Record<ArtifactKind, ArtifactKindAdapter> = {
+    brief: buildBriefAdapter(deps),
+    patch: buildPatchAdapter(deps),
+  };
+
+  const router = Router();
+
+  router.param('kind', (req, res, next, kind) => {
+    if (!(kind in adapters)) {
+      return next(new DomainError('UNKNOWN_ARTIFACT_KIND', `unknown artifact kind '${kind}'`));
+    }
+    next();
+  });
+
+  // GET /api/artifacts/:kind — list (per-kind query filters: ?implemented= for
+  // brief, ?brief=/?status= for patch).
+  router.get('/:kind', (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      res.json({ data: adapters[kind].list(req.query as Record<string, unknown>) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/artifacts/:kind/<path>/versions
+  router.get('/:kind/*/versions', (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const versions = deps.pageVersions.listVersions(path, artifactRegistry[kind].rootId);
+      res.json({ data: versions });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/artifacts/:kind/<path>/versions/:version
+  router.get('/:kind/*/versions/:version', (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const version = Number(req.params.version);
+      if (!Number.isInteger(version) || version <= 0) {
+        throw new DomainError('VALIDATION', 'version must be a positive integer');
+      }
+      const path = extractPath(req.params);
+      const detail = deps.pageVersions.getVersion(path, version, artifactRegistry[kind].rootId);
+      if (!detail) throw new DomainError('VERSION_NOT_FOUND', `version ${version} not found`);
+      res.json({ data: detail });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // PUT /api/artifacts/:kind/<path>/content — full replace, optimistic concurrency.
+  router.put('/:kind/*/content', async (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const body = (req.body ?? {}) as { content?: string; expectedHash?: string };
+      if (typeof body.content !== 'string') {
+        throw new DomainError('VALIDATION', 'content is required');
+      }
+      const out = await adapters[kind].updateContent(path, body.content, body.expectedHash ?? '');
+      res.json({ data: out });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // PATCH /api/artifacts/:kind/<path>/frontmatter — only keys in the kind's
+  // frontmatterContract.mutable are accepted; anything else -> 400 IMMUTABLE_FIELD.
+  router.patch('/:kind/*/frontmatter', async (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const body = (req.body ?? {}) as { frontmatter?: Record<string, unknown> };
+      const frontmatter = body.frontmatter ?? {};
+      const mutable = new Set(artifactRegistry[kind].frontmatterContract.mutable);
+      const invalid = Object.keys(frontmatter).filter((k) => !mutable.has(k));
+      if (invalid.length > 0) {
+        throw new DomainError(
+          'IMMUTABLE_FIELD',
+          `cannot mutate immutable frontmatter keys: ${invalid.join(', ')} (mutable: ${[...mutable].join(', ')})`,
+        );
+      }
+      const out = await adapters[kind].updateFrontmatter(path, frontmatter);
+      res.json({ data: out });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // POST /api/artifacts/:kind/<path>/threads
+  router.post('/:kind/*/threads', async (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const body = (req.body ?? {}) as { name?: string };
+      const result = await adapters[kind].createThread(path, body.name ?? null);
+      res.json({ data: result });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // GET /api/artifacts/:kind/<path> — detail (must be LAST so the more
+  // specific /versions, /content, /frontmatter, /threads routes match first).
+  router.get('/:kind/*', async (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const data = await adapters[kind].get(path);
+      res.json({ data });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  return router;
+}

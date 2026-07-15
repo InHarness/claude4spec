@@ -32,13 +32,13 @@ import { readConfig } from '../config.js';
 import { resolveAgentPathScope } from '../services/agent-path-scope.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
-import type { PatchService } from '../services/patch.js';
+import type { PatchService, PatchDetail } from '../services/patch.js';
 import type { ReleaseService } from '../services/release.js';
 import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
-import type { Annotation, Brief, ChatMessage, ChatThread, PatchResponse } from '../../shared/entities.js';
+import type { Annotation, Brief, ChatMessage, ChatThread } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
@@ -438,7 +438,7 @@ export async function runAgentTurn(
     // M23: patch threads keep the FULL spec-editing toolset — their job is to edit the
     // spec; only the system prompt differs (the patch snapshot is injected). `patch_path`
     // is set iff context_type='patch' (chat.ts invariant), so its presence IS the gate.
-    let patchSnapshot: PatchResponse | null = null;
+    let patchSnapshot: PatchDetail | null = null;
     if (thread.patchPath) {
       try {
         patchSnapshot = await deps.patchService.getPatch(thread.patchPath);

@@ -24,8 +24,6 @@ import type {
   BriefThreadSummary,
   PatchFrontmatter,
   PatchKind,
-  PatchListItem,
-  PatchResponse,
   PatchStatus,
 } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
@@ -65,6 +63,45 @@ export interface PatchUpdateFrontmatterOpts {
   status: PatchStatus;
 }
 
+/**
+ * Internal detail shape for `getPatch()`/`updateContent()`/`updateFrontmatter()`.
+ * Was previously the shared `PatchResponse` DTO; M36 replaced the wire-level
+ * detail shape with the generic `ArtifactResponse` (no top-level `title` — the
+ * client derives it from the body's first heading), so this stays a
+ * service-internal type that `routes/artifacts.ts`'s patch adapter maps to
+ * `ArtifactResponse` at the REST boundary.
+ */
+export interface PatchDetail {
+  /** Path relative to patchesDir. */
+  path: string;
+  title: string;
+  frontmatter: PatchFrontmatter;
+  body: string;
+  /** Full file content (frontmatter + body, byte-faithful). */
+  content: string;
+  /** sha256 hex of `content` — used for optimistic concurrency. */
+  hash: string;
+}
+
+/**
+ * Internal list-item shape for `listPatches()`. Was previously the shared
+ * `PatchListItem` DTO — see `PatchDetail`'s doc comment for why this moved.
+ */
+export interface PatchListItem {
+  path: string;
+  title: string;
+  /** `null` = orphan (no resolvable brief). */
+  briefPath: string | null;
+  patchKind: PatchKind;
+  status: PatchStatus;
+  createdAt: string;
+  createdBy: string;
+  /** `created_at` of the latest file_version row with kind='patch'. */
+  lastModified: string;
+  /** Count of chat threads with context_type='patch' pointing at this patch. */
+  threadCount: number;
+}
+
 const VALID_PATCH_KINDS: ReadonlySet<string> = new Set([
   'drift',
   'missing',
@@ -77,7 +114,7 @@ export class PatchService {
 
   // ─── Reads ───────────────────────────────────────────────────────────────
 
-  async getPatch(relPath: string): Promise<PatchResponse> {
+  async getPatch(relPath: string): Promise<PatchDetail> {
     if (!(await this.deps.patchesPages.exists(relPath))) {
       throw new DomainError('NOT_FOUND', `patch '${relPath}' not found`);
     }
@@ -141,7 +178,7 @@ export class PatchService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
-  async updateContent(opts: PatchUpdateContentOpts): Promise<PatchResponse> {
+  async updateContent(opts: PatchUpdateContentOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
       throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash, current.content);
@@ -172,7 +209,7 @@ export class PatchService {
     return this.getPatch(opts.path);
   }
 
-  async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchResponse> {
+  async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
     const next: PatchFrontmatter = { ...current.frontmatter, status: opts.status };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);

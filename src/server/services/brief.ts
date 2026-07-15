@@ -22,7 +22,6 @@ import type {
   Brief,
   BriefChangedBy,
   BriefFrontmatter,
-  BriefListItem,
   BriefSource,
   BriefThreadSummary,
 } from '../../shared/entities.js';
@@ -98,6 +97,30 @@ export interface BriefUpdateFrontmatterOpts {
 
 export interface BriefListOpts {
   implemented?: boolean;
+}
+
+/**
+ * Internal list-item shape for `BriefService.listBriefs()`. Was previously the
+ * shared `BriefListItem` DTO; M36 replaced the wire-level list shape with the
+ * generic `ArtifactListItem` (no top-level title/source/threadCount — those
+ * live in `frontmatter` or are dropped), so this stays a service-internal type
+ * that `routes/artifacts.ts`'s brief adapter maps to `ArtifactListItem` at the
+ * REST boundary.
+ */
+export interface BriefListItem {
+  path: string;
+  title: string | null;
+  /** 0.1.69: brief provenance ('release-diff' | 'analysis'). */
+  source: string;
+  /** `null` = initial brief. */
+  fromRelease: string | null;
+  /** `null` = analysis brief (no target release; state relative to HEAD). */
+  toRelease: string | null;
+  implemented: boolean;
+  generatedAt: string;
+  lastModifiedAt: string | null;
+  /** 0.1.69 B4: count of top-level (non-banka) brief threads for this brief. */
+  threadCount: number;
 }
 
 export class BriefService {

@@ -993,22 +993,6 @@ export interface Brief {
   hash: string;
 }
 
-export interface BriefListItem {
-  path: string;
-  title: string | null;
-  /** 0.1.69: brief provenance ('release-diff' | 'analysis'). */
-  source: string;
-  /** `null` = initial brief. */
-  fromRelease: string | null;
-  /** `null` = analysis brief (no target release; state relative to HEAD). */
-  toRelease: string | null;
-  implemented: boolean;
-  generatedAt: string;
-  lastModifiedAt: string | null;
-  /** 0.1.69 B4: count of top-level (non-banka) brief threads for this brief. */
-  threadCount: number;
-}
-
 export interface BriefCreateRequest {
   /** 0.1.104: brief provenance. Defaults to 'release-diff' when absent. */
   source?: BriefSource;
@@ -1031,22 +1015,8 @@ export interface BriefCreateResult {
   initialThreadId: string;
 }
 
-export interface BriefFrontmatterUpdateRequest {
-  implemented?: boolean;
-}
-
-export interface BriefContentUpdateRequest {
-  content: string;
-  expectedHash: string;
-  changeSummary?: string;
-}
-
 export interface BriefContentUpdateResult {
   newHash: string;
-}
-
-export interface BriefThreadCreateRequest {
-  name?: string;
 }
 
 export interface BriefThreadSummary {
@@ -1088,12 +1058,13 @@ export interface PatchFrontmatter {
   [key: string]: unknown;
 }
 
-/** Response of `GET /api/patches/:path` and the result of PUT/PATCH writes. */
-export interface PatchResponse {
-  /** Path relative to patchesDir. */
+// --- M36: chat artifacts (generic REST family for brief/patch, /api/artifacts/:kind/*) ---
+
+/** `GET /api/artifacts/:kind/:path` detail envelope (`{ data: ArtifactResponse }`). */
+export interface ArtifactResponse {
   path: string;
-  title: string;
-  frontmatter: PatchFrontmatter;
+  /** Parsed YAML frontmatter — kind-specific fields (source/status/patch_kind/...) live here. */
+  frontmatter: Record<string, unknown>;
   body: string;
   /** Full file content (frontmatter + body, byte-faithful). */
   content: string;
@@ -1101,30 +1072,29 @@ export interface PatchResponse {
   hash: string;
 }
 
-export interface PatchListItem {
+/**
+ * `GET /api/artifacts/:kind` list item. No `name`/`title`/`source`/`threadCount`
+ * at the list level — kind-specific data lives in `frontmatter`; the client
+ * derives a display title from `frontmatter.title` (brief) or the body's first
+ * heading (patch) rather than the server bolting a synthesized field on.
+ */
+export interface ArtifactListItem {
   path: string;
-  title: string;
-  /** `null` = orphan (no resolvable brief). */
-  briefPath: string | null;
-  patchKind: PatchKind;
-  status: PatchStatus;
-  createdAt: string;
-  createdBy: string;
-  /** `created_at` of the latest file_version row with kind='patch'. */
-  lastModified: string;
-  /** Count of chat threads with context_type='patch' pointing at this patch. */
-  threadCount: number;
+  frontmatter: Record<string, unknown>;
+  hash: string;
+  updatedAt: string | null;
 }
 
-export interface PatchContentUpdateRequest {
+export interface ArtifactContentUpdateRequest {
   content: string;
   expectedHash: string;
 }
 
-export interface PatchFrontmatterUpdateRequest {
-  status: PatchStatus;
+/** Partial map of fields mutable per the kind's `frontmatterContract.mutable` (artifact-registry.ts). */
+export interface ArtifactFrontmatterUpdateRequest {
+  frontmatter: Record<string, unknown>;
 }
 
-export interface PatchThreadCreateRequest {
+export interface ArtifactThreadCreateRequest {
   name?: string;
 }
