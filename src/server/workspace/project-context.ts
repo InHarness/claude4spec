@@ -27,7 +27,7 @@ import { plansRouter } from '../routes/plans.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { PatchService } from '../services/patch.js';
-import { patchesRouter } from '../routes/patches.js';
+import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
 import { RemoteHttpClient } from '../services/remote-http-client.js';
 import { remoteAccountRouter } from '../routes/remote-account.js';
@@ -803,8 +803,16 @@ async function buildInner(
   // 0.1.123: on a successful checkout, reuse the same invalidate path as a
   // context-defining config change — no new M31 reload machinery needed.
   router.use('/git', gitRouter(gitService, { onSwitched: onContextConfigChanged }));
-  router.use('/briefs', briefsRouter(briefService, pageVersions));
-  router.use('/patches', patchesRouter(patchService));
+  router.use('/briefs', briefsRouter(briefService));
+  router.use(
+    '/artifacts',
+    artifactsRouter({
+      brief: briefService,
+      patch: patchService,
+      pageVersions,
+      frontmatterIndexer: pagesFrontmatterIndexer,
+    }),
+  );
   router.use('/agent', agentRouter(agentCredentialService));
   router.use('/remote-account', remoteAccountRouter(remoteAuthService));
   router.use('/remote-project', remoteProjectRouter(remoteAuthService, cwd));
