@@ -73,11 +73,11 @@ describe('markBriefImplemented', () => {
     vi.unstubAllGlobals();
   });
 
-  it('PATCHes the frontmatter endpoint with { implemented: true } and returns the DTO', async () => {
+  it('PATCHes the artifacts/brief frontmatter endpoint with { frontmatter: { implemented: true } } and returns the DTO', async () => {
     const { calls } = stubFlow({
       status: 200,
       ok: true,
-      body: { data: { path: 'v0-1-16-to-v0-1-17.md', implemented: true } },
+      body: { data: { path: 'v0-1-16-to-v0-1-17.md', frontmatter: { implemented: true } } },
     });
 
     const result = await markBriefImplemented({
@@ -86,11 +86,11 @@ describe('markBriefImplemented', () => {
       workspace: 'default',
     });
 
-    expect(result).toEqual({ path: 'v0-1-16-to-v0-1-17.md', implemented: true });
+    expect(result).toEqual({ path: 'v0-1-16-to-v0-1-17.md', frontmatter: { implemented: true } });
     const patch = calls.find((c) => c.url.endsWith('/frontmatter'));
     expect(patch?.method).toBe('PATCH');
-    expect(patch?.url).toContain('/briefs/v0-1-16-to-v0-1-17.md/frontmatter');
-    expect(patch?.body).toEqual({ implemented: true });
+    expect(patch?.url).toContain('/artifacts/brief/v0-1-16-to-v0-1-17.md/frontmatter');
+    expect(patch?.body).toEqual({ frontmatter: { implemented: true } });
   });
 
   it('URL-encodes each path segment of a nested brief path', async () => {
@@ -99,7 +99,7 @@ describe('markBriefImplemented', () => {
     await markBriefImplemented({ briefPath: 'sub dir/brief one.md', project: projectDir, workspace: 'default' });
 
     const patch = calls.find((c) => c.url.endsWith('/frontmatter'));
-    expect(patch?.url).toContain('/briefs/sub%20dir/brief%20one.md/frontmatter');
+    expect(patch?.url).toContain('/artifacts/brief/sub%20dir/brief%20one.md/frontmatter');
   });
 
   it('surfaces SERVER_NOT_RUNNING when the health-check fails to connect', async () => {
@@ -154,14 +154,14 @@ describe('markBriefImplemented', () => {
     expect((err as AgentError).message).toBe('brief not found: missing.md');
   });
 
-  it('passes through BRIEF_FRONTMATTER_IMMUTABLE unchanged', async () => {
+  it('passes through IMMUTABLE_FIELD unchanged', async () => {
     stubFlow({
       status: 400,
       ok: false,
       body: {
         error: {
-          code: 'BRIEF_FRONTMATTER_IMMUTABLE',
-          message: "cannot mutate immutable frontmatter keys: source (only 'implemented' is mutable via this endpoint)",
+          code: 'IMMUTABLE_FIELD',
+          message: "cannot mutate immutable frontmatter keys: source (mutable: implemented)",
         },
       },
     });
@@ -170,6 +170,6 @@ describe('markBriefImplemented', () => {
       (e) => e,
     );
     expect(err).toBeInstanceOf(AgentError);
-    expect((err as AgentError).code).toBe('BRIEF_FRONTMATTER_IMMUTABLE');
+    expect((err as AgentError).code).toBe('IMMUTABLE_FIELD');
   });
 });

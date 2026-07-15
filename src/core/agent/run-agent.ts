@@ -109,9 +109,9 @@ export type AgentErrorCode =
   | 'VALIDATION'
   | 'BRIEF_SAME_RELEASE'
   | 'RELEASE_NOT_FOUND'
-  // 0.1.106 `c4s mark-brief-implemented` (`PATCH /api/briefs/:path/frontmatter`).
+  // 0.1.106 `c4s mark-brief-implemented` (M36: `PATCH /api/artifacts/brief/:path/frontmatter`).
   | 'BRIEF_NOT_FOUND'
-  | 'BRIEF_FRONTMATTER_IMMUTABLE';
+  | 'IMMUTABLE_FIELD';
 
 export class AgentError extends Error {
   constructor(public code: AgentErrorCode, message: string, public hint?: string) {
