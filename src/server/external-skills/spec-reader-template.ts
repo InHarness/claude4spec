@@ -61,7 +61,7 @@ When a question goes beyond resolving entities or pages, \`c4s ask\` runs a
 synchronous agent turn against the specification:
 
 \`\`\`sh
-c4s ask "<question>" --ct chat ${identity}
+c4s ask "<question>" ${identity}
 \`\`\`
 
 Unlike the read-only commands above, \`c4s ask\` requires a running

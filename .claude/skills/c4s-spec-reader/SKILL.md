@@ -53,7 +53,7 @@ When a question goes beyond resolving entities or pages, `c4s ask` runs a
 synchronous agent turn against the specification:
 
 ```sh
-c4s ask "<question>" --ct chat --project 'app-spec' --workspace 'default'
+c4s ask "<question>" --project 'app-spec' --workspace 'default'
 ```
 
 Unlike the read-only commands above, `c4s ask` requires a running

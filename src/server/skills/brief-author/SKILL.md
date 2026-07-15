@@ -33,6 +33,11 @@ The system prompt already binds you to the **self-contained invariant**: the bri
 - Modify brief frontmatter (immutable to agents — only the user can toggle `archived` via the UI Settings popover).
 - Reach for current spec state (`Read pages/...`, `get_<type>`, entity graph) to ground the brief — that returns HEAD and breaks the brief's historical self-containment. Drill-down over a release slice happens inside a `diff-explore` subagent, against the historical diff/dump only — never current state.
 
+**When a request needs more than this brief's window — redirect, don't guess.** You see only this brief and its release-diff window: no full current spec, no other releases, no CLI, no filesystem. Surface the next step to the user (you cannot run anything yourself):
+
+- **A question the release diff can't answer** (it needs a broader scope than the brief — the full current spec, other releases, or entities outside this diff): don't fabricate. Tell the user it's outside this brief's window and point them to a **read-only full-spec consult** — `c4s ask "<question>"` (add `--project <project>` / `--workspace <workspace>` when the project is ambiguous). `c4s ask` only *asks* against the full current spec; it never changes the spec.
+- **A request to change the specification**: you cannot — briefs are write-side only, and a brief thread never authors spec edits. Spec changes are raised as **patches after implementation**: the brief is implemented first, then a patch is filed (`c4s file-patch`, via the `c4s-brief-implementer` flow) and resolved in a patch thread. Direct the user into that patch feedback loop — do not attempt a spec edit or route to a live authoring agent here.
+
 ---
 
 ## Two operating branches
