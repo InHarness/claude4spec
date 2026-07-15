@@ -51,6 +51,10 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
   // host-capability + current-config probe (what a turn run right now WOULD
   // get), not a specific past turn's actual adapter_ready event.
   const pathScopeRequested = agentAllowedPaths.length > 0 || agentDisallowedPaths.length > 0;
+  // 0.1.130: the resolver now also folds in the implicit artifact deny-set (it requires the
+  // 5 dir params). The strength badge deliberately still reflects only the USER's configured
+  // scope (`pathScopeRequested`) — the always-on artifact deny is a separate, unshowable
+  // hard-lock, so 'none' here means "no user scope", not "no enforcement".
   const pathScopeStrength: PathScopeStrength = pathScopeRequested
     ? probePathScope('claude-code', {
         cwd,
@@ -59,6 +63,11 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
           roots: c.roots,
           allowedPaths: agentAllowedPaths,
           disallowedPaths: agentDisallowedPaths,
+          plansDir: c.plansDir,
+          briefsDir: c.briefsDir,
+          patchesDir: c.patchesDir,
+          entitiesDir: c.entitiesDir,
+          releasesDir: c.releasesDir,
         }),
         architectureConfig: { claude_sandbox: { enabled: true } },
       }).strength

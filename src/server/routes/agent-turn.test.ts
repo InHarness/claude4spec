@@ -1,4 +1,15 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import path from 'node:path';
+
+// 0.1.130: the resolver always folds the C4S artifact dirs (config defaults, resolved vs
+// cwd) into the sandbox deny-set, so every turn is scoped even with no user config.
+const ARTIFACT_ABS = [
+  '.claude4spec/plans',
+  '.claude4spec/briefs',
+  '.claude4spec/patches',
+  '.claude4spec/entities',
+  '.claude4spec/releases',
+].map((d) => path.resolve(process.cwd(), d));
 
 // 0.1.58: `answer` = the LAST assistant text block of the turn (final summary
 // after the terminal `result`), not a concatenation of intermediate texts
@@ -255,24 +266,25 @@ describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-1
   });
 });
 
-describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', () => {
-  it('requests hard enforcement (claude_sandbox) when a path scope is configured', async () => {
+describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103 / 0.1.130)', () => {
+  it('requests hard enforcement (claude_sandbox) with user scope merged after the artifact deny-set', async () => {
     hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: ['/deny/dir'] };
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
 
     await runAgentTurn(deps, makeInput());
 
-    expect(hoisted.lastExecute?.architectureConfig).toMatchObject({
-      claude_sandbox: {
-        enabled: true,
-        filesystem: {
-          denyRead: ['/deny/dir'],
-          denyWrite: ['/deny/dir'],
-          allowWrite: ['/allowed/dir'],
-        },
-      },
-    });
+    const fs = (
+      (hoisted.lastExecute?.architectureConfig as Record<string, unknown>).claude_sandbox as {
+        enabled: boolean;
+        filesystem: { denyRead: string[]; denyWrite: string[]; allowWrite: string[] };
+      }
+    );
+    expect(fs.enabled).toBe(true);
+    // 0.1.130: deny lists carry the implicit artifact deny-set + the user's disallowedPaths.
+    expect(fs.filesystem.denyRead).toEqual([...ARTIFACT_ABS, '/deny/dir']);
+    expect(fs.filesystem.denyWrite).toEqual([...ARTIFACT_ABS, '/deny/dir']);
+    expect(fs.filesystem.allowWrite).toEqual(['/allowed/dir']);
   });
 
   it('preserves caller-supplied architectureConfig fields alongside claude_sandbox', async () => {
@@ -289,7 +301,7 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', (
     expect(architectureConfig.claude_sandbox).toBeDefined();
   });
 
-  it('is an exact no-op when no path scope is configured (ac-puste-allowedpaths-i-disallowedpaths-n)', async () => {
+  it('0.1.130: applies the artifact deny-set even when NO user path scope is configured', async () => {
     hoisted.agent = undefined;
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
@@ -298,15 +310,24 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103)', (
 
     await runAgentTurn(deps, input);
 
-    // architectureConfig reaches adapter.execute byte-for-byte unchanged —
-    // claude_sandbox must be genuinely ABSENT, not merely undefined.
+    // The caller's field is preserved, and the sandbox is now ALWAYS built (unconditional
+    // hard-lock) — with only the artifact deny-set and no user allow-list.
     const architectureConfig = hoisted.lastExecute?.architectureConfig as Record<string, unknown>;
-    expect(architectureConfig).toEqual({ some_existing_flag: 'keep-me' });
-    expect('claude_sandbox' in architectureConfig).toBe(false);
-    // The pre-existing conditional-spread behavior for allowedPaths/disallowedPaths
-    // (agent-adapters' own soft layer) is untouched by this change.
-    expect('allowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
-    expect('disallowedPaths' in (hoisted.lastExecute ?? {})).toBe(false);
+    expect(architectureConfig.some_existing_flag).toBe('keep-me');
+    const fs = (
+      architectureConfig.claude_sandbox as {
+        enabled: boolean;
+        filesystem: { denyRead: string[]; denyWrite: string[]; allowWrite: string[] };
+      }
+    );
+    expect(fs.enabled).toBe(true);
+    expect(fs.filesystem.denyRead).toEqual(ARTIFACT_ABS);
+    expect(fs.filesystem.denyWrite).toEqual(ARTIFACT_ABS);
+    // Empty allow-list ⇒ cwd stays writable via the library's implicit base.
+    expect(fs.filesystem.allowWrite).toEqual([]);
+    // The resolved scope is always spread onto execute (library's own gate is non-empty deny).
+    expect(hoisted.lastExecute?.allowedPaths).toEqual([]);
+    expect(hoisted.lastExecute?.disallowedPaths).toEqual(ARTIFACT_ABS);
   });
 });
 

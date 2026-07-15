@@ -230,24 +230,38 @@ describe('buildSystemPrompt — ask context (0.1.79)', () => {
   });
 });
 
-describe('buildSystemPrompt — <agent_path_scope> (0.1.90)', () => {
-  const scope = { allowedPaths: ['/extra/lib'], disallowedPaths: ['/tmp/my-spec/src'] };
+describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
+  // 0.1.130: artifactDenyDirs is always present (the implicit deny-set) → block always emitted.
+  const ARTIFACT = [
+    '/tmp/my-spec/.claude4spec/plans',
+    '/tmp/my-spec/.claude4spec/briefs',
+    '/tmp/my-spec/.claude4spec/patches',
+    '/tmp/my-spec/.claude4spec/entities',
+    '/tmp/my-spec/.claude4spec/releases',
+  ];
+  const scope = { allowedPaths: ['/extra/lib'], disallowedPaths: ['/tmp/my-spec/src'], artifactDenyDirs: ARTIFACT };
+  const emptyUserScope = { allowedPaths: [], disallowedPaths: [], artifactDenyDirs: ARTIFACT };
 
-  it('omits the block when both lists are empty (base-only ⇒ no-op)', () => {
-    const out = build({ agentPathScope: { allowedPaths: [], disallowedPaths: [] } });
-    expect(out).not.toContain('<agent_path_scope>');
+  it('emits the block even when the user lists are empty (artifact deny-set is unconditional)', () => {
+    const out = build({ contextType: 'chat', agentPathScope: emptyUserScope });
+    expect(out).toContain('<agent_path_scope>');
+    expect(out).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
+    for (const d of ARTIFACT) expect(out).toContain(d);
   });
 
   it('omits the block when agentPathScope is absent', () => {
     expect(build({})).not.toContain('<agent_path_scope>');
   });
 
-  it('emits the block in the chat frame with cwd, allowed and disallowed lines', () => {
+  it('emits the block in the chat frame with cwd, allowed, disallowed and ALWAYS-DISALLOWED lines', () => {
     const out = build({ contextType: 'chat', agentPathScope: scope });
     expect(out).toContain('<agent_path_scope>');
     // cwd is always listed; configured allow/deny entries appear verbatim.
     expect(out).toContain('ALLOWED (you may read/write here): /tmp/my-spec, /extra/lib');
     expect(out).toContain('DISALLOWED (never read/write here, takes precedence): /tmp/my-spec/src');
+    // 0.1.130: unconditional artifact deny line + MCP-only guidance.
+    expect(out).toContain(`ALWAYS DISALLOWED — C4S artifact dirs (edit ONLY via MCP tools, never with built-in Read/Write/Edit/Bash): ${ARTIFACT.join(', ')}`);
+    expect(out).toContain('use plan-tools / brief-tools / entity-tools / release-tools instead');
   });
 
   it('emits the block in the patch and ask frames', () => {
@@ -258,14 +272,18 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90)', () => {
   it('NEVER emits the block in the brief frame, even with a configured scope', () => {
     const out = build({ contextType: 'brief', agentPathScope: scope });
     expect(out).not.toContain('<agent_path_scope>');
+    expect(out).not.toContain('ALWAYS DISALLOWED — C4S artifact dirs');
   });
 
-  it('drops the DISALLOWED line when only allowedPaths is set', () => {
-    const out = build({ contextType: 'chat', agentPathScope: { allowedPaths: ['/extra/lib'], disallowedPaths: [] } });
+  it('drops the DISALLOWED line when only allowedPaths is set (artifact line still present)', () => {
+    const out = build({
+      contextType: 'chat',
+      agentPathScope: { allowedPaths: ['/extra/lib'], disallowedPaths: [], artifactDenyDirs: ARTIFACT },
+    });
     expect(out).toContain('<agent_path_scope>');
-    // The DISALLOWED *list* line is dropped (the trailing "ALLOWED minus DISALLOWED"
-    // instruction always mentions the word, so assert on the list-line prefix).
+    // The user DISALLOWED *list* line is dropped; the ALWAYS DISALLOWED line is unconditional.
     expect(out).not.toContain('DISALLOWED (never read/write here');
+    expect(out).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
   });
 
   it('includes a root dir on the ALLOWED line only when it sits outside cwd', () => {
