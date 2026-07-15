@@ -243,6 +243,27 @@ export class ChatService {
     return row?.id ?? null;
   }
 
+  /**
+   * Oldest attached thread — a stable reference point, unlike
+   * {@link findLastThreadIdForPlan} (most-recently-updated, used for
+   * `PlanListItem.lastThreadId`). Anchor-chip resolution (`getByAnchor`) uses
+   * this one: a heading anchor should always resolve back to the thread the
+   * plan was originally drafted in, not whichever thread most recently
+   * touched it (which would make the same anchor link resolve to a different
+   * thread over time as other threads keep editing the plan).
+   */
+  findOldestThreadIdForPlan(planPath: string): string | null {
+    const row = this.db
+      .prepare(
+        `SELECT id FROM chat_thread
+          WHERE plan_path = ? AND parent_thread_id IS NULL
+          ORDER BY created_at ASC
+          LIMIT 1`,
+      )
+      .get(planPath) as { id: string } | undefined;
+    return row?.id ?? null;
+  }
+
   getThreadPlanPath(threadId: string): string | null {
     const row = this.db
       .prepare(`SELECT plan_path FROM chat_thread WHERE id = ?`)

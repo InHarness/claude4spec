@@ -174,7 +174,7 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     // the same PlanService method the bespoke POST /api/plans/:slug/create-thread
     // route uses, so there's no behavior fork if a caller does reach this route.
     createThread(path) {
-      return Promise.resolve(plans.attachThreadToPlan(path));
+      return plans.attachThreadToPlan(path);
     },
     listThreads(path) {
       return plans.listThreadsForPlan(path);

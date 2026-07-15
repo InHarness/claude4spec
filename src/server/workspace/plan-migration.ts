@@ -79,7 +79,7 @@ export async function backfillPlansToFilesystem(params: {
       },
       body: row.content,
     });
-    slugById.set(row.id, slug);
+    slugById.set(row.id, `${slug}.md`);
   }
 
   // migrate.ts's own comment explains why: PRAGMA foreign_keys is a no-op
@@ -92,8 +92,8 @@ export async function backfillPlansToFilesystem(params: {
   try {
     const tx = db.transaction(() => {
       const backfillPlanPath = db.prepare(`UPDATE chat_thread SET plan_path = ? WHERE plan_id = ?`);
-      for (const [planId, slug] of slugById) {
-        backfillPlanPath.run(slug, planId);
+      for (const [planId, planPath] of slugById) {
+        backfillPlanPath.run(planPath, planId);
       }
 
       // Full column set as of migration 042 + 047's additive `plan_path`,

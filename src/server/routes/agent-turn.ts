@@ -38,7 +38,7 @@ import { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { buildTransagentToolsServer, TRANSAGENT_TOOL_FULL_NAME } from '../mcp/transagent-tools.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { SkillResolver, SkillRegistry } from '../services/skill-registry.js';
-import type { Annotation, Brief, ChatMessage, ChatThread } from '../../shared/entities.js';
+import type { Annotation, Brief, ChatMessage, ChatThread, Plan } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { Db } from '../db/index.js';
@@ -466,7 +466,20 @@ export async function runAgentTurn(
     // `last_seen_plan_version` — plans no longer track a "last seen version"
     // per thread (see brief 0-1-126-to-0-1-127). `currentPlan` (shown in the
     // system prompt) is unrelated and stays.
-    const currentPlan = isBriefFrame ? null : await deps.planService.getByThread(thread.id);
+    //
+    // `plan`'s registry entry declares `danglingPolicy: 'graceful-degrade'` —
+    // a thread can point at a plan_path whose file was deleted out-of-band, and
+    // that must not fail the whole turn, so this mirrors the try/catch already
+    // used above for patchSnapshot/currentPageBody instead of letting
+    // getByThread's NOT_FOUND propagate uncaught.
+    let currentPlan: Plan | null = null;
+    if (!isBriefFrame) {
+      try {
+        currentPlan = await deps.planService.getByThread(thread.id);
+      } catch (err) {
+        console.warn(`[chat] plan read failed for thread ${thread.id}:`, (err as Error).message);
+      }
+    }
 
     // Skill resolution: writing-style (config.writingStyle, M15) ladowany
     // niezaleznie od kontekstu. Dla brief context dokladamy bundled `brief-author`.

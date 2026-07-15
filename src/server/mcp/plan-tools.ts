@@ -103,7 +103,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
 
   const listPlanVersions = mcpTool(
     'list_plan_versions',
-    "List all versions of this thread's plan (metadata only, no full content). Use for audit / timeline rendering or before calling get_plan_version.",
+    "List all versions of this thread's plan (metadata only, no full content), oldest first — offset 0 is version 1. Use for audit / timeline rendering or before calling get_plan_version.",
     {
       limit: z.number().int().positive().optional(),
       offset: z.number().int().nonnegative().optional(),
@@ -112,7 +112,12 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
       try {
         const plan = await planService.getByThread(threadId);
         if (!plan) return ok({ versions: [], total: 0 });
-        const all = pageVersions.listVersions(plan.path, PLAN_ROOT_MARKER);
+        // FileVersionService.listVersions returns newest-first (shared with
+        // brief/patch/the client's version-history view) — reverse to
+        // oldest-first here so this tool's offset/limit contract (offset 0 =
+        // version 1, increasing offset walks forward in time) stays what it
+        // was under the old plan_version-table-backed implementation.
+        const all = [...pageVersions.listVersions(plan.path, PLAN_ROOT_MARKER)].reverse();
         const offset = typeof args.offset === 'number' ? args.offset : 0;
         const limit = typeof args.limit === 'number' ? args.limit : all.length;
         return ok({ versions: all.slice(offset, offset + limit), total: all.length });

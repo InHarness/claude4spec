@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { MessageSquare, Pencil, Users } from 'lucide-react';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
@@ -69,10 +69,21 @@ export function PlanPage({ planPath }: Props) {
   const [titleDraft, setTitleDraft] = useState('');
   const [showThreadDropdown, setShowThreadDropdown] = useState(false);
 
-  // Reset dirty when plan refetches to newer version.
+  // Reset dirty when plan refetches to a newer version. `currentVersion`
+  // comes from a query (usePlanVersions) independent of the one supplying the
+  // editor's content (usePlan) — it resolves from a `0` placeholder to the
+  // real version asynchronously, which could otherwise fire this effect and
+  // wipe an in-progress edit the moment the user starts typing before that
+  // query settles. Skip the first observed value (query settling) and only
+  // clear on a genuine subsequent version change.
+  const lastSeenVersionRef = useRef<number | null>(null);
   useEffect(() => {
-    setDirtyContent(null);
-  }, [currentVersion]);
+    if (versionsData === undefined) return;
+    if (lastSeenVersionRef.current !== null && lastSeenVersionRef.current !== currentVersion) {
+      setDirtyContent(null);
+    }
+    lastSeenVersionRef.current = currentVersion;
+  }, [currentVersion, versionsData]);
 
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;

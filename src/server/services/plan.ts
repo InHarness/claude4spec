@@ -109,6 +109,33 @@ export interface PlanUpdateFrontmatterOpts {
 export class PlanService {
   constructor(private deps: PlanServiceDeps) {}
 
+  /** Per-key (plan path, or thread while the plan doesn't exist yet) write queue. */
+  private locks = new Map<string, Promise<unknown>>();
+
+  /**
+   * Serializes read-modify-write cycles per `key` — the filesystem gives no
+   * transaction to provide this, unlike the SQLite `BEGIN IMMEDIATE` the
+   * pre-0.1.127 implementation relied on. Queued via chained promises rather
+   * than a real mutex library since this only needs to serialize calls within
+   * this single process/service instance.
+   */
+  private withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    const prior = this.locks.get(key) ?? Promise.resolve();
+    const settled = prior.then(
+      () => undefined,
+      () => undefined,
+    );
+    const run = settled.then(fn);
+    this.locks.set(
+      key,
+      run.then(
+        () => undefined,
+        () => undefined,
+      ),
+    );
+    return run;
+  }
+
   // ─── Reads ───────────────────────────────────────────────────────────────
 
   async getByPath(planPath: string): Promise<Plan> {
@@ -149,8 +176,10 @@ export class PlanService {
    * indexed in `section_index` (`sectionIndexed: false`), so a brute-force
    * scan over `plansDir`'s files is used instead — acceptable given the low
    * plan count (same justification as the pre-0.1.127 DB `content LIKE` scan
-   * this replaces). `threadId` is best-effort (the plan's most-recently-updated
-   * thread, or null); callers navigate by `planPath`.
+   * this replaces). `threadId` is best-effort (the plan's OLDEST attached
+   * thread, or null) — a stable reference point so the same anchor link keeps
+   * resolving to the same thread even as other threads keep editing the plan;
+   * callers otherwise navigate by `planPath`.
    */
   async getByAnchor(anchor: string): Promise<{ planPath: string; threadId: string | null } | null> {
     if (!/^[a-z0-9]{6,12}$/.test(anchor)) return null;
@@ -165,7 +194,7 @@ export class PlanService {
         continue; // deleted between listMarkdownFiles() and read
       }
       if (raw.includes(needle)) {
-        return { planPath: relPath, threadId: this.deps.chatService.findLastThreadIdForPlan(relPath) };
+        return { planPath: relPath, threadId: this.deps.chatService.findOldestThreadIdForPlan(relPath) };
       }
     }
     return null;
@@ -210,17 +239,15 @@ export class PlanService {
 
   // ─── Mutations ──────────────────────────────────────────────────────────
 
-  attachThreadToPlan(planPath: string): { threadId: string } {
-    // getByPath is async (file existence check) — attach is a pure DB op, so
-    // resolve existence synchronously via the frontmatter index instead of
-    // awaiting a file read the caller doesn't need.
-    const fm = this.deps.frontmatterIndexer.getFrontmatter(PLAN_ROOT_MARKER, planPath) as PlanFrontmatter | null;
-    if (!fm) {
-      throw new DomainError('NOT_FOUND', `plan '${planPath}' not found`);
-    }
-    const newThread = this.deps.chatService.createThread(
-      typeof fm.title === 'string' ? fm.title : planPath,
-    );
+  async attachThreadToPlan(planPath: string): Promise<{ threadId: string }> {
+    // Resolve existence via getByPath (a direct filesystem check), not the
+    // in-memory frontmatter index — the index is populated asynchronously
+    // (file watcher / boot-time indexAll()), so a plan written moments ago
+    // (e.g. by the boot-time SQLite->filesystem backfill) can otherwise be
+    // reported NOT_FOUND here even though it's fully readable on disk.
+    const plan = await this.getByPath(planPath);
+    const title = typeof plan.frontmatter.title === 'string' ? plan.frontmatter.title : planPath;
+    const newThread = this.deps.chatService.createThread(title);
     this.deps.chatService.attachPlanToThread(newThread.id, planPath);
     return { threadId: newThread.id };
   }
@@ -230,123 +257,139 @@ export class PlanService {
    * NULL`) requires `title`, creates the file (`slug = slugify(title)`,
    * disambiguated on collision, then immutable) and attaches the thread.
    * Subsequent calls compose against the existing content and overwrite.
+   *
+   * The whole read-modify-write cycle runs inside {@link withLock}, keyed by
+   * the target plan path (or by thread while the plan doesn't exist yet) —
+   * filesystem writes have no transaction to serialize concurrent editors the
+   * way the pre-0.1.127 SQLite `BEGIN IMMEDIATE` transaction did, so two
+   * threads attached to the same plan calling `update_plan` back-to-back
+   * would otherwise silently clobber each other.
    */
   async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
     const { threadId, action, content, anchor, heading, title, changeSummary, changedBy } = input;
+    const lockKey = this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
 
-    const existingPath = this.deps.chatService.getThreadPlanPath(threadId);
+    return this.withLock(lockKey, async () => {
+      // Re-resolve inside the lock: another call for the same thread may have
+      // created the plan while this call was waiting its turn.
+      const existingPath = this.deps.chatService.getThreadPlanPath(threadId);
 
-    if (!existingPath) {
-      const trimmedTitle = title?.trim();
-      if (!trimmedTitle) {
-        throw new DomainError('MISSING_TITLE', 'title is required on the first update_plan call in a thread');
+      if (!existingPath) {
+        const trimmedTitle = title?.trim();
+        if (!trimmedTitle) {
+          throw new DomainError('MISSING_TITLE', 'title is required on the first update_plan call in a thread');
+        }
+        const planPath = await this.allocatePath(trimmedTitle);
+        const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
+        const frontmatter: PlanFrontmatter = {
+          type: 'plan',
+          title: trimmedTitle,
+          created_at: new Date().toISOString(),
+          created_by: changedBy,
+        };
+        const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
+        const abs = this.absPath(planPath);
+        await fs.mkdir(path.dirname(abs), { recursive: true });
+        this.deps.plansWatcher.suppress(planPath);
+        await fs.writeFile(abs, fullContent, 'utf-8');
+        await this.deps.pageVersions.recordVersion(
+          planPath,
+          'create',
+          toFileChangedBy(changedBy),
+          undefined,
+          this.deps.plansSerializer,
+          PLAN_ROOT_MARKER,
+          changeSummary,
+        );
+        await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, planPath);
+        this.deps.chatService.attachPlanToThread(threadId, planPath);
+
+        const version = this.currentVersionFor(planPath);
+        const plan = await this.getByPath(planPath);
+        this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
+        return { plan, version };
       }
-      const planPath = await this.allocatePath(trimmedTitle);
-      const finalContent = injectAnchors(composeContent('', action, content, anchor, heading));
-      const frontmatter: PlanFrontmatter = {
-        type: 'plan',
-        title: trimmedTitle,
-        created_at: new Date().toISOString(),
-        created_by: changedBy,
-      };
-      const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
-      const abs = this.absPath(planPath);
-      await fs.mkdir(path.dirname(abs), { recursive: true });
-      this.deps.plansWatcher.suppress(planPath);
+
+      const current = await this.getByPath(existingPath);
+      const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
+      const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
+      const abs = this.absPath(existingPath);
+      this.deps.plansWatcher.suppress(existingPath);
       await fs.writeFile(abs, fullContent, 'utf-8');
       await this.deps.pageVersions.recordVersion(
-        planPath,
-        'create',
+        existingPath,
+        'update',
         toFileChangedBy(changedBy),
         undefined,
         this.deps.plansSerializer,
         PLAN_ROOT_MARKER,
         changeSummary,
       );
-      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, planPath);
-      this.deps.chatService.attachPlanToThread(threadId, planPath);
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, existingPath);
 
-      const version = this.currentVersionFor(planPath);
-      const plan = await this.getByPath(planPath);
-      this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
+      const version = this.currentVersionFor(existingPath);
+      const plan = await this.getByPath(existingPath);
+      this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
       return { plan, version };
-    }
-
-    const current = await this.getByPath(existingPath);
-    const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
-    const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
-    const abs = this.absPath(existingPath);
-    this.deps.plansWatcher.suppress(existingPath);
-    await fs.writeFile(abs, fullContent, 'utf-8');
-    await this.deps.pageVersions.recordVersion(
-      existingPath,
-      'update',
-      toFileChangedBy(changedBy),
-      undefined,
-      this.deps.plansSerializer,
-      PLAN_ROOT_MARKER,
-      changeSummary,
-    );
-    await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, existingPath);
-
-    const version = this.currentVersionFor(existingPath);
-    const plan = await this.getByPath(existingPath);
-    this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
-    return { plan, version };
+    });
   }
 
   async updateContent(opts: PlanUpdateContentOpts): Promise<{ newHash: string }> {
-    const current = await this.getByPath(opts.path);
-    if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
-      throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
-    }
-    const incoming = matter(opts.content);
-    const incomingFm = (incoming.data ?? {}) as PlanFrontmatter;
-    const violated = PLAN_IMMUTABLE_FRONTMATTER_KEYS.filter(
-      (k) => JSON.stringify(incomingFm[k]) !== JSON.stringify(current.frontmatter[k]),
-    );
-    if (violated.length > 0) {
-      throw new DomainError('IMMUTABLE_FIELD', `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`);
-    }
-    const abs = this.absPath(opts.path);
-    this.deps.plansWatcher.suppress(opts.path);
-    await fs.writeFile(abs, opts.content, 'utf-8');
-    await this.deps.pageVersions.recordVersion(
-      opts.path,
-      'update',
-      toFileChangedBy(opts.changedBy),
-      undefined,
-      this.deps.plansSerializer,
-      PLAN_ROOT_MARKER,
-      opts.changeSummary,
-    );
-    await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
-    return { newHash: hashContent(opts.content) };
+    return this.withLock(opts.path, async () => {
+      const current = await this.getByPath(opts.path);
+      if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
+        throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash, current.content);
+      }
+      const incoming = matter(opts.content);
+      const incomingFm = (incoming.data ?? {}) as PlanFrontmatter;
+      const violated = PLAN_IMMUTABLE_FRONTMATTER_KEYS.filter(
+        (k) => JSON.stringify(incomingFm[k]) !== JSON.stringify(current.frontmatter[k]),
+      );
+      if (violated.length > 0) {
+        throw new DomainError('IMMUTABLE_FIELD', `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`);
+      }
+      const abs = this.absPath(opts.path);
+      this.deps.plansWatcher.suppress(opts.path);
+      await fs.writeFile(abs, opts.content, 'utf-8');
+      await this.deps.pageVersions.recordVersion(
+        opts.path,
+        'update',
+        toFileChangedBy(opts.changedBy),
+        undefined,
+        this.deps.plansSerializer,
+        PLAN_ROOT_MARKER,
+        opts.changeSummary,
+      );
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      return { newHash: hashContent(opts.content) };
+    });
   }
 
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
-    const current = await this.getByPath(opts.path);
-    const next: PlanFrontmatter = { ...current.frontmatter };
-    const summaries: string[] = [];
-    if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
-      next.title = opts.patch.title;
-      summaries.push(`set title=${opts.patch.title}`);
-    }
-    const newContent = matter.stringify(current.body, next as Record<string, unknown>);
-    const abs = this.absPath(opts.path);
-    this.deps.plansWatcher.suppress(opts.path);
-    await fs.writeFile(abs, newContent, 'utf-8');
-    await this.deps.pageVersions.recordVersion(
-      opts.path,
-      'update',
-      toFileChangedBy(opts.changedBy),
-      undefined,
-      this.deps.plansSerializer,
-      PLAN_ROOT_MARKER,
-      summaries.length > 0 ? summaries.join('; ') : null,
-    );
-    await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
-    return this.getByPath(opts.path);
+    return this.withLock(opts.path, async () => {
+      const current = await this.getByPath(opts.path);
+      const next: PlanFrontmatter = { ...current.frontmatter };
+      const summaries: string[] = [];
+      if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
+        next.title = opts.patch.title;
+        summaries.push(`set title=${opts.patch.title}`);
+      }
+      const newContent = matter.stringify(current.body, next as Record<string, unknown>);
+      const abs = this.absPath(opts.path);
+      this.deps.plansWatcher.suppress(opts.path);
+      await fs.writeFile(abs, newContent, 'utf-8');
+      await this.deps.pageVersions.recordVersion(
+        opts.path,
+        'update',
+        toFileChangedBy(opts.changedBy),
+        undefined,
+        this.deps.plansSerializer,
+        PLAN_ROOT_MARKER,
+        summaries.length > 0 ? summaries.join('; ') : null,
+      );
+      await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
+      return this.getByPath(opts.path);
+    });
   }
 
   async execute(
@@ -360,7 +403,7 @@ export class PlanService {
     }
 
     if (mode === 'new-session') {
-      const { threadId: newThreadId } = this.attachThreadToPlan(plan.path);
+      const { threadId: newThreadId } = await this.attachThreadToPlan(plan.path);
       this.deps.chatService.updateThreadSettings(newThreadId, { planMode: false });
       const firstMessage = `Executing plan "${plan.frontmatter.title}" — disabling planMode and proceeding with implementation.`;
       return { mode: 'new-session', newThreadId, planPath: plan.path, firstMessage };

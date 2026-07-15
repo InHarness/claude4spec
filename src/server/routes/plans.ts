@@ -60,9 +60,9 @@ export function plansRouter(plan: PlanService): Router {
     }
   });
 
-  router.post('/:slug/create-thread', (req, res, next) => {
+  router.post('/:slug/create-thread', async (req, res, next) => {
     try {
-      const result = plan.attachThreadToPlan(req.params.slug);
+      const result = await plan.attachThreadToPlan(req.params.slug);
       res.status(201).json({ data: result });
     } catch (err) {
       next(err);
