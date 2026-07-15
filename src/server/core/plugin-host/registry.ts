@@ -23,6 +23,7 @@ import type {
   PluginCommandContribution,
   PluginManifest,
   PluginSettingsModule,
+  ReferenceTypeContribution,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
@@ -32,6 +33,7 @@ import {
   synthesizeMount,
   validateWritingStyle,
 } from './manifest-adapter.js';
+import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
 
 /** Internal record: the public one plus the styles + the registered module
  *  instances, so unregister can drop styles and delete ONLY the modules this
@@ -39,6 +41,7 @@ import {
 interface InternalPluginRecord extends RegisteredPluginRecord {
   styles: WritingStyleContribution[];
   entityModules: BackendModule[];
+  referenceTypes: ReferenceTypeContribution[];
 }
 
 /** Outcome of validating + lowering a manifest, ready to commit to the registry. */
@@ -62,6 +65,12 @@ export class PluginRegistryImpl implements PluginRegistry {
     // `BackendModule` directly (never touching `EntityContribution`), so this
     // is the one place both origins are guaranteed to pass through.
     this.modules.set(module.type, synthesizeMount(module));
+    // v0.1.129 (M19 Slot B) — a module owning its own XML reference tag (e.g.
+    // diagram) declares it here instead of a standalone bootstrap side-effect
+    // call; entityType is always the module's own type, never author-supplied.
+    if (module.frontend?.referenceType) {
+      registerExtensionReferenceType({ ...module.frontend.referenceType, entityType: module.type });
+    }
   }
 
   /**
@@ -112,6 +121,7 @@ export class PluginRegistryImpl implements PluginRegistry {
 
     const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
+    const referenceTypes: ReferenceTypeContribution[] = manifest.contributes.referenceTypes ?? [];
     return {
       record: {
         name: manifest.name,
@@ -121,6 +131,7 @@ export class PluginRegistryImpl implements PluginRegistry {
         commands,
         styles,
         entityModules,
+        referenceTypes,
         onUnregister,
       },
     };
@@ -134,6 +145,12 @@ export class PluginRegistryImpl implements PluginRegistry {
     const { record } = this.validateAndLower(manifest);
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
+    }
+    // v0.1.129 (M19 Slot A) — external/entity-less reference tags. Committed
+    // here (not in validateAndLower) so a manifest that fails validation
+    // elsewhere never partially registers into the M19 process-global registry.
+    for (const refType of record.referenceTypes) {
+      registerExtensionReferenceType(refType);
     }
     // Re-registration (hot-reload) overwrites the prior record; Map keeps the
     // first-seen insertion order, which is what we want for stable section order.
@@ -157,6 +174,12 @@ export class PluginRegistryImpl implements PluginRegistry {
         this.modules.delete(module.type);
       }
     }
+    // NOTE: `record.referenceTypes` (M19 Slot A) are intentionally NOT dropped
+    // here — the M19 registry (`shared/reference-extensions.ts`) is a single
+    // process-global Map with no per-owner tracking or unregister primitive
+    // (unlike `this.modules`, which is keyed and drop-checked by identity
+    // above). A plugin that changes its own reference-type definition across a
+    // hot-reload will hit the fail-fast duplicate-tag guard on re-registration.
     this.plugins.delete(name);
   }
 

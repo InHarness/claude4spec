@@ -52,6 +52,7 @@ export type {
   PluginSettingField,
   PluginSettingsModule,
   PluginCommandContribution,
+  ReferenceTypeContribution,
 } from '../shared/plugin-host/manifest.js';
 export type { EntityModuleManifest, SystemPromptContribution };
 

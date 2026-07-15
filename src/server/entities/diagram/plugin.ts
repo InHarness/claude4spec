@@ -41,6 +41,14 @@ export const diagramBackendModule: BackendModule = {
     },
     mcpServer: () => () => createDiagramToolsServer(),
   },
+  // v0.1.129 (M19 Slot B) — <diagram/> as the 7th XML reference type, via the
+  // entity's own module instead of a standalone bootstrap side-effect call
+  // (see project-context.ts). `caption` is a per-reference attribute (not
+  // stored on the entity); `slug` identifies the diagram entity. `entityType`
+  // is auto-injected by `registerEntityModule` as `module.type` ('diagram').
+  frontend: {
+    referenceType: { tag: 'diagram', attrOrder: ['slug', 'caption'] },
+  },
 };
 
 export function onRegister(registry: PluginRegistry): void {

@@ -154,7 +154,20 @@ registerEditorExtension({
 
 // v0.1.64 — `<diagram/>` 7th XML reference type via the M19 extension slot.
 // `slug` identifies the diagram entity (source of truth); `caption` is per-
-// reference prose. Mirrors the server registration in project-context.ts.
+// reference prose.
+//
+// v0.1.129: the server side moved this registration onto
+// diagramBackendModule.frontend.referenceType (M19 Slot B), since diagram is
+// registered there through the normal registerEntityModule call anyway. This
+// client-side call stays a standalone registration, deliberately — diagram is
+// the only built-in entity whose client-side rendering (chip/row/card) still
+// goes through the legacy `registerEntity` (entities/registry.tsx) instead of
+// `clientPluginHost.registerFrontendModule`/`FrontendModule`, so there is no
+// Slot B-equivalent entry point on the client to attach this to without a
+// separate migration of diagram's client registration. Each XML-tag
+// registration (this one) is independent of Tiptap-node registration
+// (`registerEditorExtension` below) — parseXmlTags/serializeXmlTag need this
+// one regardless of whether the entity has a FrontendModule.
 registerExtensionReferenceType({
   tag: 'diagram',
   attrOrder: ['slug', 'caption'],

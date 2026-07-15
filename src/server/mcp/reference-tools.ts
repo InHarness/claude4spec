@@ -11,7 +11,7 @@ import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import { pagesServiceSource } from '../services/references.js';
-import { listExtensionReferenceTypes } from '../../shared/reference-extensions.js';
+import { getExtensionReferenceType } from '../../shared/reference-extensions.js';
 import type { EntityType } from '../../shared/entities.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
 import type { AcService } from '../entities/ac/service.js';
@@ -261,7 +261,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const checkConsistency = mcpTool(
     'check_consistency',
-    'Run a full consistency check across pages, entities, and tags. Reports broken references in 3 categories (broken-reference / inactive-plugin / unknown-type), plus orphaned entity_tag rows, unreferenced entities, broken extension references (rule 8 — e.g. <section_ref/> with unknown anchor), broken AC verifies (rule 9 — always on when AC plugin active), entity-without-AC-coverage (rule 10 — config-flagged via config.consistency.requireAcCoverage), module-without-AC (rule 11 — config-flagged via config.consistency.requireModuleAc).',
+    'Run a full consistency check across pages, entities, and tags. Reports broken references in 3 categories (broken-reference / inactive-plugin / unknown-type) — including for extension tags with no `type` attr whose registered type carries an `entityType`, e.g. <diagram/> (rule 12) — plus orphaned entity_tag rows, unreferenced entities, broken extension references (rule 8 — e.g. <section_ref/> with unknown anchor), broken AC verifies (rule 9 — always on when AC plugin active), entity-without-AC-coverage (rule 10 — config-flagged via config.consistency.requireAcCoverage), module-without-AC (rule 11 — config-flagged via config.consistency.requireModuleAc).',
     {},
     async () => {
       try {
@@ -322,7 +322,16 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         for (const p of pagePaths) {
           const page = await deps.pagesService.read(p);
           for (const tag of parseXmlTagsExcludingCode(page.body)) {
-            const tagType = tag.attrs.type;
+            // Rule 12 — an extension tag with no `type` attr (e.g. <diagram/>, the
+            // tag name IS the type) still gets existence checking for free when its
+            // registered ExtensionReferenceType carries an `entityType`: fall back to
+            // it here so such tags flow through the SAME categorise/slugSetsByType/
+            // referencedByType machinery the 5 core types already use below, instead
+            // of a separate bandaid branch. Extensions without an entityType (e.g.
+            // <section_ref/>, resolved by anchor) are unaffected and fall through to
+            // the dedicated rule 8 handling further down.
+            const extType = tag.source === 'extension' ? getExtensionReferenceType(tag.kind) : undefined;
+            const tagType = tag.attrs.type ?? extType?.entityType;
             if (tag.kind !== 'tagged_list_mixed' && tagType) {
               const cat = categorise(tagType);
               const slugs =
@@ -403,10 +412,11 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
                     category: 'unknown-anchor',
                   });
                 }
-              } else {
-                const ext = listExtensionReferenceTypes().find((e) => e.tag === tag.kind);
-                if (ext?.validate) {
-                  const result = ext.validate(tag.attrs);
+              } else if (!extType?.entityType) {
+                // entityType-bearing extensions (e.g. diagram) are already covered
+                // by the widened rule-12 main-loop branch above — don't double-check.
+                if (extType?.validate) {
+                  const result = extType.validate(tag.attrs);
                   if (!result.ok) {
                     brokenExtensionReferences.push({
                       pagePath: p,

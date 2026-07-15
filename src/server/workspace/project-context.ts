@@ -99,15 +99,13 @@ registerExtensionReferenceType({
   attrOrder: ['anchor'],
 });
 
-// v0.1.64 registers <diagram/> as the 7th XML reference type via the M19
-// extension slot. `caption` is a per-reference attribute (not stored on the
-// entity); `slug` identifies the diagram entity. No validate closure — broken
-// diagram references surface through the generic entity-reference matching
-// (tagMatchesEntity) like any other static reference.
-registerExtensionReferenceType({
-  tag: 'diagram',
-  attrOrder: ['slug', 'caption'],
-});
+// v0.1.64 originally registered <diagram/> as the 7th XML reference type here
+// too, as a standalone bootstrap side-effect call. v0.1.129 (M19 Slot B)
+// moved that registration onto diagramBackendModule.frontend.referenceType
+// (src/server/entities/diagram/plugin.ts) — it now happens automatically as
+// part of the existing registerEntityModule(diagramBackendModule) call in
+// registerAllPlugins, with `entityType` auto-injected as the module's own
+// type. No standalone call needed here anymore.
 
 /**
  * M29: one-time best-effort backup of the derived SQLite before a DB→text
