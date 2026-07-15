@@ -144,7 +144,7 @@ export class PatchService {
   async updateContent(opts: PatchUpdateContentOpts): Promise<PatchResponse> {
     const current = await this.getPatch(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
-      throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash);
+      throw new ConflictError('PATCH_CONFLICT', 'patch changed since last read', current.hash, current.content);
     }
     const incoming = matter(opts.content);
     const incomingFm = (incoming.data ?? {}) as PatchFrontmatter;
@@ -153,7 +153,7 @@ export class PatchService {
     );
     if (violated.length > 0) {
       throw new DomainError(
-        'PATCH_FRONTMATTER_IMMUTABLE',
+        'IMMUTABLE_FIELD',
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }

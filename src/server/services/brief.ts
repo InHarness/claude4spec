@@ -271,7 +271,7 @@ export class BriefService {
   async updateContent(opts: BriefUpdateContentOpts): Promise<{ newHash: string }> {
     const current = await this.getBrief(opts.path);
     if (typeof opts.expectedHash === 'string' && opts.expectedHash !== current.hash) {
-      throw new ConflictError('BRIEF_CONFLICT', 'brief changed since last read', current.hash);
+      throw new ConflictError('BRIEF_CONFLICT', 'brief changed since last read', current.hash, current.content);
     }
     // Validate immutable frontmatter has not been altered in incoming content.
     const incoming = matter(opts.content);
@@ -290,7 +290,7 @@ export class BriefService {
     }
     if (violated.length > 0) {
       throw new DomainError(
-        'BRIEF_FRONTMATTER_IMMUTABLE',
+        'IMMUTABLE_FIELD',
         `cannot mutate immutable frontmatter keys: ${violated.join(', ')}`,
       );
     }
@@ -391,11 +391,13 @@ export class BriefService {
 export class ConflictError extends Error {
   readonly code: string;
   readonly currentHash: string;
-  constructor(code: string, message: string, currentHash: string) {
+  readonly currentContent?: string;
+  constructor(code: string, message: string, currentHash: string, currentContent?: string) {
     super(message);
     this.name = 'ConflictError';
     this.code = code;
     this.currentHash = currentHash;
+    this.currentContent = currentContent;
   }
 }
 

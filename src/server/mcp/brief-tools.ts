@@ -75,7 +75,7 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): McpServerInstance
       "releasable roots this brief covers; absent = whole-release) — pass it to release_diff",
       'as `roots` to keep the diff scoped to this brief. `implemented` is owned by the',
       'implementer-agent in the target repo and toggled via filesystem edit, not via this MCP.',
-      'Any frontmatter mutation attempt → BRIEF_FRONTMATTER_IMMUTABLE.',
+      'Any frontmatter mutation attempt → IMMUTABLE_FIELD.',
       'Optional `expectedHash` (sha256 from get_brief) enables optimistic concurrency —',
       'mismatch → BRIEF_CONFLICT (re-read brief before retrying).',
       'Each mutation captures a row in file_version with changed_by="agent".',
