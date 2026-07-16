@@ -1,4 +1,6 @@
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+// 0.1.133: build the custom MCP server through the C4S facade barrel
+// (`@c4s/plugin-runtime`), never the vendor `@inharness-ai/agent-adapters` directly.
+import { createMcpServer, mcpTool, type McpServerInstance } from '../../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { EndpointService } from './service.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';

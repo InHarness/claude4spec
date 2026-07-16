@@ -101,6 +101,17 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
 ] as const;
 
 /**
+ * The BACKEND value exports of `@c4s/plugin-runtime` (0.1.133 MCP builder
+ * facade). Unlike {@link PLUGIN_RUNTIME_EXPORT_NAMES}, these are NOT browser
+ * singletons routed through the import-map shim — they are host-process values
+ * re-exported from the backend barrel (`server/plugin-runtime/index.ts`) and
+ * shipped via the package's `./plugin-runtime` runtime export. A parity test
+ * (`published-surface.test.ts`) asserts the barrel exports exactly these and
+ * that the published `.d.ts` declares their facade signatures.
+ */
+export const PLUGIN_RUNTIME_BACKEND_VALUE_NAMES = ['createMcpServer', 'mcpTool'] as const;
+
+/**
  * The VALUE exports of `@c4s/plugin-runtime/ui` (Host UI Kit catalog, M34/L12) —
  * a browser module the server can't introspect, same as the main facade above.
  * The runtime shim emits these names; a parity test asserts they match the

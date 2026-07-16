@@ -109,9 +109,6 @@ export interface MountContext {
  */
 export type PluginMountFn = (ctx: MountContext) => void;
 
-/** Factory for a custom `${type}-tools` MCP server (non-CRUD tools only). */
-export type McpServerFactory = () => McpServerInstance;
-
 export interface BackendModule extends EntityModuleManifest {
   /** L9 — JSON serialization for external consumers (CLI, MCP, ...). */
   serializer: EntitySerializer<unknown>;
@@ -152,8 +149,16 @@ export interface BackendModule extends EntityModuleManifest {
     routes?: {
       router: (service: EntityCrudService, ctx: MountContext) => Router;
     };
-    /** Custom `${type}-tools` server factory for this type's non-CRUD tools. */
-    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
+    /**
+     * Custom `${type}-tools` server for this type's non-CRUD tools. 0.1.133:
+     * the slot returns the MCP server HANDLE directly — the result of
+     * `createMcpServer(...)` (published as the opaque C4S `McpServerFactory`) —
+     * NOT a `() => instance` thunk. Per-turn freshness is host-owned: the host
+     * wraps this factory in a per-turn thunk in `synthesizeMount`
+     * (`registerMcpServer`), so `buildMcpServers()` rebuilds a fresh, connectable
+     * server each turn behind the facade.
+     */
+    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerInstance;
   };
 
   /**

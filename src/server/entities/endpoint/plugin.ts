@@ -34,7 +34,7 @@ export const endpointBackendModule: BackendModule = {
     routes: {
       router: (service, ctx) => endpointsRouter(service as EndpointService, ctx.referencesService),
     },
-    mcpServer: (service, ctx) => () =>
+    mcpServer: (service, ctx) =>
       createEndpointToolsServer({ endpointService: service as EndpointService, ws: ctx.ws }),
   },
 };

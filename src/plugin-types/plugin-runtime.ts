@@ -107,6 +107,48 @@ export interface EntityCrudService<T = unknown> {
   search?(query: string, opts: { limit: number; offset: number }): { items: T[]; total: number };
 }
 
+// ── M13/L11 — MCP builder facade (0.1.133) ──
+// A plugin that contributes a CUSTOM MCP server (the `backend.mcpServer` slot,
+// for a type's non-CRUD tools) builds it by calling `createMcpServer`/`mcpTool`
+// RE-EXPORTED from `@c4s/plugin-runtime` — NEVER by importing the vendor
+// `@inharness-ai/agent-adapters` directly. These are C4S-owned FACADE signatures:
+// the vendor is an internal host dependency hidden behind them, so its config
+// shapes (`McpServerConfig`, `McpServerInstance`) are deliberately NOT part of
+// this published surface, and a vendor version bump does not bump
+// `hostApiVersion` as long as the facade shape below is preserved (see the
+// versioning rule in `shared/plugin-host/manifest.ts`).
+//
+// `createMcpServer` / `mcpTool` are runtime VALUES; `declare`-d here so the
+// emitted `.d.ts` carries the contract while `tsc` erases any implementation
+// (the values ship from the backend barrel `server/plugin-runtime/index.ts`).
+
+/**
+ * Opaque, C4S-owned handle for a custom MCP server — the RESULT of
+ * `createMcpServer(...)`, and the return type of the `backend.mcpServer` slot.
+ * Nominally opaque to the plugin author (NOT `ReturnType<typeof createMcpServer>`
+ * of the vendor, NOT a `() => instance` thunk): the host lowers it to the vendor
+ * representation at `adapter.execute({ mcpServers })` and rebuilds a fresh server
+ * per turn behind the facade.
+ */
+export interface McpServerFactory {
+  /* opaque host-owned handle */
+}
+/** Facade alias for one MCP tool — the real tool shape is a vendor detail behind the facade. */
+export type McpTool = unknown;
+/**
+ * Loose mirror of zod's `ZodRawShape` — `zod` is a shared peer the plugin
+ * already resolves at runtime, so the precise type is not pinned into this
+ * published surface.
+ */
+export type ZodRawShape = Record<string, unknown>;
+export declare function createMcpServer(def: { name: string; tools: McpTool[] }): McpServerFactory;
+export declare function mcpTool(
+  name: string,
+  description: string,
+  zodShape: ZodRawShape,
+  handler: (input: unknown) => unknown,
+): McpTool;
+
 // ── L9 serializer ──
 export interface SerializeContext {
   reader: unknown;

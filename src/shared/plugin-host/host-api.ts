@@ -12,6 +12,13 @@
  * The surface now also covers the `stable` Host UI Kit components (M34/L12); a
  * breaking prop-shape change there is a major bump with a `ui-prop-reshape`
  * descriptor (see {@link VERSIONED_UI_KIT_COMPONENTS}).
+ *
+ * Since 0.1.133 the surface also covers the MCP builder FACADE (the opaque
+ * `McpServerFactory` handle + the `createMcpServer` / `mcpTool` signatures
+ * re-exported from `@c4s/plugin-runtime`). Crucially, a version bump of the
+ * vendor `@inharness-ai/agent-adapters` hidden BEHIND that facade is NOT a
+ * surface change and does NOT bump `hostApiVersion` while the facade shape
+ * holds — only a change to the facade shape itself qualifies as a major.
  */
 
 import { HOST_API_VERSION, parseMajor } from './manifest.js';

@@ -29,9 +29,14 @@ export type ReferenceTypeContribution = ExtensionReferenceType;
  * The Host API version this build advertises. Bumped on a breaking change to
  * any surface counted into the contract: the manifest / EntityModule
  * signatures, the `mountBackend(app, mcpHost, db, cwd)` mount-context shape,
- * the chip/card/row prop shapes, the L8 editor registration contract, and the
+ * the chip/card/row prop shapes, the L8 editor registration contract, the
  * prop contracts of the `stable` Host UI Kit components (M34/L12;
- * `@c4s/plugin-runtime/ui`). See `UI_KIT_STABLE_COMPONENTS` in
+ * `@c4s/plugin-runtime/ui`), and — since 0.1.133 — the MCP builder FACADE:
+ * the opaque `McpServerFactory` handle (return type of the `backend.mcpServer`
+ * slot) plus the `createMcpServer` / `mcpTool` signatures re-exported from
+ * `@c4s/plugin-runtime`. The vendor types behind that facade
+ * (`@inharness-ai/agent-adapters`' `McpServerConfig` / `McpServerInstance`) are
+ * deliberately NOT part of the surface. See `UI_KIT_STABLE_COMPONENTS` in
  * `ui-kit-surface.ts`; `experimental` kit components are deliberately NOT part
  * of this surface.
  *
@@ -59,6 +64,17 @@ export type ReferenceTypeContribution = ExtensionReferenceType;
  * during stabilization (no published third-party plugins yet) does not bump
  * the version — it is simply folded into what `1.0.0` now covers, same as the
  * Host UI Kit precedent.
+ *
+ * MCP facade (0.1.133) — the qualification rule applies as follows:
+ *   - ADDING the facade (re-exporting the `createMcpServer` / `mcpTool` values +
+ *     defining the opaque `McpServerFactory` handle) is additive within the
+ *     `1.0.0` baseline — no bump (same stabilization precedent as M13).
+ *   - Bumping the vendor `@inharness-ai/agent-adapters` behind the facade is NOT
+ *     a Host API surface change and does NOT bump `hostApiVersion`, as long as
+ *     the facade shape (the `createMcpServer` / `mcpTool` signatures and the
+ *     `McpServerFactory` contract) is preserved. This is the whole point of the
+ *     facade: it decouples the Host API major from vendor dependency churn.
+ *   - A `hostApiVersion` MAJOR bumps only when the facade shape itself changes.
  */
 export const HOST_API_VERSION = '1.0.0';
 
@@ -130,7 +146,12 @@ export interface EntityContribution extends EntityModuleManifest {
      * non-standard tools (e.g. `link_dto`/`unlink_dto`); CRUD tools belong
      * exclusively to `entity-tools`, never to a per-type server. Registered as
      * `${type}-tools`. Omit when the type has no custom tools — no server is
-     * mounted in that case. (server `(service, ctx) => McpServerFactory`.)
+     * mounted in that case. 0.1.133: the slot returns the MCP server HANDLE
+     * directly — the result of `createMcpServer(...)`, published as the opaque
+     * C4S facade `McpServerFactory` — NOT a `() => instance` thunk; per-turn
+     * freshness is host-owned. Typed `unknown` here (like `service`/`crud`/
+     * `routes`) so the dep-free shared bundle carries no vendor type; the
+     * server registry narrows it to `(service, ctx) => McpServerInstance`.
      */
     mcpServer?: unknown;
   };

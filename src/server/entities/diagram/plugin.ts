@@ -39,7 +39,7 @@ export const diagramBackendModule: BackendModule = {
     routes: {
       router: (service, ctx) => diagramsRouter(service as DiagramService, ctx.referencesService, ctx.ws),
     },
-    mcpServer: () => () => createDiagramToolsServer(),
+    mcpServer: () => createDiagramToolsServer(),
   },
   // v0.1.129 (M19 Slot B) — <diagram/> as the 7th XML reference type, via the
   // entity's own module instead of a standalone bootstrap side-effect call

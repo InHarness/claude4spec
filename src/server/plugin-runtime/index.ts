@@ -11,9 +11,26 @@
  * plugins under `.claude4spec/plugins/` link against it). The frontend half of
  * `@c4s/plugin-runtime` lives in `src/client/runtime/plugin-runtime.ts` and is
  * delivered to plugins through the import-map shim.
+ *
+ * 0.1.133 — MCP builder facade. `createMcpServer` / `mcpTool` are re-exported as
+ * VALUES here so a plugin's custom `backend.mcpServer` server compiles and runs
+ * against `@c4s/plugin-runtime`, never reaching into the vendor
+ * `@inharness-ai/agent-adapters` directly. The vendor is an internal host
+ * dependency hidden behind this facade: the PUBLISHED type surface
+ * (`plugin-types/plugin-runtime.ts`, routed via `exports.types`) shows only the
+ * C4S-owned opaque `McpServerFactory` handle, so vendor config shapes never leak
+ * and a vendor version bump does not bump `hostApiVersion` while the facade shape
+ * holds. Host-internal backend consumers (the built-in entity modules) import the
+ * builders from this barrel and keep the concrete vendor `McpServerInstance` type
+ * re-exported below — that concrete type is host-internal, not published.
  */
 
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+// MCP builder facade (0.1.133) — VALUES re-exported from the internal vendor.
+export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
+// Host-internal concrete handle type for in-repo backend consumers. NOT part of
+// the published `@c4s/plugin-runtime` surface (that shows opaque `McpServerFactory`).
+export type { McpServerInstance } from '@inharness-ai/agent-adapters';
 export type {
   PluginManifest,
   EntityContribution,

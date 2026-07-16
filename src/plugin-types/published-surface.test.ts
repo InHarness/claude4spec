@@ -12,13 +12,17 @@
  * declarations (see the cross-repo verification).
  */
 
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { HOST_API_VERSION } from '../shared/plugin-host/manifest.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../shared/plugin-host/ui-kit-surface.js';
 import {
   PLUGIN_RUNTIME_EXPORT_NAMES,
   PLUGIN_RUNTIME_UI_EXPORT_NAMES,
+  PLUGIN_RUNTIME_BACKEND_VALUE_NAMES,
 } from '../shared/plugin-host/frontend-manifest.js';
+import * as backendBarrel from '../server/plugin-runtime/index.js';
 
 /**
  * The names the published `@inharness-ai/claude4spec/plugin-runtime` surface
@@ -116,5 +120,43 @@ describe('published Host API type surface', () => {
     expect([...UI_KIT_STABLE_COMPONENTS].sort()).toEqual(
       ['DetailPanelShell', 'EntityListHeader', 'FieldGrid', 'FieldRow'].sort(),
     );
+  });
+});
+
+/**
+ * MCP builder facade (0.1.133). The vendor `@inharness-ai/agent-adapters` is an
+ * internal host dependency hidden behind a C4S-owned facade: the backend barrel
+ * re-exports the `createMcpServer` / `mcpTool` VALUES, while the published
+ * `.d.ts` shows only the opaque `McpServerFactory` handle + facade signatures —
+ * never the vendor's `McpServerConfig` / `McpServerInstance`.
+ */
+describe('MCP builder facade', () => {
+  const facadeSource = readFileSync(
+    fileURLToPath(new URL('./plugin-runtime.ts', import.meta.url)),
+    'utf8',
+  );
+  // Comments are stripped from the emitted `.d.ts`, so the leak guard runs
+  // against code only — an explanatory comment may name a vendor type, but no
+  // actual declaration or import may reference it.
+  const facadeCode = facadeSource
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '');
+
+  it('re-exports exactly the backend MCP builder values from the barrel', () => {
+    for (const name of PLUGIN_RUNTIME_BACKEND_VALUE_NAMES) {
+      expect(typeof (backendBarrel as Record<string, unknown>)[name]).toBe('function');
+    }
+  });
+
+  it('declares the C4S facade names in the published type surface', () => {
+    for (const name of ['McpServerFactory', 'McpTool', 'createMcpServer', 'mcpTool']) {
+      expect(facadeCode).toContain(name);
+    }
+  });
+
+  it('does NOT leak vendor MCP types into the published surface', () => {
+    expect(facadeCode).not.toContain('McpServerConfig');
+    expect(facadeCode).not.toContain('McpServerInstance');
+    expect(facadeCode).not.toContain('@inharness-ai/agent-adapters');
   });
 });
