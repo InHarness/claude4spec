@@ -118,10 +118,23 @@ export interface EntityCrudService<T = unknown> {
 // `hostApiVersion` as long as the facade shape below is preserved (see the
 // versioning rule in `shared/plugin-host/manifest.ts`).
 //
+// BACKEND-ONLY VALUES. `createMcpServer` / `mcpTool` are server-side values
+// consumed by a plugin's `backend.*` code; they run only in the host process. A
+// plugin's FRONTEND (browser) module must NOT import them — the import-map shim
+// that resolves `@c4s/plugin-runtime` in the browser serves only the client
+// value surface (`PLUGIN_RUNTIME_EXPORT_NAMES`), so a browser import of these
+// names fails to resolve at load time even though it type-checks against this
+// shared surface (same as the backend types `MountContext` / `EntityCrudService`
+// above, which a frontend module also must not depend on).
+//
 // `createMcpServer` / `mcpTool` are runtime VALUES; `declare`-d here so the
 // emitted `.d.ts` carries the contract while `tsc` erases any implementation
 // (the values ship from the backend barrel `server/plugin-runtime/index.ts`).
 
+// A private brand makes `McpServerFactory` nominally opaque: a plugin cannot
+// fabricate one structurally (an empty `interface {}` would be assignable from
+// any value) — the ONLY way to obtain it is calling `createMcpServer(...)`.
+declare const mcpServerFactoryBrand: unique symbol;
 /**
  * Opaque, C4S-owned handle for a custom MCP server — the RESULT of
  * `createMcpServer(...)`, and the return type of the `backend.mcpServer` slot.
@@ -131,7 +144,8 @@ export interface EntityCrudService<T = unknown> {
  * per turn behind the facade.
  */
 export interface McpServerFactory {
-  /* opaque host-owned handle */
+  /** @internal opaque brand — only `createMcpServer` produces this handle. */
+  readonly [mcpServerFactoryBrand]: 'McpServerFactory';
 }
 /** Facade alias for one MCP tool — the real tool shape is a vendor detail behind the facade. */
 export type McpTool = unknown;

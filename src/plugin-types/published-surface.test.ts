@@ -135,12 +135,13 @@ describe('MCP builder facade', () => {
     fileURLToPath(new URL('./plugin-runtime.ts', import.meta.url)),
     'utf8',
   );
-  // Comments are stripped from the emitted `.d.ts`, so the leak guard runs
-  // against code only — an explanatory comment may name a vendor type, but no
-  // actual declaration or import may reference it.
-  const facadeCode = facadeSource
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\/\/.*$/gm, '');
+  // Mirror what actually reaches the emitted `.d.ts`: tsc RETAINS JSDoc (`/** */`)
+  // on declarations but drops `//` line comments. So strip ONLY line comments —
+  // stripping JSDoc too would let a vendor-type name added inside a JSDoc block
+  // leak into the shipped surface while this guard (blind to it) stayed green.
+  // A prose mention in a `//` comment is fine (it never reaches the `.d.ts`); a
+  // reference in code OR retained JSDoc is a real leak and must fail here.
+  const facadeCode = facadeSource.replace(/\/\/.*$/gm, '');
 
   it('re-exports exactly the backend MCP builder values from the barrel', () => {
     for (const name of PLUGIN_RUNTIME_BACKEND_VALUE_NAMES) {

@@ -23,6 +23,17 @@
  * holds. Host-internal backend consumers (the built-in entity modules) import the
  * builders from this barrel and keep the concrete vendor `McpServerInstance` type
  * re-exported below — that concrete type is host-internal, not published.
+ *
+ * Runtime resolution of these VALUES, by consumer:
+ *   - In-repo built-ins import this barrel by relative path (`../../plugin-runtime`).
+ *   - External backend plugins import the package SUBPATH
+ *     `@inharness-ai/claude4spec/plugin-runtime`, which Node resolves to this
+ *     compiled barrel via the `exports["./plugin-runtime"].default` condition.
+ *   - The bare alias `@c4s/plugin-runtime` resolves at runtime ONLY in the
+ *     browser (the M33 import-map shim, which serves the client value surface).
+ *     A backend Node import of the bare alias has no resolver yet — a per-project
+ *     backend import-map is future work; until then, backend code uses the
+ *     subpath (or this relative barrel) rather than the bare alias.
  */
 
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
