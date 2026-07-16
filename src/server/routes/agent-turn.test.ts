@@ -122,8 +122,8 @@ function makeDeps() {
     briefService: {},
     patchService: {},
     pageVersions: {},
-    skillResolver: { resolve: () => [] },
-    skillRegistry: { has: () => false },
+    skillResolver: { resolve: () => [], resolveForContext: () => [] },
+    skillRegistry: { has: () => false, resolve: () => { throw new Error('unexpected resolve() call'); } },
     ws: {},
     cwd: process.cwd(),
     roots: [
@@ -263,6 +263,100 @@ describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-1
     const mcpKeys = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
     expect(mcpKeys).not.toContain('entity-tools');
     expect(mcpKeys).toContain('release-tools');
+  });
+});
+
+describe('runAgentTurn — M37 per-context skill injection', () => {
+  /** Minimal fake registry backing a fixed set of skills for these tests. */
+  function fakeSkillDeps(skills: Record<string, { title: string; description: string; injection: 'forced' | 'available'; scope?: 'contextual' | 'writing-style' }>) {
+    const skillRegistry = {
+      has: (slug: string) => slug in skills,
+      resolve: (slug: string) => {
+        const s = skills[slug];
+        if (!s) throw new Error(`unknown slug "${slug}"`);
+        return { metadata: { slug, title: s.title, description: s.description, injection: s.injection, version: 1, language: 'en', scope: s.scope ?? 'contextual', source: 'bundled', path: '' }, content: `${slug} body`, files: {} };
+      },
+    };
+    const skillResolver = {
+      resolve: () => [],
+      // Mirrors the real resolveForContext: resolves the attach-list (throwing on an
+      // unknown slug, same as the real registry-backed implementation), then appends
+      // any 'writing-style' scoped entry last (the active style, if one is configured).
+      resolveForContext: (attach: string[]) => {
+        const out = attach.map((slug) => {
+          if (!(slug in skills)) throw new Error(`[skill] attachInternalSkills slug "${slug}" not in registry — broken bundled-skills install?`);
+          const r = skillRegistry.resolve(slug);
+          return { name: slug, description: r.metadata.description, content: r.content, files: r.files, metadata: { title: r.metadata.title, version: 1, language: 'en', scope: r.metadata.scope, injection: r.metadata.injection } };
+        });
+        for (const [slug, s] of Object.entries(skills)) {
+          if (s.scope === 'writing-style' && !out.some((o) => o.name === slug)) {
+            const r = skillRegistry.resolve(slug);
+            out.push({ name: slug, description: r.metadata.description, content: r.content, files: r.files, metadata: { title: r.metadata.title, version: 1, language: 'en', scope: r.metadata.scope, injection: r.metadata.injection } });
+          }
+        }
+        return out;
+      },
+    };
+    return { skillRegistry, skillResolver };
+  }
+
+  it('patch thread: patch-implementer (forced) is both in inlineSkills and gets a <project_skill> block', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    Object.assign(deps, fakeSkillDeps({
+      'patch-implementer': { title: 'Patch Implementer', description: 'resolves patches', injection: 'forced' },
+    }));
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'patch';
+
+    await runAgentTurn(deps, input);
+
+    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
+    expect(skillNames).toContain('patch-implementer');
+    expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<project_skill slug="patch-implementer"');
+  });
+
+  it("chat thread: writing-style-author (available) is in inlineSkills but produces NO <project_skill> block", async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    Object.assign(deps, fakeSkillDeps({
+      'writing-style-author': { title: 'Writing Style Author', description: 'authors styles', injection: 'available' },
+    }));
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'chat';
+
+    await runAgentTurn(deps, input);
+
+    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
+    expect(skillNames).toContain('writing-style-author');
+    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_skill slug="writing-style-author"');
+  });
+
+  it('an active writing style is ALWAYS forced, even if its own frontmatter says injection: available (misconfiguration)', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    Object.assign(deps, fakeSkillDeps({
+      'writing-style-author': { title: 'Writing Style Author', description: 'authors styles', injection: 'available' },
+      'house-style': { title: 'House Style', description: 'the active style', injection: 'available', scope: 'writing-style' },
+    }));
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'chat';
+
+    await runAgentTurn(deps, input);
+
+    // Despite injection:'available' on the style itself, scope:'writing-style' wins —
+    // the style is always force-injected once active, per the documented invariant.
+    expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<project_skill slug="house-style"');
+  });
+
+  it('a missing bundled attach-list skill fails the turn loudly instead of silently dropping its announcement', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    Object.assign(deps, fakeSkillDeps({})); // 'brief-author' is NOT registered — simulates a broken build.
+    const input = makeInput();
+    (input.thread as unknown as { contextType: string }).contextType = 'brief';
+
+    await expect(runAgentTurn(deps, input)).rejects.toThrow(/brief-author/);
   });
 });
 
