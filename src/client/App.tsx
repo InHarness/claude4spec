@@ -25,7 +25,7 @@ import { openPopover, toast } from './ui/events.js';
 import { usePersistedWidth, useTheme } from './state/tweaks.js';
 import { useChatStore } from './state/chat.js';
 import { useConfig } from './hooks/useConfig.js';
-import type { PageNode } from '../shared/types.js';
+import { countFiles } from '../shared/page-files.js';
 
 export function RootLayout() {
   const navigate = useNavigate();
@@ -218,14 +218,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
   );
 }
 
-function countFiles(nodes: PageNode[]): number {
-  let n = 0;
-  for (const node of nodes) {
-    if (node.type === 'file') n++;
-    else if (node.children) n += countFiles(node.children);
-  }
-  return n;
-}
 
 function deriveTitle(filePath: string): string {
   const base = filePath.split('/').pop() ?? 'untitled';

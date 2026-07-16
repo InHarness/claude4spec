@@ -46,11 +46,13 @@ import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
+import { useConfig, useRoots } from './hooks/useConfig.js';
 import { EntityBreadcrumbBar } from './entities/_shared/EntityBreadcrumbBar.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
+import { useLastPage } from './hooks/useLastPage.js';
+import { resolveLandingTarget } from './lib/landing.js';
 import type { EntityType } from '../shared/entities.js';
-import type { PageNode } from '../shared/types.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
 
@@ -401,10 +403,25 @@ export function RoutePane({ children }: { children: React.ReactNode }) {
 }
 
 function IndexRoute() {
-  const { data: tree = [] } = usePages();
-  const firstPage = useMemo(() => firstLeaf(tree), [tree]);
-  if (firstPage) {
-    return <Navigate to="/space/$rootId/$" params={{ rootId: 'pages', _splat: firstPage.path }} replace />;
+  const roots = useRoots();
+  const { isLoading: rootsLoading } = useConfig();
+  const [lastPage] = useLastPage();
+  const { data: pagesTree = [] } = usePages('pages');
+  const { data: lastPageTree = [], isLoading: lastPageTreeLoading } = usePages(lastPage?.rootId ?? 'pages');
+  // A remembered page still validating (roots/lastPageTree not loaded yet) must not be treated
+  // as invalid just because these queries default to `[]`/`false` while in flight — that race
+  // would send a live remembered page to the fallback chain and never come back (Navigate unmounts
+  // this component). Only decide once its own validating data has actually settled.
+  const stillValidatingLastPage = !!lastPage && (rootsLoading || lastPageTreeLoading);
+  const target = useMemo(() => {
+    if (stillValidatingLastPage) return undefined;
+    return resolveLandingTarget({ lastPage, roots, pagesTree, lastPageTree });
+  }, [stillValidatingLastPage, lastPage, roots, pagesTree, lastPageTree]);
+  if (target === undefined) {
+    return null;
+  }
+  if (target) {
+    return <Navigate to="/space/$rootId/$" params={{ rootId: target.rootId, _splat: target.path }} replace />;
   }
   return (
     <RoutePane>
@@ -427,7 +444,12 @@ function PageRoute() {
   const setPageView = usePageViewStore((s) => s.setPageView);
   useEffect(() => {
     setPageView('editor');
-  }, [path, setPageView]);
+  }, [rootId, path, setPageView]);
+  const [, setLastPage] = useLastPage();
+  useEffect(() => {
+    if (!path) return;
+    setLastPage({ rootId, path });
+  }, [rootId, path, setLastPage]);
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
@@ -960,17 +982,6 @@ export function EntityNotFound({ type }: { type: EntityType }) {
       </div>
     </RoutePane>
   );
-}
-
-function firstLeaf(nodes: PageNode[]): PageNode | null {
-  for (const n of nodes) {
-    if (n.type === 'file') return n;
-    if (n.children) {
-      const found = firstLeaf(n.children);
-      if (found) return found;
-    }
-  }
-  return null;
 }
 
 function promptNewPage() {

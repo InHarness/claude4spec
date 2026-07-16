@@ -23,7 +23,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import type { PageNode, PageSearchHit, Root } from '../../shared/types.js';
-import { markdownExtension } from '../../shared/page-files.js';
+import { markdownExtension, countFiles } from '../../shared/page-files.js';
 import { usePages, usePagesSearch } from '../hooks/usePages.js';
 import { useRoots } from '../hooks/useConfig.js';
 import { usePersistedState, projectKey } from '../state/persisted.js';
@@ -590,15 +590,6 @@ function PagesTree({
       })}
     </div>
   );
-}
-
-function countFiles(nodes: PageNode[]): number {
-  let n = 0;
-  for (const node of nodes) {
-    if (node.type === 'file') n++;
-    else if (node.children) n += countFiles(node.children);
-  }
-  return n;
 }
 
 const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links'];
