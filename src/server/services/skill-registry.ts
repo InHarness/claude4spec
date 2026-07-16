@@ -315,20 +315,27 @@ export class SkillResolver {
    * the writing style — which may carry a `workflows/brief.md` addendum handled
    * separately by the system-prompt builder — is always the trailing entry.
    *
-   * Unlike `resolve()` (user-configurable `config.writingStyle`, where an unknown
-   * slug is a recoverable user mistake and warn-and-skip is correct), an unknown
-   * `attachInternalSkills` slug THROWS: these slugs come from the code-level
-   * `CONTEXT_TYPE_REGISTRY`, not user input — every entry names a package-bundled
-   * skill that is supposed to always exist. A missing one means a broken build
-   * (e.g. `dist/server/skills/` lost a directory), and silently degrading the
-   * turn (no genre skill, no announcement, no visible signal) is worse than
-   * failing the turn loudly with an actionable error.
+   * An unknown `attachInternalSkills` slug is warned and skipped rather than
+   * thrown — even though these slugs come from the code-level
+   * `CONTEXT_TYPE_REGISTRY` and every entry is meant to name an always-present
+   * package-bundled skill, `SkillRegistry`'s bundled roots are scanned ONCE at
+   * server boot and never rescanned (see `load()`/`rebuild()` above). That means
+   * there is an inherent window on every real deploy — new code shipped, server
+   * not yet restarted — where a newly bundled skill exists on disk but not in
+   * the live process's cache. Throwing here would turn that ordinary, transient
+   * window into a hard per-request failure for every turn of the affected
+   * context type until the process restarts (this happened for real once — a
+   * throw here took down every `chat` turn against a dev server started before
+   * `writing-style-author` was added). Degrading gracefully and logging is the
+   * right tradeoff; a genuinely broken/missing bundled skill is better caught by
+   * a startup-time check than by every in-flight request paying for it.
    */
   resolveForContext(attachInternalSkills: string[]): InlineSkill[] {
     const out: InlineSkill[] = [];
     for (const slug of attachInternalSkills) {
       if (!this.registry.has(slug)) {
-        throw new Error(`[skill] attachInternalSkills slug "${slug}" not in registry — broken bundled-skills install?`);
+        console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
+        continue;
       }
       out.push(toInlineSkill(this.registry.resolve(slug)));
     }

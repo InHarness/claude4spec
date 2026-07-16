@@ -86,10 +86,11 @@ describe('SkillResolver.resolveForContext', () => {
     expect(result.map((s) => s.name)).toEqual(['brief-author', 'house-style']);
   });
 
-  it('throws for an attach-list slug missing from the registry (broken bundled-skills install, not a recoverable user mistake)', () => {
+  it('warns and skips an attach-list slug missing from the registry, without throwing (bundled roots only rescan at boot — a newly bundled skill not yet picked up by a running process must degrade gracefully, not fail every turn)', () => {
     const registry = SkillRegistry.load([]);
     const resolver = new SkillResolver(registry, tmp);
-    expect(() => resolver.resolveForContext(['does-not-exist'])).toThrow(/does-not-exist/);
+    const result = resolver.resolveForContext(['does-not-exist']);
+    expect(result).toEqual([]);
   });
 
   it('marks an "available" attach-list skill in inlineSkills metadata, distinguishing it from forced ones', () => {

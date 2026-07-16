@@ -279,14 +279,16 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     };
     const skillResolver = {
       resolve: () => [],
-      // Mirrors the real resolveForContext: resolves the attach-list (throwing on an
-      // unknown slug, same as the real registry-backed implementation), then appends
-      // any 'writing-style' scoped entry last (the active style, if one is configured).
+      // Mirrors the real resolveForContext: resolves the attach-list (warning and
+      // skipping an unknown slug, same as the real registry-backed implementation —
+      // bundled roots only rescan at server boot, so a slug missing from a running
+      // process's cache must degrade gracefully rather than fail every turn), then
+      // appends any 'writing-style' scoped entry last (the active style, if any).
       resolveForContext: (attach: string[]) => {
-        const out = attach.map((slug) => {
-          if (!(slug in skills)) throw new Error(`[skill] attachInternalSkills slug "${slug}" not in registry — broken bundled-skills install?`);
+        const out = attach.flatMap((slug) => {
+          if (!(slug in skills)) return [];
           const r = skillRegistry.resolve(slug);
-          return { name: slug, description: r.metadata.description, content: r.content, files: r.files, metadata: { title: r.metadata.title, version: 1, language: 'en', scope: r.metadata.scope, injection: r.metadata.injection } };
+          return [{ name: slug, description: r.metadata.description, content: r.content, files: r.files, metadata: { title: r.metadata.title, version: 1, language: 'en', scope: r.metadata.scope, injection: r.metadata.injection } }];
         });
         for (const [slug, s] of Object.entries(skills)) {
           if (s.scope === 'writing-style' && !out.some((o) => o.name === slug)) {
@@ -349,14 +351,19 @@ describe('runAgentTurn — M37 per-context skill injection', () => {
     expect(String(hoisted.lastExecute?.systemPrompt)).toContain('<project_skill slug="house-style"');
   });
 
-  it('a missing bundled attach-list skill fails the turn loudly instead of silently dropping its announcement', async () => {
+  it('a missing bundled attach-list skill degrades gracefully (no crash, no <project_skill> block for it) instead of failing every turn', async () => {
     hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
     const { deps } = makeDeps();
-    Object.assign(deps, fakeSkillDeps({})); // 'brief-author' is NOT registered — simulates a broken build.
+    Object.assign(deps, fakeSkillDeps({})); // 'brief-author' is NOT registered — simulates a stale/not-yet-restarted process.
     const input = makeInput();
     (input.thread as unknown as { contextType: string }).contextType = 'brief';
 
-    await expect(runAgentTurn(deps, input)).rejects.toThrow(/brief-author/);
+    const result = await runAgentTurn(deps, input);
+
+    expect(result.answer).toBe('ok');
+    const skillNames = ((hoisted.lastExecute?.skills ?? []) as Array<{ name: string }>).map((s) => s.name);
+    expect(skillNames).not.toContain('brief-author');
+    expect(String(hoisted.lastExecute?.systemPrompt)).not.toContain('<project_skill slug="brief-author"');
   });
 });
 
