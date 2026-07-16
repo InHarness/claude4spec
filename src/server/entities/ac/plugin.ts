@@ -31,7 +31,7 @@ export const acBackendModule: BackendModule = {
     routes: {
       router: (service, ctx) => acsRouter(service as AcService, ctx.referencesService),
     },
-    mcpServer: (service, ctx) => () =>
+    mcpServer: (service, ctx) =>
       createAcToolsServer({
         acService: service as AcService,
         db: ctx.db,

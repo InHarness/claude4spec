@@ -23,7 +23,8 @@ import type {
 } from '../../../shared/plugin-host/manifest.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
-import type { BackendModule, McpServerFactory, MountContext, PluginMountFn, SqlMigration } from './types.js';
+import type { McpServerInstance } from '@inharness-ai/agent-adapters';
+import type { BackendModule, MountContext, PluginMountFn, SqlMigration } from './types.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
 export class PluginManifestError extends Error {
@@ -128,7 +129,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
         | { router: (service: EntityCrudService, ctx: MountContext) => Router }
         | undefined,
       mcpServer: backend.mcpServer as
-        | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
+        | ((service: EntityCrudService, ctx: MountContext) => McpServerInstance)
         | undefined,
     };
   }
@@ -200,7 +201,12 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       ctx.app.use(module.pathPrefix, routes.router(instance as EntityCrudService, ctx));
     }
     if (mcpServer) {
-      ctx.registerMcpServer(`${module.type}-tools`, mcpServer(instance as EntityCrudService, ctx));
+      // 0.1.133: the slot returns the MCP server HANDLE directly (not a thunk).
+      // Per-turn freshness is host-owned — wrap the slot factory in a thunk so
+      // `buildMcpServers()` re-invokes it each turn for a fresh, connectable
+      // server (an MCP instance can't be re-`connect`ed across turns).
+      const svc = instance as EntityCrudService;
+      ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
     }
   };
 
