@@ -1,3 +1,5 @@
+import type { PageNode } from './types.js';
+
 /**
  * Page file-extension classification (M02 `e16qvg1n`). `.md` and `.mdx` are one
  * markdown class — both edited in tiptap, section-indexed (M06), reference-
@@ -26,4 +28,37 @@ export function markdownExtension(name: string): 'md' | 'mdx' | null {
  *  callers can pass POSIX-normalized (`/`) or OS-native (`path.sep`) paths. */
 export function hasDotSegment(relPath: string): boolean {
   return relPath.split(/[/\\]/).some((seg) => seg.startsWith('.'));
+}
+
+/** Shared PageNode-tree walkers (App.tsx/Sidebar.tsx counting, M02 landing chain, ...). */
+
+/** Total number of `type: 'file'` nodes in a tree, recursively. */
+export function countFiles(nodes: PageNode[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    if (node.type === 'file') n++;
+    else if (node.children) n += countFiles(node.children);
+  }
+  return n;
+}
+
+/** Depth-first first `type: 'file'` node — callers pass an already-sorted tree. */
+export function firstLeaf(nodes: PageNode[]): PageNode | null {
+  for (const n of nodes) {
+    if (n.type === 'file') return n;
+    if (n.children) {
+      const found = firstLeaf(n.children);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+/** True when some node in the tree has this exact `path`, recursively. */
+export function pathExistsInTree(nodes: PageNode[], path: string): boolean {
+  for (const n of nodes) {
+    if (n.type === 'file' && n.path === path) return true;
+    if (n.children && pathExistsInTree(n.children, path)) return true;
+  }
+  return false;
 }

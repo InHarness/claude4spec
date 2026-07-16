@@ -17,12 +17,12 @@ function folder(name: string, path: string, children: PageNode[]): PageNode {
   return { type: 'folder', name, path, children };
 }
 
-function root(id: string): Root {
+function root(id: string, builtin = id === 'pages'): Root {
   return {
     id,
     name: id,
     dir: id,
-    builtin: id === 'pages',
+    builtin,
     releasable: true,
     sectionIndexed: true,
     referenceValidated: true,
@@ -118,6 +118,17 @@ describe('resolveLandingTarget', () => {
       lastPageTree: [],
     });
     expect(target).toBeNull();
+  });
+
+  it('derives the fallback rootId from the builtin root flag, not a hardcoded id', () => {
+    const pagesTree = [file('index.md', 'index.md')];
+    const target = resolveLandingTarget({
+      lastPage: null,
+      roots: [root('main-content', true)],
+      pagesTree,
+      lastPageTree: [],
+    });
+    expect(target).toEqual({ rootId: 'main-content', path: 'index.md' });
   });
 });
 

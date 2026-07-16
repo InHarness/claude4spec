@@ -1,30 +1,13 @@
 import type { PageNode } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
+import { firstLeaf, pathExistsInTree } from '../../shared/page-files.js';
+
+export { firstLeaf, pathExistsInTree };
 
 /** M02: a remembered `{ rootId, path }` pointer, persisted at `c4s:m02:last-page`. */
 export interface LastPage {
   rootId: string;
   path: string;
-}
-
-/** Depth-first first `type: 'file'` node — tree already arrives sorted (order asc, then alpha). */
-export function firstLeaf(nodes: PageNode[]): PageNode | null {
-  for (const n of nodes) {
-    if (n.type === 'file') return n;
-    if (n.children) {
-      const found = firstLeaf(n.children);
-      if (found) return found;
-    }
-  }
-  return null;
-}
-
-export function pathExistsInTree(nodes: PageNode[], path: string): boolean {
-  for (const n of nodes) {
-    if (n.type === 'file' && n.path === path) return true;
-    if (n.children && pathExistsInTree(n.children, path)) return true;
-  }
-  return false;
 }
 
 /** Root-level (non-recursive) `index.md`/`index.mdx` lookup, case-insensitive; `.md` beats `.mdx`. */
@@ -67,14 +50,17 @@ export function resolveLandingTarget(input: {
     }
   }
 
+  // Per-directory behavior is gated on Root flags, never a hardcoded id (src/shared/types.ts).
+  const builtinRootId = roots.find((r) => r.builtin)?.id ?? 'pages';
+
   const indexFile = findRootIndexFile(pagesTree);
-  if (indexFile) return { rootId: 'pages', path: indexFile.path };
+  if (indexFile) return { rootId: builtinRootId, path: indexFile.path };
 
   const skillFile = findRootSkillFile(pagesTree);
-  if (skillFile) return { rootId: 'pages', path: skillFile.path };
+  if (skillFile) return { rootId: builtinRootId, path: skillFile.path };
 
   const first = firstLeaf(pagesTree);
-  if (first) return { rootId: 'pages', path: first.path };
+  if (first) return { rootId: builtinRootId, path: first.path };
 
   return null;
 }
