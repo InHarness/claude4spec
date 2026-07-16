@@ -46,11 +46,13 @@ import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
+import { useRoots } from './hooks/useConfig.js';
 import { EntityBreadcrumbBar } from './entities/_shared/EntityBreadcrumbBar.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
+import { usePersistedState, projectKey } from './state/persisted.js';
+import { firstLeaf, resolveLandingTarget, type LastPage } from './lib/landing.js';
 import type { EntityType } from '../shared/entities.js';
-import type { PageNode } from '../shared/types.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
 
@@ -401,10 +403,16 @@ export function RoutePane({ children }: { children: React.ReactNode }) {
 }
 
 function IndexRoute() {
-  const { data: tree = [] } = usePages();
-  const firstPage = useMemo(() => firstLeaf(tree), [tree]);
-  if (firstPage) {
-    return <Navigate to="/space/$rootId/$" params={{ rootId: 'pages', _splat: firstPage.path }} replace />;
+  const roots = useRoots();
+  const [lastPage] = usePersistedState<LastPage | null>(projectKey('c4s:m02:last-page'), null, 1);
+  const { data: pagesTree = [] } = usePages('pages');
+  const { data: lastPageTree = [] } = usePages(lastPage?.rootId ?? 'pages');
+  const target = useMemo(
+    () => resolveLandingTarget({ lastPage, roots, pagesTree, lastPageTree }),
+    [lastPage, roots, pagesTree, lastPageTree]
+  );
+  if (target) {
+    return <Navigate to="/space/$rootId/$" params={{ rootId: target.rootId, _splat: target.path }} replace />;
   }
   return (
     <RoutePane>
@@ -428,6 +436,10 @@ function PageRoute() {
   useEffect(() => {
     setPageView('editor');
   }, [path, setPageView]);
+  const [, setLastPage] = usePersistedState<LastPage | null>(projectKey('c4s:m02:last-page'), null, 1);
+  useEffect(() => {
+    setLastPage({ rootId, path });
+  }, [rootId, path, setLastPage]);
   const bridge = useMemo(
     () => ({
       openEntity: (type: EntityType, slug: string) => navigateToEntity(navigate, type, slug),
@@ -960,17 +972,6 @@ export function EntityNotFound({ type }: { type: EntityType }) {
       </div>
     </RoutePane>
   );
-}
-
-function firstLeaf(nodes: PageNode[]): PageNode | null {
-  for (const n of nodes) {
-    if (n.type === 'file') return n;
-    if (n.children) {
-      const found = firstLeaf(n.children);
-      if (found) return found;
-    }
-  }
-  return null;
 }
 
 function promptNewPage() {
