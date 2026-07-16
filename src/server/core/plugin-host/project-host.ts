@@ -152,10 +152,23 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   }
 
   buildMcpServers(): Array<{ name: string; server: McpServerInstance }> {
-    return Array.from(this.mcpServerFactories.entries()).map(([name, factory]) => ({
-      name,
-      server: factory(),
-    }));
+    return Array.from(this.mcpServerFactories.entries()).map(([name, factory]) => {
+      const server = factory();
+      // 0.1.133: a `backend.mcpServer` slot must return the createMcpServer(...)
+      // HANDLE directly; the host wraps it in this per-turn factory. If a factory
+      // yields a bare `() => instance` thunk (a function) — the pre-0.1.133 slot
+      // shape, typically from a stale/partial build — `server.config` is
+      // undefined and the adapter later throws a cryptic "reading 'type'". Fail
+      // loudly here instead, naming the offending server and the fix.
+      if (!server || typeof server !== 'object' || !('config' in server)) {
+        throw new Error(
+          `[mcp] factory for "${name}" returned an invalid MCP server (no .config). A backend.mcpServer ` +
+            `slot must return createMcpServer(...) directly (0.1.133+), not a () => instance thunk — this ` +
+            `usually means a stale/partial build; run: rm -rf dist tsconfig.server.tsbuildinfo && npm run build.`,
+        );
+      }
+      return { name, server };
+    });
   }
 
   clearMcpFactories(): void {

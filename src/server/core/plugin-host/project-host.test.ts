@@ -91,6 +91,24 @@ describe('consolidate — overlay', () => {
   });
 });
 
+describe('buildMcpServers — validates factory output (0.1.133 skew guard)', () => {
+  it('returns the server when the factory yields a valid instance (has .config)', () => {
+    const host = baseRegistry('endpoint').consolidate({});
+    const instance = { config: { type: 'sdk' } } as never;
+    host.registerMcpServer('endpoint-tools', () => instance);
+    expect(host.buildMcpServers()).toEqual([{ name: 'endpoint-tools', server: instance }]);
+  });
+
+  it('throws an actionable error when a factory returns a bare thunk (stale/partial build skew)', () => {
+    const host = baseRegistry('endpoint').consolidate({});
+    // Pre-0.1.133 slot shape leaking through a mixed build: the factory yields
+    // `() => instance` (a function) instead of the createMcpServer(...) handle.
+    host.registerMcpServer('endpoint-tools', (() => () => ({ config: {} })) as never);
+    expect(() => host.buildMcpServers()).toThrow(/invalid MCP server \(no \.config\)/);
+    expect(() => host.buildMcpServers()).toThrow(/endpoint-tools/);
+  });
+});
+
 describe('mountBackend — runs declared plugin migrations (L1/M13)', () => {
   const exampleMigrations: SqlMigration[] = [
     {
