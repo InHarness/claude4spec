@@ -140,10 +140,20 @@ export interface SystemPromptInput {
    * M37: force-injected skills for this turn — one `<project_skill>` block per
    * entry, replacing the old single gated `writingStyle` block. Populated by the
    * caller from `resolveForContext`'s result, filtered to entries whose registry
-   * metadata has `injection: 'forced'` (an `available` skill like
-   * `writing-style-author` still rides `inlineSkills`, just with no block here).
+   * metadata has `injection: 'forced'` OR `scope: 'writing-style'` (the active
+   * writing style is always forced regardless of its own `injection` value; an
+   * `available` contextual skill like `writing-style-author` still rides
+   * `inlineSkills`, just with no block here).
    */
   forcedSkills?: { slug: string; title: string }[];
+  /**
+   * M37: the active writing style specifically (a subset of `forcedSkills`,
+   * when present) — passed through explicitly rather than re-derived from
+   * `forcedSkills` by excluding a known slug, so `buildBriefSystemPrompt` can
+   * key the `<writing_style_brief_workflow>` addendum off it unambiguously
+   * even if a future context type ever forces more than one internal skill.
+   */
+  writingStyle?: { slug: string; title: string } | null;
   /** 0.1.51: config.language — display name; emits `<spec_language>` (chat/patch only, NOT brief). */
   specLanguage?: string;
   /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
@@ -721,6 +731,7 @@ function buildBriefSystemPrompt(input: {
   brief: Brief | null;
   annotations: Annotation[];
   forcedSkills: { slug: string; title: string }[];
+  writingStyle: { slug: string; title: string } | null;
   conversationalLanguage?: string;
 }): string {
   const parts: string[] = [];
@@ -792,12 +803,13 @@ function buildBriefSystemPrompt(input: {
 
   // Writing-style skill supplies methodology-specific brief guidance
   // (filter rules, inlining patterns, "For implementers" structure)
-  // via its `workflows/brief.md`. Identified as the forced skill that isn't
-  // `brief-author` itself; absent when no writing style is active, in which
-  // case the agent uses brief-author genre rules alone — generic but free of
-  // writing-style-specific leakage.
-  const writingStyle = input.forcedSkills.find((s) => s.slug !== 'brief-author');
-  if (writingStyle) {
+  // via its `workflows/brief.md`. Passed explicitly (not derived from
+  // `forcedSkills` by excluding `brief-author`) so this stays correct even if a
+  // future context type ever forces more than one internal skill; absent when
+  // no writing style is active, in which case the agent uses brief-author
+  // genre rules alone — generic but free of writing-style-specific leakage.
+  if (input.writingStyle) {
+    const writingStyle = input.writingStyle;
     parts.push(
       [
         `<writing_style_brief_workflow ${attrs({ slug: writingStyle.slug })}>`,
@@ -938,6 +950,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     workspaceProjects = [],
     workspaceName,
     forcedSkills = [],
+    writingStyle = null,
     specLanguage,
     conversationalLanguage,
     agentPathScope,
@@ -951,7 +964,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // tools. Just identity, brief-tools usage, brief-author skill (genre) + writing-style
   // skill (methodology, supplies workflows/brief.md), and the brief snapshot.
   if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
-    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, forcedSkills, conversationalLanguage });
+    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, forcedSkills, writingStyle, conversationalLanguage });
   }
 
   const parts: string[] = [];

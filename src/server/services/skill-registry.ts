@@ -255,7 +255,14 @@ export class SkillRegistry {
   }
 }
 
-/** Maps a resolved skill onto the `InlineSkill` shape the agent adapter expects. */
+/**
+ * Maps a resolved skill onto the `InlineSkill` shape the agent adapter expects.
+ * `scope`/`injection` travel in `metadata` so a caller building `forcedSkills`
+ * (agent-turn.ts) can classify each entry without a second registry lookup —
+ * `scope: 'writing-style'` is the unambiguous signal for "this is the active
+ * writing style", independent of its own `injection` value (a writing style is
+ * always force-injected once selected, regardless of what its frontmatter says).
+ */
 export function toInlineSkill(skill: ResolvedSkill): InlineSkill {
   return {
     name: skill.metadata.slug,
@@ -266,6 +273,7 @@ export function toInlineSkill(skill: ResolvedSkill): InlineSkill {
       version: skill.metadata.version,
       language: skill.metadata.language,
       title: skill.metadata.title,
+      scope: skill.metadata.scope,
       injection: skill.metadata.injection,
     },
   };
@@ -306,16 +314,21 @@ export class SkillResolver {
    * (`resolve()`, unchanged) last. Order matters: `attachInternalSkills` first so
    * the writing style — which may carry a `workflows/brief.md` addendum handled
    * separately by the system-prompt builder — is always the trailing entry.
-   * Unknown slugs are warned and skipped rather than throwing (defensive — the
-   * context-type registry is a code constant, but a bundled skill could be
-   * missing/malformed at runtime).
+   *
+   * Unlike `resolve()` (user-configurable `config.writingStyle`, where an unknown
+   * slug is a recoverable user mistake and warn-and-skip is correct), an unknown
+   * `attachInternalSkills` slug THROWS: these slugs come from the code-level
+   * `CONTEXT_TYPE_REGISTRY`, not user input — every entry names a package-bundled
+   * skill that is supposed to always exist. A missing one means a broken build
+   * (e.g. `dist/server/skills/` lost a directory), and silently degrading the
+   * turn (no genre skill, no announcement, no visible signal) is worse than
+   * failing the turn loudly with an actionable error.
    */
   resolveForContext(attachInternalSkills: string[]): InlineSkill[] {
     const out: InlineSkill[] = [];
     for (const slug of attachInternalSkills) {
       if (!this.registry.has(slug)) {
-        console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
-        continue;
+        throw new Error(`[skill] attachInternalSkills slug "${slug}" not in registry — broken bundled-skills install?`);
       }
       out.push(toInlineSkill(this.registry.resolve(slug)));
     }

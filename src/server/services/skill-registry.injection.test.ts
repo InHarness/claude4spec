@@ -86,11 +86,10 @@ describe('SkillResolver.resolveForContext', () => {
     expect(result.map((s) => s.name)).toEqual(['brief-author', 'house-style']);
   });
 
-  it('warns and skips an attach-list slug missing from the registry, without throwing', () => {
+  it('throws for an attach-list slug missing from the registry (broken bundled-skills install, not a recoverable user mistake)', () => {
     const registry = SkillRegistry.load([]);
     const resolver = new SkillResolver(registry, tmp);
-    const result = resolver.resolveForContext(['does-not-exist']);
-    expect(result).toEqual([]);
+    expect(() => resolver.resolveForContext(['does-not-exist'])).toThrow(/does-not-exist/);
   });
 
   it('marks an "available" attach-list skill in inlineSkills metadata, distinguishing it from forced ones', () => {
@@ -103,5 +102,15 @@ describe('SkillResolver.resolveForContext', () => {
 
     const [skill] = resolver.resolveForContext(['writing-style-author']);
     expect(skill.metadata?.injection).toBe('available');
+  });
+
+  it('carries scope on every resolved InlineSkill, so a caller can identify the active writing style unambiguously', () => {
+    const bundled = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
+    const registry = SkillRegistry.load([bundled]);
+    writeConfig(tmp, 'house-style');
+    const resolver = new SkillResolver(registry, tmp);
+
+    const [skill] = resolver.resolveForContext([]);
+    expect(skill.metadata?.scope).toBe('writing-style');
   });
 });
