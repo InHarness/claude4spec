@@ -34,9 +34,11 @@ export interface McpServerSet {
 
 /** One registry row — the five dimensions spec `m05ctxreg` dispatches per thread. */
 export interface ContextTypeEntry {
-  /** Dim 1 — bundled skill (M15) added to `inlineSkills` on top of `config.writingStyle`.
-   *  `'brief-author'` for brief; `null` for chat/patch/ask (writing-style only). */
-  bundledSkill: 'brief-author' | null;
+  /** Dim 1 — M37: internal skills (contextual, package-only) attached to `inlineSkills`
+   *  on top of `config.writingStyle` (which `resolveForContext` auto-appends to every
+   *  context type — deliberately not listed here). Each slug's own `injection` metadata
+   *  (`forced` | `available`) decides whether it also gets a `<project_skill>` block. */
+  attachInternalSkills: string[];
   /** Dim 2 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
   mcp: McpServerSet;
   /** Dim 3 — chat-overlay chrome. Declarative marker only: the frontend `ChatOverlay.tsx`
@@ -56,21 +58,21 @@ export interface ContextTypeEntry {
  */
 export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = {
   chat: {
-    bundledSkill: null,
+    attachInternalSkills: ['writing-style-author'],
     mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: 'follow-thread',
   },
   brief: {
-    bundledSkill: 'brief-author',
+    attachInternalSkills: ['brief-author'],
     mcp: { pluginServers: 'release-only', planTools: false, briefTools: true, c4sTools: false, transagentTools: false },
     uiChrome: 'brief-detail',
     subagent: 'diff-explore',
     builtinPosture: 'follow-thread',
   },
   patch: {
-    bundledSkill: null,
+    attachInternalSkills: ['patch-implementer'],
     mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
     uiChrome: 'overlay',
     subagent: 'spec-explore',
@@ -79,7 +81,7 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
   ask: {
     // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
     // peer cannot consult/delegate to another peer). Read-only enforced via forced plan-mode.
-    bundledSkill: null,
+    attachInternalSkills: [],
     mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: false, transagentTools: false },
     uiChrome: 'overlay',
     subagent: 'spec-explore',
@@ -134,7 +136,14 @@ export interface SystemPromptInput {
   workspaceProjects?: PeerProject[];
   /** 0.1.58: workspace name — the `workspace="…"` attr on `<workspace_projects>`. */
   workspaceName?: string;
-  writingStyle?: { slug: string; title: string } | null;
+  /**
+   * M37: force-injected skills for this turn — one `<project_skill>` block per
+   * entry, replacing the old single gated `writingStyle` block. Populated by the
+   * caller from `resolveForContext`'s result, filtered to entries whose registry
+   * metadata has `injection: 'forced'` (an `available` skill like
+   * `writing-style-author` still rides `inlineSkills`, just with no block here).
+   */
+  forcedSkills?: { slug: string; title: string }[];
   /** 0.1.51: config.language — display name; emits `<spec_language>` (chat/patch only, NOT brief). */
   specLanguage?: string;
   /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
@@ -711,7 +720,7 @@ function buildBriefSystemPrompt(input: {
   cwd: string;
   brief: Brief | null;
   annotations: Annotation[];
-  writingStyle: { slug: string; title: string } | null;
+  forcedSkills: { slug: string; title: string }[];
   conversationalLanguage?: string;
 }): string {
   const parts: string[] = [];
@@ -775,18 +784,24 @@ function buildBriefSystemPrompt(input: {
   if (input.conversationalLanguage) {
     parts.push(buildConversationalLanguage(input.conversationalLanguage));
   }
-  parts.push(buildProjectSkill({ slug: 'brief-author', title: 'Brief Author' }));
+  // M37: one <project_skill> block per forced skill — `brief-author` (genre,
+  // always present) plus the active writing style (methodology), if forced.
+  for (const skill of input.forcedSkills) {
+    parts.push(buildProjectSkill(skill));
+  }
 
   // Writing-style skill supplies methodology-specific brief guidance
   // (filter rules, inlining patterns, "For implementers" structure)
-  // via its `workflows/brief.md`. Without it, agent uses brief-author
-  // genre rules alone — generic but free of writing-style-specific leakage.
-  if (input.writingStyle) {
-    parts.push(buildProjectSkill({ slug: input.writingStyle.slug, title: input.writingStyle.title }));
+  // via its `workflows/brief.md`. Identified as the forced skill that isn't
+  // `brief-author` itself; absent when no writing style is active, in which
+  // case the agent uses brief-author genre rules alone — generic but free of
+  // writing-style-specific leakage.
+  const writingStyle = input.forcedSkills.find((s) => s.slug !== 'brief-author');
+  if (writingStyle) {
     parts.push(
       [
-        `<writing_style_brief_workflow ${attrs({ slug: input.writingStyle.slug })}>`,
-        `For brief generation in this writing style, read \`workflows/brief.md\` within Skill("${input.writingStyle.slug}") if present. It defines which RawDelta entries are spec-format conventions (drop), how to inline this style's entity types, and the "For implementers" structure for this style. Read it after Skill("brief-author").`,
+        `<writing_style_brief_workflow ${attrs({ slug: writingStyle.slug })}>`,
+        `For brief generation in this writing style, read \`workflows/brief.md\` within Skill("${writingStyle.slug}") if present. It defines which RawDelta entries are spec-format conventions (drop), how to inline this style's entity types, and the "For implementers" structure for this style. Read it after Skill("brief-author").`,
         `</writing_style_brief_workflow>`,
       ].join('\n'),
     );
@@ -922,7 +937,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     c4sToolsAvailable = false,
     workspaceProjects = [],
     workspaceName,
-    writingStyle = null,
+    forcedSkills = [],
     specLanguage,
     conversationalLanguage,
     agentPathScope,
@@ -936,7 +951,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // tools. Just identity, brief-tools usage, brief-author skill (genre) + writing-style
   // skill (methodology, supplies workflows/brief.md), and the brief snapshot.
   if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
-    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, writingStyle, conversationalLanguage });
+    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, forcedSkills, conversationalLanguage });
   }
 
   const parts: string[] = [];
@@ -979,8 +994,12 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildWorkspaceProjects(workspaceName ?? '', workspaceProjects));
   }
 
-  if (writingStyle) {
-    parts.push(buildProjectSkill(writingStyle));
+  // M37: one <project_skill> block per forced skill (e.g. `patch-implementer`
+  // for patch threads, plus the active writing style if one is selected).
+  // `available` skills (e.g. `writing-style-author`) are NOT in this list —
+  // they ride `inlineSkills` only, with no forced system-prompt block.
+  for (const skill of forcedSkills) {
+    parts.push(buildProjectSkill(skill));
   }
 
   // 0.1.51 step 6a/6b: language directives, right after the project skill and before

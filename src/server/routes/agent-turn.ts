@@ -481,32 +481,16 @@ export async function runAgentTurn(
       }
     }
 
-    // Skill resolution: writing-style (config.writingStyle, M15) ladowany
-    // niezaleznie od kontekstu. Dla brief context dokladamy bundled `brief-author`.
-    const writingStyleSkills = deps.skillResolver.resolve();
-    const writingStyle = writingStyleSkills[0]
-      ? {
-          slug: writingStyleSkills[0].name,
-          title: String(writingStyleSkills[0].metadata?.title ?? writingStyleSkills[0].name),
-        }
-      : null;
-    // M05 m05ctxreg dim 1: the registry's bundled skill (beyond config.writingStyle).
-    // Only the brief row carries `brief-author`; chat/patch/ask carry null.
-    const inlineSkills = [...writingStyleSkills];
-    if (ctx.bundledSkill === 'brief-author' && deps.skillRegistry.has('brief-author')) {
-      const skill = deps.skillRegistry.resolve('brief-author');
-      inlineSkills.push({
-        name: skill.metadata.slug,
-        description: skill.metadata.description,
-        content: skill.content,
-        files: skill.files,
-        metadata: {
-          version: skill.metadata.version,
-          language: skill.metadata.language,
-          title: skill.metadata.title,
-        },
-      });
-    }
+    // M37: per-context skill resolution — attachInternalSkills (M05 m05ctxreg dim 1)
+    // plus the active writing style (config.writingStyle), auto-appended to every
+    // context type by resolveForContext itself.
+    const inlineSkills = deps.skillResolver.resolveForContext(ctx.attachInternalSkills);
+    // Force-injected skills get a <project_skill> system-prompt block on top of their
+    // inlineSkills entry; `available` skills (e.g. writing-style-author) are already in
+    // inlineSkills above but excluded here — the model opens them via Skill(slug) instead.
+    const forcedSkills = inlineSkills
+      .filter((s) => deps.skillRegistry.has(s.name) && deps.skillRegistry.resolve(s.name).metadata.injection === 'forced')
+      .map((s) => ({ slug: s.name, title: String(s.metadata?.title ?? s.name) }));
 
     const pageCount = isBriefFrame ? 0 : countPages(await deps.pagesService.listTree());
     // 0.1.51: language directives travel the same path as writingStyle — read from
@@ -567,7 +551,7 @@ export async function runAgentTurn(
       // disk reads when c4s-tools is absent (the block would be gated out anyway).
       workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
-      writingStyle,
+      forcedSkills,
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's

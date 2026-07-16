@@ -51,7 +51,7 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
       c4sToolsAvailable: true,
       workspaceProjects: PEERS,
       workspaceName: 'acme',
-      writingStyle: { slug: 'house-style', title: 'House Style' },
+      forcedSkills: [{ slug: 'house-style', title: 'House Style' }],
     });
     const c4sIdx = out.indexOf('<c4s_tools_usage>');
     const wsIdx = out.indexOf('<workspace_projects');
@@ -81,6 +81,51 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
       brief: null,
     });
     expect(out).not.toContain('<workspace_projects workspace=');
+  });
+});
+
+describe('buildSystemPrompt — M37 forcedSkills (multi-skill <project_skill>)', () => {
+  it('brief frame: emits one <project_skill> block per forced skill, and derives the writing-style workflow addendum from the non-brief-author entry', () => {
+    const out = build({
+      contextType: 'brief',
+      brief: null,
+      forcedSkills: [
+        { slug: 'brief-author', title: 'Brief Author' },
+        { slug: 'house-style', title: 'House Style' },
+      ],
+    });
+    expect(out.match(/<project_skill /g)?.length).toBe(2);
+    expect(out).toContain('<project_skill slug="brief-author" title="Brief Author">');
+    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+    expect(out).toContain('<writing_style_brief_workflow slug="house-style">');
+  });
+
+  it('brief frame: omits the writing-style workflow addendum when only brief-author is forced (no active style)', () => {
+    const out = build({
+      contextType: 'brief',
+      brief: null,
+      forcedSkills: [{ slug: 'brief-author', title: 'Brief Author' }],
+    });
+    expect(out.match(/<project_skill /g)?.length).toBe(1);
+    expect(out).not.toContain('<writing_style_brief_workflow');
+  });
+
+  it('non-brief frame (chat/patch/ask): emits one <project_skill> block per forced skill', () => {
+    const out = build({
+      contextType: 'patch',
+      forcedSkills: [
+        { slug: 'patch-implementer', title: 'Patch Implementer' },
+        { slug: 'house-style', title: 'House Style' },
+      ],
+    });
+    expect(out.match(/<project_skill /g)?.length).toBe(2);
+    expect(out).toContain('<project_skill slug="patch-implementer" title="Patch Implementer">');
+    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+  });
+
+  it('non-brief frame: renders nothing when forcedSkills is empty', () => {
+    const out = build({ contextType: 'ask' });
+    expect(out).not.toContain('<project_skill');
   });
 });
 

@@ -10,6 +10,15 @@ import { readConfig } from '../config.js';
 export type SkillScope = 'writing-style' | 'contextual';
 
 /**
+ * How a skill reaches the model (M37). `'forced'` gets both a `<project_skill>`
+ * system-prompt block AND an `inlineSkills` entry; `'available'` gets only the
+ * `inlineSkills` entry — the model opens it on demand via `Skill(slug)`, guided
+ * by `description`. Defaults to `'forced'` when frontmatter omits it (matches
+ * prior all-forced behavior).
+ */
+export type SkillInjection = 'forced' | 'available';
+
+/**
  * Where a skill was discovered: in-package bundle, a user `.claude/skills` root,
  * or a plugin contribution (M15). Selection precedence is
  * `project > global > plugin > bundled` — project/global are both `user`
@@ -24,6 +33,7 @@ export interface SkillMetadata {
   version: number;
   language: 'en' | 'pl';
   scope: SkillScope;
+  injection: SkillInjection;
   source: SkillSource;
   path: string;
 }
@@ -183,6 +193,7 @@ export class SkillRegistry {
       version: c.version,
       language: c.language,
       scope: 'writing-style',
+      injection: 'forced',
       source: 'plugin',
       path: '',
     };
@@ -244,6 +255,22 @@ export class SkillRegistry {
   }
 }
 
+/** Maps a resolved skill onto the `InlineSkill` shape the agent adapter expects. */
+export function toInlineSkill(skill: ResolvedSkill): InlineSkill {
+  return {
+    name: skill.metadata.slug,
+    description: skill.metadata.description,
+    content: skill.content,
+    files: skill.files,
+    metadata: {
+      version: skill.metadata.version,
+      language: skill.metadata.language,
+      title: skill.metadata.title,
+      injection: skill.metadata.injection,
+    },
+  };
+}
+
 export class SkillResolver {
   constructor(
     private readonly registry: SkillRegistry,
@@ -268,17 +295,32 @@ export class SkillResolver {
       console.warn(`[skill] config.writingStyle="${slug}" has scope="${skill.metadata.scope}", skipping`);
       return [];
     }
-    return [{
-      name: skill.metadata.slug,
-      description: skill.metadata.description,
-      content: skill.content,
-      files: skill.files,
-      metadata: {
-        version: skill.metadata.version,
-        language: skill.metadata.language,
-        title: skill.metadata.title,
-      },
-    }];
+    return [toInlineSkill(skill)];
+  }
+
+  /**
+   * M37: per-context-type resolution, called once per agent turn. Resolves each
+   * slug in `attachInternalSkills` (the context-type registry's per-type internal
+   * skills — e.g. `brief-author` for brief, `patch-implementer` for patch,
+   * `writing-style-author` for chat), then appends the active writing style
+   * (`resolve()`, unchanged) last. Order matters: `attachInternalSkills` first so
+   * the writing style — which may carry a `workflows/brief.md` addendum handled
+   * separately by the system-prompt builder — is always the trailing entry.
+   * Unknown slugs are warned and skipped rather than throwing (defensive — the
+   * context-type registry is a code constant, but a bundled skill could be
+   * missing/malformed at runtime).
+   */
+  resolveForContext(attachInternalSkills: string[]): InlineSkill[] {
+    const out: InlineSkill[] = [];
+    for (const slug of attachInternalSkills) {
+      if (!this.registry.has(slug)) {
+        console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
+        continue;
+      }
+      out.push(toInlineSkill(this.registry.resolve(slug)));
+    }
+    out.push(...this.resolve());
+    return out;
   }
 }
 
@@ -385,12 +427,14 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
   const version = data.version;
   const language = data.language;
   const scopeRaw = data.scope ?? 'writing-style';
+  const injectionRaw = data.injection ?? 'forced';
   if (typeof title !== 'string' || title.length === 0) throw new Error("frontmatter 'title' must be a non-empty string");
   if (typeof description !== 'string' || description.length === 0) throw new Error("frontmatter 'description' must be a non-empty string");
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) throw new Error("frontmatter 'version' must be a positive integer");
   if (language !== 'en' && language !== 'pl') throw new Error("frontmatter 'language' must be 'en' or 'pl'");
   if (scopeRaw !== 'writing-style' && scopeRaw !== 'contextual') throw new Error("frontmatter 'scope' must be 'writing-style' or 'contextual'");
-  return { slug, title, description, version, language, scope: scopeRaw, source, path: skillPath };
+  if (injectionRaw !== 'forced' && injectionRaw !== 'available') throw new Error("frontmatter 'injection' must be 'forced' or 'available'");
+  return { slug, title, description, version, language, scope: scopeRaw, injection: injectionRaw, source, path: skillPath };
 }
 
 function loadSkillFiles(skillDir: string): Record<string, string> {
