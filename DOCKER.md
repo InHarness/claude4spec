@@ -204,6 +204,22 @@ production server's boot path entirely (it's a one-off CLI mutation of
 - Frontend-facing peer imports (`react`, `react-dom`, `@c4s/plugin-runtime`,
   etc.) ARE provided by the host's import-map shim for the *browser* bundle
   — but that shim has no bearing on the *backend* entry's Node `import()`.
+- **`@c4s/plugin-runtime` is the one exception on the backend** (0.1.134): the
+  M33 loader installs a host-owned resolver at bootstrap, so your backend entry
+  may import the bare alias and will get the host's *live* facade — the same
+  instance the host itself uses, not a bundled copy. Do NOT bundle it. It
+  carries the MCP builders (`createMcpServer`/`mcpTool`, for the
+  `backend.mcpServer` slot) and `HOST_API_VERSION`; `@c4s/plugin-runtime/ui`
+  resolves to the React-free contract (the `stable` component names). Per-project
+  things (db, host services) arrive through `MountContext`, not this alias.
+  Build it as an `external`, and prefer it over naming
+  `@inharness-ai/agent-adapters` yourself — a direct vendor import means
+  ERESOLVE peer conflicts on install, two vendor copies in one process, and a
+  plugin that works locally but throws (e.g. `AdapterInitError`) against a host
+  whose vendor moved.
+  - Fallback: on node <20.6 (`engines.node` still admits it) the resolver can't
+    install, warns, and the bare alias fails as before — import
+    `@inharness-ai/claude4spec/plugin-runtime` instead.
 - `hostApiVersion` in your manifest must satisfy this build's
   `HOST_API_VERSION` (`src/shared/plugin-host/manifest.ts`) — a major
   mismatch reports `status: "incompatible"` with a migration descriptor.

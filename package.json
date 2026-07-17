@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "0.1.133",
+  "version": "0.1.134",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
@@ -45,7 +45,8 @@
       "default": "./dist/server/plugin-runtime/index.js"
     },
     "./plugin-runtime/ui": {
-      "types": "./dist/plugin-types/ui.d.ts"
+      "types": "./dist/plugin-types/ui.d.ts",
+      "default": "./dist/server/plugin-runtime/ui.js"
     },
     "./plugin-runtime/ambient": {
       "types": "./dist/plugin-types/ambient.d.ts"
@@ -70,13 +71,13 @@
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",
-    "@google/gemini-cli-core": "^0.42.0",
+    "@google/gemini-cli-core": "^0.38.2",
     "@inharness-ai/agent-adapters": "^0.9.0",
     "@inharness-ai/agent-chat": "^0.3.1",
     "@inharness-ai/c4s-plugin-simple-database-tables": "^0.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@monaco-editor/react": "^4.7.0",
-    "@openai/codex-sdk": "^0.130.0",
+    "@openai/codex-sdk": "^0.120.0",
     "@opencode-ai/sdk": "^1.14.48",
     "@tanstack/react-query": "^5.62.11",
     "@tanstack/react-router": "^1.168.23",
@@ -135,6 +136,11 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "@inharness-ai/c4s-plugin-simple-database-tables": {
+      "@inharness-ai/agent-adapters": "$@inharness-ai/agent-adapters"
+    }
   },
   "engines": {
     "node": ">=20"
