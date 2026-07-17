@@ -17,6 +17,7 @@ import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import { buildMigrationInfo, type PluginMigrationInfo } from '../../../shared/plugin-host/host-api.js';
 import { entryCacheBust } from './cache-bust.js';
+import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import type { PluginRegistry } from './types.js';
 
 /**
@@ -153,6 +154,12 @@ export async function loadWorkspacePlugins(
 ): Promise<PluginLoadResult> {
   const records: PluginLoadRecord[] = [];
 
+  // Bind the bare `@c4s/plugin-runtime` alias before the first plugin import.
+  // Installing here rather than at the call sites keeps this the "single mechanism
+  // run identically from every entry point" the docblock above promises. Skipped
+  // when there is nothing to load, so a plugin-free CLI never spawns a loader thread.
+  if (packageNames.length > 0) installPluginRuntimeResolver();
+
   for (const pkg of packageNames) {
     let mod: unknown;
     try {
@@ -258,6 +265,12 @@ export async function reloadPlugin(
   const resolveEntry = opts.resolveEntry ?? resolveBaseEntry;
   const cacheBust = opts.cacheBust ?? entryCacheBust;
   const base: PluginLoadRecord = { package: pkg, status: 'loaded', layer: 'base' };
+
+  // Independently of `loadWorkspacePlugins`: a reload can be the first plugin import
+  // of a process (e.g. a `tsx watch` respawn). The latch makes the repeat call free.
+  // Note the cache-bust below busts the PLUGIN entry, never the host barrel — so a
+  // reloaded plugin keeps resolving to the same live facade instance.
+  installPluginRuntimeResolver();
 
   const entry = resolveEntry(pkg);
   const specifier = entry ? pathToFileURL(entry).href + cacheBust(entry) : pkg;

@@ -26,14 +26,17 @@
  *
  * Runtime resolution of these VALUES, by consumer:
  *   - In-repo built-ins import this barrel by relative path (`../../plugin-runtime`).
- *   - External backend plugins import the package SUBPATH
- *     `@inharness-ai/claude4spec/plugin-runtime`, which Node resolves to this
- *     compiled barrel via the `exports["./plugin-runtime"].default` condition.
- *   - The bare alias `@c4s/plugin-runtime` resolves at runtime ONLY in the
- *     browser (the M33 import-map shim, which serves the client value surface).
- *     A backend Node import of the bare alias has no resolver yet — a per-project
- *     backend import-map is future work; until then, backend code uses the
- *     subpath (or this relative barrel) rather than the bare alias.
+ *   - External backend plugins import the bare alias `@c4s/plugin-runtime`, which
+ *     0.1.134 binds in Node: the M33 loader installs a host-owned resolve hook at
+ *     bootstrap (`core/plugin-host/plugin-runtime-resolver.ts`) that points the alias
+ *     at THIS barrel — the same URL the built-ins resolve to, so both ends share one
+ *     live instance. This is the backend counterpart of the frontend import-map
+ *     shim, which serves the (disjoint) client value surface for the same alias.
+ *   - The package SUBPATH `@inharness-ai/claude4spec/plugin-runtime` also resolves
+ *     here via `exports["./plugin-runtime"].default` — the fallback when the
+ *     resolver can't install (node <20.6, which `engines.node: ">=20"` still admits).
+ *     Prefer the bare alias: in dev the subpath resolves to `dist/` while the host
+ *     runs from `src/`, which is a second copy of this barrel.
  */
 
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';

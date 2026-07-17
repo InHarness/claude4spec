@@ -29,6 +29,7 @@ import {
   type PluginLoadRecord,
 } from './loader.js';
 import { lowerEntityContribution, synthesizeMount, validateWritingStyle } from './manifest-adapter.js';
+import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
 import type {
@@ -148,7 +149,15 @@ export async function loadProjectOverlay(
   const commands: PluginCommandContribution[] = [];
   const teardowns: Array<() => void> = [];
 
-  for (const pkg of enumerateOverlayPackages(cwd)) {
+  // Bind the bare `@c4s/plugin-runtime` alias before the first overlay import. This
+  // layer needs it most: a project-local package is loaded by raw `import()` of its
+  // resolved entry, with no bridge to the host's own `node_modules`. Guarded so a
+  // project with no local plugins never spawns a loader thread (this runs per
+  // ProjectContext, unlike the once-per-process base load).
+  const overlayPackages = enumerateOverlayPackages(cwd);
+  if (overlayPackages.length > 0) installPluginRuntimeResolver();
+
+  for (const pkg of overlayPackages) {
     const pkgDir = path.join(projectPluginsDir(cwd), pkg);
     const origin = path.join('.claude4spec', 'plugins', pkg);
     const base: PluginLoadRecord = { package: pkg, status: 'loaded', layer: 'overlay', trust: 'trusted', origin };
