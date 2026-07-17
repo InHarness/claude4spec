@@ -137,6 +137,11 @@
     "vite": "^6.0.7",
     "vitest": "^4.1.8"
   },
+  "overrides": {
+    "@inharness-ai/c4s-plugin-simple-database-tables": {
+      "@inharness-ai/agent-adapters": "$@inharness-ai/agent-adapters"
+    }
+  },
   "engines": {
     "node": ">=20"
   }
