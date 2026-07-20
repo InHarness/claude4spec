@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Table from '@tiptap/extension-table';
@@ -48,6 +48,11 @@ function RichTextFieldImpl({
   placeholder,
   toolbar = DEFAULT_TOOLBAR,
 }: RichTextFieldProps) {
+  // Last markdown this editor emitted OR applied via setContent; a `value` equal
+  // to it is already reflected in the doc — skip the rebuild so normalization
+  // drift can't drop the caret. Recording on apply too keeps a `value` that
+  // returns to an earlier string from being stranded.
+  const lastSyncedRef = useRef<string | null>(null);
   const extensions = useMemo(
     () => [
       StarterKit.configure({ heading: { levels: [2, 3, 4] } }),
@@ -66,7 +71,11 @@ function RichTextFieldImpl({
     content: '',
     editable: !readOnly,
     editorProps: { attributes: { class: 'prose-spec focus:outline-none' } },
-    onUpdate: ({ editor }) => onChange(editor.storage.markdown.getMarkdown() as string),
+    onUpdate: ({ editor }) => {
+      const md = editor.storage.markdown.getMarkdown() as string;
+      lastSyncedRef.current = md;
+      onChange(md);
+    },
   });
 
   useEffect(() => {
@@ -76,8 +85,12 @@ function RichTextFieldImpl({
 
   useEffect(() => {
     if (!editor) return;
+    // Already reflected in the doc (our own echo, or a value we just applied) —
+    // don't rebuild under the caret.
+    if (value === lastSyncedRef.current) return;
     const current = editor.storage.markdown.getMarkdown() as string;
     if (current === value) return;
+    lastSyncedRef.current = value;
     editor.commands.setContent(value, false);
   }, [editor, value]);
 

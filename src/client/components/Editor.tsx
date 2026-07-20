@@ -33,6 +33,7 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
   const lastSavedBodyRef = useRef<string | null>(null);
   const isDirtyRef = useRef(false);
   const currentPathRef = useRef<string>(path);
+  const prevPagesIndexRef = useRef<ReturnType<typeof usePagesIndex>>(undefined);
   const annotations = useChatStore((s) => s.annotations);
   const externalChange = useFileEventsStore((s) => s.externalChange);
   const clearExternalChange = useFileEventsStore((s) => s.clearExternalChange);
@@ -113,9 +114,18 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
     const storage = editor.storage as Record<string, unknown>;
     storage.pagesIndex = pagesIndex;
     storage.pageRefSourcePath = path;
-    // First-time arrival or update — re-parse current body so code_inline and link
-    // post-processors can promote resolved paths into PageRefNode chips.
-    if (!pagesIndex || !data || isDirtyRef.current) return;
+    // Re-parse the body once so code_inline and link post-processors can promote
+    // resolved paths into PageRefNode chips — but ONLY on the index's first
+    // arrival (undefined → defined), i.e. a cold load where the doc rendered
+    // before the link graph was ready. Later pagesIndex refetches must NOT
+    // re-parse: a page save fires `pageLinks:changed`, minting a fresh index Map,
+    // and rebuilding the doc then would drop the caret to the doc end. Chip
+    // promotion round-trips to identical markdown, so no content-equality check
+    // can tell that echo apart — the first-arrival gate is what protects the
+    // caret. (Loads with a warm index, and navigations, are chipped by Effect A.)
+    const hadIndex = !!prevPagesIndexRef.current;
+    prevPagesIndexRef.current = pagesIndex;
+    if (hadIndex || !pagesIndex || !data || isDirtyRef.current) return;
     queueMicrotask(() => {
       if (editor.isDestroyed) return;
       editor.commands.setContent(data.body, false);
