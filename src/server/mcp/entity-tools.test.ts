@@ -69,8 +69,13 @@ function fakeWidgetService(): EntityCrudService<Widget> {
   };
 }
 
-/** Builds fake deps with `widget` (active, CRUD), `no-crud` (active, no backend.crud), `inactive` (registered but inactive). */
-function fakeDeps(): { deps: EntityToolsDeps; service: EntityCrudService<Widget> } {
+/**
+ * Builds fake deps with `widget` (active, CRUD), `no-crud` (active, no backend.crud),
+ * `inactive` (registered but inactive). `extraActive` modules are registered AND made
+ * active — used by the describe-isolation tests to inject a type whose schema can't be
+ * serialized, without disturbing tests that assert the exact active-type set.
+ */
+function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; service: EntityCrudService<Widget> } {
   const service = fakeWidgetService();
   const modules = new Map<string, BackendModule>([
     ['widget', widgetModule()],
@@ -78,6 +83,10 @@ function fakeDeps(): { deps: EntityToolsDeps; service: EntityCrudService<Widget>
     ['inactive', widgetModule({ type: 'inactive' })],
   ]);
   const activeTypes = new Set(['widget', 'no-crud']);
+  for (const m of extraActive) {
+    modules.set(m.type, m);
+    activeTypes.add(m.type);
+  }
 
   const host: ProjectPluginHost = {
     listAvailable: () => Array.from(modules.values()),
@@ -236,5 +245,89 @@ describe('entity-tools: describe_entity_type', () => {
     const { types } = parse(result) as { types: Array<{ type: string; crudSupported: boolean }> };
     expect(types.map((t) => t.type).sort()).toEqual(['no-crud', 'widget']);
     expect(types.find((t) => t.type === 'no-crud')?.crudSupported).toBe(false);
+  });
+
+  // A module whose createSchema contains a type z.toJSONSchema() cannot represent
+  // (BigInt) — a stand-in for the real-world foreign/undefined schema node that used to
+  // crash the whole handler with `Cannot read properties of undefined (reading 'def')`.
+  const badSchemaModule = () =>
+    widgetModule({ type: 'bad-schema', backend: { crud: { createSchema: { amount: z.bigint() } } } });
+
+  it('describe-all isolates one un-serializable type: healthy types still described, bad type carries an __error placeholder', async () => {
+    const { deps } = fakeDeps([badSchemaModule()]);
+    const result = await tool(deps, 'describe_entity_type').handler({});
+    expect(result.isError).toBeUndefined(); // no process-level throw
+    const { types } = parse(result) as {
+      types: Array<{ type: string; createSchema?: Record<string, unknown>; updateSchema?: Record<string, unknown> }>;
+    };
+    // healthy type serializes normally — a real JSON Schema, not an error placeholder
+    const widget = types.find((t) => t.type === 'widget')!;
+    expect(widget.createSchema).toMatchObject({ type: 'object' });
+    expect(widget.createSchema).not.toHaveProperty('__error');
+    // failing type degrades to a type-named placeholder for both schemas
+    const bad = types.find((t) => t.type === 'bad-schema')!;
+    expect(bad.createSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
+    expect(bad.updateSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
+  });
+
+  it('single-type describe of the failing type returns the placeholder instead of throwing', async () => {
+    const { deps } = fakeDeps([badSchemaModule()]);
+    const result = await tool(deps, 'describe_entity_type').handler({ type: 'bad-schema' });
+    expect(result.isError).toBeUndefined();
+    const { types } = parse(result) as {
+      types: Array<{ type: string; createSchema?: Record<string, unknown>; updateSchema?: Record<string, unknown> }>;
+    };
+    expect(types).toHaveLength(1);
+    expect(types[0]!.createSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
+    expect(types[0]!.updateSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
+  });
+
+  // A module whose createSchema throws during the zod-object BUILD (property access),
+  // not at serialization time — exercises the inner guard's "wraps both the build and
+  // the toJSONSchema call" claim, a path the BigInt (serialize-time) cases don't reach.
+  const buildThrowModule = () => {
+    const crud: Record<string, unknown> = {};
+    Object.defineProperty(crud, 'createSchema', {
+      enumerable: true,
+      get() {
+        throw new Error('boom-build');
+      },
+    });
+    return widgetModule({ type: 'build-throw', backend: { crud } as BackendModule['backend'] });
+  };
+
+  it('inner guard catches a throw during schema build (not just serialization)', async () => {
+    const { deps } = fakeDeps([buildThrowModule()]);
+    const result = await tool(deps, 'describe_entity_type').handler({ type: 'build-throw' });
+    expect(result.isError).toBeUndefined();
+    const { types } = parse(result) as {
+      types: Array<{ createSchema?: Record<string, unknown>; updateSchema?: Record<string, unknown> }>;
+    };
+    expect(types[0]!.createSchema).toMatchObject({ __error: expect.stringMatching(/^build-throw: boom-build/) });
+    expect(types[0]!.updateSchema).toMatchObject({ __error: expect.stringMatching(/^build-throw: boom-build/) });
+  });
+
+  it('describe-all isolates a type whose registry.describe() throws: healthy types survive, bad type gets an entry-level __error', async () => {
+    const { deps } = fakeDeps([widgetModule({ type: 'describe-throw' })]);
+    // The outer per-type guard must contain failures beyond schema serialization —
+    // here registry.describe() itself throws for one type.
+    const original = deps.registry.describe;
+    deps.registry.describe = ((type: string, view: unknown, db: unknown) => {
+      if (type === 'describe-throw') throw new Error('boom-describe');
+      return (original as (t: string, v: unknown, d: unknown) => unknown)(type, view, db);
+    }) as typeof deps.registry.describe;
+
+    const result = await tool(deps, 'describe_entity_type').handler({});
+    expect(result.isError).toBeUndefined(); // batch completes, no process-level throw
+    const { types } = parse(result) as {
+      types: Array<{ type: string; __error?: string; createSchema?: Record<string, unknown> }>;
+    };
+    // healthy type is still fully described
+    const widget = types.find((t) => t.type === 'widget')!;
+    expect(widget.createSchema).toMatchObject({ type: 'object' });
+    expect(widget).not.toHaveProperty('__error');
+    // failing type degrades to a type-named entry-level placeholder instead of aborting the batch
+    const bad = types.find((t) => t.type === 'describe-throw')!;
+    expect(bad.__error).toMatch(/^describe-throw: boom-describe/);
   });
 });
