@@ -100,6 +100,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     const raw = module.backend!.crud!.updateSchema;
     return raw ? z.object(raw) : createSchemaOf(module).partial();
   };
+  // Per-type guard: a schema that can't be serialized (e.g. a foreign/undefined zod
+  // node) must degrade to a labelled placeholder for THAT type instead of throwing out
+  // of the whole describe_entity_type handler. Wraps both the zod-object build and the
+  // toJSONSchema call, since either can throw for a malformed schema.
+  const safeToJsonSchema = (type: string, build: () => z.core.$ZodType): object => {
+    try {
+      return z.toJSONSchema(build());
+    } catch (err) {
+      return { __error: `${type}: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  };
 
   const broadcastChanged = (type: string, slug: string): void => {
     deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
@@ -338,8 +349,8 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         return {
           type: module.type,
           label: module.label,
-          createSchema: crudSupported ? z.toJSONSchema(createSchemaOf(module)) : undefined,
-          updateSchema: crudSupported ? z.toJSONSchema(updateSchemaOf(module)) : undefined,
+          createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
+          updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
           searchSupported,
           crudSupported,
           views: views?.views ?? [],
