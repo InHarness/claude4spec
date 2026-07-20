@@ -191,8 +191,21 @@ production server's boot path entirely (it's a one-off CLI mutation of
   bare-metal against a real project directory elsewhere on disk. Any runtime
   dependency your plugin's backend entry imports beyond Node builtins must be
   bundled into `dist/` (e.g. don't mark pure-JS backend deps like `express`
-  or `zod` as Rollup/esbuild `external`). A dependency left unbundled
+  as Rollup/esbuild `external`). A dependency left unbundled
   resolves to nothing and the package record comes back `status: "failed"`.
+  - **`zod` is the exception to "bundle it" when you build entity schemas**
+    (0.1.134→next): a `backend.crud` create/update schema, or a `zodShape`
+    passed to `mcpTool`, is later introspected by the host with
+    `z.toJSONSchema()` (a **zod v4** API that walks each schema node's internal
+    `.def`). A schema built by a *bundled* second zod instance has no v4-shaped
+    `.def`, so the host throws `Cannot read properties of undefined (reading
+    'def')` and `describe_entity_type` degrades to an error placeholder for that
+    type. Build such schemas with the host's `z`, imported from the facade —
+    `import { z } from '@c4s/plugin-runtime'` — so there is one zod instance in
+    the process. The host is on **zod v4**; schema code written against v3 APIs
+    may need adjustment. (zod you use for your own internal, non-schema
+    validation can still be bundled — the sharing only matters for shapes the
+    host introspects.)
 - **Native modules (e.g. `better-sqlite3`) are not supported by this
   mechanism today** — there's no way to bundle a compiled `.node` binary the
   same way, and there is no backend equivalent of the frontend's
@@ -209,7 +222,9 @@ production server's boot path entirely (it's a one-off CLI mutation of
   may import the bare alias and will get the host's *live* facade — the same
   instance the host itself uses, not a bundled copy. Do NOT bundle it. It
   carries the MCP builders (`createMcpServer`/`mcpTool`, for the
-  `backend.mcpServer` slot) and `HOST_API_VERSION`; `@c4s/plugin-runtime/ui`
+  `backend.mcpServer` slot), the host's `z` (0.1.134→next — use it to build any
+  schema the host introspects, per the `zod` note above) and `HOST_API_VERSION`;
+  `@c4s/plugin-runtime/ui`
   resolves to the React-free contract (the `stable` component names). Per-project
   things (db, host services) arrive through `MountContext`, not this alias.
   Build it as an `external`, and prefer it over naming

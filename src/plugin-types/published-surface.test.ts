@@ -15,6 +15,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { HOST_API_VERSION } from '../shared/plugin-host/manifest.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../shared/plugin-host/ui-kit-surface.js';
 import {
@@ -159,5 +160,38 @@ describe('MCP builder facade', () => {
     expect(facadeCode).not.toContain('McpServerConfig');
     expect(facadeCode).not.toContain('McpServerInstance');
     expect(facadeCode).not.toContain('@inharness-ai/agent-adapters');
+  });
+});
+
+/**
+ * zod facade (0.1.134→next). The backend barrel re-exports the host's OWN `z`, so a
+ * plugin importing `z` from `@c4s/plugin-runtime` builds schemas with the single host
+ * instance the host later introspects via `z.toJSONSchema()` — closing the "two zod
+ * copies in one process" `.def` throw for plugin-contributed entity schemas.
+ */
+describe('zod facade', () => {
+  const facadeCode = readFileSync(
+    fileURLToPath(new URL('./plugin-runtime.ts', import.meta.url)),
+    'utf8',
+  ).replace(/\/\/.*$/gm, '');
+
+  it('re-exports the host\'s OWN zod instance from the backend barrel', () => {
+    // Identity, not just presence: a second copy is exactly the bug this closes.
+    expect((backendBarrel as { z?: unknown }).z).toBe(z);
+    expect(typeof (backendBarrel as { z: typeof z }).z.toJSONSchema).toBe('function');
+  });
+
+  it('declares `z` in the published type surface so the facade import type-checks', () => {
+    expect(facadeCode).toContain('export declare const z');
+  });
+
+  it('the shared `z` survives `z.toJSONSchema()` (the v4 `.def` walker)', () => {
+    // A schema built with the barrel's `z` is introspectable by the host's `z` —
+    // the whole point. (Same instance here, so this asserts the v4 API is present
+    // and the round-trip works, standing in for the cross-instance repro proven in
+    // the resolver subprocess test.)
+    const schema = (backendBarrel as { z: typeof z }).z.object({ title: z.string() });
+    expect(() => z.toJSONSchema(schema)).not.toThrow();
+    expect(z.toJSONSchema(schema)).toMatchObject({ type: 'object' });
   });
 });

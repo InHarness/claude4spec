@@ -140,4 +140,53 @@ describe('M33 — resolver from a plugin-like location', () => {
       fs.rmSync(path.join(repoRoot, 'node_modules', '@c4s-fixture'), { recursive: true, force: true });
     }
   });
+
+  /**
+   * zod facade (0.1.134→next). A plugin that builds its entity schemas with `z` from
+   * `@c4s/plugin-runtime` shares the host's SINGLE zod instance — so a schema it builds
+   * survives the host's `z.toJSONSchema()` (the zod v4 `.def` walker) instead of
+   * throwing `Cannot read properties of undefined (reading 'def')`. This is the
+   * real-runtime proof of the facade path; the identity assertion is the guard that a
+   * regression (a second zod copy) would trip.
+   */
+  it('a plugin building schemas with the facade `z` shares the host zod and survives z.toJSONSchema()', () => {
+    fs.mkdirSync(fixtureDir, { recursive: true });
+    try {
+      fs.writeFileSync(
+        path.join(fixtureDir, 'package.json'),
+        JSON.stringify({ name: '@c4s-fixture/probe-plugin', version: '1.0.0', type: 'module', main: 'index.js' }),
+      );
+      fs.writeFileSync(
+        path.join(fixtureDir, 'index.js'),
+        `import { z } from '@c4s/plugin-runtime';\n` +
+          `export const facadeZ = z;\n` +
+          `export const schema = z.object({ title: z.string() });\n`,
+      );
+
+      const res = runProbe(
+        `const plugin = await import('@c4s-fixture/probe-plugin');\n` +
+          `const host = await import('./src/server/plugin-runtime/index.js');\n` +
+          `const zod = await import('zod');\n` +
+          `let toJsonOk = true, jsonType = null, err = '';\n` +
+          `try { jsonType = host.z.toJSONSchema(plugin.schema).type; } catch (e) { toJsonOk = false; err = String(e && e.message || e); }\n` +
+          `process.stdout.write(JSON.stringify({\n` +
+          `  facadeIsHostZod: plugin.facadeZ === zod.z,\n` +
+          `  barrelIsHostZod: host.z === zod.z,\n` +
+          `  toJsonOk, jsonType, err,\n` +
+          `}));`,
+      );
+      expect(res.ok, res.ok ? '' : res.err).toBe(true);
+      if (!res.ok) return;
+
+      const got = JSON.parse(res.out) as Record<string, unknown>;
+      // One instance across the facade import, the host barrel and bare `zod`.
+      expect(got.facadeIsHostZod).toBe(true);
+      expect(got.barrelIsHostZod).toBe(true);
+      // The host introspects the plugin-built schema with no `.def` throw.
+      expect(got.toJsonOk, String(got.err)).toBe(true);
+      expect(got.jsonType).toBe('object');
+    } finally {
+      fs.rmSync(path.join(repoRoot, 'node_modules', '@c4s-fixture'), { recursive: true, force: true });
+    }
+  });
 });
