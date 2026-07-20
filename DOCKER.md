@@ -193,19 +193,21 @@ production server's boot path entirely (it's a one-off CLI mutation of
   bundled into `dist/` (e.g. don't mark pure-JS backend deps like `express`
   as Rollup/esbuild `external`). A dependency left unbundled
   resolves to nothing and the package record comes back `status: "failed"`.
-  - **`zod` is the exception to "bundle it" when you build entity schemas**
-    (0.1.134→next): a `backend.crud` create/update schema, or a `zodShape`
-    passed to `mcpTool`, is later introspected by the host with
-    `z.toJSONSchema()` (a **zod v4** API that walks each schema node's internal
-    `.def`). A schema built by a *bundled* second zod instance has no v4-shaped
-    `.def`, so the host throws `Cannot read properties of undefined (reading
-    'def')` and `describe_entity_type` degrades to an error placeholder for that
-    type. Build such schemas with the host's `z`, imported from the facade —
-    `import { z } from '@c4s/plugin-runtime'` — so there is one zod instance in
-    the process. The host is on **zod v4**; schema code written against v3 APIs
-    may need adjustment. (zod you use for your own internal, non-schema
-    validation can still be bundled — the sharing only matters for shapes the
-    host introspects.)
+  - **Build any schema the host introspects with the facade `z`, not a bundled
+    `zod`** (0.1.134→next): import it as `import { z } from '@c4s/plugin-runtime'`.
+    A `backend.crud` create/update schema, or a `zodShape` passed to `mcpTool`,
+    is later introspected by the host with `z.toJSONSchema()` (a **zod v4** API
+    that walks each schema node's internal `.def`). A schema built by a *second*
+    zod instance — whether bundled into `dist/`, or left as a bare `import { z }
+    from 'zod'` — has no v4-shaped `.def`, so the host throws `Cannot read
+    properties of undefined (reading 'def')` and `describe_entity_type` degrades
+    to an error placeholder for that type. Only the facade `z` is the host's
+    single instance; there is **no** host resolver for a bare `import 'zod'`, so
+    marking `zod` `external` and importing it bare resolves to nothing at runtime
+    (`status: "failed"`) — always name `@c4s/plugin-runtime`. The host is on
+    **zod v4**; schema code written against v3 APIs may need adjustment. (zod you
+    use for your own internal, non-schema validation that the host never sees can
+    still be bundled normally.)
 - **Native modules (e.g. `better-sqlite3`) are not supported by this
   mechanism today** — there's no way to bundle a compiled `.node` binary the
   same way, and there is no backend equivalent of the frontend's

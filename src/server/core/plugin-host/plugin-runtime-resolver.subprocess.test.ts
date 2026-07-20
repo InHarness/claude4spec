@@ -137,7 +137,10 @@ describe('M33 — resolver from a plugin-like location', () => {
       expect(got.builders).toEqual(['function', 'function']);
       expect(got.sharesHostInstance).toBe(true);
     } finally {
-      fs.rmSync(path.join(repoRoot, 'node_modules', '@c4s-fixture'), { recursive: true, force: true });
+      // Remove only THIS test's own fixture subdir, not the shared `@c4s-fixture`
+      // parent — so tests stay independent even if this file is ever run with
+      // per-test concurrency.
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 
@@ -150,21 +153,24 @@ describe('M33 — resolver from a plugin-like location', () => {
    * regression (a second zod copy) would trip.
    */
   it('a plugin building schemas with the facade `z` shares the host zod and survives z.toJSONSchema()', () => {
-    fs.mkdirSync(fixtureDir, { recursive: true });
+    // Distinct package name + subdir from the probe-plugin test above, so the two
+    // never share a mutable `node_modules` path (each finally clears only its own).
+    const zodFixtureDir = path.join(repoRoot, 'node_modules', '@c4s-fixture', 'probe-zod-plugin');
+    fs.mkdirSync(zodFixtureDir, { recursive: true });
     try {
       fs.writeFileSync(
-        path.join(fixtureDir, 'package.json'),
-        JSON.stringify({ name: '@c4s-fixture/probe-plugin', version: '1.0.0', type: 'module', main: 'index.js' }),
+        path.join(zodFixtureDir, 'package.json'),
+        JSON.stringify({ name: '@c4s-fixture/probe-zod-plugin', version: '1.0.0', type: 'module', main: 'index.js' }),
       );
       fs.writeFileSync(
-        path.join(fixtureDir, 'index.js'),
+        path.join(zodFixtureDir, 'index.js'),
         `import { z } from '@c4s/plugin-runtime';\n` +
           `export const facadeZ = z;\n` +
           `export const schema = z.object({ title: z.string() });\n`,
       );
 
       const res = runProbe(
-        `const plugin = await import('@c4s-fixture/probe-plugin');\n` +
+        `const plugin = await import('@c4s-fixture/probe-zod-plugin');\n` +
           `const host = await import('./src/server/plugin-runtime/index.js');\n` +
           `const zod = await import('zod');\n` +
           `let toJsonOk = true, jsonType = null, err = '';\n` +
@@ -186,7 +192,7 @@ describe('M33 — resolver from a plugin-like location', () => {
       expect(got.toJsonOk, String(got.err)).toBe(true);
       expect(got.jsonType).toBe('object');
     } finally {
-      fs.rmSync(path.join(repoRoot, 'node_modules', '@c4s-fixture'), { recursive: true, force: true });
+      fs.rmSync(zodFixtureDir, { recursive: true, force: true });
     }
   });
 });
