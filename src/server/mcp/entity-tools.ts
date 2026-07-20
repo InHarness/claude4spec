@@ -100,6 +100,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     const raw = module.backend!.crud!.updateSchema;
     return raw ? z.object(raw) : createSchemaOf(module).partial();
   };
+  const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
   // Per-type guard: a schema that can't be serialized (e.g. a foreign/undefined zod
   // node) must degrade to a labelled placeholder for THAT type instead of throwing out
   // of the whole describe_entity_type handler. Wraps both the zod-object build and the
@@ -108,7 +109,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     try {
       return z.toJSONSchema(build());
     } catch (err) {
-      return { __error: `${type}: ${err instanceof Error ? err.message : String(err)}` };
+      return { __error: `${type}: ${errMessage(err)}` };
     }
   };
 
@@ -342,20 +343,28 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         if (!m.ok) return m.response;
       }
       const described = (modules as Array<{ ok: true; module: BackendModule }>).map(({ module }) => {
-        const crudSupported = module.backend?.crud != null;
-        const service = deps.host.getEntityService(module.type) as EntityCrudService | null;
-        const searchSupported = typeof service?.search === 'function';
-        const views = deps.registry.describe(module.type, undefined, deps.db);
-        return {
-          type: module.type,
-          label: module.label,
-          createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
-          updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
-          searchSupported,
-          crudSupported,
-          views: views?.views ?? [],
-          customToolsLine: module.systemPrompt.mcpToolsLine,
-        };
+        // Outer per-type guard: schema serialization is already isolated by
+        // safeToJsonSchema, but the rest of the entry (registry.describe, service
+        // lookup) can also throw for a malformed type — contain that too so one bad
+        // type never aborts the whole describe-all batch.
+        try {
+          const crudSupported = module.backend?.crud != null;
+          const service = deps.host.getEntityService(module.type) as EntityCrudService | null;
+          const searchSupported = typeof service?.search === 'function';
+          const views = deps.registry.describe(module.type, undefined, deps.db);
+          return {
+            type: module.type,
+            label: module.label,
+            createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
+            updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
+            searchSupported,
+            crudSupported,
+            views: views?.views ?? [],
+            customToolsLine: module.systemPrompt.mcpToolsLine,
+          };
+        } catch (err) {
+          return { type: module.type, label: module.label, __error: `${module.type}: ${errMessage(err)}` };
+        }
       });
       return ok({ types: described });
     },
