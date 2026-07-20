@@ -108,7 +108,7 @@ git push -u origin "brief/$brief_slug"
 Then compose an order following the template from the env-runner spec (`wytyczne-implementatorow.md`), filling in only what deviates from the defaults (`app` = registry@main, `api.enabled` = false, no plugins, `data` = empty):
 
 ```
-Cel środowiska: smoke-test brief <brief-path>
+Cel środowiska: smoke-test zmiany z branch brief/<brief_slug>
 Nazwa env:      <brief_slug>
 Aplikacja:      local <origin-url>@brief/<brief_slug>
 API:            nie
@@ -116,6 +116,7 @@ Pluginy:
 Dane:           empty
 ```
 
+- `Cel środowiska` is a free-text label for the operator only — never reference a brief's file path/name there. `env-runner` is a separate spec project with no access to `app-spec`'s briefs; a `.md`-looking filename in this line has previously made the operator try (and fail) to go locate that file in its own project instead of just building the manifest from the order's fields below.
 - `<origin-url>` is this repo's own remote: `git remote get-url origin`.
 - `mode: local` is required here (not `registry`) — the brief's code isn't published, so env-runner must build the app from your pushed branch.
 - Flip `API` to `tak` only if the brief specifically exercises the remote/API path (e.g. remote login, account features). Add a `seed:<path>` under `Dane` only if the brief needs pre-existing fixture data.
@@ -139,6 +140,8 @@ c4s agent "Nowy push na brief/$brief_slug — odśwież środowisko." --thread <
 
 If the smoke test reveals drift, file a patch (step 6).
 
+**If the environment never comes up, do not shrug it off and continue to the PR** — go to step 6a, which is a hard stop. A change you could not run is not a change you can hand off. This includes the case where the failure has nothing to do with your branch.
+
 ### 6. Feedback loop (patches)
 
 When you discover that the brief diverges from reality — a missing detail, an incorrect assumption, an edge case not covered, or anything else the spec-author should know — file a patch. Use `c4s file-patch`, which records the patch on the spec side for you:
@@ -157,6 +160,22 @@ The body (from stdin, or `--body-file <f>`) goes below an auto-generated `# Patc
 - `missing` — the brief is silent on a detail you had to decide yourself.
 - `incorrect` — the brief is factually wrong about existing code.
 - `clarification` — the brief is ambiguous; you guessed but it should be made explicit for next time.
+
+### 6a. HARD GATE — a failed smoke test blocks the PR and escalates
+
+**This gate runs BEFORE you open a PR, and it overrides the "always hand off a draft PR" flow below.** Green unit tests are not a substitute: they exercise the code, not the shipped artifact.
+
+Classify the step-5 outcome honestly:
+
+- **The environment came up and you exercised the change** → proceed to step 7 normally.
+- **The environment never came up** — the build failed, `npm ci`/install failed, the app can't start, the image won't produce a running container → **STOP. Do NOT open a PR.** Escalate to the user directly, as the headline of your reply, in these words or equivalent: *"BLOCKER: the app cannot be installed/started — I did not open a PR."* Then give the literal error, say whether it comes from your branch or pre-exists on `main` (check: `git diff origin/main...HEAD -- package.json package-lock.json`), and ask how to proceed. Nothing about this is a footnote.
+- **The environment came up but the change misbehaves** → that's a normal bug; fix it and re-test, don't escalate.
+
+**Never** report an install/start failure as a bullet inside a longer summary, under a heading like "worth noting", or after a list of green results. A reader skimming for the outcome must hit it first, or they will merge something that does not run. If you already opened the PR when the failure surfaced, immediately mark it: `gh pr edit <n> --title "[DO NOT MERGE — app cannot be installed] <original title>"`, keep it a draft, and put the blocker at the very top of the PR body.
+
+**Why this rule exists:** on brief `0-1-133-to-0-1-134` the app could not be `npm ci`-installed at all (a pre-existing ERESOLVE on `main` broke every env-runner build, on every branch). That was reported as an ⚠️ bullet mid-report under "worth your attention" — and the user came within a step of merging before having to ask what was actually going on. A merge-blocking fact stated calmly in the middle of good news reads as noise.
+
+**Corollary — a pre-existing blocker is still a blocker.** "Not caused by my branch" explains it; it does not downgrade it. If `main` itself cannot be installed, say so loudly: it means nobody's smoke test works, which is worse than a bug in your diff, not better.
 
 ### 7. Open a draft PR and STOP
 
@@ -192,6 +211,14 @@ git worktree remove ".worktrees/$brief_slug"
 git branch -d "brief/$brief_slug"                          # local branch
 git push origin --delete "brief/$brief_slug" 2>/dev/null    # remote, if `gh pr merge --delete-branch` didn't already
 ```
+
+Once local `main` is refreshed with the merged change, rebuild so the local `dist/` matches the new `main`:
+
+```bash
+npm run build
+```
+
+This keeps the local checkout's compiled output in sync with the code you just merged (stale `dist/` is a known trap — see [[c4s-cli-stale-dist]]). Report the build result to the user; if it fails, surface the error rather than treating cleanup as done.
 
 If you merge the PR yourself (`gh pr merge --draft` PRs need `gh pr ready` first), pass `--delete-branch` — but still verify locally afterward: `gh pr merge` run from inside the worktree can fail the local branch-delete/checkout step (base branch is checked out elsewhere), so don't assume it fully succeeded without checking (`git ls-remote --heads origin "brief/$brief_slug"` should come back empty).
 
