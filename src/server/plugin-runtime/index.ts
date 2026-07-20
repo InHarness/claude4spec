@@ -24,6 +24,12 @@
  * builders from this barrel and keep the concrete vendor `McpServerInstance` type
  * re-exported below — that concrete type is host-internal, not published.
  *
+ * 0.1.134→next — zod facade. The host's own `z` is re-exported below as a VALUE for
+ * the same single-instance reason as the MCP builders: a plugin's backend schema code
+ * must build entity CRUD/`mcpTool` schemas with the host's `z` so the host can
+ * introspect them via `z.toJSONSchema()` (a zod v4 walker over each node's `.def`).
+ * See the inline note at the export for the failure mode this closes and the v4 caveat.
+ *
  * Runtime resolution of these VALUES, by consumer:
  *   - In-repo built-ins import this barrel by relative path (`../../plugin-runtime`).
  *   - External backend plugins import the bare alias `@c4s/plugin-runtime`, which
@@ -42,6 +48,19 @@
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
 // MCP builder facade (0.1.133) — VALUES re-exported from the internal vendor.
 export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
+// zod facade (0.1.134→next) — the host's OWN `z` re-exported as a VALUE. A plugin's
+// backend schema code (the `backend.crud` create/update schemas, a custom
+// `backend.mcpServer`'s `mcpTool` shapes) must build with THIS `z`, not a bundled
+// `import { z } from 'zod'`: the host introspects those schemas with `z.toJSONSchema()`
+// (a zod v4 API), which walks each node's internal `.def`. A schema built by a second
+// zod instance has no v4-shaped `.def` and the walker throws
+// `Cannot read properties of undefined (reading 'def')` — the "two vendor copies in one
+// process" failure #89 removed for the runtime facade, here closed for zod. This barrel
+// is the single instance both the host and a facade-importing plugin resolve to, so the
+// shared `z` is one instance process-wide. NOTE: the host is on **zod v4** — a plugin
+// written against v3 backend-schema APIs may need adjustment once it shares this `z`.
+export { z } from 'zod';
+export type { ZodRawShape } from 'zod';
 // Host-internal concrete handle type for in-repo backend consumers. NOT part of
 // the published `@c4s/plugin-runtime` surface (that shows opaque `McpServerFactory`).
 export type { McpServerInstance } from '@inharness-ai/agent-adapters';

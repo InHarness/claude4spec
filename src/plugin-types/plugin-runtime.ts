@@ -163,6 +163,29 @@ export declare function mcpTool(
   handler: (input: unknown) => unknown,
 ): McpTool;
 
+// zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
+// create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
+// with the host's `z`, obtained here — NOT a bundled `import { z } from 'zod'`. The
+// host introspects those schemas with `z.toJSONSchema()` (a zod v4 API that walks each
+// node's internal `.def`); a schema built by a SECOND zod instance has no v4-shaped
+// `.def` and the walker throws `Cannot read properties of undefined (reading 'def')`.
+// Importing `z` from `@c4s/plugin-runtime` guarantees the single host instance (the
+// alias resolves to the host's backend barrel, which re-exports the host's own `z`).
+// The host is on **zod v4** — a plugin written against v3 backend-schema APIs may need
+// adjustment once it shares this `z`.
+//
+// BACKEND-ONLY VALUE — same rule as `createMcpServer` / `mcpTool` above: a plugin's
+// FRONTEND (browser) module must NOT import `z`. The browser import-map shim that
+// resolves `@c4s/plugin-runtime` serves only the client value surface
+// (`PLUGIN_RUNTIME_EXPORT_NAMES`), which does not include `z`, so a browser import
+// fails to resolve at load time even though it type-checks against this shared surface.
+//
+// The type resolves to the AUTHOR's installed zod (`import('zod')`, a peer they already
+// carry alongside `react` / `lucide-react` at the top of this file); keep it out of the
+// `mcpTool` signature above (that stays the loose `ZodRawShape`) so the facade shape
+// does not pin a zod version into the versioned surface.
+export declare const z: typeof import('zod').z;
+
 // ── L9 serializer ──
 export interface SerializeContext {
   reader: unknown;
