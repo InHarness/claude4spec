@@ -44,6 +44,22 @@ async function ensureProject(previous?: WorkspaceProject): Promise<WorkspaceProj
   return restored[0]!;
 }
 
+/**
+ * Settle the project past onboarding. `RootLayout` redirects EVERY project route
+ * to `/onboarding` while `onboarding.completed` is false (App.tsx), so a freshly
+ * bootstrapped environment would never show the Settings page these cases assert
+ * on. Do it over the API so the precondition is deterministic instead of
+ * depending on how the environment happened to be created.
+ */
+async function completeOnboarding(projectId: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/config`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ onboardingCompleted: true }),
+  });
+  if (!res.ok) throw new Error(`failed to complete onboarding: ${res.status}`);
+}
+
 /** Poll an async predicate — Vitest's `expect` does not auto-retry like Playwright's. */
 async function until(predicate: () => Promise<boolean>, message: string, timeoutMs = 10_000) {
   const deadline = Date.now() + timeoutMs;
@@ -77,6 +93,7 @@ describe.skipIf(!BASE)('workspace root & welcome routing', () => {
    */
   it('[ac:ac-po-udanym-usunieciu-projektu-detach-lub] detaching the last project lands the UI on /welcome', async () => {
     const project = await ensureProject();
+    await completeOnboarding(project.id);
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 
     // Precondition: with a project registered, the root must ALREADY refuse to
@@ -99,6 +116,7 @@ describe.skipIf(!BASE)('workspace root & welcome routing', () => {
 
   it('[ac:ac-akcja-purge-usun-projekt-i-dane-c4s] purge stays disabled until the exact project name is typed', async () => {
     const project = await ensureProject();
+    await completeOnboarding(project.id);
     page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     await page.goto(`${BASE}/p/${project.id}/settings`, { waitUntil: 'networkidle' });
 
