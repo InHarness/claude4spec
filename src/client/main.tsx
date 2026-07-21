@@ -14,18 +14,27 @@ import { mountFrontend } from './tiptap/mountFrontend.js';
 import { queryClient } from './runtime/query-client.js';
 import { bootFrontendPlugins } from './runtime/boot-plugins.js';
 import { metaApi } from './lib/api.js';
+import { PROJECT_ID } from './lib/api-core.js';
 import './styles/index.css';
 import 'highlight.js/styles/atom-one-dark.css';
 
 // Seed plugin host activation before React mounts. Failure is non-fatal —
 // host falls back to "all available active" so legacy code paths keep working.
-metaApi
-  .entities()
-  .then((state) => clientPluginHost.applyActivation(state))
-  .catch((err) => {
-    console.warn('[plugin-host] failed to fetch /api/_meta/entities — assuming all active', err);
-    clientPluginHost.applyActivation(null);
-  });
+// Decision #11: `/welcome` runs project-less (PROJECT_ID=''), where `apiFetch`
+// cannot build a `/api/projects/<id>` prefix — the request would 404 on every
+// visit to what 0.1.137 made the unconditional landing page. Skip it and apply
+// the same fallback the failure path uses (mirrors `useConfig`'s `enabled`).
+if (PROJECT_ID) {
+  metaApi
+    .entities()
+    .then((state) => clientPluginHost.applyActivation(state))
+    .catch((err) => {
+      console.warn('[plugin-host] failed to fetch /api/_meta/entities — assuming all active', err);
+      clientPluginHost.applyActivation(null);
+    });
+} else {
+  clientPluginHost.applyActivation(null);
+}
 
 const router = createAppRouter(queryClient);
 

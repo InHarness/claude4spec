@@ -1,6 +1,6 @@
 {
   "name": "@inharness-ai/claude4spec",
-  "version": "0.1.134",
+  "version": "0.1.137",
   "description": "Plan the whole system before your agent writes a line of code. Local-first planning layer with structured entities and typed relations.",
   "license": "MIT",
   "author": "Mike Tomala <mike@inharness.ai>",
@@ -65,6 +65,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
     "deps:unlink": "node scripts/deps-unlink.mjs"

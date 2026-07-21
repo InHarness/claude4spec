@@ -2,7 +2,6 @@
   "ac-ikona-zebatki-w-prawym-gornym-rogu": "UI-only: header gear icon rendering and /settings navigation, not automatable in Vitest",
   "ac-5-generycznych-node-w-m19-deleguje-re": "UI-only: TipTap NodeView rendering (renderChip/renderCard/renderRow delegation, broken-chip fallback) — React editor, not automatable in Vitest",
   "ac-akcja-disconnect-w-sekcji-remote-project": "UI + remote API: Disconnect action (settings-page ConfirmModal) wired to PATCH /api/config and a downstream release-push first-push path against the remote /v1 API",
-  "ac-akcja-purge-usun-projekt-i-dane-c4s": "UI-only: Danger-zone purge with type-to-confirm gating and warning copy in settings-page — React, not automatable in Vitest",
   "ac-analyze-ac-against-entities-yje-w-serwe": "LLM-based: analyze_ac_against_entities is a non-deterministic on-demand semantic audit (ac-tools MCP server) requiring a model — not automatable in Vitest",
   "ac-b-d-operacji-git-brak-gita-w-path-bra": "requires git: M28 release git-sync edge cases (no git in PATH / no upstream / detached HEAD / repo gone) exercise real git operations and a UI toast warning — not automatable in Vitest",
   "ac-b-d-po-czenia-pobierania-z-remote-h": "remote API + network: --clone CLONE_FAILED rollback depends on a real download failure from the remote /v1 API and full cwd teardown — not automatable in Vitest",

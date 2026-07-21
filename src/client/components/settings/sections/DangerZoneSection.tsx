@@ -18,7 +18,8 @@ interface DeleteResponse {
  *
  * Workspace-scope call → plain `fetch` (not project-prefixed `apiFetch`). On
  * success a full reload to `/p/<redirectProjectId>/` (or `/` when the last
- * project was removed) re-initializes the module-load constants.
+ * project was removed — the server resolves `/` to `/welcome`) re-initializes
+ * the module-load constants.
  */
 export function DangerZoneSection() {
   const { data: config } = useConfig();
