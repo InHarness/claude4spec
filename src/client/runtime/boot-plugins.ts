@@ -18,6 +18,7 @@
  */
 
 import { metaApi, pluginsApi } from '../lib/api.js';
+import { PROJECT_ID } from '../lib/api-core.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
 import { mountFrontend } from '../tiptap/mountFrontend.js';
 import { registerPluginCommands } from '../tiptap/pluginCommands.js';
@@ -71,8 +72,16 @@ async function loadManifestPlugins(
   mountFrontend(router, clientPluginHost.listEntities());
 }
 
-/** Register the declarative `contributes.commands` of loaded+trusted plugins. */
+/**
+ * Register the declarative `contributes.commands` of loaded+trusted plugins.
+ *
+ * Project-scoped: on the project-less `/welcome` (Decision #11, PROJECT_ID='')
+ * there is no `/api/projects/<id>` prefix for `apiFetch` to build, so the call
+ * would 404 — and since 0.1.137 `/welcome` is the unconditional root landing,
+ * that would greet every start. Nothing there can host a plugin command anyway.
+ */
 async function registerProjectPluginCommands(): Promise<void> {
+  if (!PROJECT_ID) return;
   try {
     const { commands } = await metaApi.pluginCommands();
     registerPluginCommands(commands);

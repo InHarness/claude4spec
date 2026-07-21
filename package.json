@@ -65,6 +65,7 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
     "deps:unlink": "node scripts/deps-unlink.mjs"
