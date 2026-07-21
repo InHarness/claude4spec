@@ -16,9 +16,10 @@ interface WorkspaceResponse {
 }
 
 /**
- * Decision #11 (0.1.57): `/welcome` runs the SPA project-less — the tail of the
- * root `/` redirect (last-opened → first → here) and the permanent target of the
- * bare `npx @inharness-ai/claude4spec`. Lists the workspace projects neutrally
+ * Decision #11 (0.1.57): `/welcome` runs the SPA project-less. 0.1.137: it is the
+ * SOLE, unconditional target of the root `/` redirect (no more auto-jump to the
+ * last-opened project) and, as before, the permanent target of the bare
+ * `npx @inharness-ai/claude4spec`. Lists the workspace projects neutrally
  * (no highlight for the process CWD); picking one does a full reload to
  * `/p/<id>/` because PROJECT_ID / API_BASE / router basepath are module-load
  * constants. "Add project to workspace" reuses the switcher's AddProjectDialog.

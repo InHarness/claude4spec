@@ -11,7 +11,8 @@ import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
 import { workspaceRouter } from './workspace/routes.js';
-import type { ProjectRecord, WorkspaceRecord } from './workspace/types.js';
+import type { WorkspaceRecord } from './workspace/types.js';
+import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './serialization/registerAll.js';
 import { loadWorkspacePlugins, reloadPlugin, resolveBaseEntry } from './core/plugin-host/loader.js';
@@ -116,42 +117,6 @@ function injectImportMap(html: string): string {
   return html.replace('<head>', `<head>${IMPORT_MAP_SCRIPT}`);
 }
 
-const PROJECT_ROUTE_RE = /^\/p\/([0-9a-f]{12})(\/|$)/;
-
-type SpaResolution =
-  | { kind: 'project'; project: ProjectRecord }
-  | { kind: 'redirect'; to: string }
-  | { kind: 'welcome' };
-
-/**
- * M31 route scheme `/p/<project-id>/…` (assets stay at root — no Vite
- * base changes). Decision #11 (0.1.57): `/` → 302 to the last-opened project
- * (else first registered, else `/welcome`); `/welcome` serves the SPA with NO
- * project injected (workspace-scope project list); unknown id and any other
- * non-asset path → redirect `/`.
- */
-function resolveSpaRoute(
-  registry: WorkspaceRegistry,
-  workspace: WorkspaceRecord,
-  urlPath: string,
-): SpaResolution {
-  const m = urlPath.match(PROJECT_ROUTE_RE);
-  if (m) {
-    const project = registry.getProject(workspace, m[1]!);
-    return project ? { kind: 'project', project } : { kind: 'redirect', to: '/' };
-  }
-  if (urlPath === '/welcome') return { kind: 'welcome' };
-  if (urlPath === '/' || urlPath === '') {
-    const fresh = registry.getWorkspace(workspace.name) ?? workspace;
-    if (fresh.projects.length === 0) return { kind: 'redirect', to: '/welcome' };
-    const byRecency = [...fresh.projects].sort((a, b) =>
-      (b.lastOpened ?? b.addedAt).localeCompare(a.lastOpened ?? a.addedAt),
-    );
-    return { kind: 'redirect', to: `/p/${byRecency[0]!.id}/` };
-  }
-  return { kind: 'redirect', to: '/' };
-}
-
 interface SpaDeps {
   registry: WorkspaceRegistry;
   workspace: WorkspaceRecord;
@@ -201,7 +166,7 @@ async function mountDevVite(app: Express, deps: SpaDeps) {
 function mountProd(app: Express, deps: SpaDeps) {
   const repoRoot = findRepoRoot(deps.startCwd);
   const clientDist = path.join(repoRoot, 'dist/client');
-  // index:false — '/' must reach the catch-all (redirect to /p/<id>/), never a raw un-injected index.html.
+  // index:false — '/' must reach the catch-all (302 → /welcome), never a raw un-injected index.html.
   app.use(express.static(clientDist, { index: false }));
   app.use('*', (req, res, next) => {
     if (req.originalUrl.startsWith('/api') || req.originalUrl.startsWith('/ws')) return next();
