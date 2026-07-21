@@ -19,8 +19,12 @@ export interface StartSeededThreadOptions {
  *    and, when `autoSubmit` is set and the thread is empty, `sendMessage`s the
  *    seed as a normal user message (persisted in `chat_message`).
  *
- * Distinct from M10 plan execution, which goes through the dedicated
- * `post-api-plans-slug-execute` endpoint with a `plan_path`.
+ * Shares the prefill path (`requestChatPrefill` → `CHAT_PREFILL_EVENT`) with
+ * M10's plan footer, but not the thread-creation logic: M10's Run plan /
+ * Analyse plan go through `post-api-plans-slug-create-thread`, which attaches
+ * the plan server-side (`plan_path`) and drafts the prompt with
+ * `autoSend: false`; this helper posts to bare `post-api-chat` with no
+ * `plan_path` and usually auto-sends.
  */
 export function startSeededThread(prompt: string, opts: StartSeededThreadOptions = {}): void {
   const store = useChatStore.getState();

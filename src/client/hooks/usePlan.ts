@@ -1,13 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
-import type {
-  Plan,
-  PlanExecuteMode,
-  PlanExecuteResult,
-  PlanFrontmatter,
-  PlanThreadItem,
-} from '../../shared/entities.js';
+import type { Plan, PlanFrontmatter, PlanThreadItem } from '../../shared/entities.js';
 
 type Envelope<T> = { data: T };
 
@@ -210,6 +204,11 @@ export function useUpdatePlanTitle() {
   });
 }
 
+/**
+ * 0.1.138: the single "run a plan" path. `useExecutePlan` (POST
+ * /api/plans/:slug/execute, modes new-session/continue) is gone — the execution
+ * prompt is now a client-side composer draft, see PlanPage's footer.
+ */
 export function useCreateThreadFromPlan() {
   const qc = useQueryClient();
   return useMutation({
@@ -228,33 +227,6 @@ export function useCreateThreadFromPlan() {
       qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
       qc.invalidateQueries({ queryKey: ['threads'] });
-    },
-  });
-}
-
-export function useExecutePlan() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: {
-      planPath: string;
-      mode: PlanExecuteMode;
-      threadId?: string;
-    }) => {
-      const body = await fetchJson<Envelope<PlanExecuteResult>>(
-        `/api/plans/${encodeArtifactPath(input.planPath)}/execute`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode: input.mode, threadId: input.threadId }),
-        },
-      );
-      return body.data;
-    },
-    onSuccess: (_data, vars) => {
-      qc.invalidateQueries({ queryKey: keys.detail(vars.planPath) });
-      qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
-      qc.invalidateQueries({ queryKey: ['threads'] });
-      qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
   });
 }

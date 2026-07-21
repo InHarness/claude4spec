@@ -28,6 +28,14 @@ import { chatConfigApi, type SessionResumeConstraint } from '../lib/api.js';
 
 const NEW_THREAD_DRAFT_KEY = '__new__';
 
+/**
+ * Jak długo prefill „w locie" ma pierwszeństwo nad restore draftu. Obie ścieżki
+ * odpalają się po 50 ms, więc okno musi je z zapasem pokryć — a jednocześnie być
+ * na tyle krótkie, by prefill BEZ zmiany wątku nie wstrzyknął się w kolejny
+ * switch wątku wykonany chwilę później przez użytkownika.
+ */
+const PREFILL_HANDOFF_MS = 1000;
+
 export function ChatOverlay() {
   const chatOpen = useChatStore((s) => s.chatOpen);
   const chatWidth = useChatStore((s) => s.chatWidth);
@@ -47,6 +55,13 @@ export function ChatOverlay() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<ChatInputEditorHandle>(null);
   const stickToBottomRef = useRef(true); // start: przyklejony do dołu
+  // Prefill w locie: ustawiany SYNCHRONICZNIE przez listener CHAT_PREFILL_EVENT,
+  // konsumowany przez ten z timerow (prefill / draft-restore), ktory pierwszy
+  // zastanie zamontowany edytor. Bez tego prefill wyslany razem ze zmiana watku
+  // ginal: oba timery maja 50 ms, ale efekt draft-restore rejestruje sie PO
+  // commicie Reacta, wiec jego `handle.clear()` wykonywal sie jako ostatni i
+  // czyscil dopiero co wstawiony prompt.
+  const pendingPrefillRef = useRef<{ prompt: string; at: number } | null>(null);
 
   const [hasInput, setHasInput] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
@@ -199,6 +214,20 @@ export function ChatOverlay() {
     const t = window.setTimeout(() => {
       const handle = inputRef.current;
       if (!handle) return;
+      // Prefill wyslany razem z ta zmiana watku (np. „Run plan" na stronie planu)
+      // ma pierwszenstwo nad seedem/draftem/clear — inaczej skasowalibysmy prompt,
+      // ktory listener wlasnie wstawil albo za chwile wstawi. Okno swiezosci
+      // odcina prefille bez zmiany watku: ich flaga zostaje ustawiona, ale nie
+      // moze wstrzyknac sie w JAKIS pozniejszy switch.
+      const prefill = pendingPrefillRef.current;
+      if (prefill) {
+        pendingPrefillRef.current = null;
+        if (Date.now() - prefill.at < PREFILL_HANDOFF_MS) {
+          handle.setMarkdown(prefill.prompt);
+          setHasInput(!handle.isEmpty());
+          return;
+        }
+      }
       // One-shot seed (np. „Run new thread" na patchu) ma pierwszenstwo nad
       // draftem/clear. Czytamy swiezo ze store (nie z closure), konsumujemy raz.
       const seed = useChatStore.getState().seedPrompt;
@@ -297,6 +326,11 @@ export function ChatOverlay() {
       const detail = (e as CustomEvent<ChatPrefillDetail>).detail;
       if (!detail?.prompt) return;
       setChatOpen(true);
+      // Zaznacz prefill SYNCHRONICZNIE — jesli ta sama akcja przelaczyla watek,
+      // efekt draft-restore odpali sie PO nas i bez tej flagi wyczysci edytor.
+      // Flagi NIE kasujemy tutaj: ten timer jest zwykle pierwszy, a konsumentem
+      // jest draft-restore (patrz tam) — inaczej zdazylby juz zobaczyc `null`.
+      pendingPrefillRef.current = { prompt: detail.prompt, at: Date.now() };
       // Defer so the editor has mounted before we try to populate it.
       setTimeout(() => {
         const handle = inputRef.current;
@@ -307,6 +341,9 @@ export function ChatOverlay() {
         // po POST /api/briefs). Reload strony nie zdubluje wysyłki, bo thread
         // ma już wtedy messages.length > 0.
         if (detail.autoSend && messageCountRef.current === 0) {
+          // Prompt poszedl jako wiadomosc — draft-restore nie ma juz czego
+          // przywracac, inaczej wstawilby wyslany tekst z powrotem do inputu.
+          pendingPrefillRef.current = null;
           handle.clear();
           setHasInput(false);
           void sendMessage(detail.prompt, [], currentPage, currentPageRootId);

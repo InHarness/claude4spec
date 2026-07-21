@@ -107,7 +107,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
   // exercise the generic /api/artifacts/:kind/* family alongside each kind's
-  // bespoke routes (e.g. plansRouter's create-thread/execute).
+  // bespoke routes (e.g. plansRouter's create-thread).
   const chatService = new ChatService(db);
   const briefsPages = new PagesService(cwd, 'briefs', BRIEF_ROOT_MARKER);
   await briefsPages.ensureRoot();

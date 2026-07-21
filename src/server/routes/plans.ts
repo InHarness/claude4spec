@@ -1,7 +1,5 @@
 import { Router } from 'express';
-import type { PlanExecuteMode } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
-import { DomainError } from '../services/tags.js';
 
 /**
  * 0.1.127 M10: plan CRUD/versioning/blame moved to the generic
@@ -10,10 +8,18 @@ import { DomainError } from '../services/tags.js';
  * `GET /api/plans/:planId/blame` are all GONE. What stays here is plan's
  * bespoke thread-binding behavior (`binding.mode: 'attach'`), re-pathed
  * `:planId` (integer) → `:slug` (string, the file path relative to plansDir):
- * `create-thread`/`execute` have richer semantics than the generic
- * `POST .../threads` (execute's two modes, initialMessage), and
- * `last-thread`/`by-thread`/`by-anchor`/`threads` are plan-specific queries
- * with no generic-family equivalent.
+ * `create-thread` attaches the plan by `plan_path` (the generic
+ * `POST .../threads` has no such binding), and `last-thread`/`by-thread`/
+ * `by-anchor`/`threads` are plan-specific queries with no generic-family
+ * equivalent. Note `CreateThreadFromPlanRequest.initialMessage` is part of the
+ * documented wire shape but is deliberately NOT acted on here — the backend
+ * sends no message on the caller's behalf.
+ *
+ * 0.1.138: `POST /:slug/execute` (modes `new-session`/`continue`) is GONE —
+ * running a plan is now a pure chat workflow: `create-thread` attaches the
+ * plan, and the execution prompt lives client-side as an editable composer
+ * draft the user sends themselves (no server-generated `firstMessage`, no
+ * server-side `plan_mode` toggle).
  */
 export function plansRouter(plan: PlanService): Router {
   const router = Router();
@@ -64,20 +70,6 @@ export function plansRouter(plan: PlanService): Router {
     try {
       const result = await plan.attachThreadToPlan(req.params.slug);
       res.status(201).json({ data: result });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.post('/:slug/execute', async (req, res, next) => {
-    try {
-      const mode = req.body?.mode as PlanExecuteMode | undefined;
-      if (mode !== 'new-session' && mode !== 'continue') {
-        throw new DomainError('VALIDATION', "mode must be 'new-session' or 'continue'");
-      }
-      const threadId = typeof req.body?.threadId === 'string' ? req.body.threadId : undefined;
-      const result = await plan.execute(req.params.slug, mode, { threadId });
-      res.json({ data: result });
     } catch (err) {
       next(err);
     }
