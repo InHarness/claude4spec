@@ -85,6 +85,55 @@ describe('GET /api/plans/:slug/threads', () => {
   });
 });
 
+// 0.1.138: `POST /api/plans/:slug/execute` (modes new-session/continue) is gone
+// — create-thread is now the ONLY "run a plan" path, and the execution prompt
+// lives client-side as an editable composer draft (PlanPage's Run plan /
+// Analyse plan). The backend generates no firstMessage and never flips
+// chat_thread.plan_mode.
+describe('POST /api/plans/:slug/create-thread', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('creates a new thread attached to the plan and returns { threadId }', async () => {
+    const planPath = await seedPlan(t, 'runnable-plan', 'Runnable plan', 'do the thing');
+
+    const res = await request(t.app).post(`/api/plans/${encodeURIComponent(planPath)}/create-thread`);
+    expect(res.status).toBe(201);
+    expect(res.body.data.threadId).toEqual(expect.any(String));
+
+    const row = t.db
+      .prepare(`SELECT plan_path, plan_mode FROM chat_thread WHERE id = ?`)
+      .get(res.body.data.threadId) as { plan_path: string; plan_mode: number };
+    expect(row.plan_path).toBe(planPath);
+    // No server-side plan_mode toggle on plan execution — the flag only moves
+    // through PATCH /api/threads/:id and POST /api/chat.
+    expect(row.plan_mode).toBe(0);
+  });
+
+  it('always creates a NEW thread, never reuses the attached one', async () => {
+    const planPath = await seedPlan(t, 'twice-plan', 'Twice plan', 'body');
+
+    const first = await request(t.app).post(`/api/plans/${encodeURIComponent(planPath)}/create-thread`);
+    const second = await request(t.app).post(`/api/plans/${encodeURIComponent(planPath)}/create-thread`);
+    expect(first.body.data.threadId).not.toBe(second.body.data.threadId);
+
+    const threads = await request(t.app).get(`/api/plans/${encodeURIComponent(planPath)}/threads`);
+    expect(threads.body.data).toHaveLength(2);
+  });
+
+  it('404s on the removed POST /api/plans/:slug/execute', async () => {
+    const planPath = await seedPlan(t, 'gone-plan', 'Gone plan', 'body');
+    const res = await request(t.app)
+      .post(`/api/plans/${encodeURIComponent(planPath)}/execute`)
+      .send({ mode: 'new-session' });
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('GET /api/plans/by-anchor/:anchor', () => {
   let t: TestApp;
 

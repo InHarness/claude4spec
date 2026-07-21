@@ -38,8 +38,6 @@ import type {
   Plan,
   PlanAction,
   PlanChangedBy,
-  PlanExecuteMode,
-  PlanExecuteResult,
   PlanFrontmatter,
   PlanListItem,
   PlanThreadItem,
@@ -422,42 +420,11 @@ export class PlanService {
     });
   }
 
-  async execute(
-    planPath: string,
-    mode: PlanExecuteMode,
-    opts: { threadId?: string } = {},
-  ): Promise<PlanExecuteResult> {
-    const plan = await this.getByPath(planPath);
-    if (plan.body.trim().length === 0) {
-      throw new DomainError('VALIDATION', 'cannot execute an empty plan');
-    }
-
-    if (mode === 'new-session') {
-      const { threadId: newThreadId } = await this.attachThreadToPlan(plan.path);
-      this.deps.chatService.updateThreadSettings(newThreadId, { planMode: false });
-      const firstMessage = `Executing plan "${plan.frontmatter.title}" — disabling planMode and proceeding with implementation.`;
-      return { mode: 'new-session', newThreadId, planPath: plan.path, firstMessage };
-    }
-
-    // mode === 'continue'
-    const threadId = opts.threadId;
-    if (!threadId) {
-      throw new DomainError('VALIDATION', "mode='continue' requires `threadId` in body");
-    }
-    const attachedThread = this.deps.chatService.getThreadMeta(threadId);
-    if (!attachedThread) {
-      throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
-    }
-    if (attachedThread.planPath !== plan.path) {
-      throw new DomainError(
-        'THREAD_NOT_ATTACHED_TO_PLAN',
-        `thread '${threadId}' is not attached to plan '${plan.path}'`,
-      );
-    }
-    this.deps.chatService.updateThreadSettings(threadId, { planMode: false });
-    const firstMessage = `Executing plan "${plan.frontmatter.title}" — disabling planMode and proceeding with implementation.`;
-    return { mode: 'continue', threadId, firstMessage };
-  }
+  // 0.1.138: `execute(planPath, mode)` is GONE. PlanService carries only plan
+  // logic now (upsert-by-title + attach); "running" a plan is `attachThreadToPlan`
+  // plus a client-side composer draft, so nothing here generates a first message
+  // or touches `chat_thread.plan_mode` — that flag moves only through
+  // `PATCH /api/threads/:id` / `POST /api/chat` (Plan Mode in ModelSettingsPopover).
 
   // ─── Internals ──────────────────────────────────────────────────────────
 

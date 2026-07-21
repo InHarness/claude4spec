@@ -856,7 +856,6 @@ export interface ClearedQueueResponse {
 
 // --- M10: Plans (filesystem-backed as of 0.1.127 — see brief 0-1-126-to-0-1-127) ---
 
-export type PlanExecuteMode = 'new-session' | 'continue';
 export type PlanAction =
   | 'replace'
   | 'append'
@@ -921,19 +920,13 @@ export interface PlanThreadItem {
   updatedAt: string;
 }
 
-export type PlanExecuteResult =
-  | {
-      mode: 'new-session';
-      newThreadId: string;
-      planPath: string;
-      firstMessage: string;
-    }
-  | {
-      mode: 'continue';
-      threadId: string;
-      firstMessage: string;
-    };
-
+/**
+ * 0.1.138: `POST /api/plans/:slug/execute` and its DTOs (`ExecutePlanRequest`,
+ * `ExecutePlanNewSessionResponse`, `ExecutePlanContinueResponse` — here
+ * `PlanExecuteMode`/`PlanExecuteResult`) are GONE. Running a plan is now
+ * `POST /api/plans/:slug/create-thread` + a client-side composer draft, so the
+ * only wire shape left is the create-thread pair below.
+ */
 export interface CreateThreadFromPlanRequest {
   initialMessage?: string;
 }

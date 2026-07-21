@@ -1,5 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { MessageSquare, Pencil, Users } from 'lucide-react';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
@@ -8,7 +7,7 @@ import {
   usePlanThreads,
   usePlanVersions,
   useSavePlan,
-  useExecutePlan,
+  useCreateThreadFromPlan,
   useUpdatePlanTitle,
 } from '../hooks/usePlan.js';
 import { PlanEditor } from './PlanEditor.js';
@@ -17,11 +16,19 @@ import { ButtonGroup } from './ButtonGroup.js';
 import { SegmentedControl } from './SegmentedControl.js';
 import { OutlineButton } from './OutlineButton.js';
 import { useOutlineStore } from '../state/outline.js';
-import type { PlanExecuteMode } from '../../shared/entities.js';
 
 interface Props {
   planPath: string;
 }
+
+/**
+ * 0.1.138: running a plan is a pure chat workflow. Both footer buttons take the
+ * SAME backend path (`POST /api/plans/:slug/create-thread` → new thread with
+ * `plan_path` attached) and differ only in the draft they drop into the
+ * composer. Nothing is auto-sent — the user edits and sends it themselves.
+ */
+const RUN_PLAN_PROMPT = 'Execute the attached plan';
+const ANALYSE_PLAN_PROMPT = 'Analyse the plan 3 times';
 
 // 0.1.127: Blame removed along with the plan_version table it was built from
 // (see brief 0-1-126-to-0-1-127) — Compare stays, backed by the generic
@@ -29,10 +36,9 @@ interface Props {
 type PlanView = 'plan' | 'compare';
 
 export function PlanPage({ planPath }: Props) {
-  const navigate = useNavigate();
   const { data: plan, isLoading } = usePlan(planPath);
   const savePlan = useSavePlan();
-  const executePlan = useExecutePlan();
+  const createThread = useCreateThreadFromPlan();
   const updateTitle = useUpdatePlanTitle();
   // P2: a plan's threads come from the dedicated GET /api/plans/:slug/threads
   // projection, not from filtering the paginated GET /api/threads list.
@@ -47,20 +53,7 @@ export function PlanPage({ planPath }: Props) {
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
-  const activeChatThreadId = useChatStore((s) => s.chatThreadId);
-
-  // Mode='continue' uses currently-open chat thread if it references THIS plan,
-  // else falls back to the most recent attached thread.
-  const continueThreadId = useMemo(() => {
-    if (!plan) return null;
-    if (
-      activeChatThreadId &&
-      attachedThreads.some((t) => t.id === activeChatThreadId)
-    ) {
-      return activeChatThreadId;
-    }
-    return lastThreadId;
-  }, [plan, activeChatThreadId, attachedThreads, lastThreadId]);
+  const setSeedPrompt = useChatStore((s) => s.setSeedPrompt);
 
   const [dirtyContent, setDirtyContent] = useState<string | null>(null);
   const [view, setView] = useState<PlanView>('plan');
@@ -100,49 +93,30 @@ export function PlanPage({ planPath }: Props) {
     }
   }, [plan, dirtyContent, savePlan]);
 
-  const handleExecute = useCallback(
-    async (mode: PlanExecuteMode) => {
+  const runWithPrompt = useCallback(
+    async (prompt: string) => {
       if (!plan) return;
       try {
-        const threadIdForContinue =
-          mode === 'continue' ? continueThreadId ?? undefined : undefined;
-        if (mode === 'continue' && !threadIdForContinue) {
-          setError('No attached thread available for "continue".');
-          return;
-        }
-        const result = await executePlan.mutateAsync({
-          planPath: plan.path,
-          mode,
-          threadId: threadIdForContinue,
-        });
+        // Always a NEW thread with the plan attached (plan_path reference — the
+        // plan body is never copied into the thread). Query invalidation is
+        // handled by useCreateThreadFromPlan.
+        const { threadId } = await createThread.mutateAsync({ planPath: plan.path });
         setError(null);
-        // The thread list / plan-threads queries are invalidated by useExecutePlan.
-
-        if (result.mode === 'new-session') {
-          setChatThreadId(result.newThreadId);
-          setChatOpen(true);
-          dispatchPrefill(result.firstMessage);
-          navigate({
-            to: '/plans/$planPath',
-            params: { planPath: result.planPath },
-          });
-        } else {
-          setChatThreadId(result.threadId);
-          setChatOpen(true);
-          dispatchPrefill(result.firstMessage);
-        }
+        // setSeedPrompt BEFORE the thread switch: ChatOverlay's draft-restore
+        // effect fires on the chatThreadId change and would otherwise clear the
+        // editor right after the prefill event filled it (both use a 50 ms
+        // timer, the effect's is scheduled later so its clear() runs last).
+        // The seed is read with priority by that same effect — same reason as
+        // CreateBriefDialog / BriefsList.
+        setSeedPrompt(prompt);
+        setChatThreadId(threadId);
+        setChatOpen(true);
+        requestChatPrefill({ prompt, autoSend: false });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       }
     },
-    [
-      plan,
-      executePlan,
-      setChatThreadId,
-      setChatOpen,
-      navigate,
-      continueThreadId,
-    ],
+    [plan, createThread, setSeedPrompt, setChatThreadId, setChatOpen],
   );
 
   const handleStartEditTitle = useCallback(() => {
@@ -373,37 +347,31 @@ export function PlanPage({ planPath }: Props) {
                   {canExecute ? (
                     <>
                       <button
-                        onClick={() => handleExecute('new-session')}
-                        disabled={executePlan.isPending}
+                        onClick={() => void runWithPrompt(RUN_PLAN_PROMPT)}
+                        disabled={createThread.isPending}
+                        title="Open a new thread with this plan attached and draft the run prompt"
                         className="text-[12.5px] px-3 py-1.5 rounded"
                         style={{
                           background: 'var(--c-accent)',
                           color: '#fff',
+                          opacity: createThread.isPending ? 0.6 : 1,
                         }}
                       >
-                        Run in new thread
+                        Run plan
                       </button>
                       <button
-                        onClick={() => handleExecute('continue')}
-                        disabled={
-                          executePlan.isPending || !continueThreadId
-                        }
-                        title={
-                          continueThreadId
-                            ? 'Continue running in attached thread'
-                            : 'No attached thread — open one first or use "Run in new thread"'
-                        }
+                        onClick={() => void runWithPrompt(ANALYSE_PLAN_PROMPT)}
+                        disabled={createThread.isPending}
+                        title="Open a new thread with this plan attached and draft the analysis prompt"
                         className="text-[12.5px] px-3 py-1.5 rounded"
                         style={{
                           background: 'var(--c-card)',
                           border: '1px solid var(--c-hair-strong)',
-                          color: continueThreadId
-                            ? 'var(--c-ink)'
-                            : 'var(--c-subtle)',
-                          cursor: continueThreadId ? 'pointer' : 'not-allowed',
+                          color: 'var(--c-ink)',
+                          opacity: createThread.isPending ? 0.6 : 1,
                         }}
                       >
-                        Run in thread
+                        Analyse plan
                       </button>
                     </>
                   ) : null}
@@ -418,9 +386,4 @@ export function PlanPage({ planPath }: Props) {
 
     </div>
   );
-}
-
-
-function dispatchPrefill(prompt: string): void {
-  requestChatPrefill({ prompt });
 }
