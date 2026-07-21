@@ -47,6 +47,13 @@ export function ChatOverlay() {
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<ChatInputEditorHandle>(null);
   const stickToBottomRef = useRef(true); // start: przyklejony do dołu
+  // Prefill w locie: ustawiany SYNCHRONICZNIE przez listener CHAT_PREFILL_EVENT,
+  // konsumowany przez ten z timerow (prefill / draft-restore), ktory pierwszy
+  // zastanie zamontowany edytor. Bez tego prefill wyslany razem ze zmiana watku
+  // ginal: oba timery maja 50 ms, ale efekt draft-restore rejestruje sie PO
+  // commicie Reacta, wiec jego `handle.clear()` wykonywal sie jako ostatni i
+  // czyscil dopiero co wstawiony prompt.
+  const pendingPrefillRef = useRef<string | null>(null);
 
   const [hasInput, setHasInput] = useState(false);
   const [threadsOpen, setThreadsOpen] = useState(false);
@@ -199,6 +206,16 @@ export function ChatOverlay() {
     const t = window.setTimeout(() => {
       const handle = inputRef.current;
       if (!handle) return;
+      // Prefill wyslany razem z ta zmiana watku (np. „Run plan" na stronie planu)
+      // ma pierwszenstwo nad seedem/draftem/clear — inaczej skasowalibysmy prompt,
+      // ktory listener wlasnie wstawil albo za chwile wstawi.
+      const prefill = pendingPrefillRef.current;
+      if (prefill) {
+        pendingPrefillRef.current = null;
+        handle.setMarkdown(prefill);
+        setHasInput(!handle.isEmpty());
+        return;
+      }
       // One-shot seed (np. „Run new thread" na patchu) ma pierwszenstwo nad
       // draftem/clear. Czytamy swiezo ze store (nie z closure), konsumujemy raz.
       const seed = useChatStore.getState().seedPrompt;
@@ -297,10 +314,17 @@ export function ChatOverlay() {
       const detail = (e as CustomEvent<ChatPrefillDetail>).detail;
       if (!detail?.prompt) return;
       setChatOpen(true);
+      // Zaznacz prefill SYNCHRONICZNIE — jesli ta sama akcja przelaczyla watek,
+      // efekt draft-restore odpali sie po nas i musi zobaczyc, ze prompt jest
+      // w drodze (inaczej wyczysci edytor).
+      pendingPrefillRef.current = detail.prompt;
       // Defer so the editor has mounted before we try to populate it.
       setTimeout(() => {
         const handle = inputRef.current;
         if (!handle) return;
+        // Draft-restore mogl juz skonsumowac ten prefill — wstawiamy ten sam
+        // tekst, wiec powtorka jest nieszkodliwa; zerujemy flage niezaleznie.
+        pendingPrefillRef.current = null;
         handle.setMarkdown(detail.prompt);
         setHasInput(!handle.isEmpty());
         // Auto-send: pierwsza wiadomość w świeżym threadzie (np. initial-thread

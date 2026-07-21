@@ -53,7 +53,8 @@ export function PlanPage({ planPath }: Props) {
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
-  const setSeedPrompt = useChatStore((s) => s.setSeedPrompt);
+  /** Guards against a second create-thread before `isPending` has re-rendered. */
+  const runInFlightRef = useRef(false);
 
   const [dirtyContent, setDirtyContent] = useState<string | null>(null);
   const [view, setView] = useState<PlanView>('plan');
@@ -96,27 +97,30 @@ export function PlanPage({ planPath }: Props) {
   const runWithPrompt = useCallback(
     async (prompt: string) => {
       if (!plan) return;
+      // `createThread.isPending` only flips on the next render, so two clicks
+      // landing in the same tick (Run plan, then Analyse plan) would each POST
+      // create-thread and leave one of the two new threads orphaned. The ref
+      // closes that window.
+      if (runInFlightRef.current) return;
+      runInFlightRef.current = true;
       try {
         // Always a NEW thread with the plan attached (plan_path reference — the
         // plan body is never copied into the thread). Query invalidation is
         // handled by useCreateThreadFromPlan.
         const { threadId } = await createThread.mutateAsync({ planPath: plan.path });
         setError(null);
-        // setSeedPrompt BEFORE the thread switch: ChatOverlay's draft-restore
-        // effect fires on the chatThreadId change and would otherwise clear the
-        // editor right after the prefill event filled it (both use a 50 ms
-        // timer, the effect's is scheduled later so its clear() runs last).
-        // The seed is read with priority by that same effect — same reason as
-        // CreateBriefDialog / BriefsList.
-        setSeedPrompt(prompt);
         setChatThreadId(threadId);
         setChatOpen(true);
+        // The draft is editable and NOT sent — ChatOverlay holds the prompt
+        // across the thread switch above (see its pendingPrefillRef).
         requestChatPrefill({ prompt, autoSend: false });
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        runInFlightRef.current = false;
       }
     },
-    [plan, createThread, setSeedPrompt, setChatThreadId, setChatOpen],
+    [plan, createThread, setChatThreadId, setChatOpen],
   );
 
   const handleStartEditTitle = useCallback(() => {

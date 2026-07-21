@@ -8,9 +8,12 @@ import type { PlanService } from '../services/plan.js';
  * `GET /api/plans/:planId/blame` are all GONE. What stays here is plan's
  * bespoke thread-binding behavior (`binding.mode: 'attach'`), re-pathed
  * `:planId` (integer) → `:slug` (string, the file path relative to plansDir):
- * `create-thread` carries `initialMessage` semantics the generic
- * `POST .../threads` doesn't, and `last-thread`/`by-thread`/`by-anchor`/
- * `threads` are plan-specific queries with no generic-family equivalent.
+ * `create-thread` attaches the plan by `plan_path` (the generic
+ * `POST .../threads` has no such binding), and `last-thread`/`by-thread`/
+ * `by-anchor`/`threads` are plan-specific queries with no generic-family
+ * equivalent. Note `CreateThreadFromPlanRequest.initialMessage` is part of the
+ * documented wire shape but is deliberately NOT acted on here — the backend
+ * sends no message on the caller's behalf.
  *
  * 0.1.138: `POST /:slug/execute` (modes `new-session`/`continue`) is GONE —
  * running a plan is now a pure chat workflow: `create-thread` attaches the

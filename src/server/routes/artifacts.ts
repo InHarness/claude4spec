@@ -22,9 +22,10 @@ import { DomainError } from '../services/tags.js';
  * `plan`'s generic `/api/artifacts/plan/*` endpoints (list/detail/versions/
  * content/frontmatter) replace the pre-0.1.127 bespoke `GET /api/plans`,
  * `GET/PUT/PATCH /api/plans/:planId` routes — but `plan`'s own thread-binding
- * flows (`create-thread`, `execute`, `last-thread`, `by-thread`) stay bespoke
- * in `routes/plans.ts` (richer semantics than the generic `POST .../threads`:
- * `execute`'s two modes, `initialMessage`, etc.), so this adapter's
+ * flows (`create-thread`, `last-thread`, `by-thread`) stay bespoke in
+ * `routes/plans.ts` (richer semantics than the generic `POST .../threads`:
+ * the `plan_path` attach and plan-specific thread queries; 0.1.138 removed the
+ * `execute` endpoint that used to live there too), so this adapter's
  * `createThread`/`listThreads` exist only to satisfy `ArtifactKindAdapter` —
  * they delegate to the exact same `PlanService` methods `routes/plans.ts`
  * calls, so there's no behavior fork between the two paths.

@@ -40,13 +40,27 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
-/** A plan with a body — the footer only renders when `plan.body` is non-empty. */
-async function firstPlanPath(projectId: string): Promise<string> {
+/**
+ * A plan with a NON-EMPTY body. The footer is gated on `plan.body.trim()`
+ * (PlanPage), and the list response carries no body — so picking `data[0]`
+ * blindly can land on a stub plan whose footer legitimately never renders,
+ * turning every case below into a misleading timeout. Fetch details and pick
+ * the first plan that can actually be run.
+ */
+async function runnablePlanPath(projectId: string): Promise<string> {
   const res = await fetch(`${BASE}/api/projects/${projectId}/artifacts/plan`);
-  const body = (await res.json()) as { data: Array<{ path: string }> };
-  const path = body.data[0]?.path;
-  if (!path) throw new Error('no plan in this environment — seed one first');
-  return path;
+  const listed = (await res.json()) as { data: Array<{ path: string }> };
+  for (const { path } of listed.data) {
+    const detail = await fetch(
+      `${BASE}/api/projects/${projectId}/artifacts/plan/${encodeURIComponent(path)}`,
+    );
+    if (!detail.ok) continue;
+    const { data } = (await detail.json()) as { data: { body: string } };
+    if (data.body.trim().length > 0) return path;
+  }
+  throw new Error(
+    `no plan with a non-empty body in this environment (${listed.data.length} listed) — seed one first`,
+  );
 }
 
 describe.skipIf(!BASE)('plan footer — Run plan / Analyse plan', () => {
@@ -57,7 +71,7 @@ describe.skipIf(!BASE)('plan footer — Run plan / Analyse plan', () => {
   beforeAll(async () => {
     browser = await chromium.launch();
     project = await firstProject();
-    planPath = await firstPlanPath(project.id);
+    planPath = await runnablePlanPath(project.id);
   });
   afterAll(async () => {
     await browser?.close();
