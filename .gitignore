@@ -22,6 +22,7 @@ pages/
 .claude/skills/specyfikacja
 .claude/skills/pozycjonowanie
 .claude/skills/release-process
+.claude/skills/c4s-env-runner
 
 # Prywatne skrypty (osobne repo: InHarness/claude4spec-private)
 scripts/deploy-site.sh

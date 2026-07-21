@@ -486,7 +486,7 @@ export function ChatOverlay() {
             <>
               {messages.length === 0 && !isBusy && (
                 <div className="text-[13px] py-6" style={{ color: 'var(--c-muted)' }}>
-                  Start a conversation. Try "Add endpoint GET /users returning UserResponse".
+                  Start a conversation.
                 </div>
               )}
               {(() => {

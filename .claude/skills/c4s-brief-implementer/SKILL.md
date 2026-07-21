@@ -11,7 +11,7 @@ This skill describes how to implement a release brief in **your code repository*
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 
-**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. `c4s agent`/`c4s ask` calls in this skill (the optional spec-check in step 2, the env-runner order in step 5) and `c4s mark-brief-implemented` (step 9) all talk to it — `c4s read-brief`/`list-briefs`/`file-patch` do not (see filesystem-scoped note above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8). The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
+**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. `c4s agent`/`c4s ask` calls in this skill (the optional spec-check in step 2, the env-runner order in step 5) and `c4s mark-brief-implemented` (step 9) all talk to it — `c4s read-brief`/`list-briefs`/`file-patch` do not (see filesystem-scoped note above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8) — its mechanics live in the shared **`c4s-env-runner` skill**, not in this file. The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
 
 ## Workflow
 
@@ -97,50 +97,42 @@ In each of these cases, ask the user via **AskUserQuestion** whether to set the 
 
 ### 5. Smoke-test via env-runner
 
-Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Never run Docker yourself for this (`docker/setup-env.sh`, `docker compose up`, etc.) — every environment, including a plain brief smoke-test, goes through the centralized `env-runner` broker. You place an order describing what you need; the operator translates it into a manifest and stands up an isolated, port-bumped environment for you — nothing more; it does not exercise or test the change for you.
+Before opening the PR, launch and exercise the change end-to-end — don't hand off on green unit tests alone. Never run Docker yourself.
 
-Push the branch first — env-runner clones by git ref, so it needs something on `origin` to check out:
+**Read the `c4s-env-runner` skill and follow it.** It owns everything about ordering an environment; nothing of that is repeated here.
+
+Push the branch first — the environment is built from it:
 
 ```bash
 git push -u origin "brief/$brief_slug"
 ```
 
-Then compose an order following the template from the env-runner spec (`wytyczne-implementatorow.md`), filling in only what deviates from the defaults (`app` = registry@main, `api.enabled` = false, no plugins, `data` = empty):
+Then order an environment named `$brief_slug`, built from that branch, whose purpose is a smoke-test of this branch. Don't put the brief's file path or name in the order — env-runner knows nothing about briefs.
 
-```
-Cel środowiska: smoke-test zmiany z branch brief/<brief_slug>
-Nazwa env:      <brief_slug>
-Aplikacja:      local <origin-url>@brief/<brief_slug>
-API:            nie
-Pluginy:
-Dane:           empty
-```
-
-- `Cel środowiska` is a free-text label for the operator only — never reference a brief's file path/name there. `env-runner` is a separate spec project with no access to `app-spec`'s briefs; a `.md`-looking filename in this line has previously made the operator try (and fail) to go locate that file in its own project instead of just building the manifest from the order's fields below.
-- `<origin-url>` is this repo's own remote: `git remote get-url origin`.
-- `mode: local` is required here (not `registry`) — the brief's code isn't published, so env-runner must build the app from your pushed branch.
-- Flip `API` to `tak` only if the brief specifically exercises the remote/API path (e.g. remote login, account features). Add a `seed:<path>` under `Dane` only if the brief needs pre-existing fixture data.
-- If this brief also touches `agent-adapters`/`agent-chat`, say so in `Cel środowiska` and expect the operator to pin them under the app's `libs:` (any `ref` there forces a local app build) — this replaces the old `app-local` vs `app-registry` choice.
-
-Send it:
-
-```bash
-c4s agent "<order>" --project 'env-runner' --workspace 'default'
-```
-
-The operator replies with the env name, its port map/URL, and a `threadId` — record the `threadId`, you'll need it for every follow-up (re-create after a new push, destroy at the end). Exercise the change at the returned URL. Report back to the user: the env name, the URL/ports, and the `threadId` — the user gets their own hands-on look at the same environment you just exercised. Leave it running; don't ask the operator to destroy it unless the user requests a teardown.
-
-This channel needs `c4s` installed and a running `npx @inharness-ai/claude4spec` server (see terminology note above — same precondition as the step 2 synchronous-ask path). If either is missing, **stop and ask the user** to start it — do not fall back to running `docker compose`/`docker/setup-env.sh` yourself; that self-service path is retired.
-
-If you push new commits later (a fixup, or a change made while investigating drift), push again and message the **same thread** so the operator can re-create the environment — don't file a brand-new order:
-
-```bash
-c4s agent "Nowy push na brief/$brief_slug — odśwież środowisko." --thread <threadId> --project 'env-runner' --workspace 'default'
-```
+The operator only stands the environment up; **you** exercise the change at the URL it returns. Report the env name, URL and `threadId` to the user, and leave it running.
 
 If the smoke test reveals drift, file a patch (step 6).
 
 **If the environment never comes up, do not shrug it off and continue to the PR** — go to step 6a, which is a hard stop. A change you could not run is not a change you can hand off. This includes the case where the failure has nothing to do with your branch.
+
+### 5b. Exercise it in a real browser, not just with `curl`
+
+"Exercise the change" in step 5 means a **browser**. A green `curl` proves the server answered; it does not prove the page rendered, and it cannot see what the page logs. Run the repo's committed e2e suite against the URL env-runner returned:
+
+```bash
+C4S_E2E_BASE_URL=<url> npm run test:e2e     # whole suite
+npm run test:e2e -- -t 'purge'              # one case, by name or [ac:<slug>] marker
+```
+
+The suite skips itself when `C4S_E2E_BASE_URL` is unset, and is excluded from `npm test`, so it never runs against nothing.
+
+For behavior specific to THIS brief that no committed test covers yet, write a throwaway Playwright script in the scratchpad (`playwright` is a devDependency, browsers are cached — `chromium.launch()` is headless; pass `{ headless: false }` only when the user asks to watch). In every such script:
+
+- **Always assert zero console errors and zero responses with status ≥ 400.** This is the highest-value assertion in the whole step — it is what caught two 404s on a page that `curl` reported as a clean `200`.
+- Save screenshots to the scratchpad and give the user the paths.
+- Assert on rendered content (a heading, a list row), not just on the final URL — a white SPA shell also returns 200.
+
+If a brief's behavior is worth keeping honest over time, don't leave it in the scratchpad: add it to `tests/e2e/` as `it('[ac:<slug>] …')`. That marker is the repo's traceability contract (see the `ac-test-implementer` skill) and `npm run test:ac-coverage` counts it with no further wiring. Browser-driven cases can also retire entries from `tests/ac-skiplist.json` whose stated reason is "UI-only / not automatable in Vitest" — that reason stops being true once the test exists.
 
 ### 6. Feedback loop (patches)
 
@@ -196,13 +188,7 @@ gh pr create --draft --base main \
 
 Only do this once the user explicitly tells you the PR is merged (or asks you to merge it yourself) — never proactively. Then, from the **primary repo checkout** (not the worktree, since it has the target branch, e.g. `main`, checked out and `git worktree remove`/branch deletion must run from outside the worktree being removed):
 
-First, ask the env-runner broker to tear down the environment you left running for this brief's smoke-test (step 5), in the same thread:
-
-```bash
-c4s agent "Zamknij środowisko $brief_slug (envr destroy)." --thread <threadId> --project 'env-runner' --workspace 'default'
-```
-
-`envr destroy` removes the containers, network and volumes and frees the port block — no local Docker inspection needed. Then clean up the git side:
+First, tear down the environment you left running for this brief's smoke-test (step 5) — per the `c4s-env-runner` skill, in the same thread. Nothing to clean up in local Docker. Then clean up the git side:
 
 ```bash
 git fetch origin
@@ -222,7 +208,7 @@ This keeps the local checkout's compiled output in sync with the code you just m
 
 If you merge the PR yourself (`gh pr merge --draft` PRs need `gh pr ready` first), pass `--delete-branch` — but still verify locally afterward: `gh pr merge` run from inside the worktree can fail the local branch-delete/checkout step (base branch is checked out elsewhere), so don't assume it fully succeeded without checking (`git ls-remote --heads origin "brief/$brief_slug"` should come back empty).
 
-If the `envr destroy` request above didn't go through for some reason, follow up in the same thread with `c4s agent "..." --thread <threadId> --project 'env-runner' --workspace 'default'` rather than tearing anything down locally.
+If the `envr destroy` request above didn't go through for some reason, follow up in the same thread rather than tearing anything down locally.
 
 ### 9. Mark brief as implemented
 
@@ -240,4 +226,6 @@ The spec-author picks up your patches on the spec side and folds each deviation 
 
 ## Notes
 
-This is a **base skill** generated by claude4spec **on demand** — you got it either by downloading the ZIP from the Settings page or by running `c4s install-skills`, which writes it into your code repo's `.claude/skills/`. The base skill covers reading briefs and asking the c4s agent questions; **this project's copy additionally pins a git/PR flow** on top of it (worktree → fresh branch → stage `package.json` version from `to_release` → push → order an environment from env-runner → smoke-test (leave it running) → draft PR → stop → post-merge cleanup including `envr destroy`, steps 3/4a/5/7/8 above). It is **yours to edit** — nothing overwrites it automatically. But a manual refresh (re-downloading the ZIP, or re-running `c4s install-skills`) **will** overwrite this file wholesale, including the pinned git/PR customization — re-apply steps 3/4a/5/7/8 afterward rather than being surprised they're gone.
+This is a **base skill** generated by claude4spec **on demand** — you got it either by downloading the ZIP from the Settings page or by running `c4s install-skills`, which writes it into your code repo's `.claude/skills/`. The base skill covers reading briefs and asking the c4s agent questions; **this project's copy additionally pins a git/PR flow** on top of it (worktree → fresh branch → stage `package.json` version from `to_release` → push → order an environment from env-runner → smoke-test (leave it running) → browser pass → draft PR → stop → post-merge cleanup including `envr destroy`, steps 3/4a/5/5b/7/8 above). It is **yours to edit** — nothing overwrites it automatically. But a manual refresh (re-downloading the ZIP, or re-running `c4s install-skills`) **will** overwrite this file wholesale, including the pinned git/PR customization — re-apply steps 3/4a/5/5b/7/8 afterward rather than being surprised they're gone.
+
+**Env-runner rules are not here.** Step 5 and the teardown in step 8 delegate to the `c4s-env-runner` skill. Keep it that way — never re-inline them.
