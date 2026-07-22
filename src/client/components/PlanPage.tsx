@@ -19,6 +19,7 @@ import { SegmentedControl } from './SegmentedControl.js';
 import { OutlineButton } from './OutlineButton.js';
 import { useOutlineStore } from '../state/outline.js';
 import { stem } from '../lib/artifact-path.js';
+import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 
 interface Props {
   planPath: string;
@@ -91,19 +92,11 @@ export function PlanPage({ planPath }: Props) {
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
     try {
-      // `PUT .../content` replaces the WHOLE file, but the tiptap editor only
-      // ever holds the BODY — so the frontmatter has to be composed back on
-      // before sending. Without this the server parses a file with no
-      // frontmatter at all and rejects the save as mutating every immutable
-      // key (`type, created_at, created_by`). Mirrors BriefEditor.doSave().
-      const matterMod = await import('gray-matter');
-      const fullContent = matterMod.default.stringify(
-        dirtyContent,
-        plan.frontmatter as unknown as Record<string, unknown>,
-      );
       await savePlan.mutateAsync({
         planPath: plan.path,
-        content: fullContent,
+        // The editor holds the body only; `PUT .../content` replaces the whole
+        // file. Carry the original frontmatter across or the save is rejected.
+        content: withFrontmatterOf(plan.content, dirtyContent),
         expectedHash: plan.hash,
       });
       setDirtyContent(null);
