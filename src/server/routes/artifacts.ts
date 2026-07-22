@@ -192,7 +192,9 @@ function extractPath(params: unknown): string {
 /** `?limit`/`?offset` with the family's defaults; anything non-numeric is a 400. */
 function parsePaging(query: Record<string, unknown>): { limit: number; offset: number } {
   const read = (raw: unknown, name: string, fallback: number): number => {
-    if (raw === undefined) return fallback;
+    // `?limit=` with no value must not become `Number('') === 0`, which would
+    // silently return an empty page instead of the default one.
+    if (raw === undefined || raw === '') return fallback;
     const n = Number(raw);
     if (!Number.isInteger(n) || n < 0) {
       throw new DomainError('VALIDATION', `${name} must be a non-negative integer`);
