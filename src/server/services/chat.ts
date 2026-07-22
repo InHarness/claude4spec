@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type {
+  ArtifactThreadListItem,
   ChatContextType,
   ChatMessage,
   ChatMessageStatus,
@@ -86,6 +87,16 @@ export interface QueuedMessageRecord {
 export const QUEUE_LIMIT = 20;
 
 /**
+ * `chat_thread` columns an artifact kind may bind its threads to — the
+ * whitelist {@link ChatService.listThreadsByArtifact} validates against before
+ * interpolating one into SQL. Mirrors every `binding.threadColumn` in
+ * `artifactRegistry`; adding a kind means adding its column here too.
+ */
+export const ARTIFACT_THREAD_COLUMNS = ['brief_path', 'patch_path', 'plan_path'] as const;
+
+export type ArtifactThreadColumn = (typeof ARTIFACT_THREAD_COLUMNS)[number];
+
+/**
  * Column list for thread *list* projections (ChatThreadMeta). Deliberately omits
  * the potentially-large `initial_system_prompt` blob (up to ~85 KB/row, ~10 MB
  * across this DB) — a list only needs the boolean `has_system_prompt`; the full
@@ -136,39 +147,81 @@ export class ChatService {
     return this.getThreadRow(id);
   }
 
-  /** M21: list threads attached to a brief (path-keyed lookup). */
-  listThreadsForBrief(briefPath: string): ChatThreadMeta[] {
+  /**
+   * 0.1.139: the ONE home for "list the chat threads referencing this artifact",
+   * for every kind in `artifactRegistry` — it replaced the three near-identical
+   * `listThreadsForBrief`/`listThreadsForPatch`/`listThreadsForPlan` queries.
+   * Callers pass the kind's `binding.threadColumn`, so widening `ArtifactKind`
+   * needs no change here.
+   *
+   * Two binding contracts (see brief 0-1-138-to-0-1-139), both load-bearing on a
+   * real database (~500 threads / ~37k messages):
+   *  - `messageCount` comes from the correlated subquery covered by
+   *    `idx_cm_thread`, NEVER a `LEFT JOIN chat_message … GROUP BY t.id`
+   *    (GROUP-BY-then-LIMIT measured ~2 s per fetch vs ~10 ms here).
+   *  - the projection never selects `initial_system_prompt` (a blob up to
+   *    ~85 KB/row) — only the boolean `has_system_prompt` derived from it.
+   *    That's why this builds its own column list instead of reusing
+   *    {@link THREAD_META_COLUMNS}: the result is the wire DTO, not a
+   *    `ChatThread`.
+   *
+   * `id` breaks ties in the sort: `updated_at` is written by `datetime('now')`
+   * at whole-second granularity, so threads attached in one burst share a
+   * timestamp. Without a tiebreaker SQLite may order a tied group differently
+   * between two `LIMIT/OFFSET` statements, and a paging caller would then see
+   * one thread twice and another never — plus `isLast` would point at an
+   * arbitrary member of the newest tie group.
+   *
+   * Filters on the reference column alone. The brief/patch queries this
+   * replaced also pinned `context_type`, which was redundant: `createThread`
+   * enforces `context_type='brief' ⇒ brief_path` (L2) and `'patch' ⇒
+   * patch_path` (M23), so those sets are homogeneous anyway — while a plan's
+   * threads are deliberately heterogeneous (`binding.mode: 'attach'`, any
+   * thread kind can carry a `plan_path`), which is why the DTO carries
+   * `contextType`/`planMode` per row.
+   */
+  listThreadsByArtifact(opts: {
+    threadColumn: ArtifactThreadColumn;
+    path: string;
+    limit?: number;
+    offset?: number;
+  }): ArtifactThreadListItem[] {
+    const { threadColumn, path, limit = 20, offset = 0 } = opts;
+    // `threadColumn` is the one fragment interpolated into SQL rather than
+    // bound — so it must come from the whitelist, never straight off a request.
+    if (!(ARTIFACT_THREAD_COLUMNS as readonly string[]).includes(threadColumn)) {
+      throw new DomainError('VALIDATION', `unsupported artifact thread column '${threadColumn}'`);
+    }
     const rows = this.db
       .prepare(
-        `SELECT ${THREAD_META_COLUMNS},
+        `SELECT t.id, t.title, t.context_type, t.plan_mode, t.updated_at,
+                (t.initial_system_prompt IS NOT NULL) AS has_system_prompt,
                 (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
            FROM chat_thread t
-          WHERE t.brief_path = ? AND t.context_type = 'brief'
-            AND t.parent_thread_id IS NULL
-          ORDER BY t.updated_at DESC`,
+          WHERE t.${threadColumn} = ? AND t.parent_thread_id IS NULL
+          ORDER BY t.updated_at DESC, t.id DESC
+          LIMIT ? OFFSET ?`,
       )
-      .all(briefPath) as Array<ChatThreadRow & { message_count: number }>;
-    return rows.map((r) => ({
-      ...this.hydrateThread(r),
+      .all(path, limit, offset) as Array<{
+      id: string;
+      title: string | null;
+      context_type: string;
+      plan_mode: number;
+      updated_at: string;
+      has_system_prompt: number;
+      message_count: number;
+    }>;
+    return rows.map((r, i) => ({
+      id: r.id,
+      title: r.title,
+      contextType: r.context_type,
+      planMode: r.plan_mode === 1,
       messageCount: r.message_count,
-    }));
-  }
-
-  /** M23: list threads attached to a patch (path-keyed lookup). */
-  listThreadsForPatch(patchPath: string): ChatThreadMeta[] {
-    const rows = this.db
-      .prepare(
-        `SELECT ${THREAD_META_COLUMNS},
-                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
-           FROM chat_thread t
-          WHERE t.patch_path = ? AND t.context_type = 'patch'
-            AND t.parent_thread_id IS NULL
-          ORDER BY t.updated_at DESC`,
-      )
-      .all(patchPath) as Array<ChatThreadRow & { message_count: number }>;
-    return rows.map((r) => ({
-      ...this.hydrateThread(r),
-      messageCount: r.message_count,
+      hasSystemPrompt: r.has_system_prompt === 1,
+      updatedAt: r.updated_at,
+      // Rows are `updated_at DESC`, so row 0 of the FIRST page is the freshest
+      // thread — the "open last thread" shortcut. On any later page no row is.
+      isLast: offset === 0 && i === 0,
     }));
   }
 
@@ -195,31 +248,16 @@ export class ChatService {
   /**
    * 0.1.127 M10: plan attach is N:1/optional and NOT tied to a `context_type`
    * (unlike brief/patch's `anchor` mode) — any thread kind can carry a
-   * `plan_path`. `attachPlanToThread`/`listThreadsForPlan`/`threadCountForPlan`/
+   * `plan_path`. `attachPlanToThread`/`threadCountForPlan`/
    * `findLastThreadIdForPlan` mirror the brief/patch path-keyed lookups above,
-   * minus the `context_type` filter.
+   * minus the `context_type` filter. (Listing itself moved to
+   * {@link listThreadsByArtifact} in 0.1.139.)
    */
   attachPlanToThread(threadId: string, planPath: string): void {
     const info = this.db
       .prepare(`UPDATE chat_thread SET plan_path = ?, updated_at = datetime('now') WHERE id = ?`)
       .run(planPath, threadId);
     if (info.changes === 0) throw new DomainError('NOT_FOUND', `thread '${threadId}' not found`);
-  }
-
-  listThreadsForPlan(planPath: string): ChatThreadMeta[] {
-    const rows = this.db
-      .prepare(
-        `SELECT ${THREAD_META_COLUMNS},
-                (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
-           FROM chat_thread t
-          WHERE t.plan_path = ? AND t.parent_thread_id IS NULL
-          ORDER BY t.updated_at DESC`,
-      )
-      .all(planPath) as Array<ChatThreadRow & { message_count: number }>;
-    return rows.map((r) => ({
-      ...this.hydrateThread(r),
-      messageCount: r.message_count,
-    }));
   }
 
   threadCountForPlan(planPath: string): number {

@@ -18,7 +18,6 @@ import type {
   ArtifactThreadCreateRequest,
   BriefCreateRequest,
   BriefCreateResult,
-  BriefThreadSummary,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
 import { encodeArtifactPath } from './artifact-path.js';
@@ -46,7 +45,6 @@ export interface BriefListItemView {
 }
 
 export interface BriefDetailResponse extends ArtifactResponse {
-  threads: BriefThreadSummary[];
 }
 
 /**

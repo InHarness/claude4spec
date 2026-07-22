@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { PatchStatus } from '../../shared/entities.js';
 import { patchesApi } from '../lib/patches-api.js';
+import { artifactThreadsKey } from './useArtifactThreads.js';
 
 const keys = {
   list: (brief?: string, status?: string) =>
@@ -56,6 +57,7 @@ export function useCreatePatchThread(patchPath: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(patchPath) });
       qc.invalidateQueries({ queryKey: ['patches', 'list'] });
+      qc.invalidateQueries({ queryKey: artifactThreadsKey('patch', patchPath) });
     },
   });
 }

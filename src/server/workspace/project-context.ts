@@ -848,6 +848,7 @@ async function buildInner(
       patch: patchService,
       plan: planService,
       pageVersions,
+      chat: chatService,
     }),
   );
   router.use('/agent', agentRouter(agentCredentialService));

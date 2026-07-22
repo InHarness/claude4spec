@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { SegmentedControl } from './SegmentedControl.js';
 import { Link } from '@tanstack/react-router';
-import { FileText, MessageSquare, MessageSquarePlus, Settings, Check, Circle, ChevronRight } from 'lucide-react';
+import { FileText, Settings, Check, Circle, ChevronRight } from 'lucide-react';
 import {
   useBrief,
   useCreateBriefThread,
@@ -9,8 +9,10 @@ import {
 } from '../hooks/useBriefs.js';
 import type { BriefFrontmatterView } from '../lib/briefs-api.js';
 import { useChatStore } from '../state/chat.js';
+import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { BriefEditor } from './BriefEditor.js';
-import { BriefVersionHistory } from './BriefVersionHistory.js';
+import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
+import { FileVersionHistory } from './FileVersionHistory.js';
 
 interface Props {
   briefPath: string;
@@ -30,6 +32,9 @@ export function BriefDetail({ briefPath }: Props) {
   const { data: brief, isLoading } = useBrief(briefPath);
   const setImplementedMutation = useSetBriefImplemented(briefPath);
   const createThread = useCreateBriefThread(briefPath);
+  // 0.1.139: the panel owns its list (generic GET /api/artifacts/brief/:path/threads)
+  // instead of reading `.threads` off the detail response.
+  const threadsQuery = useArtifactThreads('brief', briefPath);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const [view, setView] = useState<ViewTab>('artifact');
@@ -187,84 +192,20 @@ export function BriefDetail({ briefPath }: Props) {
           </div>
         )}
         {view === 'threads' && (
-          <ThreadsPanel
-            threads={brief.threads}
+          <ArtifactThreadsPanel
+            title="Editorial threads"
+            emptyHint='Click "New conversation" to start one with the brief author agent.'
+            threads={threadsQuery.threads}
             onOpen={handleOpenThread}
-            onCreate={handleNewThread}
+            onCreate={() => void handleNewThread()}
             creating={createThread.isPending}
+            loading={threadsQuery.isPending}
+            hasMore={threadsQuery.hasNextPage}
+            loadingMore={threadsQuery.isFetchingNextPage}
+            onLoadMore={() => void threadsQuery.fetchNextPage()}
           />
         )}
-        {view === 'history' && (
-          <div className="flex-1 overflow-auto">
-            <BriefVersionHistory briefPath={briefPath} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ThreadsPanel({
-  threads,
-  onOpen,
-  onCreate,
-  creating,
-}: {
-  threads: Array<{ id: string; title: string | null; updatedAt: string; messageCount: number }>;
-  onOpen(id: string): void;
-  onCreate(): void;
-  creating: boolean;
-}) {
-  return (
-    <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 720, padding: '24px 32px 48px' }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--c-ink)' }}>
-            Editorial threads
-          </h3>
-          <button
-            onClick={onCreate}
-            disabled={creating}
-            className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px]"
-            style={{ background: 'var(--c-accent)', color: '#fff', opacity: creating ? 0.5 : 1 }}
-          >
-            <MessageSquarePlus size={11} />
-            {creating ? 'Creating…' : 'New conversation'}
-          </button>
-        </div>
-        {threads.length === 0 ? (
-          <div
-            className="text-center py-12 rounded-lg"
-            style={{
-              background: 'var(--c-card)',
-              border: '1px dashed var(--c-hair-strong)',
-              color: 'var(--c-subtle)',
-            }}
-          >
-            <div className="text-[13px]">No editorial threads yet.</div>
-            <div className="text-[11.5px] mt-1">Click "New conversation" to start one with the brief author agent.</div>
-          </div>
-        ) : (
-          <ul className="space-y-1.5">
-            {threads.map((t) => (
-              <li key={t.id}>
-                <button
-                  onClick={() => onOpen(t.id)}
-                  className="w-full text-left px-3 py-2 rounded-md flex items-center gap-2"
-                  style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-                >
-                  <MessageSquare size={12} style={{ color: 'var(--c-muted)' }} />
-                  <span className="flex-1 text-[12.5px] truncate" style={{ color: 'var(--c-ink)' }}>
-                    {t.title ?? '(untitled)'}
-                  </span>
-                  <span className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
-                    {t.messageCount} msg
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
+        {view === 'history' && <FileVersionHistory kind="brief" path={briefPath} />}
       </div>
     </div>
   );

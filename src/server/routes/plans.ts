@@ -10,10 +10,14 @@ import type { PlanService } from '../services/plan.js';
  * `:planId` (integer) → `:slug` (string, the file path relative to plansDir):
  * `create-thread` attaches the plan by `plan_path` (the generic
  * `POST .../threads` has no such binding), and `last-thread`/`by-thread`/
- * `by-anchor`/`threads` are plan-specific queries with no generic-family
- * equivalent. Note `CreateThreadFromPlanRequest.initialMessage` is part of the
- * documented wire shape but is deliberately NOT acted on here — the backend
- * sends no message on the caller's behalf.
+ * `by-anchor` are plan-specific queries with no generic-family equivalent.
+ * Note `CreateThreadFromPlanRequest.initialMessage` is part of the documented
+ * wire shape but is deliberately NOT acted on here — the backend sends no
+ * message on the caller's behalf.
+ *
+ * 0.1.139: `GET /:slug/threads` is GONE — listing an artifact's threads is now
+ * generic (`GET /api/artifacts/plan/:path/threads`, one query for brief/patch/
+ * plan alike). `last-thread` stays: it is a single-row shortcut, not a listing.
  *
  * 0.1.138: `POST /:slug/execute` (modes `new-session`/`continue`) is GONE —
  * running a plan is now a pure chat workflow: `create-thread` attaches the
@@ -44,14 +48,6 @@ export function plansRouter(plan: PlanService): Router {
           .status(404)
           .json({ error: { code: 'NOT_FOUND', message: 'plan anchor not found' } });
       res.json(row);
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:slug/threads', (req, res, next) => {
-    try {
-      res.json({ data: plan.listThreadsForPlan(req.params.slug) });
     } catch (err) {
       next(err);
     }

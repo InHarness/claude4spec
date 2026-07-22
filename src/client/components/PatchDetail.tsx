@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { SegmentedControl } from './SegmentedControl.js';
 import { Link } from '@tanstack/react-router';
-import { FileWarning, MessageSquare, MessageSquarePlus, Settings, Check, Circle } from 'lucide-react';
+import { FileWarning, Settings, Check, Circle } from 'lucide-react';
 import { usePatch, useCreatePatchThread, useUpdatePatchStatus } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { useChatStore } from '../state/chat.js';
+import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PatchEditor } from './PatchEditor.js';
+import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
 
 interface Props {
   patchPath: string;
@@ -22,6 +24,9 @@ type ViewTab = 'artifact' | 'threads';
 export function PatchDetail({ patchPath }: Props) {
   const { data: patch, isLoading } = usePatch(patchPath);
   const createThread = useCreatePatchThread(patchPath);
+  // 0.1.139: the panel owns its list (generic GET /api/artifacts/patch/:path/threads)
+  // instead of reading `.threads` off the detail response.
+  const threadsQuery = useArtifactThreads('patch', patchPath);
   const setStatus = useUpdatePatchStatus(patchPath);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -178,80 +183,18 @@ export function PatchDetail({ patchPath }: Props) {
           </div>
         )}
         {view === 'threads' && (
-          <ThreadsPanel
-            threads={patch.threads}
+          <ArtifactThreadsPanel
+            title="Resolution threads"
+            emptyHint='Click "New conversation" to start one with the spec author agent.'
+            threads={threadsQuery.threads}
             onOpen={handleOpenThread}
             onCreate={handleNewThread}
             creating={createThread.isPending}
+            loading={threadsQuery.isPending}
+            hasMore={threadsQuery.hasNextPage}
+            loadingMore={threadsQuery.isFetchingNextPage}
+            onLoadMore={() => void threadsQuery.fetchNextPage()}
           />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ThreadsPanel({
-  threads,
-  onOpen,
-  onCreate,
-  creating,
-}: {
-  threads: Array<{ id: string; title: string | null; updatedAt: string; messageCount: number }>;
-  onOpen(id: string): void;
-  onCreate(): void;
-  creating: boolean;
-}) {
-  return (
-    <div className="flex-1 overflow-auto nice-scroll">
-      <div className="mx-auto" style={{ maxWidth: 720, padding: '24px 32px 48px' }}>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-[14px] font-semibold" style={{ color: 'var(--c-ink)' }}>
-            Resolution threads
-          </h3>
-          <button
-            onClick={onCreate}
-            disabled={creating}
-            className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px]"
-            style={{ background: 'var(--c-accent)', color: '#fff', opacity: creating ? 0.5 : 1 }}
-          >
-            <MessageSquarePlus size={11} />
-            {creating ? 'Creating…' : 'Change spec according to patch'}
-          </button>
-        </div>
-        {threads.length === 0 ? (
-          <div
-            className="text-center py-12 rounded-lg"
-            style={{
-              background: 'var(--c-card)',
-              border: '1px dashed var(--c-hair-strong)',
-              color: 'var(--c-subtle)',
-            }}
-          >
-            <div className="text-[13px]">No resolution threads yet.</div>
-            <div className="text-[11.5px] mt-1">
-              Click "Change spec according to patch" to start one.
-            </div>
-          </div>
-        ) : (
-          <ul className="space-y-1.5">
-            {threads.map((t) => (
-              <li key={t.id}>
-                <button
-                  onClick={() => onOpen(t.id)}
-                  className="w-full text-left px-3 py-2 rounded-md flex items-center gap-2"
-                  style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-                >
-                  <MessageSquare size={12} style={{ color: 'var(--c-muted)' }} />
-                  <span className="flex-1 text-[12.5px] truncate" style={{ color: 'var(--c-ink)' }}>
-                    {t.title ?? '(untitled)'}
-                  </span>
-                  <span className="text-[10.5px]" style={{ color: 'var(--c-subtle)' }}>
-                    {t.messageCount} msg
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
         )}
       </div>
     </div>

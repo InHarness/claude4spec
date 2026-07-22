@@ -6,6 +6,7 @@ import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
 import { ApiError } from '../lib/api-core.js';
+import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 
 interface Props {
   patchPath: string;
@@ -58,15 +59,21 @@ export function PatchEditor({ patchPath }: Props) {
 
   async function doSave(newBody: string) {
     if (!patch) return;
-    const matterMod = await import('gray-matter');
-    const fullContent = matterMod.default.stringify(
-      newBody,
-      patch.frontmatter as Record<string, unknown>,
-    );
+    // 0.1.139: was `gray-matter.stringify`, which throws "Buffer is not
+    // defined" in the browser (gray-matter is a Node library) — so every patch
+    // autosave died inside this handler and the edits were silently lost.
+    const fullContent = withFrontmatterOf(patch.content, newBody);
     try {
       await update.mutateAsync({ content: fullContent, expectedHash: patch.hash });
       lastSavedBodyRef.current = newBody;
-      isDirtyRef.current = false;
+      // Only clear the dirty flag if the editor still holds exactly what we
+      // just saved. Keystrokes landing WHILE the request was in flight leave
+      // newer text behind; clearing unconditionally would let the hydrate
+      // effect below overwrite them with the older server copy when
+      // `onSuccess` invalidates the detail query. (Unreachable before 0.1.139
+      // only because every save threw at `gray-matter.stringify`.)
+      const live = (editor?.storage.markdown.getMarkdown() as string | undefined) ?? newBody;
+      if (live === newBody) isDirtyRef.current = false;
       setConflict(false);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'PATCH_CONFLICT') {

@@ -6,6 +6,7 @@ import '../tiptap/registrations.js';
 import { EditorFactory } from '../tiptap/EditorFactory.js';
 import { invokeSlash } from '../tiptap/slashInvoke.js';
 import { ApiError } from '../lib/api-core.js';
+import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { confirmDestructive } from '../ui/events.js';
 
@@ -68,17 +69,25 @@ export function BriefEditor({ briefPath }: Props) {
 
   async function doSave(newBody: string) {
     if (!brief) return;
-    // Compose pelny content: frontmatter (immutable) + body. gray-matter w briefs-api/server
-    // re-serializuje deterministycznie.
-    const matterMod = await import('gray-matter');
-    const fullContent = matterMod.default.stringify(newBody, brief.frontmatter as Record<string, unknown>);
+    // Compose pelny content: frontmatter (immutable) + body.
+    // 0.1.139: bylo `gray-matter.stringify` — ktore w przegladarce rzuca
+    // "Buffer is not defined" (gray-matter to lib node'owy), przez co KAZDY
+    // autosave briefu cicho padal wewnatrz tego handlera.
+    const fullContent = withFrontmatterOf(brief.content, newBody);
     try {
       await update.mutateAsync({
         content: fullContent,
         expectedHash: brief.hash,
       });
       lastSavedBodyRef.current = newBody;
-      isDirtyRef.current = false;
+      // Only clear the dirty flag if the editor still holds exactly what we
+      // just saved. Keystrokes landing WHILE the request was in flight leave
+      // newer text behind; clearing unconditionally would let the hydrate
+      // effect below overwrite them with the older server copy when
+      // `onSuccess` invalidates the detail query. (Unreachable before 0.1.139
+      // only because every save threw at `gray-matter.stringify`.)
+      const live = (editor?.storage.markdown.getMarkdown() as string | undefined) ?? newBody;
+      if (live === newBody) isDirtyRef.current = false;
       setConflict(null);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'BRIEF_CONFLICT') {

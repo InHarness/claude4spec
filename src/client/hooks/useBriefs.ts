@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { BriefCreateRequest } from '../../shared/entities.js';
-import { briefsApi, encodeBriefPath } from '../lib/briefs-api.js';
-import { handle, apiFetch } from '../lib/api-core.js';
+import { briefsApi } from '../lib/briefs-api.js';
+import { artifactVersionsKey } from './useArtifactVersions.js';
+import { artifactThreadsKey } from './useArtifactThreads.js';
 
 const keys = {
   list: (implemented?: boolean) => ['briefs', 'list', implemented ?? null] as const,
   detail: (path: string) => ['briefs', 'detail', path] as const,
-  versions: (path: string) => ['briefs', 'versions', path] as const,
+  versions: (path: string) => artifactVersionsKey('brief', path),
 };
 
 export function useBriefs(opts: { implemented?: boolean } = {}) {
@@ -70,36 +71,13 @@ export function useSetBriefImplemented(briefPath: string) {
   });
 }
 
-interface BriefVersionListItem {
-  id: number;
-  path: string;
-  version: number;
-  op: 'create' | 'update' | 'delete';
-  changedBy: 'user' | 'agent' | 'filesystem';
-  releaseId: number | null;
-  serializerVersion: string;
-  createdAt: string;
-  changeSummary: string | null;
-}
-
-export function useBriefVersions(briefPath: string | null) {
-  return useQuery({
-    enabled: !!briefPath,
-    queryKey: keys.versions(briefPath ?? ''),
-    queryFn: async () => {
-      const res = await apiFetch(`/api/artifacts/brief/${encodeBriefPath(briefPath as string)}/versions`);
-      const env = await handle<{ data: BriefVersionListItem[] }>(res);
-      return env.data;
-    },
-  });
-}
-
 export function useCreateBriefThread(briefPath: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (name?: string) => briefsApi.createThread(briefPath, name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(briefPath) });
+      qc.invalidateQueries({ queryKey: artifactThreadsKey('brief', briefPath) });
     },
   });
 }
