@@ -38,7 +38,10 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
-async function firstArtifactPath(projectId: string, kind: 'plan' | 'brief'): Promise<string> {
+async function firstArtifactPath(
+  projectId: string,
+  kind: 'plan' | 'brief' | 'patch',
+): Promise<string> {
   const res = await fetch(`${BASE}/api/projects/${projectId}/artifacts/${kind}`);
   const { data } = (await res.json()) as { data: Array<{ path: string }> };
   const path = data[0]?.path;
@@ -51,12 +54,14 @@ describe.skipIf(!BASE)('artifact threads panel', () => {
   let project: WorkspaceProject;
   let planPath: string;
   let briefPath: string;
+  let patchPath: string | null;
 
   beforeAll(async () => {
     browser = await chromium.launch();
     project = await firstProject();
     planPath = await firstArtifactPath(project.id, 'plan');
     briefPath = await firstArtifactPath(project.id, 'brief');
+    patchPath = await firstArtifactPath(project.id, 'patch').catch(() => null);
   });
   afterAll(async () => {
     await browser?.close();
@@ -182,6 +187,77 @@ describe.skipIf(!BASE)('artifact threads panel', () => {
 
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * Regression for the review's data-loss trio. Patch autosave was the third
+   * call site of the `gray-matter` -> `Buffer is not defined` bug (briefs and
+   * plans were fixed first), and it fails the same way: silently, inside a
+   * debounced handler, with the edits gone on navigation.
+   */
+  it('patch autosave persists the body and keeps frontmatter intact', async () => {
+    if (!patchPath) return; // environment without a patch fixture
+    const { page, consoleErrors } = await openWatched(
+      `${BASE}/p/${project.id}/patches/${encodeURIComponent(patchPath)}`,
+    );
+    const detailUrl = `${BASE}/api/projects/${project.id}/artifacts/patch/${encodeURIComponent(patchPath)}`;
+    const before = await fetch(detailUrl).then(
+      (r) => r.json() as Promise<{ data: { frontmatter: Record<string, unknown> } }>,
+    );
+
+    await page.locator('.prose-spec').first().click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' patch-edited-by-e2e');
+    await page.waitForTimeout(2500); // outlast the 800ms autosave debounce
+
+    const after = await fetch(detailUrl).then(
+      (r) => r.json() as Promise<{ data: { frontmatter: Record<string, unknown>; body: string } }>,
+    );
+    expect(after.data.body).toContain('patch-edited-by-e2e');
+    for (const key of ['type', 'patch_kind', 'created_at', 'created_by']) {
+      expect(after.data.frontmatter[key]).toEqual(before.data.frontmatter[key]);
+    }
+    expect(consoleErrors).toEqual([]);
+    await page.close();
+  });
+
+  it('renaming a plan refreshes the version badge and does not discard an edit', async () => {
+    const url = `${BASE}/p/${project.id}/plans/${encodeURIComponent(planPath)}`;
+    const { page, consoleErrors, badResponses } = await openWatched(url);
+
+    const versionBefore = await page.locator('header').first().innerText();
+
+    // Rename via the header, then confirm the badge moves without a reload —
+    // it only does if the rename invalidated the versions cache.
+    await page.getByTitle('Click to rename plan').click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' R');
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(async () => page.locator('header').first().innerText(), { timeout: 8000 })
+      .not.toBe(versionBefore);
+
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  it('the threads panel never shows the empty state while it is still loading', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    // Hold the listing open so the panel is observed mid-flight.
+    await page.route('**/threads*', async (route) => {
+      await new Promise((r) => setTimeout(r, 1200));
+      await route.continue();
+    });
+    await page.goto(`${BASE}/p/${project.id}/plans/${encodeURIComponent(planPath)}`);
+    await page.getByRole('button', { name: 'Threads', exact: true }).click();
+    await page.waitForTimeout(400);
+
+    const body = await page.locator('body').innerText();
+    expect(body).toContain('Loading threads');
+    // Telling a user with threads that there are none invites a duplicate.
+    expect(body).not.toContain('No threads yet');
     await page.close();
   });
 
