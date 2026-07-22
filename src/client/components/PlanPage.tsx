@@ -12,9 +12,7 @@ import {
 } from '../hooks/usePlan.js';
 import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PlanEditor } from './PlanEditor.js';
-import { ComparePanel } from './ComparePanel.js';
 import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
-import { ChatToggleButton } from './ChatToggleButton.js';
 import { FileVersionHistory } from './FileVersionHistory.js';
 import { ButtonGroup } from './ButtonGroup.js';
 import { SegmentedControl } from './SegmentedControl.js';
@@ -42,11 +40,11 @@ const ANALYSE_PLAN_PROMPT = 'Analyse the plan 3 times';
  * used to be a "Used by N threads" badge with a dropdown wedged into the top
  * bar; it is a real panel now.
  *
- * 0.1.127: Blame removed along with the plan_version table it was built from
- * (see brief 0-1-126-to-0-1-127) — Compare stays, backed by the generic
- * file_version log.
+ * Compare (a version-to-version diff panel) went with it: `<FileVersionHistory />`
+ * answers the same question — what changed, and when — and the spec had already
+ * dropped Compare (D1) before this release.
  */
-type PlanView = 'plan' | 'threads' | 'history' | 'compare';
+type PlanView = 'plan' | 'threads' | 'history';
 
 export function PlanPage({ planPath }: Props) {
   const { data: plan, isLoading } = usePlan(planPath);
@@ -93,9 +91,19 @@ export function PlanPage({ planPath }: Props) {
   const handleSave = useCallback(async () => {
     if (!plan || dirtyContent === null) return;
     try {
+      // `PUT .../content` replaces the WHOLE file, but the tiptap editor only
+      // ever holds the BODY — so the frontmatter has to be composed back on
+      // before sending. Without this the server parses a file with no
+      // frontmatter at all and rejects the save as mutating every immutable
+      // key (`type, created_at, created_by`). Mirrors BriefEditor.doSave().
+      const matterMod = await import('gray-matter');
+      const fullContent = matterMod.default.stringify(
+        dirtyContent,
+        plan.frontmatter as unknown as Record<string, unknown>,
+      );
       await savePlan.mutateAsync({
         planPath: plan.path,
-        content: dirtyContent,
+        content: fullContent,
         expectedHash: plan.hash,
       });
       setDirtyContent(null);
@@ -246,7 +254,6 @@ export function PlanPage({ planPath }: Props) {
           </span>
         </div>
         <span className="flex-1" />
-        <ChatToggleButton />
         <SegmentedControl
           value={view}
           onChange={setView}
@@ -254,7 +261,6 @@ export function PlanPage({ planPath }: Props) {
             { value: 'plan', label: 'Plan' },
             { value: 'threads', label: 'Threads' },
             { value: 'history', label: 'History' },
-            { value: 'compare', label: 'Compare' },
           ]}
         />
         {editor && (
@@ -360,10 +366,8 @@ export function PlanPage({ planPath }: Props) {
               creating={createThread.isPending}
               lastThreadId={lastThreadId}
             />
-          ) : view === 'history' ? (
-            <FileVersionHistory kind="plan" path={plan.path} />
           ) : (
-            <ComparePanel planPath={plan.path} currentVersion={currentVersion} />
+            <FileVersionHistory kind="plan" path={plan.path} />
           )}
         </div>
       </div>

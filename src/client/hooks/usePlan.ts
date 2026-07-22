@@ -35,7 +35,6 @@ const keys = {
   lastThread: (planPath: string) => ['plan', 'last-thread', planPath] as const,
   detail: (planPath: string) => ['plan', 'detail', planPath] as const,
   versions: (planPath: string) => artifactVersionsKey('plan', planPath),
-  version: (planPath: string, version: number) => ['plan', 'version', planPath, version] as const,
 };
 
 export interface PlanDetailResponse extends PlanArtifactResponse {
@@ -132,28 +131,12 @@ export function usePlanByThread(threadId: string | null) {
  * more per-action metadata (see brief 0-1-126-to-0-1-127 drift notes).
  * 0.1.139: the fetch itself is `useArtifactVersions`, shared with
  * `<FileVersionHistory />`; this wrapper only keeps the `{ versions, total }`
- * shape `ComparePanel`/`PlanPage` read.
+ * shape `PlanPage` reads.
  */
 export function usePlanVersions(planPath: string | null) {
   const q = useArtifactVersions('plan', planPath);
   const versions = q.data ?? [];
   return { ...q, data: q.data ? { versions, total: versions.length } : undefined };
-}
-
-export function usePlanVersion(planPath: string | null, version: number | null) {
-  return useQuery({
-    queryKey:
-      planPath === null || version === null
-        ? ['plan', 'version', 'none']
-        : keys.version(planPath, version),
-    queryFn: async () => {
-      const body = await fetchJson<Envelope<FileVersionListItem & { data: { content: string } }>>(
-        `/api/artifacts/plan/${encodeArtifactPath(planPath!)}/versions/${version}`,
-      );
-      return body.data;
-    },
-    enabled: planPath !== null && version !== null,
-  });
 }
 
 /**

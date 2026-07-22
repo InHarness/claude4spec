@@ -82,18 +82,15 @@ describe.skipIf(!BASE)('artifact threads panel', () => {
     return { page, consoleErrors, badResponses };
   }
 
-  it('the plan page mounts all four panels with no console error and no 4xx/5xx', async () => {
+  it('the plan page mounts every panel with no console error and no 4xx/5xx', async () => {
     const { page, consoleErrors, badResponses } = await openWatched(
       `${BASE}/p/${project.id}/plans/${encodeURIComponent(planPath)}`,
     );
 
     // The header the multi-panel rebuild introduced.
-    await expect
-      .poll(() => page.getByRole('button', { name: /Chat/ }).first().isVisible())
-      .toBe(true);
     expect(await page.locator('header').first().innerText()).toMatch(/Plan v\d+/);
 
-    for (const tab of ['Threads', 'History', 'Compare', 'Plan']) {
+    for (const tab of ['Threads', 'History', 'Plan']) {
       await page.getByRole('button', { name: tab, exact: true }).click();
       await page.waitForTimeout(500);
     }
@@ -122,6 +119,49 @@ describe.skipIf(!BASE)('artifact threads panel', () => {
     // Row metadata the generic DTO carries (messageCount).
     expect(await page.locator('ul li button').first().innerText()).toMatch(/\d+ msg/);
 
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * Regression: `PUT /api/artifacts/plan/:path/content` replaces the whole file,
+   * but the tiptap editor only holds the body — so a Save that forwards the
+   * editor's markdown verbatim arrives with NO frontmatter and is rejected as
+   * mutating every immutable key. Vitest can't catch it: composing the payload
+   * is the browser's job, and the endpoint is perfectly happy when called
+   * correctly.
+   */
+  it('saving an edited plan body preserves frontmatter instead of 400ing IMMUTABLE_FIELD', async () => {
+    const url = `${BASE}/p/${project.id}/plans/${encodeURIComponent(planPath)}`;
+    const { page, consoleErrors, badResponses } = await openWatched(url);
+
+    const before = await fetch(
+      `${BASE}/api/projects/${project.id}/artifacts/plan/${encodeURIComponent(planPath)}`,
+    ).then((r) => r.json() as Promise<{ data: { frontmatter: Record<string, unknown> } }>);
+
+    const editor = page.locator('.prose-spec').first();
+    await editor.click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' edited-by-e2e');
+
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    await expect.poll(() => save.isVisible()).toBe(true);
+    await save.click();
+    await page.waitForTimeout(1500);
+
+    // The Save button disappears only once `dirtyContent` clears, i.e. on success.
+    expect(await save.isVisible()).toBe(false);
+
+    const after = await fetch(
+      `${BASE}/api/projects/${project.id}/artifacts/plan/${encodeURIComponent(planPath)}`,
+    ).then((r) => r.json() as Promise<{ data: { frontmatter: Record<string, unknown>; body: string } }>);
+
+    expect(after.data.body).toContain('edited-by-e2e');
+    // The immutable trio survived the round-trip.
+    for (const key of ['type', 'created_at', 'created_by']) {
+      expect(after.data.frontmatter[key]).toEqual(before.data.frontmatter[key]);
+    }
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
     await page.close();
