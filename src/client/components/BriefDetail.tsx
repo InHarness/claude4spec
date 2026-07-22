@@ -34,7 +34,7 @@ export function BriefDetail({ briefPath }: Props) {
   const createThread = useCreateBriefThread(briefPath);
   // 0.1.139: the panel owns its list (generic GET /api/artifacts/brief/:path/threads)
   // instead of reading `.threads` off the detail response.
-  const { data: threads = [] } = useArtifactThreads('brief', briefPath);
+  const threadsQuery = useArtifactThreads('brief', briefPath);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const [view, setView] = useState<ViewTab>('artifact');
@@ -195,10 +195,14 @@ export function BriefDetail({ briefPath }: Props) {
           <ArtifactThreadsPanel
             title="Editorial threads"
             emptyHint='Click "New conversation" to start one with the brief author agent.'
-            threads={threads}
+            threads={threadsQuery.threads}
             onOpen={handleOpenThread}
             onCreate={() => void handleNewThread()}
             creating={createThread.isPending}
+            loading={threadsQuery.isPending}
+            hasMore={threadsQuery.hasNextPage}
+            loadingMore={threadsQuery.isFetchingNextPage}
+            onLoadMore={() => void threadsQuery.fetchNextPage()}
           />
         )}
         {view === 'history' && <FileVersionHistory kind="brief" path={briefPath} />}

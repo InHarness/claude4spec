@@ -161,13 +161,18 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(pendingOnly.body.data).toHaveLength(1);
     });
 
-    it('GET /api/artifacts/brief/:path returns full detail with merged threads', async () => {
+    it('GET /api/artifacts/brief/:path returns detail WITHOUT a threads payload', async () => {
+      // 0.1.139: threads left the detail response — they have their own paged
+      // endpoint, and merging them here cost a second chat_thread scan per
+      // fetch that no client read.
+      await request(app).post('/api/artifacts/brief/v1-to-v2.md/threads').send({ name: 'a thread' });
+
       const res = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
       expect(res.status).toBe(200);
       expect(res.body.data.path).toBe('v1-to-v2.md');
       expect(res.body.data.frontmatter.from_release).toBe('v1');
       expect(res.body.data.body).toContain('Brief: v1 -> v2');
-      expect(res.body.data.threads).toEqual([]);
+      expect(res.body.data).not.toHaveProperty('threads');
     });
 
     it('GET /api/artifacts/brief/:path/versions lists captured versions', async () => {
@@ -233,9 +238,9 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.status).toBe(200);
       expect(typeof res.body.data.threadId).toBe('string');
 
-      const detail = await request(app).get('/api/artifacts/brief/v1-to-v2.md');
-      expect(detail.body.data.threads).toHaveLength(1);
-      expect(detail.body.data.threads[0].title).toBe('my thread');
+      const listed = await request(app).get('/api/artifacts/brief/v1-to-v2.md/threads');
+      expect(listed.body.data).toHaveLength(1);
+      expect(listed.body.data[0].title).toBe('my thread');
     });
 
     it('GET .../threads lists them as ArtifactThreadListItem rows', async () => {

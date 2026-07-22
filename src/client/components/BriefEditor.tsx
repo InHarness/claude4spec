@@ -80,7 +80,14 @@ export function BriefEditor({ briefPath }: Props) {
         expectedHash: brief.hash,
       });
       lastSavedBodyRef.current = newBody;
-      isDirtyRef.current = false;
+      // Only clear the dirty flag if the editor still holds exactly what we
+      // just saved. Keystrokes landing WHILE the request was in flight leave
+      // newer text behind; clearing unconditionally would let the hydrate
+      // effect below overwrite them with the older server copy when
+      // `onSuccess` invalidates the detail query. (Unreachable before 0.1.139
+      // only because every save threw at `gray-matter.stringify`.)
+      const live = (editor?.storage.markdown.getMarkdown() as string | undefined) ?? newBody;
+      if (live === newBody) isDirtyRef.current = false;
       setConflict(null);
     } catch (err) {
       if (err instanceof ApiError && err.code === 'BRIEF_CONFLICT') {

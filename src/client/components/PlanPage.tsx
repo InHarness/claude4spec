@@ -54,7 +54,7 @@ export function PlanPage({ planPath }: Props) {
   const updateTitle = useUpdatePlanTitle();
   // 0.1.139: the generic artifact listing — one query shared with the brief and
   // patch panels, not a plan-specific projection.
-  const { data: attachedThreads = [] } = useArtifactThreads('plan', planPath);
+  const threadsQuery = useArtifactThreads('plan', planPath);
   const { data: lastThreadId = null } = usePlanLastThread(planPath);
   // currentVersion isn't part of the generic artifact detail response (no
   // stored column backs it anymore) — derive it from the version log's most
@@ -135,16 +135,22 @@ export function PlanPage({ planPath }: Props) {
     [plan, createThread, setChatThreadId, setChatOpen],
   );
 
+  /** The header's display name — also the seed for the rename input. A plan
+   *  written by an agent can land with no `title` key at all, in which case
+   *  both fall back to the filename rather than to `undefined` (which would
+   *  make the input uncontrolled and throw on `.trim()` when saved). */
+  const displayTitle = plan ? plan.frontmatter.title || stem(plan.path) : '';
+
   const handleStartEditTitle = useCallback(() => {
     if (!plan) return;
-    setTitleDraft(plan.frontmatter.title);
+    setTitleDraft(displayTitle);
     setEditingTitle(true);
-  }, [plan]);
+  }, [plan, displayTitle]);
 
   const handleSaveTitle = useCallback(async () => {
     if (!plan) return;
     const next = titleDraft.trim();
-    if (!next || next === plan.frontmatter.title) {
+    if (!next || next === displayTitle) {
       setEditingTitle(false);
       return;
     }
@@ -155,7 +161,7 @@ export function PlanPage({ planPath }: Props) {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  }, [plan, titleDraft, updateTitle]);
+  }, [plan, titleDraft, displayTitle, updateTitle]);
 
   const handleOpenThread = useCallback(
     (threadId: string) => {
@@ -229,9 +235,7 @@ export function PlanPage({ planPath }: Props) {
               title="Click to rename plan"
             >
               <span className="truncate" style={{ maxWidth: 360 }}>
-                {/* A plan written by an agent can land without a title — fall back
-                    to the filename rather than rendering an empty header. */}
-                {plan.frontmatter.title || stem(plan.path)}
+                {displayTitle}
               </span>
               <Pencil size={10} style={{ color: 'var(--c-subtle)' }} />
             </button>
@@ -353,10 +357,14 @@ export function PlanPage({ planPath }: Props) {
             <ArtifactThreadsPanel
               title="Attached threads"
               emptyHint='Click "New conversation" to start one with this plan attached.'
-              threads={attachedThreads}
+              threads={threadsQuery.threads}
               onOpen={handleOpenThread}
               onCreate={() => void handleNewThread()}
               creating={createThread.isPending}
+              loading={threadsQuery.isPending}
+              hasMore={threadsQuery.hasNextPage}
+              loadingMore={threadsQuery.isFetchingNextPage}
+              onLoadMore={() => void threadsQuery.fetchNextPage()}
               lastThreadId={lastThreadId}
             />
           ) : (

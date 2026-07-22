@@ -351,11 +351,12 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     try {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
-      const data = await adapters[kind].get(path);
-      // Kept from the pre-M36 per-kind detail routes: client detail pages read
-      // `.threads` off this same call. The dedicated GET .../threads above is
-      // what a panel refetching on its own uses.
-      res.json({ data: { ...data, threads: listThreads(kind, path) } });
+      // 0.1.139: `threads` is NOT merged in here any more. The pre-M36 detail
+      // routes carried it because the detail pages read `.threads` off this
+      // call; they now all use `GET .../threads` (which pages properly), so
+      // merging it meant a second chat_thread scan per detail fetch whose
+      // result nothing read — and one silently capped at the default limit.
+      res.json({ data: await adapters[kind].get(path) });
     } catch (err) {
       next(err);
     }

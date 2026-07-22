@@ -15,7 +15,6 @@ import type {
   ArtifactListItem,
   ArtifactResponse,
   ArtifactThreadCreateRequest,
-  ArtifactThreadListItem,
   PatchKind,
   PatchStatus,
 } from '../../shared/entities.js';
@@ -56,7 +55,6 @@ export interface PatchArtifactView extends ArtifactResponse {
 
 /** Only the detail GET returns `threads` (the old detail route merged them in). */
 export interface PatchDetailResponse extends PatchArtifactView {
-  threads: ArtifactThreadListItem[];
 }
 
 const VALID_PATCH_KINDS: ReadonlySet<string> = new Set(['drift', 'missing', 'incorrect', 'clarification']);
@@ -103,10 +101,10 @@ export const patchesApi = {
   },
 
   async get(patchPath: string): Promise<PatchDetailResponse> {
-    const env = await handle<Envelope<ArtifactResponse & { threads: ArtifactThreadListItem[] }>>(
+    const env = await handle<Envelope<ArtifactResponse>>(
       await apiFetch(`/api/artifacts/patch/${encodePatchPath(patchPath)}`),
     );
-    return { ...toPatchArtifactView(env.data), threads: env.data.threads };
+    return toPatchArtifactView(env.data);
   },
 
   async updateContent(

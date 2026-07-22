@@ -26,7 +26,7 @@ export function PatchDetail({ patchPath }: Props) {
   const createThread = useCreatePatchThread(patchPath);
   // 0.1.139: the panel owns its list (generic GET /api/artifacts/patch/:path/threads)
   // instead of reading `.threads` off the detail response.
-  const { data: threads = [] } = useArtifactThreads('patch', patchPath);
+  const threadsQuery = useArtifactThreads('patch', patchPath);
   const setStatus = useUpdatePatchStatus(patchPath);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -186,10 +186,14 @@ export function PatchDetail({ patchPath }: Props) {
           <ArtifactThreadsPanel
             title="Resolution threads"
             emptyHint='Click "New conversation" to start one with the spec author agent.'
-            threads={threads}
+            threads={threadsQuery.threads}
             onOpen={handleOpenThread}
             onCreate={handleNewThread}
             creating={createThread.isPending}
+            loading={threadsQuery.isPending}
+            hasMore={threadsQuery.hasNextPage}
+            loadingMore={threadsQuery.isFetchingNextPage}
+            onLoadMore={() => void threadsQuery.fetchNextPage()}
           />
         )}
       </div>

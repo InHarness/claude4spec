@@ -122,6 +122,22 @@ describe('ChatService.listThreadsByArtifact', () => {
     expect(rows.map((r) => r.id)).toEqual(['b1']);
   });
 
+  it('orders ties deterministically so paging cannot repeat or skip a row', () => {
+    // `updated_at` is whole-second, so a burst of attaches shares a timestamp.
+    // Without the `id` tiebreaker SQLite may order the tie group differently
+    // per statement, and a pager would see one thread twice and another never.
+    for (const id of ['t-a', 't-b', 't-c', 't-d']) seedThread(id, { planPath: 'p.md' });
+
+    const all = chat.listThreadsByArtifact({ threadColumn: 'plan_path', path: 'p.md' });
+    const paged = [
+      ...chat.listThreadsByArtifact({ threadColumn: 'plan_path', path: 'p.md', limit: 2 }),
+      ...chat.listThreadsByArtifact({ threadColumn: 'plan_path', path: 'p.md', limit: 2, offset: 2 }),
+    ];
+
+    expect(paged.map((r) => r.id)).toEqual(all.map((r) => r.id));
+    expect(new Set(paged.map((r) => r.id)).size).toBe(4);
+  });
+
   it('pages with limit/offset, marking isLast only on the first page', () => {
     seedThread('a', { planPath: 'p.md' });
     seedThread('b', { planPath: 'p.md', ago: '-1 hour' });

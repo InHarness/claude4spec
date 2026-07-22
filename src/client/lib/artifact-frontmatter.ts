@@ -17,7 +17,13 @@
  * or reformat dates, so a body-only edit produces a body-only diff.
  */
 export function withFrontmatterOf(rawContent: string, newBody: string): string {
-  const match = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*\r?\n?/.exec(rawContent);
+  // The middle group is optional so an EMPTY block (`---\n---\n`) still
+  // matches — otherwise it falls through and the delimiters are dropped, and
+  // the server then rejects the save for mutating every immutable key. The
+  // leading `\uFEFF?` keeps a UTF-8 BOM from defeating the `^---` anchor;
+  // gray-matter strips one server-side, so a BOM'd file parses fine there and
+  // would otherwise only break here.
+  const match = /^\uFEFF?---[ \t]*\r?\n(?:[\s\S]*?\r?\n)?---[ \t]*\r?\n?/.exec(rawContent);
   // No frontmatter to preserve (hand-written file, or a kind that has none) —
   // the body IS the whole file.
   return match ? `${match[0]}${newBody}` : newBody;

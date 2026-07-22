@@ -30,6 +30,19 @@ describe('withFrontmatterOf', () => {
     );
   });
 
+  it('preserves an EMPTY frontmatter block instead of dropping the delimiters', () => {
+    // `---\n---\n` has no lines between the fences. Dropping it would send a
+    // file with no frontmatter at all, which the server rejects as mutating
+    // every immutable key — and BriefEditor swallows that error.
+    expect(withFrontmatterOf('---\n---\nold body', 'new body')).toBe('---\n---\nnew body');
+  });
+
+  it('survives a UTF-8 BOM, which gray-matter strips server-side', () => {
+    expect(withFrontmatterOf('\uFEFF---\ntype: plan\n---\nold', 'new')).toBe(
+      '\uFEFF---\ntype: plan\n---\nnew',
+    );
+  });
+
   it('treats a file with no frontmatter as body-only', () => {
     expect(withFrontmatterOf('# Just a body\n', 'replaced')).toBe('replaced');
   });

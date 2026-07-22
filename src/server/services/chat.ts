@@ -165,6 +165,13 @@ export class ChatService {
    *    {@link THREAD_META_COLUMNS}: the result is the wire DTO, not a
    *    `ChatThread`.
    *
+   * `id` breaks ties in the sort: `updated_at` is written by `datetime('now')`
+   * at whole-second granularity, so threads attached in one burst share a
+   * timestamp. Without a tiebreaker SQLite may order a tied group differently
+   * between two `LIMIT/OFFSET` statements, and a paging caller would then see
+   * one thread twice and another never — plus `isLast` would point at an
+   * arbitrary member of the newest tie group.
+   *
    * Filters on the reference column alone. The brief/patch queries this
    * replaced also pinned `context_type`, which was redundant: `createThread`
    * enforces `context_type='brief' ⇒ brief_path` (L2) and `'patch' ⇒
@@ -192,7 +199,7 @@ export class ChatService {
                 (SELECT COUNT(*) FROM chat_message m WHERE m.thread_id = t.id) AS message_count
            FROM chat_thread t
           WHERE t.${threadColumn} = ? AND t.parent_thread_id IS NULL
-          ORDER BY t.updated_at DESC
+          ORDER BY t.updated_at DESC, t.id DESC
           LIMIT ? OFFSET ?`,
       )
       .all(path, limit, offset) as Array<{

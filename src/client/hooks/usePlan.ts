@@ -1,7 +1,8 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
-import type { ArtifactThreadListItem, Plan, PlanFrontmatter } from '../../shared/entities.js';
+import type { Plan, PlanFrontmatter } from '../../shared/entities.js';
 import {
   artifactVersionsKey,
   useArtifactVersions,
@@ -37,9 +38,7 @@ const keys = {
   versions: (planPath: string) => artifactVersionsKey('plan', planPath),
 };
 
-export interface PlanDetailResponse extends PlanArtifactResponse {
-  threads: ArtifactThreadListItem[];
-}
+export type PlanDetailResponse = PlanArtifactResponse;
 
 export interface PlanListEntry {
   path: string;
@@ -135,8 +134,14 @@ export function usePlanByThread(threadId: string | null) {
  */
 export function usePlanVersions(planPath: string | null) {
   const q = useArtifactVersions('plan', planPath);
-  const versions = q.data ?? [];
-  return { ...q, data: q.data ? { versions, total: versions.length } : undefined };
+  // Memoized on the query's own data identity: returning a fresh object each
+  // render would re-fire PlanPage's `versionsData` effect on every unrelated
+  // re-render, and that effect can clear an in-progress edit.
+  const data = useMemo(
+    () => (q.data ? { versions: q.data, total: q.data.length } : undefined),
+    [q.data],
+  );
+  return { ...q, data };
 }
 
 /**
@@ -184,6 +189,12 @@ export function useUpdatePlanTitle() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: keys.detail(data.path) });
+      // A rename records a `file_version` row server-side, so the History panel
+      // and `currentVersion` both go stale without this. Skipping it also armed
+      // a live edit-wipe: PlanPage clears `dirtyContent` when `currentVersion`
+      // changes, so a background refetch delivering the missed version mid-edit
+      // discarded whatever the user had typed.
+      qc.invalidateQueries({ queryKey: keys.versions(data.path) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
   });

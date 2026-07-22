@@ -10,6 +10,12 @@ interface Props {
   onOpen(threadId: string): void;
   onCreate(): void;
   creating: boolean;
+  /** First load still in flight — distinct from "loaded, and there are none". */
+  loading?: boolean;
+  /** More pages available; render a "Load more" affordance rather than lying about the count. */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  onLoadMore?(): void;
   /**
    * "Open last thread" shortcut. Only plan uses it today (backed by
    * `GET /api/plans/:slug/last-thread`); omit it and the button is not rendered.
@@ -42,6 +48,10 @@ export function ArtifactThreadsPanel({
   onOpen,
   onCreate,
   creating,
+  loading = false,
+  hasMore = false,
+  loadingMore = false,
+  onLoadMore,
   lastThreadId,
 }: Props) {
   const showContextType = new Set(threads.map((t) => t.contextType)).size > 1;
@@ -58,16 +68,20 @@ export function ArtifactThreadsPanel({
             <span
               className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
               style={{ background: 'var(--c-hair)', color: 'var(--c-muted)' }}
-              title={`${threads.length} thread(s) reference this artifact`}
+              title={
+                hasMore
+                  ? `${threads.length} loaded so far — more not yet fetched`
+                  : `${threads.length} thread(s) reference this artifact`
+              }
             >
-              {threads.length}
+              {loading ? '…' : `${threads.length}${hasMore ? '+' : ''}`}
             </span>
           </h3>
           <div className="flex items-center gap-1.5">
             {lastThreadId !== undefined && (
               <button
                 onClick={() => lastThreadId && onOpen(lastThreadId)}
-                disabled={!lastThreadId}
+                disabled={!lastThreadId || loading}
                 className="rounded-md flex items-center gap-1 px-2 py-1 text-[11.5px] btn-ghost"
                 style={{
                   color: 'var(--c-muted)',
@@ -76,9 +90,11 @@ export function ArtifactThreadsPanel({
                   cursor: lastThreadId ? undefined : 'not-allowed',
                 }}
                 title={
-                  lastThreadId
-                    ? 'Open the most recently active thread'
-                    : 'No thread references this artifact yet'
+                  loading
+                    ? 'Loading threads…'
+                    : lastThreadId
+                      ? 'Open the most recently active thread'
+                      : 'No thread references this artifact yet'
                 }
               >
                 <History size={11} />
@@ -96,7 +112,14 @@ export function ArtifactThreadsPanel({
             </button>
           </div>
         </div>
-        {threads.length === 0 ? (
+        {loading ? (
+          // Never fall through to the empty state while the first page is in
+          // flight: telling a user with 12 threads that there are none invites
+          // them to click "New conversation" and create a duplicate.
+          <div className="text-center py-12 text-[13px]" style={{ color: 'var(--c-subtle)' }}>
+            Loading threads…
+          </div>
+        ) : threads.length === 0 ? (
           <div
             className="text-center py-12 rounded-lg"
             style={{
@@ -153,6 +176,16 @@ export function ArtifactThreadsPanel({
             ))}
           </ul>
         )}
+        {hasMore && !loading ? (
+          <button
+            onClick={onLoadMore}
+            disabled={loadingMore}
+            className="mt-2 w-full rounded-md py-1.5 text-[11.5px] btn-ghost"
+            style={{ color: 'var(--c-muted)', border: '1px solid var(--c-hair)' }}
+          >
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
+        ) : null}
       </div>
     </div>
   );
