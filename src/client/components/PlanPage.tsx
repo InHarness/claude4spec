@@ -1,21 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { MessageSquare, Pencil, Users } from 'lucide-react';
+import { Pencil } from 'lucide-react';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
 import {
   usePlan,
-  usePlanThreads,
+  usePlanLastThread,
   usePlanVersions,
   useSavePlan,
   useCreateThreadFromPlan,
   useUpdatePlanTitle,
 } from '../hooks/usePlan.js';
+import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PlanEditor } from './PlanEditor.js';
 import { ComparePanel } from './ComparePanel.js';
+import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
+import { ChatToggleButton } from './ChatToggleButton.js';
+import { FileVersionHistory } from './FileVersionHistory.js';
 import { ButtonGroup } from './ButtonGroup.js';
 import { SegmentedControl } from './SegmentedControl.js';
 import { OutlineButton } from './OutlineButton.js';
 import { useOutlineStore } from '../state/outline.js';
+import { stem } from '../lib/artifact-path.js';
 
 interface Props {
   planPath: string;
@@ -30,26 +35,33 @@ interface Props {
 const RUN_PLAN_PROMPT = 'Execute the attached plan';
 const ANALYSE_PLAN_PROMPT = 'Analyse the plan 3 times';
 
-// 0.1.127: Blame removed along with the plan_version table it was built from
-// (see brief 0-1-126-to-0-1-127) — Compare stays, backed by the generic
-// file_version log.
-type PlanView = 'plan' | 'compare';
+/**
+ * 0.1.139: the page went multi-panel, at parity with the brief detail page —
+ * artifact / threads / version history, collapsed into a switcher the same way
+ * `BriefDetail` and `PatchDetail` collapse theirs. The plan↔thread relation
+ * used to be a "Used by N threads" badge with a dropdown wedged into the top
+ * bar; it is a real panel now.
+ *
+ * 0.1.127: Blame removed along with the plan_version table it was built from
+ * (see brief 0-1-126-to-0-1-127) — Compare stays, backed by the generic
+ * file_version log.
+ */
+type PlanView = 'plan' | 'threads' | 'history' | 'compare';
 
 export function PlanPage({ planPath }: Props) {
   const { data: plan, isLoading } = usePlan(planPath);
   const savePlan = useSavePlan();
   const createThread = useCreateThreadFromPlan();
   const updateTitle = useUpdatePlanTitle();
-  // P2: a plan's threads come from the dedicated GET /api/plans/:slug/threads
-  // projection, not from filtering the paginated GET /api/threads list.
-  const { data: attachedThreads = [] } = usePlanThreads(planPath);
+  // 0.1.139: the generic artifact listing — one query shared with the brief and
+  // patch panels, not a plan-specific projection.
+  const { data: attachedThreads = [] } = useArtifactThreads('plan', planPath);
+  const { data: lastThreadId = null } = usePlanLastThread(planPath);
   // currentVersion isn't part of the generic artifact detail response (no
   // stored column backs it anymore) — derive it from the version log's most
   // recent entry (listVersions sorts DESC).
   const { data: versionsData } = usePlanVersions(planPath);
   const currentVersion = versionsData?.versions[0]?.version ?? 0;
-  const threadCount = attachedThreads.length;
-  const lastThreadId = attachedThreads[0]?.id ?? null;
   const editor = useOutlineStore((s) => s.editor);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
@@ -61,7 +73,6 @@ export function PlanPage({ planPath }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
-  const [showThreadDropdown, setShowThreadDropdown] = useState(false);
 
   // Reset dirty when plan refetches to a newer version. `currentVersion`
   // comes from a query (usePlanVersions) independent of the one supplying the
@@ -149,10 +160,21 @@ export function PlanPage({ planPath }: Props) {
     (threadId: string) => {
       setChatThreadId(threadId);
       setChatOpen(true);
-      setShowThreadDropdown(false);
     },
     [setChatThreadId, setChatOpen],
   );
+
+  /** Threads panel's "New conversation" — same attach path as Run/Analyse, no draft. */
+  const handleNewThread = useCallback(async () => {
+    if (!plan) return;
+    try {
+      const { threadId } = await createThread.mutateAsync({ planPath: plan.path });
+      setError(null);
+      handleOpenThread(threadId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [plan, createThread, handleOpenThread]);
 
   if (isLoading || !plan) {
     return (
@@ -206,7 +228,9 @@ export function PlanPage({ planPath }: Props) {
               title="Click to rename plan"
             >
               <span className="truncate" style={{ maxWidth: 360 }}>
-                {plan.frontmatter.title}
+                {/* A plan written by an agent can land without a title — fall back
+                    to the filename rather than rendering an empty header. */}
+                {plan.frontmatter.title || stem(plan.path)}
               </span>
               <Pencil size={10} style={{ color: 'var(--c-subtle)' }} />
             </button>
@@ -218,74 +242,18 @@ export function PlanPage({ planPath }: Props) {
               color: 'var(--c-muted)',
             }}
           >
-            v{currentVersion}
+            Plan v{currentVersion}
           </span>
-          {threadCount > 1 ? (
-            <div className="relative">
-              <button
-                onClick={() => setShowThreadDropdown((v) => !v)}
-                className="font-mono text-[11px] px-1.5 py-0.5 rounded inline-flex items-center gap-1"
-                style={{
-                  background: 'var(--c-accent)',
-                  color: '#fff',
-                }}
-                title={`Plan referenced by ${threadCount} threads — click to choose one`}
-              >
-                <Users size={10} />
-                Used by {threadCount} threads
-              </button>
-              {showThreadDropdown ? (
-                <div
-                  className="absolute z-30 mt-1 rounded-md min-w-[240px] py-1"
-                  style={{
-                    background: 'var(--c-card)',
-                    border: '1px solid var(--c-hair-strong)',
-                    boxShadow: '0 6px 24px rgba(0,0,0,0.12)',
-                  }}
-                >
-                  {attachedThreads.length === 0 ? (
-                    <div
-                      className="px-3 py-2 text-[12px]"
-                      style={{ color: 'var(--c-subtle)' }}
-                    >
-                      Loading threads…
-                    </div>
-                  ) : (
-                    attachedThreads.map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => handleOpenThread(t.id)}
-                        className="w-full text-left px-3 py-1.5 text-[12px] btn-ghost flex items-center gap-2"
-                        style={{ color: 'var(--c-ink)' }}
-                      >
-                        <MessageSquare size={11} style={{ color: 'var(--c-muted)' }} />
-                        <span className="truncate">{t.title ?? '(untitled)'}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              ) : null}
-            </div>
-          ) : lastThreadId ? (
-            <button
-              onClick={() => handleOpenThread(lastThreadId)}
-              className="flex items-center gap-1 text-[12px] btn-ghost rounded px-1.5 py-0.5 min-w-0"
-              title="Open attached thread in chat"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              <MessageSquare size={11} />
-              <span className="truncate" style={{ maxWidth: 320 }}>
-                {attachedThreads[0]?.title ?? '(untitled)'}
-              </span>
-            </button>
-          ) : null}
         </div>
         <span className="flex-1" />
+        <ChatToggleButton />
         <SegmentedControl
           value={view}
           onChange={setView}
           options={[
             { value: 'plan', label: 'Plan' },
+            { value: 'threads', label: 'Threads' },
+            { value: 'history', label: 'History' },
             { value: 'compare', label: 'Compare' },
           ]}
         />
@@ -382,6 +350,18 @@ export function PlanPage({ planPath }: Props) {
                 </footer>
               )}
             </>
+          ) : view === 'threads' ? (
+            <ArtifactThreadsPanel
+              title="Attached threads"
+              emptyHint='Click "New conversation" to start one with this plan attached.'
+              threads={attachedThreads}
+              onOpen={handleOpenThread}
+              onCreate={() => void handleNewThread()}
+              creating={createThread.isPending}
+              lastThreadId={lastThreadId}
+            />
+          ) : view === 'history' ? (
+            <FileVersionHistory kind="plan" path={plan.path} />
           ) : (
             <ComparePanel planPath={plan.path} currentVersion={currentVersion} />
           )}

@@ -20,7 +20,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
 import type {
-  BriefThreadSummary,
   PatchFrontmatter,
   PatchKind,
   PatchStatus,
@@ -182,15 +181,6 @@ export class PatchService {
       });
     }
     return out;
-  }
-
-  listThreadsForPatch(relPath: string): BriefThreadSummary[] {
-    return this.deps.chatService.listThreadsForPatch(relPath).map((t) => ({
-      id: t.id,
-      title: t.title,
-      updatedAt: t.updatedAt,
-      messageCount: t.messageCount,
-    }));
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────

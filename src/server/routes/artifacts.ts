@@ -3,10 +3,12 @@ import type { BriefService } from '../services/brief.js';
 import type { PatchService } from '../services/patch.js';
 import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
+import type { ChatService, ArtifactThreadColumn } from '../services/chat.js';
 import { artifactRegistry, type ArtifactKind } from '../services/artifact-registry.js';
 import type {
   ArtifactListItem,
   ArtifactResponse,
+  ArtifactThreadListItem,
   PatchStatus,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
@@ -24,19 +26,20 @@ import { DomainError } from '../services/tags.js';
  * `GET/PUT/PATCH /api/plans/:planId` routes — but `plan`'s own thread-binding
  * flows (`create-thread`, `last-thread`, `by-thread`) stay bespoke in
  * `routes/plans.ts` (richer semantics than the generic `POST .../threads`:
- * the `plan_path` attach and plan-specific thread queries; 0.1.138 removed the
- * `execute` endpoint that used to live there too), so this adapter's
- * `createThread`/`listThreads` exist only to satisfy `ArtifactKindAdapter` —
- * they delegate to the exact same `PlanService` methods `routes/plans.ts`
- * calls, so there's no behavior fork between the two paths.
+ * the `plan_path` attach; 0.1.138 removed the `execute` endpoint that used to
+ * live there too), so this adapter's `createThread` exists only to satisfy
+ * `ArtifactKindAdapter` — it delegates to the exact same `PlanService` method
+ * `routes/plans.ts` calls, so there's no behavior fork between the two paths.
+ *
+ * 0.1.139: `GET /:kind/<path>/threads` joined the family as its 8th endpoint,
+ * and thread *listing* left the adapter entirely — every kind resolves through
+ * `artifactRegistry[kind].binding.threadColumn` to the single
+ * `ChatService.listThreadsByArtifact` query, so there is nothing per-kind left
+ * to dispatch on. `GET /api/plans/:slug/threads` was retired with it.
  */
 interface ArtifactKindAdapter {
   list(query: Record<string, unknown>): ArtifactListItem[];
   get(path: string): Promise<ArtifactResponse>;
-  /** Both kinds' old detail routes merged `threads` into the response body
-   *  (`{ ...detail, threads }`) — preserved here rather than dropped, since
-   *  client detail pages read `.threads` off the same call. */
-  listThreads(path: string): Array<{ id: string; title: string | null; updatedAt: string; messageCount?: number }>;
   updateContent(path: string, content: string, expectedHash: string): Promise<ArtifactResponse>;
   updateFrontmatter(path: string, frontmatter: Record<string, unknown>): Promise<ArtifactResponse>;
   createThread(path: string, name?: string | null): Promise<{ threadId: string }>;
@@ -47,6 +50,7 @@ export interface ArtifactsRouterDeps {
   patch: PatchService;
   plan: PlanService;
   pageVersions: FileVersionService;
+  chat: ChatService;
 }
 
 
@@ -91,9 +95,6 @@ function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     createThread(path, name) {
       return Promise.resolve(briefs.createThreadForBrief({ path, name: name ?? null }));
     },
-    listThreads(path) {
-      return briefs.listThreadsForBrief(path);
-    },
   };
 }
 
@@ -137,9 +138,6 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     createThread(path, name) {
       return patches.createThreadForPatch(path, name ?? null);
     },
-    listThreads(path) {
-      return patches.listThreadsForPatch(path);
-    },
   };
 }
 
@@ -177,9 +175,6 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     createThread(path) {
       return plans.attachThreadToPlan(path);
     },
-    listThreads(path) {
-      return plans.listThreadsForPlan(path);
-    },
   };
 }
 
@@ -194,6 +189,19 @@ function extractPath(params: unknown): string {
   return splat;
 }
 
+/** `?limit`/`?offset` with the family's defaults; anything non-numeric is a 400. */
+function parsePaging(query: Record<string, unknown>): { limit: number; offset: number } {
+  const read = (raw: unknown, name: string, fallback: number): number => {
+    if (raw === undefined) return fallback;
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 0) {
+      throw new DomainError('VALIDATION', `${name} must be a non-negative integer`);
+    }
+    return n;
+  };
+  return { limit: read(query.limit, 'limit', 20), offset: read(query.offset, 'offset', 0) };
+}
+
 export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
   const adapters: Record<ArtifactKind, ArtifactKindAdapter> = {
     brief: buildBriefAdapter(deps),
@@ -202,6 +210,22 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
   };
 
   const router = Router();
+
+  /**
+   * The whole of thread listing, for every kind: resolve the registry's
+   * `binding.threadColumn` and hand it to the one `chat_thread` query. No
+   * per-kind branch, no per-service projection.
+   */
+  const listThreads = (
+    kind: ArtifactKind,
+    path: string,
+    paging: { limit: number; offset: number } = { limit: 20, offset: 0 },
+  ): ArtifactThreadListItem[] =>
+    deps.chat.listThreadsByArtifact({
+      threadColumn: artifactRegistry[kind].binding.threadColumn as ArtifactThreadColumn,
+      path,
+      ...paging,
+    });
 
   router.param('kind', (req, res, next, kind) => {
     if (!(kind in adapters)) {
@@ -292,6 +316,20 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
     }
   });
 
+  // GET /api/artifacts/:kind/<path>/threads — 0.1.139: the generic listing of
+  // every top-level thread referencing this artifact (transagent bankas, which
+  // carry a parent_thread_id, are excluded), newest activity first.
+  router.get('/:kind/*/threads', (req, res, next) => {
+    try {
+      const kind = req.params.kind as ArtifactKind;
+      const path = extractPath(req.params);
+      const paging = parsePaging(req.query as Record<string, unknown>);
+      res.json({ data: listThreads(kind, path, paging) });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // POST /api/artifacts/:kind/<path>/threads
   router.post('/:kind/*/threads', async (req, res, next) => {
     try {
@@ -312,8 +350,10 @@ export function artifactsRouter(deps: ArtifactsRouterDeps): Router {
       const kind = req.params.kind as ArtifactKind;
       const path = extractPath(req.params);
       const data = await adapters[kind].get(path);
-      const threads = adapters[kind].listThreads(path);
-      res.json({ data: { ...data, threads } });
+      // Kept from the pre-M36 per-kind detail routes: client detail pages read
+      // `.threads` off this same call. The dedicated GET .../threads above is
+      // what a panel refetching on its own uses.
+      res.json({ data: { ...data, threads: listThreads(kind, path) } });
     } catch (err) {
       next(err);
     }

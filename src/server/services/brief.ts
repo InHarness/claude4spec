@@ -22,7 +22,6 @@ import type {
   BriefChangedBy,
   BriefFrontmatter,
   BriefSource,
-  BriefThreadSummary,
 } from '../../shared/entities.js';
 import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
@@ -195,15 +194,6 @@ export class BriefService {
       });
     }
     return out;
-  }
-
-  listThreadsForBrief(path: string): BriefThreadSummary[] {
-    return this.deps.chatService.listThreadsForBrief(path).map((t) => ({
-      id: t.id,
-      title: t.title,
-      updatedAt: t.updatedAt,
-      messageCount: t.messageCount,
-    }));
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────

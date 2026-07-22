@@ -158,7 +158,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     ws,
   });
   router.use('/plans', plansRouter(planService));
-  router.use('/artifacts', artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions }));
+  router.use('/artifacts', artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions, chat: chatService }));
   router.use(errorHandler);
 
   const app = express();

@@ -40,7 +40,6 @@ import type {
   PlanChangedBy,
   PlanFrontmatter,
   PlanListItem,
-  PlanThreadItem,
 } from '../../shared/entities.js';
 import { PLAN_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
@@ -230,14 +229,6 @@ export class PlanService {
     }
     out.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     return out;
-  }
-
-  listThreadsForPlan(planPath: string): PlanThreadItem[] {
-    return this.deps.chatService.listThreadsForPlan(planPath).map((t) => ({
-      id: t.id,
-      title: t.title,
-      updatedAt: t.updatedAt,
-    }));
   }
 
   findLastThreadIdForPlan(planPath: string): string | null {

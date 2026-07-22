@@ -53,7 +53,11 @@ describe('GET /api/artifacts/plan', () => {
   });
 });
 
-describe('GET /api/plans/:slug/threads', () => {
+// 0.1.139: `GET /api/plans/:slug/threads` is GONE — listing an artifact's
+// threads is generic across brief/patch/plan (one endpoint, one
+// `ChatService.listThreadsByArtifact` query resolved through
+// `artifactRegistry[kind].binding.threadColumn`).
+describe('GET /api/artifacts/plan/:path/threads', () => {
   let t: TestApp;
 
   beforeEach(async () => {
@@ -61,7 +65,7 @@ describe('GET /api/plans/:slug/threads', () => {
   });
   afterEach(() => t.cleanup());
 
-  it('returns the plan threads (PlanThreadItem) DESC by updated_at, excluding child threads', async () => {
+  it('returns the plan threads (ArtifactThreadListItem) DESC by updated_at, excluding child threads', async () => {
     const planPath = await seedPlan(t, 'p2-plan', 'P2 plan', 'body');
     t.db
       .prepare(
@@ -72,14 +76,25 @@ describe('GET /api/plans/:slug/threads', () => {
       )
       .run(planPath, planPath, planPath);
 
-    const res = await request(t.app).get(`/api/plans/${encodeURIComponent(planPath)}/threads`);
+    const res = await request(t.app).get(`/api/artifacts/plan/${encodeURIComponent(planPath)}/threads`);
     expect(res.status).toBe(200);
     expect(res.body.data.map((x: { id: string }) => x.id)).toEqual(['th-new', 'th-old']);
-    expect(res.body.data[0]).toEqual({ id: 'th-new', title: 'new', updatedAt: expect.any(String) });
+    expect(res.body.data[0]).toEqual({
+      id: 'th-new',
+      title: 'new',
+      contextType: 'chat',
+      planMode: false,
+      messageCount: 0,
+      hasSystemPrompt: false,
+      updatedAt: expect.any(String),
+      // Freshest row of the first page — the "open last thread" shortcut.
+      isLast: true,
+    });
+    expect(res.body.data[1].isLast).toBe(false);
   });
 
   it('returns an empty list for a missing plan (no invariant to enforce — attach is optional)', async () => {
-    const res = await request(t.app).get('/api/plans/does-not-exist.md/threads');
+    const res = await request(t.app).get('/api/artifacts/plan/does-not-exist.md/threads');
     expect(res.status).toBe(200);
     expect(res.body.data).toEqual([]);
   });
@@ -121,7 +136,7 @@ describe('POST /api/plans/:slug/create-thread', () => {
     const second = await request(t.app).post(`/api/plans/${encodeURIComponent(planPath)}/create-thread`);
     expect(first.body.data.threadId).not.toBe(second.body.data.threadId);
 
-    const threads = await request(t.app).get(`/api/plans/${encodeURIComponent(planPath)}/threads`);
+    const threads = await request(t.app).get(`/api/artifacts/plan/${encodeURIComponent(planPath)}/threads`);
     expect(threads.body.data).toHaveLength(2);
   });
 

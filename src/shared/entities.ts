@@ -909,15 +909,26 @@ export interface PlanListItem {
 }
 
 /**
- * Lightweight projection of a thread attached to a plan, served by
- * `GET /api/plans/:slug/threads`. PlanPage uses this dedicated projection
- * (not the paginated `GET /api/threads` list) so its "Used by N threads"
- * dropdown is unaffected by thread-list pagination.
+ * 0.1.139 M36: one row of `GET /api/artifacts/:kind/:path/threads` — the
+ * generic listing that replaced the per-kind `BriefThreadSummary` (brief/patch)
+ * and `PlanThreadItem` (plan) projections.
+ *
+ * The set a caller gets back can be heterogeneous — a plan binds by `attach`,
+ * so any thread kind may reference it, with or without plan mode — hence
+ * `contextType`/`planMode` travel with every row rather than being implied by
+ * the endpoint. `hasSystemPrompt` is a boolean precisely so the list never
+ * drags `chat_thread.initial_system_prompt` (a blob) over the wire.
  */
-export interface PlanThreadItem {
+export interface ArtifactThreadListItem {
   id: string;
   title: string | null;
+  contextType: string;
+  planMode: boolean;
+  messageCount: number;
+  hasSystemPrompt: boolean;
   updatedAt: string;
+  /** Freshest thread of the first page — backs the "open last thread" shortcut. */
+  isLast?: boolean;
 }
 
 /**
@@ -1017,13 +1028,6 @@ export interface BriefCreateRequest {
 export interface BriefCreateResult {
   briefPath: string;
   initialThreadId: string;
-}
-
-export interface BriefThreadSummary {
-  id: string;
-  title: string | null;
-  updatedAt: string;
-  messageCount: number;
 }
 
 // --- M23: Patches ---

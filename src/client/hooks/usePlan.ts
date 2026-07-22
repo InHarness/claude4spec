@@ -1,7 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiFetch } from '../lib/api-core.js';
 import { encodeArtifactPath } from '../lib/artifact-path.js';
-import type { Plan, PlanFrontmatter, PlanThreadItem } from '../../shared/entities.js';
+import type { ArtifactThreadListItem, Plan, PlanFrontmatter } from '../../shared/entities.js';
+import {
+  artifactVersionsKey,
+  useArtifactVersions,
+  type FileVersionListItem,
+} from './useArtifactVersions.js';
+import { artifactThreadsKey } from './useArtifactThreads.js';
 
 type Envelope<T> = { data: T };
 
@@ -20,30 +26,20 @@ interface PlanArtifactResponse {
   hash: string;
 }
 
-export interface FileVersionListItem {
-  id: number;
-  path: string;
-  version: number;
-  op: 'create' | 'update' | 'delete';
-  changedBy: 'user' | 'agent' | 'filesystem';
-  releaseId: number | null;
-  serializerVersion: string;
-  createdAt: string;
-  rootId: string;
-  changeSummary: string | null;
-}
+export type { FileVersionListItem };
 
 const keys = {
   list: (opts: { search?: string } | undefined) => ['plans-list', opts ?? {}] as const,
   byThread: (threadId: string) => ['plan', 'by-thread', threadId] as const,
-  threads: (planPath: string) => ['plan', 'threads', planPath] as const,
+  threads: (planPath: string) => artifactThreadsKey('plan', planPath),
+  lastThread: (planPath: string) => ['plan', 'last-thread', planPath] as const,
   detail: (planPath: string) => ['plan', 'detail', planPath] as const,
-  versions: (planPath: string) => ['plan', 'versions', planPath] as const,
+  versions: (planPath: string) => artifactVersionsKey('plan', planPath),
   version: (planPath: string, version: number) => ['plan', 'version', planPath, version] as const,
 };
 
 export interface PlanDetailResponse extends PlanArtifactResponse {
-  threads: PlanThreadItem[];
+  threads: ArtifactThreadListItem[];
 }
 
 export interface PlanListEntry {
@@ -97,14 +93,21 @@ export function usePlan(planPath: string | null) {
   });
 }
 
-export function usePlanThreads(planPath: string | null) {
+/**
+ * 0.1.139: `usePlanThreads` (bespoke `GET /api/plans/:slug/threads`) is GONE —
+ * use `useArtifactThreads('plan', planPath)`. What survives is this single-row
+ * shortcut, which the threads panel's "Open last thread" button needs and the
+ * generic listing does not cover (it answers "the freshest one" without
+ * fetching a page of rows).
+ */
+export function usePlanLastThread(planPath: string | null) {
   return useQuery({
-    queryKey: planPath === null ? ['plan', 'threads', 'none'] : keys.threads(planPath),
+    queryKey: planPath === null ? ['plan', 'last-thread', 'none'] : keys.lastThread(planPath),
     queryFn: async () => {
-      const body = await fetchJson<Envelope<PlanThreadItem[]>>(
-        `/api/plans/${encodeArtifactPath(planPath!)}/threads`,
+      const body = await fetchJson<Envelope<{ threadId: string | null }>>(
+        `/api/plans/${encodeArtifactPath(planPath!)}/last-thread`,
       );
-      return body.data;
+      return body.data.threadId;
     },
     enabled: planPath !== null,
   });
@@ -124,18 +127,17 @@ export function usePlanByThread(threadId: string | null) {
   });
 }
 
-/** 0.1.127: version history moved to the generic M36 family + `file_version` — no more per-action metadata (see brief 0-1-126-to-0-1-127 drift notes). */
+/**
+ * 0.1.127: version history moved to the generic M36 family + `file_version` — no
+ * more per-action metadata (see brief 0-1-126-to-0-1-127 drift notes).
+ * 0.1.139: the fetch itself is `useArtifactVersions`, shared with
+ * `<FileVersionHistory />`; this wrapper only keeps the `{ versions, total }`
+ * shape `ComparePanel`/`PlanPage` read.
+ */
 export function usePlanVersions(planPath: string | null) {
-  return useQuery({
-    queryKey: planPath === null ? ['plan', 'versions', 'none'] : keys.versions(planPath),
-    queryFn: async () => {
-      const body = await fetchJson<Envelope<FileVersionListItem[]>>(
-        `/api/artifacts/plan/${encodeArtifactPath(planPath!)}/versions`,
-      );
-      return { versions: body.data, total: body.data.length };
-    },
-    enabled: planPath !== null,
-  });
+  const q = useArtifactVersions('plan', planPath);
+  const versions = q.data ?? [];
+  return { ...q, data: q.data ? { versions, total: versions.length } : undefined };
 }
 
 export function usePlanVersion(planPath: string | null, version: number | null) {
@@ -225,6 +227,7 @@ export function useCreateThreadFromPlan() {
     onSuccess: (_data, vars) => {
       qc.invalidateQueries({ queryKey: keys.detail(vars.planPath) });
       qc.invalidateQueries({ queryKey: keys.threads(vars.planPath) });
+      qc.invalidateQueries({ queryKey: keys.lastThread(vars.planPath) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
       qc.invalidateQueries({ queryKey: ['threads'] });
     },

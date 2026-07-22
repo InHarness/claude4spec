@@ -1,17 +1,21 @@
 import { Clock } from 'lucide-react';
-import { useBriefVersions } from '../hooks/useBriefs.js';
+import { useArtifactVersions } from '../hooks/useArtifactVersions.js';
+import type { ArtifactKind } from '../hooks/useArtifactThreads.js';
 
 interface Props {
-  briefPath: string;
+  kind: ArtifactKind;
+  path: string;
 }
 
 /**
- * M21 brief version history. Lekka wersja PageVersionHistory — bez restore button
- * (brief'y odzyskuje sie przez M17 release restore lub pelny rewrite z chat).
- * Ma byc tylko audit trail "kto kiedy co".
+ * 0.1.139: the `file_version` audit trail shared by every artifact detail page
+ * (was `BriefVersionHistory`, brief-only). Deliberately read-only — a version
+ * is recovered through an M17 release restore or a rewrite from chat, not from
+ * here, which is why there is no restore button (unlike the entity-level
+ * `VersionHistory` / `PageVersionHistory`).
  */
-export function BriefVersionHistory({ briefPath }: Props) {
-  const { data: versions = [], isLoading } = useBriefVersions(briefPath);
+export function FileVersionHistory({ kind, path }: Props) {
+  const { data: versions = [], isLoading } = useArtifactVersions(kind, path);
 
   if (isLoading) {
     return (
@@ -28,7 +32,7 @@ export function BriefVersionHistory({ briefPath }: Props) {
     );
   }
   return (
-    <div className="overflow-auto nice-scroll">
+    <div className="flex-1 overflow-auto nice-scroll">
       <ul className="divide-y" style={{ borderColor: 'var(--c-hair)' }}>
         {versions.map((v) => (
           <li key={v.id} className="px-4 py-2.5">
