@@ -5,6 +5,7 @@ import { renderDiagram, hashSource, sanitizeRenderId, isSupportedFormat } from '
 import { openPopover, toast } from '../../../ui/events.js';
 import { DiagramFullscreen } from '../../../components/DiagramFullscreen.js';
 import { useDiagram, useUpdateDiagram } from '../../../hooks/useDiagrams.js';
+import { useTheme } from '../../../state/tweaks.js';
 import type { DiagramFormat } from '../../../../shared/entities.js';
 
 type ViewState =
@@ -25,12 +26,16 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
   const source = diagram?.source ?? '';
   const missing = Boolean(slug) && !isLoading && !diagram;
 
+  // Theme is baked into the rendered SVG, so a switch has to re-run mermaid —
+  // the store is shared, which makes every mounted diagram re-render eagerly.
+  const { effectiveTheme } = useTheme();
+
   const [state, setState] = useState<ViewState>({ status: 'loading' });
   const [fullscreen, setFullscreen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const renderId = useMemo(
     () => sanitizeRenderId(`${format}-${hashSource(source)}-${Math.random().toString(36).slice(2, 6)}`),
-    [format, source],
+    [format, source, effectiveTheme],
   );
 
   useEffect(() => {
@@ -48,7 +53,7 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
       return;
     }
     setState({ status: 'loading' });
-    renderDiagram(format, source, renderId).then((result) => {
+    renderDiagram(format, source, renderId, effectiveTheme).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setState({ status: 'rendered', svg: result.svg });
@@ -59,7 +64,7 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
     return () => {
       cancelled = true;
     };
-  }, [format, source, renderId, isLoading]);
+  }, [format, source, renderId, isLoading, effectiveTheme]);
 
   async function openEditPopover(e?: React.MouseEvent) {
     const rect = wrapperRef.current?.getBoundingClientRect();
@@ -198,7 +203,6 @@ export function DiagramView({ node, updateAttributes, deleteNode }: NodeViewProp
           <div
             className="c4s-diagram-svg"
             style={{
-              background: '#FFFBF4',
               border: '1px solid var(--c-hair)',
               borderRadius: 4,
               padding: 12,
