@@ -42,10 +42,16 @@ export function buildDiagramTools(_deps: DiagramToolsDeps = {}): McpToolDefiniti
       format: formatSchema.default('mermaid').describe("Diagram language (default 'mermaid')."),
     },
     async (args) => {
+      // Coerced rather than cast: the schema above guarantees these when the SDK
+      // parses arguments for us, but `buildDiagramTools` is exported, so a caller
+      // holding this handler directly can hand it anything. A tool whose contract
+      // is "never blocks, warnings only" must not answer with a TypeError.
+      const format = typeof args.format === 'string' ? args.format : 'mermaid';
+      const source = typeof args.source === 'string' ? args.source : '';
       // `warnings` is the SAME array the CRUD path returns — `ok` is purely derived.
       // No `message`/`line`: a flat list, and "unsupported format" is a client-render
       // concern, never a validator complaint.
-      const warnings = await validateDiagramSource(args.format as string, args.source as string);
+      const warnings = await validateDiagramSource(format, source);
       return ok({ ok: warnings.length === 0, warnings });
     },
   );
