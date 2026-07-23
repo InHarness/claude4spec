@@ -1,6 +1,11 @@
 // 0.1.133: build the custom MCP server through the C4S facade barrel
 // (`@c4s/plugin-runtime`), never the vendor `@inharness-ai/agent-adapters` directly.
-import { createMcpServer, mcpTool, type McpServerInstance } from '../../plugin-runtime/index.js';
+import {
+  createMcpServer,
+  mcpTool,
+  type McpServerInstance,
+  type McpToolDefinition,
+} from '../../plugin-runtime/index.js';
 import { z } from 'zod';
 import { validateDiagramSource } from './validate.js';
 
@@ -14,7 +19,12 @@ export type DiagramToolsDeps = Record<string, never>;
 
 const formatSchema = z.enum(['mermaid', 'd2']);
 
-export function createDiagramToolsServer(_deps: DiagramToolsDeps = {}): McpServerInstance {
+/**
+ * The tool list, separate from the server wrapper below — mirrors
+ * `buildEntityTools()` so each tool's `inputSchema` and `handler` stay reachable
+ * from a unit test without standing up an MCP transport.
+ */
+export function buildDiagramTools(_deps: DiagramToolsDeps = {}): McpToolDefinition[] {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
   });
@@ -25,17 +35,27 @@ export function createDiagramToolsServer(_deps: DiagramToolsDeps = {}): McpServe
       'Never blocks — returns warnings only. Use to check a source is well-formed before writing it.',
     {
       source: z.string().describe('DSL body to validate.'),
-      format: formatSchema.optional().describe("Diagram language (default 'mermaid')."),
+      // `.default()` (not `.optional()`): the MCP SDK parses arguments through this
+      // shape before the handler runs, so an omitted `format` arrives as 'mermaid'
+      // and the advertised JSON Schema carries the default. A format outside the
+      // enum is rejected at that boundary and never reaches the validator.
+      format: formatSchema.default('mermaid').describe("Diagram language (default 'mermaid')."),
     },
     async (args) => {
-      const format = (args.format as string | undefined) ?? 'mermaid';
-      const warnings = await validateDiagramSource(format, String(args.source ?? ''));
+      // `warnings` is the SAME array the CRUD path returns — `ok` is purely derived.
+      // No `message`/`line`: a flat list, and "unsupported format" is a client-render
+      // concern, never a validator complaint.
+      const warnings = await validateDiagramSource(args.format as string, args.source as string);
       return ok({ ok: warnings.length === 0, warnings });
     },
   );
 
+  return [validateDiagram];
+}
+
+export function createDiagramToolsServer(deps: DiagramToolsDeps = {}): McpServerInstance {
   return createMcpServer({
     name: 'diagram-tools',
-    tools: [validateDiagram],
+    tools: buildDiagramTools(deps),
   });
 }

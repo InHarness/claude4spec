@@ -61,9 +61,12 @@ export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
 // written against v3 backend-schema APIs may need adjustment once it shares this `z`.
 export { z } from 'zod';
 export type { ZodRawShape } from 'zod';
-// Host-internal concrete handle type for in-repo backend consumers. NOT part of
+// Host-internal concrete handle types for in-repo backend consumers. NOT part of
 // the published `@c4s/plugin-runtime` surface (that shows opaque `McpServerFactory`).
-export type { McpServerInstance } from '@inharness-ai/agent-adapters';
+// `McpToolDefinition` is what `mcpTool()` returns — an entity module that splits
+// "build the tool list" from "wrap it in a server" (so the tools stay unit-testable)
+// needs to name that type without reaching past this facade.
+export type { McpServerInstance, McpToolDefinition } from '@inharness-ai/agent-adapters';
 export type {
   PluginManifest,
   EntityContribution,
