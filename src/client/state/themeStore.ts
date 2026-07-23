@@ -42,7 +42,10 @@ function migrateLegacyThemeEnvelope(): void {
 migrateLegacyThemeEnvelope();
 
 function prefersDark(): boolean {
-  if (typeof window === 'undefined') return false;
+  // `matchMedia` is absent in jsdom without a polyfill — this module runs at
+  // import time, so an unguarded call would break any test that merely touches
+  // a component importing the theme.
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
@@ -106,8 +109,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
 if (typeof window !== 'undefined') {
   // `system` follows the OS in place — no reload required.
-  const mql = window.matchMedia('(prefers-color-scheme: dark)');
-  mql.addEventListener('change', (e) => {
+  const mql =
+    typeof window.matchMedia === 'function'
+      ? window.matchMedia('(prefers-color-scheme: dark)')
+      : null;
+  mql?.addEventListener('change', (e) => {
     if (useThemeStore.getState().theme !== 'system') return;
     useThemeStore.setState({ effectiveTheme: e.matches ? 'dark' : 'light' });
   });
