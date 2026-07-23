@@ -88,21 +88,43 @@ export function mermaidConfig(theme: EffectiveTheme) {
  * re-initialize happens BEFORE the re-render that follows a theme switch.
  */
 export async function loadMermaid(theme: EffectiveTheme = 'light'): Promise<MermaidModule> {
-  if (!mermaidInstance) {
-    if (!loadingPromise) {
-      loadingPromise = import('mermaid').then((mod) => {
+  if (!loadingPromise) {
+    loadingPromise = import('mermaid')
+      .then((mod) => {
         mermaidInstance = mod.default;
-        return mermaidInstance;
+        return mod.default;
+      })
+      .catch((err) => {
+        // Don't poison the memo: a transient chunk-load failure must not make
+        // every later render re-await the same rejected promise forever.
+        loadingPromise = null;
+        throw err;
       });
-    }
-    await loadingPromise;
   }
-  const m = mermaidInstance!;
+  const m = await loadingPromise;
   if (initializedTheme !== theme) {
     m.initialize(mermaidConfig(theme));
     initializedTheme = theme;
   }
   return m;
+}
+
+/**
+ * Serialises diagram renders.
+ *
+ * `initialize()` mutates mermaid's module-level config, so an `initialize` for
+ * one theme can land between another render's `initialize` and its `render` —
+ * emitting SVG in the palette of the wrong theme, which then sticks around as
+ * exactly the stale-palette relic the theme switch is meant to prevent. Only
+ * possible when the theme changes while a render is in flight (fast double
+ * toggle, slow first render), but the SVG it produces is permanent, so the
+ * whole load→parse→render sequence runs as one critical section.
+ */
+let renderChain: Promise<unknown> = Promise.resolve();
+function serialize<T>(fn: () => Promise<T>): Promise<T> {
+  const next = renderChain.then(fn, fn);
+  renderChain = next.catch(() => undefined);
+  return next;
 }
 
 export type RenderResult =
@@ -125,9 +147,11 @@ export async function renderDiagram(
     return { ok: false, message: 'Empty source' };
   }
   try {
-    const m = await loadMermaid(theme);
-    await m.parse(source);
-    const { svg } = await m.render(id, source);
+    const svg = await serialize(async () => {
+      const m = await loadMermaid(theme);
+      await m.parse(source);
+      return (await m.render(id, source)).svg;
+    });
     return { ok: true, svg };
   } catch (err) {
     const e = err as Error & { hash?: { loc?: { first_line?: number } } };
