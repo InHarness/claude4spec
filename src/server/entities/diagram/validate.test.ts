@@ -145,3 +145,27 @@ describe('validateDiagramSource', () => {
     expect(out).toBe('[]');
   });
 });
+
+/**
+ * The 0.1.140 contract, on top of the DOM-regression cases above: what the
+ * return VALUE is, as opposed to which sources do or do not warn.
+ */
+describe('validateDiagramSource — 0.1.140 return contract', () => {
+  it('stays silent for any non-mermaid format, not just d2', async () => {
+    // Unreachable through MCP (enum) or CRUD (readFormat coerces), but possible
+    // when a node's `format` attribute is set by hand in markdown.
+    expect(await validateDiagramSource('graphviz', 'digraph { a -> b }')).toEqual([]);
+  });
+
+  it('returns flat strings — the old { ok, message, line } shape is gone', async () => {
+    const warnings = await validateDiagramSource('mermaid', 'not a diagram at all');
+    expect(warnings).toHaveLength(1);
+    expect(typeof warnings[0]).toBe('string');
+  });
+
+  it('resolves rather than rejects — a linter must never block a write', async () => {
+    await expect(validateDiagramSource('mermaid', '<<< not even text >>>')).resolves.toBeInstanceOf(
+      Array,
+    );
+  });
+});
