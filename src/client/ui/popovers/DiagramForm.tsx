@@ -14,6 +14,7 @@ import {
   sanitizeRenderId,
   hashSource,
 } from '../../tiptap/extensions/diagramRender.js';
+import { useTheme } from '../../state/tweaks.js';
 
 type PreviewState =
   | { status: 'idle' }
@@ -30,6 +31,7 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
   const [fullscreen, setFullscreen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceRef = useRef<number | null>(null);
+  const { effectiveTheme } = useTheme();
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -46,8 +48,8 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
     }
     setPreview({ status: 'loading' });
     debounceRef.current = window.setTimeout(() => {
-      const id = sanitizeRenderId(`preview-${format}-${hashSource(source)}`);
-      renderDiagram(format, source, id).then((r) => {
+      const id = sanitizeRenderId(`preview-${format}-${effectiveTheme}-${hashSource(source)}`);
+      renderDiagram(format, source, id, effectiveTheme).then((r) => {
         if (r.ok) setPreview({ status: 'ok', svg: r.svg });
         else setPreview({ status: 'error', message: r.message, line: r.line });
       });
@@ -55,7 +57,7 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
     return () => {
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [format, source]);
+  }, [format, source, effectiveTheme]);
 
   const dirty =
     mode === 'create'
@@ -187,11 +189,11 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
         <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           <FieldLabel>Preview</FieldLabel>
           <div
+            className="c4s-diagram-svg"
             style={{
               flex: 1,
               minHeight: 220,
               padding: 8,
-              background: '#FFFBF4',
               border: '1px solid var(--c-hair)',
               borderRadius: 4,
               overflow: 'auto',

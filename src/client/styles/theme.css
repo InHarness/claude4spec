@@ -280,6 +280,33 @@ body {
   }
 }
 
+/* Diagram render surfaces — background follows the `color-card` token (light
+   #fffdf8 / dark #2c2b27) instead of a literal, so the mermaid SVG blends into
+   the light and dark shells alike. Applied on all four surfaces: the embedded
+   NodeView, the fullscreen stage, the popover live-preview and the entity
+   detail panel. */
+.c4s-diagram-svg {
+  background: var(--c-card);
+}
+
+/* Invariant: app typography does NOT style rendered diagram SVG content.
+   Mermaid puts HTML labels inside <foreignObject> and wraps them in a real
+   <p>, which `.prose-spec p` (0,1,1) would otherwise recolor with --c-ink —
+   invisible in light, unreadable in dark — overriding the diagram theme's own
+   label color. At (0,1,2) these win. The appearance of SVG content belongs
+   solely to the diagram's themeVariables; element selectors (not
+   `foreignObject`) keep this immune to SVG's case-sensitive type matching. */
+.c4s-diagram-svg svg p,
+.c4s-diagram-svg svg div,
+.c4s-diagram-svg svg span {
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-style: inherit;
+  margin: 0;
+}
+
 /* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */
 .chat-input-pm {
   font-size: 13px;

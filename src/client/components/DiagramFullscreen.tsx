@@ -193,6 +193,7 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
 
       <div
         ref={stageRef}
+        className="c4s-diagram-svg"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -201,7 +202,6 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
         style={{
           flex: 1,
           overflow: 'hidden',
-          background: '#FFFBF4',
           cursor: dragging ? 'grabbing' : 'grab',
           position: 'relative',
         }}
