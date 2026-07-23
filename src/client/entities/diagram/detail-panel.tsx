@@ -9,6 +9,7 @@ import {
 } from '../../tiptap/extensions/diagramRender.js';
 import { toast } from '../../ui/events.js';
 import { useReferences } from '../../hooks/useReferences.js';
+import { useTheme } from '../../state/tweaks.js';
 import { EntityDetailToolbar } from '../../host-ui-kit/detail/EntityDetailToolbar.js';
 import { FormShell } from '../../host-ui-kit/overlay/FormShell.js';
 import { FormField } from '../../host-ui-kit/form/FormField.js';
@@ -31,10 +32,12 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
   const format = diagram?.format ?? 'mermaid';
   const dirty = draft !== null && draft !== (diagram?.source ?? '');
 
+  const { effectiveTheme } = useTheme();
+
   const [preview, setPreview] = useState<Preview>({ status: 'idle' });
   const renderId = useMemo(
     () => sanitizeRenderId(`detail-${hashSource(source)}-${Math.random().toString(36).slice(2, 6)}`),
-    [source],
+    [source, effectiveTheme],
   );
 
   useEffect(() => {
@@ -48,14 +51,14 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
       return;
     }
     setPreview({ status: 'loading' });
-    renderDiagram(format, source, renderId).then((r) => {
+    renderDiagram(format, source, renderId, effectiveTheme).then((r) => {
       if (cancelled) return;
       setPreview(r.ok ? { status: 'rendered', svg: r.svg } : { status: 'error', message: r.message });
     });
     return () => {
       cancelled = true;
     };
-  }, [format, source, renderId]);
+  }, [format, source, renderId, effectiveTheme]);
 
   function save() {
     if (!dirty) return;
@@ -100,7 +103,12 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
         <div className="flex-1 overflow-auto p-3 flex flex-col gap-3">
           <div
             className="rounded"
-            style={{ background: '#FFFBF4', border: '1px solid var(--c-hair)', padding: 12, minHeight: 80 }}
+            style={{
+              background: 'var(--c-card)',
+              border: '1px solid var(--c-hair)',
+              padding: 12,
+              minHeight: 80,
+            }}
           >
             {preview.status === 'rendered' ? (
               <div className="c4s-diagram-svg" dangerouslySetInnerHTML={{ __html: preview.svg }} />

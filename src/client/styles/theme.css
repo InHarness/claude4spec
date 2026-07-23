@@ -280,18 +280,31 @@ body {
   }
 }
 
-/* containment for rendered mermaid diagrams (`c4s-diagram-svg`).
-   Mermaid emits real HTML <p>/<span> inside the SVG's <foreignObject>, so
-   `.prose-spec p` (0,1,1) matches the label text DIRECTLY, while the diagram's
-   own theme reaches it only by inheritance (its injected <style> targets
-   `.label` / `span`) — and a direct match always beats an inherited value.
-   Result without this rule: labels take `--c-ink`, i.e. near-white on the
-   diagram's light background in dark mode. Keep mermaid's theme authoritative.
-   Deliberately OUTSIDE @layer components and at (0,2,1) so it outranks the
-   unlayered prose rules above. */
-.prose-spec .c4s-diagram-svg p,
-.prose-spec .c4s-diagram-svg span {
+/* Diagram render surfaces — background follows the `color-card` token (light
+   #fffdf8 / dark #2c2b27) instead of a literal, so the mermaid SVG blends into
+   the light and dark shells alike. Applied on all four surfaces: the embedded
+   NodeView, the fullscreen stage, the popover live-preview and the entity
+   detail panel. */
+.c4s-diagram-svg {
+  background: var(--c-card);
+}
+
+/* Invariant: app typography does NOT style rendered diagram SVG content.
+   Mermaid puts HTML labels inside <foreignObject> and wraps them in a real
+   <p>, which `.prose-spec p` (0,1,1) would otherwise recolor with --c-ink —
+   invisible in light, unreadable in dark — overriding the diagram theme's own
+   label color. At (0,1,2) these win. The appearance of SVG content belongs
+   solely to the diagram's themeVariables; element selectors (not
+   `foreignObject`) keep this immune to SVG's case-sensitive type matching. */
+.c4s-diagram-svg svg p,
+.c4s-diagram-svg svg div,
+.c4s-diagram-svg svg span {
   color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  font-style: inherit;
+  margin: 0;
 }
 
 /* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */

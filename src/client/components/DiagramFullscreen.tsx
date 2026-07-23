@@ -193,6 +193,7 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
 
       <div
         ref={stageRef}
+        className="c4s-diagram-svg"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -201,21 +202,12 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
         style={{
           flex: 1,
           overflow: 'hidden',
-          background: '#FFFBF4',
           cursor: dragging ? 'grabbing' : 'grab',
           position: 'relative',
         }}
       >
-        {/*
-          `c4s-diagram-svg`: same hook as the embedded NodeView (DiagramView) and the
-          detail panel. This overlay is NOT portalled — it renders inside the NodeView's
-          <figure>, so it sits under `.prose-spec` and `.prose-spec p` would recolor
-          mermaid's labels here too. The containment rule in theme.css is keyed on this
-          class, so without it the overlay keeps the bug the embedded view no longer has.
-        */}
         <div
           ref={contentRef}
-          className="c4s-diagram-svg"
           style={{
             position: 'absolute',
             left: 0,
