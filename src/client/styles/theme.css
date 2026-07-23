@@ -280,6 +280,20 @@ body {
   }
 }
 
+/* containment for rendered mermaid diagrams (`c4s-diagram-svg`).
+   Mermaid emits real HTML <p>/<span> inside the SVG's <foreignObject>, so
+   `.prose-spec p` (0,1,1) matches the label text DIRECTLY, while the diagram's
+   own theme reaches it only by inheritance (its injected <style> targets
+   `.label` / `span`) — and a direct match always beats an inherited value.
+   Result without this rule: labels take `--c-ink`, i.e. near-white on the
+   diagram's light background in dark mode. Keep mermaid's theme authoritative.
+   Deliberately OUTSIDE @layer components and at (0,2,1) so it outranks the
+   unlayered prose rules above. */
+.prose-spec .c4s-diagram-svg p,
+.prose-spec .c4s-diagram-svg span {
+  color: inherit;
+}
+
 /* chat composer (L8 `chat-input` context) — tiptap skinned to match the old textarea */
 .chat-input-pm {
   font-size: 13px;
