@@ -54,10 +54,18 @@ async function importMermaidWithDom(): Promise<ParseFn | null> {
     const w = new Window({ url: 'http://localhost' });
     win = w as unknown as { happyDOM: { close: () => Promise<void> } };
 
-    for (const key of DOM_GLOBALS) saved.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     for (const key of DOM_GLOBALS) {
       const value = key === 'window' ? w : (w as unknown as Record<string, unknown>)[key];
-      Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+      try {
+        // Record the descriptor only once we know we can replace it, so the
+        // restore below never re-defines something we did not touch.
+        const descriptor = Object.getOwnPropertyDescriptor(globalThis, key);
+        Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
+        saved.set(key, descriptor);
+      } catch {
+        // A non-configurable host global (Node version dependent) — skip it
+        // rather than give up on validating altogether.
+      }
     }
 
     const mod = (await import('mermaid')) as { default?: unknown };
