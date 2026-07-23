@@ -33,9 +33,18 @@ function stripLayerBlocks(source: string): string {
       break;
     }
     const open = css.indexOf('{', at);
+    const semi = css.indexOf(';', at);
     if (open === -1) {
       out += css.slice(i);
       break;
+    }
+    // statement form (`@layer base, components;`) declares order without a body —
+    // without this, the scan would take the NEXT rule's `{` as the block opener and
+    // silently delete that rule, quietly changing what the assertions below see
+    if (semi !== -1 && semi < open) {
+      out += css.slice(i, at);
+      i = semi + 1;
+      continue;
     }
     out += css.slice(i, at);
     let depth = 1;

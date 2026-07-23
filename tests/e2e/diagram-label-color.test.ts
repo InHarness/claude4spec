@@ -55,8 +55,9 @@ interface WorkspaceProject {
 
 async function firstProject(): Promise<WorkspaceProject> {
   const res = await fetch(`${BASE}/api/workspace`);
-  const body = (await res.json()) as { projects: WorkspaceProject[] };
-  const project = body.projects[0];
+  if (!res.ok) throw new Error(`GET /api/workspace → ${res.status}`);
+  const body = (await res.json()) as { projects?: WorkspaceProject[] };
+  const project = body.projects?.[0];
   if (!project) throw new Error('no project registered in this environment');
   await fetch(`${BASE}/api/projects/${project.id}/config`, {
     method: 'PATCH',
