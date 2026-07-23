@@ -95,23 +95,42 @@ async function pageWithEmbeddedDiagram(projectId: string): Promise<string> {
 }
 
 /**
- * For every mermaid label on the page: the computed color of the inner <p> mermaid
- * emits, alongside the color of the label container mermaid's own theme styles.
- * Equal → the diagram theme is authoritative. Different → app CSS leaked in.
+ * For every mermaid label on the page: the computed style of the inner <p> mermaid
+ * emits, next to the label container mermaid's own theme styles. Equal → the
+ * diagram theme is authoritative. Different → app typography leaked in.
+ *
+ * `fontSize` and `lineHeight` carry this test, not `color`. Since 0.1.141 the
+ * diagram palette mirrors the app tokens, so mermaid's label ink EQUALS `--c-ink`
+ * in both themes — a color leak is currently invisible on a real diagram (verified:
+ * deleting the containment rule from the live page's CSSOM leaves the color
+ * unchanged and shifts font-size 16px→15.5px, line-height 24px→26.35px). Color is
+ * still asserted so the day the two palettes diverge again, this catches it; the
+ * synthetic probe above keeps a non-vacuous color check either way.
  */
 const LABEL_VS_CONTAINER = `[...document.querySelectorAll('.nodeLabel, .edgeLabel')]
   .filter((el) => el.textContent.trim() && el.querySelector('p'))
-  .map((el) => ({
-    text: el.textContent.trim().slice(0, 24),
-    container: getComputedStyle(el).color,
-    inner: getComputedStyle(el.querySelector('p')).color,
-    margin: getComputedStyle(el.querySelector('p')).marginBottom,
-  }))`;
+  .map((el) => {
+    const outer = getComputedStyle(el);
+    const inner = getComputedStyle(el.querySelector('p'));
+    const pick = (s) => ({ color: s.color, fontSize: s.fontSize, lineHeight: s.lineHeight });
+    return {
+      text: el.textContent.trim().slice(0, 24),
+      container: pick(outer),
+      inner: pick(inner),
+      margin: inner.marginBottom,
+    };
+  })`;
+
+interface LabelStyle {
+  color: string;
+  fontSize: string;
+  lineHeight: string;
+}
 
 interface LabelProbe {
   text: string;
-  container: string;
-  inner: string;
+  container: LabelStyle;
+  inner: LabelStyle;
   margin: string;
 }
 
@@ -201,7 +220,9 @@ describe.skipIf(!BASE)('diagram labels keep mermaid’s styling, not the app’s
       const embedded = (await page.evaluate(LABEL_VS_CONTAINER)) as LabelProbe[];
       expect(embedded.length).toBeGreaterThan(0);
       for (const l of embedded) {
-        expect(l.inner, `embedded label "${l.text}" diverges from its container`).toBe(l.container);
+        expect(l.inner, `embedded label "${l.text}" diverges from its container`).toEqual(
+          l.container,
+        );
         expect(l.margin).toBe('0px');
       }
 
@@ -214,7 +235,7 @@ describe.skipIf(!BASE)('diagram labels keep mermaid’s styling, not the app’s
       const both = (await page.evaluate(LABEL_VS_CONTAINER)) as LabelProbe[];
       expect(both.length).toBeGreaterThan(embedded.length);
       for (const l of both) {
-        expect(l.inner, `label "${l.text}" diverges from its container`).toBe(l.container);
+        expect(l.inner, `label "${l.text}" diverges from its container`).toEqual(l.container);
         expect(l.margin).toBe('0px');
       }
 
