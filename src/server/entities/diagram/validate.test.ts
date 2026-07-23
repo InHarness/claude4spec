@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { validateDiagramSource } from './validate.js';
 
@@ -79,21 +80,50 @@ describe('validateDiagramSource', () => {
     expect(await validateDiagramSource('mermaid', '   \n\t ')).toEqual([]);
   });
 
-  it('leaves no fake DOM globals behind in the process', async () => {
+  it('restores every DOM global it installs, byte-for-byte', async () => {
+    // All eight keys the implementation touches. `navigator` is the interesting
+    // one: it already exists natively on Node >= 21, so it is the only entry
+    // that takes the save-and-restore-descriptor path rather than the delete
+    // path — exactly the branch that could leave happy-dom's navigator behind.
+    const keys = [
+      'window',
+      'document',
+      'DOMParser',
+      'Node',
+      'Element',
+      'HTMLElement',
+      'NodeFilter',
+      'navigator',
+    ];
+    const before = keys.map((k) => Object.getOwnPropertyDescriptor(globalThis, k));
+
     await validateDiagramSource('mermaid', VALID.classDiagram);
-    const g = globalThis as unknown as Record<string, unknown>;
-    for (const key of ['window', 'document', 'DOMParser', 'HTMLElement', 'NodeFilter']) {
-      expect(g[key], `globalThis.${key} should not survive validation`).toBeUndefined();
-    }
+
+    keys.forEach((key, i) => {
+      const after = Object.getOwnPropertyDescriptor(globalThis, key);
+      expect(after, `globalThis.${key} changed across validation`).toEqual(before[i]);
+    });
   });
 
-  it('does not keep the event loop alive — a CLI process exits cleanly after validating', () => {
+  // The DOM must not keep a CLI process alive after a validation. That can only
+  // be observed from outside the process — in-process handle counts are polluted
+  // by vitest's own timers — so this spawns one short-lived child. Skipped rather
+  // than failed when `tsx` is absent, so a missing dev toolchain never looks like
+  // a leaked-timer regression.
+  const tsxAvailable = (() => {
+    try {
+      createRequire(import.meta.url).resolve('tsx');
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  it.skipIf(!tsxAvailable)('does not keep the event loop alive — a CLI process exits cleanly', () => {
     const here = path.dirname(fileURLToPath(import.meta.url));
-    const repoRoot = path.resolve(here, '../../../..');
     const modulePath = pathToFileURL(path.join(here, 'validate.ts')).href;
-    // Runs the real validator in a fresh process through tsx. `execFileSync`
-    // throws on a non-zero exit *and* on the timeout, so a process kept alive
-    // by a leaked happy-dom timer fails this test rather than hanging the run.
+    // execFileSync throws on a non-zero exit *and* on the timeout, so a process
+    // held open by a leaked happy-dom handle fails here instead of hanging.
     const out = execFileSync(
       process.execPath,
       [
@@ -105,7 +135,12 @@ describe('validateDiagramSource', () => {
          const warnings = await validateDiagramSource('mermaid', 'classDiagram\\n  class Foo {\\n    +bar()\\n  }');
          process.stdout.write(JSON.stringify(warnings));`,
       ],
-      { cwd: repoRoot, timeout: 60_000, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] },
+      {
+        cwd: path.resolve(here, '../../../..'),
+        timeout: 30_000,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
     );
     expect(out).toBe('[]');
   });

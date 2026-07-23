@@ -40,19 +40,18 @@ const DOM_GLOBALS = [
 
 /**
  * Memoized so the set/restore of `globalThis` can never interleave between two
- * concurrent validations: every caller awaits the same single import.
+ * concurrent validations: every caller awaits the same single import. Only a
+ * *successful* import is kept — see `ensureMermaid`.
  */
 let mermaidParse: Promise<ParseFn | null> | null = null;
 
 async function importMermaidWithDom(): Promise<ParseFn | null> {
   const anyGlobal = globalThis as unknown as Record<string, unknown>;
   const saved = new Map<string, PropertyDescriptor | undefined>();
-  let win: { happyDOM: { close: () => Promise<void> } } | null = null;
 
   try {
     const { Window } = await import('happy-dom');
     const w = new Window({ url: 'http://localhost' });
-    win = w as unknown as { happyDOM: { close: () => Promise<void> } };
 
     for (const key of DOM_GLOBALS) {
       const value = key === 'window' ? w : (w as unknown as Record<string, unknown>)[key];
@@ -74,17 +73,36 @@ async function importMermaidWithDom(): Promise<ParseFn | null> {
   } catch {
     return null; // no DOM or no mermaid in this runtime — cannot validate, never block
   } finally {
+    // Must not throw: a throw here would override the `return null` above and
+    // reject the memoized promise, turning "cannot validate" into a failed write.
     for (const [key, descriptor] of saved) {
-      delete anyGlobal[key];
-      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      try {
+        delete anyGlobal[key];
+        if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      } catch {
+        // Leave this one key as-is rather than abandoning the remaining restores.
+      }
     }
-    // Release happy-dom's timers/observers so the DOM never keeps a CLI process alive.
-    await win?.happyDOM.close().catch(() => {});
+    // The happy-dom window is deliberately NOT closed: DOMPurify keeps its own
+    // reference to it for every later parse(), and an un-closed window schedules
+    // nothing, so it never keeps a CLI process alive (covered by a test below).
   }
 }
 
 function ensureMermaid(): Promise<ParseFn | null> {
-  mermaidParse ??= importMermaidWithDom();
+  // Memoize only a successful import: a transient failure (ESM resolution race,
+  // a busy box) must not disable diagram validation for the rest of the process
+  // lifetime — `[]` is indistinguishable from "valid", so it would be silent.
+  mermaidParse ??= importMermaidWithDom().then(
+    (parse) => {
+      if (!parse) mermaidParse = null;
+      return parse;
+    },
+    () => {
+      mermaidParse = null;
+      return null;
+    },
+  );
   return mermaidParse;
 }
 
@@ -92,7 +110,9 @@ export async function validateDiagramSource(format: string, source: string): Pro
   if (format !== 'mermaid') return [];
   if (!source.trim()) return [];
 
-  const parse = await ensureMermaid();
+  // Belt-and-braces: this function never rejects, so a caller that already
+  // committed a write (routes.ts, service.ts) can never be turned into a 500.
+  const parse = await ensureMermaid().catch(() => null);
   if (!parse) return [];
 
   try {
