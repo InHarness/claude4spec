@@ -450,6 +450,29 @@ body {
   background: var(--c-subtle);
 }
 
+/* Global default scrollbar — applies to every scroll container without opt-in.
+   Mirrors the .nice-scroll treatment above; .scroll-thin's class-scoped rules keep
+   higher specificity and continue to override this on narrow <pre> blocks. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--c-hair-strong);
+  border-radius: 999px;
+  border: 2px solid var(--c-bg);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--c-subtle);
+}
+/* Firefox (no ::-webkit pseudo-elements) */
+html {
+  scrollbar-color: var(--c-hair-strong) transparent;
+}
+
 /* caret */
 @keyframes caret-blink {
   0%, 50% { opacity: 1; }
