@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { nanoid } from 'nanoid';
 import type {
   ArtifactThreadListItem,
+  ChatBackgroundTask,
   ChatContextType,
   ChatMessage,
   ChatMessageStatus,
@@ -59,6 +60,18 @@ interface ChatSubagentTaskRow {
   tool_use_id: string | null;
   description: string;
   status: string;
+  summary: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface ChatBackgroundTaskRow {
+  thread_id: string;
+  task_id: string;
+  task_type: string;
+  description: string;
+  status: string;
+  output_file: string | null;
   summary: string | null;
   created_at: string;
   updated_at: string;
@@ -349,12 +362,18 @@ export class ChatService {
     id: string,
     limit?: number,
     offset?: number
-  ): { thread: ChatThread; messages: ChatMessage[]; subagentTasks: ChatSubagentTask[] } | null {
+  ): {
+    thread: ChatThread;
+    messages: ChatMessage[];
+    subagentTasks: ChatSubagentTask[];
+    backgroundTasks: ChatBackgroundTask[];
+  } | null {
     const thread = this.findThread(id);
     if (!thread) return null;
     const messages = this.getMessages(id, limit, offset);
     const subagentTasks = this.listSubagentTasks(id);
-    return { thread, messages, subagentTasks };
+    const backgroundTasks = this.listBackgroundTasks(id);
+    return { thread, messages, subagentTasks, backgroundTasks };
   }
 
   getThreadMeta(id: string): ChatThread | null {
@@ -447,6 +466,81 @@ export class ChatService {
       )
       .all(threadId) as ChatSubagentTaskRow[];
     return rows.map((r) => this.hydrateSubagentTask(r));
+  }
+
+  // --- M17: engine-backgrounded tasks (background_task_* family). Sibling to the
+  // subagent methods above; a backgrounded shell/monitor/workflow is NOT a subagent.
+
+  startBackgroundTask(
+    threadId: string,
+    taskId: string,
+    taskType: string,
+    description: string
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO chat_background_task (thread_id, task_id, task_type, description, status)
+         VALUES (?, ?, ?, ?, 'running')
+         ON CONFLICT(thread_id, task_id) DO UPDATE SET
+           task_type   = excluded.task_type,
+           description = excluded.description,
+           updated_at  = datetime('now')`
+      )
+      .run(threadId, taskId, taskType, description);
+  }
+
+  updateBackgroundTaskProgress(
+    threadId: string,
+    taskId: string,
+    taskType: string,
+    description: string | null,
+    status: string | null,
+    outputFile: string | null
+  ): void {
+    // COALESCE keeps prior values when a progress event omits an optional field.
+    this.db
+      .prepare(
+        `UPDATE chat_background_task
+            SET task_type   = ?,
+                description = COALESCE(?, description),
+                status      = COALESCE(?, status),
+                output_file = COALESCE(?, output_file),
+                updated_at  = datetime('now')
+          WHERE thread_id = ? AND task_id = ?`
+      )
+      .run(taskType, description, status, outputFile, threadId, taskId);
+  }
+
+  completeBackgroundTask(
+    threadId: string,
+    taskId: string,
+    taskType: string,
+    status: string,
+    outputFile: string | null,
+    summary: string | null
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE chat_background_task
+            SET task_type   = ?,
+                status      = ?,
+                output_file = COALESCE(?, output_file),
+                summary     = ?,
+                updated_at  = datetime('now')
+          WHERE thread_id = ? AND task_id = ?`
+      )
+      .run(taskType, status, outputFile, summary, threadId, taskId);
+  }
+
+  listBackgroundTasks(threadId: string): ChatBackgroundTask[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM chat_background_task
+          WHERE thread_id = ?
+          ORDER BY created_at ASC`
+      )
+      .all(threadId) as ChatBackgroundTaskRow[];
+    return rows.map((r) => this.hydrateBackgroundTask(r));
   }
 
   getMessages(threadId: string, limit?: number, offset?: number): ChatMessage[] {
@@ -765,6 +859,20 @@ export class ChatService {
       toolUseId: row.tool_use_id,
       description: row.description,
       status: row.status,
+      summary: row.summary,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  private hydrateBackgroundTask(row: ChatBackgroundTaskRow): ChatBackgroundTask {
+    return {
+      threadId: row.thread_id,
+      taskId: row.task_id,
+      taskType: row.task_type,
+      description: row.description,
+      status: row.status,
+      outputFile: row.output_file,
       summary: row.summary,
       createdAt: row.created_at,
       updatedAt: row.updated_at,

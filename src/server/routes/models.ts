@@ -4,5 +4,5 @@
  * importow (`agent-turn` importuje `c4s-tools`, wiec import w druga strone tworzylby
  * cykl). `agent-turn.ts` re-eksportuje stad dla zgodnosci istniejacych importerow.
  */
-export const ALLOWED_MODELS = ['fable-5', 'sonnet-4.6', 'opus-4.8', 'haiku-4.5'] as const;
+export const ALLOWED_MODELS = ['fable-5', 'sonnet-4.6', 'opus-5', 'opus-4.8', 'haiku-4.5'] as const;
 export type Model = (typeof ALLOWED_MODELS)[number];

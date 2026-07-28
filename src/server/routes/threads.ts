@@ -71,6 +71,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           ...result.thread,
           messages: result.messages,
           subagentTasks: result.subagentTasks,
+          backgroundTasks: result.backgroundTasks,
           isLive: activeAdapters.has(req.params.id),
           // M05: pending queue (position ASC) — restores chips after F5/restart.
           queuedMessages: chat.listQueued(req.params.id),

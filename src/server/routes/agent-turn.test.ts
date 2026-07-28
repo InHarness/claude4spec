@@ -95,6 +95,10 @@ function makeDeps() {
     startSubagentTask: () => {},
     updateSubagentTaskProgress: () => {},
     completeSubagentTask: () => {},
+    // M17 background tasks (sibling to the subagent stubs above).
+    startBackgroundTask: () => {},
+    updateBackgroundTaskProgress: () => {},
+    completeBackgroundTask: () => {},
     updateCurrentTodoItems: () => {},
     finalizeStreamingRows: () => {},
     // M05 queue: the after-turn merged-dispatch loop drains the queue; an empty
@@ -451,5 +455,68 @@ describe('runAgentTurn — server-side turn timeout (0-1-110-to-next)', () => {
     await runAgentTurn(deps, makeInput());
 
     expect('timeoutMs' in (hoisted.lastExecute ?? {})).toBe(false);
+  });
+});
+
+describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
+  it('persists background_task_* events and never emits/finalizes a held result', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'Backgrounding a sleep. ' },
+      { type: 'background_task_started', taskId: 'bg1', taskType: 'shell', description: 'sleep 5' },
+      // HELD result — engine still running the sleep, NOT end-of-run.
+      {
+        type: 'result',
+        sessionId: 's-held',
+        usage: { inputTokens: 10, outputTokens: 5 },
+        contextSize: 15,
+        backgroundTasks: [{ taskId: 'bg1', taskType: 'shell' }],
+      },
+      { type: 'background_task_completed', taskId: 'bg1', taskType: 'shell', status: 'success', summary: 'slept' },
+      { type: 'text_delta', text: 'The sleep finished.' },
+      // FINAL result — nothing in flight, genuine end-of-run.
+      {
+        type: 'result',
+        sessionId: 's-final',
+        usage: { inputTokens: 20, outputTokens: 8 },
+        contextSize: 28,
+      },
+    ];
+
+    const { deps } = makeDeps();
+    const cs = deps.chatService as unknown as {
+      startBackgroundTask: (...a: unknown[]) => void;
+      completeBackgroundTask: (...a: unknown[]) => void;
+      setLastSessionId: (...a: unknown[]) => void;
+    };
+    const started = vi.spyOn(cs, 'startBackgroundTask');
+    const completed = vi.spyOn(cs, 'completeBackgroundTask');
+    const setSession = vi.spyOn(cs, 'setLastSessionId');
+
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    const result = await runAgentTurn(deps, input);
+
+    // The continuation turn's text is the answer — the held result did not end it early.
+    expect(result.answer).toBe('The sleep finished.');
+
+    // Background task persisted via the dedicated (non-subagent) methods, taskType by name.
+    expect(started).toHaveBeenCalledWith('t1', 'bg1', 'shell', 'sleep 5');
+    expect(completed).toHaveBeenCalledWith('t1', 'bg1', 'shell', 'success', null, 'slept');
+
+    // Only the genuine final result reaches the client — the held one is suppressed,
+    // so agent-chat's reducer never finalizes isStreaming / sums usage on it.
+    const emittedResults = emitted.filter((e) => e.type === 'result');
+    expect(emittedResults).toHaveLength(1);
+    expect(emittedResults[0].sessionId).toBe('s-final');
+
+    // The background_task_* events themselves DO reach the client (rendered as a panel).
+    expect(emitted.filter((e) => e.type === 'background_task_started')).toHaveLength(1);
+    expect(emitted.filter((e) => e.type === 'background_task_completed')).toHaveLength(1);
+
+    // Held result still advances the session anchor; final result advances it again.
+    expect(setSession).toHaveBeenCalledWith('t1', 's-held');
+    expect(setSession).toHaveBeenCalledWith('t1', 's-final');
   });
 });

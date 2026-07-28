@@ -11,6 +11,7 @@ import { useChat } from './useChat.js';
 import { useThreadListContext } from './ThreadListContext.js';
 import { BlockRenderer, QueuedMessageBubble } from './BlockRenderer.js';
 import { TransagentPanel } from './TransagentPanel.js';
+import { BackgroundTaskPanel } from './BackgroundTaskPanel.js';
 import { AnnotationPanel } from './AnnotationPanel.js';
 import { CurrentTodoList } from './CurrentTodoList.js';
 import { UsageBadge } from './UsageBadge.js';
@@ -130,6 +131,7 @@ export function ChatOverlay() {
     cancelQueued,
     clearQueue,
     transagents,
+    backgroundTasks,
     activeThreadMeta,
   } = useChat({
     threadId: chatThreadId,
@@ -426,6 +428,7 @@ export function ChatOverlay() {
   const MODEL_LABELS: Record<ChatModel, string> = {
     'fable-5': 'Fable 5',
     'sonnet-4.6': 'Sonnet 4.6',
+    'opus-5': 'Opus 5',
     'opus-4.8': 'Opus 4.8',
     'haiku-4.5': 'Haiku 4.5',
   };
@@ -552,6 +555,11 @@ export function ChatOverlay() {
               {/* 0.1.69 Transagents: nested child panels (live-join or persisted). */}
               {transagents.map((t) => (
                 <TransagentPanel key={t.toolUseId} entry={t} model={model} />
+              ))}
+              {/* M17: engine-backgrounded tasks (shell/monitor/workflow) — a distinct
+                  panel; a backgrounded process is not a subagent. */}
+              {backgroundTasks.map((t) => (
+                <BackgroundTaskPanel key={t.taskId} entry={t} />
               ))}
               {showStreamingBubble && (
                 <div className="msg-enter mb-3 flex">
@@ -972,6 +980,7 @@ interface ModelSettingsPopoverProps {
 function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
     { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning' },
+    { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · 1M ctx' },
     { id: 'opus-4.8', label: 'Opus 4.8', sub: 'Deep reasoning · slow' },
     { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
     { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light' },
