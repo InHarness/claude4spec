@@ -18,10 +18,14 @@
 import { computeLineDiffClient } from '../lib/release-diff/compute-line-diff.js';
 import type { DiffViewLine } from '../host-ui-kit/detail/DiffView.js';
 
-/** Version snapshots arrive as parsed JSON; pre-stringified text is passed through. */
+/**
+ * Version snapshots arrive as parsed JSON; pre-stringified text is passed
+ * through. A missing snapshot diffs as empty rather than as the literal
+ * `"null"` — "no snapshot" is the absence of content, not a value.
+ */
 function asText(snapshot: unknown): string {
   if (typeof snapshot === 'string') return snapshot;
-  if (snapshot === undefined) return '';
+  if (snapshot === undefined || snapshot === null) return '';
   return JSON.stringify(snapshot, null, 2) ?? '';
 }
 

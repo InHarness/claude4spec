@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { withStability } from '../stability.js';
 import { EmptyState } from '../list/EmptyState.js';
 import { LoadingState } from '../actions/LoadingState.js';
@@ -67,22 +67,35 @@ function EntityVersionHistoryViewImpl({
   const [compareVersion, setCompareVersion] = useState<number | null>(null);
   const [tab, setTab] = useState<RightTab>('diff');
 
-  // Newest version is the default selection.
-  useEffect(() => {
-    if (versions.length && selected === null) setSelected(versions[0]!.version);
-  }, [versions, selected]);
+  // Both selections are DERIVED, never stored-and-reset. `type`/`slug` can
+  // change under the same React instance (navigating entity A → entity B reuses
+  // it), and a stale version number would fetch a version B may not have — a
+  // 404 on every such navigation. Deriving also means no init effect: the newest
+  // version is simply the default.
+  const activeVersion =
+    selected != null && versions.some((v) => v.version === selected)
+      ? selected
+      : (versions[0]?.version ?? null);
 
-  // Default compare target: the version immediately older than `selected`.
-  useEffect(() => {
-    if (selected == null || versions.length === 0) return;
-    const idx = versions.findIndex((v) => v.version === selected);
-    const next = idx >= 0 && idx + 1 < versions.length ? versions[idx + 1]!.version : null;
-    setCompareVersion((cur) => (cur === null || !versions.some((v) => v.version === cur) ? next : cur));
-  }, [selected, versions]);
+  // Default compare target: the version immediately older than the active one.
+  const defaultCompare = useMemo(() => {
+    if (activeVersion == null) return null;
+    const idx = versions.findIndex((v) => v.version === activeVersion);
+    return idx >= 0 && idx + 1 < versions.length ? versions[idx + 1]!.version : null;
+  }, [activeVersion, versions]);
 
-  const { data: detail } = useVersionDetail(entityType, slug, selected);
-  const comparing = allowCompare && compareVersion != null && compareVersion !== selected;
-  const { data: compareDetail } = useVersionDetail(entityType, slug, comparing ? compareVersion : null);
+  const compareTarget =
+    allowCompare &&
+    compareVersion != null &&
+    compareVersion !== activeVersion &&
+    versions.some((v) => v.version === compareVersion)
+      ? compareVersion
+      : allowCompare
+        ? defaultCompare
+        : null;
+
+  const { data: detail } = useVersionDetail(entityType, slug, activeVersion);
+  const { data: compareDetail } = useVersionDetail(entityType, slug, compareTarget);
 
   const hunks = useMemo<DiffViewLine[] | null>(() => {
     if (!detail || !compareDetail) return null;
@@ -100,10 +113,16 @@ function EntityVersionHistoryViewImpl({
       : {}),
   }));
 
-  const onRestore = async (id: string) => {
-    const version = Number(id);
-    await restoreVersion.mutateAsync({ type: entityType, slug, version });
-    onRestored?.(id);
+  // `mutate`, not `mutateAsync`: the kit's Restore button calls this
+  // synchronously and drops the return value, so a rejected promise would
+  // become an unhandled rejection and the failure would be invisible. The
+  // in-flight guard stops a double click from capturing two restores.
+  const onRestore = (id: string) => {
+    if (restoreVersion.isPending) return;
+    restoreVersion.mutate(
+      { type: entityType, slug, version: Number(id) },
+      { onSuccess: () => onRestored?.(id) },
+    );
   };
 
   if (isLoading) return <LoadingState lines={4} height={32} />;
@@ -119,16 +138,28 @@ function EntityVersionHistoryViewImpl({
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <EntityDetailToolbar title={`${type} · ${slug}`} busy={restoreVersion.isPending} />
+      <EntityDetailToolbar title={`${type} · ${slug}`} />
+      {restoreVersion.isError && (
+        // Surfaced inline rather than through `useToast`: a toast needs a
+        // `ToastViewport` the embedding app may not have mounted, and a restore
+        // that silently does nothing is the worst possible failure here.
+        <div
+          role="alert"
+          className="mx-5 mt-3 rounded-md px-3 py-2 text-[12px]"
+          style={{ background: 'var(--c-red-soft)', color: 'var(--c-red)' }}
+        >
+          Restore failed: {(restoreVersion.error as Error).message}
+        </div>
+      )}
       <div className="grid grid-cols-[260px_1fr] gap-6 p-5 min-h-0 flex-1 overflow-auto">
         <VersionHistory
           versions={items}
           variant="timeline"
-          activeVersion={selected != null ? String(selected) : undefined}
+          activeVersion={activeVersion != null ? String(activeVersion) : undefined}
           onSelect={(id) => setSelected(Number(id))}
           {...(allowCompare
             ? {
-                compareVersion: compareVersion != null ? String(compareVersion) : undefined,
+                compareVersion: compareTarget != null ? String(compareTarget) : undefined,
                 onCompare: (id: string) => setCompareVersion(Number(id)),
               }
             : {})}
@@ -179,7 +210,13 @@ function RightPane({
       {activeTab === 'diff' ? (
         // No compare target selected yet is a PLACEHOLDER, never an error.
         hunks ? (
-          (renderDiff?.(hunks) ?? <DiffView hunks={hunks} />)
+          // Gated on `renderDiff` being GIVEN, not on what it returns —
+          // `null`/`undefined` are valid nodes meaning "render nothing".
+          renderDiff ? (
+            renderDiff(hunks)
+          ) : (
+            <DiffView hunks={hunks} />
+          )
         ) : (
           <EmptyState
             title="Nothing to compare"

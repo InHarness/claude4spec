@@ -43,8 +43,12 @@ interface VersionRow {
   releaseId?: number;
 }
 
-async function listVersions(projectId: string, slug: string): Promise<VersionRow[]> {
-  const res = await fetch(`${BASE}/api/projects/${projectId}/entities/endpoint/${slug}/versions`);
+async function listVersions(
+  projectId: string,
+  slug: string,
+  type = 'endpoint',
+): Promise<VersionRow[]> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/entities/${type}/${slug}/versions`);
   if (!res.ok) return [];
   const body = (await res.json()) as { versions: VersionRow[] };
   return body.versions;
@@ -72,8 +76,42 @@ async function endpointWithHistory(projectId: string): Promise<string> {
   return slug;
 }
 
+/** A brand-new endpoint has exactly ONE version (`op: 'create'`) — i.e. nothing older to compare against. */
+async function endpointWithOneVersion(projectId: string): Promise<string> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/endpoints`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug: `e2e-single-${Math.random().toString(36).slice(2, 8)}`,
+      method: 'GET',
+      path: '/e2e/single',
+      summary: 'e2e single-version probe',
+    }),
+  });
+  if (!res.ok) throw new Error(`could not create a probe endpoint: ${res.status}`);
+  const { slug } = (await res.json()) as { slug: string };
+  const versions = await listVersions(projectId, slug);
+  if (versions.length !== 1) throw new Error(`expected exactly one version, got ${versions.length}`);
+  return slug;
+}
+
+/** An entity that has never been mutated — no version rows at all. */
+async function acWithNoVersions(projectId: string): Promise<string | null> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/acs`);
+  const body = (await res.json()) as { acs: { slug: string }[] };
+  for (const { slug } of body.acs) {
+    if ((await listVersions(projectId, slug, 'ac')).length === 0) return slug;
+  }
+  return null;
+}
+
 /** Opens the history route with console + network capture armed. */
-async function openHistory(browser: Browser, projectId: string, slug: string) {
+async function openHistory(
+  browser: Browser,
+  projectId: string,
+  slug: string,
+  type: 'endpoints' | 'acs' = 'endpoints',
+) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const consoleErrors: string[] = [];
   const badResponses: string[] = [];
@@ -84,7 +122,7 @@ async function openHistory(browser: Browser, projectId: string, slug: string) {
     if (r.status() >= 400) badResponses.push(`${r.status()} ${new URL(r.url()).pathname}`);
   });
 
-  await page.goto(`${BASE}/p/${projectId}/endpoints/${slug}/history`, { waitUntil: 'networkidle' });
+  await page.goto(`${BASE}/p/${projectId}/${type}/${slug}/history`, { waitUntil: 'networkidle' });
   return { page, consoleErrors, badResponses };
 }
 
@@ -143,18 +181,40 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     await page.close();
   });
 
-  it('[ac:ac-entityversionhistoryview-dla-encji-bez] shows a placeholder, not an error, when nothing is selected to compare', async () => {
-    const { page, consoleErrors, badResponses } = await openHistory(browser, project.id, slug);
+  it('[ac:ac-entityversionhistoryview-dla-encji-bez] falls back to a placeholder, not an error, when there is nothing to compare against', async () => {
+    // A one-version entity is the real "no compare target" state: there is no
+    // older version to default to, so the diff pane has nothing to render.
+    const single = await endpointWithOneVersion(project.id);
+    const { page, consoleErrors, badResponses } = await openHistory(browser, project.id, single);
 
-    // Default state: the next-older version is preselected, so the diff renders.
-    await expect.poll(() => page.getByRole('tab', { name: 'Diff' }).isVisible()).toBe(true);
-
-    // Clearing the compare target must degrade to a placeholder — never a throw.
-    await page.getByRole('button', { name: 'Comparing' }).first().click();
-    await page.waitForTimeout(300);
-
+    await expect.poll(() => page.getByText('v1').first().isVisible()).toBe(true);
+    expect(await page.getByText('Nothing to compare').isVisible()).toBe(true);
+    // A placeholder, not a thrown error and not a failed request for a version
+    // that does not exist.
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
+
+    await page.close();
+    await fetch(`${BASE}/api/projects/${project.id}/endpoints/${single}`, { method: 'DELETE' });
+  });
+
+  it('[ac:ac-entityversionhistoryview-dla-encji-bez] renders the empty state for an entity with no versions at all', async () => {
+    const untouched = await acWithNoVersions(project.id);
+    if (!untouched) {
+      throw new Error('no unversioned entity in this environment — cannot exercise the empty state');
+    }
+
+    const { page, consoleErrors, badResponses } = await openHistory(
+      browser,
+      project.id,
+      untouched,
+      'acs',
+    );
+
+    expect(await page.getByText('No versions yet').isVisible()).toBe(true);
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+
     await page.close();
   });
 

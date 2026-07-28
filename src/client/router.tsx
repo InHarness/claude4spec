@@ -554,7 +554,6 @@ function EndpointDetailRoute() {
 
 function EndpointHistoryRoute() {
   const { slug } = useParams({ from: '/endpoints/$slug/history' });
-  const navigate = useNavigate();
   const { data: endpoint } = useEndpoint(slug);
 
   return (
@@ -629,7 +628,6 @@ function DtoDetailRoute() {
 
 function DtoHistoryRoute() {
   const { slug } = useParams({ from: '/dtos/$slug/history' });
-  const navigate = useNavigate();
   const { data: dto } = useDto(slug);
 
   return (
@@ -810,7 +808,6 @@ function AcDetailRoute() {
 
 function AcHistoryRoute() {
   const { slug } = useParams({ from: '/acs/$slug/history' });
-  const navigate = useNavigate();
 
   return (
     <RoutePane>
