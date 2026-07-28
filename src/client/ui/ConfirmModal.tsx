@@ -1,12 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { UI_EVENTS, type ConfirmRequest } from './events.js';
 
+/**
+ * The host's destructive-confirm FACADE (M34/L12 one-implementation rule): it
+ * renders the catalog's `Dialog` in its destructive-confirm shape and maps a
+ * `confirmDestructive()` event payload onto its props. Scrim, panel chrome,
+ * focus trap, focus restore and Escape all come from `Dialog` — nothing here
+ * reimplements them. What stays is the invocation surface: an event-bus
+ * singleton resolving a promise, rather than props-in `open` state.
+ *
+ * `confirmDestructive()` itself is unchanged by the move.
+ */
 export function ModalHost() {
   const [request, setRequest] = useState<ConfirmRequest | null>(null);
   const [typed, setTyped] = useState('');
-  const cancelRef = useRef<HTMLButtonElement>(null);
-  const confirmRef = useRef<HTMLButtonElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
 
   // Type-to-confirm: the confirm button stays disabled until the input matches.
   const requireText = request?.requireText;
@@ -21,38 +29,6 @@ export function ModalHost() {
     window.addEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
     return () => window.removeEventListener(UI_EVENTS.CONFIRM, handler as EventListener);
   }, []);
-
-  useEffect(() => {
-    if (!request) return;
-    // Focus the input for type-to-confirm, otherwise the confirm button.
-    const t = window.setTimeout(
-      () => (request.requireText ? inputRef.current : confirmRef.current)?.focus(),
-      0,
-    );
-    return () => window.clearTimeout(t);
-  }, [request]);
-
-  useEffect(() => {
-    if (!request) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        cancel();
-        return;
-      }
-      // With a type-to-confirm input present, let Tab move naturally so the
-      // input stays reachable; only trap focus in the plain two-button case.
-      if (e.key === 'Tab' && !request.requireText) {
-        e.preventDefault();
-        const el = document.activeElement;
-        if (el === confirmRef.current) cancelRef.current?.focus();
-        else confirmRef.current?.focus();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request]);
 
   function cancel() {
     if (!request) return;
@@ -75,111 +51,86 @@ export function ModalHost() {
   const danger = request.danger ?? true;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={request.title}
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.35)',
-        zIndex: 1200,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) cancel();
-      }}
-    >
-      <div
-        style={{
-          width: 400,
-          maxWidth: 'calc(100vw - 32px)',
-          background: 'var(--c-card)',
-          border: '1px solid var(--c-hair-strong)',
-          borderRadius: 8,
-          padding: 20,
-          boxShadow: '0 20px 48px rgba(0,0,0,0.20)',
-        }}
-      >
-        <div
-          style={{
-            fontFamily: 'Lora, serif',
-            fontSize: 16,
-            color: 'var(--c-ink)',
-            marginBottom: 10,
-            fontWeight: 500,
-          }}
-        >
+    <Dialog
+      open
+      onClose={cancel}
+      // The destructive-confirm anatomy pins its own width and Lora title
+      // rather than retuning `size="sm"`, which five other call sites share.
+      title={
+        <span style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500 }}>
           {request.title}
-        </div>
-        <div
-          style={{
-            fontSize: 13.5,
-            color: 'var(--c-muted)',
-            lineHeight: 1.5,
-            marginBottom: 20,
-            whiteSpace: 'pre-wrap',
-          }}
-        >
-          {request.body}
-        </div>
-        {requireText ? (
-          <input
-            ref={inputRef}
-            type="text"
-            value={typed}
-            onChange={(e) => setTyped(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && matches) confirm();
-            }}
-            placeholder={requireText}
-            spellCheck={false}
-            autoComplete="off"
-            style={{
-              width: '100%',
-              fontSize: 13,
-              padding: '7px 10px',
-              borderRadius: 4,
-              marginBottom: 20,
-              background: 'var(--c-bg)',
-              border: '1px solid var(--c-hair-strong)',
-              color: 'var(--c-ink)',
-            }}
-          />
-        ) : null}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        </span>
+      }
+      width={400}
+      footer={
+        <>
+          {/* Cancel is visually first so Escape and the eye both land on the
+              safe option, even though the confirm button takes initial focus. */}
           <button
-            ref={cancelRef}
+            type="button"
             onClick={cancel}
-            style={{
-              fontSize: 12,
-              padding: '6px 12px',
-              borderRadius: 4,
-              color: 'var(--c-muted)',
-            }}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 4, color: 'var(--c-muted)' }}
           >
             {cancelLabel}
           </button>
           <button
-            ref={confirmRef}
+            type="button"
             onClick={confirm}
             disabled={!matches}
+            autoFocus={!requireText}
             style={{
               fontSize: 12,
               padding: '6px 14px',
               borderRadius: 4,
               fontWeight: 500,
-              background: matches ? (danger ? 'var(--c-red, #c45a3b)' : 'var(--c-accent)') : 'var(--c-hair-strong)',
+              background: matches
+                ? danger
+                  ? 'var(--c-red, #c45a3b)'
+                  : 'var(--c-accent)'
+                : 'var(--c-hair-strong)',
               color: matches ? '#fff' : 'var(--c-subtle)',
               cursor: matches ? 'pointer' : 'not-allowed',
             }}
           >
             {confirmLabel}
           </button>
-        </div>
+        </>
+      }
+    >
+      <div
+        style={{
+          fontSize: 13.5,
+          color: 'var(--c-muted)',
+          lineHeight: 1.5,
+          whiteSpace: 'pre-wrap',
+        }}
+      >
+        {request.body}
       </div>
-    </div>
+      {requireText ? (
+        <input
+          type="text"
+          value={typed}
+          autoFocus
+          onChange={(e) => setTyped(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && matches) confirm();
+          }}
+          placeholder={requireText}
+          spellCheck={false}
+          autoComplete="off"
+          style={{
+            width: '100%',
+            fontSize: 13,
+            padding: '7px 10px',
+            borderRadius: 4,
+            marginTop: 16,
+            background: 'var(--c-bg)',
+            border: '1px solid var(--c-hair-strong)',
+            color: 'var(--c-ink)',
+          }}
+        />
+      ) : null}
+    </Dialog>
   );
 }

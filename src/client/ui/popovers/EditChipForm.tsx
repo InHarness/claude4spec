@@ -108,7 +108,6 @@ export function EditChipForm({ request, onClose }: PopoverFormProps<'edit-chip'>
       x={request.x}
       y={request.y}
       width={280}
-      estHeight={260}
       onCancel={() => onClose(null)}
       title={TITLE_FOR[nodeType]}
       icon={<Edit3 size={12} style={{ color: 'var(--c-accent)' }} />}

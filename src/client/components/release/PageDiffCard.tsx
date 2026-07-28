@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import type { RawDeltaPageChange, ModifiedSectionLite } from '../../../shared/entities.js';
 import { colorForOp, labelForOp } from '../../lib/release-diff/colors.js';
-import { LineDiffViewer } from './LineDiffViewer.js';
+import { DiffView } from '../../host-ui-kit/detail/DiffView.js';
+import { toDiffViewHunks } from '../../lib/release-diff/to-diff-view.js';
 import { FrontmatterDiffPanel } from './FrontmatterDiffPanel.js';
 import { XmlRefsDiffPanel } from './XmlRefsDiffPanel.js';
 
@@ -123,7 +124,7 @@ function ModifiedSectionDetails({ section }: { section: ModifiedSectionLite }) {
       </button>
       {expanded && (
         <div className="px-2 pb-2">
-          <LineDiffViewer lineDiff={section.line_diff} />
+          <DiffView hunks={toDiffViewHunks(section.line_diff)} />
         </div>
       )}
     </div>

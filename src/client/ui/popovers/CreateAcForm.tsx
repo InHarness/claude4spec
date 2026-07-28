@@ -43,7 +43,6 @@ export function CreateAcForm({ request, onClose }: PopoverFormProps<'create-ac'>
       x={request.x}
       y={request.y}
       width={400}
-      estHeight={260}
       onCancel={() => onClose(null)}
       title="New acceptance criterion"
       icon={<CheckSquare size={12} style={{ color: 'var(--c-accent)' }} />}

@@ -93,7 +93,8 @@ export interface EntityListRowProps {
   leading?: ReactNode;
   /** Leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
   icon?: LucideIcon;
-  onClick: () => void;
+  /** Makes the whole row a click target. Omit for rows that are editing surfaces, not links. */
+  onClick?: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];
   tagLookup: Map<string, Tag>;
@@ -130,6 +131,26 @@ export interface ActionButtonProps {
 }
 export declare const ActionButton: ComponentType<ActionButtonProps>;
 
+export type ActionBarVariant = ActionButtonVariant;
+export interface ActionBarAction {
+  /** Stable React key; defaults to the label. */
+  key?: string;
+  label: string;
+  icon?: ReactNode;
+  onClick(): void;
+  variant?: ActionBarVariant;
+  disabled?: boolean;
+  /** Native tooltip — useful to explain a disabled state. */
+  title?: string;
+}
+export interface ActionBarProps {
+  /** Optional left-aligned status text. */
+  status?: ReactNode;
+  /** Right-aligned action buttons. */
+  actions: ActionBarAction[];
+}
+export declare const ActionBar: ComponentType<ActionBarProps>;
+
 export interface BadgeProps {
   label: ReactNode;
   color?: string;
@@ -137,6 +158,13 @@ export interface BadgeProps {
   small?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
+  /** Explicit text color; overrides the default active/inactive ink color. */
+  foreground?: string;
+  mono?: boolean;
+  dot?: boolean;
+  minWidth?: number;
+  /** `'broken'` marks a dangling reference (red ink, ⚠ prefix). */
+  variant?: 'default' | 'broken';
 }
 export declare const Badge: ComponentType<BadgeProps>;
 
@@ -175,6 +203,8 @@ export interface DialogProps {
   footer?: ReactNode;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /** Exact panel width in px, overriding `size`. */
+  width?: number;
 }
 export declare const Dialog: ComponentType<DialogProps>;
 
@@ -328,14 +358,36 @@ export declare const EntityVersionHistoryView: ComponentType<EntityVersionHistor
 export interface PopoverProps {
   open: boolean;
   onClose(): void;
-  anchorRef: { current: HTMLElement | null };
+  /** Anchor element to position against. Supply this or `at`. */
+  anchorRef?: { current: HTMLElement | null };
+  /** Fixed viewport coordinates. Wins over `anchorRef` if both are given. */
+  at?: { x: number; y: number };
   placement?: 'top' | 'bottom' | 'left' | 'right';
   children: ReactNode;
+  /** 320 = create, 280 = edit, 360 = multi-step. Omitted, sizes to content. */
+  width?: number;
+  title?: string;
+  icon?: ReactNode;
   maxHeight?: number;
   footer?: ReactNode;
 }
 export declare const Popover: ComponentType<PopoverProps>;
-export declare const ToastViewport: ComponentType<Record<string, never>>;
+
+export type ToastKind = 'success' | 'error' | 'warning' | 'info';
+export interface ToastViewportItem {
+  id: number | string;
+  kind: ToastKind;
+  message: ReactNode;
+  action?: ToastAction;
+}
+export interface ToastViewportProps {
+  /** Caller-owned stack. Omitted, the viewport manages its own from `useToast()`. */
+  toasts?: ToastViewportItem[];
+  onDismiss?(id: number | string): void;
+  onPause?(id: number | string): void;
+  onResume?(id: number | string): void;
+}
+export declare const ToastViewport: ComponentType<ToastViewportProps>;
 export interface ToastAction {
   label: string;
   onClick(): void;
@@ -360,7 +412,10 @@ export interface GroupedRelationPickerProps {
   selected: Record<string, string[]>;
   onAdd(groupKey: string, id: string): void;
   onRemove(groupKey: string, id: string): void;
-  onSearch?(q: string): void;
+  /** Query plus the group it was typed in; the widget-level search omits the key. */
+  onSearch?(q: string, groupKey?: string): void;
+  /** A group's link popover opened — lets the consumer load that group's candidates lazily. */
+  onGroupOpen?(groupKey: string): void;
   maxHeight?: number;
 }
 export declare const GroupedRelationPicker: ComponentType<GroupedRelationPickerProps>;

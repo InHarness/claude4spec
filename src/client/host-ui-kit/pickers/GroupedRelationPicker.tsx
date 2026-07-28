@@ -20,7 +20,20 @@ export interface GroupedRelationPickerProps {
   selected: Record<string, string[]>;
   onAdd(groupKey: string, id: string): void;
   onRemove(groupKey: string, id: string): void;
-  onSearch?(q: string): void;
+  /**
+   * Called with the query and the group it was typed in. A consumer filtering
+   * its own candidates needs that key: without it one group's search silently
+   * filters every other group, whose own inputs still read as empty. The
+   * widget-level search box (see `maxHeight`) spans every group and so omits
+   * it.
+   */
+  onSearch?(q: string, groupKey?: string): void;
+  /**
+   * Fired when a group's link popover opens. Lets a consumer defer loading
+   * that group's candidates until they can actually be seen, instead of
+   * fetching every group's full collection on mount.
+   */
+  onGroupOpen?(groupKey: string): void;
   /**
    * Caps the height of the groups list, which then scrolls internally; a
    * widget-level search field (backed by `onSearch`) is pinned below it.
@@ -29,18 +42,22 @@ export interface GroupedRelationPickerProps {
   maxHeight?: number;
 }
 
+const CANDIDATE_LIST_MAX_HEIGHT = 280;
+
 function GroupRow({
   group,
   selectedIds,
   onAdd,
   onRemove,
   onSearch,
+  onGroupOpen,
 }: {
   group: GroupedRelationPickerProps['groups'][number];
   selectedIds: string[];
   onAdd: (id: string) => void;
   onRemove: (id: string) => void;
   onSearch?: (q: string) => void;
+  onGroupOpen?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -87,7 +104,12 @@ function GroupRow({
           <button
             ref={anchorRef}
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={() => {
+              setOpen((v) => {
+                if (!v) onGroupOpen?.();
+                return !v;
+              });
+            }}
             className="text-[11.5px] px-2 py-0.5 rounded-full"
             style={{ color: 'var(--c-subtle)', border: '1px dashed var(--c-hair-strong)' }}
           >
@@ -95,7 +117,17 @@ function GroupRow({
           </button>
         </div>
       </div>
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchorRef} placement="bottom">
+      <Popover
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={anchorRef}
+        placement="bottom"
+        // A group's candidates are a whole collection; without a cap the panel
+        // runs past the bottom of the viewport and everything below the fold
+        // is unreachable, since a fixed-position panel does not scroll with
+        // the page.
+        maxHeight={CANDIDATE_LIST_MAX_HEIGHT}
+      >
         <div className="flex flex-col gap-1.5" style={{ minWidth: 200, maxWidth: 280 }}>
           {onSearch && (
             <input
@@ -135,7 +167,15 @@ function GroupRow({
   );
 }
 
-function GroupedRelationPickerImpl({ groups, selected, onAdd, onRemove, onSearch, maxHeight }: GroupedRelationPickerProps) {
+function GroupedRelationPickerImpl({
+  groups,
+  selected,
+  onAdd,
+  onRemove,
+  onSearch,
+  onGroupOpen,
+  maxHeight,
+}: GroupedRelationPickerProps) {
   const [query, setQuery] = useState('');
   const showWidgetSearch = maxHeight != null && onSearch != null;
 
@@ -146,7 +186,8 @@ function GroupedRelationPickerImpl({ groups, selected, onAdd, onRemove, onSearch
         selectedIds={selected[group.key] ?? []}
         onAdd={(id) => onAdd(group.key, id)}
         onRemove={(id) => onRemove(group.key, id)}
-        onSearch={onSearch}
+        onSearch={onSearch && ((q) => onSearch(q, group.key))}
+        onGroupOpen={onGroupOpen && (() => onGroupOpen(group.key))}
       />
     </div>
   ));
@@ -171,7 +212,7 @@ function GroupedRelationPickerImpl({ groups, selected, onAdd, onRemove, onSearch
               setQuery(e.target.value);
               onSearch!(e.target.value);
             }}
-            placeholder="Search…"
+            placeholder="Search all…"
             className="w-full rounded px-2 py-1 text-[12px]"
             style={{ background: 'var(--c-panel)', border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
           />

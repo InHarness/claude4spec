@@ -37,7 +37,6 @@ export function CreateDtoForm({ request, onClose }: PopoverFormProps<'create-dto
       x={request.x}
       y={request.y}
       width={340}
-      estHeight={200}
       onCancel={() => onClose(null)}
       title="New DTO"
       icon={<Braces size={12} style={{ color: 'var(--c-accent)' }} />}

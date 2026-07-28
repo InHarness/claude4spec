@@ -5,6 +5,8 @@ import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
 import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
 import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
+import { Badge } from '../../host-ui-kit/actions/Badge.js';
+import { GroupedRelationPicker } from '../../host-ui-kit/pickers/GroupedRelationPicker.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import {
   useDeleteUiView,
@@ -518,9 +520,10 @@ function ParamRow({
 }
 
 /**
- * Single-select for the ui-view → design-system relation. Shows "None" + the
- * available systems. A value that no longer resolves renders as a red broken
- * chip with a clear action (the column is kept on the server; clearing is opt-in).
+ * The ui-view → design-system relation through the catalog's
+ * `GroupedRelationPicker`: one group, single-select. A value that no longer
+ * resolves keeps its chip and marks it with a `broken` `Badge` — the column
+ * stays on the server, so clearing it is the user's explicit act (the chip's ×).
  */
 function DesignSystemSelect({
   value,
@@ -535,57 +538,41 @@ function DesignSystemSelect({
 }) {
   const resolved = value ? options.find((o) => o.slug === value) : null;
   const dangling = Boolean(value) && !resolved;
+
+  const items = options.map((o) => ({
+    id: o.slug,
+    label: o.name,
+    ...(onOpen
+      ? {
+          badge: (
+            <button
+              onClick={() => onOpen(o.slug)}
+              title="Open design system"
+              className="font-mono text-[9.5px] px-1 rounded uppercase"
+              style={{ background: 'var(--c-panel)', color: 'var(--c-accent)' }}
+            >
+              DS
+            </button>
+          ),
+        }
+      : null),
+  }));
+
+  if (dangling) {
+    items.push({
+      id: value as string,
+      label: value as string,
+      badge: <Badge label="missing" variant="broken" small dot={false} />,
+    });
+  }
+
   return (
-    <div className="flex items-center gap-2">
-      <select
-        value={dangling ? '' : value ?? ''}
-        onChange={(e) => onChange(e.target.value || null)}
-        className="font-mono text-[12.5px] bg-transparent outline-none px-2 py-1 rounded"
-        style={{ color: 'var(--c-ink)', border: '1px solid var(--c-hair)' }}
-      >
-        <option value="">None</option>
-        {options.map((o) => (
-          <option key={o.slug} value={o.slug}>
-            {o.name}
-          </option>
-        ))}
-        {dangling && (
-          <option value={value as string} disabled>
-            {value} (missing)
-          </option>
-        )}
-      </select>
-      {resolved && onOpen && (
-        <button
-          onClick={() => onOpen(resolved.slug)}
-          className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px]"
-          style={{ border: '1px solid var(--c-hair)', background: 'var(--c-card)', color: 'var(--c-ink)' }}
-          title="Open design system"
-        >
-          <span
-            className="font-mono text-[9.5px] px-1 rounded uppercase"
-            style={{ background: 'var(--c-panel)', color: 'var(--c-accent)' }}
-          >
-            DS
-          </span>
-          {resolved.name}
-        </button>
-      )}
-      {dangling && (
-        <span
-          className="inline-flex items-center gap-1 align-middle rounded px-1.5 py-[1px] text-[11px] font-mono"
-          style={{
-            background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
-            color: 'var(--c-red, #c45a3b)',
-            border: '1px solid var(--c-red, #c45a3b)',
-          }}
-        >
-          ⚠ {value}
-          <button onClick={() => onChange(null)} title="Clear broken reference" style={{ color: 'inherit' }}>
-            ×
-          </button>
-        </span>
-      )}
-    </div>
+    <GroupedRelationPicker
+      groups={[{ key: 'design-system', label: 'System', items }]}
+      selected={{ 'design-system': value ? [value] : [] }}
+      // Single-select: linking a system replaces whatever was there.
+      onAdd={(_group, id) => onChange(id)}
+      onRemove={() => onChange(null)}
+    />
   );
 }

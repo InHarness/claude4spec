@@ -7,7 +7,12 @@
  * published contract, not a wrapper around the host's own toast system.
  */
 
-export type ToastKind = 'success' | 'error' | 'warning';
+/**
+ * `info` is renderable but deliberately absent from `useToast()`: the catalog
+ * publishes the three kinds the anatomy defines, while the host's own
+ * `toast.info()` facade still needs a kind the one viewport can render.
+ */
+export type ToastKind = 'success' | 'error' | 'warning' | 'info';
 
 export interface ToastAction {
   label: string;

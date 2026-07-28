@@ -1,15 +1,18 @@
 import type { ReactNode } from 'react';
-import { ActionButton, type ActionButtonVariant } from '../host-ui-kit/actions/ActionButton.js';
+import { withStability } from '../stability.js';
+import { ActionButton, type ActionButtonVariant } from './ActionButton.js';
 
 /**
- * L5-B layout primitive (brief 0.1.45 §2). A sticky bottom action bar for a
- * view: a persistent container pinned to the bottom of a list/page holding
- * 1..N action buttons that act on the whole view, plus optional left-side
- * status text. Not floating, no scrim — it sits *below* the interaction
- * primitives (Toast 1300, ConfirmModal 1200, Popover 1100) at zIndex 900.
+ * `ActionBar` (Akcje, `experimental`) — a sticky bottom action bar for a view: a
+ * container pinned to the bottom of a list or page holding 1..N actions that
+ * act on the whole view, plus optional left-side status text. Not floating, no
+ * scrim — it sits *below* the interaction primitives (Toast 1300, Dialog 1200,
+ * Popover 1100) at zIndex 900.
  *
- * The buttons delegate to the Host UI Kit's `ActionButton` (M34/L12,
- * `experimental`); this owns only the sticky-bar layout + status slot.
+ * Promoted out of L5-B into the catalog in 0.1.144: it has more than one
+ * consumer (the `ac` list and M10's plan footer), so the host-local gate —
+ * which requires a single use site — does not admit it. The buttons delegate to
+ * `ActionButton`; this owns only the sticky-bar layout and the status slot.
  */
 
 export type ActionBarVariant = ActionButtonVariant;
@@ -33,7 +36,7 @@ export interface ActionBarProps {
   actions: ActionBarAction[];
 }
 
-export function ActionBar({ status, actions }: ActionBarProps) {
+function ActionBarImpl({ status, actions }: ActionBarProps) {
   return (
     <div
       className="flex items-center gap-3"
@@ -68,3 +71,5 @@ export function ActionBar({ status, actions }: ActionBarProps) {
     </div>
   );
 }
+
+export const ActionBar = withStability(ActionBarImpl, 'experimental');

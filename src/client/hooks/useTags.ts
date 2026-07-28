@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { tagsApi } from '../lib/api.js';
 import { createTagIdempotent } from '../runtime/tags-service.js';
-import type { EntityType } from '../../shared/entities.js';
+import type { EntityType, Tag, TagUpdateInput } from '../../shared/entities.js';
 
 const entityTagsKey = (type: EntityType, slug: string) => ['entity-tags', type, slug] as const;
 
@@ -27,6 +27,41 @@ export function useCreateTag() {
   return useMutation({
     mutationFn: createTagIdempotent,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tags'] }),
+  });
+}
+
+/**
+ * M18: inline edit of a tag's own fields (name, color) from `/tags`. Optimistic
+ * — the row must not flicker back to the old value while the PATCH is in
+ * flight — with the server response reconciled on settle.
+ *
+ * A rename re-derives the slug server-side, and the slug is the mutation's own
+ * addressing key. So the server's tag replaces the optimistic row on success:
+ * carrying the stale slug forward would send the NEXT edit of that row (a
+ * colour pick moments later) to a path that no longer exists.
+ */
+export function useUpdateTag() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, input }: { slug: string; input: TagUpdateInput }) =>
+      tagsApi.update(slug, input),
+    onMutate: async ({ slug, input }) => {
+      await qc.cancelQueries({ queryKey: ['tags'] });
+      const previous = qc.getQueryData<Tag[]>(['tags']);
+      qc.setQueryData<Tag[]>(['tags'], (old) =>
+        old?.map((t) => (t.slug === slug ? { ...t, ...input } : t)),
+      );
+      return { previous };
+    },
+    onSuccess: (updated, { slug }) => {
+      qc.setQueryData<Tag[]>(['tags'], (old) =>
+        old?.map((t) => (t.slug === slug ? updated : t)),
+      );
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(['tags'], context.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['tags'] }),
   });
 }
 

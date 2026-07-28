@@ -1,4 +1,5 @@
-import { forwardRef, useEffect, useRef, useState, type ReactNode } from 'react';
+import { forwardRef, useEffect, useState, type ReactNode } from 'react';
+import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 import { UI_EVENTS, type PopoverKind, type PopoverRequest, type PopoverResult } from './events.js';
 import { POPOVER_RENDERERS } from './popovers/registry.js';
 
@@ -6,88 +7,34 @@ export interface PopoverShellProps {
   x: number;
   y: number;
   width?: number;
-  estHeight?: number;
   onCancel: () => void;
   title: string;
   icon?: ReactNode;
   children: ReactNode;
 }
 
+/**
+ * The host's popover FACADE (M34/L12 one-implementation rule): it renders the
+ * catalog's `Popover` and maps the imperative `openPopover()` payload onto its
+ * props. There is no host-internal popover anatomy any more — panel chrome,
+ * header, click-outside, Escape and viewport clamping all live in the catalog
+ * component. What stays here is the *invocation surface*: coordinates from an
+ * event payload rather than props-in state.
+ */
 export function PopoverShell({
   x,
   y,
   width = 320,
-  estHeight = 180,
   onCancel,
   title,
   icon,
   children,
 }: PopoverShellProps) {
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) onCancel();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onCancel();
-      }
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [onCancel]);
-
-  const { x: cx, y: cy } = clampToViewport(x, y, width, estHeight);
-
   return (
-    <div
-      ref={rootRef}
-      role="dialog"
-      aria-label={title}
-      className="rounded-md shadow-lg"
-      style={{
-        position: 'fixed',
-        top: cy,
-        left: cx,
-        zIndex: 'var(--z-popover)',
-        width,
-        background: 'var(--c-card)',
-        border: '1px solid var(--c-hair-strong)',
-        padding: 12,
-      }}
-    >
-      <div
-        className="flex items-center gap-2 mb-2 text-[11px] uppercase font-mono tracking-wider"
-        style={{ color: 'var(--c-subtle)' }}
-      >
-        {icon}
-        <span>{title}</span>
-      </div>
+    <Popover open onClose={onCancel} at={{ x, y }} width={width} title={title} icon={icon}>
       {children}
-    </div>
+    </Popover>
   );
-}
-
-function clampToViewport(
-  x: number,
-  y: number,
-  width: number,
-  estHeight: number,
-): { x: number; y: number } {
-  const pad = 8;
-  const maxX = window.innerWidth - width - pad;
-  const maxY = window.innerHeight - estHeight - pad;
-  return {
-    x: Math.max(pad, Math.min(x, maxX)),
-    y: Math.max(pad, Math.min(y, maxY)),
-  };
 }
 
 export interface PopoverFormProps<K extends PopoverKind> {

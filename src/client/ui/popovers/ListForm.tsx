@@ -40,7 +40,6 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
       x={request.x}
       y={request.y}
       width={360}
-      estHeight={220}
       onCancel={() => onClose(null)}
       title="Element list"
       icon={<List size={12} style={{ color: 'var(--c-accent)' }} />}

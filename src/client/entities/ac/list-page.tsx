@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { CheckSquare, ScanSearch } from 'lucide-react';
 import { useAcs, useCreateAc } from '../../hooks/useAcs.js';
 import { openPopover, toast } from '../../ui/events.js';
-import { ActionBar } from '../../ui/ActionBar.js';
+import { ActionBar } from '../../host-ui-kit/actions/ActionBar.js';
 import { startSeededThread } from '../../chat/startSeededThread.js';
 import type { AcKind, AcStatus } from '../../../shared/entities.js';
 import { ListPageLayout } from '../_shared/ListPageLayout.js';

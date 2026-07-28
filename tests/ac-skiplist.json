@@ -5,5 +5,7 @@
   "ac-analyze-ac-against-entities-yje-w-serwe": "LLM-based: analyze_ac_against_entities is a non-deterministic on-demand semantic audit (ac-tools MCP server) requiring a model — not automatable in Vitest",
   "ac-b-d-operacji-git-brak-gita-w-path-bra": "requires git: M28 release git-sync edge cases (no git in PATH / no upstream / detached HEAD / repo gone) exercise real git operations and a UI toast warning — not automatable in Vitest",
   "ac-b-d-po-czenia-pobierania-z-remote-h": "remote API + network: --clone CLONE_FAILED rollback depends on a real download failure from the remote /v1 API and full cwd teardown — not automatable in Vitest",
-  "ac-belka-akcji-na-acs-z-przyciskiem-analy": "UI + chat/agent: /acs action bar 'Analyze consistency' button opens and auto-runs a seeded chat-thread (React + agent run) — not automatable in Vitest"
+  "ac-belka-akcji-na-acs-z-przyciskiem-analy": "UI + chat/agent: /acs action bar 'Analyze consistency' button opens and auto-runs a seeded chat-thread (React + agent run) — not automatable in Vitest",
+  "ac-kazdy-komponent-renderowany-poza-katalog": "spec-document invariant: asserts every out-of-catalog component is DECLARED and justified in its slice's 'Host-local components' field — a property of the specification prose, not of the code. The code-side half (no undeclared twin) is covered by src/client/host-ui-kit/one-implementation.test.ts",
+  "ac-kazdy-slice-renderujacy-ui-encji-modul": "spec-document invariant: asserts every slice rendering entity UI carries a 'Host UI Kit (L12)' section with 'Components consumed' filled in — a schema requirement on the specification files, with no code artifact to assert against"
 }

@@ -41,7 +41,6 @@ export function NewPageForm({ request, onClose }: PopoverFormProps<'new-page'>) 
       x={request.x}
       y={request.y}
       width={360}
-      estHeight={150}
       onCancel={() => onClose(null)}
       title="New page"
       icon={<FileText size={12} style={{ color: 'var(--c-accent)' }} />}

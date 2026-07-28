@@ -48,7 +48,6 @@ export function TaggedForm({ request, onClose }: PopoverFormProps<'tagged'>) {
       x={request.x}
       y={request.y}
       width={360}
-      estHeight={240}
       onCancel={() => onClose(null)}
       title="Tagged list"
       icon={<Tags size={12} style={{ color: 'var(--c-accent)' }} />}
@@ -124,7 +123,6 @@ export function TaggedMixedForm({ request, onClose }: PopoverFormProps<'tagged-m
       x={request.x}
       y={request.y}
       width={360}
-      estHeight={220}
       onCancel={() => onClose(null)}
       title="Tagged list (mixed types)"
       icon={<Tags size={12} style={{ color: 'var(--c-accent)' }} />}

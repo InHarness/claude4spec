@@ -26,6 +26,12 @@ export interface BadgeProps {
   dot?: boolean;
   /** Minimum width in px, so badges with different label lengths (e.g. HTTP methods) align to a common column width in a list. Centers the label when set. */
   minWidth?: number;
+  /**
+   * `'broken'` marks a dangling reference — a slug whose target no longer
+   * resolves. It reads as an error (red ink and hairline, ⚠ prefix) and wins
+   * over `color`/`active`, since a broken link's identity beats its styling.
+   */
+  variant?: 'default' | 'broken';
 }
 
 function BadgeImpl({
@@ -39,9 +45,13 @@ function BadgeImpl({
   mono,
   dot = true,
   minWidth,
+  variant = 'default',
 }: BadgeProps) {
-  const dotColor = color ?? 'var(--c-muted)';
-  const textColor = foreground ?? (active ? '#fff' : 'var(--c-ink)');
+  const broken = variant === 'broken';
+  const dotColor = broken ? 'var(--c-red, #c45a3b)' : (color ?? 'var(--c-muted)');
+  const textColor = broken
+    ? 'var(--c-red, #c45a3b)'
+    : (foreground ?? (active ? '#fff' : 'var(--c-ink)'));
   return (
     <span
       onClick={onClick}
@@ -49,14 +59,23 @@ function BadgeImpl({
       style={{
         padding: small ? '1px 7px' : '2px 8px',
         fontSize: small ? 10.5 : 11.5,
-        background: active ? dotColor : 'var(--c-panel)',
+        background: active && !broken ? dotColor : 'var(--c-panel)',
         color: textColor,
-        border: `1px solid ${active ? dotColor : 'var(--c-hair)'}`,
+        border: `1px solid ${broken ? 'var(--c-red, #c45a3b)' : active ? dotColor : 'var(--c-hair)'}`,
         cursor: onClick ? 'pointer' : 'default',
         minWidth,
       }}
     >
-      {dot && <span className="rounded-full" style={{ width: 6, height: 6, background: active ? textColor : dotColor }} />}
+      {broken ? (
+        <span aria-hidden>⚠</span>
+      ) : (
+        dot && (
+          <span
+            className="rounded-full"
+            style={{ width: 6, height: 6, background: active ? textColor : dotColor }}
+          />
+        )
+      )}
       {label}
       {onRemove && (
         <button
