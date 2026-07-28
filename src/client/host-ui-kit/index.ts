@@ -7,13 +7,21 @@
  * delivered to plugins through the M33 import-map shim — so the subpath resolves
  * to ONE host UI bundle, not a per-plugin copy.
  *
- * Every component is pure-presentational — props-in, no live host services
- * (no `useQueryClient()`, no fetch, no EditorBridge singleton) — and carries a
- * mandatory `stability` constant. A local, self-contained editor instance
- * (e.g. `RichTextField`'s Tiptap usage) is still pure-presentational in this
- * sense: it touches no host service, only `value`/`onChange` props. `DocEditor`
- * is the one documented exception (see its own docblock). Only `stable`
- * components are part of the versioned `hostApiVersion` surface.
+ * Every component carries TWO mandatory constants: `stability` (versioning
+ * tier) and `binding` (data access — see `stability.ts`).
+ *
+ * `binding: 'presentational'` is the default doctrine and covers the whole
+ * `stable` core: props-in, no live host services (no `useQueryClient()`, no
+ * fetch, no EditorBridge singleton). A local, self-contained editor instance
+ * (e.g. `RichTextField`'s Tiptap usage) is still presentational in this sense:
+ * it touches no host service, only `value`/`onChange` props.
+ *
+ * `binding: 'connected'` components reach host-owned data themselves through
+ * the L11 surface and must name what they consume: `DocEditor` (the
+ * `EditorBridge` singleton) and `EntityVersionHistoryView` (the version /
+ * release hooks). They still only render — domain computation stays in M13/M17.
+ *
+ * Only `stable` components are part of the versioned `hostApiVersion` surface.
  */
 
 // Core (stable)
@@ -52,7 +60,11 @@ export {
   type SegmentedControlTabsProps,
 } from './detail/SegmentedControlTabs.js';
 export { VersionHistory, type VersionHistoryProps, type VersionHistoryItem } from './detail/VersionHistory.js';
-export { DiffView, type DiffViewProps } from './detail/DiffView.js';
+export { DiffView, type DiffViewProps, type DiffViewLine } from './detail/DiffView.js';
+export {
+  EntityVersionHistoryView,
+  type EntityVersionHistoryViewProps,
+} from './detail/EntityVersionHistoryView.js';
 export { EntityDetailToolbar, type EntityDetailToolbarProps } from './detail/EntityDetailToolbar.js';
 export {
   RichTextField,
@@ -85,7 +97,7 @@ export { useHostTokens } from './useHostTokens.js';
 export { HOST_TOKEN_NAMES, readHostTokens, type HostTokenName } from './tokens.js';
 
 // Stability metadata
-export { type Stability, type WithStability } from './stability.js';
+export { type Stability, type Binding, type WithStability } from './stability.js';
 export {
   UI_KIT_CATALOG,
   STABLE_UI_KIT_COMPONENTS,

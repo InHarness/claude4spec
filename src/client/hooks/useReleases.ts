@@ -1,11 +1,31 @@
+import { useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { releasesApi } from '../lib/releases-api.js';
+import { releasesService } from '../runtime/releases-service.js';
 
-export function useReleases() {
+/**
+ * The full release list — everything the host's `/releases` UI needs
+ * (`description`, `createdBy`, `createdAt`). Host-only: the plugin surface gets
+ * the narrower label mirror below.
+ */
+export function useReleaseList() {
   return useQuery({
     queryKey: ['releases'],
-    queryFn: () => releasesApi.list(),
+    queryFn: () => releasesService.listReleases(),
   });
+}
+
+/**
+ * M17/L11: the release-label lookup — `releaseId → name`. This is the ONE
+ * `useReleases` in the codebase: the host's own version-history timeline and
+ * every plugin (via `@c4s/plugin-runtime`) read release labels through it, off
+ * the same `['releases']` query, so there is a single fetch and a single shape.
+ * A version with `release_id IS NULL` is simply absent from the map — callers
+ * render "(unreleased)".
+ */
+export function useReleases(): Map<number, string> {
+  const { data } = useReleaseList();
+  return useMemo(() => new Map((data ?? []).map((r) => [r.id, r.name])), [data]);
 }
 
 export function useRelease(idOrName: string | number | undefined) {
@@ -81,16 +101,11 @@ export function useUpdateRelease() {
   });
 }
 
-export function useRestoreEntity() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (params: { releaseId: string | number; type: string; slug: string }) =>
-      releasesApi.restoreEntity(params.releaseId, { type: params.type, slug: params.slug }),
-    onSuccess: () => {
-      qc.invalidateQueries(); // restore touches everything
-    },
-  });
-}
+// 0.1.143: `useRestoreEntity` (release-scoped per-entity restore) is gone. Entity
+// history restores through M13 `useRestoreVersion` — one path for the host and
+// for plugins. The release-scoped restore stays available for whole-release and
+// page scopes (`useRestorePage` / `useRestoreSpec` below) and, for a single
+// entity, via `releasesApi.restoreEntity` over REST/MCP.
 
 export function useRestorePage() {
   const qc = useQueryClient();

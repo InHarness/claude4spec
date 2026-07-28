@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Clock, RotateCcw } from 'lucide-react';
 import { usePageVersions, usePageVersionDetail } from '../hooks/usePageVersions.js';
 import { useReleases, useRestorePage } from '../hooks/useReleases.js';
@@ -16,16 +16,10 @@ interface Props {
  */
 export function PageVersionHistory({ rootId, path, onBack }: Props) {
   const { data: versions = [], isLoading } = usePageVersions(rootId, path);
-  const { data: allReleases = [] } = useReleases();
+  const releaseNameById = useReleases();
   const restorePage = useRestorePage();
   const [selected, setSelected] = useState<number | null>(null);
   const [restoring, setRestoring] = useState<number | null>(null);
-
-  const releaseNameById = useMemo(() => {
-    const m = new Map<number, string>();
-    for (const r of allReleases) m.set(r.id, r.name);
-    return m;
-  }, [allReleases]);
 
   useEffect(() => {
     if (versions.length && selected === null) setSelected(versions[0]!.version);

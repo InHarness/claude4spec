@@ -13,6 +13,10 @@ export interface VersionHistoryItem {
   author?: string;
   /** M13/M34: shown per-row in the `timeline` variant (kit doesn't fetch releases — author supplies it). */
   releaseLabel?: string;
+  /** M13/M34: who made the change — rendered in `timeline` as a colour-coded badge so an agent edit is visually distinct from a user edit. */
+  changedBy?: 'user' | 'agent' | 'filesystem';
+  /** M13/M34: one-line description of what the change did (the version's change summary). */
+  summary?: string;
 }
 
 export interface VersionHistoryProps {
@@ -86,10 +90,44 @@ function VersionHistoryImpl({
 /** Shared "{createdAt} · {author}" line — used by both the `flat` and `timeline` renderings. */
 function VersionMeta({ v }: { v: VersionHistoryItem }) {
   return (
-    <div className="text-[11px]" style={{ color: 'var(--c-muted)' }}>
-      {v.createdAt}
-      {v.author ? ` · ${v.author}` : ''}
-    </div>
+    <>
+      <div className="text-[11px]" style={{ color: 'var(--c-muted)' }}>
+        {v.createdAt}
+        {v.author ? ` · ${v.author}` : ''}
+      </div>
+      {v.summary && (
+        <div className="text-[11.5px] truncate" style={{ color: 'var(--c-muted)' }}>
+          {v.summary}
+        </div>
+      )}
+    </>
+  );
+}
+
+/**
+ * Badge colours per author kind. An agent-made change must be tellable from a
+ * user-made one at a glance, so this is a colour distinction and not just text.
+ *
+ * Exported so the "agent and user are visually distinct" invariant can be
+ * unit-tested without a rendering harness (no React Testing Library here).
+ */
+export function changedByBadgeStyle(
+  changedBy: NonNullable<VersionHistoryItem['changedBy']>,
+): { bg: string; fg: string } {
+  if (changedBy === 'agent') return { bg: 'var(--c-blue-soft)', fg: 'var(--c-blue)' };
+  if (changedBy === 'user') return { bg: 'var(--c-green-soft)', fg: 'var(--c-green)' };
+  return { bg: 'var(--c-panel)', fg: 'var(--c-muted)' };
+}
+
+function ChangedByBadge({ changedBy }: { changedBy: NonNullable<VersionHistoryItem['changedBy']> }) {
+  const { bg, fg } = changedByBadgeStyle(changedBy);
+  return (
+    <span
+      className="rounded-full px-1.5 text-[9.5px] uppercase tracking-wider font-mono flex-shrink-0"
+      style={{ background: bg, color: fg }}
+    >
+      {changedBy}
+    </span>
   );
 }
 
@@ -151,6 +189,7 @@ function TimelineList({ versions, activeVersion, onSelect, onRestore, compareVer
                 <div className="text-[12.5px] font-medium truncate" style={{ color: 'var(--c-ink)' }}>
                   {v.label}
                 </div>
+                {v.changedBy && <ChangedByBadge changedBy={v.changedBy} />}
                 {v.releaseLabel && (
                   <span
                     className="text-[10px] rounded px-1.5 py-0.5 flex-shrink-0"

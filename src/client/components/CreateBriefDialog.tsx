@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { FileText, X } from 'lucide-react';
 import { useCreateBrief } from '../hooks/useBriefs.js';
-import { useReleases } from '../hooks/useReleases.js';
+import { useReleaseList } from '../hooks/useReleases.js';
 import { useRoots } from '../hooks/useConfig.js';
 import { useChatStore } from '../state/chat.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
@@ -54,7 +54,7 @@ interface Props {
  * `/briefs/<path>` + auto-prefill chatu pierwszym promptem inicjacyjnym.
  */
 export function CreateBriefDialog({ toReleaseName, onClose }: Props) {
-  const { data: allReleases = [] } = useReleases();
+  const { data: allReleases = [] } = useReleaseList();
   const roots = useRoots();
   const create = useCreateBrief();
   const navigate = useNavigate();

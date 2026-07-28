@@ -14,11 +14,13 @@ import { EditorBridgeProvider, useEditorBridge } from '../../tiptap/EditorContex
 import { withStability } from '../stability.js';
 
 /**
- * `DocEditor` (Panel detalu, `experimental`, HOST-WIRED) — the catalog's
- * documented exception to the pure-presentational doctrine: cross-entity
- * mention/slash-command clicks resolve via the live EditorBridge (L11)
- * instead of a caller-supplied callback, the way `useVersions`/`useReferences`
- * /`useTags` reach the host's live data services. A plugin author picks this
+ * `DocEditor` (Panel detalu, `experimental`, `binding: 'connected'`) — since
+ * 0.1.143 no longer "the documented exception to the pure-presentational
+ * doctrine" but the first member of the named `connected` class: cross-entity
+ * mention/slash-command clicks resolve via the live EditorBridge singleton (the
+ * L11 surface it declares) instead of a caller-supplied callback, the way
+ * `useVersions`/`useReferences`/`useTags` reach the host's live data services.
+ * A plugin author picks this
  * over `RichTextField` when they want full parity with the host's own
  * description editor — no navigation props to wire.
  *
@@ -106,4 +108,4 @@ function DocEditorImpl({ value, onChange, readOnly, placeholder }: DocEditorProp
   );
 }
 
-export const DocEditor = withStability(DocEditorImpl, 'experimental');
+export const DocEditor = withStability(DocEditorImpl, 'experimental', 'connected', ['EditorBridge']);
