@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { lineDiffHunks } from './line-diff.js';
 
 describe('lineDiffHunks (M13/L11)', () => {
-  it('emits the public L12 vocabulary, never the internal LineDiffLite shape', () => {
+  it('[ac:ac-util-line-diff-wystawiony-przez-powierzc] emits the public L12 vocabulary, never the internal LineDiffLite shape', () => {
     const hunks = lineDiffHunks({ name: 'a' }, { name: 'b' });
 
     expect(hunks.length).toBeGreaterThan(0);

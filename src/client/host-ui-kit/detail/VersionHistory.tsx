@@ -105,16 +105,22 @@ function VersionMeta({ v }: { v: VersionHistoryItem }) {
 }
 
 /**
- * Colour-coded authorship badge. An agent-made change must be tellable from a
+ * Badge colours per author kind. An agent-made change must be tellable from a
  * user-made one at a glance, so this is a colour distinction and not just text.
+ *
+ * Exported so the "agent and user are visually distinct" invariant can be
+ * unit-tested without a rendering harness (no React Testing Library here).
  */
+export function changedByBadgeStyle(
+  changedBy: NonNullable<VersionHistoryItem['changedBy']>,
+): { bg: string; fg: string } {
+  if (changedBy === 'agent') return { bg: 'var(--c-blue-soft)', fg: 'var(--c-blue)' };
+  if (changedBy === 'user') return { bg: 'var(--c-green-soft)', fg: 'var(--c-green)' };
+  return { bg: 'var(--c-panel)', fg: 'var(--c-muted)' };
+}
+
 function ChangedByBadge({ changedBy }: { changedBy: NonNullable<VersionHistoryItem['changedBy']> }) {
-  const { bg, fg } =
-    changedBy === 'agent'
-      ? { bg: 'var(--c-blue-soft)', fg: 'var(--c-blue)' }
-      : changedBy === 'user'
-        ? { bg: 'var(--c-green-soft)', fg: 'var(--c-green)' }
-        : { bg: 'var(--c-panel)', fg: 'var(--c-muted)' };
+  const { bg, fg } = changedByBadgeStyle(changedBy);
   return (
     <span
       className="rounded-full px-1.5 text-[9.5px] uppercase tracking-wider font-mono flex-shrink-0"
