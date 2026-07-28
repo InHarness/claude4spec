@@ -125,7 +125,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
           >
             <div
               className="text-[14px] font-semibold min-w-0"
-              style={{ fontFamily: 'Lora, serif', color: 'var(--c-ink)' }}
+              style={{ fontFamily: 'var(--font-heading)', color: 'var(--c-ink)' }}
             >
               {title}
             </div>

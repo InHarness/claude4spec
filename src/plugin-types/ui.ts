@@ -118,11 +118,15 @@ export declare const TagFilterBar: ComponentType<TagBarProps>;
 export type ActionButtonVariant = 'primary' | 'secondary' | 'ghost';
 export interface ActionButtonProps {
   label: ReactNode;
-  onClick: () => void;
+  /** Omit when `type="submit"` and the enclosing form's `onSubmit` already handles the action — avoids double-firing on click. */
+  onClick?: () => void;
   icon?: ReactNode;
   variant?: ActionButtonVariant;
   disabled?: boolean;
+  /** Native tooltip — useful to explain a disabled state. */
   title?: string;
+  /** Native button type. Defaults to `button`; set `submit` to make this the form's default action (e.g. Enter-to-submit) inside a `FormShell`. */
+  type?: 'button' | 'submit';
 }
 export declare const ActionButton: ComponentType<ActionButtonProps>;
 
