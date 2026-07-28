@@ -56,13 +56,13 @@ async function listVersions(projectId: string, slug: string): Promise<VersionRow
  * needs instead of depending on how the environment happened to be seeded.
  */
 async function endpointWithHistory(projectId: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/projects/${projectId}/entities/endpoint`);
-  const body = (await res.json()) as { data?: { slug: string }[]; endpoints?: { slug: string }[] };
-  const slug = (body.data ?? body.endpoints ?? [])[0]?.slug;
+  const res = await fetch(`${BASE}/api/projects/${projectId}/endpoints`);
+  const body = (await res.json()) as { endpoints: { slug: string }[] };
+  const slug = body.endpoints[0]?.slug;
   if (!slug) throw new Error('no endpoint in this environment — seed one first');
 
   while ((await listVersions(projectId, slug)).length < 2) {
-    const patched = await fetch(`${BASE}/api/projects/${projectId}/entities/endpoint/${slug}`, {
+    const patched = await fetch(`${BASE}/api/projects/${projectId}/endpoints/${slug}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ description: `e2e history probe ${Math.random().toString(36).slice(2)}` }),
@@ -116,7 +116,6 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
 
-    await page.screenshot({ path: 'e2e-entity-version-history.png', fullPage: true });
     await page.close();
   });
 
