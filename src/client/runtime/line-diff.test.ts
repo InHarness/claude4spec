@@ -45,3 +45,18 @@ describe('lineDiffHunks (M13/L11)', () => {
     expect(lineDiffHunks(undefined, undefined)).toEqual([]);
   });
 });
+
+describe('lineDiffHunks — markdown-noise filter is off', () => {
+  it('reports an added blank line instead of silently dropping it', () => {
+    // `computeLineDiffClient` drops blank/anchor-only added lines for markdown
+    // PAGES. Over a snapshot every line is content, so dropping one would
+    // report "no changes" for a change that happened.
+    const hunks = lineDiffHunks('a\nb', 'a\n\nb');
+    expect(hunks.some((h) => h.op === 'add' && h.line === '')).toBe(true);
+  });
+
+  it('reports an added anchor-only line', () => {
+    const hunks = lineDiffHunks('# Title', '# Title\n<!-- anchor: abcd1234 -->');
+    expect(hunks.some((h) => h.op === 'add' && h.line.includes('anchor: abcd1234'))).toBe(true);
+  });
+});

@@ -101,16 +101,11 @@ export function useUpdateRelease() {
   });
 }
 
-export function useRestoreEntity() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (params: { releaseId: string | number; type: string; slug: string }) =>
-      releasesApi.restoreEntity(params.releaseId, { type: params.type, slug: params.slug }),
-    onSuccess: () => {
-      qc.invalidateQueries(); // restore touches everything
-    },
-  });
-}
+// 0.1.143: `useRestoreEntity` (release-scoped per-entity restore) is gone. Entity
+// history restores through M13 `useRestoreVersion` — one path for the host and
+// for plugins. The release-scoped restore stays available for whole-release and
+// page scopes (`useRestorePage` / `useRestoreSpec` below) and, for a single
+// entity, via `releasesApi.restoreEntity` over REST/MCP.
 
 export function useRestorePage() {
   const qc = useQueryClient();

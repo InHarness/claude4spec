@@ -36,7 +36,13 @@ function asText(snapshot: unknown): string {
  * @param after  the newer snapshot
  */
 export function lineDiffHunks(before: unknown, after: unknown): DiffViewLine[] {
-  const { lines } = computeLineDiffClient(asText(before), asText(after));
+  // `dropMarkdownNoise: false` — that filter exists for markdown PAGES, where a
+  // blank or anchor-only line is noise. Here the input is a JSON snapshot (or
+  // author-supplied text), so every line is content: silently dropping one
+  // would report "no changes" for a change that did happen.
+  const { lines } = computeLineDiffClient(asText(before), asText(after), {
+    dropMarkdownNoise: false,
+  });
   return lines.map((l) => ({
     op: l.op === 'added' ? 'add' : l.op === 'removed' ? 'del' : 'ctx',
     line: l.content,

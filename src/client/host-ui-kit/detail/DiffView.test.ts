@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pairRows } from './DiffView.js';
+import { normalizeHunks, pairRows } from './DiffView.js';
 
 // The PUBLIC L12 vocabulary (`add`/`del`/`ctx` + `line`), not the host-internal
 // `LineDiffLite` shape — see `DiffViewLine`.
@@ -45,5 +45,37 @@ describe('pairRows', () => {
 
   it('returns an empty array for an empty hunk list', () => {
     expect(pairRows([])).toEqual([]);
+  });
+});
+
+describe('normalizeHunks — pre-0.1.143 compatibility', () => {
+  it('translates the legacy LineDiffLite vocabulary instead of rendering nonsense', () => {
+    // What a plugin compiled against the old `.d.ts` still passes at runtime.
+    const legacy = [
+      { op: 'keep' as const, content: 'same' },
+      { op: 'removed' as const, content: 'old' },
+      { op: 'added' as const, content: 'new' },
+    ];
+
+    expect(normalizeHunks(legacy)).toEqual([
+      { op: 'ctx', line: 'same' },
+      { op: 'del', line: 'old' },
+      { op: 'add', line: 'new' },
+    ]);
+  });
+
+  it('passes current-vocabulary hunks through untouched', () => {
+    const current = [
+      { op: 'ctx' as const, line: 'same' },
+      { op: 'add' as const, line: 'new' },
+    ];
+    expect(normalizeHunks(current)).toEqual(current);
+  });
+
+  it('keeps an unchanged legacy diff all-context (the silent-corruption case)', () => {
+    // Untranslated, every line would fall through `pairRows` as a change and
+    // render as a blank green addition.
+    const rows = pairRows(normalizeHunks([{ op: 'keep' as const, content: 'a' }]));
+    expect(rows).toEqual([{ left: { op: 'ctx', line: 'a' }, right: { op: 'ctx', line: 'a' } }]);
   });
 });

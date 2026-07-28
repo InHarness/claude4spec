@@ -48,6 +48,43 @@ export interface EntityVersionHistoryViewProps {
 
 type RightTab = 'diff' | 'snapshot';
 
+/** Just enough of a version row for the selection maths below. */
+interface VersionLike {
+  version: number;
+}
+
+/**
+ * Which version is active. DERIVED rather than stored-and-reset: `type`/`slug`
+ * can change under the same React instance (navigating entity A → entity B
+ * reuses it), and carrying A's version number over would fetch a version B may
+ * not have. Anything not present in the current list falls back to the newest.
+ *
+ * Exported so the entity-switch case is unit-testable without a browser.
+ */
+export function resolveActiveVersion(versions: VersionLike[], selected: number | null): number | null {
+  if (selected != null && versions.some((v) => v.version === selected)) return selected;
+  return versions[0]?.version ?? null;
+}
+
+/**
+ * Which version the active one is compared against. Defaults to the version
+ * immediately older than the active one; a requested target is honoured only if
+ * it is in the current list and is not the active version itself. Returns
+ * `null` when there is nothing older — the "nothing to compare" placeholder.
+ */
+export function resolveCompareVersion(
+  versions: VersionLike[],
+  active: number | null,
+  requested: number | null,
+): number | null {
+  if (active == null) return null;
+  if (requested != null && requested !== active && versions.some((v) => v.version === requested)) {
+    return requested;
+  }
+  const idx = versions.findIndex((v) => v.version === active);
+  return idx >= 0 && idx + 1 < versions.length ? versions[idx + 1]!.version : null;
+}
+
 function EntityVersionHistoryViewImpl({
   type,
   slug,
@@ -67,32 +104,10 @@ function EntityVersionHistoryViewImpl({
   const [compareVersion, setCompareVersion] = useState<number | null>(null);
   const [tab, setTab] = useState<RightTab>('diff');
 
-  // Both selections are DERIVED, never stored-and-reset. `type`/`slug` can
-  // change under the same React instance (navigating entity A → entity B reuses
-  // it), and a stale version number would fetch a version B may not have — a
-  // 404 on every such navigation. Deriving also means no init effect: the newest
-  // version is simply the default.
-  const activeVersion =
-    selected != null && versions.some((v) => v.version === selected)
-      ? selected
-      : (versions[0]?.version ?? null);
-
-  // Default compare target: the version immediately older than the active one.
-  const defaultCompare = useMemo(() => {
-    if (activeVersion == null) return null;
-    const idx = versions.findIndex((v) => v.version === activeVersion);
-    return idx >= 0 && idx + 1 < versions.length ? versions[idx + 1]!.version : null;
-  }, [activeVersion, versions]);
-
-  const compareTarget =
-    allowCompare &&
-    compareVersion != null &&
-    compareVersion !== activeVersion &&
-    versions.some((v) => v.version === compareVersion)
-      ? compareVersion
-      : allowCompare
-        ? defaultCompare
-        : null;
+  const activeVersion = resolveActiveVersion(versions, selected);
+  const compareTarget = allowCompare
+    ? resolveCompareVersion(versions, activeVersion, compareVersion)
+    : null;
 
   const { data: detail } = useVersionDetail(entityType, slug, activeVersion);
   const { data: compareDetail } = useVersionDetail(entityType, slug, compareTarget);

@@ -16,6 +16,42 @@ export interface DiffViewLine {
 type DiffLine = DiffViewLine;
 
 /**
+ * The shape `hunks` had BEFORE 0.1.143 — the host-internal `LineDiffLite` line,
+ * which a plugin compiled against the old `.d.ts` still passes at runtime.
+ */
+interface LegacyDiffLine {
+  op: 'keep' | 'added' | 'removed';
+  content: string;
+}
+
+const LEGACY_OPS = { keep: 'ctx', added: 'add', removed: 'del' } as const;
+let warnedLegacyHunks = false;
+
+/**
+ * Accept the pre-0.1.143 hunk shape for one release instead of rendering
+ * nonsense. Left untranslated, a legacy line falls through `pairRows` as a
+ * change (its `op` is never `'ctx'`) and `line` is `undefined`, so an unchanged
+ * file renders as a block of blank green additions — a plausible-looking but
+ * entirely wrong diff, with nothing in the console to explain it.
+ *
+ * Exported for unit tests; not part of the published surface.
+ */
+export function normalizeHunks(hunks: readonly (DiffLine | LegacyDiffLine)[]): DiffLine[] {
+  return hunks.map((h) => {
+    if (!('content' in h)) return h;
+    if (!warnedLegacyHunks) {
+      warnedLegacyHunks = true;
+      console.warn(
+        '[c4s] DiffView: `hunks` uses the pre-0.1.143 `{ op: keep|added|removed, content }` shape. ' +
+          'Migrate to `{ op: add|del|ctx, line }` (see `lineDiffHunks` in @c4s/plugin-runtime) — ' +
+          'this fallback will be removed.',
+      );
+    }
+    return { op: LEGACY_OPS[h.op], line: h.content };
+  });
+}
+
+/**
  * `DiffView` (Panel detalu, `experimental`) — the plugin-facing parallel of
  * the host-internal `LineDiffViewer` (M17/L5, not published to plugins).
  * Strictly props-in: it renders an already-computed diff, never computes one
@@ -37,6 +73,7 @@ export interface DiffViewProps {
 function DiffViewImpl({ hunks, before, after, title, mode = 'inline' }: DiffViewProps) {
   const hasHunks = Boolean(hunks && hunks.length > 0);
   const hasBeforeAfter = !hasHunks && before !== undefined && after !== undefined;
+  const lines = hasHunks ? normalizeHunks(hunks as DiffLine[]) : [];
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -47,9 +84,9 @@ function DiffViewImpl({ hunks, before, after, title, mode = 'inline' }: DiffView
       )}
       {hasHunks ? (
         mode === 'split' ? (
-          <SplitHunks hunks={hunks as DiffLine[]} />
+          <SplitHunks hunks={lines} />
         ) : (
-          <InlineHunks hunks={hunks as DiffLine[]} />
+          <InlineHunks hunks={lines} />
         )
       ) : hasBeforeAfter ? (
         <BeforeAfterPanes before={before as string} after={after as string} />
