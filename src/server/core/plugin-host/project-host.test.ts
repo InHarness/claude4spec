@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PluginRegistryImpl } from './registry.js';
 import type { BackendModule, MountContext, ProjectPluginOverlay, SqlMigration } from './types.js';
 
@@ -146,5 +146,93 @@ describe('mountBackend — runs declared plugin migrations (L1/M13)', () => {
       .get() as { n: number };
     expect(count.n).toBe(1);
     db.close();
+  });
+});
+
+describe('buildMcpServers — one malformed plugin must not kill the turn', () => {
+  /** A valid handle is the `{server, config}` shape `createMcpServer(...)` returns. */
+  const validInstance = (name: string) => ({ server: { __name: name }, config: { type: 'sdk' } });
+
+  function hostWith(factories: Record<string, () => unknown>) {
+    const host = baseRegistry('endpoint').consolidate({});
+    for (const [name, factory] of Object.entries(factories)) {
+      host.registerMcpServer(name, factory as () => never);
+    }
+    return host;
+  }
+
+  function silenceWarn() {
+    return vi.spyOn(console, 'warn').mockImplementation(() => {});
+  }
+
+  it('passes a well-formed McpServerInstance through untouched', () => {
+    const instance = validInstance('ok-tools');
+    const host = hostWith({ 'ok-tools': () => instance });
+    expect(host.buildMcpServers()).toEqual([{ name: 'ok-tools', server: instance }]);
+  });
+
+  it('skips a hand-rolled `{name, version, tools}` descriptor and keeps the healthy servers', () => {
+    // The exact shape `c4s-plugin-database-tables` returned: no `config`, so
+    // `agent-turn` would have put `undefined` into the adapter's mcpServers map
+    // and every turn in every project of the workspace died on `serverConfig.type`.
+    const healthy = validInstance('endpoint-tools');
+    const warn = silenceWarn();
+    const host = hostWith({
+      'database-table-tools': () => ({ name: 'database-table-tools', version: '1.0.0', tools: [] }),
+      'endpoint-tools': () => healthy,
+    });
+
+    const built = host.buildMcpServers();
+
+    // The invariant whose absence broke the whole workspace: a bad plugin
+    // costs only its own tools.
+    expect(built).toEqual([{ name: 'endpoint-tools', server: healthy }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('database-table-tools'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('createMcpServer'));
+    warn.mockRestore();
+  });
+
+  it('skips a factory returning undefined', () => {
+    const warn = silenceWarn();
+    const host = hostWith({ 'bad-tools': () => undefined });
+    expect(host.buildMcpServers()).toEqual([]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('skips a throwing factory instead of failing the turn', () => {
+    const healthy = validInstance('endpoint-tools');
+    const warn = silenceWarn();
+    const host = hostWith({
+      'bad-tools': () => {
+        throw new Error('boom');
+      },
+      'endpoint-tools': () => healthy,
+    });
+
+    let built: ReturnType<typeof host.buildMcpServers> = [];
+    expect(() => {
+      built = host.buildMcpServers();
+    }).not.toThrow();
+    expect(built).toEqual([{ name: 'endpoint-tools', server: healthy }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('boom'));
+    warn.mockRestore();
+  });
+
+  it('auto-unwraps a pre-0.1.133 thunk (compat shim moved here from manifest-adapter)', () => {
+    const instance = validInstance('legacy-tools');
+    const warn = silenceWarn();
+    const host = hostWith({ 'legacy-tools': () => () => instance });
+
+    expect(host.buildMcpServers()).toEqual([{ name: 'legacy-tools', server: instance }]);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('pre-0.1.133'));
+    warn.mockRestore();
+  });
+
+  it('skips a thunk that unwraps to a malformed value', () => {
+    const warn = silenceWarn();
+    const host = hostWith({ 'legacy-bad-tools': () => () => ({ tools: [] }) });
+    expect(host.buildMcpServers()).toEqual([]);
+    warn.mockRestore();
   });
 });

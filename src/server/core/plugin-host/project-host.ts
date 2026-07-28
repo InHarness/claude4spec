@@ -151,11 +151,68 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     this.mcpServerFactories.set(name, factory);
   }
 
+  /**
+   * Builds one fresh server per registered factory. Every entry is validated
+   * before it leaves this method: the caller (`runAgentTurn`) reads `.config`
+   * off each result straight into the adapter's `mcpServers` map, and a single
+   * malformed entry lands there as `undefined` — the adapter then dies on
+   * `serverConfig.type` and takes down EVERY turn in EVERY project of the
+   * workspace, not just the offending type. One broken plugin must degrade to
+   * "its tools are missing", never to "chat is dead".
+   *
+   * This is the single choke point for that check on purpose: it covers both
+   * the declarative `backend.mcpServer` slot (wrapped in `synthesizeMount`) and
+   * a plugin's own `mount()` calling `registerMcpServer` directly — the latter
+   * bypasses `manifest-adapter` entirely, which is exactly how a hand-rolled
+   * `{name, version, tools}` descriptor reached the adapter in the wild.
+   */
   buildMcpServers(): Array<{ name: string; server: McpServerInstance }> {
-    return Array.from(this.mcpServerFactories.entries()).map(([name, factory]) => ({
-      name,
-      server: factory(),
-    }));
+    const out: Array<{ name: string; server: McpServerInstance }> = [];
+    for (const [name, factory] of this.mcpServerFactories) {
+      let server: unknown;
+      try {
+        server = factory();
+      } catch (err) {
+        console.warn(
+          `[plugin-host] MCP server "${name}" — factory threw, skipping this server for the turn: ` +
+            `${(err as Error).message}`,
+        );
+        continue;
+      }
+      // Backward-compat shim: a plugin built against the pre-0.1.133 contract
+      // returns `() => McpServerInstance` (a thunk) instead of the instance.
+      // An `McpServerInstance` is always a plain `{server, config}` object,
+      // never callable, so `typeof === 'function'` identifies the old shape
+      // unambiguously.
+      if (typeof server === 'function') {
+        console.warn(
+          `[plugin-host] MCP server "${name}" returned a thunk (pre-0.1.133 contract) — ` +
+            `auto-unwrapping for compatibility. Migrate this plugin to return the McpServerInstance handle directly.`,
+        );
+        try {
+          server = (server as () => unknown)();
+        } catch (err) {
+          console.warn(
+            `[plugin-host] MCP server "${name}" — unwrapped thunk threw, skipping: ${(err as Error).message}`,
+          );
+          continue;
+        }
+      }
+      if (
+        typeof server !== 'object' ||
+        server === null ||
+        (server as { config?: unknown }).config == null
+      ) {
+        console.warn(
+          `[plugin-host] MCP server "${name}" — factory returned a value without a usable \`config\`, skipping. ` +
+            `A backend MCP server must be built with \`createMcpServer(...)\` from the plugin runtime facade; ` +
+            `a hand-rolled descriptor (e.g. \`{name, version, tools}\`) is NOT a valid McpServerInstance.`,
+        );
+        continue;
+      }
+      out.push({ name, server: server as McpServerInstance });
+    }
+    return out;
   }
 
   clearMcpFactories(): void {

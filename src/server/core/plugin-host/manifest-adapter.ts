@@ -205,27 +205,12 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       // Per-turn freshness is host-owned — wrap the slot factory in a thunk so
       // `buildMcpServers()` re-invokes it each turn for a fresh, connectable
       // server (an MCP instance can't be re-`connect`ed across turns).
+      // Thunk auto-unwrapping (pre-0.1.133 contract) and shape validation both
+      // live in `ProjectPluginHostImpl.buildMcpServers()` — the single choke
+      // point every registered factory passes through, including the ones a
+      // plugin's own `mount()` registers without going through this adapter.
       const svc = instance as EntityCrudService;
-      ctx.registerMcpServer(`${module.type}-tools`, () => {
-        const result = mcpServer(svc, ctx);
-        // Backward-compat shim: an externally-published plugin built against the
-        // pre-0.1.133 contract still returns `() => McpServerInstance` (a thunk)
-        // instead of the instance directly — an `McpServerInstance` is always a
-        // plain `{server, config}` object, never callable, so `typeof === 'function'`
-        // unambiguously identifies the old shape. Auto-unwrapping it here means a
-        // not-yet-migrated plugin degrades to "works, with a warning" instead of
-        // crashing every turn deep inside the adapter with an opaque
-        // "Cannot read properties of undefined (reading 'type')" (the malformed
-        // config silently produced by NOT unwrapping — this happened for real).
-        if (typeof result === 'function') {
-          console.warn(
-            `[plugin-host] ${module.type}: backend.mcpServer returned a thunk (pre-0.1.133 contract) — ` +
-              `auto-unwrapping for compatibility. Migrate this plugin to return the McpServerInstance handle directly.`,
-          );
-          return (result as () => McpServerInstance)();
-        }
-        return result;
-      });
+      ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
     }
   };
 
