@@ -18,7 +18,13 @@ import { chromium, type Browser, type Page } from 'playwright';
  * difference. Hence the test navigates by clicking `Briefs`, not by asserting
  * the item is visible.
  *
- * The plan page is the venue because it is where the ActionBar renders.
+ * The venue is `/acs`, not the plan page the brief describes. Both render an
+ * `ActionBar` and the stacking question is identical, but the AC list renders
+ * its bar UNCONDITIONALLY while `PlanPage` gates its own on a non-empty plan
+ * body — so on the plan page this test would silently pass against a page with
+ * nothing to stack against whenever the environment has no seeded plan. (The
+ * `demo-c4s` seed has exactly that gap today: zero plans, which is also why
+ * `plan-footer.test.ts` fails there.)
  */
 const BASE = process.env.C4S_E2E_BASE_URL?.replace(/\/$/, '');
 
@@ -41,42 +47,19 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
-/**
- * A plan whose body is non-empty — the ActionBar is gated on `plan.body.trim()`
- * (PlanPage), so a stub plan would give us a page with nothing to stack against
- * and the test would pass for the wrong reason.
- */
-async function runnablePlanPath(projectId: string): Promise<string> {
-  const res = await fetch(`${BASE}/api/projects/${projectId}/artifacts/plan`);
-  const listed = (await res.json()) as { data: Array<{ path: string }> };
-  for (const { path } of listed.data) {
-    const detail = await fetch(
-      `${BASE}/api/projects/${projectId}/artifacts/plan/${encodeURIComponent(path)}`,
-    );
-    if (!detail.ok) continue;
-    const { data } = (await detail.json()) as { data: { body: string } };
-    if (data.body.trim().length > 0) return path;
-  }
-  throw new Error(
-    `no plan with a non-empty body in this environment (${listed.data.length} listed) — seed one first`,
-  );
-}
-
 describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
   let browser: Browser;
   let project: WorkspaceProject;
-  let planPath: string;
 
   beforeAll(async () => {
     browser = await chromium.launch();
     project = await firstProject();
-    planPath = await runnablePlanPath(project.id);
   });
   afterAll(async () => {
     await browser?.close();
   });
 
-  /** Opens the plan page and the flyout, collecting console/network failures. */
+  /** Opens the AC list page and the flyout, collecting console/network failures. */
   async function openFlyout(page: Page) {
     const consoleErrors: string[] = [];
     const badResponses: string[] = [];
@@ -87,9 +70,11 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
       if (r.status() >= 400) badResponses.push(`${r.status()} ${new URL(r.url()).pathname}`);
     });
 
-    await page.goto(`${BASE}/p/${project.id}/plans/${encodeURIComponent(planPath)}`, {
-      waitUntil: 'networkidle',
-    });
+    await page.goto(`${BASE}/p/${project.id}/acs`, { waitUntil: 'networkidle' });
+    // The bar this must stack above.
+    await expect
+      .poll(() => page.getByRole('button', { name: 'Analyze consistency' }).count())
+      .toBe(1);
     await page.getByRole('button', { name: 'OTHERS' }).click();
     return { consoleErrors, badResponses };
   }
@@ -106,12 +91,39 @@ describe.skipIf(!BASE)('sidebar OTHERS flyout', () => {
     const z = await panel.evaluate((el) => getComputedStyle(el).zIndex);
     expect(z).toBe('1100');
 
-    // The real proof: `Briefs` sits in the band the action bar occupies. If
-    // anything paints over it, this click lands on the bar and the URL never
-    // changes — Playwright fails the click as intercepted rather than silently
-    // passing.
-    await panel.getByRole('link', { name: 'Briefs' }).click();
-    await expect.poll(() => new URL(page.url()).pathname).toContain('/briefs');
+    // `Links` is the LAST menu item and the one genuinely buried in the action
+    // bar's band. `Briefs` is not a substitute: measured at 1440x900 its rect
+    // only clips the bar by ~7px at the bottom, so its CENTRE — the point
+    // Playwright clicks — stays clear of the bar and would pass even on the
+    // broken build.
+    const item = panel.getByRole('link', { name: 'Links' });
+    const itemBox = await item.boundingBox();
+    const barBox = await page.evaluate(() => {
+      for (const el of document.querySelectorAll('div')) {
+        const s = getComputedStyle(el);
+        if (s.position === 'sticky' && s.zIndex === '900') {
+          const r = el.getBoundingClientRect();
+          return { y: r.y, height: r.height };
+        }
+      }
+      return null;
+    });
+
+    // Assert the test's own premise. If a layout change ever lifts the menu
+    // clear of the bar, the click below stops proving anything — and a test
+    // that silently goes vacuous is worse than one that fails.
+    expect(itemBox, 'Links item must be laid out').not.toBeNull();
+    expect(barBox, 'the AC list page must render an ActionBar').not.toBeNull();
+    const centre = itemBox!.y + itemBox!.height / 2;
+    expect(
+      centre,
+      "Links' centre must fall inside the ActionBar band, or this test is vacuous",
+    ).toBeGreaterThan(barBox!.y);
+
+    // The real proof: on the broken build the bar paints over this point and
+    // Playwright fails the click as intercepted.
+    await item.click();
+    await expect.poll(() => new URL(page.url()).pathname).toContain('/links');
 
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
