@@ -55,7 +55,6 @@ function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
       x={request.x}
       y={request.y}
       width={340}
-      estHeight={200}
       onCancel={() => onClose(null)}
       title={title}
       icon={<Icon size={12} style={{ color: 'var(--c-accent)' }} />}

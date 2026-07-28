@@ -92,7 +92,6 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
   }
 
   const width = fullscreen ? Math.round(window.innerWidth * 0.9) : 620;
-  const estHeight = fullscreen ? Math.round(window.innerHeight * 0.9) : 480;
   const x = fullscreen ? Math.round(window.innerWidth * 0.05) : request.x;
   const y = fullscreen ? Math.round(window.innerHeight * 0.05) : request.y;
 
@@ -101,7 +100,6 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
       x={x}
       y={y}
       width={width}
-      estHeight={estHeight}
       onCancel={() => onClose(null)}
       title={mode === 'edit' ? 'Edit diagram' : 'New diagram'}
       icon={<Share2 size={12} style={{ color: 'var(--c-accent)' }} />}

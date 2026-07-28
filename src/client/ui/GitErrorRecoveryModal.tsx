@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { startSeededThread } from '../chat/startSeededThread.js';
 import { UI_EVENTS, type GitErrorModalRequest } from './events.js';
 
@@ -43,128 +44,20 @@ export function GitErrorRecoveryModal() {
     return () => window.removeEventListener(UI_EVENTS.GIT_ERROR, handler as EventListener);
   }, []);
 
-  useEffect(() => {
-    if (!request) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        setRequest(null);
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [request]);
-
   if (!request) return null;
   const { recovery } = request;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Git sync error"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.35)',
-        zIndex: 1200,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) setRequest(null);
-      }}
-    >
-      <div
-        style={{
-          width: 460,
-          maxWidth: 'calc(100vw - 32px)',
-          background: 'var(--c-card)',
-          border: '1px solid var(--c-hair-strong)',
-          borderRadius: 8,
-          padding: 20,
-          boxShadow: '0 20px 48px rgba(0,0,0,0.20)',
-        }}
-      >
-        <div
-          style={{
-            fontFamily: 'Lora, serif',
-            fontSize: 16,
-            color: 'var(--c-ink)',
-            marginBottom: 10,
-            fontWeight: 500,
-          }}
-        >
-          Done — but git sync hit a problem
-        </div>
-        <div
-          style={{
-            fontSize: 13.5,
-            color: 'var(--c-muted)',
-            lineHeight: 1.5,
-            marginBottom: recovery.kind ? 4 : 12,
-          }}
-        >
-          {OPERATION_LABEL[recovery.operation]} failed: {recovery.reason}
-        </div>
-
-        {recovery.kind && (
-          <div
-            style={{
-              fontSize: 12.5,
-              color: 'var(--c-subtle)',
-              lineHeight: 1.5,
-              marginBottom: 12,
-            }}
-          >
-            {KIND_HINT[recovery.kind]}
-          </div>
-        )}
-
-        <button
-          onClick={() => setExpanded((v) => !v)}
-          style={{
-            fontSize: 11.5,
-            color: 'var(--c-subtle)',
-            marginBottom: expanded ? 10 : 20,
-          }}
-        >
-          {expanded ? '▾ Hide details' : '▸ Show details'}
-        </button>
-
-        {expanded && (
-          <div
-            className="font-mono"
-            style={{
-              fontSize: 11,
-              color: 'var(--c-subtle)',
-              background: 'var(--c-bg)',
-              border: '1px solid var(--c-hair)',
-              borderRadius: 6,
-              padding: 10,
-              marginBottom: 20,
-              maxHeight: 180,
-              overflow: 'auto',
-              whiteSpace: 'pre-wrap',
-            }}
-          >
-            <div style={{ marginBottom: 6 }}>operation: {recovery.operation}</div>
-            {recovery.kind && <div style={{ marginBottom: 6 }}>kind: {recovery.kind}</div>}
-            <div style={{ marginBottom: 6 }}>reason: {recovery.reason}</div>
-            <div>gitStderr:{'\n'}{recovery.gitStderr || '(empty)'}</div>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+    <Dialog
+      open
+      onClose={() => setRequest(null)}
+      title="Done — but git sync hit a problem"
+      size="md"
+      footer={
+        <>
           <button
             onClick={() => setRequest(null)}
-            style={{
-              fontSize: 12,
-              padding: '6px 12px',
-              borderRadius: 4,
-              color: 'var(--c-muted)',
-            }}
+            style={{ fontSize: 12, padding: '6px 12px', borderRadius: 4, color: 'var(--c-muted)' }}
           >
             Dismiss
           </button>
@@ -184,8 +77,54 @@ export function GitErrorRecoveryModal() {
           >
             Fix it with Agent
           </button>
-        </div>
+        </>
+      }
+    >
+      <div
+        style={{
+          fontSize: 13.5,
+          color: 'var(--c-muted)',
+          lineHeight: 1.5,
+          marginBottom: recovery.kind ? 4 : 12,
+        }}
+      >
+        {OPERATION_LABEL[recovery.operation]} failed: {recovery.reason}
       </div>
-    </div>
+
+      {recovery.kind && (
+        <div style={{ fontSize: 12.5, color: 'var(--c-subtle)', lineHeight: 1.5, marginBottom: 12 }}>
+          {KIND_HINT[recovery.kind]}
+        </div>
+      )}
+
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        style={{ fontSize: 11.5, color: 'var(--c-subtle)', marginBottom: expanded ? 10 : 0 }}
+      >
+        {expanded ? '▾ Hide details' : '▸ Show details'}
+      </button>
+
+      {expanded && (
+        <div
+          className="font-mono"
+          style={{
+            fontSize: 11,
+            color: 'var(--c-subtle)',
+            background: 'var(--c-bg)',
+            border: '1px solid var(--c-hair)',
+            borderRadius: 6,
+            padding: 10,
+            maxHeight: 180,
+            overflow: 'auto',
+            whiteSpace: 'pre-wrap',
+          }}
+        >
+          <div style={{ marginBottom: 6 }}>operation: {recovery.operation}</div>
+          {recovery.kind && <div style={{ marginBottom: 6 }}>kind: {recovery.kind}</div>}
+          <div style={{ marginBottom: 6 }}>reason: {recovery.reason}</div>
+          <div>gitStderr:{'\n'}{recovery.gitStderr || '(empty)'}</div>
+        </div>
+      )}
+    </Dialog>
   );
 }

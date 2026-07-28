@@ -19,6 +19,7 @@ import { EmptyState } from './list/EmptyState.js';
 import { TagFilterBar } from './list/TagFilterBar.js';
 import { EntityListRow } from './list/EntityListRow.js';
 import { ActionButton } from './actions/ActionButton.js';
+import { ActionBar } from './actions/ActionBar.js';
 import { Badge } from './actions/Badge.js';
 import { LoadingState } from './actions/LoadingState.js';
 import { FormField } from './form/FormField.js';
@@ -88,6 +89,7 @@ export const UI_KIT_CATALOG: UiKitComponentEntry[] = [
   entry('TagFilterBar', 'list', TagFilterBar),
   entry('EntityListRow', 'list', EntityListRow),
   entry('ActionButton', 'actions', ActionButton),
+  entry('ActionBar', 'actions', ActionBar),
   entry('Badge', 'actions', Badge),
   entry('LoadingState', 'actions', LoadingState),
   entry('FormField', 'form', FormField),

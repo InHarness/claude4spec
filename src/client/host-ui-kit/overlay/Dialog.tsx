@@ -31,7 +31,7 @@ export interface DialogProps {
 }
 
 const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
-  sm: 420,
+  sm: 400,
   md: 560,
   lg: 760,
 };
@@ -124,7 +124,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
             style={{ borderBottom: '1px solid var(--c-hair)' }}
           >
             <div
-              className="text-[14px] font-semibold min-w-0"
+              className="text-[16px] font-medium min-w-0"
               style={{ fontFamily: 'var(--font-heading)', color: 'var(--c-ink)' }}
             >
               {title}

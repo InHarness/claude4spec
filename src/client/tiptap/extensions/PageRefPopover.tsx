@@ -123,7 +123,6 @@ function PageRefPopoverForm({
       x={request.x}
       y={request.y}
       width={320}
-      estHeight={280}
       onCancel={() => onClose(false)}
       title="Edit page reference"
       icon={<FileText size={12} style={{ color: 'var(--c-accent)' }} />}

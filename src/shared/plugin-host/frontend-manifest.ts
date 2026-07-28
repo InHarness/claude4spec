@@ -137,6 +137,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'EntityListRow',
   // Actions & states (experimental)
   'ActionButton',
+  'ActionBar',
   'Badge',
   'LoadingState',
   // Form (experimental)

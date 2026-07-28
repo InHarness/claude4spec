@@ -49,7 +49,6 @@ export function CreateEndpointForm({ request, onClose }: PopoverFormProps<'creat
       x={request.x}
       y={request.y}
       width={360}
-      estHeight={260}
       onCancel={() => onClose(null)}
       title="New endpoint"
       icon={<ArrowRightLeft size={12} style={{ color: 'var(--c-accent)' }} />}

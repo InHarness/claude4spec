@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { StickyNote } from 'lucide-react';
+import { PopoverShell, TextInput, PopoverFooter } from '../ui/Popover.js';
 
 export type TodoPopoverRequest =
   | {
@@ -25,11 +26,15 @@ export function dispatchTodoPopover(detail: TodoPopoverRequest): void {
   window.dispatchEvent(new CustomEvent<TodoPopoverRequest>(EVENT_NAME, { detail }));
 }
 
+/**
+ * TODO popover. Its own event contract (callback-based, not promise-resolving)
+ * — but no anatomy of its own: the panel, header, click-outside, Escape and
+ * viewport clamping all come from `PopoverShell` → the catalog's `Popover`.
+ */
 export function TodoPopover() {
   const [request, setRequest] = useState<TodoPopoverRequest | null>(null);
   const [comment, setComment] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
-  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -49,24 +54,6 @@ export function TodoPopover() {
       }, 0);
       return () => window.clearTimeout(t);
     }
-  }, [request]);
-
-  useEffect(() => {
-    if (!request) return;
-    const onDown = (e: MouseEvent) => {
-      if (!rootRef.current) return;
-      if (!rootRef.current.contains(e.target as Node)) cancel();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') cancel();
-    };
-    document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [request]);
 
   function cancel() {
@@ -94,38 +81,19 @@ export function TodoPopover() {
 
   if (!request) return null;
 
-  const { x, y } = clampToViewport(request.x, request.y);
   const trimmed = comment.trim();
   const submitDisabled =
-    request.mode === 'create'
-      ? !trimmed
-      : trimmed === request.initialComment.trim();
+    request.mode === 'create' ? !trimmed : trimmed === request.initialComment.trim();
 
   return (
-    <div
-      ref={rootRef}
-      role="dialog"
-      aria-label={request.mode === 'create' ? 'New TODO' : 'Edit TODO'}
-      className="rounded-md shadow-lg"
-      style={{
-        position: 'fixed',
-        top: y,
-        left: x,
-        zIndex: 1100,
-        width: 320,
-        background: 'var(--c-card)',
-        border: '1px solid var(--c-hair-strong)',
-        padding: 12,
-      }}
+    <PopoverShell
+      x={request.x}
+      y={request.y}
+      onCancel={cancel}
+      title={request.mode === 'create' ? 'New TODO' : 'Edit TODO'}
+      icon={<StickyNote size={12} style={{ color: '#a87033' }} />}
     >
-      <div
-        className="flex items-center gap-2 mb-2 text-[11px] uppercase font-mono tracking-wider"
-        style={{ color: 'var(--c-subtle)' }}
-      >
-        <StickyNote size={12} style={{ color: '#a87033' }} />
-        {request.mode === 'create' ? 'New TODO' : 'Edit TODO'}
-      </div>
-      <input
+      <TextInput
         ref={inputRef}
         value={comment}
         onChange={(e) => setComment(e.target.value)}
@@ -136,55 +104,14 @@ export function TodoPopover() {
           }
         }}
         placeholder="rate-limit review"
-        spellCheck={false}
-        className="w-full text-[13.5px] bg-transparent outline-none mb-2 px-2 py-1 rounded"
-        style={{
-          color: 'var(--c-ink)',
-          border: '1px solid var(--c-hair)',
-        }}
       />
-      <div className="flex items-center gap-2 justify-end">
-        {request.mode === 'edit' && (
-          <button
-            onClick={remove}
-            className="text-[12px] px-2 py-1 rounded mr-auto"
-            style={{ color: 'var(--c-red, #c45a3b)' }}
-          >
-            Remove
-          </button>
-        )}
-        <button
-          onClick={cancel}
-          className="text-[12px] px-2 py-1 rounded"
-          style={{ color: 'var(--c-muted)' }}
-        >
-          Cancel
-        </button>
-        <button
-          onClick={submit}
-          disabled={submitDisabled}
-          className="text-[12px] px-3 py-1 rounded font-medium"
-          style={{
-            background: 'var(--c-accent)',
-            color: '#fff',
-            opacity: submitDisabled ? 0.5 : 1,
-          }}
-        >
-          {request.mode === 'create' ? 'Create' : 'Save'}
-        </button>
-      </div>
-    </div>
+      <PopoverFooter
+        onCancel={cancel}
+        onSubmit={submit}
+        submitLabel={request.mode === 'create' ? 'Create' : 'Save'}
+        disabled={submitDisabled}
+        {...(request.mode === 'edit' ? { onRemove: remove } : null)}
+      />
+    </PopoverShell>
   );
-}
-
-function clampToViewport(x: number, y: number): { x: number; y: number } {
-  const width = 320;
-  const estHeight = 110;
-  const pad = 8;
-  const maxX = window.innerWidth - width - pad;
-  const maxY = window.innerHeight - estHeight - pad;
-  return {
-    x: Math.max(pad, Math.min(x, maxX)),
-    y: Math.max(pad, Math.min(y, maxY)),
-  };
 }

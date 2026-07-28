@@ -130,6 +130,26 @@ export interface ActionButtonProps {
 }
 export declare const ActionButton: ComponentType<ActionButtonProps>;
 
+export type ActionBarVariant = ActionButtonVariant;
+export interface ActionBarAction {
+  /** Stable React key; defaults to the label. */
+  key?: string;
+  label: string;
+  icon?: ReactNode;
+  onClick(): void;
+  variant?: ActionBarVariant;
+  disabled?: boolean;
+  /** Native tooltip — useful to explain a disabled state. */
+  title?: string;
+}
+export interface ActionBarProps {
+  /** Optional left-aligned status text. */
+  status?: ReactNode;
+  /** Right-aligned action buttons. */
+  actions: ActionBarAction[];
+}
+export declare const ActionBar: ComponentType<ActionBarProps>;
+
 export interface BadgeProps {
   label: ReactNode;
   color?: string;
@@ -328,14 +348,36 @@ export declare const EntityVersionHistoryView: ComponentType<EntityVersionHistor
 export interface PopoverProps {
   open: boolean;
   onClose(): void;
-  anchorRef: { current: HTMLElement | null };
+  /** Anchor element to position against. Supply this or `at`. */
+  anchorRef?: { current: HTMLElement | null };
+  /** Fixed viewport coordinates. Wins over `anchorRef` if both are given. */
+  at?: { x: number; y: number };
   placement?: 'top' | 'bottom' | 'left' | 'right';
   children: ReactNode;
+  /** 320 = create, 280 = edit, 360 = multi-step. Omitted, sizes to content. */
+  width?: number;
+  title?: string;
+  icon?: ReactNode;
   maxHeight?: number;
   footer?: ReactNode;
 }
 export declare const Popover: ComponentType<PopoverProps>;
-export declare const ToastViewport: ComponentType<Record<string, never>>;
+
+export type ToastKind = 'success' | 'error' | 'warning' | 'info';
+export interface ToastViewportItem {
+  id: number | string;
+  kind: ToastKind;
+  message: ReactNode;
+  action?: ToastAction;
+}
+export interface ToastViewportProps {
+  /** Caller-owned stack. Omitted, the viewport manages its own from `useToast()`. */
+  toasts?: ToastViewportItem[];
+  onDismiss?(id: number | string): void;
+  onPause?(id: number | string): void;
+  onResume?(id: number | string): void;
+}
+export declare const ToastViewport: ComponentType<ToastViewportProps>;
 export interface ToastAction {
   label: string;
   onClick(): void;

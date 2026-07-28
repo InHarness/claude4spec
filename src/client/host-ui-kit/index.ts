@@ -43,6 +43,12 @@ export { EntityListRow, type EntityListRowProps } from './list/EntityListRow.js'
 
 // Actions & states (experimental)
 export { ActionButton, type ActionButtonProps, type ActionButtonVariant } from './actions/ActionButton.js';
+export {
+  ActionBar,
+  type ActionBarProps,
+  type ActionBarAction,
+  type ActionBarVariant,
+} from './actions/ActionBar.js';
 export { Badge, type BadgeProps } from './actions/Badge.js';
 export { LoadingState, type LoadingStateProps } from './actions/LoadingState.js';
 
@@ -82,7 +88,11 @@ export { DocEditor, type DocEditorProps } from './detail/DocEditor.js';
 
 // Overlay/feedback (experimental)
 export { Popover, type PopoverProps } from './overlay-feedback/Popover.js';
-export { ToastViewport } from './overlay-feedback/ToastViewport.js';
+export {
+  ToastViewport,
+  type ToastViewportProps,
+  type ToastViewportItem,
+} from './overlay-feedback/ToastViewport.js';
 export { useToast } from './overlay-feedback/useToast.js';
 
 // Pickers (experimental)

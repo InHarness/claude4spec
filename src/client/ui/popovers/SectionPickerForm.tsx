@@ -60,7 +60,6 @@ export function SectionPickerForm({ request, onClose }: PopoverFormProps<'sectio
       x={request.x}
       y={request.y}
       width={420}
-      estHeight={320}
       onCancel={() => onClose(null)}
       title={initialAnchor ? 'Edit section reference' : 'Insert section reference'}
       icon={<Hash size={12} style={{ color: 'var(--c-accent)' }} />}

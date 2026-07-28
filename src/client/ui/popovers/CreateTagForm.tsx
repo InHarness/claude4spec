@@ -35,7 +35,6 @@ export function CreateTagForm({ request, onClose }: PopoverFormProps<'create-tag
       x={request.x}
       y={request.y}
       width={300}
-      estHeight={160}
       onCancel={() => onClose(null)}
       title={contextLabel ? `Add tag to ${contextLabel}` : 'New tag'}
       icon={<TagIcon size={12} style={{ color: 'var(--c-accent)' }} />}
