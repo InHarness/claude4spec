@@ -203,6 +203,8 @@ export interface DialogProps {
   footer?: ReactNode;
   children: ReactNode;
   size?: 'sm' | 'md' | 'lg';
+  /** Exact panel width in px, overriding `size`. */
+  width?: number;
 }
 export declare const Dialog: ComponentType<DialogProps>;
 
@@ -410,7 +412,10 @@ export interface GroupedRelationPickerProps {
   selected: Record<string, string[]>;
   onAdd(groupKey: string, id: string): void;
   onRemove(groupKey: string, id: string): void;
-  onSearch?(q: string): void;
+  /** Query plus the group it was typed in; the widget-level search omits the key. */
+  onSearch?(q: string, groupKey?: string): void;
+  /** A group's link popover opened — lets the consumer load that group's candidates lazily. */
+  onGroupOpen?(groupKey: string): void;
   maxHeight?: number;
 }
 export declare const GroupedRelationPicker: ComponentType<GroupedRelationPickerProps>;

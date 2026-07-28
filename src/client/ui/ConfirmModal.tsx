@@ -54,8 +54,14 @@ export function ModalHost() {
     <Dialog
       open
       onClose={cancel}
-      title={request.title}
-      size="sm"
+      // The destructive-confirm anatomy pins its own width and Lora title
+      // rather than retuning `size="sm"`, which five other call sites share.
+      title={
+        <span style={{ fontFamily: 'var(--font-heading)', fontSize: 16, fontWeight: 500 }}>
+          {request.title}
+        </span>
+      }
+      width={400}
       footer={
         <>
           {/* Cancel is visually first so Escape and the eye both land on the

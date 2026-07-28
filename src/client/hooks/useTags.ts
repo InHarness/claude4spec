@@ -34,6 +34,11 @@ export function useCreateTag() {
  * M18: inline edit of a tag's own fields (name, color) from `/tags`. Optimistic
  * — the row must not flicker back to the old value while the PATCH is in
  * flight — with the server response reconciled on settle.
+ *
+ * A rename re-derives the slug server-side, and the slug is the mutation's own
+ * addressing key. So the server's tag replaces the optimistic row on success:
+ * carrying the stale slug forward would send the NEXT edit of that row (a
+ * colour pick moments later) to a path that no longer exists.
  */
 export function useUpdateTag() {
   const qc = useQueryClient();
@@ -47,6 +52,11 @@ export function useUpdateTag() {
         old?.map((t) => (t.slug === slug ? { ...t, ...input } : t)),
       );
       return { previous };
+    },
+    onSuccess: (updated, { slug }) => {
+      qc.setQueryData<Tag[]>(['tags'], (old) =>
+        old?.map((t) => (t.slug === slug ? updated : t)),
+      );
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) qc.setQueryData(['tags'], context.previous);

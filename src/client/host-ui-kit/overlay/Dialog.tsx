@@ -28,10 +28,17 @@ export interface DialogProps {
   children: ReactNode;
   /** Panel width tier. Defaults to `md`. */
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * Exact panel width in px, overriding `size`. For a variant whose width is
+   * specified independently of the tiers (the host's destructive-confirm is
+   * pinned at 400px) — so honouring it does not require retuning a tier every
+   * other call site shares.
+   */
+  width?: number;
 }
 
 const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
-  sm: 400,
+  sm: 420,
   md: 560,
   lg: 760,
 };
@@ -39,13 +46,28 @@ const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: DialogProps) {
+function DialogImpl({ open, onClose, title, footer, children, size = 'md', width }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  const restoreRef = useRef<HTMLElement | null>(null);
+
+  // Captured during the FIRST render that sees `open` — before the panel is
+  // committed, so before a child's `autoFocus` runs. An effect would be too
+  // late: `autoFocus` fires during commit, so `document.activeElement` would
+  // already be inside the panel and the restore-on-close would be a no-op.
+  if (open && restoreRef.current === null) {
+    restoreRef.current = document.activeElement as HTMLElement | null;
+  }
+
+  // `onClose` is typically an inline arrow, so it changes identity on every
+  // render of the consumer. Reading it through a ref keeps the focus effect
+  // keyed on `open` alone — otherwise every re-render (a checkbox, an
+  // expanding details block) would tear the effect down, restore focus behind
+  // the scrim, and re-grab it on the panel's first focusable.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return;
-    // Remember what had focus so we can restore it when the dialog closes.
-    const previouslyFocused = document.activeElement as HTMLElement | null;
     // Move focus into the panel (first focusable, else the panel itself) —
     // unless something inside the panel (e.g. a child's `autoFocus`) already
     // claimed focus, in which case leave it alone.
@@ -60,7 +82,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== 'Tab') return;
@@ -89,9 +111,13 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
     return () => {
       window.clearTimeout(t);
       window.removeEventListener('keydown', onKey);
-      previouslyFocused?.focus?.();
+      const restore = restoreRef.current;
+      restoreRef.current = null;
+      // Skip a detached opener: focusing it is a no-op that leaves
+      // `document.activeElement` on `<body>`, which is worse than doing nothing.
+      if (restore?.isConnected) restore.focus?.();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 
@@ -110,7 +136,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
         tabIndex={-1}
         className="rounded-lg outline-none flex flex-col"
         style={{
-          width: SIZE_WIDTH[size],
+          width: width ?? SIZE_WIDTH[size],
           maxWidth: 'calc(100vw - 32px)',
           maxHeight: 'calc(100vh - 48px)',
           background: 'var(--c-card)',
@@ -124,7 +150,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md' }: Dia
             style={{ borderBottom: '1px solid var(--c-hair)' }}
           >
             <div
-              className="text-[16px] font-medium min-w-0"
+              className="text-[14px] font-semibold min-w-0"
               style={{ fontFamily: 'var(--font-heading)', color: 'var(--c-ink)' }}
             >
               {title}

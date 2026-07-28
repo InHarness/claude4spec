@@ -110,7 +110,12 @@ function PopoverImpl({
     }
 
     setPos(clampToViewport(left, top, measuredWidth, height));
-  }, [open, anchorRef, at?.x, at?.y, placement, children, width]);
+    // Deliberately NOT keyed on `children`: the clamp reads the panel's
+    // measured height, so re-running it as content resizes would slide the
+    // panel out from under the pointer — a filtered picker list shrinking on
+    // each keystroke would walk the options the user is aiming at. The
+    // position is settled once per open, per anchor.
+  }, [open, anchorRef, at?.x, at?.y, placement, width]);
 
   useEffect(() => {
     if (!open) return;

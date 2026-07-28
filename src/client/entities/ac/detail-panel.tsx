@@ -22,6 +22,7 @@ import type {
   EntityType,
 } from '../../../shared/entities.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
+import { verifyGroupItems, verifyGroupTypes } from './verify-groups.js';
 
 /** `kind` and `status` are the catalog's colored-badge-with-dropdown, not bespoke widgets. */
 const AC_KIND_OPTIONS = [
@@ -322,10 +323,11 @@ interface VerifiesPanelProps {
  * verified entity type, chips per linked slug, dangling ones as a `broken`
  * `Badge`. Props-in — the actual link/unlink is a draft mutation above.
  *
- * The search box doubles as free-text entry: an AC may legitimately verify an
- * entity that doesn't exist yet, so a query matching nothing is offered as a
- * literal slug rather than being dropped. That preserved the one capability the
- * old hand-rolled panel had that a fixed candidate list would have removed.
+ * Each group's search box doubles as free-text entry: an AC may legitimately
+ * verify an entity that does not exist yet, so a query matching nothing is
+ * offered as a literal slug rather than being dropped. That preserves the one
+ * capability the old hand-rolled panel had which a fixed candidate list would
+ * otherwise remove.
  */
 function VerifiesPanel({
   verifies,
@@ -334,35 +336,48 @@ function VerifiesPanel({
   onRemove,
   onOpenEntity,
 }: VerifiesPanelProps) {
-  const [query, setQuery] = useState('');
+  // Per-group, because `GroupedRelationPicker` keeps each group's input state
+  // locally: a single shared query would filter groups whose own box reads
+  // empty, and would offer its literal in all of them.
+  const [queries, setQueries] = useState<Record<string, string>>({});
+  // A group's candidates are a whole collection, so they load when its picker
+  // is first opened rather than on every AC the user clicks through.
+  const [opened, setOpened] = useState<Set<string>>(() => new Set());
+
   const modules = clientPluginHost.listEntities().filter((m) => m.type !== 'ac');
+  const moduleByType = new Map(modules.map((m) => [m.type as string, m]));
+
+  const selected: Record<string, string[]> = {};
+  for (const v of verifies) (selected[v.type] ??= []).push(v.slug);
 
   const candidates = useQueries({
     queries: modules.map((m) => ({
       queryKey: ['verify-candidates', m.type] as const,
       queryFn: () => m.listByTags({ tags: [], filter: 'or' as const }),
       staleTime: 60_000,
+      enabled: opened.has(m.type as string),
     })),
   });
+  const candidateByType = new Map(modules.map((m, i) => [m.type as string, candidates[i]]));
 
-  const selected: Record<string, string[]> = {};
-  for (const v of verifies) (selected[v.type] ??= []).push(v.slug);
+  const moduleTypes = modules.map((m) => m.type as string);
+  const fetchedByType: Record<string, string[]> = {};
+  for (const type of moduleTypes) {
+    fetchedByType[type] = (candidateByType.get(type)?.data ?? []).map((e) => e.slug);
+  }
+  const groupInput = { moduleTypes, selected, fetchedByType, queries };
 
-  const q = query.trim().toLowerCase();
-  const groups = modules.map((m, i) => {
-    const linked = selected[m.type] ?? [];
-    const fetched = (candidates[i]?.data ?? []).map((e) => e.slug);
-    // Linked slugs must stay in `items` even when they resolve to nothing —
-    // otherwise a broken reference would render as a bare id with no badge.
-    const known = Array.from(new Set([...fetched, ...linked]));
-    const matching = q ? known.filter((s) => s.toLowerCase().includes(q)) : known;
-    const literal = q && !known.some((s) => s.toLowerCase() === q) ? [query.trim()] : [];
+  const groups = verifyGroupTypes(groupInput).map((type) => {
+    const mod = moduleByType.get(type);
+    const result = candidateByType.get(type);
 
     return {
-      key: m.type,
-      label: m.label,
-      items: [...matching, ...literal].map((slug) => {
-        const reason = brokenByKey.get(`${m.type}/${slug}`);
+      key: type,
+      // An inactive/unknown type has no module to name it, and a group whose
+      // candidates failed to load must not read as "nothing to link".
+      label: mod ? (result?.isError ? `${mod.label} (failed to load)` : mod.label) : `${type} (inactive)`,
+      items: verifyGroupItems(type, groupInput).map((slug) => {
+        const reason = brokenByKey.get(`${type}/${slug}`);
         return {
           id: slug,
           label: slug,
@@ -371,10 +386,10 @@ function VerifiesPanel({
           badge: (
             <>
               {reason && <Badge label={reason} variant="broken" small dot={false} />}
-              {!reason && onOpenEntity && (
+              {!reason && mod && onOpenEntity && (
                 <button
-                  onClick={() => onOpenEntity(m.type as EntityType, slug)}
-                  title={`Open ${m.type} ${slug}`}
+                  onClick={() => onOpenEntity(type as EntityType, slug)}
+                  title={`Open ${type} ${slug}`}
                   className="opacity-70 hover:opacity-100 text-[11px]"
                   style={{ color: 'var(--c-accent)' }}
                 >
@@ -394,13 +409,19 @@ function VerifiesPanel({
       selected={selected}
       onAdd={(groupKey, id) => {
         onAdd(groupKey, id);
-        setQuery('');
+        setQueries((prev) => ({ ...prev, [groupKey]: '' }));
       }}
       onRemove={(groupKey, id) => {
         const idx = verifies.findIndex((v) => v.type === groupKey && v.slug === id);
         if (idx >= 0) onRemove(idx);
       }}
-      onSearch={setQuery}
+      onSearch={(q, groupKey) => {
+        if (!groupKey) return;
+        setQueries((prev) => ({ ...prev, [groupKey]: q }));
+      }}
+      onGroupOpen={(groupKey) =>
+        setOpened((prev) => (prev.has(groupKey) ? prev : new Set(prev).add(groupKey)))
+      }
     />
   );
 }
