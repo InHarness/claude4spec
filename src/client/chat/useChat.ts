@@ -75,6 +75,23 @@ export interface BackgroundTaskEntry {
   summary: string | null;
 }
 
+/**
+ * Upsert a background-task entry by taskId: apply `make` to the existing entry,
+ * or seed a new one from `make(null)` when the taskId is not present yet. Every
+ * background_task_* handler routes through this so an out-of-order progress /
+ * completed event (replay buffer, completed-only fast task) inserts rather than
+ * being silently dropped.
+ */
+function upsertBackgroundTask(
+  prev: BackgroundTaskEntry[],
+  taskId: string,
+  make: (existing: BackgroundTaskEntry | null) => BackgroundTaskEntry,
+): BackgroundTaskEntry[] {
+  return prev.some((t) => t.taskId === taskId)
+    ? prev.map((t) => (t.taskId === taskId ? make(t) : t))
+    : [...prev, make(null)];
+}
+
 export interface UseChatOptions {
   serverUrl?: string;
   threadId: string | null;
@@ -180,51 +197,50 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         );
         return;
       }
-      // M17: background-task lifecycle. Upsert on started, patch on progress, flip
-      // status + summary on completed. Kept out of the lib reducer (early return) —
-      // it has no background-task block; this panel is custom, transagent-style.
+      // M17: background-task lifecycle. Every variant UPSERTS by taskId — progress
+      // and completed can legitimately arrive before `started` (replay-buffer
+      // ordering, or a completed-only fast task), so a plain map that dropped the
+      // update on a missing entry would lose the task. Kept out of the lib reducer
+      // (early return) — it has no background-task block; this panel is custom.
       if (ext.type === 'background_task_started') {
         const { taskId, taskType, description } = ext;
         setBackgroundTasks((prev) =>
-          prev.some((t) => t.taskId === taskId)
-            ? prev.map((t) =>
-                t.taskId === taskId ? { ...t, taskType, description, status: 'running' } : t,
-              )
-            : [...prev, { taskId, taskType, description, status: 'running', outputFile: null, summary: null }],
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description,
+            status: 'running',
+            outputFile: e?.outputFile ?? null,
+            summary: e?.summary ?? null,
+          })),
         );
         return;
       }
       if (ext.type === 'background_task_progress') {
         const { taskId, taskType, description, status, outputFile } = ext;
         setBackgroundTasks((prev) =>
-          prev.map((t) =>
-            t.taskId === taskId
-              ? {
-                  ...t,
-                  taskType,
-                  description: description ?? t.description,
-                  status: status ?? t.status,
-                  outputFile: outputFile ?? t.outputFile,
-                }
-              : t,
-          ),
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description: description ?? e?.description ?? '',
+            status: status ?? e?.status ?? 'running',
+            outputFile: outputFile ?? e?.outputFile ?? null,
+            summary: e?.summary ?? null,
+          })),
         );
         return;
       }
       if (ext.type === 'background_task_completed') {
         const { taskId, taskType, status, outputFile, summary } = ext;
         setBackgroundTasks((prev) =>
-          prev.map((t) =>
-            t.taskId === taskId
-              ? {
-                  ...t,
-                  taskType,
-                  status,
-                  outputFile: outputFile ?? t.outputFile,
-                  summary: summary ?? t.summary,
-                }
-              : t,
-          ),
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description: e?.description ?? '',
+            status,
+            outputFile: outputFile ?? e?.outputFile ?? null,
+            summary: summary ?? e?.summary ?? null,
+          })),
         );
         return;
       }
@@ -440,6 +456,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveUsage(null);
     setLiveContextSize(null);
     setTransagents([]);
+    setBackgroundTasks([]);
     setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;

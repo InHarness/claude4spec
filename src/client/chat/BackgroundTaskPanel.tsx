@@ -102,10 +102,17 @@ function iconFor(taskType: string) {
   }
 }
 
-/** Map the engine's terminal status string onto the three visual states. */
+/**
+ * Map the engine's status string onto the three visual states. Only KNOWN
+ * terminal statuses read as done/failed; anything unrecognized falls back to
+ * 'running' so an in-flight task whose status string we don't know (e.g.
+ * 'active', 'starting', 'queued') never renders as finished.
+ */
 function normalizeStatus(status: string): 'running' | 'failed' | 'done' {
   const s = status.toLowerCase();
-  if (s === 'running' || s === 'in_progress' || s === 'pending') return 'running';
-  if (s === 'error' || s === 'failed' || s === 'failure') return 'failed';
-  return 'done';
+  if (s === 'error' || s === 'failed' || s === 'failure' || s === 'cancelled' || s === 'canceled')
+    return 'failed';
+  if (s === 'success' || s === 'succeeded' || s === 'completed' || s === 'complete' || s === 'done' || s === 'ok')
+    return 'done';
+  return 'running';
 }
