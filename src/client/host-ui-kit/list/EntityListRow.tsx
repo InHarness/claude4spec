@@ -21,7 +21,12 @@ export interface EntityListRowProps {
    * a row needing custom icon styling still uses `leading` directly instead.
    */
   icon?: LucideIcon;
-  onClick: () => void;
+  /**
+   * Makes the whole row a click target. Omit it when the row is an editing
+   * surface rather than a link (e.g. `/tags`): the row then renders as a plain
+   * container, so its own controls aren't nested inside a button.
+   */
+  onClick?: () => void;
   tags?: string[];
   tagLookup: Map<string, Tag>;
   trailing?: React.ReactNode;
@@ -41,9 +46,11 @@ function EntityListRowImpl({
   style,
   children,
 }: EntityListRowProps) {
+  const Root = onClick ? 'button' : 'div';
+
   return (
-    <button
-      onClick={onClick}
+    <Root
+      {...(onClick ? { onClick } : null)}
       className={`w-full text-left flex gap-3 px-4 py-3 rounded-md transition mb-1 ${
         align === 'start' ? 'items-start' : 'items-center'
       }`}
@@ -67,7 +74,7 @@ function EntityListRowImpl({
         )}
       </div>
       {trailing}
-    </button>
+    </Root>
   );
 }
 

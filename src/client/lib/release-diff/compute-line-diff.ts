@@ -22,7 +22,7 @@ export interface ComputeLineDiffOptions {
  * Client-side mirror of `computeLineDiff` from server file-serializer.
  * Used for ad-hoc inline diff between two arbitrary text snapshots
  * (e.g. entity versions in VersionHistory). Output shape matches
- * `LineDiffLite` so it can be passed to `LineDiffViewer`.
+ * `LineDiffLite` so it can be passed to `DiffView` via `toDiffViewHunks`.
  */
 export function computeLineDiffClient(
   a: string,

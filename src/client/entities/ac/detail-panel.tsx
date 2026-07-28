@@ -1,10 +1,13 @@
 import { useLayoutEffect, useRef, useState } from 'react';
-import { Plus, Trash, CheckSquare, X } from 'lucide-react';
+import { useQueries } from '@tanstack/react-query';
+import { Trash, CheckSquare } from 'lucide-react';
+import { Badge } from '../../host-ui-kit/actions/Badge.js';
+import { EnumBadgePicker } from '../../host-ui-kit/pickers/EnumBadgePicker.js';
+import { GroupedRelationPicker } from '../../host-ui-kit/pickers/GroupedRelationPicker.js';
 import { DocEditor } from '../../host-ui-kit/detail/DocEditor.js';
 import { TagPicker } from '../../host-ui-kit/detail/TagPicker.js';
 import { FieldGrid } from '../../host-ui-kit/core/FieldGrid.js';
 import { FieldRow } from '../../host-ui-kit/core/FieldRow.js';
-import { ActionButton } from '../../host-ui-kit/actions/ActionButton.js';
 import { useEntityDraftEditor } from '../_shared/useEntityDraftEditor.js';
 import { useAc, useDeleteAc, useUpdateAc } from '../../hooks/useAcs.js';
 import { useTags } from '../../hooks/useTags.js';
@@ -19,6 +22,17 @@ import type {
   EntityType,
 } from '../../../shared/entities.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
+
+/** `kind` and `status` are the catalog's colored-badge-with-dropdown, not bespoke widgets. */
+const AC_KIND_OPTIONS = [
+  { value: 'requirement', label: 'requirement', color: 'var(--c-accent)' },
+  { value: 'edge-case', label: 'edge-case', color: 'var(--c-yellow-ink)' },
+];
+
+const AC_STATUS_OPTIONS = [
+  { value: 'active', label: 'active', color: 'var(--c-accent)' },
+  { value: 'deprecated', label: 'deprecated', color: 'var(--c-red, #c45a3b)' },
+];
 
 interface Props {
   slug: string;
@@ -206,39 +220,19 @@ export function AcDetail({
         </div>
 
         <FieldRow label="Kind">
-          <div className="flex items-center gap-3 flex-wrap text-[11.5px]" style={{ color: 'var(--c-muted)' }}>
-            <label className="flex items-center gap-1">
-              <input
-                type="radio"
-                checked={draft.kind === 'requirement'}
-                onChange={() => patch({ kind: 'requirement' })}
-              />
-              requirement
-            </label>
-            <label className="flex items-center gap-1">
-              <input
-                type="radio"
-                checked={draft.kind === 'edge-case'}
-                onChange={() => patch({ kind: 'edge-case' })}
-              />
-              edge-case
-            </label>
-          </div>
+          <EnumBadgePicker
+            options={AC_KIND_OPTIONS}
+            value={draft.kind}
+            onChange={(v) => patch({ kind: v as AcKind })}
+          />
         </FieldRow>
 
         <FieldRow label="Status">
-          <button
-            onClick={() => patch({ status: deprecated ? 'active' : 'deprecated' })}
-            className="rounded-full px-2 py-0.5 text-[10.5px] uppercase font-mono tracking-wider"
-            style={{
-              background: deprecated ? 'var(--c-panel)' : 'transparent',
-              color: deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-subtle)',
-              border: `1px solid ${deprecated ? 'var(--c-red, #c45a3b)' : 'var(--c-hair-strong)'}`,
-            }}
-            title={deprecated ? 'Click to reactivate' : 'Click to mark deprecated'}
-          >
-            {deprecated ? 'deprecated' : 'active'}
-          </button>
+          <EnumBadgePicker
+            options={AC_STATUS_OPTIONS}
+            value={draft.status}
+            onChange={(v) => patch({ status: v as AcStatus })}
+          />
         </FieldRow>
 
         <FieldRow label="Tags">
@@ -323,123 +317,90 @@ interface VerifiesPanelProps {
   onOpenEntity?: (type: EntityType, slug: string) => void;
 }
 
-function VerifiesPanel({ verifies, brokenByKey, onAdd, onRemove, onOpenEntity }: VerifiesPanelProps) {
-  const [adding, setAdding] = useState(false);
-  const [type, setType] = useState<string>('endpoint');
-  const [slugInput, setSlugInput] = useState('');
+/**
+ * `verifies` through the catalog's `GroupedRelationPicker`: one group per
+ * verified entity type, chips per linked slug, dangling ones as a `broken`
+ * `Badge`. Props-in — the actual link/unlink is a draft mutation above.
+ *
+ * The search box doubles as free-text entry: an AC may legitimately verify an
+ * entity that doesn't exist yet, so a query matching nothing is offered as a
+ * literal slug rather than being dropped. That preserved the one capability the
+ * old hand-rolled panel had that a fixed candidate list would have removed.
+ */
+function VerifiesPanel({
+  verifies,
+  brokenByKey,
+  onAdd,
+  onRemove,
+  onOpenEntity,
+}: VerifiesPanelProps) {
+  const [query, setQuery] = useState('');
+  const modules = clientPluginHost.listEntities().filter((m) => m.type !== 'ac');
 
-  const availableTypes = clientPluginHost.listEntities()
-    .filter((m) => m.type !== 'ac')
-    .map((m) => ({ type: m.type, label: m.label }));
+  const candidates = useQueries({
+    queries: modules.map((m) => ({
+      queryKey: ['verify-candidates', m.type] as const,
+      queryFn: () => m.listByTags({ tags: [], filter: 'or' as const }),
+      staleTime: 60_000,
+    })),
+  });
 
-  function commit() {
-    const trimmed = slugInput.trim();
-    if (!trimmed) return;
-    onAdd(type, trimmed);
-    setSlugInput('');
-    setAdding(false);
-  }
+  const selected: Record<string, string[]> = {};
+  for (const v of verifies) (selected[v.type] ??= []).push(v.slug);
+
+  const q = query.trim().toLowerCase();
+  const groups = modules.map((m, i) => {
+    const linked = selected[m.type] ?? [];
+    const fetched = (candidates[i]?.data ?? []).map((e) => e.slug);
+    // Linked slugs must stay in `items` even when they resolve to nothing —
+    // otherwise a broken reference would render as a bare id with no badge.
+    const known = Array.from(new Set([...fetched, ...linked]));
+    const matching = q ? known.filter((s) => s.toLowerCase().includes(q)) : known;
+    const literal = q && !known.some((s) => s.toLowerCase() === q) ? [query.trim()] : [];
+
+    return {
+      key: m.type,
+      label: m.label,
+      items: [...matching, ...literal].map((slug) => {
+        const reason = brokenByKey.get(`${m.type}/${slug}`);
+        return {
+          id: slug,
+          label: slug,
+          // The chip's own slot carries both the dangling marker and the
+          // jump-to-entity affordance the old panel had on the slug itself.
+          badge: (
+            <>
+              {reason && <Badge label={reason} variant="broken" small dot={false} />}
+              {!reason && onOpenEntity && (
+                <button
+                  onClick={() => onOpenEntity(m.type as EntityType, slug)}
+                  title={`Open ${m.type} ${slug}`}
+                  className="opacity-70 hover:opacity-100 text-[11px]"
+                  style={{ color: 'var(--c-accent)' }}
+                >
+                  ↗
+                </button>
+              )}
+            </>
+          ),
+        };
+      }),
+    };
+  });
 
   return (
-    <div
-      className="rounded-md"
-      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-    >
-      {verifies.length === 0 && !adding && (
-        <div className="px-3 py-3 text-[12.5px]" style={{ color: 'var(--c-subtle)' }}>
-          No entity references yet.
-        </div>
-      )}
-      {verifies.map((v, i) => {
-        const key = `${v.type}/${v.slug}`;
-        const reason = brokenByKey.get(key);
-        return (
-          <div
-            key={`${key}-${i}`}
-            className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"
-            style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
-          >
-            <span
-              className="text-[10.5px] uppercase font-mono tracking-wider"
-              style={{ color: 'var(--c-subtle)', minWidth: 86 }}
-            >
-              {v.type}
-            </span>
-            <button
-              onClick={() => onOpenEntity?.(v.type as EntityType, v.slug)}
-              className="font-mono hover:underline"
-              style={{ color: reason ? 'var(--c-red, #c45a3b)' : 'var(--c-accent-ink, var(--c-accent))' }}
-              title={reason ? `Broken: ${reason}` : `Open ${v.type} ${v.slug}`}
-            >
-              {reason ? `⚠ ${v.slug}` : v.slug}
-            </button>
-            {reason && (
-              <span
-                className="text-[10.5px] font-mono px-1.5 py-0.5 rounded"
-                style={{ background: 'var(--c-panel)', color: 'var(--c-red, #c45a3b)' }}
-              >
-                {reason}
-              </span>
-            )}
-            <span className="flex-1" />
-            <button
-              onClick={() => onRemove(i)}
-              className="text-[12px]"
-              style={{ color: 'var(--c-subtle)' }}
-              title="Remove reference"
-            >
-              <X size={12} />
-            </button>
-          </div>
-        );
-      })}
-      {adding ? (
-        <div
-          className="px-3 py-2 flex items-center gap-2"
-          style={{ borderTop: verifies.length > 0 ? '1px solid var(--c-hair)' : 'none' }}
-        >
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value)}
-            className="text-[12px] rounded px-1.5 py-1 bg-transparent outline-none"
-            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
-          >
-            {availableTypes.map((t) => (
-              <option key={t.type} value={t.type}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          <input
-            autoFocus
-            value={slugInput}
-            onChange={(e) => setSlugInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commit();
-              }
-              if (e.key === 'Escape') setAdding(false);
-            }}
-            placeholder="entity slug"
-            className="flex-1 text-[12.5px] rounded px-1.5 py-1 bg-transparent outline-none font-mono"
-            style={{ border: '1px solid var(--c-hair)', color: 'var(--c-ink)' }}
-          />
-          <ActionButton label="Add" variant="primary" onClick={commit} />
-          <ActionButton label="Cancel" variant="ghost" onClick={() => setAdding(false)} />
-        </div>
-      ) : (
-        <button
-          onClick={() => setAdding(true)}
-          className="w-full px-3 py-1.5 text-left text-[12px] inline-flex items-center gap-1"
-          style={{
-            color: 'var(--c-subtle)',
-            borderTop: verifies.length > 0 ? '1px solid var(--c-hair)' : 'none',
-          }}
-        >
-          <Plus size={11} /> add entity reference
-        </button>
-      )}
-    </div>
+    <GroupedRelationPicker
+      groups={groups}
+      selected={selected}
+      onAdd={(groupKey, id) => {
+        onAdd(groupKey, id);
+        setQuery('');
+      }}
+      onRemove={(groupKey, id) => {
+        const idx = verifies.findIndex((v) => v.type === groupKey && v.slug === id);
+        if (idx >= 0) onRemove(idx);
+      }}
+      onSearch={setQuery}
+    />
   );
 }

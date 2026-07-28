@@ -93,7 +93,8 @@ export interface EntityListRowProps {
   leading?: ReactNode;
   /** Leading icon — the same `LucideIcon` type as `EntityListHeader.icon`. */
   icon?: LucideIcon;
-  onClick: () => void;
+  /** Makes the whole row a click target. Omit for rows that are editing surfaces, not links. */
+  onClick?: () => void;
   /** Tag slugs to render as chips; resolved through `tagLookup`. */
   tags?: string[];
   tagLookup: Map<string, Tag>;
@@ -157,6 +158,13 @@ export interface BadgeProps {
   small?: boolean;
   onClick?: () => void;
   onRemove?: () => void;
+  /** Explicit text color; overrides the default active/inactive ink color. */
+  foreground?: string;
+  mono?: boolean;
+  dot?: boolean;
+  minWidth?: number;
+  /** `'broken'` marks a dangling reference (red ink, ⚠ prefix). */
+  variant?: 'default' | 'broken';
 }
 export declare const Badge: ComponentType<BadgeProps>;
 

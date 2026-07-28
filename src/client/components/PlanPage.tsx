@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Pencil } from 'lucide-react';
+import { ActionBar } from '../host-ui-kit/actions/ActionBar.js';
 import { requestChatPrefill } from '../chat/chatPrefill.js';
 import { useChatStore } from '../state/chat.js';
 import {
@@ -290,67 +291,51 @@ export function PlanPage({ planPath }: Props) {
                 currentPage={`/plans/${plan.path}`}
               />
               {(isDirty || canExecute) && (
-                <footer
-                  className="px-5 py-2.5 flex items-center gap-2"
-                  style={{ borderTop: '1px solid var(--c-hair)', background: 'var(--c-bg)' }}
-                >
-                  {isDirty ? (
-                    <button
-                      onClick={handleSave}
-                      disabled={savePlan.isPending}
-                      className="text-[12.5px] px-3 py-1.5 rounded"
-                      style={{
-                        background: 'var(--c-accent)',
-                        color: '#fff',
-                        opacity: savePlan.isPending ? 0.6 : 1,
-                      }}
-                    >
-                      {savePlan.isPending ? 'Saving…' : 'Save'}
-                    </button>
-                  ) : null}
-                  {isDirty ? (
-                    <button
-                      onClick={() => setDirtyContent(null)}
-                      disabled={savePlan.isPending}
-                      className="text-[12.5px] px-2.5 py-1 rounded btn-ghost"
-                      style={{ color: 'var(--c-muted)' }}
-                    >
-                      Discard
-                    </button>
-                  ) : null}
-                  <div className="flex-1" />
-                  {canExecute ? (
-                    <>
-                      <button
-                        onClick={() => void runWithPrompt(RUN_PLAN_PROMPT)}
-                        disabled={createThread.isPending}
-                        title="Open a new thread with this plan attached and draft the run prompt"
-                        className="text-[12.5px] px-3 py-1.5 rounded"
-                        style={{
-                          background: 'var(--c-accent)',
-                          color: '#fff',
-                          opacity: createThread.isPending ? 0.6 : 1,
-                        }}
-                      >
-                        Run plan
-                      </button>
-                      <button
-                        onClick={() => void runWithPrompt(ANALYSE_PLAN_PROMPT)}
-                        disabled={createThread.isPending}
-                        title="Open a new thread with this plan attached and draft the analysis prompt"
-                        className="text-[12.5px] px-3 py-1.5 rounded"
-                        style={{
-                          background: 'var(--c-card)',
-                          border: '1px solid var(--c-hair-strong)',
-                          color: 'var(--c-ink)',
-                          opacity: createThread.isPending ? 0.6 : 1,
-                        }}
-                      >
-                        Analyse plan
-                      </button>
-                    </>
-                  ) : null}
-                </footer>
+                <ActionBar
+                  status={isDirty ? 'Unsaved changes' : undefined}
+                  actions={[
+                    ...(isDirty
+                      ? [
+                          {
+                            key: 'discard',
+                            label: 'Discard',
+                            variant: 'ghost' as const,
+                            disabled: savePlan.isPending,
+                            onClick: () => setDirtyContent(null),
+                          },
+                          {
+                            key: 'save',
+                            label: savePlan.isPending ? 'Saving…' : 'Save',
+                            variant: 'primary' as const,
+                            disabled: savePlan.isPending,
+                            onClick: handleSave,
+                          },
+                        ]
+                      : []),
+                    ...(canExecute
+                      ? [
+                          {
+                            key: 'analyse',
+                            label: 'Analyse plan',
+                            variant: 'secondary' as const,
+                            disabled: createThread.isPending,
+                            title:
+                              'Open a new thread with this plan attached and draft the analysis prompt',
+                            onClick: () => void runWithPrompt(ANALYSE_PLAN_PROMPT),
+                          },
+                          {
+                            key: 'run',
+                            label: 'Run plan',
+                            variant: 'primary' as const,
+                            disabled: createThread.isPending,
+                            title:
+                              'Open a new thread with this plan attached and draft the run prompt',
+                            onClick: () => void runWithPrompt(RUN_PLAN_PROMPT),
+                          },
+                        ]
+                      : []),
+                  ]}
+                />
               )}
             </>
           ) : view === 'threads' ? (
