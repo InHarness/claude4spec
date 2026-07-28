@@ -10,6 +10,7 @@ import type { ChatModel } from '../state/chat.js';
 const CLAUDE_CODE_CONTEXT_WINDOWS: Record<ChatModel, number> = {
   'fable-5': 1_000_000,
   'sonnet-4.6': 200_000,
+  'opus-5': 1_000_000,
   'opus-4.8': 1_000_000,
   'haiku-4.5': 200_000,
 };

@@ -20,13 +20,13 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'fable-5' | 'sonnet-4.6' | 'opus-4.8' | 'haiku-4.5';
+export type ChatModel = 'fable-5' | 'sonnet-4.6' | 'opus-5' | 'opus-4.8' | 'haiku-4.5';
 export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 // Models that use adaptive thinking + a reasoning-effort knob (claude_effort),
 // and therefore support the 'max' effort level. Mirrors agent-adapters
 // ADAPTIVE_THINKING_ONLY for the claude-code aliases we expose.
-export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['opus-4.8', 'fable-5']);
+export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['opus-5', 'opus-4.8', 'fable-5']);
 export const isAdaptiveModel = (m: ChatModel): boolean => ADAPTIVE_MODELS.has(m);
 
 // Map UI thinking level → adapter architectureConfig.
@@ -44,7 +44,7 @@ export function thinkingToConfig(
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
 
-const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-4.6', 'opus-4.8', 'haiku-4.5'];
+const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-4.6', 'opus-5', 'opus-4.8', 'haiku-4.5'];
 export const isChatModel = (m: unknown): m is ChatModel =>
   typeof m === 'string' && (CHAT_MODELS as readonly string[]).includes(m);
 

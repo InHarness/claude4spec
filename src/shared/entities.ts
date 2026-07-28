@@ -812,6 +812,25 @@ export interface ChatSubagentTask {
   updatedAt: string;
 }
 
+/**
+ * M17: an engine-backgrounded task (a `Bash run_in_background`, a `Monitor`
+ * loop, a `workflow`) surfaced by agent-adapters 0.9.1's `background_task_*`
+ * event family. **Never a subagent** — real spawned helper agents keep the
+ * `subagent_*` family / {@link ChatSubagentTask}. `taskType` is passed through
+ * by name ('shell' | 'monitor' | 'workflow' | future kinds).
+ */
+export interface ChatBackgroundTask {
+  threadId: string;
+  taskId: string;
+  taskType: string;
+  description: string;
+  status: string;
+  outputFile: string | null;
+  summary: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Annotation {
   id: string;
   text: string;

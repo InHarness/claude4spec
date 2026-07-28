@@ -5,6 +5,7 @@ import type { QueuedMessage, UsageStats, WireEvent } from '@inharness-ai/agent-c
 import type { NormalizedMessage, TodoItem, UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import type {
   Annotation,
+  ChatBackgroundTask,
   ChatMessage as ChatMessageRow,
   ChatSubagentTask,
   ChatThread,
@@ -20,6 +21,27 @@ type WireEventExtended =
   // nested-live-joins GET /api/chat/stream/:childThreadId between these.
   | { type: 'transagent_started'; childThreadId: string; toolUseId: string; contextType: string }
   | { type: 'transagent_completed'; childThreadId: string; toolUseId: string; status?: string }
+  // M17: engine-backgrounded tasks (a `run_in_background` shell, a Monitor, a
+  // workflow). agent-adapters 0.9.1 emits these instead of mislabelling the work
+  // as `subagent_*`. agent-chat's reducer doesn't know them (unknown → identity),
+  // so this panel is driven entirely from onEvent + custom state, transagent-style.
+  | { type: 'background_task_started'; taskId: string; taskType: string; description: string }
+  | {
+      type: 'background_task_progress';
+      taskId: string;
+      taskType: string;
+      description?: string;
+      status?: string;
+      outputFile?: string;
+    }
+  | {
+      type: 'background_task_completed';
+      taskId: string;
+      taskType: string;
+      status: string;
+      outputFile?: string;
+      summary?: string;
+    }
   // Runtime shape of SSE `error` events is looser than the library's WireEvent:
   // adapter pass-through (agent-turn.ts) yields `{ error: <object>, phase }` with
   // NO `code`, while the server catch-block yields `{ error: string, code }`.
@@ -35,6 +57,39 @@ export interface TransagentEntry {
   childThreadId: string;
   contextType: string;
   status: 'running' | 'completed' | 'error';
+}
+
+/**
+ * M17: an engine-backgrounded task surfaced in the panel, keyed by `taskId`.
+ * `status` is 'running' until a `background_task_completed` sets the terminal
+ * value the engine reports (e.g. 'success' / 'failed'). Rebuilt live from the
+ * `background_task_*` events and, on cold reload, from the persisted
+ * `chat_background_task` rows.
+ */
+export interface BackgroundTaskEntry {
+  taskId: string;
+  taskType: string;
+  description: string;
+  status: string;
+  outputFile: string | null;
+  summary: string | null;
+}
+
+/**
+ * Upsert a background-task entry by taskId: apply `make` to the existing entry,
+ * or seed a new one from `make(null)` when the taskId is not present yet. Every
+ * background_task_* handler routes through this so an out-of-order progress /
+ * completed event (replay buffer, completed-only fast task) inserts rather than
+ * being silently dropped.
+ */
+function upsertBackgroundTask(
+  prev: BackgroundTaskEntry[],
+  taskId: string,
+  make: (existing: BackgroundTaskEntry | null) => BackgroundTaskEntry,
+): BackgroundTaskEntry[] {
+  return prev.some((t) => t.taskId === taskId)
+    ? prev.map((t) => (t.taskId === taskId ? make(t) : t))
+    : [...prev, make(null)];
 }
 
 export interface UseChatOptions {
@@ -115,6 +170,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   const [isResuming, setIsResuming] = useState(false);
   // 0.1.69 Transagents: child banki surfaced in this panel (keyed by tool_use id).
   const [transagents, setTransagents] = useState<TransagentEntry[]>([]);
+  // M17: engine-backgrounded tasks surfaced in this panel (keyed by taskId).
+  const [backgroundTasks, setBackgroundTasks] = useState<BackgroundTaskEntry[]>([]);
   // Active thread metadata sourced from GET /api/threads/:id (the same fetch that
   // loads messages below). The header/model-lock controls read it from here instead
   // of the paginated thread list, so they stay correct for threads beyond page 1.
@@ -137,6 +194,53 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         const status: TransagentEntry['status'] = ext.status === 'error' ? 'error' : 'completed';
         setTransagents((prev) =>
           prev.map((t) => (t.toolUseId === toolUseId ? { ...t, status } : t)),
+        );
+        return;
+      }
+      // M17: background-task lifecycle. Every variant UPSERTS by taskId — progress
+      // and completed can legitimately arrive before `started` (replay-buffer
+      // ordering, or a completed-only fast task), so a plain map that dropped the
+      // update on a missing entry would lose the task. Kept out of the lib reducer
+      // (early return) — it has no background-task block; this panel is custom.
+      if (ext.type === 'background_task_started') {
+        const { taskId, taskType, description } = ext;
+        setBackgroundTasks((prev) =>
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description,
+            status: 'running',
+            outputFile: e?.outputFile ?? null,
+            summary: e?.summary ?? null,
+          })),
+        );
+        return;
+      }
+      if (ext.type === 'background_task_progress') {
+        const { taskId, taskType, description, status, outputFile } = ext;
+        setBackgroundTasks((prev) =>
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description: description ?? e?.description ?? '',
+            status: status ?? e?.status ?? 'running',
+            outputFile: outputFile ?? e?.outputFile ?? null,
+            summary: e?.summary ?? null,
+          })),
+        );
+        return;
+      }
+      if (ext.type === 'background_task_completed') {
+        const { taskId, taskType, status, outputFile, summary } = ext;
+        setBackgroundTasks((prev) =>
+          upsertBackgroundTask(prev, taskId, (e) => ({
+            taskId,
+            taskType,
+            description: e?.description ?? '',
+            status,
+            outputFile: outputFile ?? e?.outputFile ?? null,
+            summary: summary ?? e?.summary ?? null,
+          })),
         );
         return;
       }
@@ -352,6 +456,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     setLiveUsage(null);
     setLiveContextSize(null);
     setTransagents([]);
+    setBackgroundTasks([]);
     setActiveThreadMeta(null);
 
     currentThreadIdRef.current = threadId;
@@ -380,6 +485,7 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
           data: ChatThread & {
             messages: ChatMessageRow[];
             subagentTasks: ChatSubagentTask[];
+            backgroundTasks?: ChatBackgroundTask[];
             isLive?: boolean;
             queuedMessages?: QueuedMessage[];
           };
@@ -405,6 +511,19 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
         // reconstructed here — the live join replays `transagent_started` which
         // re-adds them via onEvent.
         setTransagents(reconstructTransagents(thread.messages));
+        // M17 (F5 / cold reload): rebuild the background-task panel from persisted
+        // rows. In-flight ('running') entries dedup against the live replay's
+        // `background_task_started` (onEvent upserts by taskId).
+        setBackgroundTasks(
+          (thread.backgroundTasks ?? []).map((t) => ({
+            taskId: t.taskId,
+            taskType: t.taskType,
+            description: t.description,
+            status: t.status,
+            outputFile: t.outputFile,
+            summary: t.summary,
+          })),
+        );
 
         // Zywa tura serwerowa, ktorej ta karta nie streamuje → wznow przez joinStream.
         // Przywracamy historie SPRZED biezacej tury (przed ostatnim user-message); turn_start
@@ -479,6 +598,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
     clearQueue,
     // 0.1.69 Transagents
     transagents,
+    // M17: engine-backgrounded tasks
+    backgroundTasks,
     // P2: active thread metadata (from GET /api/threads/:id), list-independent.
     activeThreadMeta,
   };

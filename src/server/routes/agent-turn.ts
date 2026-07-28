@@ -265,6 +265,11 @@ export async function runAgentTurn(
     'subagent_started',
     'subagent_progress',
     'subagent_completed',
+    // M17: engine-backgrounded tasks (shell/monitor/workflow) — a reload or
+    // late-joining client rebuilds the background-task panel from history.
+    'background_task_started',
+    'background_task_progress',
+    'background_task_completed',
     'todo_list_updated',
     'user_input_request',
     // 0.1.69 Transagents: bracket markers so reload/joiners reconstruct the
@@ -720,6 +725,21 @@ export async function runAgentTurn(
             text: event.text,
             timestamp: new Date(event.timestamp).toISOString(),
           });
+        } else if (event.type === 'result' && (event.backgroundTasks?.length ?? 0) > 0) {
+          // M17 HELD RESULT — NOT end-of-run. The engine holds the session open
+          // while background work (a `run_in_background` shell, a Monitor, a
+          // workflow) is in flight, wakes the model when it settles, and emits a
+          // further `result` (empty `backgroundTasks`) before the generator is
+          // `done`. Do NOT emit or buffer this result: agent-chat's reducer sets
+          // `isStreaming: false` and SUMS usage on every `result`, so a held one
+          // would stop the turn UI early and double-count usage. Track sessionId
+          // only, skip the switch's usage finalization, and let the `for-await`
+          // continue to the genuine final result.
+          if (event.sessionId) {
+            currentSessionId = event.sessionId;
+            deps.chatService.setLastSessionId(thread.id, event.sessionId);
+          }
+          continue;
         } else {
           emit(event as unknown as TurnEvent);
         }
@@ -816,6 +836,39 @@ export async function runAgentTurn(
               thread.id,
               event.taskId,
               event.status,
+              event.summary ?? null,
+            );
+            break;
+          // M17: engine-backgrounded tasks. Persist (emission is automatic via the
+          // `emit` above); the client renders them in a distinct panel — a
+          // backgrounded shell/monitor/workflow is NOT a subagent. `taskType` is
+          // stored by name so a future SDK kind is observable, not dropped.
+          case 'background_task_started':
+            flushMainBuf();
+            deps.chatService.startBackgroundTask(
+              thread.id,
+              event.taskId,
+              event.taskType,
+              event.description,
+            );
+            break;
+          case 'background_task_progress':
+            deps.chatService.updateBackgroundTaskProgress(
+              thread.id,
+              event.taskId,
+              event.taskType,
+              event.description ?? null,
+              event.status ?? null,
+              event.outputFile ?? null,
+            );
+            break;
+          case 'background_task_completed':
+            deps.chatService.completeBackgroundTask(
+              thread.id,
+              event.taskId,
+              event.taskType,
+              event.status,
+              event.outputFile ?? null,
               event.summary ?? null,
             );
             break;

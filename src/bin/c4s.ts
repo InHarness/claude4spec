@@ -84,7 +84,7 @@ Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
   ask "<msg>" --thread <id>                   continue an existing ask thread
     --server <url>                                    override server discovery (remote / one-off --port)
     --effort <low|medium|high>                        reasoning level for the turn (default medium)
-    --model <fable-5|sonnet-4.6|opus-4.8|haiku-4.5>    model for the turn (default opus-4.8)
+    --model <fable-5|sonnet-4.6|opus-5|opus-4.8|haiku-4.5>  model for the turn (default opus-4.8)
 
 Discovery:
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
