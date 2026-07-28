@@ -27,14 +27,31 @@ const KIT_DIR = join(CLIENT_DIR, 'host-ui-kit');
 const ANATOMY = [
   { component: 'Popover', pattern: /var\(--z-popover\)/ },
   { component: 'ToastViewport', pattern: /var\(--z-toast\)/ },
-  { component: 'Dialog', pattern: /zIndex:\s*1200/ },
+  // A modal twin is a full-viewport scrim with a centred panel, however its
+  // stacking happens to be spelled. Matching only `Dialog`'s own `zIndex: 1200`
+  // would let every twin hide behind a different z-index — and in fact all five
+  // pending ones below use Tailwind's `z-50`, so a narrower pattern reported a
+  // clean catalog while they sat in plain sight. `items-center justify-center`
+  // is what separates a dialog from a fullscreen viewer (`flex flex-col`).
+  {
+    component: 'Dialog',
+    pattern: /zIndex:\s*1[23]00|fixed inset-0[^"]*items-center justify-center/,
+  },
 ] as const;
+
+/** Reason shared by every twin whose migration is tracked by the analysis brief. */
+const PENDING = 'Pending migration to Dialog — see analysis brief 0-1-144-to-next.md.';
 
 /**
  * Host slices that still render their own scrim, with the reason each one does
  * not currently pass through `Dialog`. These are declared, not tolerated
  * silently — the point of the rule is that an undeclared twin is a violation.
  * Emptying this list is the goal; adding to it needs a justification here.
+ *
+ * Two kinds of entry, and the difference matters: the first three are standing
+ * exceptions — anatomy `Dialog` genuinely cannot express. The rest are twins
+ * awaiting migration, tracked by a brief; that group is expected to shrink to
+ * nothing, and nothing new belongs in it.
  */
 const DECLARED_EXCEPTIONS: Record<string, string> = {
   'components/TrustPluginsModal.tsx':
@@ -43,6 +60,19 @@ const DECLARED_EXCEPTIONS: Record<string, string> = {
     'Raw-JSON viewer at 1100px — wider than any of Dialog\'s size tiers.',
   'components/DiagramFullscreen.tsx':
     'Host-local per the diagram slice: a fullscreen pan+zoom canvas, not a sized Dialog panel.',
+
+  // Pending migration — 480px scrim+panel twins that `Dialog` (with the `width`
+  // prop added in this release) covers as-is. Each also lacks the Escape
+  // handling, Tab trap and focus restore `Dialog` owns. Routed as an analysis
+  // brief rather than folded into this release, whose scope is the three
+  // imperative facades.
+  'components/CreateBriefDialog.tsx': PENDING,
+  'components/CreateReleaseDialog.tsx': PENDING,
+  'components/AddProjectDialog.tsx': PENDING,
+  'components/briefs/BriefScopeModal.tsx': PENDING,
+  // Additionally a twin of `confirmDestructive()` itself, with a `loading`
+  // state the imperative contract has no slot for.
+  'components/ReleaseDetail.tsx': PENDING,
 };
 
 function walk(dir: string, out: string[] = []): string[] {
