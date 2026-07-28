@@ -12,7 +12,16 @@ export interface ParsedArgs {
   sortKeys: boolean;
 }
 
-const KNOWN_BOOLEAN_FLAGS = new Set(['compact', 'sort-keys', 'help', 'version']);
+// `force`/`no-install` (M38 `create-plugin`) must be declared here: without it
+// `c4s create-plugin --force my-plugin` swallows the positional as the flag's value.
+const KNOWN_BOOLEAN_FLAGS = new Set([
+  'compact',
+  'sort-keys',
+  'help',
+  'version',
+  'force',
+  'no-install',
+]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const result: ParsedArgs = {

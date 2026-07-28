@@ -48,14 +48,16 @@ const PENDING = 'Pending migration to Dialog — see analysis brief 0-1-144-to-n
  * silently — the point of the rule is that an undeclared twin is a violation.
  * Emptying this list is the goal; adding to it needs a justification here.
  *
- * Two kinds of entry, and the difference matters: the first three are standing
+ * Two kinds of entry, and the difference matters: the first two are standing
  * exceptions — anatomy `Dialog` genuinely cannot express. The rest are twins
  * awaiting migration, tracked by a brief; that group is expected to shrink to
  * nothing, and nothing new belongs in it.
+ *
+ * `TrustPluginsModal` used to sit here ("must NOT be dismissible, but Dialog
+ * always closes on Escape/scrim") — 0.2.1 gave `Dialog` a `dismissible` prop,
+ * so the reason expired and the gate is now a facade like the rest.
  */
 const DECLARED_EXCEPTIONS: Record<string, string> = {
-  'components/TrustPluginsModal.tsx':
-    'Security gate: must NOT be dismissible, but Dialog always closes on Escape/scrim.',
   'chat/ToolJsonModal.tsx':
     'Raw-JSON viewer at 1100px — wider than any of Dialog\'s size tiers.',
   'components/DiagramFullscreen.tsx':
@@ -106,6 +108,10 @@ describe('M34/L12 — one implementation rule', () => {
       'ui/Popover.tsx': /host-ui-kit\/overlay-feedback\/Popover\.js/,
       'ui/ConfirmModal.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
       'ui/ToastHost.tsx': /host-ui-kit\/overlay-feedback\/ToastViewport\.js/,
+      // Not imperative facades, but the same rule: the window shell is the
+      // catalog's, the content stays with the owning slice (M28 / M33).
+      'ui/GitErrorRecoveryModal.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
+      'components/TrustPluginsModal.tsx': /host-ui-kit\/overlay\/Dialog\.js/,
     };
     for (const [file, importPattern] of Object.entries(facades)) {
       const src = readFileSync(join(CLIENT_DIR, file), 'utf8');
@@ -130,6 +136,15 @@ describe('M34/L12 — one implementation rule', () => {
     expect(src).toMatch(/GroupedRelationPicker/);
     // The specialised widgets these replaced must not have come back.
     expect(src).not.toMatch(/\bMethodBadge\b/);
+  });
+
+  it('the plugin trust gate is an undismissable Dialog', () => {
+    // The security property, pinned in source: no scrim/Escape/✕ escape hatch,
+    // so the only ways out are the two explicit footer buttons.
+    const src = readFileSync(join(CLIENT_DIR, 'components/TrustPluginsModal.tsx'), 'utf8');
+    expect(src).toMatch(/dismissible=\{false\}/);
+    const dialog = readFileSync(join(KIT_DIR, 'overlay/Dialog.tsx'), 'utf8');
+    expect(dialog).toMatch(/dismissible = true/);
   });
 
   it('every declared exception still exists (the list cannot rot)', () => {

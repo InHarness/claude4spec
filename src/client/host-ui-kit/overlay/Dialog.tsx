@@ -10,7 +10,8 @@ import { withStability } from '../stability.js';
  * scrim/panel/focus chrome per entity.
  *
  * Controlled: the consumer owns `open` and closes via `onClose` (scrim click,
- * the header ✕, or Escape). Pure-presentational — owns no data, fetches nothing.
+ * the header ✕, or Escape — none of which exist when `dismissible` is false).
+ * Pure-presentational — owns no data, fetches nothing.
  *
  * Distinct from the host-internal `ConfirmModal`/`ModalHost` (L5): that one is an
  * imperative event-bus singleton for destructive-confirm; this is controlled
@@ -35,6 +36,17 @@ export interface DialogProps {
    * other call site shares.
    */
   width?: number;
+  /**
+   * Whether the dialog can be dismissed without answering it. Defaults to
+   * `true`. With `false` the scrim click, `Escape` and the header ✕ are all
+   * gone and the consumer calls `onClose()` itself after an explicit action —
+   * for decision gates that must not be left unresolved (the project-local
+   * plugin trust prompt, M33: a reflexive click beside the panel must not be
+   * able to start running foreign code). Focus-trap, scrim and panel anatomy
+   * are identical either way; the difference is purely behavioural. Forms stay
+   * dismissible — there "Cancel" is a real answer.
+   */
+  dismissible?: boolean;
 }
 
 const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
@@ -46,7 +58,16 @@ const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-function DialogImpl({ open, onClose, title, footer, children, size = 'md', width }: DialogProps) {
+function DialogImpl({
+  open,
+  onClose,
+  title,
+  footer,
+  children,
+  size = 'md',
+  width,
+  dismissible = true,
+}: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
 
@@ -66,6 +87,11 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // Read through a ref for the same reason as `onClose`: the keydown listener
+  // is keyed on `open` alone, so it must not capture this at mount time.
+  const dismissibleRef = useRef(dismissible);
+  dismissibleRef.current = dismissible;
+
   useEffect(() => {
     if (!open) return;
     // Move focus into the panel (first focusable, else the panel itself) —
@@ -80,7 +106,10 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
     }, 0);
 
     const onKey = (e: KeyboardEvent) => {
+      // Escape closes only a dismissible dialog. The Tab trap below stays
+      // wired either way — a gate still confines focus to its own panel.
       if (e.key === 'Escape') {
+        if (!dismissibleRef.current) return;
         e.preventDefault();
         onCloseRef.current();
         return;
@@ -128,6 +157,7 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
       className="fixed inset-0 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.4)', zIndex: 1200 }}
       onMouseDown={(e) => {
+        if (!dismissible) return;
         if (e.target === e.currentTarget) onClose();
       }}
     >
@@ -156,15 +186,17 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
               {title}
             </div>
             <span className="flex-1" />
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-md p-1 btn-ghost"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              <X size={14} />
-            </button>
+            {dismissible && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded-md p-1 btn-ghost"
+                style={{ color: 'var(--c-muted)' }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         )}
         <div className="px-5 py-4 overflow-auto nice-scroll">{children}</div>

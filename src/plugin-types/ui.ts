@@ -205,6 +205,12 @@ export interface DialogProps {
   size?: 'sm' | 'md' | 'lg';
   /** Exact panel width in px, overriding `size`. */
   width?: number;
+  /**
+   * Defaults to `true`. With `false` the scrim click, `Escape` and the header ✕
+   * are gone — for decision gates that must not be left unresolved; the
+   * consumer calls `onClose()` after an explicit action.
+   */
+  dismissible?: boolean;
 }
 export declare const Dialog: ComponentType<DialogProps>;
 

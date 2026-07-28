@@ -57,7 +57,9 @@ export async function runTrustPlugins(args: ParsedArgs): Promise<void> {
 
 export const trustPluginsCommand: CliCommandContribution = {
   name: 'trust-plugins',
-  executionMode: 'fs-scoped',
+  // `registry-write`, not `fs-scoped`: it never resolves a project, it writes
+  // the workspace registry directly and creates the project record on demand.
+  executionMode: 'registry-write',
   errorCodes: ['INVALID_ARGS'],
   handler: runTrustPlugins,
 };
