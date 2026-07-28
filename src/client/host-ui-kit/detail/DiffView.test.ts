@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { pairRows } from './DiffView.js';
 
-const keep = (content: string) => ({ op: 'keep' as const, content });
-const added = (content: string) => ({ op: 'added' as const, content });
-const removed = (content: string) => ({ op: 'removed' as const, content });
+// The PUBLIC L12 vocabulary (`add`/`del`/`ctx` + `line`), not the host-internal
+// `LineDiffLite` shape — see `DiffViewLine`.
+const keep = (line: string) => ({ op: 'ctx' as const, line });
+const added = (line: string) => ({ op: 'add' as const, line });
+const removed = (line: string) => ({ op: 'del' as const, line });
 
 describe('pairRows', () => {
   it('pairs a keep line onto the same row on both sides', () => {

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Link } from '@tanstack/react-router';
 import { ArrowUpRight, FileText, GitCommit, Plus } from 'lucide-react';
-import { useReleases } from '../hooks/useReleases.js';
+import { useReleaseList } from '../hooks/useReleases.js';
 import { useAllReleasePushes } from '../hooks/useReleasePushes.js';
 import { useBriefs } from '../hooks/useBriefs.js';
 import type { BriefListItemView } from '../lib/briefs-api.js';
@@ -22,7 +22,7 @@ interface Props {
 }
 
 export function ReleasesList({ onCreateClick }: Props) {
-  const { data: releases = [], isLoading } = useReleases();
+  const { data: releases = [], isLoading } = useReleaseList();
   const { data: pushes = [] } = useAllReleasePushes();
   const { data: briefs = [] } = useBriefs();
 

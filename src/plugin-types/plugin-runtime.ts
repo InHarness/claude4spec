@@ -402,3 +402,33 @@ export declare const referencesService: {
   findReferrers(type: string, slug: string): Promise<ReferenceHit[]>;
 };
 export declare function useReferences(type: string, slug: string | null): QueryLike<ReferenceHit[]>;
+
+// ── M17/L11 releases (READ-ONLY) ──
+// A narrow mirror of release LABELS. Plugins never create, update or assign
+// releases — the write side stays behind the host's MCP / REST / UI, and the
+// backend `releaseService` is not part of `MountContext`.
+export interface Release {
+  id: number;
+  name: string;
+  description: string;
+  createdBy: 'user' | 'agent';
+  createdAt: string;
+}
+export declare const releasesService: {
+  listReleases(): Promise<Release[]>;
+};
+/** `releaseId → name`. A version with no release is simply absent from the map. */
+export declare function useReleases(): Map<number, string>;
+
+// ── M13/L11 line-diff util ──
+/**
+ * Textual line-diff over two entity version snapshots, in the PUBLIC Host UI
+ * Kit vocabulary (`DiffView.hunks`) — never the host-internal
+ * `{ op: 'keep'|'added'|'removed'; content }` shape. A pure function, not a
+ * singleton. Distinct from `useVersionDiff`, which is the semantic delta from
+ * the L9 serializer's `diff` slot; neither replaces the other.
+ */
+export declare function lineDiffHunks(
+  before: unknown,
+  after: unknown
+): { op: 'add' | 'del' | 'ctx'; line: string }[];

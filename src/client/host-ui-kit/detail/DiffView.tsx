@@ -1,18 +1,29 @@
 import { withStability } from '../stability.js';
 import { EmptyState } from '../list/EmptyState.js';
-import type { LineDiffLite } from '../../../shared/entities.js';
 
-type DiffLine = LineDiffLite['lines'][number];
+/**
+ * One line of a rendered diff, in the PUBLIC L12 vocabulary. Deliberately NOT
+ * the host-internal `LineDiffLite` shape (`{ op: 'keep'|'added'|'removed';
+ * content }`, M17/L5) — L11 speaks L12's dictionary, so the internal shape
+ * never leaks onto the plugin surface. `lineDiffHunks()` (`@c4s/plugin-runtime`)
+ * maps between the two.
+ */
+export interface DiffViewLine {
+  op: 'add' | 'del' | 'ctx';
+  line: string;
+}
+
+type DiffLine = DiffViewLine;
 
 /**
  * `DiffView` (Panel detalu, `experimental`) — the plugin-facing parallel of
  * the host-internal `LineDiffViewer` (M17/L5, not published to plugins).
  * Strictly props-in: it renders an already-computed diff, never computes one
- * itself. Typical data source is `useVersionDiff`'s `raw`/`changes` (author
- * converts to `hunks`), or an author-supplied `before`/`after` pair.
+ * itself. Typical data source is the `lineDiffHunks()` util over two version
+ * snapshots, or an author-supplied `before`/`after` pair.
  */
 export interface DiffViewProps {
-  /** Precomputed line hunks (reuses the shared `LineDiffLite` line shape). Wins over `before`/`after` if both are given. */
+  /** Precomputed line hunks. Wins over `before`/`after` if both are given. */
   hunks?: DiffLine[];
   /** Pre-stringified "before" text — DiffView never serializes values itself. Only used when `hunks` is absent; requires `after` too. */
   before?: string;
@@ -82,7 +93,7 @@ export function pairRows(hunks: DiffLine[]): PairedRow[] {
   while (i < hunks.length) {
     const line = hunks[i];
     if (!line) break;
-    if (line.op === 'keep') {
+    if (line.op === 'ctx') {
       rows.push({ left: line, right: line });
       i++;
       continue;
@@ -91,8 +102,8 @@ export function pairRows(hunks: DiffLine[]): PairedRow[] {
     const added: DiffLine[] = [];
     while (i < hunks.length) {
       const next = hunks[i];
-      if (!next || next.op === 'keep') break;
-      (next.op === 'removed' ? removed : added).push(next);
+      if (!next || next.op === 'ctx') break;
+      (next.op === 'del' ? removed : added).push(next);
       i++;
     }
     const blockSize = Math.max(removed.length, added.length);
@@ -122,7 +133,7 @@ function HunkRow({ line }: { line: DiffLine | null }) {
       style={{ background: style.bg, color: style.fg, paddingLeft: 6, paddingRight: 8 }}
     >
       <span style={{ width: 14, color: 'var(--c-subtle)', flexShrink: 0 }}>{line ? prefixOf(line.op) : ' '}</span>
-      <span className="flex-1 min-w-0">{(line && line.content) || ' '}</span>
+      <span className="flex-1 min-w-0">{(line && line.line) || ' '}</span>
     </div>
   );
 }
@@ -152,14 +163,14 @@ function TextPane({ content }: { content: string }) {
 }
 
 function prefixOf(op: DiffLine['op']): string {
-  if (op === 'added') return '+';
-  if (op === 'removed') return '−';
+  if (op === 'add') return '+';
+  if (op === 'del') return '−';
   return ' ';
 }
 
 function stylesFor(op: DiffLine['op']): { bg: string; fg: string } {
-  if (op === 'added') return { bg: 'rgba(16,185,129,0.10)', fg: 'var(--c-ink)' };
-  if (op === 'removed') return { bg: 'rgba(220,38,38,0.10)', fg: 'var(--c-ink)' };
+  if (op === 'add') return { bg: 'rgba(16,185,129,0.10)', fg: 'var(--c-ink)' };
+  if (op === 'del') return { bg: 'rgba(220,38,38,0.10)', fg: 'var(--c-ink)' };
   return { bg: 'transparent', fg: 'var(--c-muted)' };
 }
 

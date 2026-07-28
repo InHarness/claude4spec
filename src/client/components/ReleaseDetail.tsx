@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router';
 import { ArrowLeft, FileText, GitCommit, MoreHorizontal, Plus, RotateCcw } from 'lucide-react';
 import {
   useRelease,
-  useReleases,
+  useReleaseList,
   useReleaseDiff,
   useReleaseSnapshot,
   useRestoreSpec,
@@ -26,7 +26,7 @@ interface Props {
 
 export function ReleaseDetail({ idOrName }: Props) {
   const { data: release, isLoading } = useRelease(idOrName);
-  const { data: allReleases = [] } = useReleases();
+  const { data: allReleases = [] } = useReleaseList();
   const restoreSpec = useRestoreSpec();
   const updateRelease = useUpdateRelease();
   const [confirmRestore, setConfirmRestore] = useState(false);

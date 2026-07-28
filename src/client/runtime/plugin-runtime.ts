@@ -25,9 +25,14 @@ export { registerExtensionReferenceType } from '../../shared/reference-extension
 export { versionService } from './version-service.js';
 export { tagsService } from './tags-service.js';
 export { referencesService } from './references-service.js';
+export { releasesService } from './releases-service.js';
 export { useVersions, useVersionDetail, useRestoreVersion, useVersionDiff } from '../hooks/useVersions.js';
 export { useTags, useEntityTags, useAssignTags, useRemoveEntityTag, useCreateTag } from '../hooks/useTags.js';
 export { useReferences } from '../hooks/useReferences.js';
+export { useReleases } from '../hooks/useReleases.js';
+
+// M13/L11: a PURE FUNCTION, not a singleton — no single-instance requirement.
+export { lineDiffHunks } from './line-diff.js';
 
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
 export type { FrontendModule } from '../core/plugin-host/types.js';
@@ -35,3 +40,4 @@ export type { EditorBridge } from '../tiptap/EditorContext.js';
 export type { VersionServiceSingleton } from './version-service.js';
 export type { TagsServiceSingleton } from './tags-service.js';
 export type { ReferencesServiceSingleton } from './references-service.js';
+export type { ReleasesServiceSingleton } from './releases-service.js';

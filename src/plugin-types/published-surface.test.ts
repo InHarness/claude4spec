@@ -40,6 +40,7 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   'versionService',
   'tagsService',
   'referencesService',
+  'releasesService',
   'useVersions',
   'useVersionDetail',
   'useRestoreVersion',
@@ -50,6 +51,8 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   'useRemoveEntityTag',
   'useCreateTag',
   'useReferences',
+  'useReleases',
+  'lineDiffHunks',
 ] as const;
 
 /**
@@ -83,6 +86,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
   'ReferencesList',
   'DocumentBody',
   'DocEditor',
+  'EntityVersionHistoryView',
   'Popover',
   'ToastViewport',
   'useToast',

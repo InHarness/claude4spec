@@ -87,6 +87,7 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'versionService',
   'tagsService',
   'referencesService',
+  'releasesService',
   'useVersions',
   'useVersionDetail',
   'useRestoreVersion',
@@ -97,6 +98,9 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'useRemoveEntityTag',
   'useCreateTag',
   'useReferences',
+  'useReleases',
+  // M13/L11: a pure function, deliberately not a singleton.
+  'lineDiffHunks',
   'HOST_API_VERSION',
 ] as const;
 
@@ -151,6 +155,7 @@ export const PLUGIN_RUNTIME_UI_EXPORT_NAMES = [
   'ReferencesList',
   'DocumentBody',
   'DocEditor',
+  'EntityVersionHistoryView',
   // Overlay/feedback (experimental, M34/L12)
   'Popover',
   'ToastViewport',

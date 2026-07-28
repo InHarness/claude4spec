@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { GitCompare } from 'lucide-react';
-import { useReleases, useReleaseDiff, useReleaseSnapshot } from '../hooks/useReleases.js';
+import { useReleaseList, useReleaseDiff, useReleaseSnapshot } from '../hooks/useReleases.js';
 import { EmptyState } from '../host-ui-kit/list/EmptyState.js';
 import { DeltaSection } from './release/DeltaSection.js';
 import { ReleaseSelect } from './release/ReleaseSelect.js';
@@ -12,7 +12,7 @@ import { ReleaseSelect } from './release/ReleaseSelect.js';
  * "latest → current" preset used by the unreleased-changes counter deep-link.
  */
 export function ReleasesCompareTab() {
-  const { data: releases = [], isLoading } = useReleases();
+  const { data: releases = [], isLoading } = useReleaseList();
   const maxReleaseId = releases.length > 0 ? Math.max(...releases.map((r) => r.id)) : null;
   const latest = releases.find((r) => r.id === maxReleaseId) ?? null;
   const [selectedName, setSelectedName] = useState<string | null>(null);

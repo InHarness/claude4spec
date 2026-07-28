@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { FileText, FileWarning, MessageSquarePlus, ChevronDown, ChevronRight } from 'lucide-react';
 import { useBriefs, useCreateBriefThread } from '../hooks/useBriefs.js';
-import { useReleases } from '../hooks/useReleases.js';
+import { useReleaseList } from '../hooks/useReleases.js';
 import { usePatches, useCreatePatchThread } from '../hooks/usePatches.js';
 import { encodeBriefPath, type BriefListItemView } from '../lib/briefs-api.js';
 import { encodePatchPath, type PatchListItemView } from '../lib/patches-api.js';
@@ -16,7 +16,7 @@ type ImplementedFilter = 'all' | 'done' | 'pending';
 /**
  * M21 /briefs list. 3-state filter (All / Done / Pending) sterujący query
  * paramem `?implemented`. Default `all`. Sort wg kanonicznej kolejności wydań
- * ze `spec_release` (najnowszy target release na gorze) — `useReleases()`
+ * ze `spec_release` (najnowszy target release na gorze) — `useReleaseList()`
  * zwraca releasy w porządku `created_at DESC`, więc pozycja w liście = ranga.
  * Briefy targetujące release nieobecny w liście (usunięty/zmieniona nazwa, lub
  * lista jeszcze się ładuje) lądują na końcu z fallbackiem na heurystykę
@@ -30,7 +30,7 @@ export function BriefsList() {
   const implementedFilter =
     filter === 'all' ? undefined : filter === 'done';
   const { data: briefs = [], isLoading } = useBriefs({ implemented: implementedFilter });
-  const { data: releases = [] } = useReleases();
+  const { data: releases = [] } = useReleaseList();
   const { data: patches = [] } = usePatches();
   const [collapsed, setCollapsed] = usePersistedState<string[]>(
     projectKey('c4s:briefs:collapsed-patches'),

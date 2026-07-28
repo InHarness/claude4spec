@@ -3,8 +3,8 @@ import { UI_KIT_CATALOG, STABLE_UI_KIT_COMPONENTS } from './registry.js';
 import { UI_KIT_STABLE_COMPONENTS } from '../../shared/plugin-host/ui-kit-surface.js';
 
 describe('Host UI Kit catalog registry (M34/L12)', () => {
-  it('catalogs all 29 components across the eight groups', () => {
-    expect(UI_KIT_CATALOG).toHaveLength(29);
+  it('catalogs all 30 components across the eight groups', () => {
+    expect(UI_KIT_CATALOG).toHaveLength(30);
     const byGroup = (g: string) => UI_KIT_CATALOG.filter((c) => c.group === g).map((c) => c.name);
     expect(byGroup('core')).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
     expect(byGroup('list')).toEqual([
@@ -27,6 +27,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
       'ReferencesList',
       'DocumentBody',
       'DocEditor',
+      'EntityVersionHistoryView',
     ]);
     expect(byGroup('feedback')).toEqual(['Popover', 'ToastViewport']);
     expect(byGroup('pickers')).toEqual(['EnumBadgePicker', 'GroupedRelationPicker']);
@@ -36,10 +37,31 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     const stable = UI_KIT_CATALOG.filter((c) => c.stability === 'stable').map((c) => c.name);
     const experimental = UI_KIT_CATALOG.filter((c) => c.stability === 'experimental');
     expect(stable).toEqual(['EntityListHeader', 'DetailPanelShell', 'FieldRow', 'FieldGrid']);
-    expect(experimental).toHaveLength(25);
+    expect(experimental).toHaveLength(26);
     // Every Core component is stable; no other group is.
     for (const c of UI_KIT_CATALOG) {
       expect(c.stability).toBe(c.group === 'core' ? 'stable' : 'experimental');
+    }
+  });
+
+  it('marks exactly DocEditor and EntityVersionHistoryView as connected', () => {
+    const connected = UI_KIT_CATALOG.filter((c) => c.binding === 'connected').map((c) => c.name);
+    expect(connected).toEqual(['DocEditor', 'EntityVersionHistoryView']);
+  });
+
+  it('every connected entry names the L11 surface it consumes, and no presentational one does', () => {
+    for (const c of UI_KIT_CATALOG) {
+      if (c.binding === 'connected') {
+        expect(c.l11Surfaces?.length ?? 0).toBeGreaterThan(0);
+      } else {
+        expect(c.l11Surfaces).toBeUndefined();
+      }
+    }
+  });
+
+  it('keeps the whole stable core presentational', () => {
+    for (const c of UI_KIT_CATALOG.filter((c) => c.stability === 'stable')) {
+      expect(c.binding).toBe('presentational');
     }
   });
 

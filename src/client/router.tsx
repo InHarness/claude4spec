@@ -40,7 +40,7 @@ import { DtoDetail } from './entities/dto/detail-panel.js';
 import { UiViewDetail } from './entities/ui-view/detail-panel.js';
 import { AcDetail } from './entities/ac/detail-panel.js';
 import { DesignSystemDetail } from './entities/design-system/detail-panel.js';
-import { VersionHistory } from './components/VersionHistory.js';
+import { EntityVersionHistoryView } from './host-ui-kit/index.js';
 import { usePages } from './hooks/usePages.js';
 import { useEndpoint } from './hooks/useEndpoints.js';
 import { useDto } from './hooks/useDtos.js';
@@ -567,11 +567,7 @@ function EndpointHistoryRoute() {
         view="history"
         hasHistory
       />
-      <VersionHistory
-        type="endpoint"
-        slug={slug}
-        onBack={() => navigate({ to: '/endpoints/$slug', params: { slug } })}
-      />
+      <EntityVersionHistoryView type="endpoint" slug={slug} />
     </RoutePane>
   );
 }
@@ -639,11 +635,7 @@ function DtoHistoryRoute() {
   return (
     <RoutePane>
       <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
-      <VersionHistory
-        type="dto"
-        slug={slug}
-        onBack={() => navigate({ to: '/dtos/$slug', params: { slug } })}
-      />
+      <EntityVersionHistoryView type="dto" slug={slug} />
     </RoutePane>
   );
 }
@@ -823,11 +815,7 @@ function AcHistoryRoute() {
   return (
     <RoutePane>
       <EntityBreadcrumbBar type="ac" slug={slug} view="history" hasHistory />
-      <VersionHistory
-        type="ac"
-        slug={slug}
-        onBack={() => navigate({ to: '/acs/$slug', params: { slug } })}
-      />
+      <EntityVersionHistoryView type="ac" slug={slug} />
     </RoutePane>
   );
 }

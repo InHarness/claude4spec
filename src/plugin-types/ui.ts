@@ -198,6 +198,10 @@ export interface VersionHistoryItem {
   author?: string;
   /** M13/M34: shown per-row in the `timeline` variant (kit doesn't fetch releases — author supplies it). */
   releaseLabel?: string;
+  /** M13/M34: who made the change — a colour-coded badge in `timeline`, so agent edits read differently from user edits. */
+  changedBy?: 'user' | 'agent' | 'filesystem';
+  /** M13/M34: one-line description of what the change did. */
+  summary?: string;
 }
 export interface VersionHistoryProps {
   versions: VersionHistoryItem[];
@@ -213,9 +217,15 @@ export interface VersionHistoryProps {
 }
 export declare const VersionHistory: ComponentType<VersionHistoryProps>;
 
+/**
+ * The PUBLIC diff-line vocabulary. Deliberately NOT the host-internal
+ * `LineDiffLite` shape (`{ op: 'keep'|'added'|'removed'; content }`, M17/L5) —
+ * L11 speaks L12's dictionary. `lineDiffHunks()` (`@c4s/plugin-runtime`) maps
+ * version snapshots into this shape.
+ */
 export interface DiffViewLine {
-  op: 'keep' | 'added' | 'removed';
-  content: string;
+  op: 'add' | 'del' | 'ctx';
+  line: string;
 }
 export interface DiffViewProps {
   /** Precomputed line hunks. Wins over `before`/`after` if both are given. */
@@ -284,6 +294,31 @@ export interface DocEditorProps {
   placeholder?: string;
 }
 export declare const DocEditor: ComponentType<DocEditorProps>;
+
+/**
+ * The catalog's first `binding: 'connected'` block: give it `type` + `slug` and
+ * it fetches versions, snapshots and release labels itself, then composes
+ * `EntityDetailToolbar` / `VersionHistory` / `SegmentedControlTabs` / `DiffView`.
+ * It renders but does not compute — restore goes down the host's existing
+ * `versionService` path, never a mutation of its own.
+ */
+export interface EntityVersionHistoryViewProps {
+  type: string;
+  slug: string;
+  /** Show the restore action per row. Default `true`. */
+  allowRestore?: boolean;
+  /** Show the "Compare to" selection and the diff panel. Default `true`. */
+  allowCompare?: boolean;
+  /** Show the release-name pill (`(unreleased)` when the version has no release). Default `true`. */
+  showReleasePill?: boolean;
+  /** Rendered instead of the default empty state when the entity has no versions. */
+  emptyState?: ReactNode;
+  /** Replaces the default diff panel. */
+  renderDiff?: (hunks: DiffViewLine[]) => ReactNode;
+  /** Fired after a successful restore. */
+  onRestored?: (versionId: string) => void;
+}
+export declare const EntityVersionHistoryView: ComponentType<EntityVersionHistoryViewProps>;
 
 // ── Overlay/feedback (experimental, M34/L12) ──
 export interface PopoverProps {
@@ -367,13 +402,20 @@ export declare const HOST_TOKEN_NAMES: readonly HostTokenName[];
 export declare function readHostTokens(): Record<HostTokenName, string>;
 export declare function useHostTokens(): Record<HostTokenName, string>;
 
-// ── Stability metadata ──
-export type WithStability<C> = C & { stability: import('../shared/plugin-host/ui-kit-surface.js').Stability };
+// ── Stability + binding metadata ──
+export type WithStability<C> = C & {
+  stability: import('../shared/plugin-host/ui-kit-surface.js').Stability;
+  binding: import('../shared/plugin-host/ui-kit-surface.js').Binding;
+  l11Surfaces?: readonly string[];
+};
 export type UiKitGroup = 'core' | 'list' | 'actions' | 'form' | 'overlay' | 'detail' | 'feedback' | 'pickers';
 export interface UiKitComponentEntry {
   name: string;
   group: UiKitGroup;
   stability: import('../shared/plugin-host/ui-kit-surface.js').Stability;
+  binding: import('../shared/plugin-host/ui-kit-surface.js').Binding;
+  /** Which L11 surface a `connected` component consumes; absent for `presentational` ones. */
+  l11Surfaces?: readonly string[];
 }
 export declare const UI_KIT_CATALOG: readonly UiKitComponentEntry[];
 export declare const STABLE_UI_KIT_COMPONENTS: readonly string[];
