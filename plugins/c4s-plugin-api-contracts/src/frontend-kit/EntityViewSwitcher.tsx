@@ -12,7 +12,8 @@ interface Props {
 
 export function EntityViewSwitcher({ type, slug, view }: Props) {
   const navigate = useNavigate();
-  const prefix = (clientPluginHost.getAvailable as (t: string) => { pathPrefix?: string } | null)(type)?.pathPrefix ?? '';
+  // Method call — see the note in EntityBreadcrumbBar on why never a local.
+  const prefix = clientPluginHost.getAvailable(type)?.pathPrefix ?? '';
 
   return (
     <SegmentedControl

@@ -19,12 +19,11 @@ const crumbLinkClass = 'inline-flex items-center gap-1.5 rounded px-1 -mx-1 tran
 
 export function EntityBreadcrumbBar({ type, slug, method, path, name, view, hasHistory }: Props) {
   const navigate = useNavigate();
-  // `clientPluginHost` is typed loosely on the published surface (its real type
-  // pulls the whole client registry), so the one lookup this needs is narrowed here.
-  const getAvailable = clientPluginHost.getAvailable as (
-    t: string,
-  ) => { labelPlural?: string; pathPrefix?: string } | null;
-  const mod = getAvailable(type);
+  // Always a METHOD call. `getAvailable` reads `this.modules`, so pulling it
+  // into a local — the obvious way to write a cast once — silently unbinds the
+  // receiver and throws "Cannot read properties of undefined" at render. It
+  // type-checks either way; only the browser tells you.
+  const mod = clientPluginHost.getAvailable(type);
   const listLabel = mod?.labelPlural ?? 'Entities';
   const prefix = mod?.pathPrefix ?? '';
 

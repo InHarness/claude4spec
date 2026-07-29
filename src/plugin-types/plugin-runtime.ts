@@ -341,6 +341,14 @@ export interface EditorBridge {
 // `QueryClient`, a peer the plugin already shares via the import map.
 export declare const clientPluginHost: {
   registerFrontendModule(module: FrontendModule): void;
+  /**
+   * 0.2.2 — a registered module's identity, by type, whether or not it is
+   * active. Published because a plugin rendering a breadcrumb or a view switcher
+   * for an entity needs that type's `label`/`pathPrefix`, and reaching it
+   * through the index signature forces a cast on the FUNCTION — which unbinds
+   * the receiver and throws at render, while type-checking cleanly.
+   */
+  getAvailable(type: string): EntityModuleManifest | null;
   [key: string]: unknown;
 };
 export declare function registerFrontendModule(module: FrontendModule): void;
