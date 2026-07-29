@@ -49,6 +49,10 @@ export type CliErrorCode =
   | 'INVALID_TARGET'
   | 'TARGET_EXISTS'
   | 'TEMPLATE_FETCH_FAILED'
+  // Not in the brief, which has no code for a write failure during expansion:
+  // without it a read-only target or ENOSPC escapes untyped and the bin reports
+  // it as UNKNOWN_COMMAND/exit 1. Rolls back like the two above it.
+  | 'SCAFFOLD_WRITE_FAILED'
   | 'INSTALL_FAILED';
 
 export class CliError extends Error {

@@ -60,6 +60,10 @@ export function TrustPluginsModal() {
       // `decide()`, which flips the query state and unmounts this component.
       onClose={() => {}}
       width={460}
+      // Above every other overlay, as the hand-rolled scrim it replaced was:
+      // a gate that another modal can paint over is a gate that cannot be
+      // answered, and this one blocks the shell on first open.
+      zIndex={1300}
       title="Trust this project's plugins?"
       footer={
         <>

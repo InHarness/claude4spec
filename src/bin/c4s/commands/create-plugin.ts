@@ -1,5 +1,4 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString } from '../args.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { createPlugin, DEFAULT_TEMPLATE } from '../../../core/plugin-scaffold/create-plugin.js';
@@ -31,13 +30,29 @@ export async function runCreatePlugin(args: ParsedArgs): Promise<void> {
 
   const result = createPlugin({
     targetDir,
-    template: optionalString(args, 'template') ?? DEFAULT_TEMPLATE,
-    branch: optionalString(args, 'branch'),
+    template: valuedFlag(args, 'template') ?? DEFAULT_TEMPLATE,
+    branch: valuedFlag(args, 'branch'),
     force: args.flags.get('force') === true,
     install: args.flags.get('no-install') !== true,
   });
 
   writeOutput(result, args);
+}
+
+/**
+ * Like `optionalString`, but a flag given WITHOUT a value is an error rather
+ * than a silent fallback to the default. `parseArgs` turns a trailing
+ * `--template` (or `--template --force`) into boolean `true`, and quietly
+ * scaffolding from the default repo when the operator meant to name their own
+ * is the kind of mistake that is only discovered after it has been committed.
+ */
+function valuedFlag(args: ParsedArgs, flag: string): string | undefined {
+  const v = args.flags.get(flag);
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string' || !v) {
+    throw new CliError('INVALID_ARGS', `--${flag} requires a value`);
+  }
+  return v;
 }
 
 export const createPluginCommand: CliCommandContribution = {
@@ -48,6 +63,7 @@ export const createPluginCommand: CliCommandContribution = {
     'INVALID_TARGET',
     'TARGET_EXISTS',
     'TEMPLATE_FETCH_FAILED',
+    'SCAFFOLD_WRITE_FAILED',
     'INSTALL_FAILED',
   ],
   handler: runCreatePlugin,

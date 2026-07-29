@@ -36,6 +36,7 @@ describe('c4s create-plugin', () => {
       'INVALID_TARGET',
       'TARGET_EXISTS',
       'TEMPLATE_FETCH_FAILED',
+      'SCAFFOLD_WRITE_FAILED',
       'INSTALL_FAILED',
     ]);
   });
@@ -74,6 +75,20 @@ describe('c4s create-plugin', () => {
   it('keeps the positional when a boolean flag precedes it', async () => {
     await run(['create-plugin', '--force', 'my-plugin']);
     expect(createPlugin).toHaveBeenCalledWith(expect.objectContaining({ targetDir: 'my-plugin' }));
+  });
+
+  it('rejects a valueless --template / --branch instead of silently defaulting', async () => {
+    // `parseArgs` turns a trailing `--template` into boolean `true`; falling
+    // back to the default scaffold repo there would scaffold the wrong starter
+    // and report success.
+    for (const argv of [
+      ['create-plugin', 'p', '--template'],
+      ['create-plugin', 'p', '--branch'],
+      ['create-plugin', 'p', '--template', '--force'],
+    ]) {
+      await expect(run(argv)).rejects.toMatchObject({ code: 'INVALID_ARGS' });
+      expect(createPlugin).not.toHaveBeenCalled();
+    }
   });
 
   it('rejects a missing <target-dir> as INVALID_ARGS, without calling the core', async () => {

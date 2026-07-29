@@ -72,6 +72,16 @@ export function createPlugin(input: CreatePluginInput, cwd = process.cwd()): Cre
   // 2. Target state — a non-empty directory needs `--force`. Nothing has been
   //    written or fetched at this point, so there is nothing to roll back.
   const existed = fs.existsSync(abs);
+  if (existed && !fs.statSync(abs).isDirectory()) {
+    // A file (or symlink) sitting on the target name: `--force` cannot help,
+    // and without this guard the failure surfaces as a raw ENOTDIR from the
+    // first copy rather than a typed error.
+    throw new CliError(
+      'TARGET_EXISTS',
+      `'${targetName}' already exists and is not a directory`,
+      'use a different name, or remove that file first',
+    );
+  }
   if (existed && !force && !isEmptyDir(abs)) {
     throw new CliError(
       'TARGET_EXISTS',
@@ -89,11 +99,23 @@ export function createPlugin(input: CreatePluginInput, cwd = process.cwd()): Cre
     const resolvedBranch = fetchTemplate(template, branch, tmp);
     fs.rmSync(path.join(tmp, '.git'), { recursive: true, force: true });
 
-    // 4. Expand into the target directory.
-    if (!existed) {
-      fs.mkdirSync(abs, { recursive: true });
+    // 4. Expand into the target directory. Filesystem failures here (a
+    //    read-only target, ENOSPC, a permission error mid-copy) are typed, so
+    //    they reach the caller as a scaffold error with a real exit code
+    //    instead of falling through the bin's catch-all as UNKNOWN_COMMAND.
+    let filesWritten: number;
+    try {
+      if (!existed) {
+        fs.mkdirSync(abs, { recursive: true });
+      }
+      filesWritten = copyTree(tmp, abs, ledger);
+    } catch (err) {
+      throw new CliError(
+        'SCAFFOLD_WRITE_FAILED',
+        `failed to write the scaffold into ${abs}: ${(err as Error).message}`,
+        'check permissions and free space on the target filesystem',
+      );
     }
-    const filesWritten = copyTree(tmp, abs, ledger);
 
     // 5. Install — non-fatal for the files on disk: an `npm install` failure
     //    leaves everything in place so a retry needs no refetch.
@@ -145,6 +167,16 @@ function validateTargetDir(raw: string, cwd: string): string {
   return name;
 }
 
+/**
+ * Replaces the userinfo component of any URL in `text` with `***`. A private
+ * scaffold repo is commonly passed as
+ * `https://x-access-token:<token>@github.com/...`, and an ordinary failure must
+ * not disclose that token.
+ */
+export function redactUrlCredentials(text: string): string {
+  return text.replace(/([a-zA-Z][a-zA-Z0-9+.-]*:\/\/)[^/@\s]+@/g, '$1***@');
+}
+
 function isEmptyDir(dir: string): boolean {
   try {
     return fs.readdirSync(dir).length === 0;
@@ -163,6 +195,7 @@ function fetchTemplate(template: string, branch: string | undefined, dest: strin
   if (branch) args.push('--branch', branch);
   args.push(template, dest);
 
+  const safeTemplate = redactUrlCredentials(template);
   const clone = spawnSync('git', args, { encoding: 'utf8' });
   if (clone.error && (clone.error as NodeJS.ErrnoException).code === 'ENOENT') {
     throw new CliError(
@@ -172,13 +205,15 @@ function fetchTemplate(template: string, branch: string | undefined, dest: strin
     );
   }
   if (clone.status !== 0) {
-    const stderr = (clone.stderr ?? '').trim();
-    const where = branch ? `${template} at revision '${branch}'` : template;
+    // git echoes the URL it was given, credentials and all, so its stderr is
+    // redacted too — this envelope lands in CI logs and agent transcripts.
+    const stderr = redactUrlCredentials((clone.stderr ?? '').trim());
+    const where = branch ? `${safeTemplate} at revision '${branch}'` : safeTemplate;
     throw new CliError(
       'TEMPLATE_FETCH_FAILED',
       `failed to fetch scaffold from ${where}${stderr ? `: ${stderr}` : ''}`,
       branch
-        ? `check that branch/tag '${branch}' exists in ${template}`
+        ? `check that branch/tag '${branch}' exists in ${safeTemplate}`
         : 'check the template URL, your network access and repository permissions',
     );
   }
@@ -192,7 +227,16 @@ function fetchTemplate(template: string, branch: string | undefined, dest: strin
   return head.status === 0 && resolved ? resolved : 'HEAD';
 }
 
-/** Recursively copies `from` into `to`, recording every path this run creates. */
+/**
+ * Recursively copies `from` into `to`, recording every path this run **creates**.
+ *
+ * A file the copy OVERWRITES is deliberately not recorded: under `--force` the
+ * operator's own file was there first, and rollback deleting it would destroy
+ * data the run never owned. Recording only new paths keeps the ledger's
+ * invariant true — rollback removes what this run added and nothing else.
+ * (An overwritten file's previous content is not recoverable; `--force` is a
+ * merge into a directory the operator has told us to write into.)
+ */
 function copyTree(from: string, to: string, ledger: WriteLedger): number {
   let count = 0;
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
@@ -205,8 +249,9 @@ function copyTree(from: string, to: string, ledger: WriteLedger): number {
       }
       count += copyTree(src, dst, ledger);
     } else if (entry.isFile()) {
+      const overwrote = fs.existsSync(dst);
       fs.copyFileSync(src, dst);
-      ledger.files.push(dst);
+      if (!overwrote) ledger.files.push(dst);
       count++;
     }
     // Symlinks and other special entries are skipped: a scaffold is plain files.
@@ -239,23 +284,35 @@ function rollback(abs: string, ledger: WriteLedger): void {
 }
 
 function runInstall(cwd: string): void {
+  // NOT `stdio: 'inherit'`: npm's progress and audit chatter would land on this
+  // command's stdout ahead of the JSON result envelope, and every other c4s
+  // command guarantees stdout is machine-readable (`c4s create-plugin … | jq`).
+  // npm's own output is surfaced through the error message when it fails, and
+  // is otherwise dropped.
   const res = spawnSync('npm', ['install'], {
     cwd,
-    stdio: 'inherit',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    encoding: 'utf8',
     shell: process.platform === 'win32',
   });
+  // The files stay on disk either way, so recovery is `npm install` in place —
+  // NOT a re-run of `create-plugin`, which would now hit TARGET_EXISTS.
+  const recovery = `the scaffold files are in place — run \`npm install\` in ${cwd} to finish`;
   if (res.error && (res.error as NodeJS.ErrnoException).code === 'ENOENT') {
-    throw new CliError(
-      'INSTALL_FAILED',
-      'npm is not available on $PATH',
-      `the scaffold files are in place — run \`npm install\` in ${cwd} yourself`,
-    );
+    throw new CliError('INSTALL_FAILED', 'npm is not available on $PATH', recovery);
   }
   if (res.status !== 0) {
+    const detail = tail(`${res.stdout ?? ''}${res.stderr ?? ''}`.trim());
     throw new CliError(
       'INSTALL_FAILED',
-      `npm install failed in ${cwd} (exit ${String(res.status)})`,
-      `the scaffold files are in place — run \`npm install\` in ${cwd} yourself, or re-run with --no-install`,
+      `npm install failed in ${cwd} (exit ${String(res.status)})${detail ? `: ${detail}` : ''}`,
+      recovery,
     );
   }
+}
+
+/** Last few lines of a subprocess's output, for an error message. */
+function tail(text: string, lines = 8): string {
+  if (!text) return '';
+  return text.split('\n').slice(-lines).join('\n');
 }

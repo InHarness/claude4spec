@@ -225,6 +225,8 @@ function codeToExit(code: string): number {
       return 17;
     case 'INSTALL_FAILED':
       return 18;
+    case 'SCAFFOLD_WRITE_FAILED':
+      return 19;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

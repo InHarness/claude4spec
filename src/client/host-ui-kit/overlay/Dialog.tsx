@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { withStability } from '../stability.js';
 
@@ -47,6 +47,18 @@ export interface DialogProps {
    * dismissible — there "Cancel" is a real answer.
    */
   dismissible?: boolean;
+  /**
+   * Accessible name when there is no `title` to derive one from. With a
+   * `title`, the panel is labelled by it automatically and this is unnecessary.
+   */
+  ariaLabel?: string;
+  /**
+   * Stacking order of the scrim, defaulting to 1200 (above `Popover` 1100,
+   * below `z-toast` 1300). An escape hatch for a dialog that must outrank every
+   * other overlay — a blocking gate has to stay clickable even if another modal
+   * opens behind it.
+   */
+  zIndex?: number;
 }
 
 const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
@@ -67,9 +79,12 @@ function DialogImpl({
   size = 'md',
   width,
   dismissible = true,
+  ariaLabel,
+  zIndex = 1200,
 }: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
 
   // Captured during the FIRST render that sees `open` — before the panel is
   // committed, so before a child's `autoFocus` runs. An effect would be too
@@ -118,6 +133,16 @@ function DialogImpl({
       // Trap Tab within the panel's focusable elements.
       const panel = panelRef.current;
       if (!panel) return;
+      // Focus may have left the panel entirely — a click on the scrim of a
+      // non-dismissible dialog leaves `document.activeElement` on <body>, and
+      // wrap-at-the-edges alone would then let Tab walk into the shell behind
+      // the scrim. Pull it back before considering the edges.
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        const firstOutside = panel.querySelector<HTMLElement>(FOCUSABLE);
+        (firstOutside ?? panel).focus();
+        return;
+      }
       const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -154,11 +179,21 @@ function DialogImpl({
     <div
       role="dialog"
       aria-modal="true"
+      // Without one of these a screen reader announces only "dialog" — the user
+      // lands in a modal with no idea what it is asking.
+      aria-labelledby={title != null ? titleId : undefined}
+      aria-label={title == null ? ariaLabel : undefined}
       className="fixed inset-0 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)', zIndex: 1200 }}
+      style={{ background: 'rgba(0,0,0,0.4)', zIndex }}
       onMouseDown={(e) => {
-        if (!dismissible) return;
-        if (e.target === e.currentTarget) onClose();
+        if (e.target !== e.currentTarget) return;
+        if (!dismissible) {
+          // Swallow it: without this the mousedown blurs whatever was focused
+          // inside the panel and drops focus onto <body>, outside the trap.
+          e.preventDefault();
+          return;
+        }
+        onClose();
       }}
     >
       <div
@@ -180,6 +215,7 @@ function DialogImpl({
             style={{ borderBottom: '1px solid var(--c-hair)' }}
           >
             <div
+              id={titleId}
               className="text-[14px] font-semibold min-w-0"
               style={{ fontFamily: 'var(--font-heading)', color: 'var(--c-ink)' }}
             >

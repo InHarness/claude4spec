@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CliError } from '../../bin/c4s/errors.js';
-import { createPlugin, DEFAULT_TEMPLATE } from './create-plugin.js';
+import { createPlugin, DEFAULT_TEMPLATE, redactUrlCredentials } from './create-plugin.js';
 
 /**
  * M38 — the scaffolder, exercised against a LOCAL git repo used as the
@@ -168,6 +168,73 @@ describe('M38 createPlugin', () => {
     );
 
     expect(fs.readFileSync(path.join(abs, 'mine.txt'), 'utf8')).toBe('keep me\n');
+  });
+
+  it('under --force, a failure MID-COPY never deletes pre-existing files', () => {
+    // The regression this guards: recording overwritten files in the rollback
+    // ledger made a mid-copy failure delete the operator's own files. Rollback
+    // may only remove what the run itself created.
+    const abs = path.join(cwd, 'taken');
+    fs.mkdirSync(abs);
+    // Not in the template, so the expansion never touches it: it must come out
+    // byte-identical.
+    fs.writeFileSync(path.join(abs, 'KEEP_ME.txt'), 'MY PRECIOUS NOTES\n');
+    // In the template, so `--force` legitimately overwrites it — but rollback
+    // must not then DELETE it, which is what recording overwrites in the ledger
+    // used to do.
+    fs.writeFileSync(path.join(abs, 'README.md'), 'mine\n');
+    // `src` exists as a FILE, so copying the template's `src/` directory into
+    // it fails part-way through the expansion.
+    fs.writeFileSync(path.join(abs, 'src'), 'not a directory\n');
+
+    expectCliError(
+      () => createPlugin({ targetDir: 'taken', template: templateRepo, force: true, install: false }, cwd),
+      'SCAFFOLD_WRITE_FAILED',
+    );
+
+    expect(fs.existsSync(abs), 'a pre-existing target dir is never removed').toBe(true);
+    expect(fs.readFileSync(path.join(abs, 'KEEP_ME.txt'), 'utf8')).toBe('MY PRECIOUS NOTES\n');
+    expect(fs.existsSync(path.join(abs, 'README.md')), 'overwritten ≠ deleted').toBe(true);
+    // What the run itself created is gone.
+    expect(fs.existsSync(path.join(abs, 'package.json'))).toBe(false);
+  });
+
+  it('reports a target that exists as a FILE as TARGET_EXISTS, not a raw ENOTDIR', () => {
+    fs.writeFileSync(path.join(cwd, 'notes'), 'a file, not a directory\n');
+    const err = expectCliError(
+      () => createPlugin({ targetDir: 'notes', template: templateRepo, force: true, install: false }, cwd),
+      'TARGET_EXISTS',
+    );
+    expect(err.message).toMatch(/not a directory/);
+    // Untouched — the guard runs before anything is fetched or written.
+    expect(fs.readFileSync(path.join(cwd, 'notes'), 'utf8')).toBe('a file, not a directory\n');
+  });
+
+  it('never echoes credentials embedded in the template URL', () => {
+    const secret = 'ghp_exampletoken1234567890';
+    const err = expectCliError(
+      () =>
+        createPlugin(
+          {
+            targetDir: 'p',
+            template: `https://x-access-token:${secret}@example.invalid/private.git`,
+            install: false,
+          },
+          cwd,
+        ),
+      'TEMPLATE_FETCH_FAILED',
+    );
+    expect(`${err.message} ${err.hint ?? ''}`).not.toContain(secret);
+    expect(err.message).toContain('***@example.invalid');
+  });
+
+  it('redacts userinfo from arbitrary text', () => {
+    expect(redactUrlCredentials('https://user:pw@host/x')).toBe('https://***@host/x');
+    expect(redactUrlCredentials('git clone https://t0ken@github.com/a/b failed')).toBe(
+      'git clone https://***@github.com/a/b failed',
+    );
+    // No userinfo → untouched.
+    expect(redactUrlCredentials('https://github.com/a/b')).toBe('https://github.com/a/b');
   });
 
   it('leaves no temp clone behind on the happy path', () => {

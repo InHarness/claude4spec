@@ -141,10 +141,47 @@ describe('M34/L12 — one implementation rule', () => {
   it('the plugin trust gate is an undismissable Dialog', () => {
     // The security property, pinned in source: no scrim/Escape/✕ escape hatch,
     // so the only ways out are the two explicit footer buttons.
+    //
+    // This repo has no DOM test environment (vitest runs `environment: 'node'`,
+    // no jsdom, no RTL — see the file header), so each guard is pinned as text
+    // and the *behaviour* is covered by tests/e2e/plugin-trust-gate.test.ts
+    // against a live app. Asserting only that the strings `dismissible={false}`
+    // and `dismissible = true` exist would stay green if the guards themselves
+    // were deleted, which is exactly the regression that matters.
     const src = readFileSync(join(CLIENT_DIR, 'components/TrustPluginsModal.tsx'), 'utf8');
     expect(src).toMatch(/dismissible=\{false\}/);
+    // A gate another overlay can paint over cannot be answered.
+    expect(src).toMatch(/zIndex=\{1300\}/);
+
     const dialog = readFileSync(join(KIT_DIR, 'overlay/Dialog.tsx'), 'utf8');
-    expect(dialog).toMatch(/dismissible = true/);
+    expect(dialog, 'dismissible must default to true').toMatch(/dismissible = true/);
+    // Escape is guarded.
+    expect(dialog, 'Escape must be suppressed when not dismissible').toMatch(
+      /if \(e\.key === 'Escape'\) \{\s*\n\s*if \(!dismissibleRef\.current\) return;/,
+    );
+    // The scrim neither closes NOR blurs into <body> (which would put focus
+    // outside the Tab trap and let keyboard focus walk into the shell behind).
+    expect(dialog, 'scrim must not close a non-dismissible dialog').toMatch(
+      /if \(!dismissible\) \{[\s\S]*?e\.preventDefault\(\);[\s\S]*?return;/,
+    );
+    // Focus that ended up outside the panel is pulled back on Tab.
+    expect(dialog, 'Tab must recover focus that left the panel').toMatch(
+      /if \(!panel\.contains\(document\.activeElement\)\) \{/,
+    );
+    // The ✕ is a close path too, so it is gone with the others.
+    expect(dialog, 'the header ✕ must be hidden when not dismissible').toMatch(
+      /\{dismissible && \(\s*\n\s*<button/,
+    );
+  });
+
+  it('every Dialog has an accessible name', () => {
+    // `role="dialog"` with no name is announced as a bare "dialog" — for the
+    // trust gate that means an unnamed, unescapable modal asking permission to
+    // run foreign code.
+    const dialog = readFileSync(join(KIT_DIR, 'overlay/Dialog.tsx'), 'utf8');
+    expect(dialog).toMatch(/aria-labelledby=\{title != null \? titleId : undefined\}/);
+    expect(dialog).toMatch(/aria-label=\{title == null \? ariaLabel : undefined\}/);
+    expect(dialog).toMatch(/id=\{titleId\}/);
   });
 
   it('every declared exception still exists (the list cannot rot)', () => {

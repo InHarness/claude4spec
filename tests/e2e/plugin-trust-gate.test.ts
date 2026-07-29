@@ -119,6 +119,19 @@ describe.skipIf(!BASE)('M33 plugin trust gate — undismissable Dialog', () => {
       await page.waitForTimeout(300);
       expect(await dialog.isVisible()).toBe(true);
 
+      // …and the gate must still hold the KEYBOARD. Asserting only that it is
+      // still visible after the scrim click misses the real bypass: the click
+      // used to blur into <body>, from where Tab walked into the shell behind
+      // the scrim while the trust decision was unresolved.
+      await page.keyboard.press('Tab');
+      await page.waitForTimeout(200);
+      const focusInsideGate = await page.evaluate(() => {
+        const active = document.activeElement;
+        const panel = document.querySelector('[role="dialog"]');
+        return !!(active && panel && panel.contains(active));
+      });
+      expect(focusInsideGate, 'Tab must not move focus out of the gate').toBe(true);
+
       // No "close only" affordance inside the panel either — the header ✕ is
       // suppressed when `dismissible` is false, so the two decisions are the
       // only way out.
