@@ -242,10 +242,18 @@ describe('M38 createPlugin', () => {
   });
 
   it('leaves no temp clone behind on the happy path', () => {
-    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('c4s-plugin-'));
+    // `os.tmpdir()` is shared with every other vitest worker, and this scaffold's
+    // clone prefix (`c4s-plugin-`) is a PREFIX of plugin-watcher.test.ts's
+    // (`c4s-plugin-watch-`), so a plain startsWith made this assertion fail
+    // whenever those two files happened to run concurrently. Exclude the other
+    // suite's dirs so the test observes only what createPlugin itself leaves.
+    const cloneDirs = () =>
+      fs
+        .readdirSync(os.tmpdir())
+        .filter((n) => n.startsWith('c4s-plugin-') && !n.startsWith('c4s-plugin-watch-'));
+    const before = cloneDirs();
     createPlugin({ targetDir: 'p', template: templateRepo, install: false }, cwd);
-    const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('c4s-plugin-'));
-    expect(after).toEqual(before);
+    expect(cloneDirs()).toEqual(before);
   });
 
   it('defaults the template to the published scaffold repo', () => {
