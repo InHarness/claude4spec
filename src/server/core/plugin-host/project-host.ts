@@ -145,16 +145,28 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     // (schema_version per plugin, idempotent) BEFORE its mount, so the entity
     // table exists by the time `mount` builds its service and the first query runs.
     //
-    // 0.2.2 Tier B: TWO passes, not one interleaved pass. Since entity DDL now
-    // lives in `backend.migrations` rather than the host chain, a module's table
-    // may be referenced by ANOTHER module's schema — `endpoint_dto` carries an FK
-    // to `dto(slug)`. This loop iterates in `displayOrder`, not `dependsOn` order,
-    // so interleaving would make correctness depend on two unrelated numbers
-    // lining up. Migrating everything first means no mount can observe a
-    // half-migrated schema and no cross-module DDL reference can be mis-ordered.
-    const modules = this.listEntities();
-    for (const m of modules) runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
-    for (const m of modules) m.backend?.mount?.(ctx);
+    // 0.2.2 Tier B: TWO passes, over DIFFERENT sets.
+    //
+    // MIGRATE every AVAILABLE module — including deactivated ones. The schema is
+    // a function of what is INSTALLED, not of what is enabled. That was true
+    // before this release for free, because entity DDL sat in the host chain and
+    // ran unconditionally; migrating only active modules quietly changed it, and
+    // any host code that walks all available types then hit a missing table.
+    // `GET /entities/counts` did exactly that and returned 500 for the whole
+    // sidebar because one deactivated type had no table. A deactivated type
+    // keeps an empty table, exactly as it always did.
+    //
+    // MOUNT only the ACTIVE ones: a deactivated type contributes no service, no
+    // routes and no tools. That half is unchanged.
+    //
+    // Migrations run before ANY mount, not interleaved per module. A module's
+    // table may be referenced by another module's schema — `endpoint_dto`
+    // carries an FK to `dto(slug)` — and this iterates in `displayOrder`, not
+    // `dependsOn` order, so interleaving would make correctness depend on two
+    // unrelated numbers lining up. It also means no mount can observe a
+    // half-migrated schema.
+    for (const m of this.listAvailable()) runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+    for (const m of this.listEntities()) m.backend?.mount?.(ctx);
   }
 
   registerMcpServer(name: string, factory: () => McpServerFactory): void {

@@ -127,22 +127,25 @@ function resolveEnvelopeEntry(dir: string): string | null {
 export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()): BuiltinEnvelope[] {
   if (!root) return [];
 
-  // Two locations, and the order is the point.
+  // Two locations, and the ORDER IS LOAD-BEARING.
   //
-  //  - `dist/plugins/<name>/` — where the host's own build EMITS an envelope.
-  //    This is the one that matters in a packaged host: every mechanism that
-  //    packages this project copies `dist/` and only `dist/` (npm via
-  //    `package.json#files`, container images via `COPY /app/dist`). An artifact
-  //    outside it is silently absent — discovery returns nothing, no error is
-  //    raised, and the host simply has no `endpoint` and no `dto`.
-  //  - `plugins/<name>/` — an envelope that carries its own built `dist/`, the
-  //    shape an extracted package has when it is vendored back in. Kept so a
-  //    hand-placed package still works, and it is what the fixture tests use.
+  //  1. `dist/plugins/<name>/` — where the host's own build emits an envelope,
+  //     and the only location that matters in a packaged host: every mechanism
+  //     that packages this project copies `dist/` and only `dist/` (npm via
+  //     `package.json#files`, container images via `COPY /app/dist`). An
+  //     artifact outside it is silently absent — discovery finds nothing, raises
+  //     nothing, and the host simply has no `endpoint` and no `dto`.
+  //  2. `plugins/<name>/` — an envelope carrying its own built `dist/`, the
+  //     shape an extracted package has when vendored back in. Kept so a
+  //     hand-placed package works, and it is what the fixture tests use.
   //
-  // Built output wins on a name collision: if both exist, the source tree is a
-  // working copy and `dist/` is what was actually built.
+  // First hit wins, so (1) beats (2). That is not a preference, it is a
+  // correctness requirement: `plugins/<name>/dist` is gitignored build output
+  // that may be left over from an older layout, and a stale copy there would
+  // otherwise shadow what was actually just built — locally only, while the
+  // container silently ran something else.
   const byName = new Map<string, BuiltinEnvelope>();
-  for (const pluginsDir of [path.join(root, 'plugins'), path.join(root, 'dist', 'plugins')]) {
+  for (const pluginsDir of [path.join(root, 'dist', 'plugins'), path.join(root, 'plugins')]) {
     let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
@@ -153,11 +156,12 @@ export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
       const dir = path.join(pluginsDir, entry.name);
+      // Already answered by the built copy — an unbuilt source tree beside it is
+      // the normal state, not something to report.
+      if (byName.has(entry.name)) continue;
       const abs = resolveEnvelopeEntry(dir);
       if (!abs) {
-        // Not a warning when a built copy already answered for this name: an
-        // unbuilt source tree beside a built artifact is the normal dev state.
-        if (!byName.has(entry.name)) {
+        {
           console.warn(
             `[plugin-loader] built-in envelope '${entry.name}' has no resolvable entry ` +
               `(checked package.json exports/main, then src/index.js) — skipping. ` +

@@ -132,3 +132,55 @@ describe('upgrading a pre-0.2.2 database', () => {
     }
   });
 });
+
+/**
+ * Deactivating a type must not change the SCHEMA — only what is mounted.
+ *
+ * Regression, found by a browser pass rather than by any unit test: with entity
+ * DDL moved into `backend.migrations`, migrating only ACTIVE modules meant a
+ * deactivated type had no table at all. Before this release the DDL sat in the
+ * host chain and ran unconditionally, so a deactivated type kept an empty table
+ * and everything that walks all AVAILABLE types kept working.
+ *
+ * `GET /entities/counts` is exactly such a walker, and it returned 500 for the
+ * whole sidebar — every badge, for every type — because one deactivated type's
+ * table was missing.
+ */
+describe('a deactivated type keeps its (empty) table', () => {
+  it('migrates every available module, not only the active ones', async () => {
+    const db = new Database(':memory:');
+    try {
+      runMigrations(db);
+      const registry = new PluginRegistryImpl();
+      registerAllPlugins(registry);
+      await loadBuiltinEnvelopes(registry);
+
+      // A project that enables only `endpoint` — everything else is available
+      // but deactivated.
+      const host = registry.consolidate({ entities: ['endpoint'] });
+      expect(host.listEntities().map((m) => m.type)).toEqual(['endpoint']);
+
+      const ctx = {
+        db,
+        host,
+        registerMcpServer: () => {},
+        registerEntityService: () => {},
+        registerRenameListener: () => {},
+        app: { use: () => {} },
+      } as unknown as Parameters<typeof host.mountBackend>[0];
+      host.mountBackend(ctx);
+
+      const tables = (
+        db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+      ).map((r) => r.name);
+
+      // Present despite being deactivated — this is the assertion that failed.
+      for (const table of ['ui_view', 'ac', 'design_system', 'diagram', 'dto']) {
+        expect(tables).toContain(table);
+      }
+      expect(tables).toContain('endpoint');
+    } finally {
+      db.close();
+    }
+  });
+});

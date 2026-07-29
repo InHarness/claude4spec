@@ -12,8 +12,12 @@
  * quoted table names and appended-column artifacts in the stored SQL that carry
  * no meaning. PRAGMA output is the semantics.
  *
- * Scope: the gate holds for "baseline + ALL core modules active". A project
- * that narrows `config.entities` gets a strictly smaller schema, by design.
+ * Scope: unconditional. `mountBackend` migrates every AVAILABLE module, not just
+ * the active ones, so narrowing `config.entities` does NOT shrink the schema — a
+ * deactivated type keeps an empty table, exactly as it did when the DDL lived in
+ * the host chain. An earlier revision migrated only active modules and a
+ * deactivated `design-system` then had no table at all, which turned
+ * `GET /entities/counts` into a 500.
  */
 
 import Database from 'better-sqlite3';

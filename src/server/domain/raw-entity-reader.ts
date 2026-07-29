@@ -247,8 +247,22 @@ export class RawEntityReader {
   count(type: RawEntityType): number {
     const table = this.resolveTable(type);
     if (!table) return 0;
+    // A resolvable table name is not a guarantee the table EXISTS: a module can
+    // declare one whose migration never ran (a plugin shipping no migrations, or
+    // one that failed). Since 0.2.2 this is reachable rather than theoretical,
+    // and the caller is `GET /entities/counts` — one throw there turned the
+    // whole sidebar into a 500 over a single type's badge. Absent reads as zero.
+    if (!this.tableExists(table)) return 0;
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
     return row.c;
+  }
+
+  private tableExists(table: string): boolean {
+    return (
+      this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?`)
+        .get(table) !== undefined
+    );
   }
 
   listTags(): RawTag[] {
