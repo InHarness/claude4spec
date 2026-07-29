@@ -36,6 +36,31 @@ export const endpointBackendModule: BackendModule = {
   // server for endpoint's relation tools.
   backend: {
     migrations: endpointMigrations,
+    /**
+     * The junction is derived from the endpoint files' `linked_dtos[]`, so a
+     * full index rebuild must clear it before repopulating. Declared here rather
+     * than hardcoded in the indexer: the host has no idea this table exists.
+     */
+    auxTables: ['endpoint_dto'],
+    /**
+     * A DTO rename cascades through the junction's ON UPDATE CASCADE, but the
+     * endpoint FILES still embed the old slug in `linked_dtos[]`. Re-persist the
+     * affected ones. This used to be a `type === 'dto'` branch inside the host's
+     * ReferencesService — knowledge that belongs to the module owning the link.
+     */
+    onEntityRenamed: ({ type, newSlug }, ctx) => {
+      if (type !== 'dto') return;
+      const affected = ctx.db
+        .prepare('SELECT DISTINCT endpoint_slug AS slug FROM endpoint_dto WHERE dto_slug = ?')
+        .all(newSlug) as Array<{ slug: string }>;
+      for (const e of affected) {
+        try {
+          ctx.entityStore.persist('endpoint', e.slug);
+        } catch {
+          /* a file that cannot be re-persisted is skipped, as before */
+        }
+      }
+    },
     service: (ctx) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: endpointCreateSchema,

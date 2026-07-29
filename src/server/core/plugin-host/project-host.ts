@@ -8,6 +8,7 @@ import type { Database } from 'better-sqlite3';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
+  EntityRenamedEvent,
   EntityServiceLike,
   MountContext,
   PluginRegistry,
@@ -35,6 +36,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   private unknownTypes: string[] = [];
   private mcpServerFactories = new Map<string, () => McpServerFactory>();
   private entityServices = new Map<string, unknown>();
+  private renameListeners: Array<(ev: EntityRenamedEvent) => void> = [];
   // Project-local modules of THIS context, keyed by type. Empty when
   // `overlay === undefined` (parity with the base-only case).
   private readonly overlayModules = new Map<string, BackendModule>();
@@ -157,6 +159,14 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   registerMcpServer(name: string, factory: () => McpServerFactory): void {
     this.mcpServerFactories.set(name, factory);
+  }
+
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void {
+    this.renameListeners.push(fn);
+  }
+
+  listRenameListeners(): Array<(ev: EntityRenamedEvent) => void> {
+    return [...this.renameListeners];
   }
 
   /**

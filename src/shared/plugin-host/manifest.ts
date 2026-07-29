@@ -154,6 +154,19 @@ export interface EntityContribution extends EntityModuleManifest {
      * server registry narrows it to `(service, ctx) => McpServerFactory`.
      */
     mcpServer?: unknown;
+    /**
+     * 0.2.2 — auxiliary tables this module owns beyond `table` (junctions, side
+     * indexes) whose rows are derived from the entity files. The host clears
+     * them on an index rebuild and otherwise never interprets them.
+     */
+    auxTables?: string[];
+    /**
+     * 0.2.2 — react to ANOTHER entity being renamed, to repoint references held
+     * in this module's own tables or files. Typed `unknown` here for the same
+     * reason as the slots above; the server registry narrows it to
+     * `(ev: EntityRenamedEvent, ctx: MountContext) => void`.
+     */
+    onEntityRenamed?: unknown;
   };
 
   /** L8 — client editor extensions + render slots (narrowed client-side). */

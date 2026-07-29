@@ -85,10 +85,6 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     new Map([['pages', pages]]),
     new Map([['pages', watcher]]),
   );
-  // M29: wire the entity-file deps so slug-rename propagation (e.g. design-system
-  // → ui-view designSystemSlug) runs as it does in production.
-  referencesService.setEntityDeps(db, entityStore);
-
   const router = Router();
   host.mountBackend({
     app: router,
@@ -102,7 +98,11 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     entityStore,
     registerMcpServer: (name, server) => host.registerMcpServer(name, server),
     registerEntityService: (type, service) => host.registerEntityService(type, service),
+    registerRenameListener: (fn) => host.registerRenameListener(fn),
   });
+  // M29: slug-rename propagation into entity files, as in production. Must come
+  // after mountBackend — that is when modules contribute their rename listeners.
+  referencesService.setPluginHost(host);
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader));
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can

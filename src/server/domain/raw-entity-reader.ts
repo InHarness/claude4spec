@@ -86,7 +86,18 @@ export function isRawEntityType(value: string): value is RawEntityType {
 
 export class RawEntityReader {
   constructor(
-    private db: Database.Database,
+    /**
+     * 0.2.2 — public, deliberately. The escape hatch for a module whose type
+     * owns AUXILIARY tables the generic single-row read cannot express: a
+     * junction, a side index. `endpoint`'s serializer reaches its `endpoint_dto`
+     * links through `ctx.reader.db`, because `SerializeContext` carries the
+     * reader and nothing else, and widening that context would change a shape
+     * every installed plugin compiles against.
+     *
+     * Not an invitation to query another module's tables. A module may touch
+     * what it declared; the host itself must keep going through the typed API.
+     */
+    readonly db: Database.Database,
     /**
      * M17: write-path capture needs to read a plugin-contributed type's raw
      * row before snapshotting, not just the 7 core types. Optional — callers

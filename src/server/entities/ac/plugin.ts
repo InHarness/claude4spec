@@ -25,6 +25,45 @@ export const acBackendModule: BackendModule = {
   // server for ac's semantic-audit tool.
   backend: {
     migrations: acMigrations,
+    /**
+     * `ac.verifies[]` holds `{type, slug}` soft references — JSON, no FK — so a
+     * rename of ANY entity type has to be followed by hand: repoint the refs in
+     * the index, then re-persist each affected ac file.
+     *
+     * Formerly a branch in the host's ReferencesService, guarded by a hardcoded
+     * list of "raw entity types". Dropping that guard is deliberate and strictly
+     * more correct: a plugin-contributed type can be the target of a `verifies`
+     * ref, and the old guard silently left those stale.
+     */
+    onEntityRenamed: ({ type, oldSlug, newSlug }, ctx) => {
+      const candidates = ctx.db
+        .prepare('SELECT slug, verifies FROM ac WHERE verifies LIKE ?')
+        .all(`%${oldSlug}%`) as Array<{ slug: string; verifies: string }>;
+      const update = ctx.db.prepare('UPDATE ac SET verifies = ? WHERE slug = ?');
+      for (const ac of candidates) {
+        let parsed: Array<{ type?: string; slug?: string }>;
+        try {
+          parsed = JSON.parse(ac.verifies) as Array<{ type?: string; slug?: string }>;
+          if (!Array.isArray(parsed)) continue;
+        } catch {
+          continue;
+        }
+        let changed = false;
+        for (const ref of parsed) {
+          if (ref && ref.type === type && ref.slug === oldSlug) {
+            ref.slug = newSlug;
+            changed = true;
+          }
+        }
+        if (!changed) continue;
+        update.run(JSON.stringify(parsed), ac.slug);
+        try {
+          ctx.entityStore.persist('ac', ac.slug);
+        } catch {
+          /* skip */
+        }
+      }
+    },
     service: (ctx) => new AcService(ctx.db, ctx.tagsService, ctx.versionService, ctx.host, ctx.entityStore),
     crud: {
       createSchema: acCreateSchema,
