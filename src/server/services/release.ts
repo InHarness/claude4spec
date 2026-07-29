@@ -1304,9 +1304,36 @@ export class ReleaseService {
           });
         }
       }
-      // Delete extras: entities currently present but not in target
+      // Delete extras: entities currently present but not in target.
+      //
+      // 0.2.2 GUARD — only when the release demonstrably COVERS this type, i.e. it
+      // has at least one version row at-or-before it (a `delete` row counts: that
+      // is the release positively asserting "none of these"). Zero rows means the
+      // release carries no information about the type at all — typically because
+      // the type did not exist yet when the release was cut — and treating that
+      // silence as "delete every one of them" would invent an assertion the
+      // release never made.
+      //
+      // This guard exists because widening `order` from the hardcoded four types
+      // to every ACTIVE type (the fix for ac/design-system/diagram being skipped
+      // entirely) also switches ON this destructive pass for them. Without it,
+      // restoring a release cut before `ac` existed would delete every AC in the
+      // project. The skip is REPORTED, never silent.
+      const releaseCoversType = targetRows.length > 0;
       const currentSlugs = new Set(this.rawReader.listSlugs(type));
-      for (const slug of currentSlugs) {
+      if (!releaseCoversType && currentSlugs.size > 0) {
+        entityResults.push({
+          type,
+          slug: '*',
+          op: 'noop',
+          warnings: [
+            `release has no '${type}' history at or before it — ` +
+              `${currentSlugs.size} existing ${type} entities left untouched ` +
+              `(the release makes no assertion about this type)`,
+          ],
+        });
+      }
+      for (const slug of releaseCoversType ? currentSlugs : []) {
         if (targetSlugs.has(slug)) continue;
         // Was this entity present in any earlier release? If so, target says delete.
         // If never released (entity created after target release), still delete to
