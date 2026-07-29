@@ -11,8 +11,11 @@ export default defineConfig({
    * with PLUGIN_IMPORT_FAILED and `endpoint`/`dto` silently vanish from every
    * test, so this alias reproduces exactly what the hook does in production.
    *
-   * `tests/integration/plugins/envelope-load.test.ts` is what proves the real
-   * hook still works — it must not be satisfied by this alias alone.
+   * That makes the alias a risk as well as a convenience: it would keep the
+   * suite green even if the production resolver stopped working. The case in
+   * `plugin-runtime-resolver.subprocess.test.ts` ("builtin envelope — real load
+   * path") is what covers that — it runs outside this module graph, so no alias
+   * can satisfy it.
    */
   resolve: {
     alias: {

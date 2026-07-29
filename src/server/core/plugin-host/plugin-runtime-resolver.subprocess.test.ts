@@ -196,3 +196,43 @@ describe('M33 — resolver from a plugin-like location', () => {
     }
   });
 });
+
+/**
+ * 0.2.2 — the builtin envelope loads for real, through the same resolver.
+ *
+ * The host's vitest config aliases `@c4s/plugin-runtime` so the envelope's built
+ * bundle imports cleanly in-process; without it every test that writes an
+ * endpoint or a dto would fail. That alias is a convenience and it is also a
+ * risk: it would keep the suite green even if the production resolver stopped
+ * working, and the envelope would then be silently absent from every real
+ * install. This case is the one that cannot be satisfied by the alias — it runs
+ * outside vitest's module graph, exactly as the dev server does.
+ */
+describe('builtin envelope — real load path', () => {
+  it('registers endpoint and dto through the loader, not through a test alias', () => {
+    const result = runProbe(
+      `const { loadBuiltinEnvelopes } = await import('./src/server/core/plugin-host/loader.js');\n` +
+        `const { PluginRegistryImpl } = await import('./src/server/core/plugin-host/registry.js');\n` +
+        `const registry = new PluginRegistryImpl();\n` +
+        `const load = await loadBuiltinEnvelopes(registry);\n` +
+        `console.log(JSON.stringify({\n` +
+        `  statuses: load.records.map((r) => r.status),\n` +
+        `  reasons: load.records.map((r) => r.reason ?? null),\n` +
+        `  types: registry.listAvailable().map((m) => m.type).sort(),\n` +
+        `}));`,
+    );
+    expect(result.ok, result.ok ? '' : result.err).toBe(true);
+    if (!result.ok) return;
+
+    const parsed = JSON.parse(result.out.trim().split('\n').pop()!) as {
+      statuses: string[];
+      reasons: Array<string | null>;
+      types: string[];
+    };
+    // A `failed` record here means PLUGIN_IMPORT_FAILED — the bare specifier did
+    // not resolve — which is the exact regression the alias would mask.
+    expect(parsed.reasons.filter(Boolean)).toEqual([]);
+    expect(parsed.statuses).toEqual(['loaded']);
+    expect(parsed.types).toEqual(['dto', 'endpoint']);
+  });
+});
