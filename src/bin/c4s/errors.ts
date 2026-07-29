@@ -41,7 +41,19 @@ export type CliErrorCode =
   // 0.1.104 — `c4s agent --ct brief` create-mode error propagation.
   | 'VALIDATION'
   | 'BRIEF_SAME_RELEASE'
-  | 'RELEASE_NOT_FOUND';
+  | 'RELEASE_NOT_FOUND'
+  // 0.2.1 M38 — `c4s create-plugin` (mode `scaffold`). INVALID_TARGET and
+  // TARGET_EXISTS are raised before anything is fetched or written;
+  // TEMPLATE_FETCH_FAILED rolls back what this run created; INSTALL_FAILED
+  // deliberately does NOT (the files stay, so a retry needs no refetch).
+  | 'INVALID_TARGET'
+  | 'TARGET_EXISTS'
+  | 'TEMPLATE_FETCH_FAILED'
+  // Not in the brief, which has no code for a write failure during expansion:
+  // without it a read-only target or ENOSPC escapes untyped and the bin reports
+  // it as UNKNOWN_COMMAND/exit 1. Rolls back like the two above it.
+  | 'SCAFFOLD_WRITE_FAILED'
+  | 'INSTALL_FAILED';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

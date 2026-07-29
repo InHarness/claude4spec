@@ -27,6 +27,7 @@ import { readBriefCommand } from './c4s/commands/read-brief.js';
 import { filePatchCommand } from './c4s/commands/file-patch.js';
 import { markBriefImplementedCommand } from './c4s/commands/mark-brief-implemented.js';
 import { installSkillsCommand } from './c4s/commands/install-skills.js';
+import { createPluginCommand } from './c4s/commands/create-plugin.js';
 
 /**
  * L14 — CLI Commands: every command a module contributes to this bin, keyed
@@ -55,6 +56,7 @@ const COMMANDS: CliCommandContribution[] = [
   filePatchCommand,
   markBriefImplementedCommand,
   installSkillsCommand,
+  createPluginCommand,
 ];
 const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name, c]));
 
@@ -114,6 +116,12 @@ Skills (M22 — filesystem-only, no server, no sqlite; on-demand, no bootstrap s
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
                   writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
                   CODE repo), not the --project spec repo; --skills default: all three
+
+Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server, no sqlite):
+  create-plugin <target-dir> [--template <git-url>] [--branch <name>] [--force] [--no-install]
+                  creates <target-dir> under the current working directory and fills it from
+                  the scaffold repo (default: github.com/InHarness/c4s-plugin-scaffold), git
+                  history NOT carried over, then runs npm install unless --no-install
 
 Global flags:
   --project <path|name>  override project (path tried first, else matched by registered name)
@@ -207,6 +215,18 @@ function codeToExit(code: string): number {
       return 13;
     case 'SKILLS_WRITE_FAILED':
       return 14;
+    // M38 `create-plugin` — INSTALL_FAILED is non-zero too, even though it is
+    // the one code that leaves the scaffolded files on disk.
+    case 'INVALID_TARGET':
+      return 15;
+    case 'TARGET_EXISTS':
+      return 16;
+    case 'TEMPLATE_FETCH_FAILED':
+      return 17;
+    case 'INSTALL_FAILED':
+      return 18;
+    case 'SCAFFOLD_WRITE_FAILED':
+      return 19;
     // PROJECT_NOT_IN_WORKSPACE → 1 (ask-group, like other server-side ask errors)
     default:
       return 1;

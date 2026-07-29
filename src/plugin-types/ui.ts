@@ -205,6 +205,16 @@ export interface DialogProps {
   size?: 'sm' | 'md' | 'lg';
   /** Exact panel width in px, overriding `size`. */
   width?: number;
+  /**
+   * Defaults to `true`. With `false` the scrim click, `Escape` and the header ✕
+   * are gone — for decision gates that must not be left unresolved; the
+   * consumer calls `onClose()` after an explicit action.
+   */
+  dismissible?: boolean;
+  /** Accessible name when there is no `title` to derive one from. */
+  ariaLabel?: string;
+  /** Scrim stacking order; defaults to 1200. Raise it for a blocking gate. */
+  zIndex?: number;
 }
 export declare const Dialog: ComponentType<DialogProps>;
 

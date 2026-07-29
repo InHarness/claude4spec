@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { withStability } from '../stability.js';
 
@@ -10,7 +10,8 @@ import { withStability } from '../stability.js';
  * scrim/panel/focus chrome per entity.
  *
  * Controlled: the consumer owns `open` and closes via `onClose` (scrim click,
- * the header ✕, or Escape). Pure-presentational — owns no data, fetches nothing.
+ * the header ✕, or Escape — none of which exist when `dismissible` is false).
+ * Pure-presentational — owns no data, fetches nothing.
  *
  * Distinct from the host-internal `ConfirmModal`/`ModalHost` (L5): that one is an
  * imperative event-bus singleton for destructive-confirm; this is controlled
@@ -35,6 +36,29 @@ export interface DialogProps {
    * other call site shares.
    */
   width?: number;
+  /**
+   * Whether the dialog can be dismissed without answering it. Defaults to
+   * `true`. With `false` the scrim click, `Escape` and the header ✕ are all
+   * gone and the consumer calls `onClose()` itself after an explicit action —
+   * for decision gates that must not be left unresolved (the project-local
+   * plugin trust prompt, M33: a reflexive click beside the panel must not be
+   * able to start running foreign code). Focus-trap, scrim and panel anatomy
+   * are identical either way; the difference is purely behavioural. Forms stay
+   * dismissible — there "Cancel" is a real answer.
+   */
+  dismissible?: boolean;
+  /**
+   * Accessible name when there is no `title` to derive one from. With a
+   * `title`, the panel is labelled by it automatically and this is unnecessary.
+   */
+  ariaLabel?: string;
+  /**
+   * Stacking order of the scrim, defaulting to 1200 (above `Popover` 1100,
+   * below `z-toast` 1300). An escape hatch for a dialog that must outrank every
+   * other overlay — a blocking gate has to stay clickable even if another modal
+   * opens behind it.
+   */
+  zIndex?: number;
 }
 
 const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
@@ -46,9 +70,21 @@ const SIZE_WIDTH: Record<NonNullable<DialogProps['size']>, number> = {
 const FOCUSABLE =
   'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
-function DialogImpl({ open, onClose, title, footer, children, size = 'md', width }: DialogProps) {
+function DialogImpl({
+  open,
+  onClose,
+  title,
+  footer,
+  children,
+  size = 'md',
+  width,
+  dismissible = true,
+  ariaLabel,
+  zIndex = 1200,
+}: DialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
+  const titleId = useId();
 
   // Captured during the FIRST render that sees `open` — before the panel is
   // committed, so before a child's `autoFocus` runs. An effect would be too
@@ -66,6 +102,11 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
+  // Read through a ref for the same reason as `onClose`: the keydown listener
+  // is keyed on `open` alone, so it must not capture this at mount time.
+  const dismissibleRef = useRef(dismissible);
+  dismissibleRef.current = dismissible;
+
   useEffect(() => {
     if (!open) return;
     // Move focus into the panel (first focusable, else the panel itself) —
@@ -80,7 +121,10 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
     }, 0);
 
     const onKey = (e: KeyboardEvent) => {
+      // Escape closes only a dismissible dialog. The Tab trap below stays
+      // wired either way — a gate still confines focus to its own panel.
       if (e.key === 'Escape') {
+        if (!dismissibleRef.current) return;
         e.preventDefault();
         onCloseRef.current();
         return;
@@ -89,6 +133,16 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
       // Trap Tab within the panel's focusable elements.
       const panel = panelRef.current;
       if (!panel) return;
+      // Focus may have left the panel entirely — a click on the scrim of a
+      // non-dismissible dialog leaves `document.activeElement` on <body>, and
+      // wrap-at-the-edges alone would then let Tab walk into the shell behind
+      // the scrim. Pull it back before considering the edges.
+      if (!panel.contains(document.activeElement)) {
+        e.preventDefault();
+        const firstOutside = panel.querySelector<HTMLElement>(FOCUSABLE);
+        (firstOutside ?? panel).focus();
+        return;
+      }
       const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE));
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
@@ -125,10 +179,21 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
     <div
       role="dialog"
       aria-modal="true"
+      // Without one of these a screen reader announces only "dialog" — the user
+      // lands in a modal with no idea what it is asking.
+      aria-labelledby={title != null ? titleId : undefined}
+      aria-label={title == null ? ariaLabel : undefined}
       className="fixed inset-0 flex items-center justify-center"
-      style={{ background: 'rgba(0,0,0,0.4)', zIndex: 1200 }}
+      style={{ background: 'rgba(0,0,0,0.4)', zIndex }}
       onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target !== e.currentTarget) return;
+        if (!dismissible) {
+          // Swallow it: without this the mousedown blurs whatever was focused
+          // inside the panel and drops focus onto <body>, outside the trap.
+          e.preventDefault();
+          return;
+        }
+        onClose();
       }}
     >
       <div
@@ -150,21 +215,24 @@ function DialogImpl({ open, onClose, title, footer, children, size = 'md', width
             style={{ borderBottom: '1px solid var(--c-hair)' }}
           >
             <div
+              id={titleId}
               className="text-[14px] font-semibold min-w-0"
               style={{ fontFamily: 'var(--font-heading)', color: 'var(--c-ink)' }}
             >
               {title}
             </div>
             <span className="flex-1" />
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-md p-1 btn-ghost"
-              style={{ color: 'var(--c-muted)' }}
-            >
-              <X size={14} />
-            </button>
+            {dismissible && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded-md p-1 btn-ghost"
+                style={{ color: 'var(--c-muted)' }}
+              >
+                <X size={14} />
+              </button>
+            )}
           </div>
         )}
         <div className="px-5 py-4 overflow-auto nice-scroll">{children}</div>

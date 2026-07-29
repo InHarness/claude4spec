@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { Dialog } from '../host-ui-kit/overlay/Dialog.js';
 import { ApiError, metaApi } from '../lib/api.js';
 import { toast } from '../ui/events.js';
 
@@ -14,6 +15,11 @@ import { toast } from '../ui/events.js';
  * execution before the overlay is built. After a decision the server rebuilds the
  * `ProjectContext` (no process restart); we refetch the activation partition so
  * newly-trusted overlay types wake without a full reload.
+ *
+ * Rendered as the catalog `Dialog` with `dismissible={false}`: the two footer
+ * buttons are the only ways out, so an accidental click beside the panel cannot
+ * start running foreign code. An unresolved gate simply comes back on the next
+ * context build.
  */
 export function TrustPluginsModal() {
   const qc = useQueryClient();
@@ -47,82 +53,20 @@ export function TrustPluginsModal() {
   }
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Trust project plugins"
-      style={{
-        position: 'fixed',
-        inset: 0,
-        background: 'rgba(0,0,0,0.35)',
-        zIndex: 1300,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-      }}
-    >
-      <div
-        style={{
-          width: 460,
-          maxWidth: 'calc(100vw - 32px)',
-          background: 'var(--c-card)',
-          border: '1px solid var(--c-hair-strong)',
-          borderRadius: 8,
-          padding: 20,
-          boxShadow: '0 20px 48px rgba(0,0,0,0.20)',
-        }}
-      >
-        <div
-          style={{
-            fontFamily: 'Lora, serif',
-            fontSize: 16,
-            color: 'var(--c-ink)',
-            marginBottom: 10,
-            fontWeight: 500,
-          }}
-        >
-          Trust this project's plugins?
-        </div>
-        <div
-          style={{
-            fontSize: 13.5,
-            color: 'var(--c-muted)',
-            lineHeight: 1.5,
-            marginBottom: 14,
-          }}
-        >
-          This project ships plugins committed to its repository. Loading them runs
-          their code on your machine. Only trust plugins from a source you trust.
-          Your decision is stored locally (never in the repo).
-        </div>
-        <ul
-          style={{
-            listStyle: 'none',
-            margin: '0 0 20px',
-            padding: 0,
-            maxHeight: 180,
-            overflowY: 'auto',
-            border: '1px solid var(--c-hair)',
-            borderRadius: 6,
-          }}
-        >
-          {overlayPackages.map((p) => (
-            <li
-              key={p.package}
-              style={{
-                padding: '8px 12px',
-                borderBottom: '1px solid var(--c-hair)',
-                fontSize: 12.5,
-              }}
-            >
-              <span style={{ color: 'var(--c-ink)', fontWeight: 500 }}>{p.package}</span>
-              <span style={{ color: 'var(--c-subtle)', fontFamily: 'monospace', marginLeft: 8 }}>
-                {p.origin}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+    <Dialog
+      open
+      dismissible={false}
+      // Unreachable with `dismissible={false}` — the gate is resolved by
+      // `decide()`, which flips the query state and unmounts this component.
+      onClose={() => {}}
+      width={460}
+      // Above every other overlay, as the hand-rolled scrim it replaced was:
+      // a gate that another modal can paint over is a gate that cannot be
+      // answered, and this one blocks the shell on first open.
+      zIndex={1300}
+      title="Trust this project's plugins?"
+      footer={
+        <>
           <button
             onClick={() => decide(false)}
             disabled={busy}
@@ -151,8 +95,48 @@ export function TrustPluginsModal() {
           >
             Trust &amp; load
           </button>
-        </div>
+        </>
+      }
+    >
+      <div
+        style={{
+          fontSize: 13.5,
+          color: 'var(--c-muted)',
+          lineHeight: 1.5,
+          marginBottom: 14,
+        }}
+      >
+        This project ships plugins committed to its repository. Loading them runs
+        their code on your machine. Only trust plugins from a source you trust.
+        Your decision is stored locally (never in the repo).
       </div>
-    </div>
+      <ul
+        style={{
+          listStyle: 'none',
+          margin: 0,
+          padding: 0,
+          maxHeight: 180,
+          overflowY: 'auto',
+          border: '1px solid var(--c-hair)',
+          borderRadius: 6,
+        }}
+      >
+        {overlayPackages.map((p) => (
+          <li
+            key={p.package}
+            style={{
+              padding: '8px 12px',
+              borderBottom: '1px solid var(--c-hair)',
+              fontSize: 12.5,
+            }}
+          >
+            <span style={{ color: 'var(--c-ink)', fontWeight: 500 }}>{p.package}</span>
+            <span style={{ color: 'var(--c-subtle)', fontFamily: 'monospace', marginLeft: 8 }}>
+              {p.origin}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </Dialog>
   );
 }
