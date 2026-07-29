@@ -103,8 +103,13 @@ export class RawEntityReader {
      * row before snapshotting, not just the 7 core types. Optional — callers
      * that only ever touch core types (CLI tools, reference-tools,
      * ac-analysis) keep working unchanged without a host.
+     *
+     * 0.2.2 — public for the same reason as `db` above: a module's restore path
+     * needs the service resolver (`getEntityService`) to drive its own auxiliary
+     * writes, and `RestoreContext` carries the reader and the writer, nothing
+     * else.
      */
-    private host?: ProjectPluginHost,
+    readonly host?: ProjectPluginHost,
   ) {}
 
   /**

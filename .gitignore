@@ -63,3 +63,10 @@ c4s-cpanel/package.json
 !docker/environments/*/seed/project/pages/**
 !docker/environments/*/seed/project/.claude4spec/
 !docker/environments/*/seed/project/.claude4spec/**
+
+# Envelope build output is a real artifact, but it must SHIP: `package.json#files`
+# includes `plugins/*/dist`, and npm applies .gitignore inside included dirs, so
+# without this negation the published host would silently carry no envelope.
+# Negations must stay at the end of this file.
+!plugins/*/dist/
+!plugins/*/dist/**

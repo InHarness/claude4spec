@@ -81,8 +81,17 @@ export interface MountContext {
   entityStore: any;
   registerMcpServer(name: string, factory: () => unknown): void;
   registerEntityService(type: string, service: unknown): void;
+  /** 0.2.2 — see `backend.onEntityRenamed`; `synthesizeMount` uses this to bind it. */
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
 export type PluginMountFn = (ctx: MountContext) => void;
+
+/** 0.2.2 — an entity changed slug. See `backend.onEntityRenamed`. */
+export interface EntityRenamedEvent {
+  type: string;
+  oldSlug: string;
+  newSlug: string;
+}
 
 // ── M13 — generic entity-tools backend contract (declarative `backend.service`/
 // `backend.crud` slots). A plugin implements this interface directly; the
@@ -187,14 +196,44 @@ export declare function mcpTool(
 export declare const z: typeof import('zod').z;
 
 // ── L9 serializer ──
+/**
+ * 0.2.2 — the reader, named. Previously `unknown`, which meant a plugin could
+ * not read its own rows without casting the whole context.
+ *
+ * `db` and `host` are the escape hatches a type owning AUXILIARY tables needs:
+ * a junction or side index cannot be expressed through the generic single-row
+ * read, and `getEntityService` is how its restore path reaches its own service.
+ * Both are `any` for the usual reason — their real types are better-sqlite3 and
+ * the host's own registry, neither of which belongs in this contract.
+ */
+export interface HostEntityReader {
+  /** The project database. Touch what your module declared; nothing else. */
+  db: any;
+  /** The project plugin host, when one was wired. */
+  host?: {
+    getEntity(type: string): unknown;
+    getEntityService?(type: string): unknown;
+  };
+  getEntity(type: string, slug: string): unknown;
+  /** Page sections referencing this entity — `{anchor, pagePath, headingText, relation}`. */
+  findSectionReferences(type: string, slug: string): unknown[];
+}
+
+/** 0.2.2 — the restore-path writer, named. See `HostEntityReader`. */
+export interface HostEntityWriter {
+  upsert(type: string, slug: string, input: unknown, actor: 'user' | 'agent', opts?: unknown): unknown;
+  syncTags(type: string, slug: string, tags: string[]): void;
+  delete(type: string, slug: string, actor: 'user' | 'agent'): unknown;
+}
+
 export interface SerializeContext {
-  reader: unknown;
+  reader: HostEntityReader;
   depth: number;
   maxDepth: number;
 }
 export interface RestoreContext {
-  reader: unknown;
-  writer: unknown;
+  reader: HostEntityReader;
+  writer: HostEntityWriter;
   releaseId: number | null;
   actor: 'user' | 'agent';
 }
