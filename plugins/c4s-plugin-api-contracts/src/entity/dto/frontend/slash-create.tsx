@@ -11,22 +11,25 @@ import { Braces } from 'lucide-react';
 import { FieldLabel, InlineError, PopoverFooter, TextInput } from '../../../frontend-kit/popover-form.js';
 import {
   SlashPopoverShell,
+  type CaretCoords,
   insertEmbed,
   mountSlashCreatePopover,
   useSlashSubmit,
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import { toast } from '../../../frontend-kit/host-events.js';
-import { DTO_TYPE } from '../../../identity.js';
+import { DTO_POPOVER_KIND, DTO_TYPE } from '../../../identity.js';
 import { dtosApi } from './api.js';
 
-export const DTO_POPOVER_KIND = `${DTO_TYPE}-create`;
+export { DTO_POPOVER_KIND };
 
 export function DtoSlashCreatePopover({
   editor,
+  coords,
   onClose,
 }: {
   editor: EmbedEditor;
+  coords: CaretCoords | null;
   onClose: () => void;
 }) {
   const [name, setName] = useState('');
@@ -62,6 +65,7 @@ export function DtoSlashCreatePopover({
     <SlashPopoverShell
       width={340}
       title="New DTO"
+      coords={coords}
       icon={<Braces size={12} style={{ color: 'var(--c-accent)' }} />}
       onCancel={onClose}
     >

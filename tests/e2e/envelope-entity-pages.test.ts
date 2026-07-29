@@ -144,7 +144,20 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
 
     await page.goto(`${BASE}/p/${project.id}/endpoints/${slug}`, { waitUntil: 'networkidle' });
-    await expect.poll(() => page.locator('body').innerText()).not.toMatch(/not found/i);
+
+    // Poll FOR the page, never against the failure.
+    //
+    // `expect.poll` retries until the assertion PASSES, so a negative matcher is
+    // satisfied by the first sample — including the pre-hydration shell, which
+    // contains no text at all and therefore no "not found" either. Written that
+    // way this case went green with the `defaultNotFoundComponent` fix reverted,
+    // i.e. it could not fail for the reason it exists.
+    //
+    // Waiting for the slug to appear is a positive condition that only the
+    // rendered detail page satisfies, so the not-found path fails it by timing
+    // out. The negative check then runs on settled content and is meaningful.
+    await expect.poll(() => page.locator('body').innerText()).toMatch(slug);
+    expect(await page.locator('body').innerText()).not.toMatch(/not found/i);
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);

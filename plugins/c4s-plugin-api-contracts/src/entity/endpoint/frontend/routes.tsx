@@ -18,16 +18,11 @@ import type { RouteTreeFragment } from '@c4s/plugin-runtime';
 import { ENDPOINT_PATH_PREFIX, ENDPOINT_TYPE } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { toDetail, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
+import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { useEndpoint } from './hooks.js';
 import { EndpointsList } from './list-page.js';
 import { EndpointDetail } from './detail-panel.js';
 
-/** The scroll container every route body sits in — the host's own `RoutePane`. */
-const Pane: FC<{ children: React.ReactNode }> = ({ children }) => (
-  <main style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto', background: 'var(--c-bg)' }}>
-    {children}
-  </main>
-);
 
 type ListSearch = { q?: string; tag?: string };
 
@@ -63,7 +58,9 @@ function EndpointDetailRoute() {
   const { data: endpoint } = useEndpoint(slug);
 
   return (
-    <Pane>
+    // RouteBody, not Pane: the detail panel renders a DocEditor for the
+    // description, and the chips inside it need the host's editor bridge.
+    <RouteBody navigate={navigate}>
       <EntityBreadcrumbBar
         type={ENDPOINT_TYPE}
         slug={slug}
@@ -80,7 +77,7 @@ function EndpointDetailRoute() {
         onRenamed={(newSlug) => toDetail(navigate, ENDPOINT_PATH_PREFIX, newSlug, { replace: true })}
         onOpenPage={(rootId, path) => toPage(navigate, rootId, path)}
       />
-    </Pane>
+    </RouteBody>
   );
 }
 

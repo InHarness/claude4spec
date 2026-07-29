@@ -49,6 +49,18 @@
  */
 
 export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
+/**
+ * 0.2.2 — `DomainError`, re-exported as a VALUE for the same single-instance
+ * reason as the MCP builders and `z` below, but with a sharper failure mode:
+ * the host narrows on it with `instanceof`, in the MCP `itemError` mapper
+ * (`mcp/entity-tools.ts`) and in the global Express handler (`routes/errors.ts`).
+ * A plugin that declares its own class satisfies every structural type-check and
+ * still fails both narrowings at runtime — a `SLUG_CONFLICT` a plugin service
+ * raises comes back to the caller as `INTERNAL`/500 instead of 409. Class
+ * identity is not structural, so the ONLY way a plugin can raise an error the
+ * host recognises is to throw this exact class.
+ */
+export { DomainError } from '../services/tags.js';
 // MCP builder facade (0.1.133) — VALUES re-exported from the internal vendor.
 export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
 // zod facade (0.1.134→next) — the host's OWN `z` re-exported as a VALUE. A plugin's

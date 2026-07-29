@@ -171,16 +171,12 @@ export const dtoFrontendModule: FrontendModule = {
   useGetBySlug: (slug) => useDto(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => dtosApi.list({ tags, tagFilter: filter }),
   routes: dtoRoutes,
-  editorExtensions: [
-    {
-      name: 'dto-slash',
-      slashCommand: {
-        id: 'dto',
-        label: '/dto',
-        description: 'Create a new DTO inline',
-        hint: 'name',
-      },
-    },
-  ],
+  // NO `editorExtensions` slash command here. The manifest's `commands`
+  // contribution (`capabilities/commands.ts`) is the one that works: it carries
+  // a `popoverKind`, which is what `invokeSlash` dispatches on. A second entry
+  // declared here would carry none, and since the host filters the palette by
+  // substring both would show for `/{trigger}` — with THIS one selected by
+  // default, because frontend modules mount before plugin commands register.
+  // Choosing it deleted the typed text and opened nothing.
   sidebarTab: { icon: Braces, label: 'DTOs', order: 20 },
 };

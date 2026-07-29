@@ -25,7 +25,7 @@ import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
-import { discoverBuiltinEnvelopes } from './core/plugin-host/builtin-envelopes.js';
+import { discoverBuiltinEnvelopes, servableEnvelopes } from './core/plugin-host/builtin-envelopes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -252,8 +252,17 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
   // before node_modules and before the workspace registry, so core code claims its
   // types before anything external could shadow them.
-  const envelopes = discoverBuiltinEnvelopes();
+  const discoveredEnvelopes = discoverBuiltinEnvelopes();
   const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
+  // Serve an envelope's FRONTEND only if its backend actually registered — see
+  // `servableEnvelopes` for why absent beats broken here.
+  const envelopes = servableEnvelopes(discoveredEnvelopes, envelopeLoad.records);
+  for (const e of discoveredEnvelopes) {
+    if (envelopes.includes(e)) continue;
+    console.warn(
+      `[plugin-host] envelope '${e.name}' did not load — its frontend bundle will NOT be served`,
+    );
+  }
   const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
   pluginLoad.records.unshift(...envelopeLoad.records);
 

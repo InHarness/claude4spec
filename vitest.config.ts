@@ -1,4 +1,14 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig, configDefaults } from 'vitest/config';
+
+/**
+ * `new URL(...).pathname` is NOT a filesystem path: it keeps percent-encoding,
+ * so a checkout under a directory with a space resolves to a path that does not
+ * exist, and on Windows it yields a leading-slash `/C:/…`. `fileURLToPath` is
+ * the decode step. An alias that silently resolves to nothing would take the
+ * whole envelope down with it — see the comment on `resolve.alias` below.
+ */
+const here = (rel: string) => fileURLToPath(new URL(rel, import.meta.url));
 
 export default defineConfig({
   /**
@@ -19,15 +29,21 @@ export default defineConfig({
    */
   resolve: {
     alias: {
-      '@c4s/plugin-runtime/ui': new URL('./src/server/plugin-runtime/ui.ts', import.meta.url).pathname,
-      '@c4s/plugin-runtime': new URL('./src/server/plugin-runtime/index.ts', import.meta.url).pathname,
+      '@c4s/plugin-runtime/ui': here('./src/server/plugin-runtime/ui.ts'),
+      '@c4s/plugin-runtime': here('./src/server/plugin-runtime/index.ts'),
     },
   },
   test: {
     environment: 'node',
     // native better-sqlite3 crashes under worker_threads; forks are safe
     pool: 'forks',
-    include: ['src/**/*.test.ts', 'tests/**/*.test.ts'],
+    // `plugins/*/test/**` is the builtin-envelope tier. Its suites are the
+    // guards for bugs that reached a running environment during 0.2.2 and are
+    // invisible to typecheck; leaving them to the separate `test:envelopes`
+    // script meant `npm test` — the only command CI and habit actually run —
+    // collected neither of them. The alias above is what lets them resolve
+    // `@c4s/plugin-runtime` from this config.
+    include: ['src/**/*.test.ts', 'tests/**/*.test.ts', 'plugins/*/test/**/*.test.ts'],
     // `tests/e2e/**` drives a real browser against a RUNNING app (env-runner URL
     // in `C4S_E2E_BASE_URL`) — it must never join the hermetic default run.
     // Own runner: `npm run test:e2e` (vitest.e2e.config.ts). They still end in

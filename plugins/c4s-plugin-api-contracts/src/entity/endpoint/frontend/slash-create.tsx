@@ -14,25 +14,28 @@ import {
 } from '../../../frontend-kit/popover-form.js';
 import {
   SlashPopoverShell,
+  type CaretCoords,
   insertEmbed,
   mountSlashCreatePopover,
   useSlashSubmit,
   type EmbedEditor,
 } from '../../../frontend-kit/slash-create.js';
 import { toast } from '../../../frontend-kit/host-events.js';
-import { ENDPOINT_TYPE } from '../../../identity.js';
+import { ENDPOINT_POPOVER_KIND, ENDPOINT_TYPE } from '../../../identity.js';
 import type { HttpMethod } from '../../../types.js';
 import { endpointsApi } from './api.js';
 
-export const ENDPOINT_POPOVER_KIND = `${ENDPOINT_TYPE}-create`;
+export { ENDPOINT_POPOVER_KIND };
 
 const HTTP_METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 
 export function EndpointSlashCreatePopover({
   editor,
+  coords,
   onClose,
 }: {
   editor: EmbedEditor;
+  coords: CaretCoords | null;
   onClose: () => void;
 }) {
   const [method, setMethod] = useState<HttpMethod>('GET');
@@ -78,6 +81,7 @@ export function EndpointSlashCreatePopover({
     <SlashPopoverShell
       width={360}
       title="New endpoint"
+      coords={coords}
       icon={<ArrowRightLeft size={12} style={{ color: 'var(--c-accent)' }} />}
       onCancel={onClose}
     >

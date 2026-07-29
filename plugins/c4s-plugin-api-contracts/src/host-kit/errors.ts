@@ -1,25 +1,26 @@
 /**
- * The package's own error vocabulary and Express error handler.
+ * The package's Express error handler.
  *
- * `DomainError` is copied from the host's `services/tags.ts` and the handler is
- * the subset of the host's `routes/errors.ts` that these two types can actually
- * raise. A router mounted by a plugin terminates its own error chain — reaching
- * for the host's handler would be reaching for a host internal, and the host's
- * table maps three dozen codes belonging to release, brief, patch and remote
- * flows that nothing here can produce.
+ * The handler is the subset of the host's `routes/errors.ts` that these two
+ * types can actually raise. A router mounted by a plugin terminates its own
+ * error chain — reaching for the host's handler would be reaching for a host
+ * internal, and the host's table maps three dozen codes belonging to release,
+ * brief, patch and remote flows that nothing here can produce.
+ *
+ * `DomainError` is the one thing here that is NOT the package's own. It was
+ * copied from the host at first, which type-checked and was wrong: the host
+ * narrows on it with `instanceof`, in the MCP entity-tools error mapper and in
+ * its global Express handler, and class identity is nominal. A second class of
+ * the same shape turned every `SLUG_CONFLICT` raised by these services into an
+ * `INTERNAL` 500 by the time it reached an agent or a version-restore caller.
+ * 0.2.2 publishes the host's class through the runtime facade for exactly this
+ * reason; re-exported here so the services' import path stays local.
  */
 
 import type { ErrorRequestHandler } from 'express';
+import { DomainError } from '@c4s/plugin-runtime';
 
-export class DomainError extends Error {
-  constructor(
-    public code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'DomainError';
-  }
-}
+export { DomainError };
 
 const STATUS_FOR_CODE: Record<string, number> = {
   NOT_FOUND: 404,

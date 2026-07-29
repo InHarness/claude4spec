@@ -81,6 +81,10 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
   'registerFrontendModule',
   'queryClient',
   'editorBridge',
+  // 0.2.2 — the WRITE side of the bridge, needed by a plugin that owns page
+  // routes: its detail route must supply one or every entity chip in the body
+  // silently stops navigating.
+  'EditorBridgeProvider',
   'registerExtensionReferenceType',
   // M34/L11: frontend data-service singletons + hooks, additive to the 1.0.0
   // baseline (no HOST_API_VERSION bump).
@@ -113,7 +117,13 @@ export const PLUGIN_RUNTIME_EXPORT_NAMES = [
  * (`published-surface.test.ts`) asserts the barrel exports exactly these and
  * that the published `.d.ts` declares their facade signatures.
  */
-export const PLUGIN_RUNTIME_BACKEND_VALUE_NAMES = ['createMcpServer', 'mcpTool'] as const;
+export const PLUGIN_RUNTIME_BACKEND_VALUE_NAMES = [
+  'createMcpServer',
+  'mcpTool',
+  // 0.2.2 — the host narrows on this class with `instanceof`, so a plugin that
+  // declares its own copy loses every structured error code to INTERNAL/500.
+  'DomainError',
+] as const;
 
 /**
  * The VALUE exports of `@c4s/plugin-runtime/ui` (Host UI Kit catalog, M34/L12) —

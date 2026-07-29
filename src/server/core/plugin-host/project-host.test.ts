@@ -149,6 +149,61 @@ describe('mountBackend — runs declared plugin migrations (L1/M13)', () => {
   });
 });
 
+/**
+ * Deactivating a type must remain the way out of a plugin that cannot migrate.
+ *
+ * 0.2.2 migrates every AVAILABLE module, not just the active ones, so a
+ * deactivated type keeps its (empty) table — see `upgrade-adoption.test.ts`.
+ * That change also removed an operator's only recovery: before it, dropping a
+ * type from `config.entities` meant its migrations were never consulted. After
+ * it, a third-party plugin whose SQL will not apply against THIS project's data
+ * threw out of `mountBackend` regardless, and M31 turned that into a permanent
+ * `PROJECT_BUILD_FAILED` — every request 500, no configuration able to clear it
+ * short of uninstalling the package.
+ *
+ * So the isolation is asymmetric on purpose, and both halves are pinned here.
+ */
+describe('mountBackend — a broken migration in a DEACTIVATED type', () => {
+  const broken: SqlMigration[] = [
+    { version: 1, name: 'not_sql', up: 'CREATE TABLE ( this is not valid sql' },
+  ];
+  const fine: SqlMigration[] = [
+    { version: 1, name: 'create_good', up: 'CREATE TABLE IF NOT EXISTS good (slug TEXT PRIMARY KEY);' },
+  ];
+
+  function hostWith(config: { entities?: string[] } | null) {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule({ ...mod('good'), backend: { migrations: fine } });
+    registry.registerEntityModule({ ...mod('rotten'), backend: { migrations: broken } });
+    return registry.consolidate(config);
+  }
+
+  it('does not fail the project build, and the rest of the schema still applies', () => {
+    const db = new Database(':memory:');
+    const host = hostWith({ entities: ['good'] });
+
+    expect(() => host.mountBackend({ db } as unknown as MountContext)).not.toThrow();
+
+    // The healthy type is unaffected — isolation, not a blanket try/catch
+    // around the whole pass.
+    const tables = (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{ name: string }>
+    ).map((r) => r.name);
+    expect(tables).toContain('good');
+    db.close();
+  });
+
+  it('still fails the build when the SAME type is ACTIVE', () => {
+    // An active type's schema is load-bearing: serving it with no table fails
+    // later and more confusingly than failing here.
+    const db = new Database(':memory:');
+    const host = hostWith({ entities: ['good', 'rotten'] });
+
+    expect(() => host.mountBackend({ db } as unknown as MountContext)).toThrow();
+    db.close();
+  });
+});
+
 describe('buildMcpServers — one malformed plugin must not kill the turn', () => {
   /** A valid handle is the `{server, config}` shape `createMcpServer(...)` returns. */
   const validInstance = (name: string) => ({ server: { __name: name }, config: { type: 'sdk' } });

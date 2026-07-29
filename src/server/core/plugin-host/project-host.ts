@@ -165,7 +165,34 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     // `dependsOn` order, so interleaving would make correctness depend on two
     // unrelated numbers lining up. It also means no mount can observe a
     // half-migrated schema.
-    for (const m of this.listAvailable()) runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+    // A DEACTIVATED module's migration failure is isolated; an ACTIVE one's is
+    // not. Before this release, dropping a type from `config.entities` was the
+    // operator's way out of a plugin whose schema will not apply against this
+    // project's data — it stopped being consulted at all. Migrating every
+    // available module took that escape away: the migration ran regardless, threw
+    // out of here, and M31 turned it into a permanent PROJECT_BUILD_FAILED that
+    // no configuration could clear short of uninstalling the package.
+    //
+    // A deactivated type contributes no service, no routes and no tools, so its
+    // missing table costs only itself — and every host read resolves a table
+    // through existence now, so absence is handled rather than thrown. An ACTIVE
+    // type's schema IS load-bearing, and a project serving one with no table
+    // would fail later and more confusingly than it fails here.
+    const active = new Set(this.listEntities().map((m) => m.type));
+    for (const m of this.listAvailable()) {
+      if (active.has(m.type)) {
+        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+        continue;
+      }
+      try {
+        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+      } catch (err) {
+        console.warn(
+          `[plugin-host] migrations for DEACTIVATED type '${m.type}' failed — ` +
+            `continuing without its table: ${(err as Error).message}`,
+        );
+      }
+    }
     for (const m of this.listEntities()) m.backend?.mount?.(ctx);
   }
 

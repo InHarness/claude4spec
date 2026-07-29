@@ -1,6 +1,5 @@
 import type { PluginCommandContribution } from '@c4s/plugin-runtime';
-import { DTO_POPOVER_KIND } from '../entity/dto/frontend/slash-create.js';
-import { ENDPOINT_POPOVER_KIND } from '../entity/endpoint/frontend/slash-create.js';
+import { DTO_POPOVER_KIND, ENDPOINT_POPOVER_KIND } from '../identity.js';
 
 /**
  * The two slash commands, declared.
@@ -11,8 +10,11 @@ import { ENDPOINT_POPOVER_KIND } from '../entity/endpoint/frontend/slash-create.
  * `popoverKind`. Everything after that is this package's — see
  * `frontend-kit/slash-create.tsx`.
  *
- * The kinds are imported from the popovers themselves rather than restated, so
- * a rename cannot silently unhook the command from its handler.
+ * The kinds are imported from `identity.ts` rather than restated, so a rename
+ * cannot silently unhook the command from its handler. They live THERE and not
+ * beside the popovers because this file is backend-reachable — see the note on
+ * the constants; importing them from a `.tsx` dragged React onto the server's
+ * plugin-load path.
  */
 export const apiContractCommands: PluginCommandContribution[] = [
   {

@@ -175,3 +175,24 @@ export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()
   }
   return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/**
+ * The envelopes whose FRONTEND may be served: those whose backend actually
+ * registered.
+ *
+ * Discovery answers "is there a bundle on disk". Loading answers "did it import
+ * and contribute its types" — and the loader is deliberately fail-soft, so one
+ * unimportable package cannot stop bootstrap. Feeding the frontend manifest from
+ * discovery alone lets a FAILED envelope still put its sidebar tab and its
+ * routes on screen with no backend behind them: the list, the detail and every
+ * mutation 404, and the type looks broken rather than absent. The design says an
+ * envelope that did not load leaves the host simply without that type, and
+ * absent beats broken — so the two decisions are made from the same fact here.
+ */
+export function servableEnvelopes(
+  discovered: BuiltinEnvelope[],
+  records: Array<{ package: string; status: string }>,
+): BuiltinEnvelope[] {
+  const loaded = new Set(records.filter((r) => r.status === 'loaded').map((r) => r.package));
+  return discovered.filter((e) => loaded.has(e.name));
+}

@@ -10,15 +10,10 @@ import type { RouteTreeFragment } from '@c4s/plugin-runtime';
 import { DTO_PATH_PREFIX, DTO_TYPE, ENDPOINT_PATH_PREFIX } from '../../../identity.js';
 import { EntityBreadcrumbBar } from '../../../frontend-kit/EntityBreadcrumbBar.js';
 import { toDetail, toList, toPage, type Navigate } from '../../../frontend-kit/navigation.js';
+import { Pane, RouteBody } from '../../../frontend-kit/route-shell.js';
 import { useDto } from './hooks.js';
 import { DtosList } from './list-page.js';
 import { DtoDetail } from './detail-panel.js';
-
-const Pane: FC<{ children: React.ReactNode }> = ({ children }) => (
-  <main style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto', background: 'var(--c-bg)' }}>
-    {children}
-  </main>
-);
 
 type ListSearch = { q?: string; tag?: string };
 
@@ -51,7 +46,9 @@ function DtoDetailRoute() {
   const { data: dto } = useDto(slug);
 
   return (
-    <Pane>
+    // RouteBody, not Pane — see the endpoint side: the description's DocEditor
+    // needs the editor bridge, and a missing one is silent.
+    <RouteBody navigate={navigate}>
       <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.name} view="details" hasHistory />
       <DtoDetail
         key={slug}
@@ -64,7 +61,7 @@ function DtoDetailRoute() {
         onOpenEntity={(_type, endpointSlug) => toDetail(navigate, ENDPOINT_PATH_PREFIX, endpointSlug)}
         onOpenPage={(rootId, path) => toPage(navigate, rootId, path)}
       />
-    </Pane>
+    </RouteBody>
   );
 }
 

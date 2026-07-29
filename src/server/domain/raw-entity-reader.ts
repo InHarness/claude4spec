@@ -113,16 +113,49 @@ export class RawEntityReader {
   ) {}
 
   /**
-   * Resolves the SQL table for `type`. The static `ENTITY_TABLES` map is
-   * checked first (identical behavior/perf for the 7 core types); a plugin
-   * type falls back to `host.getEntity(type)?.table` — the same
-   * `EntityModuleManifest.table` field `auto-schema.ts#resolveTable` already
-   * uses for schema introspection. `getEntity` (not `getAvailable`) so an
-   * inactive/deactivated plugin type resolves to no table here too, matching
-   * every other host-gated read. No static list gates capture anymore.
+   * Resolves the SQL table for `type` — and only if that table actually exists.
+   *
+   * The name comes from the static `ENTITY_TABLES` map (identical behavior/perf
+   * for the 7 core types) or, for a plugin type, from
+   * `host.getEntity(type)?.table` — the same `EntityModuleManifest.table` field
+   * `auto-schema.ts#resolveTable` already uses for schema introspection.
+   * `getEntity` (not `getAvailable`) so an inactive/deactivated plugin type
+   * resolves to nothing here too, matching every other host-gated read.
+   *
+   * 0.2.2 — the EXISTENCE check is the load-bearing half, and it is new. A name
+   * in that static map used to imply a table, because the host's own migration
+   * chain created all seven unconditionally. Now every entity table is created
+   * by the module that owns it, and two of those modules live in a builtin
+   * envelope the host loads FAIL-SOFT: a missing or unimportable
+   * `dist/plugins/…` bundle leaves `endpoint` and `dto` with no module and no
+   * table, while this map still happily answers `'endpoint'`. Every read then
+   * threw `no such table` — `find_by_tag`, a mixed `<tagged_list>` on a page,
+   * `listSlugs` — where the design says such a type is simply ABSENT. Guarding
+   * one caller (`count`) fixed one symptom; guarding the resolver fixes the
+   * class, and keeps `hasTable` honest for the callers that must fail loudly.
    */
   private resolveTable(type: string): string | undefined {
-    return ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+    const table = ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+    if (!table) return undefined;
+    return this.tableExists(table) ? table : undefined;
+  }
+
+  /**
+   * Memoized POSITIVE results only. A table that exists cannot vanish inside a
+   * process, so caching that is safe; a table that is missing may still be
+   * created by a migration that has not run yet, so a negative answer is never
+   * cached. Absent types are the rare case, so the re-query costs little.
+   */
+  private readonly knownTables = new Set<string>();
+
+  private tableExists(table: string): boolean {
+    if (this.knownTables.has(table)) return true;
+    const found =
+      this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?`)
+        .get(table) !== undefined;
+    if (found) this.knownTables.add(table);
+    return found;
   }
 
   /**
@@ -245,24 +278,14 @@ export class RawEntityReader {
 
   /** Cheap row count for a type — used by `catalog`. */
   count(type: RawEntityType): number {
+    // `resolveTable` already answers undefined for a type with no table, so an
+    // absent type reads as zero rather than throwing. The caller is
+    // `GET /entities/counts`, where one throw blanked every badge in the
+    // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
-    // A resolvable table name is not a guarantee the table EXISTS: a module can
-    // declare one whose migration never ran (a plugin shipping no migrations, or
-    // one that failed). Since 0.2.2 this is reachable rather than theoretical,
-    // and the caller is `GET /entities/counts` — one throw there turned the
-    // whole sidebar into a 500 over a single type's badge. Absent reads as zero.
-    if (!this.tableExists(table)) return 0;
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
     return row.c;
-  }
-
-  private tableExists(table: string): boolean {
-    return (
-      this.db
-        .prepare(`SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?`)
-        .get(table) !== undefined
-    );
   }
 
   listTags(): RawTag[] {

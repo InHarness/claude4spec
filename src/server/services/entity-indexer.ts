@@ -253,7 +253,12 @@ export class EntityIndexerService {
     // DEACTIVATED must still have its row dropped. Gating on active-only left the
     // row behind while still broadcasting a delete — and since the rebuild no
     // longer touches inactive tables either, nothing would ever remove it.
-    const table = this.safeTable(this.host.getAvailable(type)?.table, type);
+    // A resolvable NAME is not an existing table — a module can declare one whose
+    // migration never ran, which since 0.2.2 includes an envelope that failed to
+    // load. `DELETE FROM` a missing table throws out of the watcher callback,
+    // where nothing catches it.
+    const named = this.safeTable(this.host.getAvailable(type)?.table, type);
+    const table = named && this.tableExists(named) ? named : null;
     if (!table) {
       console.warn(
         `[entity-indexer] ${relPath} unlinked but type '${type}' resolves to no table — ` +

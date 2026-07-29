@@ -38,7 +38,17 @@ export async function invokeSlash(
   if (command.pluginPopoverKind) {
     window.dispatchEvent(
       new CustomEvent(PLUGIN_COMMAND_EVENT, {
-        detail: { popoverKind: command.pluginPopoverKind, commandId: command.id, editor },
+        detail: {
+          popoverKind: command.pluginPopoverKind,
+          commandId: command.id,
+          editor,
+          // 0.2.2 — the caret, in viewport coordinates. Every host-side slash
+          // popover anchors to `coordsAt(editor)`; a plugin popover could not,
+          // because the event carried no position, so it had to fall back to a
+          // fixed spot at the top of the viewport — jumping away from the text
+          // the user was writing. The plugin owns whether to use it.
+          coords: tryCoordsAt(editor),
+        },
       }),
     );
     return;
@@ -90,6 +100,24 @@ async function runSection(editor: Editor): Promise<void> {
     .insertContent({ type: 'section_ref', attrs: { anchor: result.anchor } })
     .insertContent(' ')
     .run();
+}
+
+/**
+ * The caret position, or nothing.
+ *
+ * The host's own popovers are opened from a live editor and read `coordsAt`
+ * directly. The plugin dispatch cannot: it hands the position across a window
+ * event to code it does not control, as an anchoring HINT, and an editor with no
+ * mounted view (destroyed, or a caller that never had one) must not turn a
+ * working slash command into a thrown error. The plugin falls back to its own
+ * default position when this is absent.
+ */
+function tryCoordsAt(editor: Editor): { x: number; y: number } | undefined {
+  try {
+    return editor.view ? coordsAt(editor) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function coordsAt(editor: Editor): { x: number; y: number } {

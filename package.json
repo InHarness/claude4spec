@@ -73,7 +73,9 @@
     "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev",
     "prebuild": "npm run build:envelopes",
     "predev": "npm run build:envelopes",
+    "predev:default": "npm run build:envelopes",
     "pretest": "npm run build:envelopes",
+    "pretest:watch": "npm run build:envelopes",
     "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test"
   },
   "dependencies": {

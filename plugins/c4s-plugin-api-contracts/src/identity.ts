@@ -28,6 +28,21 @@ export const DTO_DISPLAY_ORDER = 20;
  */
 export const ENDPOINT_DTO_TABLE = 'endpoint_dto';
 
+/**
+ * The popover kinds the two slash commands dispatch.
+ *
+ * They live in this React-free module rather than beside the popovers they open
+ * because the BACKEND names them too: `capabilities/commands.ts` declares the
+ * commands, and it is reachable from `src/index.ts`, the entry the host's Node
+ * loader imports. Importing them from the frontend files put React,
+ * `react/jsx-runtime` and `lucide-react` on the server's plugin-load path to
+ * read two string literals — evaluated on every boot, and a hard
+ * `PLUGIN_IMPORT_FAILED` (with both types silently absent) in any install that
+ * prunes UI dependencies from a server image.
+ */
+export const ENDPOINT_POPOVER_KIND = `${ENDPOINT_TYPE}-create`;
+export const DTO_POPOVER_KIND = `${DTO_TYPE}-create`;
+
 export function endpointSlug(method: string, path: string): string {
   const base = `${method.toLowerCase()}-${slugify(path)}`;
   return base.replace(/^-+|-+$/g, '');

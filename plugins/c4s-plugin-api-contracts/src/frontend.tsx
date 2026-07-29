@@ -19,8 +19,13 @@ import { mountEndpointSlashCreate } from './entity/endpoint/frontend/slash-creat
 registerFrontendModule(dtoFrontendModule);
 registerFrontendModule(endpointFrontendModule);
 
-// The slash-create popovers listen for their own `c4s:plugin-command` kind. The
-// disposers are exported so a hot reload can tear the listeners down; nothing
-// else calls them.
-export const unmountDtoSlashCreate = mountDtoSlashCreate();
-export const unmountEndpointSlashCreate = mountEndpointSlashCreate();
+// The slash-create popovers listen for their own `c4s:plugin-command` kind.
+//
+// `mountSlashCreatePopover` is idempotent per kind and keeps its live disposers
+// on `window`, so this is safe to run again — which it will be: a plugin reload
+// re-imports this entry with a cache-bust, in a fresh module graph, and the host
+// has no unmount hook to call in between. The new copy disposing the old one is
+// what keeps a reload from stacking listeners (and rendering one popover, and
+// creating one entity, per reload since the page loaded).
+mountDtoSlashCreate();
+mountEndpointSlashCreate();

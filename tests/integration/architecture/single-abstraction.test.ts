@@ -19,22 +19,35 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = path.join(import.meta.dirname, '../../..');
 const SRC = path.join(REPO_ROOT, 'src');
 
-/** Every `.ts`/`.tsx` under `src/`, excluding the type-owning directories. */
+/**
+ * Every `.ts`/`.tsx` under `src/`, excluding the directories that OWN a type.
+ *
+ * The exemption is `entities/<type>/`, one directory per type — not the whole
+ * `entities/` tree. Skipping the tree wholesale also exempted
+ * `src/client/entities/_shared/`, which owns no type at all: it is cross-cutting
+ * host code, and it held four `type === '<literal>'` branches that this gate
+ * exists to forbid. The rule was asserting the host does not branch on entity
+ * types while looking away from the one place it did.
+ *
+ * `_`-prefixed children of `entities/` are therefore scanned; a real type
+ * directory is not. `entities/index.ts` and `registry.tsx` sit directly in the
+ * tree and are scanned too, which is correct — they are the registry, not a type.
+ */
 function hostSourceFiles(): string[] {
   const out: string[] = [];
-  const walk = (dir: string) => {
+  const walk = (dir: string, insideEntities: boolean) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        // The two directories where a type legitimately knows its own name.
-        if (entry.name === 'entities') continue;
-        walk(abs);
+        // A per-type directory: this is where a type legitimately knows its name.
+        if (insideEntities && !entry.name.startsWith('_')) continue;
+        walk(abs, entry.name === 'entities');
       } else if (/\.tsx?$/.test(entry.name)) {
         out.push(abs);
       }
     }
   };
-  walk(SRC);
+  walk(SRC, false);
   return out;
 }
 
@@ -100,6 +113,12 @@ describe('Single Abstraction Rule', () => {
     const ENTITY_TYPES = ['endpoint', 'dto', 'ui-view', 'ac', 'design-system', 'diagram', 'database-table'];
     const pattern = new RegExp(`type === '(${ENTITY_TYPES.join('|')})'`);
     expect(hits(pattern, isProduction)).toEqual([
+      // The last live one, and it needs a host-API addition to remove rather
+      // than a rewrite here: the shared breadcrumb renders a per-type crumb, and
+      // `FrontendModule` has no slot for one, so the type cannot supply it. The
+      // three dead branches beside it (endpoint/dto/database-table, left behind
+      // when those types moved out) ARE gone. Filed as a patch.
+      expect.stringContaining('_shared/EntityBreadcrumbBar.tsx'),
       // PRE-EXISTING, and out of scope for the 0.2.2 envelope work: the
       // cross-cutting reference-tools server skips `ac` when sweeping for
       // unreferenced entities. Filed as a patch rather than widened into.
