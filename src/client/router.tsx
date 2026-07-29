@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   createRouter,
   createRootRouteWithContext,
@@ -6,6 +6,7 @@ import {
   useParams,
   useSearch,
   useNavigate,
+  useRouter,
   Navigate,
   type AnyRoute,
 } from '@tanstack/react-router';
@@ -49,6 +50,8 @@ import { resolveLandingTarget } from './lib/landing.js';
 import type { EntityType } from '../shared/entities.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
+import { frontendPluginsBooted, pluginBootPending } from './runtime/boot-plugins.js';
+import { LoadingState } from './host-ui-kit/actions/LoadingState.js';
 
 /**
  * Resolve a TanStack Router navigate target for an entity type/slug pair via
@@ -307,6 +310,18 @@ export function createAppRouter(queryClient: QueryClient) {
     routeTree: rootRoute.addChildren([...BASE_ROUTE_CHILDREN]),
     context: { queryClient },
     defaultPreload: 'intent',
+    /**
+     * 0.2.2: distinguish "this route does not exist" from "this route has not
+     * been contributed YET".
+     *
+     * Plugin frontends boot after first paint, so a hard refresh on a
+     * plugin-contributed deep link — `/endpoints/foo`, `/dtos/bar`, and before
+     * them `/database-tables/baz` — lands before its route exists. Rendering the
+     * ordinary not-found there is wrong twice over: it tells the user a working
+     * link is broken, and it does so for a page that becomes correct a moment
+     * later. Wait out the boot instead, then let the router re-resolve.
+     */
+    defaultNotFoundComponent: PendingOrNotFound,
     // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
     // basepath-relative ('/space/$rootId/$', '/settings', …).
     basepath: PROJECT_ID ? `/p/${PROJECT_ID}` : '/',
@@ -314,6 +329,67 @@ export function createAppRouter(queryClient: QueryClient) {
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;
+
+/**
+ * Holds a spinner while the plugin boot is in flight, then re-resolves the
+ * current URL once. If the route still does not exist after the boot settled,
+ * this falls through to the real not-found — a boot that failed must not leave a
+ * permanent spinner.
+ */
+function PendingOrNotFound() {
+  const [waiting, setWaiting] = useState(() => pluginBootPending());
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+    void frontendPluginsBooted.then(() => {
+      if (cancelled) return;
+      setWaiting(false);
+      // The route tree grew while this component was mounted; re-resolving the
+      // same URL is what picks up the newly-mounted route.
+      void router.invalidate();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [waiting, router]);
+
+  if (waiting) {
+    return (
+      <RoutePane>
+        <LoadingState lines={4} />
+      </RoutePane>
+    );
+  }
+  return <RouteNotFound />;
+}
+
+/** The ordinary not-found: the URL matches nothing, and nothing more is coming. */
+function RouteNotFound() {
+  const navigate = useNavigate();
+  return (
+    <RoutePane>
+      <div className="flex-1 flex items-center justify-center px-10">
+        <div className="max-w-md text-center" style={{ color: 'var(--c-muted)' }}>
+          <div className="text-[15px] font-semibold mb-2" style={{ color: 'var(--c-ink)' }}>
+            Page not found
+          </div>
+          <div className="text-[12.5px] mb-4" style={{ color: 'var(--c-subtle)' }}>
+            This URL does not match any route in the app.
+          </div>
+          <button
+            onClick={() => navigate({ to: '/' })}
+            className="rounded-md px-3 py-1.5 text-[12.5px]"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            Back to start
+          </button>
+        </div>
+      </div>
+    </RoutePane>
+  );
+}
 
 /**
  * M33 phase 3: remount the router's route tree as BASE ∪ `pluginRoutes`. Centralizes

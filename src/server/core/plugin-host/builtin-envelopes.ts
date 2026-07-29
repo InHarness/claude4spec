@@ -126,27 +126,48 @@ function resolveEnvelopeEntry(dir: string): string | null {
  */
 export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()): BuiltinEnvelope[] {
   if (!root) return [];
-  const pluginsDir = path.join(root, 'plugins');
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-  } catch {
-    return []; // no plugins/ directory — nothing to discover
-  }
 
-  const out: BuiltinEnvelope[] = [];
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    const dir = path.join(pluginsDir, entry.name);
-    const abs = resolveEnvelopeEntry(dir);
-    if (!abs) {
-      console.warn(
-        `[plugin-loader] built-in envelope '${entry.name}' has no resolvable entry ` +
-          `(checked package.json exports/main, then src/index.js) — skipping`,
-      );
-      continue;
+  // Two locations, and the order is the point.
+  //
+  //  - `dist/plugins/<name>/` — where the host's own build EMITS an envelope.
+  //    This is the one that matters in a packaged host: every mechanism that
+  //    packages this project copies `dist/` and only `dist/` (npm via
+  //    `package.json#files`, container images via `COPY /app/dist`). An artifact
+  //    outside it is silently absent — discovery returns nothing, no error is
+  //    raised, and the host simply has no `endpoint` and no `dto`.
+  //  - `plugins/<name>/` — an envelope that carries its own built `dist/`, the
+  //    shape an extracted package has when it is vendored back in. Kept so a
+  //    hand-placed package still works, and it is what the fixture tests use.
+  //
+  // Built output wins on a name collision: if both exist, the source tree is a
+  // working copy and `dist/` is what was actually built.
+  const byName = new Map<string, BuiltinEnvelope>();
+  for (const pluginsDir of [path.join(root, 'plugins'), path.join(root, 'dist', 'plugins')]) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+    } catch {
+      continue; // directory absent — nothing to discover here
     }
-    out.push({ name: entry.name, dir, specifier: pathToFileURL(abs).href });
+
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const dir = path.join(pluginsDir, entry.name);
+      const abs = resolveEnvelopeEntry(dir);
+      if (!abs) {
+        // Not a warning when a built copy already answered for this name: an
+        // unbuilt source tree beside a built artifact is the normal dev state.
+        if (!byName.has(entry.name)) {
+          console.warn(
+            `[plugin-loader] built-in envelope '${entry.name}' has no resolvable entry ` +
+              `(checked package.json exports/main, then src/index.js) — skipping. ` +
+              `If this is a source tree, it has not been built: run \`npm run build:envelopes\`.`,
+          );
+        }
+        continue;
+      }
+      byName.set(entry.name, { name: entry.name, dir, specifier: pathToFileURL(abs).href });
+    }
   }
-  return out;
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -90,8 +90,45 @@ async function registerProjectPluginCommands(): Promise<void> {
   }
 }
 
+/**
+ * Whether the first plugin boot is still in flight.
+ *
+ * The boot deliberately does not block first paint, which leaves a window where
+ * a plugin-contributed route does not exist yet. Before 0.2.2 that window only
+ * covered `/database-tables`; now it covers `/endpoints` and `/dtos` too, so a
+ * hard refresh on one of those deep links would render "not found" and then
+ * quietly become correct a moment later — which reads as a broken link, not as
+ * loading. The router's `defaultNotFoundComponent` consults this to tell the
+ * two apart. Resolves (never rejects) once the boot has settled either way.
+ */
+let bootSettled = false;
+let resolveBoot: (() => void) | undefined;
+export const frontendPluginsBooted: Promise<void> = new Promise((resolve) => {
+  resolveBoot = resolve;
+});
+
+/** True until the first `bootFrontendPlugins` call settles. */
+export function pluginBootPending(): boolean {
+  return !bootSettled;
+}
+
+function settleBoot(): void {
+  bootSettled = true;
+  resolveBoot?.();
+}
+
 export async function bootFrontendPlugins(router: AppRouter): Promise<void> {
   activeRouter = router;
+  try {
+    await bootFrontendPluginsInner(router);
+  } finally {
+    // A failed boot still ends the window: whatever was missing is not coming,
+    // and holding a spinner forever is worse than an honest 404.
+    settleBoot();
+  }
+}
+
+async function bootFrontendPluginsInner(router: AppRouter): Promise<void> {
   // The lucide-react peer is code-split (see shared-runtime.ts) — wait for it
   // to land on window.__c4s_shared before any plugin entry can reach the shim.
   await sharedRuntimeReady;

@@ -1,3 +1,5 @@
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 
 /**
@@ -16,6 +18,19 @@ import { defineConfig } from 'vite';
  * lives inside the host package, so Node resolution walks up to the host's own
  * `node_modules` in development AND in an npm install. Extracting this package
  * to its own repo is where that pass gets added.
+ *
+ * OUTPUT GOES INTO THE HOST'S `dist/`, not into a `dist/` beside this source.
+ *
+ * That is the one deviation from the scaffold layout, and it is not cosmetic:
+ * every mechanism that packages this host copies `dist/` and only `dist/`. The
+ * npm tarball takes it from `package.json#files`; env-runner's image build
+ * `COPY`s `/app/dist` and `/app/node_modules`. An artifact anywhere else is
+ * silently absent at runtime — `discoverBuiltinEnvelopes()` returns `[]`, no
+ * error, and the host simply has no `endpoint` and no `dto`. That is exactly how
+ * the first smoke test of this change failed.
+ *
+ * Extraction is unaffected: the source tree is untouched, and a standalone repo
+ * would point `outDir` back at its own `dist/`.
  */
 const EXTERNAL = [
   '@c4s/plugin-runtime',
@@ -53,6 +68,44 @@ export default defineConfig({
     minify: false,
     sourcemap: true,
     target: 'es2022',
+    outDir: path.resolve(import.meta.dirname, '../../dist/plugins/c4s-plugin-api-contracts'),
+    // Outside the package root, so vite needs telling that emptying is intended.
     emptyOutDir: true,
   },
+  plugins: [
+    {
+      name: 'c4s-envelope-manifest',
+      /**
+       * The loader resolves an envelope's entry through its `package.json`
+       * (`exports` → `main`), so a manifest has to sit beside the bundles it
+       * points at. It is REWRITTEN rather than copied: the source manifest's
+       * paths carry a `dist/` segment that is already consumed by the output
+       * directory, and a copied one would send the loader to
+       * `dist/plugins/<name>/dist/index.js`.
+       *
+       * Everything not needed to resolve and gate a plugin is dropped, so the
+       * emitted manifest cannot drift into being a second source of truth about
+       * dependencies or scripts.
+       */
+      closeBundle() {
+        const out = path.resolve(import.meta.dirname, '../../dist/plugins/c4s-plugin-api-contracts');
+        const src = JSON.parse(
+          readFileSync(path.resolve(import.meta.dirname, 'package.json'), 'utf-8'),
+        ) as { name: string; version: string; description?: string };
+        const flattened = {
+          name: src.name,
+          version: src.version,
+          description: src.description,
+          type: 'module',
+          exports: {
+            '.': { import: './index.js', default: './index.js' },
+            './frontend': { import: './frontend.js', default: './frontend.js' },
+          },
+          main: './index.js',
+        };
+        mkdirSync(out, { recursive: true });
+        writeFileSync(path.join(out, 'package.json'), `${JSON.stringify(flattened, null, 2)}\n`);
+      },
+    },
+  ],
 });

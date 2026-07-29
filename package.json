@@ -30,9 +30,7 @@
     "docs/screenshots",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md",
-    "plugins/c4s-plugin-api-contracts/dist",
-    "plugins/c4s-plugin-api-contracts/package.json"
+    "CHANGELOG.md"
   ],
   "type": "module",
   "bin": {
