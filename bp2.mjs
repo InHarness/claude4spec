@@ -69,9 +69,8 @@ const go = async (path) => {
       // The duplicate entry is the bug: two ROWS both labelled /dto. Count the
       // rows, not text nodes — a single row contains the label, the description
       // and the hint, and the typed "/dto" is in the document besides.
-      const menu = page.locator('[data-slash-menu], [role=listbox]').first();
-      const scope = (await menu.count()) ? menu : page.locator('body');
-      const rowTexts = await scope.locator('[role=option], li, button').allInnerTexts();
+      const menu = page.locator('[data-slash-menu]').first();
+      const rowTexts = await menu.locator('button').allInnerTexts();
       const dtoRows = rowTexts.filter((t) => t.trim().startsWith('/dto'));
       record('exactly one /dto entry in the palette', dtoRows.length === 1, JSON.stringify(dtoRows));
 

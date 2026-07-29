@@ -82,6 +82,13 @@ export const SlashMenu = forwardRef<SlashMenuHandle, SuggestionProps<SlashComman
 
     return (
       <div
+        // A stable hook for the palette. Its rows are plain buttons in a
+        // floating div, indistinguishable from the page's own buttons and list
+        // items, so a test asserting "how many /dto entries are offered" — the
+        // duplicate-command regression 0.2.2 shipped — could only guess at them
+        // by text. Guessing produced a false failure and would just as happily
+        // have produced a false pass.
+        data-slash-menu=""
         className="rounded-md py-1"
         style={{
           background: 'var(--c-card)',
