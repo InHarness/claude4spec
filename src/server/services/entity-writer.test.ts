@@ -74,11 +74,18 @@ describe('HostEntityWriter.upsert — generic dispatch', () => {
     });
   });
 
-  it('surfaces the whole object when the payload key is ambiguous', () => {
+  it('surfaces the whole object when the payload key is ambiguous — and WARNS', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const upsert = () => ({ a: 1, b: 2, op: 'created' as const });
     const writer = new HostEntityWriter(hostWith({ odd: { upsert } }), tags);
-    // Better an inspectable object than a silently-wrong arbitrary pick.
-    expect(writer.upsert('odd', 'x', {}, 'user')?.entity).toEqual({ a: 1, b: 2, op: 'created' });
+    const result = writer.upsert('odd', 'x', {}, 'user');
+    // Better an inspectable object than a silently-wrong arbitrary pick — but
+    // returning a WRAPPER silently is no better than a wrong pick: downstream
+    // serializers read fields off `.entity` to sync junctions and write files.
+    expect(result?.entity).toEqual({ a: 1, b: 2, op: 'created' });
+    expect(result?.warnings?.join(' ')).toMatch(/ambiguous \(a, b\).*no 'entity' alias/);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("type 'odd'"));
+    warn.mockRestore();
   });
 
   it('honours capture: false on the index-rebuild path', () => {
@@ -134,9 +141,28 @@ describe('HostEntityWriter.delete — generic, no per-type switch', () => {
     expect(writer.delete('widget' as never, 'missing', 'user')).toEqual({ deleted: false });
   });
 
-  it('reports deleted:false — never throws — for a type with no service', () => {
+  it('reports deleted:false — never throws — for a type with no service, but WARNS', () => {
+    // deleted:false is ambiguous between "no delete door" and "nothing to
+    // delete". Only the first is a problem, and pre-0.2.2 it threw and became a
+    // `delete-restore failed: …` warning in the restore report. Without the
+    // console warning a restore that should have deleted an entity reports a
+    // clean noop while the entity survives.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const writer = new HostEntityWriter(hostWith({}), tags);
     expect(writer.delete('ghost' as never, 'g', 'user')).toEqual({ deleted: false });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('cannot delete ghost/g'));
+    warn.mockRestore();
+  });
+
+  it('does NOT warn for the benign case — service present, row simply absent', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const writer = new HostEntityWriter(
+      hostWith({ widget: { getBySlug: () => null, remove: vi.fn() } }),
+      tags,
+    );
+    expect(writer.delete('widget' as never, 'gone', 'user')).toEqual({ deleted: false });
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 

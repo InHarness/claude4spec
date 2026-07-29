@@ -187,6 +187,40 @@ export interface RestoreSpecResult {
   pageResults: RestorePageResult[];
 }
 
+/**
+ * Did `type` exist at the time `releaseId` was cut?
+ *
+ * True when the type has at least one `entity_version` row created at or before
+ * the release's own `created_at` — regardless of whether that row was captured
+ * INTO this release. That is precisely what separates the two situations a plain
+ * "does the release have rows for this type" check conflates:
+ *
+ *   - the type existed and the release legitimately held ZERO of them → history
+ *     exists, so a restore SHOULD delete the ones added since;
+ *   - the type did not exist yet → no history at all, so the release asserts
+ *     nothing about it and deleting everything would invent a claim.
+ *
+ * Exported (rather than a private method) so the rule is directly testable: it is
+ * the guard standing between `restoreSpec` and mass deletion of a whole type.
+ */
+export function typeExistedAtRelease(
+  db: Database.Database,
+  type: string,
+  releaseId: number | null,
+): boolean {
+  // Unbounded "current" snapshot — every type is in scope by definition.
+  if (releaseId == null) return true;
+  const row = db
+    .prepare(
+      `SELECT 1 FROM entity_version
+        WHERE entity_type = ?
+          AND created_at <= COALESCE((SELECT created_at FROM spec_release WHERE id = ?), created_at)
+        LIMIT 1`,
+    )
+    .get(type, releaseId);
+  return row != null;
+}
+
 export class ReleaseService {
   constructor(
     private db: Database.Database,
@@ -1306,34 +1340,37 @@ export class ReleaseService {
       }
       // Delete extras: entities currently present but not in target.
       //
-      // 0.2.2 GUARD — only when the release demonstrably COVERS this type, i.e. it
-      // has at least one version row at-or-before it (a `delete` row counts: that
-      // is the release positively asserting "none of these"). Zero rows means the
-      // release carries no information about the type at all — typically because
-      // the type did not exist yet when the release was cut — and treating that
-      // silence as "delete every one of them" would invent an assertion the
-      // release never made.
+      // 0.2.2 GUARD — run this destructive pass only for a type that EXISTED when
+      // the release was cut. Widening `order` from the hardcoded four types to
+      // every ACTIVE type (the fix for ac/design-system/diagram being skipped
+      // entirely) also switches this pass ON for them, and restoring a release cut
+      // before `ac` existed would otherwise delete every AC in the project.
       //
-      // This guard exists because widening `order` from the hardcoded four types
-      // to every ACTIVE type (the fix for ac/design-system/diagram being skipped
-      // entirely) also switches ON this destructive pass for them. Without it,
-      // restoring a release cut before `ac` existed would delete every AC in the
-      // project. The skip is REPORTED, never silent.
-      const releaseCoversType = targetRows.length > 0;
+      // The discriminator is deliberately NOT "does the release have rows for this
+      // type": that conflates two very different situations —
+      //   (a) the type did not exist yet  ⇒ the release asserts nothing about it,
+      //       so deleting everything invents a claim the release never made;
+      //   (b) the type existed and the release legitimately contained zero of them
+      //       ⇒ deleting the ones added since is exactly what a restore means.
+      // Both look identical through `targetRows`. `typeExistedAtRelease` tells them
+      // apart by asking whether the type has ANY version history at or before the
+      // release's own `created_at`, which is (b)'s fingerprint and not (a)'s.
+      // Skipping is REPORTED, never silent.
+      const covered = typeExistedAtRelease(this.db, type, releaseId);
       const currentSlugs = new Set(this.rawReader.listSlugs(type));
-      if (!releaseCoversType && currentSlugs.size > 0) {
+      if (!covered && currentSlugs.size > 0) {
         entityResults.push({
           type,
           slug: '*',
           op: 'noop',
           warnings: [
-            `release has no '${type}' history at or before it — ` +
+            `type '${type}' has no history at or before this release — ` +
               `${currentSlugs.size} existing ${type} entities left untouched ` +
-              `(the release makes no assertion about this type)`,
+              `(the release predates the type and asserts nothing about it)`,
           ],
         });
       }
-      for (const slug of releaseCoversType ? currentSlugs : []) {
+      for (const slug of covered ? currentSlugs : []) {
         if (targetSlugs.has(slug)) continue;
         // Was this entity present in any earlier release? If so, target says delete.
         // If never released (entity created after target release), still delete to

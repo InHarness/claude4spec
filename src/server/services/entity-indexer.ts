@@ -73,6 +73,59 @@ export class EntityIndexerService {
     );
   }
 
+  /**
+   * A `module.table` value safe to interpolate into DDL/DML, or `null`.
+   *
+   * Table names reach us from a plugin MANIFEST and are only null-checked at
+   * registration, yet they are interpolated into `db.exec` — which happily runs
+   * multiple statements, so a `table` containing `;` would execute arbitrary SQL
+   * that the deleted `ENTITY_TABLE` constant map made structurally impossible.
+   * Restore that guarantee with a shape check rather than a name allowlist (an
+   * allowlist is exactly the host-knows-every-type coupling 0.2.2 removes).
+   */
+  private safeTable(table: string | undefined, type: string): string | null {
+    if (!table) return null;
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) {
+      console.warn(
+        `[entity-indexer] type '${type}' declares an unusable table name ` +
+          `${JSON.stringify(table)} — expected a bare SQL identifier; skipping it`,
+      );
+      return null;
+    }
+    return table;
+  }
+
+  /** True when `table` exists in this database. */
+  private tableExists(table: string): boolean {
+    const row = this.db
+      .prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`)
+      .get(table);
+    return row != null;
+  }
+
+  /**
+   * Every entity table this project can address — ACTIVE modules plus merely
+   * AVAILABLE (deactivated) ones.
+   *
+   * The rebuild must clear a deactivated type's rows even though it will not
+   * refill them: the pre-0.2.2 code cleared all seven core tables
+   * unconditionally, so switching to active-only left orphaned rows that nothing
+   * would ever re-index or remove. Their `entity_tag` rows ARE still cleared
+   * unconditionally, so the leftovers would have been tag-less phantoms visible
+   * to reference resolution and count stats with no way to correct them.
+   */
+  private clearableTables(): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const m of this.host.listAvailable()) {
+      const table = this.safeTable(m.table, m.type);
+      if (!table || seen.has(table)) continue;
+      seen.add(table);
+      out.push(table);
+    }
+    return out;
+  }
+
   async indexAll(): Promise<void> {
     const startedAt = performance.now();
     let count = 0;
@@ -97,8 +150,31 @@ export class EntityIndexerService {
         // Rows would also cascade from `DELETE FROM endpoint`, but clearing it
         // explicitly keeps the rebuild correct if that FK ever changes.
         this.db.exec('DELETE FROM endpoint_dto;');
-        for (const m of [...ordered].reverse()) {
-          this.db.exec(`DELETE FROM ${m.table};`);
+        // Ordered (active) tables first, dependents before their dependencies;
+        // then any remaining addressable table — deactivated types included, so
+        // their rows never linger as un-reindexable phantoms.
+        const orderedTables = [...ordered]
+          .reverse()
+          .map((m) => this.safeTable(m.table, m.type))
+          .filter((t): t is string => t !== null);
+        const clearOrder = [...orderedTables];
+        for (const table of this.clearableTables()) {
+          if (!clearOrder.includes(table)) clearOrder.push(table);
+        }
+        for (const table of clearOrder) {
+          // A type may declare a table whose migration never ran (a plugin that
+          // shipped no `backend.migrations`, or whose migration failed). Without
+          // this check the DELETE throws, the WHOLE rebuild transaction rolls
+          // back, and the error is swallowed by the boot catch — leaving every
+          // entity in the project served from a permanently stale index.
+          if (!this.tableExists(table)) {
+            console.warn(
+              `[entity-indexer] table '${table}' does not exist — skipping it in the ` +
+                `rebuild (its type declared a table no migration created)`,
+            );
+            continue;
+          }
+          this.db.exec(`DELETE FROM ${table};`);
         }
         this.db.exec('DELETE FROM tag;');
         this.indexTagsFile(); // tags first — so entity tag refs resolve to real rows
@@ -144,14 +220,25 @@ export class EntityIndexerService {
     const parsed = this.store.parseRelPath(relPath);
     if (!parsed) return;
     const { type, slug } = parsed;
+    // `getAvailable`, not `getEntity`: a file removed while its type is
+    // DEACTIVATED must still have its row dropped. Gating on active-only left the
+    // row behind while still broadcasting a delete — and since the rebuild no
+    // longer touches inactive tables either, nothing would ever remove it.
+    const table = this.safeTable(this.host.getAvailable(type)?.table, type);
+    if (!table) {
+      console.warn(
+        `[entity-indexer] ${relPath} unlinked but type '${type}' resolves to no table — ` +
+          `the index row (if any) could not be removed`,
+      );
+      return; // no delete happened; do not broadcast one
+    }
     this.db
       .transaction(() => {
         this.db
           .prepare(`DELETE FROM entity_tag WHERE entity_type = ? AND entity_slug = ?`)
           .run(type, slug);
         // endpoint_dto rows cascade via FK ON DELETE CASCADE.
-        const table = this.host.getEntity(type)?.table;
-        if (table) this.db.prepare(`DELETE FROM ${table} WHERE slug = ?`).run(slug);
+        this.db.prepare(`DELETE FROM ${table} WHERE slug = ?`).run(slug);
       })();
     this.ws.broadcast({ kind: 'entity:indexed', type, slug, op: 'delete' });
   }
@@ -182,7 +269,21 @@ export class EntityIndexerService {
       return false;
     }
     try {
-      this.host.restore(type, snap, this.indexCtx());
+      // 0.2.2: `restore` no longer throws when a type has no registered entity
+      // service — it returns `{op:'noop'}` so one unwritable type cannot abort a
+      // whole restore. That makes a NOOP indistinguishable from a successful
+      // index unless we check: without this, a type whose `backend.service` slot
+      // is missing (or whose mount never called `registerEntityService`) reports
+      // `indexed N entities` with zero warnings while its table — just emptied by
+      // the clear pass — stays empty and every read of it comes back blank.
+      const result = this.host.restore(type, snap, this.indexCtx());
+      if (result.op === 'noop' && result.entity === null) {
+        console.warn(
+          `[entity-indexer] skip ${type}/${slug}: ` +
+            (result.warnings?.join('; ') ?? 'restore reported noop with no entity'),
+        );
+        return false;
+      }
     } catch (err) {
       console.warn(`[entity-indexer] restore failed ${type}/${slug}: ${(err as Error).message}`);
       return false;

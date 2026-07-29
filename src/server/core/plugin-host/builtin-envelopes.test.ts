@@ -98,6 +98,39 @@ describe('discoverBuiltinEnvelopes', () => {
     expect(discoverBuiltinEnvelopes(root)[0]!.specifier).toMatch(/src\/entry\.js$/);
   });
 
+  it('prefers a specific `node` condition over `default` (Node precedence)', () => {
+    // Regression: trying `default` before `node` resolved a server-side envelope
+    // to its BROWSER bundle, which then fails to import or exports no manifest —
+    // so the envelope's types silently never register.
+    writeEnvelope('envelope-node-cond', {
+      pkg: {
+        name: 'envelope-node-cond',
+        type: 'module',
+        exports: { '.': { node: './dist/server.js', default: './dist/browser.js' } },
+      },
+      entry: 'export const manifest = {};',
+      entryPath: 'dist/server.js',
+    });
+    fs.writeFileSync(
+      path.join(root, 'plugins', 'envelope-node-cond', 'dist', 'browser.js'),
+      'export const manifest = {};',
+    );
+    expect(discoverBuiltinEnvelopes(root)[0]!.specifier).toMatch(/dist\/server\.js$/);
+  });
+
+  it('falls back to `default` when no specific condition matches', () => {
+    writeEnvelope('envelope-default-only', {
+      pkg: {
+        name: 'envelope-default-only',
+        type: 'module',
+        exports: { '.': { default: './dist/only.js' } },
+      },
+      entry: 'export const manifest = {};',
+      entryPath: 'dist/only.js',
+    });
+    expect(discoverBuiltinEnvelopes(root)[0]!.specifier).toMatch(/dist\/only\.js$/);
+  });
+
   it('sorts by directory name so registration order is deterministic', () => {
     writeEnvelope('b-envelope', { entry: 'export const manifest = {};' });
     writeEnvelope('a-envelope', { entry: 'export const manifest = {};' });

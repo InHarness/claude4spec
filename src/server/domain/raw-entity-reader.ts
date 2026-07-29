@@ -157,7 +157,9 @@ export class RawEntityReader {
     tagSlugs: string[],
     filter: 'and' | 'or'
   ): RawEntity[] {
-    const table = ENTITY_TABLES[type];
+    // 0.2.2: via `resolveTable`, not the static map — see `listSlugs`.
+    const table = this.resolveTable(type);
+    if (!table) return [];
     const placeholders = tagSlugs.map(() => '?').join(',');
     let sql: string;
     const params: unknown[] = [];
@@ -201,8 +203,24 @@ export class RawEntityReader {
     return [...ALL_ENTITY_TYPES];
   }
 
+  /**
+   * Slugs currently indexed for `type`.
+   *
+   * 0.2.2: resolves through `resolveTable` (static map, then
+   * `host.getEntity(type).table`) rather than indexing the static map directly.
+   * `ReleaseService.restoreSpec` now iterates EVERY active module, not the four
+   * hardcoded core types, so a plugin-contributed type reaches this method — and
+   * `ENTITY_TABLES['use-case']` being `undefined` produced
+   * `SELECT slug FROM undefined`, a SqliteError thrown OUTSIDE restoreSpec's
+   * per-slug try/catch that aborted the whole restore half-applied.
+   *
+   * An unresolvable type returns `[]`: "nothing indexed for a type this project
+   * cannot address" is the honest answer, and it keeps the caller on its normal
+   * path instead of exploding.
+   */
   listSlugs(type: RawEntityType): string[] {
-    const table = ENTITY_TABLES[type];
+    const table = this.resolveTable(type);
+    if (!table) return [];
     const rows = this.db
       .prepare(`SELECT slug FROM ${table} ORDER BY slug`)
       .all() as Array<{ slug: string }>;
@@ -211,7 +229,8 @@ export class RawEntityReader {
 
   /** Cheap row count for a type — used by `catalog`. */
   count(type: RawEntityType): number {
-    const table = ENTITY_TABLES[type];
+    const table = this.resolveTable(type);
+    if (!table) return 0;
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
     return row.c;
   }

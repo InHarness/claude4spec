@@ -93,16 +93,27 @@ type RawUpsertReturn = {
  * plugin type the host has never heard of. When that is ambiguous (zero or
  * several candidates) surface the whole object rather than silently picking one.
  */
-function pickEntity<T>(result: RawUpsertReturn): UpsertResult<T> {
+function pickEntity<T>(result: RawUpsertReturn, type: string): UpsertResult<T> {
   const { op, warnings } = result;
-  const payload =
-    result.entity !== undefined
-      ? result.entity
-      : (() => {
-          const candidates = Object.keys(result).filter((k) => k !== 'op' && k !== 'warnings');
-          return candidates.length === 1 ? result[candidates[0]!] : result;
-        })();
-  return warnings ? { entity: payload as T, op, warnings } : { entity: payload as T, op };
+  if (result.entity !== undefined) {
+    const e = result.entity as T;
+    return warnings ? { entity: e, op, warnings } : { entity: e, op };
+  }
+  const candidates = Object.keys(result).filter((k) => k !== 'op' && k !== 'warnings');
+  if (candidates.length === 1) {
+    const e = result[candidates[0]!] as T;
+    return warnings ? { entity: e, op, warnings } : { entity: e, op };
+  }
+  // Ambiguous: several payload keys and no `entity` alias to disambiguate. Return
+  // the whole object rather than guessing which key is the entity — but SAY SO.
+  // Handing back a wrapper silently is no better than an arbitrary wrong pick:
+  // downstream serializers read fields off `.entity` to sync junctions and write
+  // files, and they would operate on the wrapper without any signal.
+  const extra = `entity service for type '${type}' returned an upsert result with ${
+    candidates.length === 0 ? 'no' : `ambiguous (${candidates.join(', ')})`
+  } payload key and no 'entity' alias — returning the whole result; add an 'entity' alias to its upsert()`;
+  console.warn(`[entity-writer] ${extra}`);
+  return { entity: result as T, op, warnings: [...(warnings ?? []), extra] };
 }
 
 export class HostEntityWriter implements EntityWriter {
@@ -134,7 +145,7 @@ export class HostEntityWriter implements EntityWriter {
     // reports a skip; this is NOT an error.
     if (!service?.upsert) return null;
     const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
-    return pickEntity<T>(result);
+    return pickEntity<T>(result, type);
   }
 
   // ─── deprecated per-type shims (see the interface for why they survive) ────
@@ -249,7 +260,19 @@ export class HostEntityWriter implements EntityWriter {
    */
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {
     const service = this.host.getEntityService(type);
-    if (!service?.getBySlug || !service.remove) return { deleted: false };
+    if (!service?.getBySlug || !service.remove) {
+      // Distinguish "no delete door" from "nothing to delete". Both return
+      // deleted:false, but only the first is a problem the operator must see:
+      // the pre-0.2.2 code THREW here and the caller turned that into a
+      // `delete-restore failed: …` warning in the restore report. Returning a
+      // bare false would let a restore that should have deleted an entity report
+      // a clean `noop` while the entity survives in the index and on disk.
+      console.warn(
+        `[entity-writer] cannot delete ${type}/${slug}: entity service for type ` +
+          `'${type}' is not registered or exposes no getBySlug/remove`,
+      );
+      return { deleted: false };
+    }
     if (!service.getBySlug(slug)) return { deleted: false };
     service.remove(slug, actor);
     return { deleted: true };

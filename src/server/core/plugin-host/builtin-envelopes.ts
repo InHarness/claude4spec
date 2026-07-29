@@ -67,10 +67,17 @@ export interface BuiltinEnvelope {
 }
 
 /**
- * Read an envelope's entry point from its own `package.json`, exactly as Node
- * would: `exports["."]` (string, or its `import`/`default` condition) first, then
- * `main`, then the `src/index.js` default that matches the `c4s create-plugin`
- * layout.
+ * Read an envelope's entry point from its own `package.json`, in Node's own
+ * condition precedence: `exports["."]` (a string, or its conditions) first, then
+ * `main`, then the `src/index.js` default matching the `c4s create-plugin` layout.
+ *
+ * Condition order matters and is NOT arbitrary: `default` is the LAST-RESORT
+ * fallback in Node's resolution, so it must be tried after every specific
+ * condition. Trying it earlier makes a package that declares
+ * `{"node": "./dist/server.js", "default": "./dist/browser.js"}` resolve to the
+ * BROWSER bundle in the server process — which then either throws on a missing
+ * Node builtin or exports no `manifest`, so the envelope's types silently never
+ * register.
  */
 function resolveEnvelopeEntry(dir: string): string | null {
   const pkgPath = path.join(dir, 'package.json');
@@ -93,7 +100,8 @@ function resolveEnvelopeEntry(dir: string): string | null {
       candidates.push(dot);
     } else if (dot && typeof dot === 'object') {
       const cond = dot as Record<string, unknown>;
-      for (const key of ['import', 'default', 'node']) {
+      // Specific conditions first; `default` last, per Node.
+      for (const key of ['node', 'import', 'require', 'default']) {
         if (typeof cond[key] === 'string') candidates.push(cond[key] as string);
       }
     }
