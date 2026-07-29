@@ -16,6 +16,19 @@
 export { clientPluginHost, registerFrontendModule } from '../core/plugin-host/host.js';
 export { queryClient } from './query-client.js';
 export { editorBridge } from './editor-bridge.js';
+/**
+ * 0.2.2 — a plugin that owns page ROUTES needs this, not just the singleton.
+ *
+ * The singleton below is the read side, for a plugin rendering outside the React
+ * tree. `EditorBridgeProvider` is the write side, and until a type could
+ * contribute its own detail route only the host had any reason to mount one. Now
+ * a plugin route renders a `DocEditor` for its entity's description, and an
+ * entity chip inside that description resolves the bridge from React context: no
+ * provider means `DocEditor` falls back to a no-op, every chip click silently
+ * does nothing, and — because `DocEditor` publishes whatever bridge it has into
+ * the process-wide singleton — chips elsewhere on the page stop navigating too.
+ */
+export { EditorBridgeProvider } from '../tiptap/EditorContext.js';
 export { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
 // M34/L11: frontend data-service singletons, each a mirror of the matching

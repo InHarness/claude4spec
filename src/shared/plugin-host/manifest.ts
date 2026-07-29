@@ -154,6 +154,19 @@ export interface EntityContribution extends EntityModuleManifest {
      * server registry narrows it to `(service, ctx) => McpServerFactory`.
      */
     mcpServer?: unknown;
+    /**
+     * 0.2.2 — auxiliary tables this module owns beyond `table` (junctions, side
+     * indexes) whose rows are derived from the entity files. The host clears
+     * them on an index rebuild and otherwise never interprets them.
+     */
+    auxTables?: string[];
+    /**
+     * 0.2.2 — react to ANOTHER entity being renamed, to repoint references held
+     * in this module's own tables or files. Typed `unknown` here for the same
+     * reason as the slots above; the server registry narrows it to
+     * `(ev: EntityRenamedEvent, ctx: MountContext) => void`.
+     */
+    onEntityRenamed?: unknown;
   };
 
   /** L8 — client editor extensions + render slots (narrowed client-side). */
@@ -226,6 +239,18 @@ export interface PluginCommandContribution {
   label: string;
   /** Popover kind dispatched on invoke (client `PopoverKind`). */
   popoverKind: string;
+  /**
+   * What the command does, shown beside the label in the palette. Defaults to
+   * the label, which renders as the same text twice.
+   *
+   * 0.2.2 — added because the host's hardcoded `/endpoint` and `/dto` entries
+   * carried one ("Create a new endpoint inline") and a declarative command had
+   * no way to. When those two types moved into an envelope the palette row
+   * degraded to `/dto  /dto  /dto`, which is not a description of anything.
+   */
+  description?: string;
+  /** Argument hint, e.g. `METHOD /path`. Defaults to `/<trigger>`. */
+  hint?: string;
   /** Editor contexts the command is available in. Omitted = all contexts. */
   availableIn?: string[];
 }

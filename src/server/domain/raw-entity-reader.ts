@@ -86,27 +86,76 @@ export function isRawEntityType(value: string): value is RawEntityType {
 
 export class RawEntityReader {
   constructor(
-    private db: Database.Database,
+    /**
+     * 0.2.2 — public, deliberately. The escape hatch for a module whose type
+     * owns AUXILIARY tables the generic single-row read cannot express: a
+     * junction, a side index. `endpoint`'s serializer reaches its `endpoint_dto`
+     * links through `ctx.reader.db`, because `SerializeContext` carries the
+     * reader and nothing else, and widening that context would change a shape
+     * every installed plugin compiles against.
+     *
+     * Not an invitation to query another module's tables. A module may touch
+     * what it declared; the host itself must keep going through the typed API.
+     */
+    readonly db: Database.Database,
     /**
      * M17: write-path capture needs to read a plugin-contributed type's raw
      * row before snapshotting, not just the 7 core types. Optional — callers
      * that only ever touch core types (CLI tools, reference-tools,
      * ac-analysis) keep working unchanged without a host.
+     *
+     * 0.2.2 — public for the same reason as `db` above: a module's restore path
+     * needs the service resolver (`getEntityService`) to drive its own auxiliary
+     * writes, and `RestoreContext` carries the reader and the writer, nothing
+     * else.
      */
-    private host?: ProjectPluginHost,
+    readonly host?: ProjectPluginHost,
   ) {}
 
   /**
-   * Resolves the SQL table for `type`. The static `ENTITY_TABLES` map is
-   * checked first (identical behavior/perf for the 7 core types); a plugin
-   * type falls back to `host.getEntity(type)?.table` — the same
-   * `EntityModuleManifest.table` field `auto-schema.ts#resolveTable` already
-   * uses for schema introspection. `getEntity` (not `getAvailable`) so an
-   * inactive/deactivated plugin type resolves to no table here too, matching
-   * every other host-gated read. No static list gates capture anymore.
+   * Resolves the SQL table for `type` — and only if that table actually exists.
+   *
+   * The name comes from the static `ENTITY_TABLES` map (identical behavior/perf
+   * for the 7 core types) or, for a plugin type, from
+   * `host.getEntity(type)?.table` — the same `EntityModuleManifest.table` field
+   * `auto-schema.ts#resolveTable` already uses for schema introspection.
+   * `getEntity` (not `getAvailable`) so an inactive/deactivated plugin type
+   * resolves to nothing here too, matching every other host-gated read.
+   *
+   * 0.2.2 — the EXISTENCE check is the load-bearing half, and it is new. A name
+   * in that static map used to imply a table, because the host's own migration
+   * chain created all seven unconditionally. Now every entity table is created
+   * by the module that owns it, and two of those modules live in a builtin
+   * envelope the host loads FAIL-SOFT: a missing or unimportable
+   * `dist/plugins/…` bundle leaves `endpoint` and `dto` with no module and no
+   * table, while this map still happily answers `'endpoint'`. Every read then
+   * threw `no such table` — `find_by_tag`, a mixed `<tagged_list>` on a page,
+   * `listSlugs` — where the design says such a type is simply ABSENT. Guarding
+   * one caller (`count`) fixed one symptom; guarding the resolver fixes the
+   * class, and keeps `hasTable` honest for the callers that must fail loudly.
    */
   private resolveTable(type: string): string | undefined {
-    return ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+    const table = ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+    if (!table) return undefined;
+    return this.tableExists(table) ? table : undefined;
+  }
+
+  /**
+   * Memoized POSITIVE results only. A table that exists cannot vanish inside a
+   * process, so caching that is safe; a table that is missing may still be
+   * created by a migration that has not run yet, so a negative answer is never
+   * cached. Absent types are the rare case, so the re-query costs little.
+   */
+  private readonly knownTables = new Set<string>();
+
+  private tableExists(table: string): boolean {
+    if (this.knownTables.has(table)) return true;
+    const found =
+      this.db
+        .prepare(`SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?`)
+        .get(table) !== undefined;
+    if (found) this.knownTables.add(table);
+    return found;
   }
 
   /**
@@ -229,6 +278,10 @@ export class RawEntityReader {
 
   /** Cheap row count for a type — used by `catalog`. */
   count(type: RawEntityType): number {
+    // `resolveTable` already answers undefined for a type with no table, so an
+    // absent type reads as zero rather than throwing. The caller is
+    // `GET /entities/counts`, where one throw blanked every badge in the
+    // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
     const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
@@ -300,67 +353,6 @@ export class RawEntityReader {
     }));
   }
 
-  /** Endpoint-DTO links (denormalised). */
-  findEndpointDtos(
-    endpointSlug: string
-  ): Array<{ dtoSlug: string; dtoName: string; relation: string; statusCode: number | null }> {
-    const rows = this.db
-      .prepare(
-        `SELECT d.slug AS dto_slug, d.name AS dto_name,
-                ed.relation AS relation, ed.status_code AS status_code
-           FROM endpoint_dto ed
-           JOIN dto d ON d.slug = ed.dto_slug
-          WHERE ed.endpoint_slug = ?
-          ORDER BY ed.relation, ed.status_code, d.name`
-      )
-      .all(endpointSlug) as Array<{
-        dto_slug: string;
-        dto_name: string;
-        relation: string;
-        status_code: number | null;
-      }>;
-    return rows.map((r) => ({
-      dtoSlug: r.dto_slug,
-      dtoName: r.dto_name,
-      relation: r.relation,
-      statusCode: r.status_code,
-    }));
-  }
-
-  /** Reverse: endpoints linked to a DTO. */
-  findDtoEndpoints(
-    dtoSlug: string
-  ): Array<{
-    endpointSlug: string;
-    method: string;
-    path: string;
-    relation: string;
-    statusCode: number | null;
-  }> {
-    const rows = this.db
-      .prepare(
-        `SELECT e.slug AS slug, e.method AS method, e.path AS path,
-                ed.relation AS relation, ed.status_code AS status_code
-           FROM endpoint_dto ed
-           JOIN endpoint e ON e.slug = ed.endpoint_slug
-          WHERE ed.dto_slug = ?
-          ORDER BY ed.relation, ed.status_code, e.path`
-      )
-      .all(dtoSlug) as Array<{
-        slug: string;
-        method: string;
-        path: string;
-        relation: string;
-        status_code: number | null;
-      }>;
-    return rows.map((r) => ({
-      endpointSlug: r.slug,
-      method: r.method,
-      path: r.path,
-      relation: r.relation,
-      statusCode: r.status_code,
-    }));
-  }
 
   private hydrate(type: string, row: Record<string, unknown>): RawEntity {
     const slug = row.slug as string;

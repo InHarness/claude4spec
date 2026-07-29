@@ -15,7 +15,12 @@ const MIGRATIONS_DIR = path.join(
  */
 function applyMigrationsUpTo(db: Database.Database, lastVersion: string): void {
   db.exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY, applied_at TEXT NOT NULL DEFAULT (datetime('now')));`);
-  const files = fs.readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql')).sort();
+  // The baseline is not part of the chain — it is the fresh-install shortcut,
+  // and replaying it here would collide with the historical CREATE TABLEs.
+  const files = fs
+    .readdirSync(MIGRATIONS_DIR)
+    .filter((f) => f.endsWith('.sql') && f !== '000_baseline.sql')
+    .sort();
   db.pragma('foreign_keys = OFF');
   for (const file of files) {
     const version = file.replace(/\.sql$/, '');

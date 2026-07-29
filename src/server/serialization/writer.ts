@@ -70,11 +70,11 @@ export interface EntityWriter {
   // not fail loudly; it would land `snapshot` in the `slug` position and restore
   // nothing, which is exactly the silent-data-loss mode that plugin's own comment
   // says it added the probe to avoid. They delegate to `upsert` and carry no logic.
+  //
+  // The `endpoint` and `dto` shims are GONE as of Tier B: their only callers were
+  // those two types' own restore slots, which now live in the envelope and go
+  // through the generic `upsert`.
 
-  /** @deprecated 0.2.2 — use `upsert('endpoint', …)`. */
-  upsertEndpoint(slug: string, input: EndpointCreateInput, actor: ChangedBy): UpsertResult<Endpoint>;
-  /** @deprecated 0.2.2 — use `upsert('dto', …)`. */
-  upsertDto(slug: string, input: DtoCreateInput, actor: ChangedBy): UpsertResult<Dto>;
   /** @deprecated 0.2.2 — use `upsert('database-table', …)`. */
   upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable>;
   /** @deprecated 0.2.2 — use `upsert('ui-view', …)`. */
@@ -85,19 +85,6 @@ export interface EntityWriter {
   upsertDesignSystem(slug: string, input: DesignSystemCreateInput, actor: ChangedBy): UpsertResult<DesignSystem>;
   /** @deprecated 0.2.2 — use `upsert('diagram', …)`. */
   upsertDiagram(slug: string, input: DiagramCreateInput, actor: ChangedBy): UpsertResult<Diagram>;
-
-  /**
-   * Sync endpoint↔dto junction to a target list. Idempotent: link missing, unlink extra.
-   *
-   * Still host-side in 0.2.2. Tier B of the brief (item 5) moves this join into the
-   * `c4s-plugin-api-contracts` envelope's own `backend.service`/`backend.routes`,
-   * at which point the host stops naming the `endpoint_dto` table and the pair of
-   * types that spans it.
-   */
-  syncEndpointDtos(
-    endpointSlug: string,
-    target: Array<{ dtoSlug: string; relation: EndpointDtoRelation; statusCode: number | null }>
-  ): { linked: number; unlinked: number; warnings: string[] };
 
   /** Sync entity tags to a target list. Idempotent. */
   syncTags(type: RawEntityType, slug: string, tags: string[]): void;

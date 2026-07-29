@@ -36,6 +36,7 @@ const PUBLISHED_PLUGIN_RUNTIME_NAMES = [
   'registerFrontendModule',
   'queryClient',
   'editorBridge',
+  'EditorBridgeProvider',
   'registerExtensionReferenceType',
   'versionService',
   'tagsService',

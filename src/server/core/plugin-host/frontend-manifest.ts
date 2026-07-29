@@ -21,6 +21,8 @@ import {
   type FrontendBundle,
   type WorkspaceRootResolver,
 } from './frontend-assets.js';
+import { enumerateEnvelopeFrontendBundles } from './frontend-assets.js';
+import type { BuiltinEnvelope } from './builtin-envelopes.js';
 import type { PluginRegistry } from './types.js';
 
 /**
@@ -53,6 +55,8 @@ function toEntry(b: FrontendBundle): PluginFrontendEntry {
 
 /**
  * Build the boot manifest. `plugins[]` is base ∪ overlay:
+ *   • envelope tier (0.2.2) — builtin packages under `<hostRoot>/plugins/`,
+ *     ungated (they live in the host repo), advertised only once built;
  *   • workspace tier (`workspacePackages`) — ALWAYS advertised, ungated (a base
  *     npm install is trusted), present for every project of the process; and
  *   • overlay tier — the primary project's project-local bundles, ONLY when that
@@ -66,8 +70,14 @@ export function buildFrontendManifest(
   serving?: FrontendManifestServing,
   workspacePackages: readonly string[] = [],
   workspaceRootResolver?: WorkspaceRootResolver,
+  envelopes: readonly BuiltinEnvelope[] = [],
 ): FrontendManifestResponse {
   const byName = new Map<string, PluginFrontendEntry>();
+  // 0.2.2: envelopes go in FIRST, so a workspace package or a project-local
+  // overlay of the same name can still deliberately shadow one — matching the
+  // backend's last-wins collision semantics, where the envelope also registers
+  // first and can be overridden.
+  for (const b of enumerateEnvelopeFrontendBundles(envelopes)) byName.set(b.name, toEntry(b));
   for (const b of enumerateWorkspaceFrontendBundles(workspacePackages, workspaceRootResolver))
     byName.set(b.name, toEntry(b));
   if (serving?.trusted) {

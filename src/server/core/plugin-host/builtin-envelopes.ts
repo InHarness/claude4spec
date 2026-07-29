@@ -126,27 +126,73 @@ function resolveEnvelopeEntry(dir: string): string | null {
  */
 export function discoverBuiltinEnvelopes(root: string | null = hostPackageRoot()): BuiltinEnvelope[] {
   if (!root) return [];
-  const pluginsDir = path.join(root, 'plugins');
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
-  } catch {
-    return []; // no plugins/ directory — nothing to discover
-  }
 
-  const out: BuiltinEnvelope[] = [];
-  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-    if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
-    const dir = path.join(pluginsDir, entry.name);
-    const abs = resolveEnvelopeEntry(dir);
-    if (!abs) {
-      console.warn(
-        `[plugin-loader] built-in envelope '${entry.name}' has no resolvable entry ` +
-          `(checked package.json exports/main, then src/index.js) — skipping`,
-      );
-      continue;
+  // Two locations, and the ORDER IS LOAD-BEARING.
+  //
+  //  1. `dist/plugins/<name>/` — where the host's own build emits an envelope,
+  //     and the only location that matters in a packaged host: every mechanism
+  //     that packages this project copies `dist/` and only `dist/` (npm via
+  //     `package.json#files`, container images via `COPY /app/dist`). An
+  //     artifact outside it is silently absent — discovery finds nothing, raises
+  //     nothing, and the host simply has no `endpoint` and no `dto`.
+  //  2. `plugins/<name>/` — an envelope carrying its own built `dist/`, the
+  //     shape an extracted package has when vendored back in. Kept so a
+  //     hand-placed package works, and it is what the fixture tests use.
+  //
+  // First hit wins, so (1) beats (2). That is not a preference, it is a
+  // correctness requirement: `plugins/<name>/dist` is gitignored build output
+  // that may be left over from an older layout, and a stale copy there would
+  // otherwise shadow what was actually just built — locally only, while the
+  // container silently ran something else.
+  const byName = new Map<string, BuiltinEnvelope>();
+  for (const pluginsDir of [path.join(root, 'dist', 'plugins'), path.join(root, 'plugins')]) {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(pluginsDir, { withFileTypes: true });
+    } catch {
+      continue; // directory absent — nothing to discover here
     }
-    out.push({ name: entry.name, dir, specifier: pathToFileURL(abs).href });
+
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      const dir = path.join(pluginsDir, entry.name);
+      // Already answered by the built copy — an unbuilt source tree beside it is
+      // the normal state, not something to report.
+      if (byName.has(entry.name)) continue;
+      const abs = resolveEnvelopeEntry(dir);
+      if (!abs) {
+        {
+          console.warn(
+            `[plugin-loader] built-in envelope '${entry.name}' has no resolvable entry ` +
+              `(checked package.json exports/main, then src/index.js) — skipping. ` +
+              `If this is a source tree, it has not been built: run \`npm run build:envelopes\`.`,
+          );
+        }
+        continue;
+      }
+      byName.set(entry.name, { name: entry.name, dir, specifier: pathToFileURL(abs).href });
+    }
   }
-  return out;
+  return [...byName.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The envelopes whose FRONTEND may be served: those whose backend actually
+ * registered.
+ *
+ * Discovery answers "is there a bundle on disk". Loading answers "did it import
+ * and contribute its types" — and the loader is deliberately fail-soft, so one
+ * unimportable package cannot stop bootstrap. Feeding the frontend manifest from
+ * discovery alone lets a FAILED envelope still put its sidebar tab and its
+ * routes on screen with no backend behind them: the list, the detail and every
+ * mutation 404, and the type looks broken rather than absent. The design says an
+ * envelope that did not load leaves the host simply without that type, and
+ * absent beats broken — so the two decisions are made from the same fact here.
+ */
+export function servableEnvelopes(
+  discovered: BuiltinEnvelope[],
+  records: Array<{ package: string; status: string }>,
+): BuiltinEnvelope[] {
+  const loaded = new Set(records.filter((r) => r.status === 'loaded').map((r) => r.package));
+  return discovered.filter((e) => loaded.has(e.name));
 }

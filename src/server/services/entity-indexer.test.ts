@@ -21,12 +21,16 @@ import type { RawEntityReader } from '../domain/raw-entity-reader.js';
 let db: Database.Database;
 let warn: ReturnType<typeof vi.spyOn>;
 
-type Mod = { type: string; table: string; displayOrder?: number };
+type Mod = { type: string; table: string; displayOrder?: number; auxTables?: string[] };
 
 /** Host double: `available` is the whole pool, `active` the config.entities subset. */
 function hostWith(available: Mod[], activeTypes?: string[]): PluginHost {
   const isActive = (t: string) => (activeTypes ? activeTypes.includes(t) : true);
-  const norm = available.map((m) => ({ displayOrder: 10, ...m }));
+  const norm = available.map(({ auxTables, ...m }) => ({
+    displayOrder: 10,
+    ...m,
+    backend: auxTables ? { auxTables } : undefined,
+  }));
   return {
     listAvailable: () => norm,
     listEntities: () => norm.filter((m) => isActive(m.type)),
@@ -111,6 +115,55 @@ describe('indexAll — clearing', () => {
     await expect(makeIndexer(host).indexer.indexAll()).resolves.toBeUndefined();
     expect(rowCount('endpoint')).toBe(0); // the rest of the rebuild still ran
     expect(warn.mock.calls.flat().join(' ')).toContain('use_cases');
+  });
+
+  it('clears a module-declared auxiliary table', async () => {
+    // The junction used to be a hardcoded `DELETE FROM endpoint_dto` in the
+    // indexer. The host now knows only that a module declared a table it owns.
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
+    db.prepare(`INSERT INTO endpoint_dto (endpoint_slug, dto_slug) VALUES ('e1', 'd1')`).run();
+
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint', auxTables: ['endpoint_dto'] }]);
+    await makeIndexer(host).indexer.indexAll();
+
+    expect(rowCount('endpoint_dto')).toBe(0);
+  });
+
+  it('clears a DEACTIVATED type’s auxiliary table too', async () => {
+    // Same reasoning as the entity table above: a deactivated type's junction
+    // rows are exactly as stale, and nothing else would ever remove them.
+    db.prepare(`INSERT INTO endpoint_dto (endpoint_slug, dto_slug) VALUES ('e1', 'd1')`).run();
+    const host = hostWith(
+      [
+        { type: 'endpoint', table: 'endpoint', auxTables: ['endpoint_dto'] },
+        { type: 'diagram', table: 'diagram' },
+      ],
+      ['diagram'],
+    );
+    await makeIndexer(host).indexer.indexAll();
+
+    expect(rowCount('endpoint_dto')).toBe(0);
+  });
+
+  it('skips a declared auxiliary table that does not exist', async () => {
+    // A plugin can declare an aux table whose migration never ran. Throwing here
+    // would roll back the whole rebuild, exactly as it did for entity tables.
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint', auxTables: ['no_such_junction'] }]);
+
+    await expect(makeIndexer(host).indexer.indexAll()).resolves.toBeUndefined();
+    expect(rowCount('endpoint')).toBe(0);
+  });
+
+  it('refuses an auxiliary table name that is not a bare SQL identifier', async () => {
+    db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
+    const host = hostWith([
+      { type: 'endpoint', table: 'endpoint', auxTables: ['y; DROP TABLE endpoint; --'] },
+    ]);
+
+    await makeIndexer(host).indexer.indexAll();
+
+    expect(() => rowCount('endpoint')).not.toThrow();
   });
 
   it('refuses a table name that is not a bare SQL identifier', async () => {

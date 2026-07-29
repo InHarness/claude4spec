@@ -126,6 +126,31 @@ export class EntityIndexerService {
     return out;
   }
 
+  /**
+   * Auxiliary tables declared by modules (`backend.auxTables`) — junctions and
+   * side indexes whose rows are derived from the entity files and therefore have
+   * to be cleared before a rebuild repopulates them.
+   *
+   * Drawn from `listAvailable()`, not `listEntities()`: a deactivated type's
+   * junction rows are exactly as stale as its entity rows, and the entity tables
+   * below are cleared on the same basis.
+   */
+  private auxTables(): string[] {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const m of this.host.listAvailable()) {
+      for (const declared of m.backend?.auxTables ?? []) {
+        // Same identifier validation as the entity tables: these names come from
+        // a plugin manifest and are interpolated into `db.exec`.
+        const table = this.safeTable(declared, m.type);
+        if (!table || seen.has(table)) continue;
+        seen.add(table);
+        out.push(table);
+      }
+    }
+    return out;
+  }
+
   async indexAll(): Promise<void> {
     const startedAt = performance.now();
     let count = 0;
@@ -145,11 +170,15 @@ export class EntityIndexerService {
         // DELETE. Table names come from `module.table`, so an active plugin type is
         // cleared too — the old hardcoded list silently left plugin rows behind.
         this.db.exec('DELETE FROM entity_tag;');
-        // The endpoint↔dto junction is still host-side in 0.2.2 (brief item 5 moves
-        // it into the api-contracts envelope, at which point this line goes with it).
-        // Rows would also cascade from `DELETE FROM endpoint`, but clearing it
-        // explicitly keeps the rebuild correct if that FK ever changes.
-        this.db.exec('DELETE FROM endpoint_dto;');
+        // Module-declared auxiliary tables (junctions, side indexes) before the
+        // entity tables they hang off. The host does not know what any of them
+        // mean — a module declares `backend.auxTables` and the rebuild clears
+        // them. Rows would usually also cascade from the parent DELETE, but
+        // clearing explicitly keeps the rebuild correct if an FK ever changes.
+        for (const table of this.auxTables()) {
+          if (!this.tableExists(table)) continue;
+          this.db.exec(`DELETE FROM ${table};`);
+        }
         // Ordered (active) tables first, dependents before their dependencies;
         // then any remaining addressable table — deactivated types included, so
         // their rows never linger as un-reindexable phantoms.
@@ -224,7 +253,12 @@ export class EntityIndexerService {
     // DEACTIVATED must still have its row dropped. Gating on active-only left the
     // row behind while still broadcasting a delete — and since the rebuild no
     // longer touches inactive tables either, nothing would ever remove it.
-    const table = this.safeTable(this.host.getAvailable(type)?.table, type);
+    // A resolvable NAME is not an existing table — a module can declare one whose
+    // migration never ran, which since 0.2.2 includes an envelope that failed to
+    // load. `DELETE FROM` a missing table throws out of the watcher callback,
+    // where nothing catches it.
+    const named = this.safeTable(this.host.getAvailable(type)?.table, type);
+    const table = named && this.tableExists(named) ? named : null;
     if (!table) {
       console.warn(
         `[entity-indexer] ${relPath} unlinked but type '${type}' resolves to no table — ` +

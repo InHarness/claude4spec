@@ -140,6 +140,12 @@ export interface MountContext {
    * write-API. Stored untyped — callers cast on retrieval.
    */
   registerEntityService(type: string, service: unknown): void;
+  /**
+   * 0.2.2: register a handler for "some entity was renamed". Used by
+   * `synthesizeMount` to bind a module's `backend.onEntityRenamed` to this
+   * context; a module writing `mount` by hand can call it directly.
+   */
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
 
 /**
@@ -148,6 +154,13 @@ export interface MountContext {
  * the MCP server as `${type}-tools`, and registers the entity service.
  */
 export type PluginMountFn = (ctx: MountContext) => void;
+
+/** 0.2.2 — an entity changed slug. See `backend.onEntityRenamed`. */
+export interface EntityRenamedEvent {
+  type: string;
+  oldSlug: string;
+  newSlug: string;
+}
 
 export interface BackendModule extends EntityModuleManifest {
   /** L9 — JSON serialization for external consumers (CLI, MCP, ...). */
@@ -199,6 +212,35 @@ export interface BackendModule extends EntityModuleManifest {
      * server each turn behind the facade.
      */
     mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
+    /**
+     * 0.2.2 — AUXILIARY tables this module owns beyond `table` itself: junctions
+     * and side indexes whose rows are derived from the entity files and so must
+     * be cleared when the index is rebuilt from scratch.
+     *
+     * Declared rather than callback-shaped on purpose: the index rebuild runs in
+     * one transaction, and a name in an array can be validated as an identifier
+     * and skipped when the table does not exist. Arbitrary code inside that
+     * transaction could roll the whole rebuild back.
+     *
+     * The host clears these; it never interprets them. It is the module's job to
+     * repopulate them from its own restore path.
+     */
+    auxTables?: string[];
+    /**
+     * 0.2.2 — the module reacts to ANOTHER entity being renamed, to repoint
+     * references that live in its own tables or files.
+     *
+     * The host knows an entity was renamed; it does not know which types care.
+     * Before this slot the host itself special-cased `type === 'dto'` (repersist
+     * endpoints whose `linked_dtos` embed the slug) and `type === 'design-system'`
+     * (repoint `ui_view.design_system_slug`) — knowledge belonging to the modules
+     * that own those columns.
+     *
+     * Called once per rename for every ACTIVE module, including the renamed
+     * entity's own. Handlers must be idempotent and non-throwing; the host logs
+     * and continues past a throw, exactly as the per-type branches did.
+     */
+    onEntityRenamed?: (ev: EntityRenamedEvent, ctx: MountContext) => void;
   };
 
   /**
@@ -384,6 +426,14 @@ export interface ProjectPluginHost {
    * one instance — see the MountContext note).
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
+
+  /**
+   * 0.2.2 — rename listeners contributed by modules at mount time. The host
+   * collects them; `ReferencesService` fans a rename out to all of them so no
+   * host code has to know which types embed which other type's slug.
+   */
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
+  listRenameListeners(): Array<(ev: EntityRenamedEvent) => void>;
 
   /**
    * Build a fresh MCP server instance from every registered factory. Called

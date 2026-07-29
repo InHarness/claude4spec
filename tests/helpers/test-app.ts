@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createTestDb } from './test-db.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
+import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
 import { artifactsRouter } from '../../src/server/routes/artifacts.js';
@@ -60,6 +61,10 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
 
   const registry = new PluginRegistryImpl();
   registerAllPlugins(registry);
+  // 0.2.2: `endpoint` and `dto` arrive through the loader now, not
+  // `registerAllPlugins`. Loading the envelopes keeps every test that writes one
+  // exercising the real registration path. Requires the built bundle — `pretest`.
+  await loadBuiltinEnvelopes(registry);
   // Test-only fixture types (e.g. proving generic capture works for a
   // plugin-contributed type) are registered before consolidate() so they
   // behave identically to core types for the rest of this function.
@@ -85,10 +90,6 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     new Map([['pages', pages]]),
     new Map([['pages', watcher]]),
   );
-  // M29: wire the entity-file deps so slug-rename propagation (e.g. design-system
-  // → ui-view designSystemSlug) runs as it does in production.
-  referencesService.setEntityDeps(db, entityStore);
-
   const router = Router();
   host.mountBackend({
     app: router,
@@ -102,7 +103,11 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     entityStore,
     registerMcpServer: (name, server) => host.registerMcpServer(name, server),
     registerEntityService: (type, service) => host.registerEntityService(type, service),
+    registerRenameListener: (fn) => host.registerRenameListener(fn),
   });
+  // M29: slug-rename propagation into entity files, as in production. Must come
+  // after mountBackend — that is when modules contribute their rename listeners.
+  referencesService.setPluginHost(host);
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader));
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can

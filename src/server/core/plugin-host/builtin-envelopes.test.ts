@@ -12,7 +12,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { discoverBuiltinEnvelopes, hostPackageRoot } from './builtin-envelopes.js';
+import { discoverBuiltinEnvelopes, hostPackageRoot, servableEnvelopes } from './builtin-envelopes.js';
 import { loadBuiltinEnvelopes } from './loader.js';
 import { PluginRegistryImpl } from './registry.js';
 import type { EntityContribution, PluginManifest } from '../../../shared/plugin-host/manifest.js';
@@ -234,5 +234,41 @@ describe('loadBuiltinEnvelopes', () => {
   it('is a no-op with no records when there are no envelopes', async () => {
     const registry = new PluginRegistryImpl();
     expect(await loadBuiltinEnvelopes(registry, async () => ({}), root)).toEqual({ records: [] });
+  });
+});
+
+/**
+ * An envelope that failed to load must not have its frontend served.
+ *
+ * The two decisions — "register the backend" and "serve the browser bundle" —
+ * were made from different facts: the first from the load result, the second
+ * from disk. Since the loader is fail-soft by design, that gap is reachable
+ * (a bad chunk, a `module.register` hook that cannot install on node <20.6), and
+ * what it produces is worse than the absence it was meant to degrade into: the
+ * type's sidebar tab and routes mount, and every request behind them 404s.
+ */
+describe('servableEnvelopes', () => {
+  const env = (name: string) => ({ name, dir: `/x/${name}`, specifier: `file:///x/${name}` });
+
+  it('drops an envelope whose backend did not load', () => {
+    const discovered = [env('good'), env('broken')];
+    const records = [
+      { package: 'good', status: 'loaded' },
+      { package: 'broken', status: 'failed' },
+    ];
+    expect(servableEnvelopes(discovered, records).map((e) => e.name)).toEqual(['good']);
+  });
+
+  it('drops an envelope with no load record at all', () => {
+    expect(servableEnvelopes([env('ghost')], [])).toEqual([]);
+  });
+
+  it('keeps the ones that loaded', () => {
+    const discovered = [env('a'), env('b')];
+    const records = [
+      { package: 'a', status: 'loaded' },
+      { package: 'b', status: 'loaded' },
+    ];
+    expect(servableEnvelopes(discovered, records)).toEqual(discovered);
   });
 });

@@ -1,0 +1,66 @@
+{
+  "name": "@inharness-ai/c4s-plugin-api-contracts",
+  "version": "0.2.2",
+  "description": "claude4spec builtin envelope contributing the `endpoint` and `dto` entity types and the junction that couples them (host API 1.0.0).",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./frontend": {
+      "types": "./dist/frontend.d.ts",
+      "import": "./dist/frontend.js",
+      "default": "./dist/frontend.js"
+    }
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "peerDependencies": {
+    "@c4s/plugin-runtime": "*",
+    "@tanstack/react-query": "^5.0.0",
+    "@tanstack/react-router": "^1.0.0",
+    "@tiptap/core": "^2.0.0",
+    "better-sqlite3": "*",
+    "express": "^4.21.2",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-dom": "^18.0.0 || ^19.0.0",
+    "zod": "*"
+  },
+  "peerDependenciesMeta": {
+    "@c4s/plugin-runtime": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "@tanstack/react-router": {
+      "optional": true
+    },
+    "@tiptap/core": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
+  }
+}

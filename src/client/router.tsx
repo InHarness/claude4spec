@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   createRouter,
   createRootRouteWithContext,
@@ -6,6 +6,7 @@ import {
   useParams,
   useSearch,
   useNavigate,
+  useRouter,
   Navigate,
   type AnyRoute,
 } from '@tanstack/react-router';
@@ -17,8 +18,6 @@ import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
-import { EndpointsList } from './entities/endpoint/list-page.js';
-import { DtosList } from './entities/dto/list-page.js';
 import { UiViewsList } from './entities/ui-view/list-page.js';
 import { AcsList } from './entities/ac/list-page.js';
 import { DesignSystemsList } from './entities/design-system/list-page.js';
@@ -35,15 +34,11 @@ import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
-import { EndpointDetail } from './entities/endpoint/detail-panel.js';
-import { DtoDetail } from './entities/dto/detail-panel.js';
 import { UiViewDetail } from './entities/ui-view/detail-panel.js';
 import { AcDetail } from './entities/ac/detail-panel.js';
 import { DesignSystemDetail } from './entities/design-system/detail-panel.js';
 import { EntityVersionHistoryView } from './host-ui-kit/index.js';
 import { usePages } from './hooks/usePages.js';
-import { useEndpoint } from './hooks/useEndpoints.js';
-import { useDto } from './hooks/useDtos.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
 import { useConfig, useRoots } from './hooks/useConfig.js';
@@ -55,6 +50,8 @@ import { resolveLandingTarget } from './lib/landing.js';
 import type { EntityType } from '../shared/entities.js';
 import { clientPluginHost } from './core/plugin-host/host.js';
 import { PROJECT_ID } from './lib/api-core.js';
+import { frontendPluginsBooted, pluginBootPending } from './runtime/boot-plugins.js';
+import { LoadingState } from './host-ui-kit/actions/LoadingState.js';
 
 /**
  * Resolve a TanStack Router navigate target for an entity type/slug pair via
@@ -135,46 +132,6 @@ const legacyPageRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pages/$',
   component: LegacyPageRedirect,
-});
-
-const endpointsIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints',
-  validateSearch: listSearchSchema,
-  component: EndpointsIndexRoute,
-});
-
-const endpointDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints/$slug',
-  component: EndpointDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="endpoint" />,
-});
-
-const endpointHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints/$slug/history',
-  component: EndpointHistoryRoute,
-});
-
-const dtosIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos',
-  validateSearch: listSearchSchema,
-  component: DtosIndexRoute,
-});
-
-const dtoDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos/$slug',
-  component: DtoDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="dto" />,
-});
-
-const dtoHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos/$slug/history',
-  component: DtoHistoryRoute,
 });
 
 // M33 phase 3: the 3 `/database-tables` routes are no longer hardcoded here.
@@ -324,12 +281,6 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   indexRoute,
   spaceRoute,
   legacyPageRedirectRoute,
-  endpointsIndexRoute,
-  endpointDetailRoute,
-  endpointHistoryRoute,
-  dtosIndexRoute,
-  dtoDetailRoute,
-  dtoHistoryRoute,
   uiViewsIndexRoute,
   uiViewDetailRoute,
   designSystemsIndexRoute,
@@ -359,6 +310,18 @@ export function createAppRouter(queryClient: QueryClient) {
     routeTree: rootRoute.addChildren([...BASE_ROUTE_CHILDREN]),
     context: { queryClient },
     defaultPreload: 'intent',
+    /**
+     * 0.2.2: distinguish "this route does not exist" from "this route has not
+     * been contributed YET".
+     *
+     * Plugin frontends boot after first paint, so a hard refresh on a
+     * plugin-contributed deep link — `/endpoints/foo`, `/dtos/bar`, and before
+     * them `/database-tables/baz` — lands before its route exists. Rendering the
+     * ordinary not-found there is wrong twice over: it tells the user a working
+     * link is broken, and it does so for a page that becomes correct a moment
+     * later. Wait out the boot instead, then let the router re-resolve.
+     */
+    defaultNotFoundComponent: PendingOrNotFound,
     // M31: the SPA is served under /p/<project-id>/ — in-app routes stay
     // basepath-relative ('/space/$rootId/$', '/settings', …).
     basepath: PROJECT_ID ? `/p/${PROJECT_ID}` : '/',
@@ -366,6 +329,67 @@ export function createAppRouter(queryClient: QueryClient) {
 }
 
 export type AppRouter = ReturnType<typeof createAppRouter>;
+
+/**
+ * Holds a spinner while the plugin boot is in flight, then re-resolves the
+ * current URL once. If the route still does not exist after the boot settled,
+ * this falls through to the real not-found — a boot that failed must not leave a
+ * permanent spinner.
+ */
+function PendingOrNotFound() {
+  const [waiting, setWaiting] = useState(() => pluginBootPending());
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!waiting) return;
+    let cancelled = false;
+    void frontendPluginsBooted.then(() => {
+      if (cancelled) return;
+      setWaiting(false);
+      // The route tree grew while this component was mounted; re-resolving the
+      // same URL is what picks up the newly-mounted route.
+      void router.invalidate();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [waiting, router]);
+
+  if (waiting) {
+    return (
+      <RoutePane>
+        <LoadingState lines={4} />
+      </RoutePane>
+    );
+  }
+  return <RouteNotFound />;
+}
+
+/** The ordinary not-found: the URL matches nothing, and nothing more is coming. */
+function RouteNotFound() {
+  const navigate = useNavigate();
+  return (
+    <RoutePane>
+      <div className="flex-1 flex items-center justify-center px-10">
+        <div className="max-w-md text-center" style={{ color: 'var(--c-muted)' }}>
+          <div className="text-[15px] font-semibold mb-2" style={{ color: 'var(--c-ink)' }}>
+            Page not found
+          </div>
+          <div className="text-[12.5px] mb-4" style={{ color: 'var(--c-subtle)' }}>
+            This URL does not match any route in the app.
+          </div>
+          <button
+            onClick={() => navigate({ to: '/' })}
+            className="rounded-md px-3 py-1.5 text-[12.5px]"
+            style={{ background: 'var(--c-accent)', color: '#fff' }}
+          >
+            Back to start
+          </button>
+        </div>
+      </div>
+    </RoutePane>
+  );
+}
 
 /**
  * M33 phase 3: remount the router's route tree as BASE ∪ `pluginRoutes`. Centralizes
@@ -486,154 +510,6 @@ function PageRoute() {
           )}
         </div>
       </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function EndpointsIndexRoute() {
-  const search = useSearch({ from: '/endpoints' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <EndpointsList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/endpoints', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/endpoints',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/endpoints/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function EndpointDetailRoute() {
-  const { slug } = useParams({ from: '/endpoints/$slug' });
-  const navigate = useNavigate();
-  const { data: endpoint } = useEndpoint(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar
-        type="endpoint"
-        slug={slug}
-        method={endpoint?.method}
-        path={endpoint?.path}
-        view="details"
-        hasHistory
-      />
-      <EditorBridgeProvider bridge={bridge}>
-        <EndpointDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/endpoints' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/endpoints/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function EndpointHistoryRoute() {
-  const { slug } = useParams({ from: '/endpoints/$slug/history' });
-  const { data: endpoint } = useEndpoint(slug);
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar
-        type="endpoint"
-        slug={slug}
-        method={endpoint?.method}
-        path={endpoint?.path}
-        view="history"
-        hasHistory
-      />
-      <EntityVersionHistoryView type="endpoint" slug={slug} />
-    </RoutePane>
-  );
-}
-
-function DtosIndexRoute() {
-  const search = useSearch({ from: '/dtos' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <DtosList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/dtos', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/dtos',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/dtos/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function DtoDetailRoute() {
-  const { slug } = useParams({ from: '/dtos/$slug' });
-  const navigate = useNavigate();
-  const { data: dto } = useDto(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="details" hasHistory />
-      <EditorBridgeProvider bridge={bridge}>
-        <DtoDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/dtos' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/dtos/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function DtoHistoryRoute() {
-  const { slug } = useParams({ from: '/dtos/$slug/history' });
-  const { data: dto } = useDto(slug);
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
-      <EntityVersionHistoryView type="dto" slug={slug} />
     </RoutePane>
   );
 }

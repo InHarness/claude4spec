@@ -43,30 +43,6 @@ import type { RawEntityType } from '../domain/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 
-/**
- * The endpoint↔dto junction half of the endpoint service, named structurally.
- *
- * Still host-side in 0.2.2 — Tier B (brief item 5) moves the whole join into the
- * `c4s-plugin-api-contracts` envelope, after which neither this shape nor the
- * `endpoint_dto` table is host knowledge at all.
- */
-interface EndpointJunctionService {
-  getBySlug(slug: string): { dtos: EndpointDtoLink[] } | null;
-  linkDto(
-    endpointSlug: string,
-    dtoSlug: string,
-    relation: EndpointDtoRelation,
-    statusCode: number | null,
-    opts: { writeFile: boolean },
-  ): unknown;
-  unlinkDto(
-    endpointSlug: string,
-    dtoSlug: string,
-    relation: EndpointDtoRelation,
-    statusCode: number | null,
-    opts: { writeFile: boolean },
-  ): unknown;
-}
 
 /**
  * The raw shape a concrete service's `upsert` returns.
@@ -150,12 +126,6 @@ export class HostEntityWriter implements EntityWriter {
 
   // ─── deprecated per-type shims (see the interface for why they survive) ────
 
-  upsertEndpoint(slug: string, input: EndpointCreateInput, actor: ChangedBy): UpsertResult<Endpoint> {
-    return this.upsertOrThrow<Endpoint>('endpoint', slug, input, actor);
-  }
-  upsertDto(slug: string, input: DtoCreateInput, actor: ChangedBy): UpsertResult<Dto> {
-    return this.upsertOrThrow<Dto>('dto', slug, input, actor);
-  }
   upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable> {
     return this.upsertOrThrow<DatabaseTable>('database-table', slug, input, actor);
   }
@@ -190,60 +160,7 @@ export class HostEntityWriter implements EntityWriter {
     return result;
   }
 
-  // ─── junction + tags ──────────────────────────────────────────────────────
-
-  syncEndpointDtos(
-    endpointSlug: string,
-    target: Array<{ dtoSlug: string; relation: EndpointDtoRelation; statusCode: number | null }>,
-  ): { linked: number; unlinked: number; warnings: string[] } {
-    const service = this.host.getEntityService('endpoint') as EndpointJunctionService | null;
-    if (!service?.getBySlug) {
-      return {
-        linked: 0,
-        unlinked: 0,
-        warnings: [`entity service for type 'endpoint' not registered`],
-      };
-    }
-    const ep = service.getBySlug(endpointSlug);
-    if (!ep) return { linked: 0, unlinked: 0, warnings: [`endpoint '${endpointSlug}' not found`] };
-
-    const keyOf = (l: { dtoSlug: string; relation: string; statusCode: number | null }) =>
-      `${l.relation}|${l.dtoSlug}|${l.statusCode ?? 'null'}`;
-    const currentSet = new Map((ep.dtos as EndpointDtoLink[]).map((l) => [keyOf(l), l]));
-    const targetSet = new Map(target.map((l) => [keyOf(l), l]));
-
-    let linked = 0;
-    let unlinked = 0;
-    const warnings: string[] = [];
-
-    // Unlink extras first to avoid conflicts on UNIQUE constraint
-    for (const [k, current] of currentSet) {
-      if (!targetSet.has(k)) {
-        try {
-          service.unlinkDto(endpointSlug, current.dtoSlug, current.relation, current.statusCode, {
-            writeFile: false,
-          });
-          unlinked += 1;
-        } catch (err) {
-          warnings.push(`unlink '${k}' failed: ${(err as Error).message}`);
-        }
-      }
-    }
-    // Link missing
-    for (const [k, want] of targetSet) {
-      if (!currentSet.has(k)) {
-        try {
-          service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode, {
-            writeFile: false,
-          });
-          linked += 1;
-        } catch (err) {
-          warnings.push(`link '${k}' failed: ${(err as Error).message}`);
-        }
-      }
-    }
-    return { linked, unlinked, warnings };
-  }
+  // ─── tags ─────────────────────────────────────────────────────────────────
 
   syncTags(type: RawEntityType, slug: string, tags: string[]): void {
     // M29: slug is the sole identity — assign directly. The caller's upsert has

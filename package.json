@@ -68,7 +68,15 @@
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
-    "deps:unlink": "node scripts/deps-unlink.mjs"
+    "deps:unlink": "node scripts/deps-unlink.mjs",
+    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build",
+    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev",
+    "prebuild": "npm run build:envelopes",
+    "predev": "npm run build:envelopes",
+    "predev:default": "npm run build:envelopes",
+    "pretest": "npm run build:envelopes",
+    "pretest:watch": "npm run build:envelopes",
+    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",

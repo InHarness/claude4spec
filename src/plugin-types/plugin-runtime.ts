@@ -30,7 +30,7 @@
  * VALUES does not apply to declarations (brief "Version semantics").
  */
 
-import type { ComponentType } from 'react';
+import type { ComponentType, ReactElement, ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 // Import-then-export the dep-free contract so the names are usable locally
 // (e.g. `FrontendModule extends EntityModuleManifest`) AND re-exported as the
@@ -81,8 +81,17 @@ export interface MountContext {
   entityStore: any;
   registerMcpServer(name: string, factory: () => unknown): void;
   registerEntityService(type: string, service: unknown): void;
+  /** 0.2.2 — see `backend.onEntityRenamed`; `synthesizeMount` uses this to bind it. */
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
 export type PluginMountFn = (ctx: MountContext) => void;
+
+/** 0.2.2 — an entity changed slug. See `backend.onEntityRenamed`. */
+export interface EntityRenamedEvent {
+  type: string;
+  oldSlug: string;
+  newSlug: string;
+}
 
 // ── M13 — generic entity-tools backend contract (declarative `backend.service`/
 // `backend.crud` slots). A plugin implements this interface directly; the
@@ -163,6 +172,27 @@ export declare function mcpTool(
   handler: (input: unknown) => unknown,
 ): McpTool;
 
+/**
+ * The error a plugin's backend code throws to produce a structured host
+ * response. A backend-only VALUE, like the MCP builders above.
+ *
+ * It must be THIS class, not a local one with the same shape. The host narrows
+ * with `instanceof` — in the MCP `create_entities`/`update_entities` error
+ * mapper and in the global Express error handler — and class identity is
+ * nominal, not structural. A plugin that declares its own `DomainError`
+ * type-checks everywhere and still has every code it raises collapse to
+ * `INTERNAL` with a 500, which is how the caller learns that a slug conflict
+ * (409) was a server crash.
+ *
+ * `code` is a free-form string; the host maps the codes it knows
+ * (`NOT_FOUND` → 404, `SLUG_CONFLICT` → 409, `VALIDATION` → 400) and treats the
+ * rest as 400.
+ */
+export declare class DomainError extends Error {
+  constructor(code: string, message: string);
+  code: string;
+}
+
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
 // with the host's `z`, obtained here — NOT a bundled `import { z } from 'zod'`. The
@@ -187,14 +217,44 @@ export declare function mcpTool(
 export declare const z: typeof import('zod').z;
 
 // ── L9 serializer ──
+/**
+ * 0.2.2 — the reader, named. Previously `unknown`, which meant a plugin could
+ * not read its own rows without casting the whole context.
+ *
+ * `db` and `host` are the escape hatches a type owning AUXILIARY tables needs:
+ * a junction or side index cannot be expressed through the generic single-row
+ * read, and `getEntityService` is how its restore path reaches its own service.
+ * Both are `any` for the usual reason — their real types are better-sqlite3 and
+ * the host's own registry, neither of which belongs in this contract.
+ */
+export interface HostEntityReader {
+  /** The project database. Touch what your module declared; nothing else. */
+  db: any;
+  /** The project plugin host, when one was wired. */
+  host?: {
+    getEntity(type: string): unknown;
+    getEntityService?(type: string): unknown;
+  };
+  getEntity(type: string, slug: string): unknown;
+  /** Page sections referencing this entity — `{anchor, pagePath, headingText, relation}`. */
+  findSectionReferences(type: string, slug: string): unknown[];
+}
+
+/** 0.2.2 — the restore-path writer, named. See `HostEntityReader`. */
+export interface HostEntityWriter {
+  upsert(type: string, slug: string, input: unknown, actor: 'user' | 'agent', opts?: unknown): unknown;
+  syncTags(type: string, slug: string, tags: string[]): void;
+  delete(type: string, slug: string, actor: 'user' | 'agent'): unknown;
+}
+
 export interface SerializeContext {
-  reader: unknown;
+  reader: HostEntityReader;
   depth: number;
   maxDepth: number;
 }
 export interface RestoreContext {
-  reader: unknown;
-  writer: unknown;
+  reader: HostEntityReader;
+  writer: HostEntityWriter;
   releaseId: number | null;
   actor: 'user' | 'agent';
 }
@@ -296,12 +356,47 @@ export interface EditorBridge {
   openSection: (pagePath: string, anchor: string) => void;
 }
 
+/**
+ * Supplies the bridge to everything rendered beneath it — and publishes it into
+ * the process-wide singleton for the lifetime of the mount.
+ *
+ * A plugin that contributes page ROUTES must wrap any route body containing a
+ * `DocEditor` (i.e. any entity detail with a rich-text field) in one of these.
+ * `DocEditor` resolves the bridge from React context and falls back to a no-op
+ * when there is none, so the failure is silent: entity chips inside the body
+ * stop navigating, and since the fallback is also published to the singleton,
+ * chips rendered outside the tree stop navigating while that page is mounted.
+ */
+export declare function EditorBridgeProvider(props: {
+  bridge: EditorBridge;
+  children: ReactNode;
+}): ReactElement | null;
+
 // ── Runtime value singletons (the L11 "Version surface") ──
 // Declared (not implemented) so emit stays decoupled from the live client
 // modules. `queryClient` is opaque on purpose — its real type is TanStack's
 // `QueryClient`, a peer the plugin already shares via the import map.
 export declare const clientPluginHost: {
   registerFrontendModule(module: FrontendModule): void;
+  /**
+   * 0.2.2 — a registered module's identity, by type, whether or not it is
+   * active. Published because a plugin rendering a breadcrumb or a view switcher
+   * for an entity needs that type's `label`/`pathPrefix`, and reaching it
+   * through the index signature forces a cast on the FUNCTION — which unbinds
+   * the receiver and throws at render, while type-checking cleanly.
+   */
+  getAvailable(type: string): EntityModuleManifest | null;
+  /**
+   * The ACTIVE module for a type, or null. Published alongside `getAvailable`
+   * for the same reason and with the same warning about binding.
+   *
+   * Prefer this one for anything that NAVIGATES: a deactivated type has no
+   * routes mounted, so linking to its `pathPrefix` lands on a not-found. The
+   * host's own `navigateToEntity` reads `getEntity(type) ?? getAvailable(type)`,
+   * and a plugin that owns routes needs the same two-step to resolve a chip
+   * pointing at a type it knows nothing about.
+   */
+  getEntity(type: string): EntityModuleManifest | null;
   [key: string]: unknown;
 };
 export declare function registerFrontendModule(module: FrontendModule): void;

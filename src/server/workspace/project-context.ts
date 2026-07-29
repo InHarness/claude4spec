@@ -589,6 +589,7 @@ async function buildInner(
     entityStore,
     registerMcpServer: (name, server) => pluginHost.registerMcpServer(name, server),
     registerEntityService: (type, service) => pluginHost.registerEntityService(type, service),
+    registerRenameListener: (fn) => pluginHost.registerRenameListener(fn),
   });
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
@@ -1050,9 +1051,11 @@ async function buildInner(
   // M29: enable tags.json persistence only AFTER the boot rebuild, so any
   // auto-created tag during indexAll does not write files mid-rebuild.
   tagsService.setEntityStore(entityStore);
-  // M29: enable slug-rename propagation into entity files (dto→endpoint
-  // linked_dtos, *→ac verifies). After indexAll so the index is consistent.
-  referencesService.setEntityDeps(db.handle, entityStore);
+  // M29: enable slug-rename propagation into entity files. 0.2.2: the host does
+  // not know which types embed which — it fans the rename out to the modules
+  // that declared `backend.onEntityRenamed`. After indexAll, so the index is
+  // consistent before any listener reads it.
+  referencesService.setPluginHost(pluginHost);
 
   // 0.1.119: Migration C — backfill on-disk release files for pre-slug
   // spec_release rows (created before 0.1.118 added releasesDir/<slug>.json).

@@ -8,6 +8,7 @@ import type { Database } from 'better-sqlite3';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
+  EntityRenamedEvent,
   EntityServiceLike,
   MountContext,
   PluginRegistry,
@@ -35,6 +36,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   private unknownTypes: string[] = [];
   private mcpServerFactories = new Map<string, () => McpServerFactory>();
   private entityServices = new Map<string, unknown>();
+  private renameListeners: Array<(ev: EntityRenamedEvent) => void> = [];
   // Project-local modules of THIS context, keyed by type. Empty when
   // `overlay === undefined` (parity with the base-only case).
   private readonly overlayModules = new Map<string, BackendModule>();
@@ -142,14 +144,68 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     // crash. L1 (M13): the host runs each plugin's declared `backend.migrations`
     // (schema_version per plugin, idempotent) BEFORE its mount, so the entity
     // table exists by the time `mount` builds its service and the first query runs.
-    for (const m of this.listEntities()) {
-      runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
-      m.backend?.mount?.(ctx);
+    //
+    // 0.2.2 Tier B: TWO passes, over DIFFERENT sets.
+    //
+    // MIGRATE every AVAILABLE module — including deactivated ones. The schema is
+    // a function of what is INSTALLED, not of what is enabled. That was true
+    // before this release for free, because entity DDL sat in the host chain and
+    // ran unconditionally; migrating only active modules quietly changed it, and
+    // any host code that walks all available types then hit a missing table.
+    // `GET /entities/counts` did exactly that and returned 500 for the whole
+    // sidebar because one deactivated type had no table. A deactivated type
+    // keeps an empty table, exactly as it always did.
+    //
+    // MOUNT only the ACTIVE ones: a deactivated type contributes no service, no
+    // routes and no tools. That half is unchanged.
+    //
+    // Migrations run before ANY mount, not interleaved per module. A module's
+    // table may be referenced by another module's schema — `endpoint_dto`
+    // carries an FK to `dto(slug)` — and this iterates in `displayOrder`, not
+    // `dependsOn` order, so interleaving would make correctness depend on two
+    // unrelated numbers lining up. It also means no mount can observe a
+    // half-migrated schema.
+    // A DEACTIVATED module's migration failure is isolated; an ACTIVE one's is
+    // not. Before this release, dropping a type from `config.entities` was the
+    // operator's way out of a plugin whose schema will not apply against this
+    // project's data — it stopped being consulted at all. Migrating every
+    // available module took that escape away: the migration ran regardless, threw
+    // out of here, and M31 turned it into a permanent PROJECT_BUILD_FAILED that
+    // no configuration could clear short of uninstalling the package.
+    //
+    // A deactivated type contributes no service, no routes and no tools, so its
+    // missing table costs only itself — and every host read resolves a table
+    // through existence now, so absence is handled rather than thrown. An ACTIVE
+    // type's schema IS load-bearing, and a project serving one with no table
+    // would fail later and more confusingly than it fails here.
+    const active = new Set(this.listEntities().map((m) => m.type));
+    for (const m of this.listAvailable()) {
+      if (active.has(m.type)) {
+        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+        continue;
+      }
+      try {
+        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+      } catch (err) {
+        console.warn(
+          `[plugin-host] migrations for DEACTIVATED type '${m.type}' failed — ` +
+            `continuing without its table: ${(err as Error).message}`,
+        );
+      }
     }
+    for (const m of this.listEntities()) m.backend?.mount?.(ctx);
   }
 
   registerMcpServer(name: string, factory: () => McpServerFactory): void {
     this.mcpServerFactories.set(name, factory);
+  }
+
+  registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void {
+    this.renameListeners.push(fn);
+  }
+
+  listRenameListeners(): Array<(ev: EntityRenamedEvent) => void> {
+    return [...this.renameListeners];
   }
 
   /**

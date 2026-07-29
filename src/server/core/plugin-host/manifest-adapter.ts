@@ -24,7 +24,13 @@ import type {
 import type { EntitySerializer } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
-import type { BackendModule, MountContext, PluginMountFn, SqlMigration } from './types.js';
+import type {
+  BackendModule,
+  EntityRenamedEvent,
+  MountContext,
+  PluginMountFn,
+  SqlMigration,
+} from './types.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
 export class PluginManifestError extends Error {
@@ -131,6 +137,10 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
       mcpServer: backend.mcpServer as
         | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
         | undefined,
+      auxTables: backend.auxTables as string[] | undefined,
+      onEntityRenamed: backend.onEntityRenamed as
+        | ((ev: EntityRenamedEvent, ctx: MountContext) => void)
+        | undefined,
     };
   }
 
@@ -170,8 +180,8 @@ export function synthesizeMount(module: BackendModule): BackendModule {
   const backend = module.backend;
   if (!backend || backend.mount) return module;
 
-  const { service, crud, routes, mcpServer } = backend;
-  if (!service && !crud && !routes && !mcpServer) return module;
+  const { service, crud, routes, mcpServer, onEntityRenamed } = backend;
+  if (!service && !crud && !routes && !mcpServer && !onEntityRenamed) return module;
 
   if (crud && !service) {
     throw new PluginManifestError(`entity "${module.type}" — backend.crud requires backend.service`);
@@ -212,6 +222,9 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       // plugin's own `mount()` registers without going through this adapter.
       const svc = instance as EntityCrudService;
       ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
+    }
+    if (onEntityRenamed) {
+      ctx.registerRenameListener((ev) => onEntityRenamed(ev, ctx));
     }
   };
 

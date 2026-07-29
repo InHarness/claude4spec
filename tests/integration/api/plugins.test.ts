@@ -52,7 +52,10 @@ describe('M33 plugins router', () => {
     expect(res.body.hostApiVersion).toBe(HOST_API_VERSION);
     const builtin = res.body.packages.find((p: { package: string }) => p.package === '@c4s/builtin');
     expect(builtin.status).toBe('loaded');
-    expect(builtin.contributedTypes).toContain('endpoint');
+    // 0.2.2: `endpoint` and `dto` are no longer contributed by the built-in
+    // record — they ship in the `c4s-plugin-api-contracts` envelope, which is its
+    // own record. `ui-view` is one of the four types still built in directly.
+    expect(builtin.contributedTypes).toContain('ui-view');
     expect(res.body.packages.some((p: { package: string }) => p.package === 'pkg-x')).toBe(true);
   });
 });

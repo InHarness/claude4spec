@@ -1,7 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
-import { dtosApi, endpointsApi } from '../lib/api.js';
 import { acsApi } from '../entities/ac/api.js';
 import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
@@ -39,7 +38,17 @@ export async function invokeSlash(
   if (command.pluginPopoverKind) {
     window.dispatchEvent(
       new CustomEvent(PLUGIN_COMMAND_EVENT, {
-        detail: { popoverKind: command.pluginPopoverKind, commandId: command.id, editor },
+        detail: {
+          popoverKind: command.pluginPopoverKind,
+          commandId: command.id,
+          editor,
+          // 0.2.2 — the caret, in viewport coordinates. Every host-side slash
+          // popover anchors to `coordsAt(editor)`; a plugin popover could not,
+          // because the event carried no position, so it had to fall back to a
+          // fixed spot at the top of the viewport — jumping away from the text
+          // the user was writing. The plugin owns whether to use it.
+          coords: tryCoordsAt(editor),
+        },
       }),
     );
     return;
@@ -59,12 +68,6 @@ export async function invokeSlash(
       return;
     case 'tagged-mixed':
       await runTaggedMixed(editor);
-      return;
-    case 'endpoint':
-      await runCreateEndpoint(editor, deps);
-      return;
-    case 'dto':
-      await runCreateDto(editor, deps);
       return;
     case 'ac':
       await runCreateAc(editor, deps);
@@ -97,6 +100,24 @@ async function runSection(editor: Editor): Promise<void> {
     .insertContent({ type: 'section_ref', attrs: { anchor: result.anchor } })
     .insertContent(' ')
     .run();
+}
+
+/**
+ * The caret position, or nothing.
+ *
+ * The host's own popovers are opened from a live editor and read `coordsAt`
+ * directly. The plugin dispatch cannot: it hands the position across a window
+ * event to code it does not control, as an anchoring HINT, and an editor with no
+ * mounted view (destroyed, or a caller that never had one) must not turn a
+ * working slash command into a thrown error. The plugin falls back to its own
+ * default position when this is absent.
+ */
+function tryCoordsAt(editor: Editor): { x: number; y: number } | undefined {
+  try {
+    return editor.view ? coordsAt(editor) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function coordsAt(editor: Editor): { x: number; y: number } {
@@ -213,23 +234,6 @@ async function runTaggedMixed(editor: Editor): Promise<void> {
     .run();
 }
 
-async function runCreateEndpoint(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const result = await openPopover('create-endpoint', coordsAt(editor), {});
-  if (!result) return;
-  try {
-    const ep = await endpointsApi.create(result);
-    deps.qc.invalidateQueries({ queryKey: ['endpoints'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'single_element', attrs: { type: 'endpoint', slug: ep.slug } })
-      .run();
-    toast.success(`Endpoint ${ep.method} ${ep.path} created`);
-  } catch (err) {
-    toast.error((err as Error).message);
-  }
-}
-
 async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
   const defaultTags = detectAcDefaultTags(deps.currentPath ?? null);
   const result = await openPopover('create-ac', coordsAt(editor), { defaultTags });
@@ -243,23 +247,6 @@ async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void>
       .insertContent({ type: 'single_element', attrs: { type: 'ac', slug: ac.slug } })
       .run();
     toast.success('AC created');
-  } catch (err) {
-    toast.error((err as Error).message);
-  }
-}
-
-async function runCreateDto(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const result = await openPopover('create-dto', coordsAt(editor), {});
-  if (!result) return;
-  try {
-    const dto = await dtosApi.create(result);
-    deps.qc.invalidateQueries({ queryKey: ['dtos'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'single_element', attrs: { type: 'dto', slug: dto.slug } })
-      .run();
-    toast.success(`DTO ${dto.name} created`);
   } catch (err) {
     toast.error((err as Error).message);
   }

@@ -8,6 +8,7 @@ import { diagramsRouter } from './routes.js';
 import { DiagramService } from './service.js';
 import { createDiagramToolsServer } from './mcp-server.js';
 import { diagramCreateSchema, diagramUpdateSchema } from './crud-schemas.js';
+import { diagramMigrations } from './migrations.js';
 
 export const diagramBackendModule: BackendModule = {
   type: 'diagram',
@@ -31,6 +32,7 @@ export const diagramBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router, mount the custom MCP
   // server for diagram's pre-flight validation tool.
   backend: {
+    migrations: diagramMigrations,
     service: (ctx) => new DiagramService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: diagramCreateSchema,

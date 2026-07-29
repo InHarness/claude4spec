@@ -64,3 +64,50 @@ describe('count', () => {
     expect(reader.count('ghost' as never)).toBe(0);
   });
 });
+
+/**
+ * A NAME in the static map is not a table.
+ *
+ * Before 0.2.2 it may as well have been: the host's own migration chain created
+ * all seven core tables unconditionally. Now each entity table is created by the
+ * module that owns it, and `endpoint`/`dto` come from a builtin envelope the
+ * host loads fail-soft — a missing `dist/plugins/…` bundle leaves the type with
+ * no module and no table while `ENTITY_TABLES` still answers with a name.
+ *
+ * The design says such a type is simply ABSENT. Every read has to agree on that,
+ * not just the one that was patched after a browser found it: `count` returned 0
+ * while `listSlugs`, `getEntity` and `findByTag` all threw `no such table`,
+ * which turned any page carrying a mixed `<tagged_list>` into a 500 and broke
+ * the `find_by_tag` MCP tool.
+ *
+ * `dto` is the probe here precisely because it IS in the static map — the
+ * fixture database just has no such table, which is exactly the shipped failure.
+ */
+describe('a core type whose table was never created', () => {
+  const missing = 'dto' as never;
+
+  it('reports no table rather than a name', () => {
+    expect(new RawEntityReader(db).hasTable(missing)).toBe(false);
+  });
+
+  it('reads as absent everywhere, not as an error', () => {
+    const reader = new RawEntityReader(db, host([]));
+    expect(reader.listSlugs(missing)).toEqual([]);
+    expect(reader.getEntity(missing, 'anything')).toBeNull();
+    expect(reader.count(missing)).toBe(0);
+  });
+
+  it('does not abort a mixed find_by_tag over every type', () => {
+    // The real caller: `<tagged_list>` with no `type` attribute walks ALL types,
+    // so one absent type used to take the whole page down with it.
+    db.exec(`
+      CREATE TABLE tag (slug TEXT PRIMARY KEY, name TEXT);
+      CREATE TABLE entity_tag (entity_type TEXT, entity_slug TEXT, tag_slug TEXT);
+      INSERT INTO tag VALUES ('core', 'Core');
+      INSERT INTO entity_tag VALUES ('endpoint', 'e1', 'core');
+    `);
+    const reader = new RawEntityReader(db, host([]));
+    const hits = reader.findByTag({ tags: ['core'], filter: 'or' });
+    expect(hits.map((h) => h.slug)).toEqual(['e1']);
+  });
+});

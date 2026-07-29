@@ -140,8 +140,6 @@ export type DiagramResult =
 
 export type PopoverMap = {
   'new-page': { props: Record<string, never>; result: NewPageResult };
-  'create-endpoint': { props: Record<string, never>; result: EndpointCreateInput };
-  'create-dto': { props: Record<string, never>; result: DtoCreateInput };
   'create-ac': { props: { defaultTags?: string[] }; result: AcCreateInput };
   'create-tag': { props: { contextLabel?: string }; result: TagCreateInput };
   mention: { props: Record<string, never>; result: MentionResult };

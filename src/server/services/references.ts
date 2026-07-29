@@ -8,6 +8,7 @@ import {
 import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { EntityStore } from './entity-store.js';
+import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import type { PagesSource, ReferencePage } from '../../core/references/index.js';
@@ -36,7 +37,7 @@ export class ReferencesService {
    * (config.roots filtered by `referenceValidated`), keyed by `rootId`. Every
    * walk/propagate iterates that subset keyed `(rootId, path)`; writes go through
    * the matching root's `PagesService` + `PagesWatcher` (suppress before write).
-   * Entity-file propagation (setEntityDeps) is root-agnostic and unchanged.
+   * Entity-file propagation (setPluginHost) is root-agnostic and unchanged.
    */
   constructor(
     private roots: Map<string, PagesService>,
@@ -48,93 +49,43 @@ export class ReferencesService {
   }
 
   /**
-   * M29: deps for propagating a slug rename into the committed entity files
-   * (not just page markdown). Wired post-construction (store is built later).
+   * 0.2.2: the project host, so a rename can be fanned out to the modules that
+   * declared `backend.onEntityRenamed`. Wired post-construction — the host is
+   * mounted after this service is built.
+   *
+   * This replaces the former `setEntityDeps(db, store)`: propagating a rename
+   * into other entity FILES no longer needs the host's own db handle or store,
+   * because the host no longer knows which tables or files embed a slug. Each
+   * listener gets those from its own MountContext.
    */
-  private db: Database.Database | null = null;
-  private store: EntityStore | null = null;
-  setEntityDeps(db: Database.Database, store: EntityStore): void {
-    this.db = db;
-    this.store = store;
+  private host: ProjectPluginHost | null = null;
+  setPluginHost(host: ProjectPluginHost): void {
+    this.host = host;
   }
 
   /**
    * M29 (m29ren001): after an entity rename, rewrite the slug inside OTHER
-   * committed entity files whose snapshots embed it:
-   *   - dto rename → endpoint files' `linked_dtos[]` (endpoint_dto already
-   *     cascaded in the index; re-persist the affected endpoint files).
-   *   - any rename → ac files' `verifies[]` (soft JSON ref, no FK) — repoint in
-   *     the index then re-persist the affected ac files.
-   * Files-only; page XML refs are handled by the caller above.
+   * committed entity files whose snapshots embed it.
+   *
+   * 0.2.2: the host no longer knows WHICH types embed which. It used to carry
+   * three hardcoded branches — dto rename repersists endpoints, design-system
+   * rename repoints ui_view.design_system_slug, any rename repoints ac.verifies
+   * — all of them naming another module's table. Each now lives in the module
+   * that owns the reference, contributed as `backend.onEntityRenamed`, and this
+   * method just fans the event out.
+   *
+   * Files-only; page XML refs are handled by the caller above. Handlers are
+   * expected to be idempotent; a throwing one is logged and skipped, exactly as
+   * the per-type branches swallowed their own failures.
    */
   private propagateInEntityFiles(type: EntityType, oldSlug: string, newSlug: string): void {
-    const db = this.db;
-    const store = this.store;
-    if (!db || !store) return;
-
-    // dto rename → endpoints (linked_dtos)
-    if (type === 'dto') {
-      const eps = db
-        .prepare(`SELECT DISTINCT endpoint_slug AS slug FROM endpoint_dto WHERE dto_slug = ?`)
-        .all(newSlug) as Array<{ slug: string }>;
-      for (const e of eps) {
-        try {
-          store.persist('endpoint', e.slug);
-        } catch {
-          /* skip */
-        }
-      }
-    }
-
-    // design-system rename → ui-view files' scalar `designSystemSlug` (v0.1.59).
-    // Pattern mirrors database-table → fk.table: repoint the column in the index,
-    // then re-persist each affected ui-view file (atomic-write + suppress + reindex).
-    if (type === 'design-system') {
-      const views = db
-        .prepare(`SELECT slug FROM ui_view WHERE design_system_slug = ?`)
-        .all(oldSlug) as Array<{ slug: string }>;
-      if (views.length) {
-        const upd = db.prepare(`UPDATE ui_view SET design_system_slug = ? WHERE slug = ?`);
-        for (const v of views) {
-          upd.run(newSlug, v.slug);
-          try {
-            store.persist('ui-view', v.slug);
-          } catch {
-            /* skip */
-          }
-        }
-      }
-    }
-
-    // any rename → ac verifies[] ({type, slug} soft refs)
-    if (isRawEntityType(type)) {
-      const acs = db
-        .prepare(`SELECT slug, verifies FROM ac WHERE verifies LIKE ?`)
-        .all(`%${oldSlug}%`) as Array<{ slug: string; verifies: string }>;
-      const upd = db.prepare(`UPDATE ac SET verifies = ? WHERE slug = ?`);
-      for (const ac of acs) {
-        let parsed: Array<{ type?: string; slug?: string }>;
-        try {
-          parsed = JSON.parse(ac.verifies);
-          if (!Array.isArray(parsed)) continue;
-        } catch {
-          continue;
-        }
-        let changed = false;
-        for (const ref of parsed) {
-          if (ref && ref.type === type && ref.slug === oldSlug) {
-            ref.slug = newSlug;
-            changed = true;
-          }
-        }
-        if (changed) {
-          upd.run(JSON.stringify(parsed), ac.slug);
-          try {
-            store.persist('ac', ac.slug);
-          } catch {
-            /* skip */
-          }
-        }
+    for (const listener of this.host?.listRenameListeners() ?? []) {
+      try {
+        listener({ type, oldSlug, newSlug });
+      } catch (err) {
+        console.warn(
+          `[references] rename listener failed for ${type} ${oldSlug} -> ${newSlug}: ${String(err)}`,
+        );
       }
     }
   }

@@ -30,8 +30,8 @@ export function registerPluginCommands(commands: PluginCommandContribution[]): v
         slashCommand: {
           id: cmd.name,
           label: cmd.label,
-          description: cmd.label,
-          hint: `/${cmd.trigger}`,
+          description: cmd.description ?? cmd.label,
+          hint: cmd.hint ?? `/${cmd.trigger}`,
           pluginPopoverKind: cmd.popoverKind,
         },
       });

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { runPluginMigrations } from './plugin-migrate.js';
+import { runPluginMigrations, PluginSchemaCollisionError, tablesCreatedBy } from './plugin-migrate.js';
 import type { SqlMigration } from './types.js';
 
 const exampleMigrations: SqlMigration[] = [
@@ -89,5 +89,51 @@ describe('runPluginMigrations', () => {
       .get();
     expect(ledger).toBeUndefined();
     db.close();
+  });
+});
+
+describe('schema-ownership collision detection', () => {
+  it('rejects a plugin migration that redefines a core host table', () => {
+    const db = new Database(':memory:');
+    expect(() =>
+      runPluginMigrations(db, 'squatter', [
+        { version: 1, name: 'steal', up: 'CREATE TABLE IF NOT EXISTS chat_thread (id TEXT PRIMARY KEY);' },
+      ]),
+    ).toThrow(PluginSchemaCollisionError);
+
+    // Rejected before anything touched the database.
+    const ledger = db
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'plugin_schema_migrations'")
+      .get();
+    expect(ledger).toBeUndefined();
+    db.close();
+  });
+
+  it('allows a plugin to own a table the baseline does not claim', () => {
+    const db = new Database(':memory:');
+    expect(() => runPluginMigrations(db, 'p', exampleMigrations)).not.toThrow();
+    db.close();
+  });
+
+  it('allows database_table — grandfathered, since the baseline still creates it', () => {
+    const db = new Database(':memory:');
+    expect(() =>
+      runPluginMigrations(db, 'database-table', [
+        { version: 1, name: 'create', up: 'CREATE TABLE IF NOT EXISTS database_table (slug TEXT PRIMARY KEY);' },
+      ]),
+    ).not.toThrow();
+    db.close();
+  });
+
+  it('does not trip on a core table named only in a comment', () => {
+    expect(tablesCreatedBy('-- unlike chat_thread, this one is ours\nCREATE TABLE mine (a TEXT);')).toEqual(['mine']);
+    expect(tablesCreatedBy('/* CREATE TABLE tag ... */ CREATE TABLE mine (a TEXT);')).toEqual(['mine']);
+  });
+
+  it('sees through quoting and IF NOT EXISTS', () => {
+    expect(tablesCreatedBy('CREATE TABLE IF NOT EXISTS "tag" (a TEXT); CREATE TABLE [plan] (b TEXT);')).toEqual([
+      'tag',
+      'plan',
+    ]);
   });
 });
