@@ -19,6 +19,7 @@ import { buildFrontendManifest } from '../core/plugin-host/frontend-manifest.js'
 import {
   assetContentType,
   resolveOverlayAsset,
+  resolveEnvelopeAsset,
   resolveWorkspaceAsset,
 } from '../core/plugin-host/frontend-assets.js';
 import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
@@ -26,6 +27,7 @@ import { getRuntimeShim } from '../core/plugin-host/runtime-shims.js';
 // the `c4s plugins` CLI reuses the SAME logic (no divergence). Re-exported here
 // for the existing `../routes/plugins.js` import sites (e.g. project-context).
 import { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
+import type { BuiltinEnvelope } from '../core/plugin-host/builtin-envelopes.js';
 export { buildBasePluginPackages } from '../core/plugin-host/base-packages.js';
 
 export interface PluginRoutesDeps {
@@ -46,6 +48,12 @@ export interface PluginRoutesDeps {
    * every project, and they are advertised in the manifest. Empty by default.
    */
   workspacePackages?: string[];
+  /**
+   * 0.2.2: builtin envelopes discovered under `<hostRoot>/plugins/`. Ungated —
+   * an envelope is in the host repo, so this list IS its own allowlist and never
+   * comes from a request.
+   */
+  envelopes?: BuiltinEnvelope[];
 }
 
 /** Diagnostics response — array of per-package records, extensible for phase 2. */
@@ -55,14 +63,14 @@ export interface PluginsMetaResponse {
 }
 
 export function pluginsRouter(deps: PluginRoutesDeps): Router {
-  const { pluginRegistry, pluginRecords, frontendServing, workspacePackages = [] } = deps;
+  const { pluginRegistry, pluginRecords, frontendServing, workspacePackages = [], envelopes = [] } = deps;
   const router = Router();
 
   router.get('/plugins/frontend-manifest', (_req, res) => {
     const serving = frontendServing
       ? { cwd: frontendServing.cwd, trusted: frontendServing.isTrusted() }
       : undefined;
-    res.json(buildFrontendManifest(pluginRegistry, serving, workspacePackages));
+    res.json(buildFrontendManifest(pluginRegistry, serving, workspacePackages, undefined, envelopes));
   });
 
   router.get('/plugins/runtime/:file', async (req, res, next) => {
@@ -99,7 +107,11 @@ export function pluginsRouter(deps: PluginRoutesDeps): Router {
       contentType &&
       ((frontendServing &&
         resolveOverlayAsset(frontendServing.cwd, frontendServing.isTrusted(), name, asset)) ||
-        resolveWorkspaceAsset(name, asset, workspacePackages));
+        resolveWorkspaceAsset(name, asset, workspacePackages) ||
+        // Envelope last: an overlay or workspace package of the same name may
+        // deliberately shadow one, mirroring the manifest's insertion order and
+        // the backend registry's last-wins semantics.
+        resolveEnvelopeAsset(name, asset, envelopes));
     if (!abs || !contentType) {
       return res.status(404).json({
         error: {

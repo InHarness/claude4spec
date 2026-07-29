@@ -29,6 +29,7 @@ import {
   projectPluginsDir,
   resolveExportsEntry,
 } from './overlay-loader.js';
+import type { BuiltinEnvelope } from './builtin-envelopes.js';
 
 /** The `package.json` fields the asset resolvers read. */
 interface PackageManifest {
@@ -311,4 +312,60 @@ export function resolveWorkspaceAsset(
   if (!root) return null;
   const frontendAbs = workspaceFrontendJs(root, readPackageJson(path.join(root, 'package.json')));
   return resolveWithinDist(path.dirname(frontendAbs), asset);
+}
+
+// ─── Envelope tier (0.2.2) ──────────────────────────────────────────────────
+//
+// A builtin envelope (`<hostRoot>/plugins/<name>/`) is trusted by virtue of
+// living in the host repo, so this tier is UNGATED and needs no allowlist: the
+// discovered envelope list IS the allowlist, and it comes from the filesystem,
+// never from a request. Everything else — the `exports['./frontend']` lookup,
+// the extension allowlist, the containment check — is shared with the workspace
+// tier above, so the two cannot drift.
+
+/** Absolute path of an envelope's built `frontend.js`. */
+function envelopeFrontendJs(dir: string): string {
+  return path.resolve(dir, workspaceFrontendEntryRel(readPackageJson(path.join(dir, 'package.json'))));
+}
+
+function findEnvelope(name: string, envelopes: readonly BuiltinEnvelope[]): BuiltinEnvelope | null {
+  return envelopes.find((e) => e.name === name) ?? null;
+}
+
+/**
+ * Resolve any allowlisted sibling of an envelope's built frontend entry, for
+ * `GET /api/plugins/<name>/<file>`. Returns null when the envelope is unknown or
+ * has not been built — an envelope with no frontend simply serves nothing, the
+ * same as a workspace package without one.
+ */
+export function resolveEnvelopeAsset(
+  name: string,
+  asset: string,
+  envelopes: readonly BuiltinEnvelope[],
+): string | null {
+  const envelope = findEnvelope(name, envelopes);
+  if (!envelope) return null;
+  return resolveWithinDist(path.dirname(envelopeFrontendJs(envelope.dir)), asset);
+}
+
+/**
+ * Envelopes that ship a built frontend entry, for the frontend manifest. An
+ * envelope whose bundle has not been built yet is omitted rather than
+ * advertised — advertising it would make the client fetch a 404 on every boot.
+ */
+export function enumerateEnvelopeFrontendBundles(
+  envelopes: readonly BuiltinEnvelope[],
+): FrontendBundle[] {
+  const bundles: FrontendBundle[] = [];
+  for (const envelope of envelopes) {
+    const pkg = readPackageJson(path.join(envelope.dir, 'package.json'));
+    const frontendAbs = envelopeFrontendJs(envelope.dir);
+    if (!fs.existsSync(frontendAbs)) continue;
+    bundles.push({
+      name: envelope.name,
+      version: packageVersion(pkg),
+      hasCss: fs.existsSync(path.join(path.dirname(frontendAbs), 'frontend.css')),
+    });
+  }
+  return bundles;
 }

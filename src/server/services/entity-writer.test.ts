@@ -108,9 +108,12 @@ describe('HostEntityWriter.upsert — generic dispatch', () => {
 
 describe('HostEntityWriter — deprecated per-type shims', () => {
   it('delegates to the generic path', () => {
-    const upsert = vi.fn(() => ({ entity: { slug: 'e1' }, op: 'created' as const }));
-    const writer = new HostEntityWriter(hostWith({ endpoint: { upsert } }), tags);
-    expect(writer.upsertEndpoint('e1', {} as never, 'user').op).toBe('created');
+    // `upsertEndpoint`/`upsertDto` are gone as of Tier B — their only callers
+    // were those two types' restore slots, which moved into the envelope and go
+    // through the generic `upsert`. The five surviving shims behave the same.
+    const upsert = vi.fn(() => ({ entity: { slug: 't1' }, op: 'created' as const }));
+    const writer = new HostEntityWriter(hostWith({ 'database-table': { upsert } }), tags);
+    expect(writer.upsertDatabaseTable('t1', {} as never, 'user').op).toBe('created');
     expect(upsert).toHaveBeenCalledOnce();
   });
 
@@ -166,39 +169,3 @@ describe('HostEntityWriter.delete — generic, no per-type switch', () => {
   });
 });
 
-describe('HostEntityWriter.syncEndpointDtos', () => {
-  it('warns instead of throwing when the endpoint service is absent', () => {
-    const writer = new HostEntityWriter(hostWith({}), tags);
-    const result = writer.syncEndpointDtos('e', []);
-    expect(result).toEqual({
-      linked: 0,
-      unlinked: 0,
-      warnings: [`entity service for type 'endpoint' not registered`],
-    });
-  });
-
-  it('links missing and unlinks extras, idempotently', () => {
-    const linkDto = vi.fn();
-    const unlinkDto = vi.fn();
-    const writer = new HostEntityWriter(
-      hostWith({
-        endpoint: {
-          getBySlug: () => ({
-            dtos: [{ dtoSlug: 'stale', relation: 'response', statusCode: 200 }],
-          }),
-          linkDto,
-          unlinkDto,
-        },
-      }),
-      tags,
-    );
-
-    const result = writer.syncEndpointDtos('e', [
-      { dtoSlug: 'wanted', relation: 'request' as never, statusCode: null },
-    ]);
-
-    expect(result).toMatchObject({ linked: 1, unlinked: 1, warnings: [] });
-    // Unlink runs FIRST so a UNIQUE constraint can't reject the new link.
-    expect(unlinkDto.mock.invocationCallOrder[0]).toBeLessThan(linkDto.mock.invocationCallOrder[0]!);
-  });
-});

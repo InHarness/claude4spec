@@ -18,6 +18,7 @@ import { describe, expect, it } from 'vitest';
  */
 
 const CLIENT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
+const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '../../..');
 const KIT_DIR = join(CLIENT_DIR, 'host-ui-kit');
 
 /**
@@ -131,7 +132,13 @@ describe('M34/L12 — one implementation rule', () => {
   });
 
   it('[ac:ac-panel-detalu-endpointu-renderuje-badge-m] endpoint detail composes its method badge and Linked DTOs from the catalog', () => {
-    const src = readFileSync(join(CLIENT_DIR, 'entities/endpoint/detail-panel.tsx'), 'utf8');
+    // 0.2.2: the panel moved into the builtin envelope with its type. The
+    // one-implementation rule follows the code — a catalog component smuggled
+    // back into a bespoke widget is exactly as much a violation there.
+    const src = readFileSync(
+      join(REPO_ROOT, 'plugins/c4s-plugin-api-contracts/src/entity/endpoint/frontend/detail-panel.tsx'),
+      'utf8',
+    );
     expect(src).toMatch(/EnumBadgePicker/);
     expect(src).toMatch(/GroupedRelationPicker/);
     // The specialised widgets these replaced must not have come back.

@@ -25,6 +25,7 @@ import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
+import { discoverBuiltinEnvelopes } from './core/plugin-host/builtin-envelopes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -250,8 +251,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // isolated (skipped/failed records) — one bad plugin never crashes bootstrap.
   // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
   // before node_modules and before the workspace registry, so core code claims its
-  // types before anything external could shadow them. No-op until the first envelope
-  // lands (Tier B of the 0.2.2 brief).
+  // types before anything external could shadow them.
+  const envelopes = discoverBuiltinEnvelopes();
   const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
   const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
   pluginLoad.records.unshift(...envelopeLoad.records);
@@ -363,6 +364,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       // M33 phase 3: workspace/npm plugin frontends are served ungated for every
       // project — the same resolved package list `loadWorkspacePlugins` consumed.
       workspacePackages: resolvePluginPackages(workspace),
+      // 0.2.2: envelope frontends are served ungated too — an envelope lives in
+      // the host repo, so the discovered list is its own allowlist.
+      envelopes,
     }),
   );
   app.use('/api/projects/:id', projectDispatchMiddleware(registry, workspace, cache));

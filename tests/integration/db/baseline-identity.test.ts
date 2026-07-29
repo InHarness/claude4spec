@@ -24,6 +24,7 @@ import { runMigrations } from '../../../src/server/db/migrate.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
 import { runPluginMigrations } from '../../../src/server/core/plugin-host/plugin-migrate.js';
+import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 
 const MIGRATIONS_DIR = path.join(import.meta.dirname, '../../../src/server/db/migrations');
 
@@ -94,13 +95,19 @@ function legacyDb(): Database.Database {
   return db;
 }
 
-/** A fresh database: baseline, then every core module's own migrations. */
-function baselineDb(): Database.Database {
+/**
+ * A fresh database: baseline, then every module's own migrations — the four
+ * directly-built-in types AND the builtin envelopes, since `endpoint`, `dto` and
+ * the junction moved into one. Loading the envelopes is what makes this an
+ * apples-to-apples comparison with the chain.
+ */
+async function baselineDb(): Promise<Database.Database> {
   const db = new Database(':memory:');
   runMigrations(db);
 
   const registry = new PluginRegistryImpl();
   registerAllPlugins(registry);
+  await loadBuiltinEnvelopes(registry);
   const host = registry.consolidate(null);
   // Same two-pass order as ProjectPluginHost.mountBackend.
   for (const m of host.listEntities()) runPluginMigrations(db, m.type, m.backend?.migrations);
@@ -108,9 +115,9 @@ function baselineDb(): Database.Database {
 }
 
 describe('000_baseline.sql', () => {
-  it('produces the same schema as the full historical chain, once modules have migrated', () => {
+  it('produces the same schema as the full historical chain, once modules have migrated', async () => {
     const legacy = legacyDb();
-    const fresh = baselineDb();
+    const fresh = await baselineDb();
     try {
       expect(snapshotSchema(fresh)).toEqual(snapshotSchema(legacy));
     } finally {

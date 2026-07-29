@@ -1,6 +1,4 @@
 // Registering entity modules — import order establishes registry.
-import './endpoint/plugin.js';
-import './dto/plugin.js';
 // `database-table` is no longer an in-app entity — it ships in the preinstalled
 // `c4s-plugin-simple-database-tables` plugin, whose frontend bundle self-registers
 // (entity def, slash command, `/database-tables` routes + create/edit popover) at

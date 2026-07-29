@@ -1,6 +1,25 @@
 import { defineConfig, configDefaults } from 'vitest/config';
 
 export default defineConfig({
+  /**
+   * 0.2.2 — resolve the plugin runtime for builtin envelopes.
+   *
+   * At runtime the host installs a `module.register` loader hook that maps the
+   * bare `@c4s/plugin-runtime` specifier onto its own barrel. That hook cannot
+   * install under vitest: it resolves a compiled `.js` sibling that only exists
+   * in `dist/`. Without an alias the envelope's built bundle fails to import
+   * with PLUGIN_IMPORT_FAILED and `endpoint`/`dto` silently vanish from every
+   * test, so this alias reproduces exactly what the hook does in production.
+   *
+   * `tests/integration/plugins/envelope-load.test.ts` is what proves the real
+   * hook still works — it must not be satisfied by this alias alone.
+   */
+  resolve: {
+    alias: {
+      '@c4s/plugin-runtime/ui': new URL('./src/server/plugin-runtime/ui.ts', import.meta.url).pathname,
+      '@c4s/plugin-runtime': new URL('./src/server/plugin-runtime/index.ts', import.meta.url).pathname,
+    },
+  },
   test: {
     environment: 'node',
     // native better-sqlite3 crashes under worker_threads; forks are safe

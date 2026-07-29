@@ -17,8 +17,6 @@ import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
-import { EndpointsList } from './entities/endpoint/list-page.js';
-import { DtosList } from './entities/dto/list-page.js';
 import { UiViewsList } from './entities/ui-view/list-page.js';
 import { AcsList } from './entities/ac/list-page.js';
 import { DesignSystemsList } from './entities/design-system/list-page.js';
@@ -35,15 +33,11 @@ import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
-import { EndpointDetail } from './entities/endpoint/detail-panel.js';
-import { DtoDetail } from './entities/dto/detail-panel.js';
 import { UiViewDetail } from './entities/ui-view/detail-panel.js';
 import { AcDetail } from './entities/ac/detail-panel.js';
 import { DesignSystemDetail } from './entities/design-system/detail-panel.js';
 import { EntityVersionHistoryView } from './host-ui-kit/index.js';
 import { usePages } from './hooks/usePages.js';
-import { useEndpoint } from './hooks/useEndpoints.js';
-import { useDto } from './hooks/useDtos.js';
 import { useUiView } from './hooks/useUiViews.js';
 import { useDesignSystem } from './hooks/useDesignSystems.js';
 import { useConfig, useRoots } from './hooks/useConfig.js';
@@ -135,46 +129,6 @@ const legacyPageRedirectRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/pages/$',
   component: LegacyPageRedirect,
-});
-
-const endpointsIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints',
-  validateSearch: listSearchSchema,
-  component: EndpointsIndexRoute,
-});
-
-const endpointDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints/$slug',
-  component: EndpointDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="endpoint" />,
-});
-
-const endpointHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/endpoints/$slug/history',
-  component: EndpointHistoryRoute,
-});
-
-const dtosIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos',
-  validateSearch: listSearchSchema,
-  component: DtosIndexRoute,
-});
-
-const dtoDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos/$slug',
-  component: DtoDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="dto" />,
-});
-
-const dtoHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/dtos/$slug/history',
-  component: DtoHistoryRoute,
 });
 
 // M33 phase 3: the 3 `/database-tables` routes are no longer hardcoded here.
@@ -324,12 +278,6 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   indexRoute,
   spaceRoute,
   legacyPageRedirectRoute,
-  endpointsIndexRoute,
-  endpointDetailRoute,
-  endpointHistoryRoute,
-  dtosIndexRoute,
-  dtoDetailRoute,
-  dtoHistoryRoute,
   uiViewsIndexRoute,
   uiViewDetailRoute,
   designSystemsIndexRoute,
@@ -486,154 +434,6 @@ function PageRoute() {
           )}
         </div>
       </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function EndpointsIndexRoute() {
-  const search = useSearch({ from: '/endpoints' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <EndpointsList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/endpoints', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/endpoints',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/endpoints/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function EndpointDetailRoute() {
-  const { slug } = useParams({ from: '/endpoints/$slug' });
-  const navigate = useNavigate();
-  const { data: endpoint } = useEndpoint(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar
-        type="endpoint"
-        slug={slug}
-        method={endpoint?.method}
-        path={endpoint?.path}
-        view="details"
-        hasHistory
-      />
-      <EditorBridgeProvider bridge={bridge}>
-        <EndpointDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/endpoints' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/endpoints/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function EndpointHistoryRoute() {
-  const { slug } = useParams({ from: '/endpoints/$slug/history' });
-  const { data: endpoint } = useEndpoint(slug);
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar
-        type="endpoint"
-        slug={slug}
-        method={endpoint?.method}
-        path={endpoint?.path}
-        view="history"
-        hasHistory
-      />
-      <EntityVersionHistoryView type="endpoint" slug={slug} />
-    </RoutePane>
-  );
-}
-
-function DtosIndexRoute() {
-  const search = useSearch({ from: '/dtos' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <DtosList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/dtos', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/dtos',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/dtos/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function DtoDetailRoute() {
-  const { slug } = useParams({ from: '/dtos/$slug' });
-  const navigate = useNavigate();
-  const { data: dto } = useDto(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="details" hasHistory />
-      <EditorBridgeProvider bridge={bridge}>
-        <DtoDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/dtos' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/dtos/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function DtoHistoryRoute() {
-  const { slug } = useParams({ from: '/dtos/$slug/history' });
-  const { data: dto } = useDto(slug);
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="dto" slug={slug} name={dto?.name} view="history" hasHistory />
-      <EntityVersionHistoryView type="dto" slug={slug} />
     </RoutePane>
   );
 }

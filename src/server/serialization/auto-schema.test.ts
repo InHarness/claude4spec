@@ -12,8 +12,12 @@ function stubHost(tableByType: Record<string, string>): ProjectPluginHost {
 
 describe('autoDerivedSchema', () => {
   it('skips audit columns, derives required from notnull and appends a tags array', () => {
+    // 0.2.2: exercised on `ui_view` rather than `endpoint` — the latter moved
+    // into a builtin envelope, whose schema only exists once the (async) loader
+    // has run, and this suite builds its database synchronously. The shape under
+    // test is generic, so any entity table proves it.
     const db = createTestDb();
-    const schema = autoDerivedSchema(db, 'endpoint', stubHost({ endpoint: 'endpoint' }));
+    const schema = autoDerivedSchema(db, 'ui-view', stubHost({ 'ui-view': 'ui_view' }));
     const properties = schema.properties as Record<string, { type: string }>;
     expect(schema._auto).toBe(true);
     expect(properties.id).toBeUndefined();
@@ -24,13 +28,17 @@ describe('autoDerivedSchema', () => {
     // slug is TEXT PRIMARY KEY without an explicit NOT NULL, so PRAGMA
     // reports notnull=0 and it stays out of required
     expect(required).not.toContain('slug');
-    expect(required).toEqual(expect.arrayContaining(['method', 'path', 'summary']));
+    expect(required).toEqual(expect.arrayContaining(['name']));
     db.close();
   });
 
   it('maps JSON hint columns to array-of-object schemas', () => {
+    // `fields` is one of the hinted column names; the table it sits on is
+    // irrelevant to what this asserts, so a local probe keeps the case free of
+    // whichever entity happens to own a `fields` column this release.
     const db = createTestDb();
-    const schema = autoDerivedSchema(db, 'dto', stubHost({ dto: 'dto' }));
+    db.exec(`CREATE TABLE hinted_probe (slug TEXT PRIMARY KEY, fields TEXT NOT NULL DEFAULT '[]')`);
+    const schema = autoDerivedSchema(db, 'probe', stubHost({ probe: 'hinted_probe' }));
     const properties = schema.properties as Record<string, unknown>;
     expect(properties.fields).toEqual({ type: 'array', items: { type: 'object' } });
     db.close();

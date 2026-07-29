@@ -25,7 +25,9 @@
   "scripts": {
     "build": "vite build",
     "dev": "vite build --watch",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "peerDependencies": {
     "@c4s/plugin-runtime": "*",
@@ -39,12 +41,26 @@
     "zod": "*"
   },
   "peerDependenciesMeta": {
-    "@c4s/plugin-runtime": { "optional": true },
-    "@tanstack/react-query": { "optional": true },
-    "@tanstack/react-router": { "optional": true },
-    "@tiptap/core": { "optional": true },
-    "better-sqlite3": { "optional": true },
-    "express": { "optional": true },
-    "zod": { "optional": true }
+    "@c4s/plugin-runtime": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "@tanstack/react-router": {
+      "optional": true
+    },
+    "@tiptap/core": {
+      "optional": true
+    },
+    "better-sqlite3": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "zod": {
+      "optional": true
+    }
   }
 }

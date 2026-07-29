@@ -1,7 +1,6 @@
 import type { Editor } from '@tiptap/core';
 import type { QueryClient } from '@tanstack/react-query';
 import type { SlashCommand } from './extensions/SlashMenu.js';
-import { dtosApi, endpointsApi } from '../lib/api.js';
 import { acsApi } from '../entities/ac/api.js';
 import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
@@ -59,12 +58,6 @@ export async function invokeSlash(
       return;
     case 'tagged-mixed':
       await runTaggedMixed(editor);
-      return;
-    case 'endpoint':
-      await runCreateEndpoint(editor, deps);
-      return;
-    case 'dto':
-      await runCreateDto(editor, deps);
       return;
     case 'ac':
       await runCreateAc(editor, deps);
@@ -213,23 +206,6 @@ async function runTaggedMixed(editor: Editor): Promise<void> {
     .run();
 }
 
-async function runCreateEndpoint(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const result = await openPopover('create-endpoint', coordsAt(editor), {});
-  if (!result) return;
-  try {
-    const ep = await endpointsApi.create(result);
-    deps.qc.invalidateQueries({ queryKey: ['endpoints'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'single_element', attrs: { type: 'endpoint', slug: ep.slug } })
-      .run();
-    toast.success(`Endpoint ${ep.method} ${ep.path} created`);
-  } catch (err) {
-    toast.error((err as Error).message);
-  }
-}
-
 async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
   const defaultTags = detectAcDefaultTags(deps.currentPath ?? null);
   const result = await openPopover('create-ac', coordsAt(editor), { defaultTags });
@@ -243,23 +219,6 @@ async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void>
       .insertContent({ type: 'single_element', attrs: { type: 'ac', slug: ac.slug } })
       .run();
     toast.success('AC created');
-  } catch (err) {
-    toast.error((err as Error).message);
-  }
-}
-
-async function runCreateDto(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const result = await openPopover('create-dto', coordsAt(editor), {});
-  if (!result) return;
-  try {
-    const dto = await dtosApi.create(result);
-    deps.qc.invalidateQueries({ queryKey: ['dtos'] });
-    editor
-      .chain()
-      .focus()
-      .insertContent({ type: 'single_element', attrs: { type: 'dto', slug: dto.slug } })
-      .run();
-    toast.success(`DTO ${dto.name} created`);
   } catch (err) {
     toast.error((err as Error).message);
   }

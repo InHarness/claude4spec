@@ -40,8 +40,6 @@ export { ApiError, handle };
 
 // Re-exports for backward compat — per-entity API clients live in
 // src/client/entities/{type}/api.ts (M13 plugin-slice rule).
-export { endpointsApi } from '../entities/endpoint/api.js';
-export { dtosApi } from '../entities/dto/api.js';
 // `database-table` API client moved to the preinstalled plugin
 // `c4s-plugin-simple-database-tables` (its frontend owns the HTTP surface).
 export { uiViewsApi, type UiViewWithWarnings } from '../entities/ui-view/api.js';

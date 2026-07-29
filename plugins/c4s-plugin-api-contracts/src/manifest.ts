@@ -1,6 +1,7 @@
 import type { PluginManifest } from '@c4s/plugin-runtime';
 import { dtoEntity } from './entity/dto/index.js';
 import { endpointEntity } from './entity/endpoint/index.js';
+import { apiContractCommands } from './capabilities/commands.js';
 
 /**
  * `c4s-plugin-api-contracts` — the pilot builtin envelope.
@@ -26,6 +27,7 @@ export const manifest: PluginManifest = {
   engines: { node: '>=20' },
   contributes: {
     entities: [dtoEntity, endpointEntity],
+    commands: apiContractCommands,
   },
   /**
    * Nothing to tear down. The two services hold no timers, watchers or open

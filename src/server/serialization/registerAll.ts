@@ -1,6 +1,4 @@
 import type { PluginRegistry } from '../core/plugin-host/types.js';
-import { onRegister as registerEndpoint } from '../entities/endpoint/plugin.js';
-import { onRegister as registerDto } from '../entities/dto/plugin.js';
 import { onRegister as registerUiView } from '../entities/ui-view/plugin.js';
 import { onRegister as registerAc } from '../entities/ac/plugin.js';
 import { onRegister as registerDesignSystem } from '../entities/design-system/plugin.js';
@@ -11,13 +9,15 @@ import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
  * singleton. Called ONCE at process start (startServer / CLI binaries) on a
  * fresh PluginRegistry; the registry is immutable afterwards.
  *
- * Registers the SIX core entity types. `database-table` is no longer here — it
- * ships as the preinstalled `c4s-plugin-simple-database-tables` plugin, loaded
- * through the M33 loader (`PREDEFINED_PLUGINS`) right after this call.
+ * Registers the FOUR types still built in DIRECTLY (tier (a)).
+ *
+ * `endpoint` and `dto` left in 0.2.2: they ship together in the builtin envelope
+ * `plugins/c4s-plugin-api-contracts/`, registered through the M33 loader like any
+ * other package — the third registration tier, and the pilot for migrating the
+ * remaining four. `database-table` left earlier, as the preinstalled external
+ * plugin `c4s-plugin-simple-database-tables`. Both load right after this call.
  */
 export function registerAllPlugins(registry: PluginRegistry): void {
-  registerEndpoint(registry);
-  registerDto(registry);
   registerUiView(registry);
   registerAc(registry);
   registerDesignSystem(registry);

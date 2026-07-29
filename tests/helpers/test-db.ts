@@ -21,7 +21,14 @@ export function createTestDb(): Database.Database {
   return db;
 }
 
-/** The entity-schema half, for tests that build their database some other way. */
+/**
+ * The entity-schema half, for tests that build their database some other way.
+ *
+ * Covers the DIRECTLY built-in types only. `endpoint` and `dto` moved into a
+ * builtin envelope in 0.2.2, and the loader imports built bundles asynchronously
+ * — a synchronous helper cannot reach them. A test that needs those two tables
+ * should build its world with `createTestApp`, which loads the envelopes.
+ */
 export function applyCoreEntityMigrations(db: Database.Database): void {
   const registry = new PluginRegistryImpl();
   registerAllPlugins(registry);
