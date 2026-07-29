@@ -164,6 +164,107 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     await page.close();
   });
 
+  /**
+   * The pane a route body sits in must be the host's `RoutePane` — a flex
+   * column that does not scroll — so the body's own scroll container engages.
+   *
+   * The envelope's copy dropped `display: flex` and added `overflow: auto`,
+   * which reads like a simplification and silently unmakes every `flex-1` child.
+   * Nothing errors; the page just scrolls in the wrong element, and the
+   * breadcrumb bar and list header slide out of the viewport instead of staying
+   * pinned. Only a rendered, scrolled page can tell the difference.
+   */
+  it('[ac:ac-pilotowa-koperta-wbudowana-c4s-plugin-a] the detail body scrolls under a pinned breadcrumb bar', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 820 } });
+    const { consoleErrors, badResponses } = watch(page);
+
+    const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
+    const { endpoints } = (await res.json()) as { endpoints: Array<{ slug: string }> };
+    const slug = endpoints[0]?.slug;
+    if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
+
+    await page.goto(`${BASE}/p/${project.id}/endpoints/${slug}`, { waitUntil: 'networkidle' });
+    const bar = page.locator('text=Details').first();
+    await expect.poll(() => bar.count()).toBe(1);
+
+    const before = await bar.boundingBox();
+    await page.mouse.move(700, 600);
+    await page.mouse.wheel(0, 1200);
+    await page.waitForTimeout(600);
+    const after = await bar.boundingBox();
+
+    expect(before, 'breadcrumb bar before scrolling').not.toBeNull();
+    expect(after?.y, 'breadcrumb bar y after scrolling the body').toBeCloseTo(before!.y, 0);
+
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  });
+
+  /**
+   * The slash palette offers each of the envelope's commands EXACTLY ONCE, and
+   * the entry describes itself.
+   *
+   * Two regressions met here. The frontend module contributed a second entry
+   * carrying no `popoverKind`; it registered first, so it won the palette by
+   * default and invoking it deleted the typed text and opened nothing. Removing
+   * it then exposed that a declarative command had no `description`/`hint`
+   * field at all, so the surviving row rendered its label three times.
+   *
+   * `curl` sees neither: no request is made, and nothing is logged.
+   */
+  it('[ac:ac-popover-create-edit-encji-wniesionej-prz] each slash command is offered once, with its own copy', async () => {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 820 } });
+    const { consoleErrors, badResponses } = watch(page);
+
+    const res = await fetch(`${BASE}/api/projects/${project.id}/pages/pages`);
+    const { tree } = (await res.json()) as { tree: Array<{ type: string; path: string }> };
+    const first = tree.find((n) => n.type === 'file' && n.path.endsWith('.md'));
+    if (!first) throw new Error('environment has no page with an editor — seed one first');
+
+    await page.goto(`${BASE}/p/${project.id}/space/pages/${first.path}`, {
+      waitUntil: 'networkidle',
+    });
+    const editor = page.locator('.ProseMirror').first();
+    await expect.poll(() => editor.count()).toBe(1);
+
+    await editor.click();
+    await page.keyboard.press('End');
+    await page.keyboard.press('Enter');
+    await page.keyboard.type('/dto');
+
+    // Scoped to the palette's own container. Its rows are plain buttons, and
+    // the `/dto` just typed is in the document too, so a text-only search finds
+    // the page's list items as readily as the menu's — it can report a
+    // duplicate that isn't there, and miss one that is.
+    const rows = page.locator('[data-slash-menu] button');
+    await expect.poll(() => rows.count()).toBeGreaterThan(0);
+    const dto = (await rows.allInnerTexts()).filter((t) => t.trim().startsWith('/dto'));
+
+    expect(dto, 'palette rows offering /dto').toHaveLength(1);
+    expect(dto[0], 'the row describes what the command does').toContain('Create a new DTO inline');
+
+    // And invoking it opens exactly one popover, anchored near the caret rather
+    // than at the fixed viewport position an unanchored shell falls back to.
+    const caretY = await editor.evaluate(() => {
+      const sel = window.getSelection();
+      return sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect().bottom : null;
+    });
+    await page.keyboard.press('Enter');
+    const dialog = page.locator('[role=dialog][aria-label="New DTO"]');
+    await expect.poll(() => dialog.count()).toBe(1);
+
+    if (caretY !== null) {
+      const box = await dialog.boundingBox();
+      expect(Math.abs(box!.y - caretY), 'popover distance from the caret').toBeLessThan(220);
+    }
+
+    await page.keyboard.press('Escape');
+    expect(consoleErrors, 'console errors').toEqual([]);
+    expect(badResponses, 'responses >= 400').toEqual([]);
+    await page.close();
+  });
+
   it('[ac:ac-ddl-tabel-encji-zyje-w-module-backend-m] entity counts answer for every type, including deactivated ones', async () => {
     // Entity DDL moved into each module's own migrations, which run for every
     // AVAILABLE module rather than only the active ones — precisely so that a
