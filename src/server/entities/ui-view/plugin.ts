@@ -6,6 +6,7 @@ import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewsRouter } from './routes.js';
 import { UiViewService } from './service.js';
 import { uiViewCreateSchema, uiViewUpdateSchema } from './crud-schemas.js';
+import { uiViewMigrations } from './migrations.js';
 
 export const uiViewBackendModule: BackendModule = {
   type: 'ui-view',
@@ -29,6 +30,7 @@ export const uiViewBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. No custom MCP server —
   // ui-view has no non-CRUD tools.
   backend: {
+    migrations: uiViewMigrations,
     service: (ctx) => new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: uiViewCreateSchema,

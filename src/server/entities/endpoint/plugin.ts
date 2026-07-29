@@ -7,6 +7,7 @@ import { endpointsRouter } from './routes.js';
 import { EndpointService } from './service.js';
 import { createEndpointToolsServer } from './mcp-server.js';
 import { endpointCreateSchema, endpointUpdateSchema } from './crud-schemas.js';
+import { endpointMigrations } from './migrations.js';
 
 export const endpointBackendModule: BackendModule = {
   type: 'endpoint',
@@ -34,6 +35,7 @@ export const endpointBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router, mount the custom MCP
   // server for endpoint's relation tools.
   backend: {
+    migrations: endpointMigrations,
     service: (ctx) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: endpointCreateSchema,

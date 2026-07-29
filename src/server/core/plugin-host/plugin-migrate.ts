@@ -41,13 +41,28 @@ export function runPluginMigrations(
     .sort((a, b) => a.version - b.version)
     .filter((m) => !applied.has(m.version));
 
-  for (const m of pending) {
-    const tx = db.transaction(() => {
-      db.exec(m.up);
-      db.prepare(
-        'INSERT INTO plugin_schema_migrations (plugin, version, name) VALUES (?, ?, ?)',
-      ).run(plugin, m.version, m.name);
-    });
-    tx();
+  if (pending.length === 0) return;
+
+  // Same reasoning as the host runner (db/migrate.ts): SQLite's recommended
+  // table-rebuild procedure (CREATE _new / INSERT / DROP / RENAME) cascade-deletes
+  // child rows through ON DELETE CASCADE unless foreign keys are off, and
+  // `PRAGMA foreign_keys` is a no-op inside a transaction — so it has to be
+  // toggled around the whole batch. A plugin evolving its own schema past v1 hits
+  // exactly this, and silently losing rows is the worst available failure mode.
+  const fkWasOn = db.pragma('foreign_keys', { simple: true }) === 1;
+  if (fkWasOn) db.pragma('foreign_keys = OFF');
+
+  try {
+    for (const m of pending) {
+      const tx = db.transaction(() => {
+        db.exec(m.up);
+        db.prepare(
+          'INSERT INTO plugin_schema_migrations (plugin, version, name) VALUES (?, ?, ?)',
+        ).run(plugin, m.version, m.name);
+      });
+      tx();
+    }
+  } finally {
+    if (fkWasOn) db.pragma('foreign_keys = ON');
   }
 }

@@ -142,10 +142,17 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     // crash. L1 (M13): the host runs each plugin's declared `backend.migrations`
     // (schema_version per plugin, idempotent) BEFORE its mount, so the entity
     // table exists by the time `mount` builds its service and the first query runs.
-    for (const m of this.listEntities()) {
-      runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
-      m.backend?.mount?.(ctx);
-    }
+    //
+    // 0.2.2 Tier B: TWO passes, not one interleaved pass. Since entity DDL now
+    // lives in `backend.migrations` rather than the host chain, a module's table
+    // may be referenced by ANOTHER module's schema — `endpoint_dto` carries an FK
+    // to `dto(slug)`. This loop iterates in `displayOrder`, not `dependsOn` order,
+    // so interleaving would make correctness depend on two unrelated numbers
+    // lining up. Migrating everything first means no mount can observe a
+    // half-migrated schema and no cross-module DDL reference can be mis-ordered.
+    const modules = this.listEntities();
+    for (const m of modules) runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
+    for (const m of modules) m.backend?.mount?.(ctx);
   }
 
   registerMcpServer(name: string, factory: () => McpServerFactory): void {

@@ -6,6 +6,7 @@ import { dtoSystemPrompt } from './system-prompt.js';
 import { dtosRouter } from './routes.js';
 import { DtoService } from './service.js';
 import { dtoCreateSchema, dtoUpdateSchema } from './crud-schemas.js';
+import { dtoMigrations } from './migrations.js';
 
 export const dtoBackendModule: BackendModule = {
   type: 'dto',
@@ -22,6 +23,7 @@ export const dtoBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. No custom MCP server — dto
   // has no non-CRUD tools left.
   backend: {
+    migrations: dtoMigrations,
     service: (ctx) => new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: dtoCreateSchema,

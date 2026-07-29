@@ -7,6 +7,7 @@ import { acsRouter } from './routes.js';
 import { AcService } from './service.js';
 import { createAcToolsServer } from './mcp-server.js';
 import { acCreateSchema, acUpdateSchema } from './crud-schemas.js';
+import { acMigrations } from './migrations.js';
 
 export const acBackendModule: BackendModule = {
   type: 'ac',
@@ -23,6 +24,7 @@ export const acBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router, mount the custom MCP
   // server for ac's semantic-audit tool.
   backend: {
+    migrations: acMigrations,
     service: (ctx) => new AcService(ctx.db, ctx.tagsService, ctx.versionService, ctx.host, ctx.entityStore),
     crud: {
       createSchema: acCreateSchema,

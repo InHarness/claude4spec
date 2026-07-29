@@ -6,6 +6,7 @@ import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemsRouter } from './routes.js';
 import { DesignSystemService } from './service.js';
 import { designSystemCreateSchema, designSystemUpdateSchema } from './crud-schemas.js';
+import { designSystemMigrations } from './migrations.js';
 
 export const designSystemBackendModule: BackendModule = {
   type: 'design-system',
@@ -23,6 +24,7 @@ export const designSystemBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. design-system has no
   // non-CRUD tools, so there is no `mcpServer` key at all.
   backend: {
+    migrations: designSystemMigrations,
     service: (ctx) => new DesignSystemService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: designSystemCreateSchema,
