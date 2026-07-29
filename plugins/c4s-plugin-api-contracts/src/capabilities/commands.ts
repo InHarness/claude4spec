@@ -17,16 +17,22 @@ import { DTO_POPOVER_KIND, ENDPOINT_POPOVER_KIND } from '../identity.js';
  * plugin-load path.
  */
 export const apiContractCommands: PluginCommandContribution[] = [
+  // `description`/`hint` carry the copy the host's hardcoded entries had. Without
+  // them the palette row renders the label three times.
   {
     name: 'endpoint-slash',
     trigger: 'endpoint',
     label: '/endpoint',
+    description: 'Create a new endpoint inline',
+    hint: 'METHOD /path',
     popoverKind: ENDPOINT_POPOVER_KIND,
   },
   {
     name: 'dto-slash',
     trigger: 'dto',
     label: '/dto',
+    description: 'Create a new DTO inline',
+    hint: 'name',
     popoverKind: DTO_POPOVER_KIND,
   },
 ];
