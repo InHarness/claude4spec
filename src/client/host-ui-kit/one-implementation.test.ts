@@ -184,6 +184,31 @@ describe('M34/L12 — one implementation rule', () => {
     expect(dialog).toMatch(/id=\{titleId\}/);
   });
 
+  it('[ac:ac-dla-komponentu-obecnego-w-katalogu-l12-n] no host overlay stacks below the --z-popover tier', () => {
+    // The `ANATOMY` scan above recognises a Popover twin by `var(--z-popover)`
+    // — so a twin that spells its stacking as a bare number is invisible to it.
+    // That is exactly how the sidebar OTHERS flyout hid: `position: 'fixed'`
+    // with `zIndex: 60`, which painted it *under* `ActionBar` (900) and made
+    // its lower items unclickable on the plan page.
+    //
+    // Deliberately narrow: only a `position: 'fixed'` block counts. In-flow
+    // `absolute` layering (ResizeHandle, diagram toolbars, anchored dropdowns)
+    // legitimately uses small numbers and is not an overlay tier.
+    const FIXED_THEN_Z = /position:\s*'fixed'[^}]*?zIndex:\s*(\d+)/g;
+    const Z_THEN_FIXED = /zIndex:\s*(\d+)[^}]*?position:\s*'fixed'/g;
+    const offenders: string[] = [];
+    for (const file of HOST_FILES) {
+      const src = readFileSync(file, 'utf8');
+      for (const re of [FIXED_THEN_Z, Z_THEN_FIXED]) {
+        re.lastIndex = 0;
+        for (const m of src.matchAll(re)) {
+          if (Number(m[1]) < 1100) offenders.push(`${relative(CLIENT_DIR, file)}: zIndex ${m[1]}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('every declared exception still exists (the list cannot rot)', () => {
     for (const file of Object.keys(DECLARED_EXCEPTIONS)) {
       expect(() => statSync(join(CLIENT_DIR, file))).not.toThrow();

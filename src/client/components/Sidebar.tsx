@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { stripBase } from '../lib/api-core.js';
 import { ProjectSwitcher } from './ProjectSwitcher.js';
 import { C4sLogoIcon } from './C4sLogoIcon.js';
@@ -30,6 +30,7 @@ import { usePersistedState, projectKey } from '../state/persisted.js';
 import { UserSection } from './UserSection.js';
 import { GitStatusBadge } from './GitStatusBadge.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
+import { Popover } from '../host-ui-kit/overlay-feedback/Popover.js';
 
 interface SidebarProps {
   width: number;
@@ -592,7 +593,7 @@ function PagesTree({
   );
 }
 
-const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/links'];
+const OTHERS_PATHS = ['/plans', '/releases', '/todos', '/tags', '/briefs', '/links'];
 
 function OthersTrigger({
   todoCount,
@@ -606,51 +607,16 @@ function OthersTrigger({
   const pathname = stripBase(useRouterState({ select: (s) => s.location.pathname }));
   const triggerRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
-  const [anchor, setAnchor] = useState<{ left: number; bottom: number } | null>(null);
   const inOthers = OTHERS_PATHS.some((p) => pathname.startsWith(p));
 
-  const closeMenu = useCallback(() => {
-    setOpen(false);
-    setAnchor(null);
-  }, []);
-
-  const openMenu = useCallback(() => {
-    const rect = triggerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // Trigger siedzi na dnie sidebara — kotwiczymy panel dolną krawędzią
-    // do dolnej krawędzi triggera, żeby rósł w górę i pozycje były widoczne.
-    setAnchor({
-      left: rect.right + 4,
-      bottom: window.innerHeight - rect.bottom,
-    });
-    setOpen(true);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (e: MouseEvent) => {
-      const t = e.target as HTMLElement;
-      if (triggerRef.current?.contains(t)) return;
-      if (t.closest('[data-others-flyout]')) return;
-      closeMenu();
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeMenu();
-    };
-    document.addEventListener('mousedown', onDoc);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDoc);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, [open, closeMenu]);
+  const closeMenu = useCallback(() => setOpen(false), []);
 
   return (
     <>
       <div className="px-1.5 py-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
         <button
           ref={triggerRef}
-          onClick={() => (open ? closeMenu() : openMenu())}
+          onClick={() => setOpen((v) => !v)}
           className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-md text-[13px] transition text-left"
           style={{
             background: inOthers || open ? 'var(--c-accent-soft)' : 'transparent',
@@ -666,70 +632,49 @@ function OthersTrigger({
         </button>
       </div>
 
-      {open && anchor && (
-        <OthersFlyout
-          anchor={anchor}
+      {/*
+       * M34/L12: the menu is the published `Popover`, not a twin of it. The
+       * primitive supplies the popover z-tier (1100) — which is what keeps the
+       * menu above the plan page's `ActionBar` (900) — plus viewport clamping
+       * and the mousedown/Escape dismissal this component used to hand-roll.
+       * The z-index is deliberately absent here: naming it, even in a comment,
+       * is the anatomy the one-implementation scan looks for.
+       *
+       * `placement="right"` anchors off the trigger's right edge; because the
+       * trigger sits at the bottom of the sidebar the clamp always pulls the
+       * panel up, so the menu still grows upward off the trigger — now without
+       * being able to run off the viewport edge, which the old flyout could.
+       */}
+      <Popover
+        open={open}
+        onClose={closeMenu}
+        anchorRef={triggerRef}
+        placement="right"
+        width={200}
+      >
+        <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={closeMenu} />
+        <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={closeMenu} />
+        <FlyoutLink
+          to="/todos"
+          icon={StickyNote}
+          label="TODOs"
+          amberBadge={todoCount > 0 ? todoCount : null}
           onNavigate={closeMenu}
-          todoCount={todoCount}
-          linkIssueCount={linkIssueCount}
-          brokenLinkCount={brokenLinkCount}
         />
-      )}
+        <FlyoutLink to="/tags" icon={Tag} label="Tags" onNavigate={closeMenu} />
+        <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={closeMenu} />
+        <FlyoutLink
+          to="/links"
+          icon={Link2}
+          label="Links"
+          amberBadge={linkIssueCount > 0 ? linkIssueCount : null}
+          brokenCount={brokenLinkCount}
+          onNavigate={closeMenu}
+        />
+      </Popover>
     </>
   );
 }
-
-function OthersFlyout({
-  anchor,
-  onNavigate,
-  todoCount,
-  linkIssueCount,
-  brokenLinkCount,
-}: {
-  anchor: { left: number; bottom: number };
-  onNavigate: () => void;
-  todoCount: number;
-  linkIssueCount: number;
-  brokenLinkCount: number;
-}) {
-  return (
-    <div
-      data-others-flyout
-      style={{
-        position: 'fixed',
-        left: anchor.left,
-        bottom: anchor.bottom,
-        background: 'var(--c-card)',
-        border: '1px solid var(--c-hair-strong)',
-        borderRadius: 8,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-        padding: 6,
-        minWidth: 200,
-        zIndex: 60,
-      }}
-    >
-      <FlyoutLink to="/plans" icon={ClipboardList} label="Plans" onNavigate={onNavigate} />
-      <FlyoutLink to="/releases" icon={GitCommit} label="Releases" onNavigate={onNavigate} />
-      <FlyoutLink
-        to="/todos"
-        icon={StickyNote}
-        label="TODOs"
-        amberBadge={todoCount > 0 ? todoCount : null}
-        onNavigate={onNavigate}
-      />
-      <FlyoutLink to="/tags" icon={Tag} label="Tags" onNavigate={onNavigate} />
-      <FlyoutLink to="/briefs" icon={FileText} label="Briefs" onNavigate={onNavigate} />
-      <FlyoutLink
-        to="/links"
-        icon={Link2}
-        label="Links"
-        amberBadge={linkIssueCount > 0 ? linkIssueCount : null}
-        brokenCount={brokenLinkCount}
-        onNavigate={onNavigate}
-      />
-    </div>
-  );
-};
 
 function FlyoutLink({
   to,
