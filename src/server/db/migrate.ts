@@ -7,6 +7,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MIGRATIONS_DIR = path.join(__dirname, 'migrations');
 
+/**
+ * The baseline cut (0.2.2). It is NOT part of the ledger-driven chain — it
+ * sorts lexicographically before `000_init` and would otherwise replay on every
+ * existing database. It runs on exactly one condition: an empty ledger.
+ *
+ * Never rename or renumber this file. The `000_baseline` ledger row is the only
+ * marker distinguishing a squashed database from a legacy one.
+ */
+const BASELINE_FILE = '000_baseline.sql';
+const BASELINE_VERSION = '000_baseline';
+
 export function runMigrations(db: Database.Database): string[] {
   db.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -23,8 +34,29 @@ export function runMigrations(db: Database.Database): string[] {
     .readdirSync(MIGRATIONS_DIR)
     .filter((f) => f.endsWith('.sql'))
     .sort();
+  const chain = files.filter((f) => f !== BASELINE_FILE);
 
-  const pending = files.filter((f) => !applied.has(f.replace(/\.sql$/, '')));
+  // Fresh database: the baseline IS the schema. Pre-seed the whole historical
+  // chain as applied so a fresh project never reconstructs history — and do it
+  // in ONE transaction with the baseline itself, so a crash can never leave a
+  // half-built schema described by a fully-seeded ledger.
+  //
+  // No foreign_keys toggle here: the baseline is pure CREATE TABLE / CREATE
+  // INDEX with no table rebuilds, and SQLite resolves a forward FK reference at
+  // DML time, not at CREATE time.
+  if (applied.size === 0) {
+    const sql = fs.readFileSync(path.join(MIGRATIONS_DIR, BASELINE_FILE), 'utf-8');
+    const insert = db.prepare('INSERT INTO schema_migrations (version) VALUES (?)');
+    db.transaction(() => {
+      db.exec(sql);
+      insert.run(BASELINE_VERSION);
+      for (const file of chain) insert.run(file.replace(/\.sql$/, ''));
+    })();
+    // Only the baseline was APPLIED; the rest were recorded. Callers log this.
+    return [BASELINE_VERSION];
+  }
+
+  const pending = chain.filter((f) => !applied.has(f.replace(/\.sql$/, '')));
   if (pending.length === 0) return [];
 
   // Schema-changing migrations may rebuild a table that has incoming foreign
