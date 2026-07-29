@@ -58,6 +58,65 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     expect(all[0]!.name).toBe('v1');
   });
 
+  // ── 0.2.2 (brief §8): `roots` joins the reconstructable metadata ──────────
+  //
+  // Before migration 049 the column did not exist: `roots` lived in the JSON file
+  // with nowhere to land, so a rebuilt DB lost each release's releasable-root set
+  // and diffs silently fell back to the project's CURRENT roots.
+
+  it('rebuilds roots from the release file (0.2.2 — migration 049)', async () => {
+    store.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First release',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: ['pages', 'docs'],
+    });
+    await indexer.indexAll();
+    expect(JSON.parse(rows()[0]!.roots as string)).toEqual(['pages', 'docs']);
+  });
+
+  it('updates roots on a changed file while keeping the id', async () => {
+    const write = (roots: string[]) =>
+      store.write('v1', {
+        name: 'v1',
+        slug: 'v1',
+        description: 'First release',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        createdBy: 'user',
+        roots,
+      });
+    write(['pages']);
+    await indexer.indexAll();
+    const id = rows()[0]!.id;
+
+    write(['pages', 'specs']);
+    await indexer.indexAll();
+
+    const after = rows();
+    expect(after).toHaveLength(1);
+    // The surrogate id is what entity_version.release_id points at — it must
+    // survive a rebuild even as roots change.
+    expect(after[0]!.id).toBe(id);
+    expect(JSON.parse(after[0]!.roots as string)).toEqual(['pages', 'specs']);
+  });
+
+  it('stores NULL, not [], when the file records no roots', async () => {
+    store.write('v1', {
+      name: 'v1',
+      slug: 'v1',
+      description: 'First release',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      createdBy: 'user',
+      roots: undefined as unknown as string[],
+    });
+    await indexer.indexAll();
+    // NULL means "not recorded — fall back to the current releasable roots",
+    // which is a different statement from "this release covered zero roots".
+    expect(rows()[0]!.roots).toBeNull();
+  });
+
   it('a second indexAll rebuild preserves the same id for an unchanged release file (upsert, not delete-all)', async () => {
     store.write('v1', {
       name: 'v1',
