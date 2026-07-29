@@ -44,7 +44,17 @@ export interface CreatePluginResult {
   template: string;
   /** The revision actually used — resolved from the clone when `branch` was omitted. */
   branch: string;
-  filesWritten: number;
+  /**
+   * 0.2.2 (brief §8): paths of every file this run wrote, RELATIVE to
+   * `targetDir`, POSIX-separated and sorted.
+   *
+   * Was a bare `number`. M38's reference pattern is M22 (`c4s install-skills`),
+   * which reports the paths it wrote — and a count tells an operator (or an
+   * agent) nothing they can act on: not which files landed, not what to inspect,
+   * not what to add to git. Relative rather than absolute so the output is stable
+   * across machines and safe to paste into a PR.
+   */
+  filesWritten: string[];
   installed: boolean;
 }
 
@@ -103,7 +113,7 @@ export function createPlugin(input: CreatePluginInput, cwd = process.cwd()): Cre
     //    read-only target, ENOSPC, a permission error mid-copy) are typed, so
     //    they reach the caller as a scaffold error with a real exit code
     //    instead of falling through the bin's catch-all as UNKNOWN_COMMAND.
-    let filesWritten: number;
+    let filesWritten: string[];
     try {
       if (!existed) {
         fs.mkdirSync(abs, { recursive: true });
@@ -237,8 +247,17 @@ function fetchTemplate(template: string, branch: string | undefined, dest: strin
  * (An overwritten file's previous content is not recoverable; `--force` is a
  * merge into a directory the operator has told us to write into.)
  */
-function copyTree(from: string, to: string, ledger: WriteLedger): number {
-  let count = 0;
+/**
+ * Copy `from` into `to`, recording writes in the ledger.
+ *
+ * Returns the paths written, relative to `root` and POSIX-separated — the M22
+ * `writeFileSet` report shape. Note this counts every file COPIED, including one
+ * that overwrote an existing file under `--force`; only files this run CREATED go
+ * into `ledger.files`, because the ledger drives rollback and must never delete
+ * something the operator already had.
+ */
+function copyTree(from: string, to: string, ledger: WriteLedger, root: string = to): string[] {
+  const written: string[] = [];
   for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
     const src = path.join(from, entry.name);
     const dst = path.join(to, entry.name);
@@ -247,16 +266,16 @@ function copyTree(from: string, to: string, ledger: WriteLedger): number {
         fs.mkdirSync(dst, { recursive: true });
         ledger.dirs.push(dst);
       }
-      count += copyTree(src, dst, ledger);
+      written.push(...copyTree(src, dst, ledger, root));
     } else if (entry.isFile()) {
       const overwrote = fs.existsSync(dst);
       fs.copyFileSync(src, dst);
       if (!overwrote) ledger.files.push(dst);
-      count++;
+      written.push(path.relative(root, dst).split(path.sep).join('/'));
     }
     // Symlinks and other special entries are skipped: a scaffold is plain files.
   }
-  return count;
+  return written.sort();
 }
 
 /**

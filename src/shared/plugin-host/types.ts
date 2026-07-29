@@ -34,6 +34,24 @@ export interface EntityModuleManifest {
    * cross-cutting code.
    */
   pathPrefix: string;
+
+  /**
+   * 0.2.2 — entity types that must be restored/indexed BEFORE this one, declared
+   * by the module that knows the dependency rather than inferred by the host.
+   *
+   * Restore and index order used to be two hardcoded, silently divergent arrays
+   * (`release.ts` listed four types and omitted `ac`/`design-system`/`diagram`;
+   * `entity-indexer.ts` listed all seven in a different order). Both now consume
+   * `topoSortModules()` over this hint, so "DTO before Endpoint" is the RESULT of
+   * `endpoint` declaring `dependsOn: ['dto']` — not host knowledge about a
+   * specific pair. A type contributed by a plugin can therefore express an
+   * ordering constraint the host has never heard of.
+   *
+   * Unknown or inactive types in the list are ignored (a soft hint, not a
+   * referential-integrity constraint): deactivating `design-system` must not
+   * strand `ui-view`.
+   */
+  dependsOn?: string[];
 }
 
 /**

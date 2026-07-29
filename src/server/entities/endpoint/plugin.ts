@@ -15,6 +15,14 @@ export const endpointBackendModule: BackendModule = {
   labelPlural: 'Endpoints',
   displayOrder: 10,
   pathPrefix: '/endpoints',
+  /**
+   * 0.2.2 — restore/index order is declared here, by the module that knows the
+   * constraint, instead of being hardcoded in the host. An endpoint links DTOs
+   * through the `endpoint_dto` junction, so DTO rows must exist first (the FK
+   * would otherwise reject the link). "DTO before Endpoint" is the RESULT of
+   * this line; the host's topological sort only consumes it.
+   */
+  dependsOn: ['dto'],
   slugFrom: (data) => {
     const d = data as { method?: string; path?: string };
     return endpointSlug(d.method ?? 'GET', d.path ?? '');

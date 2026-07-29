@@ -151,7 +151,7 @@ export interface EntityContribution extends EntityModuleManifest {
      * C4S facade `McpServerFactory` — NOT a `() => instance` thunk; per-turn
      * freshness is host-owned. Typed `unknown` here (like `service`/`crud`/
      * `routes`) so the dep-free shared bundle carries no vendor type; the
-     * server registry narrows it to `(service, ctx) => McpServerInstance`.
+     * server registry narrows it to `(service, ctx) => McpServerFactory`.
      */
     mcpServer?: unknown;
   };

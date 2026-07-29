@@ -21,8 +21,11 @@
  * C4S-owned opaque `McpServerFactory` handle, so vendor config shapes never leak
  * and a vendor version bump does not bump `hostApiVersion` while the facade shape
  * holds. Host-internal backend consumers (the built-in entity modules) import the
- * builders from this barrel and keep the concrete vendor `McpServerInstance` type
- * re-exported below — that concrete type is host-internal, not published.
+ * builders from this barrel and name the returned handle by the C4S-owned
+ * `McpServerFactory` type re-exported below — 0.2.2 finished the job the 0.1.133
+ * facade started, so the vendor's `McpServerInstance` no longer appears in the
+ * host's OWN types either (only at the adapter boundary in `routes/agent-turn.ts`,
+ * the code that actually hands the config to the adapter).
  *
  * 0.1.134→next — zod facade. The host's own `z` is re-exported below as a VALUE for
  * the same single-instance reason as the MCP builders: a plugin's backend schema code
@@ -61,12 +64,22 @@ export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
 // written against v3 backend-schema APIs may need adjustment once it shares this `z`.
 export { z } from 'zod';
 export type { ZodRawShape } from 'zod';
-// Host-internal concrete handle types for in-repo backend consumers. NOT part of
-// the published `@c4s/plugin-runtime` surface (that shows opaque `McpServerFactory`).
+// 0.2.2 — the C4S-owned server handle. Same name and same meaning as the published
+// surface's `McpServerFactory`; the published copy is additionally branded/opaque,
+// this one names the single member the host consumes (`config`). In-repo backend
+// consumers annotate their `create*ToolsServer()` return with THIS type.
+export type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
+/**
+ * Deprecated alias kept for in-repo consumers written against the 0.1.133 name.
+ * @deprecated 0.2.2 — use `McpServerFactory`.
+ */
+export type { McpServerFactory as McpServerInstance } from '../../shared/plugin-host/mcp.js';
 // `McpToolDefinition` is what `mcpTool()` returns — an entity module that splits
 // "build the tool list" from "wrap it in a server" (so the tools stay unit-testable)
-// needs to name that type without reaching past this facade.
-export type { McpServerInstance, McpToolDefinition } from '@inharness-ai/agent-adapters';
+// needs to name that type without reaching past this facade. Still vendor-typed:
+// it is a tool descriptor, not a server handle, and never reaches the host's own
+// contract surface (the published surface shows `McpTool = unknown`).
+export type { McpToolDefinition } from '@inharness-ai/agent-adapters';
 export type {
   PluginManifest,
   EntityContribution,

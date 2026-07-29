@@ -26,6 +26,7 @@ import type {
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
+import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
 import type { VersionService } from './versions.js';
 import type { FileVersionService } from './file-version.js';
@@ -184,6 +185,40 @@ export interface RestoreSpecResult {
   releaseId: number;
   entityResults: RestoreEntityResult[];
   pageResults: RestorePageResult[];
+}
+
+/**
+ * Did `type` exist at the time `releaseId` was cut?
+ *
+ * True when the type has at least one `entity_version` row created at or before
+ * the release's own `created_at` — regardless of whether that row was captured
+ * INTO this release. That is precisely what separates the two situations a plain
+ * "does the release have rows for this type" check conflates:
+ *
+ *   - the type existed and the release legitimately held ZERO of them → history
+ *     exists, so a restore SHOULD delete the ones added since;
+ *   - the type did not exist yet → no history at all, so the release asserts
+ *     nothing about it and deleting everything would invent a claim.
+ *
+ * Exported (rather than a private method) so the rule is directly testable: it is
+ * the guard standing between `restoreSpec` and mass deletion of a whole type.
+ */
+export function typeExistedAtRelease(
+  db: Database.Database,
+  type: string,
+  releaseId: number | null,
+): boolean {
+  // Unbounded "current" snapshot — every type is in scope by definition.
+  if (releaseId == null) return true;
+  const row = db
+    .prepare(
+      `SELECT 1 FROM entity_version
+        WHERE entity_type = ?
+          AND created_at <= COALESCE((SELECT created_at FROM spec_release WHERE id = ?), created_at)
+        LIMIT 1`,
+    )
+    .get(type, releaseId);
+  return row != null;
 }
 
 export class ReleaseService {
@@ -1253,9 +1288,15 @@ export class ReleaseService {
   }
 
   /**
-   * Restore the entire spec to a release. Topological sort: DTO first
-   * (Endpoint references DTO via linked_dtos), then everything else, then
-   * pages. Each step generates normal mutations → all visible in timeline.
+   * Restore the entire spec to a release. Topological sort by each module's
+   * DECLARED `dependsOn` (0.2.2), then pages. Each step generates normal
+   * mutations → all visible in timeline.
+   *
+   * Before 0.2.2 this was a hardcoded `['dto','database-table','ui-view','endpoint']`
+   * — which, besides embedding host knowledge of the DTO↔Endpoint pair, silently
+   * omitted `ac`, `design-system` and `diagram`: a full-spec restore never touched
+   * those three types at all. Deriving the order from the active modules fixes both
+   * problems at once, and picks up plugin-contributed types for free.
    */
   async restoreSpec(input: RestoreSpecInput, actor: ChangedBy = 'user'): Promise<RestoreSpecResult> {
     const releaseRow = this.findReleaseRow(input.releaseId);
@@ -1265,8 +1306,15 @@ export class ReleaseService {
     const entityResults: RestoreEntityResult[] = [];
     const pageResults: RestorePageResult[] = [];
 
-    // Topological order — DTO before Endpoint (Endpoint linked_dtos references DTO slugs).
-    const order: RawEntityType[] = ['dto', 'database-table', 'ui-view', 'endpoint'];
+    // Declared topological order over the ACTIVE modules. "DTO before Endpoint"
+    // still holds — it is now the consequence of `endpoint` declaring
+    // `dependsOn: ['dto']`, not of the host knowing that pair.
+    const order = topoSortModules(this.host.listEntities(), (remaining) =>
+      console.warn(
+        `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
+          `restoring those types in displayOrder instead`,
+      ),
+    ).map((m) => m.type as RawEntityType);
 
     for (const type of order) {
       // Slugs in target release
@@ -1290,9 +1338,39 @@ export class ReleaseService {
           });
         }
       }
-      // Delete extras: entities currently present but not in target
+      // Delete extras: entities currently present but not in target.
+      //
+      // 0.2.2 GUARD — run this destructive pass only for a type that EXISTED when
+      // the release was cut. Widening `order` from the hardcoded four types to
+      // every ACTIVE type (the fix for ac/design-system/diagram being skipped
+      // entirely) also switches this pass ON for them, and restoring a release cut
+      // before `ac` existed would otherwise delete every AC in the project.
+      //
+      // The discriminator is deliberately NOT "does the release have rows for this
+      // type": that conflates two very different situations —
+      //   (a) the type did not exist yet  ⇒ the release asserts nothing about it,
+      //       so deleting everything invents a claim the release never made;
+      //   (b) the type existed and the release legitimately contained zero of them
+      //       ⇒ deleting the ones added since is exactly what a restore means.
+      // Both look identical through `targetRows`. `typeExistedAtRelease` tells them
+      // apart by asking whether the type has ANY version history at or before the
+      // release's own `created_at`, which is (b)'s fingerprint and not (a)'s.
+      // Skipping is REPORTED, never silent.
+      const covered = typeExistedAtRelease(this.db, type, releaseId);
       const currentSlugs = new Set(this.rawReader.listSlugs(type));
-      for (const slug of currentSlugs) {
+      if (!covered && currentSlugs.size > 0) {
+        entityResults.push({
+          type,
+          slug: '*',
+          op: 'noop',
+          warnings: [
+            `type '${type}' has no history at or before this release — ` +
+              `${currentSlugs.size} existing ${type} entities left untouched ` +
+              `(the release predates the type and asserts nothing about it)`,
+          ],
+        });
+      }
+      for (const slug of covered ? currentSlugs : []) {
         if (targetSlugs.has(slug)) continue;
         // Was this entity present in any earlier release? If so, target says delete.
         // If never released (entity created after target release), still delete to

@@ -18,6 +18,7 @@ import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import { buildMigrationInfo, type PluginMigrationInfo } from '../../../shared/plugin-host/host-api.js';
 import { entryCacheBust } from './cache-bust.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
+import { discoverBuiltinEnvelopes } from './builtin-envelopes.js';
 import type { PluginRegistry } from './types.js';
 
 /**
@@ -216,6 +217,49 @@ export async function loadWorkspacePlugins(
   }
 
   return { records };
+}
+
+/**
+ * 0.2.2 (brief item 10) — step 1 of discovery gains a THIRD sub-source: built-in
+ * envelopes from `<hostRoot>/plugins/*`, registered BEFORE `node_modules` packages
+ * and before the workspace registry (M31).
+ *
+ * The ordering is deliberate, not incidental: core code registers first so nothing
+ * external shadows a core type by accident. Collision semantics are untouched
+ * (silent last-wins in `registerEntityModule`), so an external package still can
+ * deliberately shadow an envelope.
+ *
+ * Envelopes are trusted by virtue of living in the host repo and are therefore NOT
+ * subject to `trustProjectPlugins` — that gate wraps only the project-local overlay
+ * (`<cwd>/.claude4spec/plugins/`). They also resolve `@c4s/plugin-runtime` intra-repo
+ * by IMPORT RULE rather than through the bare-specifier resolver, which is what makes
+ * extracting one to its own repo a change of resolution mechanism only, not of code.
+ *
+ * Delegates the per-package pipeline to `loadWorkspacePlugins` — same import →
+ * manifest → version gate → `registerPlugin` steps, same per-package isolation —
+ * then relabels each record with the envelope's directory name rather than the
+ * `file://` specifier it was imported by.
+ *
+ * Returns `{records: []}` when there is no `plugins/` directory, which is the
+ * normal state until the first envelope lands.
+ */
+export async function loadBuiltinEnvelopes(
+  registry: PluginRegistry,
+  importer: PluginImporter = defaultImporter,
+  root?: string | null,
+): Promise<PluginLoadResult> {
+  const envelopes = root === undefined ? discoverBuiltinEnvelopes() : discoverBuiltinEnvelopes(root);
+  if (envelopes.length === 0) return { records: [] };
+
+  const bySpecifier = new Map(envelopes.map((e) => [e.specifier, e.name]));
+  const result = await loadWorkspacePlugins(
+    registry,
+    envelopes.map((e) => e.specifier),
+    importer,
+  );
+  return {
+    records: result.records.map((r) => ({ ...r, package: bySpecifier.get(r.package) ?? r.package })),
+  };
 }
 
 /**

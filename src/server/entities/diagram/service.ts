@@ -176,11 +176,11 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
     input: DiagramCreateInput,
     actor: ChangedBy,
     opts: MutateOpts = {}
-  ): { diagram: Diagram; op: 'created' | 'updated' } {
+  ): { diagram: Diagram; entity: Diagram; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
       const diagram = this.createRaw({ ...input, slug }, actor, opts);
-      return { diagram, op: 'created' };
+      return { diagram, entity: diagram, op: 'created' };
     }
     const result = this.updateRaw(
       slug,
@@ -188,7 +188,7 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
       actor,
       opts
     );
-    return { diagram: result.diagram, op: 'updated' };
+    return { diagram: result.diagram, entity: result.diagram, op: 'updated' };
   }
 
   remove(

@@ -253,11 +253,11 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
     input: DesignSystemCreateInput,
     actor: ChangedBy,
     opts: MutateOpts = {}
-  ): { designSystem: DesignSystem; op: 'created' | 'updated'; warnings: string[] } {
+  ): { designSystem: DesignSystem; entity: DesignSystem; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
       const result = this.createRaw({ ...input, slug }, actor, opts);
-      return { designSystem: result.designSystem, op: 'created', warnings: result.warnings };
+      return { designSystem: result.designSystem, entity: result.designSystem, op: 'created', warnings: result.warnings };
     }
     const result = this.updateRaw(
       slug,
@@ -271,7 +271,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       actor,
       opts
     );
-    return { designSystem: result.designSystem, op: 'updated', warnings: result.warnings };
+    return { designSystem: result.designSystem, entity: result.designSystem, op: 'updated', warnings: result.warnings };
   }
 
   remove(

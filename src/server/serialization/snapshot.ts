@@ -36,6 +36,18 @@ export function snapshotEntity(
   return fn(entity, ctx);
 }
 
+/**
+ * Step 4 of `restoreEntity` (M17): execute through the entity's normal write-API
+ * so the change lands in `entity_version` like any other — with a GENERIC
+ * dispatch, per 0.2.2.
+ *
+ * The write door is resolved by `host.getEntityService(type)`, so the limit on
+ * what can be restored is structural rather than an enumeration of seven core
+ * types: any type that contributed a `backend.service` with an upsert facade has
+ * one. A type WITHOUT such a service is REPORTED AS A SKIP (`op: 'noop'`) here,
+ * not thrown on — that is the difference between "a deactivated type was not
+ * restored" and "the whole restore died on a missing per-type method".
+ */
 export function restoreEntity(
   host: PluginHost,
   type: string,
@@ -46,6 +58,13 @@ export function restoreEntity(
   if (!module) throw new SnapshotNotImplementedError(type);
   const fn = module.serializer.restore;
   if (!fn) throw new SnapshotNotImplementedError(type);
+  if (!host.getEntityService(type)) {
+    return {
+      op: 'noop',
+      entity: null,
+      warnings: [`entity service for type '${type}' is not available — restore skipped`],
+    };
+  }
   return fn(data, ctx);
 }
 

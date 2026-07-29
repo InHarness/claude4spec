@@ -230,11 +230,11 @@ export class DtoService extends BaseEntityCrudService<Dto> {
    * Idempotent UPSERT for M17 restore. CREATE if slug missing, UPDATE
    * otherwise; preserves slug.
    */
-  upsert(slug: string, input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { dto: Dto; op: 'created' | 'updated' } {
+  upsert(slug: string, input: DtoCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { dto: Dto; entity: Dto; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
       const dto = this.createRaw({ ...input, slug } as DtoCreateInput & { slug?: string }, actor, opts);
-      return { dto, op: 'created' };
+      return { dto, entity: dto, op: 'created' };
     }
     const { dto } = this.updateRaw(slug, {
       name: input.name,
@@ -243,7 +243,7 @@ export class DtoService extends BaseEntityCrudService<Dto> {
       examples: input.examples,
       tags: input.tags,
     }, actor, opts);
-    return { dto, op: 'updated' };
+    return { dto, entity: dto, op: 'updated' };
   }
 
   remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = [], opts: MutateOpts = {}): DtoDeleteResult {

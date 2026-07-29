@@ -1,0 +1,26 @@
+-- 0.2.2 (brief §8, M29): `spec_release` becomes FULLY reconstructable from
+-- `<releasesDir>/<slug>.json`.
+--
+-- 0.1.118 already made the release IDENTITY a derived cache rebuilt from those
+-- files, but the rebuild restored only name/slug/description/created_by/created_at
+-- — `roots` existed in the JSON file and had nowhere to land in the DB, so the
+-- brief's list of reconstructable release metadata was not actually reconstructable
+-- in full. This column closes that gap.
+--
+-- SCOPE, precisely: this makes `roots` PERSISTED and round-trippable. It does NOT
+-- by itself change any query. `latestPageRowsAtOrBefore()` still scopes diffs by
+-- `this.releasableRootIds` (the CURRENT config) because no read path consults this
+-- column yet, so an old release diffed after its roots changed is still scoped by
+-- today's roots. Wiring that read is a separate, deliberate behaviour change —
+-- it alters existing diff output — and is out of scope here; it is filed as a
+-- patch on the spec side. Do not read this comment as "root-scoped diffing is
+-- fixed".
+--
+-- Stored as a JSON array of root ids (TEXT), matching `ReleaseFileData.roots`.
+-- NULL means "no roots recorded" — pre-0.2.2 rows and any release whose file
+-- predates this column.
+--
+-- What remains deliberately NON-reconstructable is unchanged: `entity_version` /
+-- `file_version` and the `release_id` linkage live exclusively in SQLite.
+
+ALTER TABLE spec_release ADD COLUMN roots TEXT;

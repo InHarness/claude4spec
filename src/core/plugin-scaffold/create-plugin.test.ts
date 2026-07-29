@@ -64,7 +64,9 @@ describe('M38 createPlugin', () => {
       targetDir: abs,
       template: templateRepo,
       branch: 'main',
-      filesWritten: 3,
+      // 0.2.2: relative POSIX paths, sorted — M22 `writeFileSet` parity, so the
+      // caller learns WHICH files landed, not merely how many.
+      filesWritten: ['README.md', 'package.json', 'src/index.ts'],
       installed: false,
     });
     expect(fs.readFileSync(path.join(abs, 'src', 'index.ts'), 'utf8')).toBe('export {};\n');
@@ -85,7 +87,7 @@ describe('M38 createPlugin', () => {
     );
 
     expect(result.branch).toBe('v2');
-    expect(result.filesWritten).toBe(4);
+    expect(result.filesWritten).toEqual(['EXTRA.md', 'README.md', 'package.json', 'src/index.ts']);
     expect(fs.existsSync(path.join(cwd, 'p', 'EXTRA.md'))).toBe(true);
   });
 
@@ -120,7 +122,9 @@ describe('M38 createPlugin', () => {
       cwd,
     );
 
-    expect(result.filesWritten).toBe(3);
+    // Reports only what the scaffold wrote — the operator's pre-existing
+    // `mine.txt` is untouched and is NOT claimed as written by this run.
+    expect(result.filesWritten).toEqual(['README.md', 'package.json', 'src/index.ts']);
     expect(fs.readFileSync(path.join(abs, 'mine.txt'), 'utf8')).toBe('keep me\n');
     expect(fs.existsSync(path.join(abs, 'README.md'))).toBe(true);
   });
@@ -238,10 +242,18 @@ describe('M38 createPlugin', () => {
   });
 
   it('leaves no temp clone behind on the happy path', () => {
-    const before = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('c4s-plugin-'));
+    // `os.tmpdir()` is shared with every other vitest worker, and this scaffold's
+    // clone prefix (`c4s-plugin-`) is a PREFIX of plugin-watcher.test.ts's
+    // (`c4s-plugin-watch-`), so a plain startsWith made this assertion fail
+    // whenever those two files happened to run concurrently. Exclude the other
+    // suite's dirs so the test observes only what createPlugin itself leaves.
+    const cloneDirs = () =>
+      fs
+        .readdirSync(os.tmpdir())
+        .filter((n) => n.startsWith('c4s-plugin-') && !n.startsWith('c4s-plugin-watch-'));
+    const before = cloneDirs();
     createPlugin({ targetDir: 'p', template: templateRepo, install: false }, cwd);
-    const after = fs.readdirSync(os.tmpdir()).filter((n) => n.startsWith('c4s-plugin-'));
-    expect(after).toEqual(before);
+    expect(cloneDirs()).toEqual(before);
   });
 
   it('defaults the template to the published scaffold repo', () => {

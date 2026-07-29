@@ -162,7 +162,7 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   const snap = data as EndpointSnapshot;
-  const upsertResult = ctx.writer.upsertEndpoint(
+  const upsertResult = ctx.writer.upsert('endpoint',
     snap.slug,
     {
       method: snap.method,
@@ -172,6 +172,11 @@ function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
     },
     ctx.actor
   );
+  if (!upsertResult) {
+    // 0.2.2: no registered service for this type in this project — report the
+    // skip, do not throw. A deactivated type must not abort a whole restore.
+    return { op: 'noop', entity: null, warnings: [`entity service for type 'endpoint' is not available — restore skipped`] };
+  }
   // Sync tags + junction (idempotent)
   ctx.writer.syncTags('endpoint', snap.slug, snap.tags);
   const junctionResult = ctx.writer.syncEndpointDtos(

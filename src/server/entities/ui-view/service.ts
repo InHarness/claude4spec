@@ -244,11 +244,11 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
     input: UiViewCreateInput,
     actor: ChangedBy,
     opts: MutateOpts = {}
-  ): { uiView: UiView; op: 'created' | 'updated'; warnings: string[] } {
+  ): { uiView: UiView; entity: UiView; op: 'created' | 'updated'; warnings: string[] } {
     const existing = this.getBySlug(slug);
     if (!existing) {
       const result = this.createRaw({ ...input, slug }, actor, opts);
-      return { uiView: result.uiView, op: 'created', warnings: result.warnings };
+      return { uiView: result.uiView, entity: result.uiView, op: 'created', warnings: result.warnings };
     }
     const result = this.updateRaw(slug, {
       name: input.name,
@@ -259,7 +259,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
       designSystemSlug: input.designSystemSlug ?? null,
       tags: input.tags,
     }, actor, opts);
-    return { uiView: result.uiView, op: 'updated', warnings: result.warnings };
+    return { uiView: result.uiView, entity: result.uiView, op: 'updated', warnings: result.warnings };
   }
 
   remove(

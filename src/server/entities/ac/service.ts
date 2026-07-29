@@ -239,11 +239,11 @@ export class AcService extends BaseEntityCrudService<Ac> {
   }
 
   /** Idempotent UPSERT for M17 restore. */
-  upsert(slug: string, input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { ac: Ac; op: 'created' | 'updated' } {
+  upsert(slug: string, input: AcCreateInput, actor: ChangedBy, opts: MutateOpts = {}): { ac: Ac; entity: Ac; op: 'created' | 'updated' } {
     const existing = this.getBySlug(slug);
     if (!existing) {
       const ac = this.createRaw({ ...input, slug }, actor, opts);
-      return { ac, op: 'created' };
+      return { ac, entity: ac, op: 'created' };
     }
     const { ac } = this.updateRaw(
       slug,
@@ -258,7 +258,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
       actor,
       opts,
     );
-    return { ac, op: 'updated' };
+    return { ac, entity: ac, op: 'updated' };
   }
 
   remove(slug: string, actor: ChangedBy, brokenReferences: BrokenReference[] = [], opts: MutateOpts = {}): AcDeleteResult {

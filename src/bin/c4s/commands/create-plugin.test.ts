@@ -21,7 +21,7 @@ function run(argv: string[]) {
     targetDir: '/tmp/x',
     template: 't',
     branch: 'main',
-    filesWritten: 1,
+    filesWritten: ['src/index.ts'],
     installed: false,
   });
   const write = vi.spyOn(process.stdout, 'write').mockReturnValue(true);

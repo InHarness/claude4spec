@@ -18,6 +18,11 @@
  *
  * This service never writes to `entity_version`/`file_version`; those
  * `release_id` columns are runtime-only and are not reconstructed from disk.
+ *
+ * 0.2.2 (brief §8): with `roots` added (migration 049) the release METADATA set
+ * the brief calls reconstructable — name, slug, description, createdAt, createdBy,
+ * roots — is now fully rebuilt here. The genuinely unreconstructable runtime state
+ * is exactly `entity_version` / `file_version` and the `release_id` linkage.
  */
 
 import type Database from 'better-sqlite3';
@@ -25,14 +30,24 @@ import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
 import type { ReleasesWatcher } from '../fs/releases-watcher.js';
 import { isReservedReleaseName } from './release.js';
 
+/**
+ * 0.2.2: `roots` joins the rebuilt columns (migration 049).
+ *
+ * It was the one field of `ReleaseFileData` the rebuild dropped on the floor, so a
+ * database rebuilt from disk came back with releases whose releasable-root set was
+ * gone and diffs silently fell back to the project's CURRENT roots. Stored as the
+ * JSON array from the file; `id` is still never referenced, so SQLite preserves the
+ * surrogate key that `entity_version.release_id` / `file_version.release_id` point at.
+ */
 const UPSERT_SQL = `
-  INSERT INTO spec_release (name, slug, description, created_by, created_at)
-  VALUES (?, ?, ?, ?, ?)
+  INSERT INTO spec_release (name, slug, description, created_by, created_at, roots)
+  VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT(slug) DO UPDATE SET
     name = excluded.name,
     description = excluded.description,
     created_by = excluded.created_by,
-    created_at = excluded.created_at
+    created_at = excluded.created_at,
+    roots = excluded.roots
 `;
 
 export class ReleaseIndexerService {
@@ -131,7 +146,17 @@ export class ReleaseIndexerService {
       console.warn(`[release-indexer] skip ${slug}: release name '${data.name}' is reserved`);
       return false;
     }
-    upsert.run(data.name, data.slug, data.description, data.createdBy, data.createdAt);
+    upsert.run(
+      data.name,
+      data.slug,
+      data.description,
+      data.createdBy,
+      data.createdAt,
+      // NULL rather than '[]' when the file records no roots: NULL means "not
+      // recorded, fall back to the current releasable roots", which is different
+      // from "this release deliberately covered zero roots".
+      data.roots ? JSON.stringify(data.roots) : null,
+    );
     return true;
   }
 }

@@ -9,13 +9,15 @@
 
 import type { Database } from 'better-sqlite3';
 import type { Router } from 'express';
-import type { McpServerInstance } from '@inharness-ai/agent-adapters';
 import type { ZodRawShape } from 'zod';
+import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type {
   EntityModuleManifest,
   PluginActivationState,
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
+import type { ChangedBy } from '../../../shared/entities.js';
+import type { UpsertResult } from '../../serialization/writer.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type {
   PluginCommandContribution,
@@ -56,6 +58,44 @@ export type SqlMigration = {
   up: string;
 };
 
+/**
+ * 0.2.2 — write-path options a service's restore/write facade accepts.
+ *   - `capture`   gates the `entity_version` capture inside the mutation
+ *                 (false on the index-rebuild path, true on a real restore).
+ *   - `writeFile` gates re-persisting the entity's JSON file (always false on
+ *                 both restore paths — the caller owns the file write).
+ */
+export interface WriteOpts {
+  capture: boolean;
+  writeFile: boolean;
+}
+
+/**
+ * 0.2.2 — surface (B) of an entity service: the rich restore/write-path facade.
+ * Consumed STRUCTURALLY (by shape, never by class) through
+ * `host.getEntityService(type)` / `requireService(type)`, which is what lets a
+ * type contributed by any plugin have a restore door without the host importing
+ * — or even naming — its service class.
+ */
+export interface UpsertCapable<T = unknown> {
+  upsert(slug: string, input: unknown, actor: ChangedBy, opts?: WriteOpts): UpsertResult<T>;
+  getBySlug(slug: string): T | null;
+  remove(slug: string, actor: ChangedBy): void;
+}
+
+/**
+ * 0.2.2 — what `getEntityService(type)` hands back.
+ *
+ * One service INSTANCE exposes two disjoint surfaces, and a given type may
+ * implement either or both, hence `Partial` on each half:
+ *   (A) `EntityCrudService` — the thin agent-facing create/get/update/delete/list
+ *       consumed only by the generic `entity-tools` MCP server.
+ *   (B) `UpsertCapable`     — the rich restore/write-path facade used by
+ *       `EntityWriter`, the release layer, `c4s-reader` and the indexer.
+ * Callers narrow by probing the method they need, never by casting to a class.
+ */
+export type EntityServiceLike = Partial<EntityCrudService> & Partial<UpsertCapable>;
+
 export interface RouteRegistration {
   /** Mount prefix, e.g. "/api/endpoints". */
   prefix: string;
@@ -93,7 +133,7 @@ export interface MountContext {
    * concurrent turns breaks, because MCP `Protocol.connect` throws once an
    * instance already holds a transport.
    */
-  registerMcpServer(name: string, factory: () => McpServerInstance): void;
+  registerMcpServer(name: string, factory: () => McpServerFactory): void;
   /**
    * M17: register the entity's L2 service with the host so cross-cutting
    * consumers (release restore) can drive idempotent UPSERT through normal
@@ -158,7 +198,7 @@ export interface BackendModule extends EntityModuleManifest {
      * (`registerMcpServer`), so `buildMcpServers()` rebuilds a fresh, connectable
      * server each turn behind the facade.
      */
-    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerInstance;
+    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
   };
 
   /**
@@ -343,7 +383,7 @@ export interface ProjectPluginHost {
    * each agent run gets a fresh `McpServer` (concurrent turns must not share
    * one instance — see the MountContext note).
    */
-  registerMcpServer(name: string, factory: () => McpServerInstance): void;
+  registerMcpServer(name: string, factory: () => McpServerFactory): void;
 
   /**
    * Build a fresh MCP server instance from every registered factory. Called
@@ -351,7 +391,7 @@ export interface ProjectPluginHost {
    * produces brand-new instances, so concurrent turns never collide on a
    * shared transport.
    */
-  buildMcpServers(): Array<{ name: string; server: McpServerInstance }>;
+  buildMcpServers(): Array<{ name: string; server: McpServerFactory }>;
 
   /**
    * Run each active plugin's `systemPrompt.countStat.sqlQuery` against the db
@@ -369,11 +409,30 @@ export interface ProjectPluginHost {
 
   /**
    * M17 entity service registry. Plugins register their L2 service during
-   * mount; cross-cutting consumers (releaseService restore) retrieve them by
-   * type. Untyped surface — caller casts to the concrete service type.
+   * mount; cross-cutting consumers retrieve them by type.
+   *
+   * 0.2.2: the retrieval side is no longer `unknown`. It returns the structural
+   * `EntityServiceLike` — the single door through which EVERY host-side consumer
+   * of a type's service (EntityWriter/M17 restore, the L4 write-path, the release
+   * layer, c4s-reader/M12, the indexer/M29) must go. None of them may
+   * `import { XService } from '…/entities/…'` any more; they consume the service
+   * BY SHAPE. Returns `null` when the type is inactive in this project OR
+   * contributed no `backend.service` slot.
+   *
+   * Boundary: the cross-cutting HOST services on `MountContext`
+   * (`tagsService`, `versionService`, `referencesService`, `entityStore`) are
+   * host-owned and deliberately NOT subject to this rule.
    */
   registerEntityService(type: string, service: unknown): void;
-  getEntityService(type: string): unknown;
+  getEntityService(type: string): EntityServiceLike | null;
+
+  /**
+   * Same lookup as `getEntityService`, but throws instead of returning `null`.
+   * Use it where the absence of a service is a programming error; use
+   * `getEntityService` where it is a legitimate "this type has no write door"
+   * outcome the caller reports as a skip (see `restoreEntity`).
+   */
+  requireService(type: string): EntityServiceLike;
 
   // ─── M17 snapshot helpers ────────────────────────────────────────────────
   /** Plugin-owned snapshot. Throws SnapshotNotImplementedError if slot absent. */

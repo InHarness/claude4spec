@@ -99,7 +99,7 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 function acRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   const snap = data as AcSnapshot;
-  const result = ctx.writer.upsertAc(
+  const result = ctx.writer.upsert('ac',
     snap.slug,
     {
       text: snap.text,
@@ -111,6 +111,11 @@ function acRestore(data: unknown, ctx: RestoreContext): RestoreResult {
     },
     ctx.actor,
   );
+  if (!result) {
+    // 0.2.2: no registered service for this type in this project — report the
+    // skip, do not throw. A deactivated type must not abort a whole restore.
+    return { op: 'noop', entity: null, warnings: [`entity service for type 'ac' is not available — restore skipped`] };
+  }
   ctx.writer.syncTags('ac', snap.slug, snap.tags);
   return { op: result.op, entity: result.entity };
 }
