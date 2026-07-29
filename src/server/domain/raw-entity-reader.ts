@@ -316,67 +316,6 @@ export class RawEntityReader {
     }));
   }
 
-  /** Endpoint-DTO links (denormalised). */
-  findEndpointDtos(
-    endpointSlug: string
-  ): Array<{ dtoSlug: string; dtoName: string; relation: string; statusCode: number | null }> {
-    const rows = this.db
-      .prepare(
-        `SELECT d.slug AS dto_slug, d.name AS dto_name,
-                ed.relation AS relation, ed.status_code AS status_code
-           FROM endpoint_dto ed
-           JOIN dto d ON d.slug = ed.dto_slug
-          WHERE ed.endpoint_slug = ?
-          ORDER BY ed.relation, ed.status_code, d.name`
-      )
-      .all(endpointSlug) as Array<{
-        dto_slug: string;
-        dto_name: string;
-        relation: string;
-        status_code: number | null;
-      }>;
-    return rows.map((r) => ({
-      dtoSlug: r.dto_slug,
-      dtoName: r.dto_name,
-      relation: r.relation,
-      statusCode: r.status_code,
-    }));
-  }
-
-  /** Reverse: endpoints linked to a DTO. */
-  findDtoEndpoints(
-    dtoSlug: string
-  ): Array<{
-    endpointSlug: string;
-    method: string;
-    path: string;
-    relation: string;
-    statusCode: number | null;
-  }> {
-    const rows = this.db
-      .prepare(
-        `SELECT e.slug AS slug, e.method AS method, e.path AS path,
-                ed.relation AS relation, ed.status_code AS status_code
-           FROM endpoint_dto ed
-           JOIN endpoint e ON e.slug = ed.endpoint_slug
-          WHERE ed.dto_slug = ?
-          ORDER BY ed.relation, ed.status_code, e.path`
-      )
-      .all(dtoSlug) as Array<{
-        slug: string;
-        method: string;
-        path: string;
-        relation: string;
-        status_code: number | null;
-      }>;
-    return rows.map((r) => ({
-      endpointSlug: r.slug,
-      method: r.method,
-      path: r.path,
-      relation: r.relation,
-      statusCode: r.status_code,
-    }));
-  }
 
   private hydrate(type: string, row: Record<string, unknown>): RawEntity {
     const slug = row.slug as string;
