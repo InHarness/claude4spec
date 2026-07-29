@@ -12,11 +12,27 @@ import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import { pagesServiceSource } from '../services/references.js';
 import { getExtensionReferenceType } from '../../shared/reference-extensions.js';
-import type { EntityType } from '../../shared/entities.js';
+import type { Ac, AcBrokenVerify, AcListQuery, AcVerifyRef, EntityType } from '../../shared/entities.js';
 import { readConfig, type ConsistencySeverity } from '../config.js';
-import type { AcService } from '../entities/ac/service.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+
+/**
+ * 0.2.2 — the two AC-specific methods consistency rules 9/10/11 need, named
+ * STRUCTURALLY rather than by importing `AcService`.
+ *
+ * The rules are host-level (they run over every entity type), but their AC half
+ * needs `listRaw`/`classifyVerifies`, which no generic service contract names.
+ * Importing the concrete class to get them would put a plugin service back in the
+ * host's compile graph — exactly what the 0.2.2 Single Abstraction Rule test
+ * (`grep "import .*Service.*from '.*entities/"` outside `entities/` → 0) forbids.
+ * The `Ac*` types below are host-owned shared types, so naming them is fine; it is
+ * the SERVICE that must stay resolved by shape through `getEntityService('ac')`.
+ */
+interface AcConsistencyService {
+  listRaw(query?: AcListQuery): Ac[];
+  classifyVerifies(verifies: AcVerifyRef[]): AcBrokenVerify[];
+}
 
 export interface ReferenceToolsDeps {
   /** M31: per-project host (was the process singleton). */
@@ -456,7 +472,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
         const acActive = pluginHost.getEntity('ac');
         if (acActive) {
-          const acService = pluginHost.getEntityService('ac') as AcService | undefined;
+          const acService = pluginHost.getEntityService('ac') as AcConsistencyService | null;
           const config = readConfig(deps.cwd);
           const requireAcCoverage = config.consistency?.requireAcCoverage ?? 'off';
           const requireModuleAc = config.consistency?.requireModuleAc ?? 'off';

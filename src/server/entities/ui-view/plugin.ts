@@ -14,6 +14,13 @@ export const uiViewBackendModule: BackendModule = {
   labelPlural: 'UI Views',
   displayOrder: 40,
   pathPrefix: '/ui-views',
+  /**
+   * 0.2.2 — a ui-view's `designSystemSlug` points at a design-system, so that
+   * type is indexed first. A dangling reference is only a warning (never an
+   * error), but the order is DECLARED rather than left to chance so the warning
+   * fires only when the design-system is genuinely absent.
+   */
+  dependsOn: ['design-system'],
   slugFrom: (data) => uiViewSlug((data as { name: string }).name),
   serializer: uiViewSerializer as EntitySerializer<unknown>,
   systemPrompt: uiViewSystemPrompt,

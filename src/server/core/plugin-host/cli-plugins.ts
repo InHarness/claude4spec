@@ -11,7 +11,7 @@ import path from 'node:path';
 import { HOST_API_VERSION } from '../../../shared/plugin-host/manifest.js';
 import { PluginRegistryImpl } from './registry.js';
 import { registerAllPlugins } from '../../serialization/registerAll.js';
-import { loadWorkspacePlugins, type PluginLoadRecord } from './loader.js';
+import { loadBuiltinEnvelopes, loadWorkspacePlugins, type PluginLoadRecord } from './loader.js';
 import { buildBasePluginPackages } from './base-packages.js';
 import { enumerateOverlayPackages, loadProjectOverlay } from './overlay-loader.js';
 import { WorkspaceRegistry } from '../../workspace/registry.js';
@@ -36,7 +36,13 @@ export async function collectPluginDiagnostics(opts: {
 
   const registry = new PluginRegistryImpl();
   registerAllPlugins(registry);
+  // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
+  // before node_modules and before the workspace registry, so core code claims its
+  // types before anything external could shadow them. No-op until the first envelope
+  // lands (Tier B of the 0.2.2 brief).
+  const envelopeLoad = await loadBuiltinEnvelopes(registry);
   const baseLoad = await loadWorkspacePlugins(registry, resolved.pluginPackages);
+  baseLoad.records.unshift(...envelopeLoad.records);
   const base = buildBasePluginPackages(registry, baseLoad.records);
 
   const wsRegistry = new WorkspaceRegistry();

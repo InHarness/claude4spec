@@ -3,9 +3,17 @@
  * committed entity files. Hybrid SQLite-primary indexer modelled on
  * SectionIndexerService (M06): queries go to the DB, no in-memory map.
  *
- *   - indexAll()      full rebuild at boot, dependency-ordered (tags.json →
- *                     dto/database-table/ui-view/ac → endpoint). Awaited BEFORE
- *                     app.listen(); does NOT broadcast (no client connected).
+ *   - indexAll()      full rebuild at boot, dependency-ordered (tags.json → the
+ *                     `dependsOn` topological order of the ACTIVE modules).
+ *                     Awaited BEFORE app.listen(); does NOT broadcast (no client
+ *                     connected).
+ *
+ * 0.2.2: neither the order nor the table names are hardcoded here any more. The
+ * order comes from each module's declared `dependsOn` (so `dto` precedes
+ * `endpoint` because `endpoint` says so) and the table from `module.table` in its
+ * manifest — so a plugin-contributed type is cleared and rebuilt on exactly the
+ * same path as a built-in one, instead of being silently missing from three
+ * hand-maintained parallel arrays.
  *   - schedulePage()  debounced (300ms) incremental reindex of one file on watch.
  *   - handleUnlink()  remove the row + junction cascades, broadcast delete.
  *
@@ -22,34 +30,8 @@ import type { PluginHost } from '../core/plugin-host/types.js';
 import type { TagsService } from './tags.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
 import type { RestoreContext } from '../serialization/types.js';
+import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import { HostEntityWriter } from './entity-writer.js';
-
-/**
- * dto/table/design-system/ui-view/ac before endpoint (endpoint_dto FK needs dto
- * rows first). design-system is indexed BEFORE ui-view because ui-view's
- * `designSystemSlug` points at it (dangling is only a warning, but the order is
- * declared).
- */
-const DEP_ORDER: RawEntityType[] = [
-  'dto',
-  'database-table',
-  'design-system',
-  'ui-view',
-  'ac',
-  'endpoint',
-  // Graph leaf: references no other entity, so order is irrelevant.
-  'diagram',
-];
-
-const ENTITY_TABLE: Record<RawEntityType, string> = {
-  endpoint: 'endpoint',
-  dto: 'dto',
-  'database-table': 'database_table',
-  'ui-view': 'ui_view',
-  ac: 'ac',
-  'design-system': 'design_system',
-  diagram: 'diagram',
-};
 
 export class EntityIndexerService {
   private debounceMs = 300;
@@ -78,6 +60,19 @@ export class EntityIndexerService {
 
   // ─── boot full rebuild ────────────────────────────────────────────────────
 
+  /**
+   * The ACTIVE modules in declared dependency order. Inactive types are absent —
+   * their files are kept on disk, just not indexed.
+   */
+  private orderedModules(): Array<{ type: string; table: string }> {
+    return topoSortModules(this.host.listEntities(), (remaining) =>
+      console.warn(
+        `[entity-indexer] dependsOn cycle among [${remaining.join(', ')}] — ` +
+          `indexing those types in displayOrder instead`,
+      ),
+    );
+  }
+
   async indexAll(): Promise<void> {
     const startedAt = performance.now();
     let count = 0;
@@ -89,23 +84,26 @@ export class EntityIndexerService {
     // SINGLE WAL fsync instead of one per entity — the dominant cost of the build.
     // entity_version (the log) and section_entity_link (derived from pages) are NOT
     // cleared. The whole restore chain is synchronous, so it fits in one transaction.
+    const ordered = this.orderedModules();
     this.db
       .transaction(() => {
-        this.db.exec(
-          `DELETE FROM entity_tag;
-           DELETE FROM endpoint_dto;
-           DELETE FROM endpoint;
-           DELETE FROM dto;
-           DELETE FROM database_table;
-           DELETE FROM ui_view;
-           DELETE FROM ac;
-           DELETE FROM design_system;
-           DELETE FROM diagram;
-           DELETE FROM tag;`,
-        );
+        // Children before parents. Entity tables are cleared in REVERSE dependency
+        // order (dependents first), so a dependent's FK never blocks the parent's
+        // DELETE. Table names come from `module.table`, so an active plugin type is
+        // cleared too — the old hardcoded list silently left plugin rows behind.
+        this.db.exec('DELETE FROM entity_tag;');
+        // The endpoint↔dto junction is still host-side in 0.2.2 (brief item 5 moves
+        // it into the api-contracts envelope, at which point this line goes with it).
+        // Rows would also cascade from `DELETE FROM endpoint`, but clearing it
+        // explicitly keeps the rebuild correct if that FK ever changes.
+        this.db.exec('DELETE FROM endpoint_dto;');
+        for (const m of [...ordered].reverse()) {
+          this.db.exec(`DELETE FROM ${m.table};`);
+        }
+        this.db.exec('DELETE FROM tag;');
         this.indexTagsFile(); // tags first — so entity tag refs resolve to real rows
-        for (const type of DEP_ORDER) {
-          if (!this.host.getEntity(type)) continue; // inactive type → files kept, not indexed
+        for (const m of ordered) {
+          const type = m.type as RawEntityType;
           for (const slug of this.store.listType(type)) {
             if (this.indexEntity(type, slug, false)) count += 1;
           }
@@ -152,7 +150,8 @@ export class EntityIndexerService {
           .prepare(`DELETE FROM entity_tag WHERE entity_type = ? AND entity_slug = ?`)
           .run(type, slug);
         // endpoint_dto rows cascade via FK ON DELETE CASCADE.
-        this.db.prepare(`DELETE FROM ${ENTITY_TABLE[type]} WHERE slug = ?`).run(slug);
+        const table = this.host.getEntity(type)?.table;
+        if (table) this.db.prepare(`DELETE FROM ${table} WHERE slug = ?`).run(slug);
       })();
     this.ws.broadcast({ kind: 'entity:indexed', type, slug, op: 'delete' });
   }

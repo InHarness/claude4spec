@@ -76,11 +76,16 @@ function coerce(raw: unknown): DiagramSnapshot {
 
 function diagramRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   const snap = coerce(data);
-  const result = ctx.writer.upsertDiagram(
+  const result = ctx.writer.upsert('diagram',
     snap.slug,
     { slug: snap.slug, format: snap.format, source: snap.source },
     ctx.actor
   );
+  if (!result) {
+    // 0.2.2: no registered service for this type in this project — report the
+    // skip, do not throw. A deactivated type must not abort a whole restore.
+    return { op: 'noop', entity: null, warnings: [`entity service for type 'diagram' is not available — restore skipped`] };
+  }
   ctx.writer.syncTags('diagram', snap.slug, snap.tags);
   return {
     op: result.op,

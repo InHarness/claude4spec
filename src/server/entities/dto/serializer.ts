@@ -138,7 +138,7 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 function dtoRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   const snap = data as DtoSnapshot;
-  const result = ctx.writer.upsertDto(
+  const result = ctx.writer.upsert('dto',
     snap.slug,
     {
       name: snap.name,
@@ -149,6 +149,11 @@ function dtoRestore(data: unknown, ctx: RestoreContext): RestoreResult {
     },
     ctx.actor
   );
+  if (!result) {
+    // 0.2.2: no registered service for this type in this project — report the
+    // skip, do not throw. A deactivated type must not abort a whole restore.
+    return { op: 'noop', entity: null, warnings: [`entity service for type 'dto' is not available — restore skipped`] };
+  }
   ctx.writer.syncTags('dto', snap.slug, snap.tags);
   return { op: result.op, entity: result.entity };
 }

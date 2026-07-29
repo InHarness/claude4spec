@@ -64,7 +64,9 @@ describe('M38 createPlugin', () => {
       targetDir: abs,
       template: templateRepo,
       branch: 'main',
-      filesWritten: 3,
+      // 0.2.2: relative POSIX paths, sorted — M22 `writeFileSet` parity, so the
+      // caller learns WHICH files landed, not merely how many.
+      filesWritten: ['README.md', 'package.json', 'src/index.ts'],
       installed: false,
     });
     expect(fs.readFileSync(path.join(abs, 'src', 'index.ts'), 'utf8')).toBe('export {};\n');
@@ -85,7 +87,7 @@ describe('M38 createPlugin', () => {
     );
 
     expect(result.branch).toBe('v2');
-    expect(result.filesWritten).toBe(4);
+    expect(result.filesWritten).toEqual(['EXTRA.md', 'README.md', 'package.json', 'src/index.ts']);
     expect(fs.existsSync(path.join(cwd, 'p', 'EXTRA.md'))).toBe(true);
   });
 
@@ -120,7 +122,9 @@ describe('M38 createPlugin', () => {
       cwd,
     );
 
-    expect(result.filesWritten).toBe(3);
+    // Reports only what the scaffold wrote — the operator's pre-existing
+    // `mine.txt` is untouched and is NOT claimed as written by this run.
+    expect(result.filesWritten).toEqual(['README.md', 'package.json', 'src/index.ts']);
     expect(fs.readFileSync(path.join(abs, 'mine.txt'), 'utf8')).toBe('keep me\n');
     expect(fs.existsSync(path.join(abs, 'README.md'))).toBe(true);
   });

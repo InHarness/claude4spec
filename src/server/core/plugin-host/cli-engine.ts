@@ -2,7 +2,7 @@ import { SerializationEngine } from './serialization-engine.js';
 import { PluginRegistryImpl } from './registry.js';
 import { registerAllPlugins } from '../../serialization/registerAll.js';
 import { sectionSerializer } from '../../serialization/serializers/section.js';
-import { loadWorkspacePlugins } from './loader.js';
+import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './loader.js';
 
 /**
  * M31/M33: per-process L9 engine for the read-only CLI (`c4s`, `c4s-mcp`). The
@@ -20,6 +20,11 @@ export async function buildCliSerializationEngineAsync(
 ): Promise<SerializationEngine> {
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
+  // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
+  // before node_modules and before the workspace registry, so core code claims its
+  // types before anything external could shadow them. No-op until the first envelope
+  // lands (Tier B of the 0.2.2 brief).
+  await loadBuiltinEnvelopes(pluginRegistry);
   await loadWorkspacePlugins(pluginRegistry, packageNames);
   // CLI applies no whitelist and no project-local overlay (read-only parity).
   return new SerializationEngine(pluginRegistry.consolidate({}), sectionSerializer);

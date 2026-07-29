@@ -1,51 +1,108 @@
 /**
  * Concrete EntityWriter implementation for M17 restore (Phase 6).
  *
- * Constructed per-restore-request by ReleaseService — looks up entity
- * services + tag/junction services from the plugin host. Each write goes
- * through the normal service API so the mutation is captured into
- * `entity_version` with `release_id = NULL` (append-only — decyzja 7).
+ * Constructed per-restore-request by ReleaseService — looks up entity services +
+ * tag/junction services from the plugin host. Each write goes through the normal
+ * service API so the mutation is captured into `entity_version` with
+ * `release_id = NULL` (append-only — decyzja 7).
  *
- * Idempotent UPSERT semantics (decyzja 11): no `--force` flag, no
- * destructive operations on history. The append-only safety net makes
- * accidental overwrites cofalne by another restore.
+ * Idempotent UPSERT semantics (decyzja 11): no `--force` flag, no destructive
+ * operations on history. The append-only safety net makes accidental overwrites
+ * cofalne by another restore.
+ *
+ * 0.2.2: this file no longer imports a single entity service CLASS. Every write
+ * resolves through `host.getEntityService(type)` and is driven by shape against
+ * the `UpsertCapable` facade. That is what the Single Abstraction Rule test
+ * `grep -rn "import .*Service.*from '.*(entities|plugins)/" src/` (→ 0 outside
+ * `entities/` and `plugins/*(/src/`) enforces, and it is what gives a
+ * plugin-contributed type the same write door as a built-in one.
  */
 
 import type {
+  Ac,
+  AcCreateInput,
   ChangedBy,
   DatabaseTable,
   DatabaseTableCreateInput,
+  DesignSystem,
+  DesignSystemCreateInput,
+  Diagram,
+  DiagramCreateInput,
+  Dto,
+  DtoCreateInput,
+  Endpoint,
+  EndpointCreateInput,
   EndpointDtoLink,
   EndpointDtoRelation,
+  UiView,
+  UiViewCreateInput,
 } from '../../shared/entities.js';
 import type { EntityWriter, UpsertResult } from '../serialization/writer.js';
-import type { PluginHost } from '../core/plugin-host/types.js';
+import type { PluginHost, WriteOpts } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../domain/raw-entity-reader.js';
-import type { EndpointService } from '../entities/endpoint/service.js';
-import type { DtoService } from '../entities/dto/service.js';
-import type { UiViewService } from '../entities/ui-view/service.js';
-import type { AcService } from '../entities/ac/service.js';
-import type { DesignSystemService } from '../entities/design-system/service.js';
-import type { DiagramService } from '../entities/diagram/service.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 
 /**
- * Structural shape of the `database-table` entity service the host writer needs.
- * The concrete service now ships in the preinstalled `c4s-plugin-simple-database-tables`
- * plugin (registered via `ctx.registerEntityService('database-table', …)`), so the
- * host depends on its shape — not its type — exactly as the plugin's restore slot
- * depends on `writer.upsertDatabaseTable()` structurally.
+ * The endpoint↔dto junction half of the endpoint service, named structurally.
+ *
+ * Still host-side in 0.2.2 — Tier B (brief item 5) moves the whole join into the
+ * `c4s-plugin-api-contracts` envelope, after which neither this shape nor the
+ * `endpoint_dto` table is host knowledge at all.
  */
-interface DatabaseTableServiceLike {
-  upsert(
-    slug: string,
-    input: DatabaseTableCreateInput,
-    actor: ChangedBy,
-    opts: { capture: boolean; writeFile: boolean },
-  ): { dbTable: DatabaseTable; op: 'created' | 'updated'; warnings?: string[] };
-  getBySlug(slug: string): unknown;
-  remove(slug: string, actor: ChangedBy): unknown;
+interface EndpointJunctionService {
+  getBySlug(slug: string): { dtos: EndpointDtoLink[] } | null;
+  linkDto(
+    endpointSlug: string,
+    dtoSlug: string,
+    relation: EndpointDtoRelation,
+    statusCode: number | null,
+    opts: { writeFile: boolean },
+  ): unknown;
+  unlinkDto(
+    endpointSlug: string,
+    dtoSlug: string,
+    relation: EndpointDtoRelation,
+    statusCode: number | null,
+    opts: { writeFile: boolean },
+  ): unknown;
+}
+
+/**
+ * The raw shape a concrete service's `upsert` returns.
+ *
+ * Historically each service named its payload after its own type (`.dto`,
+ * `.uiView`, `.dbTable`, …) rather than a uniform `.entity`, so a generic caller
+ * could not read the result without knowing the type. 0.2.2 adds an `entity`
+ * alias to every in-repo service; `pickEntity` below keeps the door open for a
+ * service that predates the alias — notably the externally-installed
+ * `database-table`, which returns `.dbTable`.
+ */
+type RawUpsertReturn = {
+  op: 'created' | 'updated';
+  warnings?: string[];
+  entity?: unknown;
+} & Record<string, unknown>;
+
+/**
+ * Normalize a service's upsert return to `UpsertResult`.
+ *
+ * Prefer the canonical `entity` alias. Otherwise fall back to the single
+ * remaining property once the envelope keys (`op`, `warnings`) are removed — a
+ * STRUCTURAL rule, not an allowlist of per-type key names, so it also holds for a
+ * plugin type the host has never heard of. When that is ambiguous (zero or
+ * several candidates) surface the whole object rather than silently picking one.
+ */
+function pickEntity<T>(result: RawUpsertReturn): UpsertResult<T> {
+  const { op, warnings } = result;
+  const payload =
+    result.entity !== undefined
+      ? result.entity
+      : (() => {
+          const candidates = Object.keys(result).filter((k) => k !== 'op' && k !== 'warnings');
+          return candidates.length === 1 ? result[candidates[0]!] : result;
+        })();
+  return warnings ? { entity: payload as T, op, warnings } : { entity: payload as T, op };
 }
 
 export class HostEntityWriter implements EntityWriter {
@@ -57,59 +114,85 @@ export class HostEntityWriter implements EntityWriter {
    * files inside the service (the index rebuild reads files; release restore
    * persists each entity's file once at the end, after junctions are synced).
    */
-  private readonly mutateOpts: { capture: boolean; writeFile: boolean };
+  private readonly mutateOpts: WriteOpts;
 
   constructor(private host: PluginHost, private tags: TagsService, opts: { capture?: boolean } = {}) {
     this.mutateOpts = { capture: opts.capture ?? true, writeFile: false };
   }
 
-  upsertEndpoint(slug: string, input: Parameters<EndpointService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<EndpointService['upsert']>['entity']> {
-    const service = this.requireService<EndpointService>('endpoint');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.entity, op: result.op };
+  // ─── the one generic write door ───────────────────────────────────────────
+
+  upsert<T = unknown>(
+    type: string,
+    slug: string,
+    input: unknown,
+    actor: ChangedBy,
+  ): UpsertResult<T> | null {
+    const service = this.host.getEntityService(type);
+    // Structural, not enumerated: no service — an inactive type, or one that
+    // contributed no `backend.service` slot — means no write door. The caller
+    // reports a skip; this is NOT an error.
+    if (!service?.upsert) return null;
+    const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
+    return pickEntity<T>(result);
   }
 
-  upsertDto(slug: string, input: Parameters<DtoService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DtoService['upsert']>['dto']> {
-    const service = this.requireService<DtoService>('dto');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.dto, op: result.op };
-  }
+  // ─── deprecated per-type shims (see the interface for why they survive) ────
 
+  upsertEndpoint(slug: string, input: EndpointCreateInput, actor: ChangedBy): UpsertResult<Endpoint> {
+    return this.upsertOrThrow<Endpoint>('endpoint', slug, input, actor);
+  }
+  upsertDto(slug: string, input: DtoCreateInput, actor: ChangedBy): UpsertResult<Dto> {
+    return this.upsertOrThrow<Dto>('dto', slug, input, actor);
+  }
   upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable> {
-    const service = this.requireService<DatabaseTableServiceLike>('database-table');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.dbTable, op: result.op, warnings: result.warnings };
+    return this.upsertOrThrow<DatabaseTable>('database-table', slug, input, actor);
+  }
+  upsertUiView(slug: string, input: UiViewCreateInput, actor: ChangedBy): UpsertResult<UiView> {
+    return this.upsertOrThrow<UiView>('ui-view', slug, input, actor);
+  }
+  upsertAc(slug: string, input: AcCreateInput, actor: ChangedBy): UpsertResult<Ac> {
+    return this.upsertOrThrow<Ac>('ac', slug, input, actor);
+  }
+  upsertDesignSystem(slug: string, input: DesignSystemCreateInput, actor: ChangedBy): UpsertResult<DesignSystem> {
+    return this.upsertOrThrow<DesignSystem>('design-system', slug, input, actor);
+  }
+  upsertDiagram(slug: string, input: DiagramCreateInput, actor: ChangedBy): UpsertResult<Diagram> {
+    return this.upsertOrThrow<Diagram>('diagram', slug, input, actor);
   }
 
-  upsertUiView(slug: string, input: Parameters<UiViewService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<UiViewService['upsert']>['uiView']> {
-    const service = this.requireService<UiViewService>('ui-view');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.uiView, op: result.op, warnings: result.warnings };
+  /**
+   * The per-type shims keep the OLD contract of throwing on a missing service:
+   * their callers are pre-0.2.2 restore slots that have no `null` branch, so
+   * handing them `null` would read as "written" and lose the entity silently.
+   */
+  private upsertOrThrow<T>(
+    type: string,
+    slug: string,
+    input: unknown,
+    actor: ChangedBy,
+  ): UpsertResult<T> {
+    const result = this.upsert<T>(type, slug, input, actor);
+    if (!result) {
+      throw new DomainError('VALIDATION', `entity service for type '${type}' not registered`);
+    }
+    return result;
   }
 
-  upsertAc(slug: string, input: Parameters<AcService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<AcService['upsert']>['ac']> {
-    const service = this.requireService<AcService>('ac');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.ac, op: result.op };
-  }
-
-  upsertDesignSystem(slug: string, input: Parameters<DesignSystemService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DesignSystemService['upsert']>['designSystem']> {
-    const service = this.requireService<DesignSystemService>('design-system');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.designSystem, op: result.op, warnings: result.warnings };
-  }
-
-  upsertDiagram(slug: string, input: Parameters<DiagramService['upsert']>[1], actor: ChangedBy): UpsertResult<ReturnType<DiagramService['upsert']>['diagram']> {
-    const service = this.requireService<DiagramService>('diagram');
-    const result = service.upsert(slug, input, actor, this.mutateOpts);
-    return { entity: result.diagram, op: result.op };
-  }
+  // ─── junction + tags ──────────────────────────────────────────────────────
 
   syncEndpointDtos(
     endpointSlug: string,
     target: Array<{ dtoSlug: string; relation: EndpointDtoRelation; statusCode: number | null }>,
   ): { linked: number; unlinked: number; warnings: string[] } {
-    const service = this.requireService<EndpointService>('endpoint');
+    const service = this.host.getEntityService('endpoint') as EndpointJunctionService | null;
+    if (!service?.getBySlug) {
+      return {
+        linked: 0,
+        unlinked: 0,
+        warnings: [`entity service for type 'endpoint' not registered`],
+      };
+    }
     const ep = service.getBySlug(endpointSlug);
     if (!ep) return { linked: 0, unlinked: 0, warnings: [`endpoint '${endpointSlug}' not found`] };
 
@@ -126,7 +209,9 @@ export class HostEntityWriter implements EntityWriter {
     for (const [k, current] of currentSet) {
       if (!targetSet.has(k)) {
         try {
-          service.unlinkDto(endpointSlug, current.dtoSlug, current.relation, current.statusCode, { writeFile: false });
+          service.unlinkDto(endpointSlug, current.dtoSlug, current.relation, current.statusCode, {
+            writeFile: false,
+          });
           unlinked += 1;
         } catch (err) {
           warnings.push(`unlink '${k}' failed: ${(err as Error).message}`);
@@ -137,7 +222,9 @@ export class HostEntityWriter implements EntityWriter {
     for (const [k, want] of targetSet) {
       if (!currentSet.has(k)) {
         try {
-          service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode, { writeFile: false });
+          service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode, {
+            writeFile: false,
+          });
           linked += 1;
         } catch (err) {
           warnings.push(`link '${k}' failed: ${(err as Error).message}`);
@@ -154,58 +241,17 @@ export class HostEntityWriter implements EntityWriter {
     this.tags.assignTags(type, slug, tags);
   }
 
+  /**
+   * 0.2.2: was a seven-arm `switch (type)` whose arms each resolved one named
+   * service class and then did the identical two calls. Now one generic path — a
+   * plugin type deletes exactly as well as a built-in one, and a type with no
+   * service reports `deleted: false` rather than falling into a silent `default:`.
+   */
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {
-    switch (type) {
-      case 'endpoint': {
-        const service = this.requireService<EndpointService>('endpoint');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'dto': {
-        const service = this.requireService<DtoService>('dto');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'database-table': {
-        const service = this.requireService<DatabaseTableServiceLike>('database-table');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'ui-view': {
-        const service = this.requireService<UiViewService>('ui-view');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'ac': {
-        const service = this.requireService<AcService>('ac');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'design-system': {
-        const service = this.requireService<DesignSystemService>('design-system');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      case 'diagram': {
-        const service = this.requireService<DiagramService>('diagram');
-        if (!service.getBySlug(slug)) return { deleted: false };
-        service.remove(slug, actor);
-        return { deleted: true };
-      }
-      default:
-        return { deleted: false };
-    }
-  }
-
-  private requireService<T>(type: string): T {
     const service = this.host.getEntityService(type);
-    if (!service) throw new DomainError('VALIDATION', `entity service for type '${type}' not registered`);
-    return service as T;
+    if (!service?.getBySlug || !service.remove) return { deleted: false };
+    if (!service.getBySlug(slug)) return { deleted: false };
+    service.remove(slug, actor);
+    return { deleted: true };
   }
 }

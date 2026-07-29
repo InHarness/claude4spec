@@ -15,7 +15,12 @@ import type { WorkspaceRecord } from './workspace/types.js';
 import { resolveSpaRoute } from './workspace/spa-route.js';
 import { PluginRegistryImpl } from './core/plugin-host/registry.js';
 import { registerAllPlugins } from './serialization/registerAll.js';
-import { loadWorkspacePlugins, reloadPlugin, resolveBaseEntry } from './core/plugin-host/loader.js';
+import {
+  loadBuiltinEnvelopes,
+  loadWorkspacePlugins,
+  reloadPlugin,
+  resolveBaseEntry,
+} from './core/plugin-host/loader.js';
 import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
@@ -243,7 +248,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // M33: load workspace-declared npm plugin packages onto the same catalog,
   // before any ProjectContext consolidates against it. Per-package failures are
   // isolated (skipped/failed records) — one bad plugin never crashes bootstrap.
+  // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
+  // before node_modules and before the workspace registry, so core code claims its
+  // types before anything external could shadow them. No-op until the first envelope
+  // lands (Tier B of the 0.2.2 brief).
+  const envelopeLoad = await loadBuiltinEnvelopes(pluginRegistry);
   const pluginLoad = await loadWorkspacePlugins(pluginRegistry, resolvePluginPackages(workspace));
+  pluginLoad.records.unshift(...envelopeLoad.records);
 
   const httpServer = createHttpServer(app);
   const gateway = new WsGateway(httpServer);

@@ -23,7 +23,7 @@ import type {
 } from '../../../shared/plugin-host/manifest.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
-import type { McpServerInstance } from '@inharness-ai/agent-adapters';
+import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type { BackendModule, MountContext, PluginMountFn, SqlMigration } from './types.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
@@ -129,7 +129,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
         | { router: (service: EntityCrudService, ctx: MountContext) => Router }
         | undefined,
       mcpServer: backend.mcpServer as
-        | ((service: EntityCrudService, ctx: MountContext) => McpServerInstance)
+        | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
         | undefined,
     };
   }
@@ -142,6 +142,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     displayOrder: c.displayOrder,
     slugFrom: c.slugFrom,
     pathPrefix: c.pathPrefix,
+    dependsOn: c.dependsOn,
     serializer: c.serializer as EntitySerializer<unknown>,
     systemPrompt: c.systemPrompt,
     backend: backendSlot,

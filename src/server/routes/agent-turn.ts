@@ -649,7 +649,10 @@ export async function runAgentTurn(
       .filter(({ name }) =>
         ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
       )
-      .map(({ name, server }) => [name, server.config] as const);
+      // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
+      // only forwards it. THIS is the adapter boundary where it is re-widened to
+      // the vendor's config type, and the only place in the host that needs to.
+      .map(({ name, server }) => [name, server.config as McpServerConfig] as const);
     const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
     if (planTools) mcpServers['plan-tools'] = planTools.config;
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;

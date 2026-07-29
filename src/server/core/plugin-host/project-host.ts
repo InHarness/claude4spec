@@ -5,9 +5,10 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import type { McpServerInstance } from '@inharness-ai/agent-adapters';
+import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
+  EntityServiceLike,
   MountContext,
   PluginRegistry,
   ProjectPluginHost,
@@ -32,7 +33,7 @@ import { runPluginMigrations } from './plugin-migrate.js';
 export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
   private unknownTypes: string[] = [];
-  private mcpServerFactories = new Map<string, () => McpServerInstance>();
+  private mcpServerFactories = new Map<string, () => McpServerFactory>();
   private entityServices = new Map<string, unknown>();
   // Project-local modules of THIS context, keyed by type. Empty when
   // `overlay === undefined` (parity with the base-only case).
@@ -147,7 +148,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     }
   }
 
-  registerMcpServer(name: string, factory: () => McpServerInstance): void {
+  registerMcpServer(name: string, factory: () => McpServerFactory): void {
     this.mcpServerFactories.set(name, factory);
   }
 
@@ -166,8 +167,8 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
    * bypasses `manifest-adapter` entirely, which is exactly how a hand-rolled
    * `{name, version, tools}` descriptor reached the adapter in the wild.
    */
-  buildMcpServers(): Array<{ name: string; server: McpServerInstance }> {
-    const out: Array<{ name: string; server: McpServerInstance }> = [];
+  buildMcpServers(): Array<{ name: string; server: McpServerFactory }> {
+    const out: Array<{ name: string; server: McpServerFactory }> = [];
     for (const [name, factory] of this.mcpServerFactories) {
       let server: unknown;
       try {
@@ -180,14 +181,14 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
         continue;
       }
       // Backward-compat shim: a plugin built against the pre-0.1.133 contract
-      // returns `() => McpServerInstance` (a thunk) instead of the instance.
-      // An `McpServerInstance` is always a plain `{server, config}` object,
+      // returns `() => McpServerFactory` (a thunk) instead of the handle.
+      // A server handle is always a plain `{server, config}` object,
       // never callable, so `typeof === 'function'` identifies the old shape
       // unambiguously.
       if (typeof server === 'function') {
         console.warn(
           `[plugin-host] MCP server "${name}" returned a thunk (pre-0.1.133 contract) — ` +
-            `auto-unwrapping for compatibility. Migrate this plugin to return the McpServerInstance handle directly.`,
+            `auto-unwrapping for compatibility. Migrate this plugin to return the McpServerFactory handle directly.`,
         );
         try {
           server = (server as () => unknown)();
@@ -206,11 +207,11 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
         console.warn(
           `[plugin-host] MCP server "${name}" — factory returned a value without a usable \`config\`, skipping. ` +
             `A backend MCP server must be built with \`createMcpServer(...)\` from the plugin runtime facade; ` +
-            `a hand-rolled descriptor (e.g. \`{name, version, tools}\`) is NOT a valid McpServerInstance.`,
+            `a hand-rolled descriptor (e.g. \`{name, version, tools}\`) is NOT a valid McpServerFactory.`,
         );
         continue;
       }
-      out.push({ name, server: server as McpServerInstance });
+      out.push({ name, server: server as McpServerFactory });
     }
     return out;
   }
@@ -232,8 +233,25 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     this.entityServices.set(type, service);
   }
 
-  getEntityService(type: string): unknown {
-    return this.entityServices.get(type) ?? null;
+  /**
+   * 0.2.2 — the ONE door to a type's service. `null` covers both "inactive in
+   * this project" and "contributed no `backend.service` slot"; callers that can
+   * legitimately continue without a write door (restore) report a skip, callers
+   * for which absence is a bug use `requireService`.
+   *
+   * The stored value is cast, not validated: `EntityServiceLike` is `Partial` on
+   * both halves, so every registered service satisfies it structurally and the
+   * caller narrows by probing the method it actually needs.
+   */
+  getEntityService(type: string): EntityServiceLike | null {
+    if (!this.isActive(type)) return null;
+    return (this.entityServices.get(type) as EntityServiceLike | undefined) ?? null;
+  }
+
+  requireService(type: string): EntityServiceLike {
+    const service = this.getEntityService(type);
+    if (!service) throw new Error(`entity service for type '${type}' not registered`);
+    return service;
   }
 
   // ─── M17 snapshot helpers ────────────────────────────────────────────────

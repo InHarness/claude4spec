@@ -1,13 +1,18 @@
 /**
  * EntityWriter — normal write-API surface used by `EntitySerializer.restore()`.
- * Each plugin's restore slot calls type-specific methods which delegate to the
- * per-type service. All mutations end up in `entity_version` with
- * `release_id = NULL` (append-only — M17 decyzja 7).
+ * All mutations end up in `entity_version` with `release_id = NULL` (append-only
+ * — M17 decyzja 7).
  *
- * Phase 1: declared as type-only.
- * Phase 2: per-plugin restore() consumes this surface.
- * Phase 6: concrete implementation constructed by `releaseService` from the
- * active per-type services + a tag/junction adapter.
+ * 0.2.2: the surface is ONE generic `upsert(type, …)`, dispatched through
+ * `host.getEntityService(type)` and called on the service's `UpsertCapable`
+ * facade BY SHAPE, never by class. Before, there were seven per-type methods and
+ * no generic entry point, so a plugin type outside that hardcoded seven had no
+ * write door in restore at all — the concrete way "the core owns the entity type"
+ * was true in practice.
+ *
+ * What remains is a STRUCTURAL limit rather than an enumerated one: a type whose
+ * `getEntityService(type)` returns `null` has no write door, and `restoreEntity`
+ * REPORTS that as a skip instead of throwing on a missing per-type method.
  */
 
 import type {
@@ -37,15 +42,58 @@ export interface UpsertResult<T> {
 }
 
 export interface EntityWriter {
+  /**
+   * 0.2.2 — the single generic write door. `type` is resolved through the host's
+   * entity-service registry; the resolved service is driven on its `UpsertCapable`
+   * facade by shape.
+   *
+   * Returns `null` when the type has no registered service, rather than throwing:
+   * a project that deactivated a type, or a bundle carrying a type this
+   * installation never had, must degrade to "this entity was not restored", never
+   * to "the whole restore died". `restoreEntity` turns the `null` into a reported
+   * skip.
+   */
+  upsert<T = unknown>(
+    type: string,
+    slug: string,
+    input: unknown,
+    actor: ChangedBy,
+  ): UpsertResult<T> | null;
+
+  // ─── deprecated per-type shims ────────────────────────────────────────────
+  //
+  // Kept, not deleted, DESPITE the 0.2.2 brief calling them host-internal with no
+  // published consumer. They have one: the installed `c4s-plugin-database-tables`
+  // probes `typeof writer.upsertDatabaseTable === 'function'` in its restore slot
+  // and, when absent, falls back to `writer.upsert(type, snapshot)` — a TWO-arg
+  // call that does not match the generic signature above. Removing the shim would
+  // not fail loudly; it would land `snapshot` in the `slug` position and restore
+  // nothing, which is exactly the silent-data-loss mode that plugin's own comment
+  // says it added the probe to avoid. They delegate to `upsert` and carry no logic.
+
+  /** @deprecated 0.2.2 — use `upsert('endpoint', …)`. */
   upsertEndpoint(slug: string, input: EndpointCreateInput, actor: ChangedBy): UpsertResult<Endpoint>;
+  /** @deprecated 0.2.2 — use `upsert('dto', …)`. */
   upsertDto(slug: string, input: DtoCreateInput, actor: ChangedBy): UpsertResult<Dto>;
+  /** @deprecated 0.2.2 — use `upsert('database-table', …)`. */
   upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable>;
+  /** @deprecated 0.2.2 — use `upsert('ui-view', …)`. */
   upsertUiView(slug: string, input: UiViewCreateInput, actor: ChangedBy): UpsertResult<UiView>;
+  /** @deprecated 0.2.2 — use `upsert('ac', …)`. */
   upsertAc(slug: string, input: AcCreateInput, actor: ChangedBy): UpsertResult<Ac>;
+  /** @deprecated 0.2.2 — use `upsert('design-system', …)`. */
   upsertDesignSystem(slug: string, input: DesignSystemCreateInput, actor: ChangedBy): UpsertResult<DesignSystem>;
+  /** @deprecated 0.2.2 — use `upsert('diagram', …)`. */
   upsertDiagram(slug: string, input: DiagramCreateInput, actor: ChangedBy): UpsertResult<Diagram>;
 
-  /** Sync endpoint↔dto junction to a target list. Idempotent: link missing, unlink extra. */
+  /**
+   * Sync endpoint↔dto junction to a target list. Idempotent: link missing, unlink extra.
+   *
+   * Still host-side in 0.2.2. Tier B of the brief (item 5) moves this join into the
+   * `c4s-plugin-api-contracts` envelope's own `backend.service`/`backend.routes`,
+   * at which point the host stops naming the `endpoint_dto` table and the pair of
+   * types that spans it.
+   */
   syncEndpointDtos(
     endpointSlug: string,
     target: Array<{ dtoSlug: string; relation: EndpointDtoRelation; statusCode: number | null }>

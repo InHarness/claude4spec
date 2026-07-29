@@ -26,6 +26,7 @@ import type {
   UpdateReleaseResponse,
 } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
+import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
 import type { VersionService } from './versions.js';
 import type { FileVersionService } from './file-version.js';
@@ -1253,9 +1254,15 @@ export class ReleaseService {
   }
 
   /**
-   * Restore the entire spec to a release. Topological sort: DTO first
-   * (Endpoint references DTO via linked_dtos), then everything else, then
-   * pages. Each step generates normal mutations → all visible in timeline.
+   * Restore the entire spec to a release. Topological sort by each module's
+   * DECLARED `dependsOn` (0.2.2), then pages. Each step generates normal
+   * mutations → all visible in timeline.
+   *
+   * Before 0.2.2 this was a hardcoded `['dto','database-table','ui-view','endpoint']`
+   * — which, besides embedding host knowledge of the DTO↔Endpoint pair, silently
+   * omitted `ac`, `design-system` and `diagram`: a full-spec restore never touched
+   * those three types at all. Deriving the order from the active modules fixes both
+   * problems at once, and picks up plugin-contributed types for free.
    */
   async restoreSpec(input: RestoreSpecInput, actor: ChangedBy = 'user'): Promise<RestoreSpecResult> {
     const releaseRow = this.findReleaseRow(input.releaseId);
@@ -1265,8 +1272,15 @@ export class ReleaseService {
     const entityResults: RestoreEntityResult[] = [];
     const pageResults: RestorePageResult[] = [];
 
-    // Topological order — DTO before Endpoint (Endpoint linked_dtos references DTO slugs).
-    const order: RawEntityType[] = ['dto', 'database-table', 'ui-view', 'endpoint'];
+    // Declared topological order over the ACTIVE modules. "DTO before Endpoint"
+    // still holds — it is now the consequence of `endpoint` declaring
+    // `dependsOn: ['dto']`, not of the host knowing that pair.
+    const order = topoSortModules(this.host.listEntities(), (remaining) =>
+      console.warn(
+        `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
+          `restoring those types in displayOrder instead`,
+      ),
+    ).map((m) => m.type as RawEntityType);
 
     for (const type of order) {
       // Slugs in target release

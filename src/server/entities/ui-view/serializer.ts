@@ -218,7 +218,7 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   const snap = coerceUiView(data);
-  const result = ctx.writer.upsertUiView(
+  const result = ctx.writer.upsert('ui-view',
     snap.slug,
     {
       name: snap.name,
@@ -231,6 +231,11 @@ function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
     },
     ctx.actor
   );
+  if (!result) {
+    // 0.2.2: no registered service for this type in this project — report the
+    // skip, do not throw. A deactivated type must not abort a whole restore.
+    return { op: 'noop', entity: null, warnings: [`entity service for type 'ui-view' is not available — restore skipped`] };
+  }
   ctx.writer.syncTags('ui-view', snap.slug, snap.tags);
   const warnings = [...(result.warnings ?? [])];
   // Dangling design-system reference: warn but keep the field (consistent with
