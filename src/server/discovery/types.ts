@@ -301,7 +301,15 @@ export interface ReferenceHit {
   via?: string[];
 }
 
-export type FindReferencesResult = Page<ReferenceHit> & { references: ReferenceHit[] };
+/**
+ * The rows come back under `references`, not `items`: that is the name the tool
+ * contract uses, and carrying both would ship the same array twice.
+ */
+export interface FindReferencesResult {
+  references: ReferenceHit[];
+  total: number;
+  hasMore: boolean;
+}
 
 export interface CheckConsistencyInput {
   severity?: 'error' | 'warning';

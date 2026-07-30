@@ -71,7 +71,7 @@ export async function findReferences(
   // A target with no references is a SUCCESS with an empty list and `total: 0`
   // — not a not-found. "Nothing cites this" is an answer.
   const page = paginate(hits, input, DEFAULT_LIMITS.findReferences);
-  return { ...page, references: page.items };
+  return { references: page.items, total: page.total, hasMore: page.hasMore };
 }
 
 async function entityReferences(
