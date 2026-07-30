@@ -16,10 +16,17 @@ export async function runTaggedList(args: ParsedArgs): Promise<void> {
   }
   const ctx = await createContext(args);
   try {
-    const entities = ctx.reader.findByTag({ type, tags, filter: filterRaw });
-    const items = entities.map((entity) =>
-      withMeta(ctx.registry.serializeEntity(type, 'tagged_list_item', entity, ctx.reader))
-    );
+    // `tagged_list` is an unbounded tag traversal on the CLI, where the consumer
+    // is a human or a shell pipeline rather than a context window — so it asks
+    // the core for the whole set explicitly instead of silently taking page one.
+    const result = ctx.discovery.listEntities({
+      type,
+      tags,
+      filter: filterRaw,
+      view: 'tagged_list_item',
+      limit: 1000,
+    });
+    const items = result.mode === 'items' ? result.items.map(withMeta) : [];
     writeOutput({ items, query: { type, tags, filter: filterRaw } }, args);
   } finally {
     ctx.close();

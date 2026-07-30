@@ -18,6 +18,7 @@ import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
+import type { SerializationEngine } from '../../core/plugin-host/serialization-engine.js';
 import { bodySize, hydrateSection } from '../section-hydrator.js';
 import { truncateText } from '../budget.js';
 import type {
@@ -129,6 +130,7 @@ export async function getSection(
   pages: PageSource,
   roots: RootSet,
   reader: RawEntityReader,
+  serialization: SerializationEngine,
   input: GetSectionInput,
 ): Promise<GetSectionResult> {
   const section = reader.getSection(input.anchor);
@@ -144,8 +146,17 @@ export async function getSection(
   roots.requireSectionIndexed(section.rootId, 'get_section');
 
   const hydrated = await hydrateSection(db, pages, section, input.includeSubtree ?? false);
+  // The `detail` view IS the source for this operation — the core does not
+  // hand-roll a second section shape beside the serializer's. What it does own
+  // is the WIRE naming: the operation's contract is snake_case, while the
+  // serializer's camelCase is what the editor and every existing consumer of
+  // `single_element` already compile against. Projecting here keeps one source
+  // of truth without renaming a shipped shape out from under its consumers.
+  const detail = serialization.serializeSection('detail', hydrated, reader).data as Record<string, unknown>;
+  const edges = (detail.edges as GetSectionResult['edges']) ?? hydrated.edges;
+
   const budgeted = truncateText(
-    hydrated.body,
+    String(detail.body ?? hydrated.body),
     `section body truncated by response budget — read the page window with get_page, or narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" })`,
   );
 
@@ -160,6 +171,6 @@ export async function getSection(
     line_end: section.lineEnd,
     body: budgeted.text,
     ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
-    edges: hydrated.edges,
+    edges,
   };
 }

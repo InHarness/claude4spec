@@ -2,6 +2,7 @@ import path from 'node:path';
 import { openDbReadonly, ReadonlyDbError } from '../../server/db/readonly.js';
 import { RawEntityReader } from '../../server/discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
+import { createDiscoveryCore, type DiscoveryCore } from '../../server/discovery/index.js';
 import { buildCliSerializationEngineAsync } from '../../server/core/plugin-host/cli-engine.js';
 import {
   resolveWorkspaceProject,
@@ -9,6 +10,7 @@ import {
   type ResolvedWorkspaceProject,
 } from '../../core/workspace/resolve.js';
 import { readConfig } from '../../server/config.js';
+import { readPackageVersion } from './package-version.js';
 import { CliError } from './errors.js';
 import type { ParsedArgs } from './args.js';
 
@@ -16,6 +18,12 @@ export interface CliContext {
   projectDir: string;
   reader: RawEntityReader;
   registry: SerializationEngine;
+  /**
+   * M39: the CLI is a TRANSPORT over the discovery core. It resolves the
+   * project and the db slot, calls an operation, and prints the result — it
+   * does not serialize entities or iterate types itself.
+   */
+  discovery: DiscoveryCore;
   db: import('better-sqlite3').Database;
   close: () => void;
 }
@@ -76,14 +84,23 @@ export async function createContext(args: ParsedArgs): Promise<CliContext> {
   const projectDir = resolved.projectDir;
   try {
     const { handle, close } = openDbReadonly(resolved.dbPath);
-    const reader = new RawEntityReader(handle);
     // M33: run the shared bootstrap loader so plugin-borne entity types appear
     // in CLI serialization exactly as on the server (phase 1: usually empty).
-    const registry = await buildCliSerializationEngineAsync(resolved.pluginPackages);
+    const { engine: registry, host } = await buildCliSerializationEngineAsync(resolved.pluginPackages);
+    const reader = new RawEntityReader(handle, host);
     return {
       projectDir,
       reader,
       registry,
+      discovery: createDiscoveryCore({
+        reader,
+        db: handle,
+        host,
+        serialization: registry,
+        roots: readConfig(projectDir).roots,
+        projectDir,
+        packageVersion: readPackageVersion(),
+      }),
       db: handle,
       close,
     };

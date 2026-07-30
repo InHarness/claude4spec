@@ -69,14 +69,33 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
   // the tag↔entity relation needs no second call.
   const view = requireView(input.view, 'element_list_item');
   const page = paginate(sorted, input, DEFAULT_LIMITS.listEntities);
-  const items = page.items.map((slug) => ({ slug, data: serialize(deps, input.type, view, slug) }));
+  const items = page.items.map((slug) => ({ slug, ...serialize(deps, input.type, view, slug) }));
   return { ...page, items, mode: 'items' };
 }
 
-function serialize(deps: DiscoveryDeps, type: string, view: ViewKind, slug: string): unknown {
+/**
+ * The ONE place the serialization registry is called from for entities.
+ *
+ * The serializer's own outcome flags travel with the payload rather than being
+ * flattened away: a consumer that cannot tell "this is the entity" from "this
+ * is a fallback because the serializer threw" will present a degraded record as
+ * the real one.
+ */
+function serialize(
+  deps: DiscoveryDeps,
+  type: string,
+  view: ViewKind,
+  slug: string,
+): { data: unknown; fallback?: boolean; error?: string; brokenRefs?: string[] } {
   const raw = deps.reader.getEntity(type, slug);
-  if (!raw) return null;
-  return deps.serialization.serializeEntity(type, view, raw, deps.reader).data;
+  if (!raw) return { data: null };
+  const result = deps.serialization.serializeEntity(type, view, raw, deps.reader);
+  return {
+    data: result.data,
+    ...(result.fallback ? { fallback: true } : {}),
+    ...(result.error ? { error: result.error } : {}),
+    ...(result.brokenRefs ? { brokenRefs: result.brokenRefs } : {}),
+  };
 }
 
 export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEntitiesResult {
@@ -89,7 +108,10 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   }
   const view = requireView(input.view, 'single_element');
 
-  const results = input.slugs.map((slug) => ({ slug, entity: serialize(deps, input.type, view, slug) }));
+  const results = input.slugs.map((slug) => {
+    const { data, ...meta } = serialize(deps, input.type, view, slug);
+    return { slug, entity: data, ...meta };
+  });
   // `detail` × N cannot be unbounded. Truncation is SIGNALLED, never silent —
   // a consumer that cannot tell a cut from an absence will report the missing
   // entities as non-existent.
@@ -132,7 +154,7 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
     items: page.items.map((hit) => ({
       slug: hit.slug,
       score: hit.score,
-      data: serialize(deps, input.type, view, hit.slug),
+      ...serialize(deps, input.type, view, hit.slug),
     })),
     mode: 'hits',
     searchedFields,

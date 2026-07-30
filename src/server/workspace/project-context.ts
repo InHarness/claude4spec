@@ -42,6 +42,8 @@ import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
 import { isRawEntityType, RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { createDiscoveryCore } from '../discovery/index.js';
+import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { ReleasePushService } from '../services/release-push.js';
@@ -601,6 +603,7 @@ async function buildInner(
       tagsService,
       referencesService,
       pagesService: pages,
+      discovery,
       sectionsService,
       ws,
       db: db.handle,
@@ -616,11 +619,28 @@ async function buildInner(
   // construction site near the return statement) so both this registration and
   // the final `serialization:` field below share one SerializationEngine.
   const serializationEngine = new SerializationEngine(pluginHost, sectionSerializer);
+  /**
+   * M39: one discovery core per project context, shared by every in-process
+   * tool server. The built-in chat agent reaching the spec through the same
+   * operations the CLI and the external MCP server use is the whole point —
+   * the asymmetry where the internal agent read the filesystem while external
+   * agents got bounded operations was a fourth, undocumented transport.
+   */
+  const discovery = createDiscoveryCore({
+    reader: rawReader,
+    db: db.handle,
+    host: pluginHost,
+    serialization: serializationEngine,
+    roots: effectiveRoots,
+    projectDir: cwd,
+    packageVersion: readPackageVersion(),
+  });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
       registry: serializationEngine,
       reader: rawReader,
+      discovery,
       db: db.handle,
       ws,
       referencesService,

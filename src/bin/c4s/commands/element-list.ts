@@ -12,17 +12,19 @@ export async function runElementList(args: ParsedArgs): Promise<void> {
   const slugs = requireStringList(args, 'slugs');
   const ctx = await createContext(args);
   try {
-    const { items: entities, missing } = ctx.reader.getEntities(type, slugs);
-    if (entities.length === 0) {
-      throw new CliError(
-        'ENTITY_NOT_FOUND',
-        `no ${type} found for slugs: ${slugs.join(', ')}`
-      );
+    const result = ctx.discovery.getEntities({ type, slugs, view: 'element_list_item' });
+    const found = result.results.filter((r) => r.entity !== null);
+    if (found.length === 0) {
+      throw new CliError('ENTITY_NOT_FOUND', `no ${type} found for slugs: ${slugs.join(', ')}`);
     }
-    const items = entities.map((entity) =>
-      withMeta(ctx.registry.serializeEntity(type, 'element_list_item', entity, ctx.reader))
+    writeOutput(
+      {
+        items: found.map(withMeta),
+        missing: result.results.filter((r) => r.entity === null).map((r) => r.slug),
+        ...(result.truncated ? { truncated: true, truncationHint: result.truncationHint } : {}),
+      },
+      args,
     );
-    writeOutput({ items, missing }, args);
   } finally {
     ctx.close();
   }

@@ -125,6 +125,24 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
         return { items, missing };
       },
     } as unknown as EntityToolsDeps['reader'],
+    // M39: the read path goes through the discovery core. The stub projects the
+    // same fake service, so these tests keep asserting what this server is
+    // responsible for — forwarding `filters` to the service — rather than
+    // re-testing the core's serialization.
+    discovery: {
+      getEntities: ({ type, slugs }: { type: string; slugs: string[] }) => ({
+        type,
+        view: 'detail',
+        results: slugs.map((slug) => ({ slug, entity: service.get(slug) ?? null })),
+      }),
+      searchEntities: ({ type }: { type: string }) => ({
+        mode: 'hits',
+        items: [],
+        total: 0,
+        hasMore: false,
+        searchedFields: [`${type}.name`],
+      }),
+    } as unknown as EntityToolsDeps['discovery'],
     db: {} as EntityToolsDeps['db'],
     ws: { broadcast: vi.fn() },
     referencesService: {
@@ -231,12 +249,41 @@ describe('entity-tools: filters escape hatch (list_entities/search_entities)', (
 });
 
 describe('entity-tools: describe_entity_type', () => {
-  it('reports crudSupported/searchSupported per type', async () => {
+  /**
+   * M39 changed what `searchSupported` MEANS. It used to be "the service has a
+   * `search` method", which excluded seven of eight types from search entirely.
+   * It now means "the type narrowed the host's default scope with its own
+   * `searchableFields` declaration" — and never means "not searchable", which
+   * is why `searchableFields` comes back either way.
+   */
+  it('reports crudSupported, and searchSupported as "the type declared its own fields"', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'describe_entity_type').handler({ type: 'widget' });
     const { types } = parse(result) as { types: Array<Record<string, unknown>> };
     expect(types).toHaveLength(1);
-    expect(types[0]).toMatchObject({ type: 'widget', crudSupported: true, searchSupported: true });
+    // The widget service HAS a `search` method and declares no fields — under
+    // the old meaning this said `true`.
+    expect(types[0]).toMatchObject({ type: 'widget', crudSupported: true, searchSupported: false });
+    // ...and it is searchable regardless, over the host default derived from
+    // its create schema.
+    expect(types[0]!.searchableFields).toEqual(expect.arrayContaining(['name']));
+  });
+
+  it('a type that declares searchableFields reports searchSupported: true and exactly those fields', async () => {
+    const declaring = widgetModule({
+      type: 'declaring',
+      backend: {
+        crud: {
+          createSchema: { name: z.string(), note: z.string() },
+          searchableFields: [{ path: 'note', weight: 2 }],
+        },
+      } as BackendModule['backend'],
+    });
+    const { deps } = fakeDeps([declaring]);
+    const result = await tool(deps, 'describe_entity_type').handler({ type: 'declaring' });
+    const { types } = parse(result) as { types: Array<Record<string, unknown>> };
+    expect(types[0]).toMatchObject({ type: 'declaring', searchSupported: true });
+    expect(types[0]!.searchableFields).toEqual(['note']);
   });
 
   it('omitting type describes every active type (widget + no-crud), not the inactive one', async () => {

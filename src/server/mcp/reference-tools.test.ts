@@ -10,6 +10,11 @@ import { createReferenceToolsServer, type ReferenceToolsDeps } from './reference
 import { PagesService } from '../services/pages.js';
 import { clearExtensionReferenceTypes, registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import type { ProjectPluginHost, BackendModule } from '../core/plugin-host/types.js';
+import { createDiscoveryCore } from '../discovery/index.js';
+import { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
+import { sectionSerializer } from '../serialization/serializers/section.js';
+import { builtinPagesRoot } from '../config.js';
 
 /**
  * Regression for the rule-12 generalization (brief 0-1-128-to-0-1-129): a
@@ -100,8 +105,20 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
   });
 
   function deps(): ReferenceToolsDeps {
+    const pluginHost = fakeHost();
     return {
-      pluginHost: fakeHost(),
+      pluginHost,
+      // M39: the read tools are adapters over the discovery core, so the test
+      // builds a real one — the rules under test now live there.
+      discovery: createDiscoveryCore({
+        reader: new RawEntityReader(db, pluginHost),
+        db,
+        host: pluginHost,
+        serialization: new SerializationEngine(pluginHost, sectionSerializer),
+        roots: [builtinPagesRoot()],
+        projectDir: cwd,
+        packageVersion: 'test',
+      }),
       tagsService: { getEntityTagSlugs: () => [], list: () => [] } as unknown as ReferenceToolsDeps['tagsService'],
       referencesService: {} as ReferenceToolsDeps['referencesService'],
       pagesService,

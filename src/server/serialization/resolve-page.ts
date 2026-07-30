@@ -1,17 +1,26 @@
 import { parseXmlTagsExcludingCode, type XmlTag } from '../../shared/xml-tags.js';
-import { isRawEntityType, type RawEntity, type RawEntityReader } from '../discovery/raw-entity-reader.js';
 import {
   renderElementList,
   renderInlineMention,
   renderSingleElement,
   renderTaggedListMixed,
 } from './inline-renderer.js';
-import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import type { SerializeResult } from './types.js';
+import type { DiscoveryCore, SerializedMeta } from '../discovery/index.js';
 
+/**
+ * Expanding tags inline is a RENDER concern — the editor preview, the static
+ * HTML export, `c4s resolve`. It is deliberately not a discovery operation: a
+ * tag is an edge, and an agent reading the spec wants the edge, not a payload
+ * pasted over it.
+ *
+ * M39 still routes the reads through the core rather than serializing here.
+ * The renderer decides what a resolved tag LOOKS like; it does not get its own
+ * copy of what an entity IS.
+ */
 export interface ResolvePageDeps {
-  reader: RawEntityReader;
-  registry: SerializationEngine;
+  discovery: DiscoveryCore;
+  /** Active entity types, for the untyped `<tagged_list_mixed/>` sweep. */
+  activeTypes: string[];
 }
 
 export interface ResolvedEntry {
@@ -107,7 +116,7 @@ function resolveSingle(
       error: 'missing_slug',
     };
   }
-  const type = normalizeType(typeRaw);
+  const type = normalizeType(typeRaw, deps);
   if (!type) {
     return {
       data: null,
@@ -116,8 +125,8 @@ function resolveSingle(
       error: 'unknown_type',
     };
   }
-  const entity = deps.reader.getEntity(type, slug);
-  if (!entity) {
+  const record = deps.discovery.getEntities({ type, slugs: [slug], view }).results[0];
+  if (!record || record.entity === null) {
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: ${type}/${slug} not found -->`,
@@ -125,13 +134,12 @@ function resolveSingle(
       error: 'entity_not_found',
     };
   }
-  const result = deps.registry.serializeEntity(type, view, entity, deps.reader);
-  const data = withMeta(result);
+  const data = withMeta(record.entity, record);
   return {
     data,
     inline: render(data),
-    fallback: result.fallback,
-    ...(result.error ? { error: result.error } : {}),
+    fallback: record.fallback === true,
+    ...(record.error ? { error: record.error } : {}),
   };
 }
 
@@ -141,7 +149,7 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
-  const type = normalizeType(typeRaw);
+  const type = normalizeType(typeRaw, deps);
   if (!type) {
     return {
       data: null,
@@ -150,10 +158,9 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
       error: 'unknown_type',
     };
   }
-  const { items: entities, missing } = deps.reader.getEntities(type, slugs);
-  const items = entities.map((entity: RawEntity) =>
-    withMeta(deps.registry.serializeEntity(type, 'element_list_item', entity, deps.reader)),
-  );
+  const { results } = deps.discovery.getEntities({ type, slugs, view: 'element_list_item' });
+  const items = results.filter((r) => r.entity !== null).map((r) => withMeta(r.entity, r));
+  const missing = results.filter((r) => r.entity === null).map((r) => r.slug);
   const data = { items, missing };
   return {
     data,
@@ -169,7 +176,7 @@ function resolveTaggedList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
     .map((s) => s.trim())
     .filter(Boolean);
   const filter = tag.attrs.filter === 'and' ? 'and' : 'or';
-  const type = normalizeType(typeRaw);
+  const type = normalizeType(typeRaw, deps);
   if (!type) {
     return {
       data: null,
@@ -178,10 +185,7 @@ function resolveTaggedList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
       error: 'unknown_type',
     };
   }
-  const entities = deps.reader.findByTag({ type, tags, filter });
-  const items = entities.map((entity) =>
-    withMeta(deps.registry.serializeEntity(type, 'tagged_list_item', entity, deps.reader)),
-  );
+  const items = itemsFor(deps, type, tags, filter);
   return {
     data: { items, query: { type, tags, filter } },
     inline: renderElementList(items),
@@ -195,25 +199,13 @@ function resolveTaggedListMixed(tag: XmlTag, deps: ResolvePageDeps): ResolveOutc
     .map((s) => s.trim())
     .filter(Boolean);
   const filter = tag.attrs.filter === 'and' ? 'and' : 'or';
-  const entities = deps.reader.findByTag({ tags, filter });
-  const groups: Record<string, unknown[]> = {
-    endpoints: [],
-    dtos: [],
-    'database-tables': [],
-    'ui-views': [],
-  };
-  const bucket: Record<string, string> = {
-    endpoint: 'endpoints',
-    dto: 'dtos',
-    'database-table': 'database-tables',
-    'ui-view': 'ui-views',
-  };
-  for (const entity of entities) {
-    const item = withMeta(
-      deps.registry.serializeEntity(entity.type, 'tagged_list_item', entity, deps.reader),
-    );
-    const key = bucket[entity.type];
-    if (key) groups[key]!.push(item);
+  // The bucket key was a hardcoded map of four core types, so a tagged entity
+  // of any other type silently vanished from a mixed list. Every one of those
+  // four keys was the type name plus an `s`, so deriving it covers the same
+  // four identically and stops dropping the rest.
+  const groups: Record<string, unknown[]> = {};
+  for (const type of deps.activeTypes) {
+    groups[`${type}s`] = itemsFor(deps, type, tags, filter);
   }
   return {
     data: { ...groups, query: { tags, filter } },
@@ -222,20 +214,37 @@ function resolveTaggedListMixed(tag: XmlTag, deps: ResolvePageDeps): ResolveOutc
   };
 }
 
-function normalizeType(raw: string) {
-  const normalized = raw === 'database_table' ? 'database-table' : raw;
-  if (isRawEntityType(normalized)) return normalized;
-  return null;
+function itemsFor(
+  deps: ResolvePageDeps,
+  type: string,
+  tags: string[],
+  filter: 'and' | 'or',
+): unknown[] {
+  const result = deps.discovery.listEntities({
+    type,
+    tags,
+    filter,
+    view: 'tagged_list_item',
+    limit: 1000,
+  });
+  return result.mode === 'items' ? result.items.map((item) => withMeta(item.data, item)) : [];
 }
 
-function withMeta(result: SerializeResult): unknown {
-  if (!result.fallback && !result.error) return result.data;
-  if (typeof result.data === 'object' && result.data !== null) {
+function normalizeType(raw: string, deps: ResolvePageDeps): string | null {
+  // `database_table` is the underscore spelling authors write in a tag; the
+  // type's canonical id is hyphenated.
+  const normalized = raw === 'database_table' ? 'database-table' : raw;
+  return deps.activeTypes.includes(normalized) ? normalized : null;
+}
+
+function withMeta(data: unknown, meta: SerializedMeta): unknown {
+  if (!meta.fallback && !meta.error) return data;
+  if (typeof data === 'object' && data !== null) {
     return {
-      ...(result.data as object),
-      ...(result.fallback ? { _fallback: true } : {}),
-      ...(result.error ? { _error: result.error } : {}),
+      ...(data as object),
+      ...(meta.fallback ? { _fallback: true } : {}),
+      ...(meta.error ? { _error: meta.error } : {}),
     };
   }
-  return result.data;
+  return data;
 }

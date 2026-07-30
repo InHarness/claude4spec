@@ -25,9 +25,13 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
   const md = fs.readFileSync(abs, 'utf8');
   const ctx = await createContext(args);
   try {
+    // `c4s resolve` stays a TRANSPORT-SIDE COMPOSITION, not a core operation:
+    // it reads a file, asks the core for the entities behind the tags, and does
+    // its own CLI formatting. There is no equivalent in the external MCP, where
+    // an agent gets structured tool calls and wants the edge, not the payload.
     const { resolved, inlineContent } = resolvePageContent(md, {
-      reader: ctx.reader,
-      registry: ctx.registry,
+      discovery: ctx.discovery,
+      activeTypes: ctx.reader.listTypes(),
     });
 
     if (format === 'json') {

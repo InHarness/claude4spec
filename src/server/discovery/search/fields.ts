@@ -48,14 +48,23 @@ export function resolveSearchFields(
   requested: readonly string[] | undefined,
 ): SearchableField[] {
   if (requested?.length) return requested.map((path) => ({ path }));
-  const declared = module?.backend?.crud?.searchableFields;
+  let declared: Array<{ path: string; weight?: number }> | undefined;
+  try {
+    declared = module?.backend?.crud?.searchableFields;
+  } catch {
+    declared = undefined;
+  }
   if (declared?.length) return declared.map((f) => ({ path: f.path, weight: f.weight }));
   return hostDefaultFields(module);
 }
 
 /** Whether the type NARROWED the host default with its own declaration. */
 export function hasDeclaredSearchFields(module: BackendModule | null): boolean {
-  return (module?.backend?.crud?.searchableFields?.length ?? 0) > 0;
+  try {
+    return (module?.backend?.crud?.searchableFields?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -65,7 +74,17 @@ export function hasDeclaredSearchFields(module: BackendModule | null): boolean {
  * schema advertises cannot drift apart.
  */
 export function hostDefaultFields(module: BackendModule | null): SearchableField[] {
-  const shape = module?.backend?.crud?.createSchema;
+  // Reading the slot is itself guarded: a manifest can expose `createSchema` as
+  // a getter, and a throwing one must degrade THIS list, not the caller's whole
+  // answer. `describe_entity_type` is built to isolate a broken type into a
+  // per-field placeholder, and an unguarded read here would escalate that back
+  // into a whole-entry failure.
+  let shape: ZodRawShape | undefined;
+  try {
+    shape = module?.backend?.crud?.createSchema;
+  } catch {
+    shape = undefined;
+  }
   const derived = shape ? textPathsOfShape(shape) : [];
   const seen = new Set(derived.map((f) => f.path));
   const out = [...derived];

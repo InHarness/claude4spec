@@ -209,7 +209,7 @@ export interface SearchEntitiesInput {
 }
 
 export type SearchEntitiesResult =
-  | (Page<{ slug: string; score: number; data: unknown }> & {
+  | (Page<{ slug: string; score: number; data: unknown } & SerializedMeta> & {
       mode: 'hits';
       /** Mandatory: without it an empty result is indistinguishable from an out-of-scope field. */
       searchedFields: string[];
@@ -238,8 +238,15 @@ export interface ListEntitiesInput {
   offset?: number;
 }
 
+/** Serializer outcome travels with every serialized record — see `serialize` in ops/entities.ts. */
+export interface SerializedMeta {
+  fallback?: boolean;
+  error?: string;
+  brokenRefs?: string[];
+}
+
 export type ListEntitiesResult =
-  | (Page<{ slug: string; data: unknown }> & { mode: 'items' })
+  | (Page<{ slug: string; data: unknown } & SerializedMeta> & { mode: 'items' })
   | { mode: 'count'; total: number };
 
 export interface GetEntitiesInput {
@@ -251,7 +258,7 @@ export interface GetEntitiesInput {
 export interface GetEntitiesResult {
   type: string;
   view: ViewKind;
-  results: Array<{ slug: string; entity: unknown | null }>;
+  results: Array<{ slug: string; entity: unknown | null } & SerializedMeta>;
   truncated?: boolean;
   truncationHint?: string;
 }
