@@ -116,7 +116,18 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
       `split the call, or use list_entities({ type: "${input.type}" }) which paginates`,
     );
   }
-  const view = requireView(input.view, 'single_element');
+  /**
+   * The default WIDENS with the size of the request, because the two shapes of
+   * this call want different things: one slug is a lookup and wants the whole
+   * record, many slugs are a list and want a row each.
+   *
+   * A flat `single_element` default made a view-less batch of forty slugs
+   * forty times wider than the `element_list_item` the tag it resolves
+   * (`<element_list slugs="a,b,…"/>`) has always rendered — enough to hit the
+   * response budget and come back `truncated`, where the identical call used to
+   * return everything.
+   */
+  const view = requireView(input.view, input.slugs.length > 1 ? 'element_list_item' : 'single_element');
 
   const results = input.slugs.map((slug) => {
     const { data, ...meta } = serialize(deps, input.type, view, slug);

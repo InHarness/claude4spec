@@ -10,7 +10,7 @@
 
 import type { Root } from '../../shared/types.js';
 import { PagesService } from '../services/pages.js';
-import { pageNotFound } from './errors.js';
+import { invalidArgument, pageNotFound } from './errors.js';
 
 export interface PageFile {
   rootId: string;
@@ -94,6 +94,21 @@ export class PageSource {
     } catch (err) {
       if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') {
         throw pageNotFound(rootId, relPath, [...this.services.keys()]);
+      }
+      /**
+       * `PagesService` refuses a path that escapes its root — the barrier that
+       * keeps a page operation from naming a brief or the entity catalogue. It
+       * refuses with a plain `Error`, so it used to surface as `INTERNAL`: the
+       * right ANSWER under the wrong code, which reads to a caller as "the
+       * server broke" rather than "that is not an address". The refusal is
+       * unchanged; only its classification is.
+       */
+      const message = err instanceof Error ? err.message : String(err);
+      if (/path escapes|invalid path|paths allowed/i.test(message)) {
+        throw invalidArgument(
+          message,
+          `a page is addressed by (rootId, path) RELATIVE to the root — use list_pages({ rootId: "${rootId}" }) to see what it contains`,
+        );
       }
       throw err;
     }

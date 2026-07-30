@@ -1,37 +1,48 @@
 import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
-import {
-  isRawEntityType,
-  type RawEntityReader,
-  type RawEntityType,
-} from '../discovery/raw-entity-reader.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import {
-  getEntitiesAll,
-  isDiscoveryError,
-  listEntitiesAll,
-  listTagsAll,
-  type DiscoveryCore,
-  type SerializedMeta,
-} from '../discovery/index.js';
-import { resolvePageContent } from '../serialization/resolve-page.js';
+import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
 import type { ViewKind } from '../serialization/types.js';
-import fs from 'node:fs';
-import path from 'node:path';
 
+/**
+ * `c4s-reader` — the external stdio transport over the M39 discovery core.
+ *
+ * Fourteen tools, named 1:1 with the core operations, and nothing else. This
+ * file maps the MCP protocol onto the core and core error codes onto
+ * `tool_result`; it does not decide what pagination means, which types exist,
+ * how an entity is serialized, or what an error should suggest next.
+ *
+ * 0.2.3 replaced the previous nine tools, and the new set is not a superset of
+ * the old one. The old set reached only six of the fourteen operations, and did
+ * so through a hardcoded four-value type enum, so a plugin-contributed type was
+ * unreachable from here even when the core could answer for it. Five names went
+ * away because the operation they fronted was renamed or absorbed —
+ * `catalog`→`overview`, `describe`→`describe_types`, `get_entity`→`get_entities`
+ * (one slug is the degenerate list), `find_by_tag`→`list_entities`,
+ * `list_slugs`→`list_entities` with the minimal view — and `resolve_page` went
+ * away because expanding embeds is a RENDER concern rather than a read
+ * contract: a tag is an edge, and pasting the payload in destroys the edge. The
+ * surviving surface for expansion is `c4s resolve` in the CLI.
+ *
+ * Every tool here is read-only, and structurally so rather than by review: the
+ * core exposes no mutating operation, so there is no path from this process to
+ * a write.
+ */
 export interface C4sReaderDeps {
   reader: RawEntityReader | null;
+  /**
+   * Held only so a caller can construct this server the same way it constructs
+   * the core. Serialization is reached exclusively THROUGH the core (M39's
+   * registry rule), so nothing in this file touches it.
+   */
   registry: SerializationEngine;
   /**
    * M39: the discovery core, already bound to a resolved project. Null on a
    * degraded start (no project) — the tools then answer `PROJECT_NOT_FOUND`
    * rather than the process exiting, because an stdio server that dies hands
    * the agent an EOF where it needed a diagnosis.
-   *
-   * This server is a TRANSPORT: it maps tool names and the MCP protocol onto
-   * core operations, and core error codes onto `tool_result`. It does not
-   * serialize entities, iterate types, or decide what pagination means.
    */
   discovery: DiscoveryCore | null;
   db: Database.Database | null;
@@ -47,7 +58,27 @@ const VIEW_KINDS = [
   'detail',
 ] as const;
 
-const ENTITY_TYPE_VALUES = ['endpoint', 'dto', 'database-table', 'ui-view'] as const;
+/**
+ * The tool names this server exposes, in the order the brief lists the
+ * operations. Exported so the architecture gate can assert the set instead of
+ * trusting the prose above it.
+ */
+export const C4S_READER_TOOL_NAMES = [
+  'overview',
+  'describe_types',
+  'list_pages',
+  'list_sections',
+  'get_section',
+  'get_page',
+  'search_pages',
+  'search_entities',
+  'list_entities',
+  'get_entities',
+  'list_tags',
+  'find_references',
+  'check_consistency',
+  'resolve_identity',
+] as const;
 
 export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   const ok = (payload: unknown) => ({
@@ -64,7 +95,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   });
 
   const requireProject = ():
-    | { ok: true; reader: RawEntityReader; db: Database.Database; projectDir: string; discovery: DiscoveryCore }
+    | { ok: true; discovery: DiscoveryCore }
     | { ok: false; response: ReturnType<typeof fail> } => {
     if (!deps.reader || !deps.db || !deps.projectDir || !deps.discovery) {
       return {
@@ -76,332 +107,371 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
         ),
       };
     }
-    return { ok: true, reader: deps.reader, db: deps.db, projectDir: deps.projectDir, discovery: deps.discovery };
+    return { ok: true, discovery: deps.discovery };
   };
 
-  const wrapDb = <T>(fn: () => T): { ok: true; value: T } | { ok: false; response: ReturnType<typeof fail> } => {
-    try {
-      return { ok: true, value: fn() };
-    } catch (err) {
-      // M39: a core error already carries its own code and its navigation —
-      // the transport RE-FRAMES it, it does not re-invent it.
-      if (isDiscoveryError(err)) {
-        return { ok: false, response: fail(err.code, err.message, err.hint) };
-      }
-      const message = err instanceof Error ? err.message : String(err);
-      const code = /no such table|no such column/i.test(message) ? 'SCHEMA_OUT_OF_DATE' : 'INTERNAL';
-      const hint = code === 'SCHEMA_OUT_OF_DATE' ? 'run `npx @inharness-ai/claude4spec` to migrate' : undefined;
-      return { ok: false, response: fail(code, message, hint) };
-    }
-  };
-
-  /** Same mapping as `wrapDb`, for the operations that touch the filesystem. */
-  const wrapDbAsync = async <T>(
-    fn: () => Promise<T>,
+  /**
+   * The one error mapping. A core error already carries its code, its message
+   * and its navigation — the transport RE-FRAMES it, it does not re-invent it,
+   * and it never drops the hint.
+   *
+   * `no such table` / `no such column` is the shape a pending migration takes
+   * when it reaches a readonly reader. This server deliberately does NOT
+   * migrate, so the hint names the process that does. Sync and async operations
+   * share this path: they used to differ, and the async half reported a pending
+   * migration as a bare `INTERNAL`.
+   */
+  const wrapCall = async <T>(
+    fn: () => T | Promise<T>,
   ): Promise<{ ok: true; value: T } | { ok: false; response: ReturnType<typeof fail> }> => {
     try {
       return { ok: true, value: await fn() };
     } catch (err) {
       if (isDiscoveryError(err)) return { ok: false, response: fail(err.code, err.message, err.hint) };
       const message = err instanceof Error ? err.message : String(err);
+      if (/no such table|no such column/i.test(message)) {
+        return {
+          ok: false,
+          response: fail('SCHEMA_OUT_OF_DATE', message, 'run `npx @inharness-ai/claude4spec` to migrate'),
+        };
+      }
       return { ok: false, response: fail('INTERNAL', message) };
     }
   };
 
-  const normalizeType = (raw: string): RawEntityType | null => {
-    const normalized = raw === 'database_table' ? 'database-table' : raw;
-    return isRawEntityType(normalized) ? normalized : null;
+  /**
+   * `database_table` → `database-table`. A normalization, not a gate: an
+   * unrecognized type falls through to the core, whose `INVALID_TYPE` lists the
+   * types that ARE active. Refusing it here would answer with strictly less.
+   */
+  const normalizeType = (raw: unknown): string => {
+    const value = String(raw);
+    return value === 'database_table' ? 'database-table' : value;
   };
 
-  const getEntity = mcpTool(
-    'get_entity',
-    'Get a single entity (endpoint / dto / database-table / ui-view) by type+slug. Use this to resolve <single_element type="..." slug="..."/> and <inline_mention type="..." slug="..."/>. The view parameter selects the response shape: single_element (default), inline_mention, detail.',
-    {
-      type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
-      slug: z.string().describe('Entity slug'),
-      view: z
-        .enum(VIEW_KINDS)
-        .optional()
-        .describe('Response shape; default: single_element'),
-    },
-    async (args) => {
+  const optionalString = (value: unknown): string | undefined =>
+    value === undefined || value === null ? undefined : String(value);
+  const optionalNumber = (value: unknown): number | undefined =>
+    value === undefined || value === null ? undefined : Number(value);
+
+  /** Every list operation takes these; the core owns their defaults and caps. */
+  const pageShape = {
+    limit: z.number().int().positive().optional().describe('Page size; the core applies a default and a cap'),
+    offset: z.number().int().nonnegative().optional().describe('Rows to skip; a stable sort makes it meaningful'),
+  };
+
+  const viewShape = z
+    .enum(VIEW_KINDS)
+    .optional()
+    .describe('Record shape — the width of a row, independent of how many rows come back');
+
+  /**
+   * One handler shape for all fourteen: guard the project, call the operation,
+   * return what it returned. A tool that reshapes the result is a tool that has
+   * started to own behaviour.
+   */
+  const op = <T>(
+    name: (typeof C4S_READER_TOOL_NAMES)[number],
+    description: string,
+    inputSchema: Record<string, unknown>,
+    call: (discovery: DiscoveryCore, args: Record<string, unknown>) => T | Promise<T>,
+  ) =>
+    mcpTool(name, description, inputSchema, async (args) => {
       const ctx = requireProject();
       if (!ctx.ok) return ctx.response;
-      const type = normalizeType(String(args.type));
-      if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
-      const view: ViewKind = (args.view as ViewKind | undefined) ?? 'single_element';
-      const slug = String(args.slug);
-      const lookup = wrapDb(() => ctx.discovery.getEntities({ type, slugs: [slug], view }));
-      if (!lookup.ok) return lookup.response;
-      const record = lookup.value.results[0];
-      if (!record || record.entity === null) return fail('ENTITY_NOT_FOUND', `${type}/${slug} not found`);
-      return ok({ type, slug, view, ...envelope(record.entity, record) });
-    },
+      const result = await wrapCall(() => call(ctx.discovery, args));
+      if (!result.ok) return result.response;
+      return ok(result.value);
+    });
+
+  // ── Meta ──────────────────────────────────────────────────────────────────
+
+  const overview = op(
+    'overview',
+    'ENTRY POINT. One call that says what this specification contains: page roots with their properties (sectionIndexed / referenceValidated / pageCount), the active entity types with a row count and serializer version each, the tag count, and the claude4spec version. Root properties are part of the payload because they decide how a hit is addressed — a section-indexed root answers with an `anchor`, a plain one with (rootId, path, line). Cheap: no schemas, no views; call describe_types for those.',
+    {},
+    (discovery) => discovery.overview(),
   );
 
-  const getEntities = mcpTool(
-    'get_entities',
-    'Get multiple entities of the same type by slug list. Use this to resolve <element_list type="..." slugs="a,b,c"/>. Default view: element_list_item. Returns { items, missing }.',
+  const describeTypes = op(
+    'describe_types',
+    'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas come from the type\'s serializer, or are derived by index reflection and flagged "_auto". A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback.',
     {
-      type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
-      slugs: z.array(z.string()).describe('List of slugs to fetch in order'),
-      view: z
-        .enum(VIEW_KINDS)
-        .optional()
-        .describe('Response shape; default: element_list_item'),
+      types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
+      // An enum, not a free string: an unrecognized view used to be forwarded to
+      // the serializer, which answered with whatever its if-chain fell through
+      // to. The tool then reported a view that does not exist, and the LATER
+      // call using it was the one that failed.
+      view: viewShape,
     },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const type = normalizeType(String(args.type));
-      if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
-      const view: ViewKind = (args.view as ViewKind | undefined) ?? 'element_list_item';
-      const slugs = (args.slugs as string[]).map(String);
-      const lookup = wrapDb(() => getEntitiesAll(ctx.discovery, { type, slugs, view }));
-      if (!lookup.ok) return lookup.response;
-      const found = lookup.value.filter((r) => r.entity !== null);
-      return ok({
-        type,
-        view,
-        items: found.map((r) => ({ slug: r.slug, ...envelope(r.entity, r) })),
-        missing: lookup.value.filter((r) => r.entity === null).map((r) => r.slug),
-      });
-    },
+    (discovery, args) =>
+      discovery.describeTypes({
+        types: (args.types as string[] | undefined)?.map(normalizeType),
+        view: optionalString(args.view) as ViewKind | undefined,
+      }),
   );
 
-  const findByTag = mcpTool(
-    'find_by_tag',
-    'Find entities by tags. Use this to resolve <tagged_list type="..." tags="a,b" filter="and"/> and <tagged_list_mixed tags="..."/>. When type is omitted, results are grouped by type ({ endpoints, dtos, "database-tables", "ui-views" }). Default view: tagged_list_item.',
+  // ── Pages and sections ────────────────────────────────────────────────────
+
+  const listPages = op(
+    'list_pages',
+    'List the pages of one root, paginated, each with a title, section count, byte size and mtime. This is the full replacement for globbing the specification: `rootId` is required because the same relative path can exist in several roots, `sort` is an explicit parameter ("path" by default and deterministic, or "modified"), and the root list holds page roots only — there is no way to name a brief, a patch or the entity catalogue from here.',
     {
-      type: z
-        .enum(ENTITY_TYPE_VALUES)
-        .optional()
-        .describe('Restrict to one entity type; omit for grouped mixed result'),
-      tags: z.array(z.string()).describe('Tag slugs to match'),
-      filter: z.enum(['and', 'or']).optional().describe('Tag filter mode; default: or'),
-      view: z
-        .enum(VIEW_KINDS)
-        .optional()
-        .describe('Response shape; default: tagged_list_item'),
+      rootId: z.string().describe('Which page root — see overview().roots'),
+      prefix: z.string().optional().describe('Restrict to paths starting with this prefix'),
+      sort: z.enum(['path', 'modified']).optional().describe('Order; default "path" (deterministic)'),
+      ...pageShape,
     },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const tags = (args.tags as string[]).map(String);
-      const filter = ((args.filter as 'and' | 'or' | undefined) ?? 'or') as 'and' | 'or';
-      const view: ViewKind = (args.view as ViewKind | undefined) ?? 'tagged_list_item';
-      const typeArg = args.type ? normalizeType(String(args.type)) : null;
-      if (args.type && !typeArg) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
-
-      if (typeArg) {
-        // Exhaustive: this tool was unbounded before, and a truncated list that
-        // does not say it is truncated is worse than a slow one.
-        const lookup = wrapDb(() => listEntitiesAll(ctx.discovery, { type: typeArg, tags, filter, view }));
-        if (!lookup.ok) return lookup.response;
-        const items = lookup.value.map((item) => ({ slug: item.slug, ...envelope(item.data, item) }));
-        return ok({ type: typeArg, view, query: { tags, filter }, items });
-      }
-
-      // The mixed grouping is a TRANSPORT composition over the per-type
-      // operation. Its bucket key was a hardcoded seven-type map that a
-      // plugin-contributed type indexed straight into `undefined`; every one of
-      // those keys was the type name plus an `s`, so deriving it keeps the same
-      // output and stops dropping the rest.
-      const grouped = wrapDb(() => {
-        // The seven documented buckets are seeded unconditionally. Deriving keys
-        // purely from the ACTIVE type set made a deactivated type's key vanish,
-        // so a consumer reading `result.endpoints.length` threw instead of
-        // reading 0 — and this tool's own description still promises those keys.
-        const groups: Record<string, unknown[]> = {
-          endpoints: [],
-          dtos: [],
-          'database-tables': [],
-          'ui-views': [],
-          acs: [],
-          'design-systems': [],
-          diagrams: [],
-        };
-        for (const t of ctx.reader.listTypes()) {
-          groups[`${t}s`] = listEntitiesAll(ctx.discovery, { type: t, tags, filter, view }).map((item) => ({
-            slug: item.slug,
-            ...envelope(item.data, item),
-          }));
-        }
-        return groups;
-      });
-      if (!grouped.ok) return grouped.response;
-      return ok({ view, query: { tags, filter }, ...grouped.value });
-    },
+    (discovery, args) =>
+      discovery.listPages({
+        rootId: String(args.rootId),
+        prefix: optionalString(args.prefix),
+        sort: args.sort as 'path' | 'modified' | undefined,
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      }),
   );
 
-  const getSection = mcpTool(
+  const listSections = op(
+    'list_sections',
+    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it. There is no fuzzy heading search here: to find a section by text, call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
+    {
+      by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
+      rootId: z.string().optional().describe('With by:"page" — which root'),
+      path: z.string().optional().describe('With by:"page" — page path relative to the root'),
+      anchor: z.string().optional().describe('With by:"anchor" — 6-12 lowercase alphanumerics'),
+      ...pageShape,
+    },
+    (discovery, args) =>
+      discovery.listSections({
+        by: args.by,
+        rootId: optionalString(args.rootId),
+        path: optionalString(args.path),
+        anchor: optionalString(args.anchor),
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      } as Parameters<DiscoveryCore['listSections']>[0]),
+  );
+
+  const getSection = op(
     'get_section',
-    'Get a documentation section by anchor.',
+    'Read one section BY ANCHOR: its heading, its coordinates, and its body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (`edges.sectionRefs` / `entityEmbeds` / `pageLinks`), so a consumer never parses markdown itself; to follow an embed, call get_entities with the slug it carries. `includeSubtree` adds the lower headings beneath this one.',
     {
-      anchor: z.string().describe('Section anchor (8-char id)'),
-      view: z.enum(VIEW_KINDS).optional().describe('Response shape; default: single_element'),
+      anchor: z.string().describe('Section anchor (6-12 lowercase alphanumerics)'),
+      includeSubtree: z.boolean().optional().describe('Include the subtree of lower headings'),
     },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const anchor = String(args.anchor);
-      // M39: the section arrives with its BODY and its outgoing document edges
-      // — returning coordinates alone was one of the three gaps that motivated
-      // the core. The `view` parameter is accepted for compatibility and no
-      // longer selects a narrower shape.
-      const result = await wrapDbAsync(() => ctx.discovery.getSection({ anchor }));
-      if (!result.ok) return result.response;
-      return ok(result.value);
-    },
+    (discovery, args) =>
+      discovery.getSection({
+        anchor: String(args.anchor),
+        includeSubtree: args.includeSubtree === true,
+      }),
   );
 
-  const resolvePage = mcpTool(
-    'resolve_page',
-    'Resolve all XML tags in a markdown file. Returns either { content } with tags expanded inline (format: inline) or { content, resolved: [...] } with the original markdown plus a sidecar of structured resolutions (format: json). Path is resolved relative to the project dir if relative; absolute paths are used as-is.',
+  const getPage = op(
+    'get_page',
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_section, which is a better window in every way. Embeds are never expanded — fetch the entity by slug instead.',
     {
-      path: z.string().describe('File path; absolute or relative to the project dir'),
-      format: z.enum(['inline', 'json']).optional().describe('Output format; default: inline'),
-    },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const rel = String(args.path);
-      const abs = path.isAbsolute(rel) ? rel : path.resolve(ctx.projectDir, rel);
-      if (!fs.existsSync(abs)) return fail('FILE_NOT_FOUND', `file not found: ${abs}`);
-      const md = fs.readFileSync(abs, 'utf8');
-      const result = wrapDb(() =>
-        resolvePageContent(md, {
-          discovery: ctx.discovery,
-          activeTypes: ctx.reader.listTypes(),
-        }),
-      );
-      if (!result.ok) return result.response;
-      const format = (args.format as 'inline' | 'json' | undefined) ?? 'inline';
-      if (format === 'json') {
-        const sidecar = result.value.resolved.map(({ inline: _inline, ...rest }) => rest);
-        return ok({ path: abs, content: md, resolved: sidecar });
-      }
-      return ok({ path: abs, content: result.value.inlineContent });
-    },
-  );
-
-  const catalog = mcpTool(
-    'catalog',
-    'Smoke test: discover active entity types with a row count, serializer version, one-line description, role noun, and MCP tools line each. Returns { types: { [type]: { count, version, description, roleNoun, mcpToolsLine } }, claude4spec }. Cheap — does not return schemas; call `describe` for the JSON Schema of a specific type.',
-    {},
-    async () => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const result = await wrapDbAsync(() => ctx.discovery.overview());
-      if (!result.ok) return result.response;
-      return ok(result.value);
-    },
-  );
-
-  const describe = mcpTool(
-    'describe',
-    'Get JSON Schemas for one entity type, per view, on demand. Returns { type, version, views, schemas }. Omit view for all of the type\'s views; pass view to narrow to one. Schemas are custom (from the serializer) or auto-derived from schema reflection (flagged "_auto").',
-    {
-      type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
-      view: z
-        .string()
+      rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
+      path: z.string().optional().describe('Page path relative to the root'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
         .optional()
-        .describe('Narrow to one view; omit for all views of the type'),
+        .describe('1-based inclusive line window; only on roots without a section index'),
     },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const type = normalizeType(String(args.type));
-      if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
-      let view: ViewKind | undefined;
-      if (args.view !== undefined) {
-        if (!VIEW_KINDS.includes(String(args.view) as ViewKind)) {
-          return fail('INVALID_VIEW', `unknown view '${args.view}'`);
-        }
-        view = String(args.view) as ViewKind;
-      }
-      const result = wrapDb(() => ctx.discovery.describeTypes({ types: [type], view }));
-      if (!result.ok) return result.response;
-      const described = result.value.types[0];
-      if (!described) return fail('INVALID_TYPE', `entity type '${type}' is not active`);
-      return ok(described);
-    },
+    (discovery, args) =>
+      discovery.getPage({
+        rootId: optionalString(args.rootId),
+        path: optionalString(args.path),
+        range: args.range as { start: number; end: number } | undefined,
+      } as Parameters<DiscoveryCore['getPage']>[0]),
   );
 
-  const listTags = mcpTool(
-    'list_tags',
-    'List all tags in the project with per-type usage counts. Returns { tags: [{ slug, name, color, description, counts }] }.',
-    {},
-    async () => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      // Counts stay ON for this tool: its documented contract is per-type
-      // counts, and the opt-in default belongs to the new surface, not to a
-      // tool whose consumers already depend on the field being there.
-      // "List ALL tags" is this tool's contract, so it exhausts the pages
-      // rather than inheriting the core's default page size.
-      const result = wrapDb(() => listTagsAll(ctx.discovery, { withCounts: true }));
-      if (!result.ok) return result.response;
-      return ok({ tags: result.value, total: result.value.length });
-    },
-  );
+  // ── Search ────────────────────────────────────────────────────────────────
 
-  const listSlugs = mcpTool(
-    'list_slugs',
-    'List all entity slugs of a given type (fast autocomplete for agents). Returns { type, slugs }. The optional filterTag parameter restricts results to entities tagged with that tag slug.',
+  const searchPages = op(
+    'search_pages',
+    'Search the prose of the pages, by phrase (`query`) or by regex (`regex`) — the replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). Three modes: "hits" (default) returns matches, "pages" returns which pages match and how often, "count" returns only a total. A hit on a section-indexed root comes back as an `anchor`; on a plain root as (rootId, path, line).',
     {
-      type: z.enum(ENTITY_TYPE_VALUES).describe('Entity type'),
-      filterTag: z.string().optional().describe('Restrict to entities tagged with this tag slug'),
+      query: z.string().optional().describe('Phrase to look for'),
+      regex: z.string().optional().describe('Regular expression; first-class, not a fallback'),
+      rootId: z.string().optional().describe('Restrict to one root; omit to search all of them'),
+      mode: z.enum(['hits', 'pages', 'count']).optional().describe('Shape of the answer; default "hits"'),
+      ...pageShape,
     },
-    async (args) => {
-      const ctx = requireProject();
-      if (!ctx.ok) return ctx.response;
-      const type = normalizeType(String(args.type));
-      if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
-      const filterTag = args.filterTag ? String(args.filterTag) : undefined;
-      const lookup = wrapDb(() =>
-        listEntitiesAll(ctx.discovery, {
-          type,
-          ...(filterTag ? { tags: [filterTag], filter: 'and' as const } : {}),
-          view: 'inline_mention',
-        }),
-      );
-      if (!lookup.ok) return lookup.response;
-      return ok({ type, ...(filterTag ? { filterTag } : {}), slugs: lookup.value.map((i) => i.slug) });
+    (discovery, args) =>
+      discovery.searchPages({
+        query: optionalString(args.query),
+        regex: optionalString(args.regex),
+        rootId: optionalString(args.rootId),
+        mode: args.mode as 'hits' | 'pages' | 'count' | undefined,
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      }),
+  );
+
+  const searchEntities = op(
+    'search_entities',
+    'Text search within exactly ONE entity type — `type` is required, because a cross-type ranking federates badly and lets a single call return hundreds of rows; use resolve_identity to search identities across types. The scope is layered: your `fields` beats the type\'s own declaration, which beats the host default over every text path of the type\'s schema, so every active type is searchable. The response always carries `searchedFields`: without it an empty result is indistinguishable from a field that was never in scope.',
+    {
+      type: z.string().describe('Exactly one entity type'),
+      query: z.string().describe('Text to look for'),
+      fields: z
+        .array(z.string())
+        .optional()
+        .describe('Dotted paths to search, e.g. fields[].description; overrides the type and host scope'),
+      view: viewShape,
+      mode: z.enum(['hits', 'count']).optional().describe('Shape of the answer; default "hits"'),
+      ...pageShape,
     },
+    (discovery, args) =>
+      discovery.searchEntities({
+        type: normalizeType(args.type),
+        query: String(args.query),
+        fields: args.fields as string[] | undefined,
+        view: args.view as ViewKind | undefined,
+        mode: args.mode as 'hits' | 'count' | undefined,
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      }),
+  );
+
+  // ── Graph ─────────────────────────────────────────────────────────────────
+
+  const listEntities = op(
+    'list_entities',
+    'Complete, paginated traversal of one entity type, optionally narrowed to tags. This is what lets search be best-effort rather than load-bearing: an entity with no tags is still reachable by enumeration, so tags are an accelerator and not a closure. Resolves <tagged_list type="..." tags="a,b" filter="and"/>. `mode: "count"` answers "how many entities carry tag X" without walking them. An EMPTY tags array filters by nothing and so matches nothing; omit it for no tag filter.',
+    {
+      type: z.string().describe('Entity type'),
+      tags: z.array(z.string()).optional().describe('Tag slugs; omit for no filter'),
+      filter: z.enum(['and', 'or']).optional().describe('How to combine tags; default "and"'),
+      view: viewShape,
+      mode: z.enum(['items', 'count']).optional().describe('Shape of the answer; default "items"'),
+      ...pageShape,
+    },
+    (discovery, args) =>
+      discovery.listEntities({
+        type: normalizeType(args.type),
+        tags: args.tags as string[] | undefined,
+        filter: args.filter as 'and' | 'or' | undefined,
+        view: args.view as ViewKind | undefined,
+        mode: args.mode as 'items' | 'count' | undefined,
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      }),
+  );
+
+  const getEntities = op(
+    'get_entities',
+    'Fetch entities of one type by slug list — one slug is simply a list of one. Resolves <single_element type="..." slug="..."/>, <inline_mention .../> and <element_list type="..." slugs="a,b,c"/>; `view` picks which of those shapes comes back. Without `view`, one slug defaults to `single_element` and several default to `element_list_item`, matching the tags each resolves. `slugs` has a hard length limit (exceeding it is INVALID_ARGUMENT stating the limit), and the response has a size budget: a cut is reported as `truncated: true` with instructions for the remainder, never dropped in silence. A slug that does not exist comes back as entity: null rather than failing the batch. The response echoes the `view` it used.',
+    {
+      type: z.string().describe('Entity type'),
+      slugs: z.array(z.string()).describe('Slugs to fetch, in order'),
+      view: viewShape,
+    },
+    (discovery, args) =>
+      discovery.getEntities({
+        type: normalizeType(args.type),
+        slugs: (args.slugs as string[]).map(String),
+        view: args.view as ViewKind | undefined,
+      }),
+  );
+
+  const listTags = op(
+    'list_tags',
+    'List the project tags, paginated. `withCounts` is OFF by default because full counts are a cartesian product of tags by active types — turn it on when you need them, or use `minCount` to keep only tags used at least N times. `coOccurringWith` takes a tag slug and returns the tags sharing entities with it, with multiplicity: the only way to discover a taxonomy without already knowing it.',
+    {
+      withCounts: z.boolean().optional().describe('Include per-type usage counts; default false'),
+      minCount: z.number().int().nonnegative().optional().describe('Only tags used at least this many times'),
+      coOccurringWith: z.string().optional().describe('Tag slug — return the tags sharing entities with it'),
+      ...pageShape,
+    },
+    (discovery, args) =>
+      discovery.listTags({
+        withCounts: args.withCounts === true,
+        minCount: optionalNumber(args.minCount),
+        coOccurringWith: optionalString(args.coOccurringWith),
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      }),
+  );
+
+  const findReferences = op(
+    'find_references',
+    'Who points at this? Three targets: { target: "entity", type, slug } — which pages embed it, and with includeTagMatches also the <tagged_list/> pages whose tags intersect the entity\'s; { target: "section", anchor } — who cites this section; { target: "page", rootId, path } — who links this page, full key required. Calling without `target` returns INVALID_ARGUMENT listing the variants. A target with no references is a SUCCESS with an empty list and total: 0. Scope is document edges — entity-to-entity links specific to a type (ac.verifies, foreign keys) are entity data, and check_consistency rule 9 reports their integrity.',
+    {
+      target: z.enum(['entity', 'section', 'page']).optional().describe('Identity regime of the target; required'),
+      type: z.string().optional().describe('With target:"entity" — entity type'),
+      slug: z.string().optional().describe('With target:"entity" — entity slug'),
+      anchor: z.string().optional().describe('With target:"section" — section anchor'),
+      rootId: z.string().optional().describe('With target:"page" — which root'),
+      path: z.string().optional().describe('With target:"page" — page path relative to the root'),
+      includeTagMatches: z.boolean().optional().describe('Also report tag-driven (dynamic) references'),
+      ...pageShape,
+    },
+    (discovery, args) =>
+      discovery.findReferences({
+        target: args.target,
+        type: args.type === undefined ? undefined : normalizeType(args.type),
+        slug: optionalString(args.slug),
+        anchor: optionalString(args.anchor),
+        rootId: optionalString(args.rootId),
+        path: optionalString(args.path),
+        includeTagMatches: args.includeTagMatches === true,
+        limit: optionalNumber(args.limit),
+        offset: optionalNumber(args.offset),
+      } as Parameters<DiscoveryCore['findReferences']>[0]),
+  );
+
+  const checkConsistency = op(
+    'check_consistency',
+    'Run the consistency rules over every reference-validated root and every active type: broken embeds by category, unreferenced entities, invalid tag references, broken section refs, broken AC verifies, coverage rules. Filter with `severity` ("error" | "warning"), `rule` (number or name) or `limit` (a per-section cap) — `summary` always carries the FULL counts, so a filtered report still says what it hid. This is also the right home for disk-versus-index drift; that is not a mode of a page-listing tool.',
+    {
+      severity: z.enum(['error', 'warning']).optional().describe('Keep only rows of this severity'),
+      rule: z.union([z.string(), z.number()]).optional().describe('Rule number or name'),
+      limit: z.number().int().positive().optional().describe('Per-section cap; summary still counts everything'),
+    },
+    (discovery, args) =>
+      discovery.checkConsistency({
+        severity: args.severity as 'error' | 'warning' | undefined,
+        rule: args.rule as string | number | undefined,
+        limit: optionalNumber(args.limit),
+      }),
+  );
+
+  const resolveIdentity = op(
+    'resolve_identity',
+    'The one cross-type operation: given a fragment of a name or a slug, which entities could you have meant? It matches IDENTITY fields (slug, name, label) across types and returns ranked candidates — a façade over the per-type indexes rather than a cross-type full-text index, so it will not find a phrase buried in a description. This is the compensation for search_entities requiring a single type; once you know the type and slug, go to get_entities.',
+    {
+      query: z.string().describe('Name or slug fragment'),
+      types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
+      limit: z.number().int().positive().optional().describe('Max candidates'),
+    },
+    (discovery, args) =>
+      discovery.resolveIdentity({
+        query: String(args.query),
+        types: (args.types as string[] | undefined)?.map(normalizeType),
+        limit: optionalNumber(args.limit),
+      }),
   );
 
   return createMcpServer({
     name: 'c4s-reader',
     version: deps.packageVersion,
     tools: [
-      getEntity,
-      getEntities,
-      findByTag,
+      overview,
+      describeTypes,
+      listPages,
+      listSections,
       getSection,
-      resolvePage,
-      catalog,
-      describe,
+      getPage,
+      searchPages,
+      searchEntities,
+      listEntities,
+      getEntities,
       listTags,
-      listSlugs,
+      findReferences,
+      checkConsistency,
+      resolveIdentity,
     ],
   });
-}
-
-/**
- * The tool-result envelope: the payload plus the serializer's own outcome.
- *
- * M39 — the outcome now travels FROM the core rather than being read off a
- * `SerializeResult` this file produced. A consumer that cannot tell a real
- * record from a fallback will present a degraded one as the truth.
- */
-function envelope(data: unknown, meta: SerializedMeta): Record<string, unknown> {
-  return {
-    data,
-    ...(meta.fallback ? { fallback: true } : {}),
-    ...(meta.error ? { error: meta.error } : {}),
-    ...(meta.brokenRefs && typeof data === 'object' && data !== null
-      ? { brokenRefs: meta.brokenRefs }
-      : {}),
-  };
 }

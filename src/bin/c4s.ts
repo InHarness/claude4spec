@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
 import { parseArgs } from './c4s/args.js';
-import { CliError } from './c4s/errors.js';
+import { CliError, cliErrorFromDiscovery } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
 import type { CliCommandContribution } from './c4s/registry.js';
 import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
@@ -163,6 +163,13 @@ main().catch((err) => {
     writeError(err);
     process.exit(codeToExit(err.code));
   }
+  // A core error reaches the user as itself, with its own code and its repair
+  // path — see `cliErrorFromDiscovery`.
+  const mapped = cliErrorFromDiscovery(err);
+  if (mapped) {
+    writeError(mapped);
+    process.exit(codeToExit(mapped.code));
+  }
   const message = err instanceof Error ? err.message : String(err);
   writeError(new CliError('UNKNOWN_COMMAND', message));
   process.exit(1);
@@ -177,8 +184,15 @@ function codeToExit(code: string): number {
     case 'INVALID_TYPE':
     case 'INVALID_VIEW':
     case 'INVALID_ARGS':
+    // M39 — the core's refusal shares the "you asked for something the contract
+    // does not allow" exit, since a caller scripting c4s branches on the class
+    // of failure and these are the same class.
+    case 'INVALID_ARGUMENT':
       return 4;
     case 'FILE_NOT_FOUND':
+    // M39 — a page named by (rootId, path) that does not exist is the same
+    // outcome for a script as a file that does not exist.
+    case 'PAGE_NOT_FOUND':
       return 5;
     case 'SCHEMA_OUT_OF_DATE':
       return 6;

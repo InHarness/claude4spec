@@ -98,10 +98,13 @@ const referenceRenderers: Record<string, ToolRenderer> = {
   update_tag: { summary: (i) => `Update tag: ${cx(i).input.slug ?? '?'}` },
   delete_tag: { summary: (i) => `Delete tag: ${cx(i).input.slug ?? '?'}` },
   list_tags: {
+    // 0.2.3 — the tool answers the core's page shape (`{ items, total,
+    // hasMore }`); `total` is the whole taxonomy, `items` only this page.
     summary(_i, r) {
       const { result } = cx2(_i, r);
-      const tags = Array.isArray(result?.tags) ? (result!.tags as unknown[]).length : undefined;
-      return typeof tags === 'number' ? `List tags (${tags})` : 'List tags';
+      const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : null;
+      const total = typeof result?.total === 'number' ? (result!.total as number) : items?.length;
+      return typeof total === 'number' ? `List tags (${total})` : 'List tags';
     },
   },
   tag_entity: {
@@ -349,33 +352,49 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
       return <EntityRows type={type} items={items} />;
     },
   },
+  /**
+   * 0.2.3 — `search_entities` searches exactly ONE type and answers flat
+   * (`{ type, items, total, hasMore, searchedFields }`). It used to answer
+   * `{ results: [{ type, items, total }] }` for one type or all of them; reading
+   * the old key against the new payload renders "Found 0 matches" next to an
+   * agent reply listing a dozen hits, which reads as a broken search rather than
+   * a stale renderer.
+   */
   search_entities: {
     summary(i, r) {
       const { query } = cx(i).input;
       const { result } = cx2(i, r);
-      const groups = Array.isArray(result?.results) ? (result!.results as Array<{ total: number }>) : [];
-      const total = groups.reduce((n, g) => n + (g.total ?? 0), 0);
+      const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : [];
+      const total = typeof result?.total === 'number' ? (result!.total as number) : items.length;
       return `Found ${total} matches for "${String(query ?? '')}"`;
     },
     renderResult(r) {
       const { result } = cx2({}, r);
-      const groups = Array.isArray(result?.results)
-        ? (result!.results as Array<{ type: string; items: unknown[]; total: number }>)
-        : [];
-      if (groups.length === 0) return <span style={{ color: 'var(--c-subtle)' }}>(no matches)</span>;
+      const items = Array.isArray(result?.items) ? (result!.items as unknown[]) : [];
+      const type = typeof result?.type === 'string' ? (result!.type as string) : '';
+      // The scope, when the search covered nothing: an empty result is
+      // otherwise indistinguishable from a field that was never searched, which
+      // is the whole reason the response carries `searchedFields`.
+      const searched = Array.isArray(result?.searchedFields) ? (result!.searchedFields as string[]) : [];
+      if (items.length === 0) {
+        return (
+          <span style={{ color: 'var(--c-subtle)' }}>
+            (no matches{searched.length > 0 ? ` — searched ${searched.join(', ')}` : ''})
+          </span>
+        );
+      }
+      const total = typeof result?.total === 'number' ? (result!.total as number) : items.length;
       return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {groups.map((g, i) => (
-            <div key={i}>
-              <div
-                className="font-mono uppercase"
-                style={{ fontSize: 10, color: 'var(--c-subtle)', letterSpacing: '0.04em', marginBottom: 4 }}
-              >
-                {entityLabel(g.type)} ({g.total})
-              </div>
-              <EntityRows type={g.type} items={g.items} />
+          <div>
+            <div
+              className="font-mono uppercase"
+              style={{ fontSize: 10, color: 'var(--c-subtle)', letterSpacing: '0.04em', marginBottom: 4 }}
+            >
+              {entityLabel(type)} ({total})
             </div>
-          ))}
+            <EntityRows type={type} items={items} />
+          </div>
         </div>
       );
     },

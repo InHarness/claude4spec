@@ -1,3 +1,5 @@
+import { isDiscoveryError } from '../../server/discovery/index.js';
+
 export type CliErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'ENTITY_NOT_FOUND'
@@ -53,11 +55,40 @@ export type CliErrorCode =
   // without it a read-only target or ENOSPC escapes untyped and the bin reports
   // it as UNKNOWN_COMMAND/exit 1. Rolls back like the two above it.
   | 'SCAFFOLD_WRITE_FAILED'
-  | 'INSTALL_FAILED';
+  | 'INSTALL_FAILED'
+  // 0.2.3 M39 — MAPPED FROM THE DISCOVERY CORE, not raised by the CLI itself.
+  // The other core codes (ENTITY_NOT_FOUND, SECTION_NOT_FOUND, INVALID_TYPE,
+  // INVALID_VIEW, AMBIGUOUS_*, INDEX_NOT_MATERIALIZED) were already in this
+  // union under their own names; these two are new here because no CLI command
+  // used to be able to address a page or to refuse an argument the way the core
+  // does. `INVALID_ARGUMENT` is deliberately NOT folded into the CLI's own
+  // `INVALID_ARGS`: one means "you typed the flags wrong", the other carries a
+  // correction from the core, and collapsing them would lose the hint.
+  | 'PAGE_NOT_FOUND'
+  | 'INVALID_ARGUMENT'
+  | 'AMBIGUOUS_ENTITY'
+  | 'AMBIGUOUS_PAGE';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {
     super(message);
     this.name = 'CliError';
   }
+}
+
+/**
+ * 0.2.3 M39 — a discovery-core error, as a CLI error.
+ *
+ * Every command converts its own failures today, so this is a NET rather than
+ * the usual path: it catches a core error that no command anticipated. Without
+ * it such an error lands in the bin's generic branch and is reported as
+ * `UNKNOWN_COMMAND` with its `hint` discarded — the code replaced by a wrong one
+ * and the repair path, which is the half the caller needed, gone. Returns null
+ * for anything that is not a core error so the caller keeps its own fallback.
+ */
+export function cliErrorFromDiscovery(err: unknown): CliError | null {
+  if (!isDiscoveryError(err)) return null;
+  // The code is the core's, not a translation of it: both unions spell these the
+  // same way precisely so a caller scripting `c4s` sees one vocabulary.
+  return new CliError(err.code as CliErrorCode, err.message, err.hint);
 }

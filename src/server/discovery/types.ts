@@ -122,7 +122,15 @@ export interface SectionListItem {
   size: number;
 }
 
-export type ListSectionsResult = Page<SectionListItem>;
+/**
+ * `is_known` is present only for the `by: "anchor"` variant, and it is part of
+ * the contract rather than a convenience: an empty list from an anchor lookup
+ * means "this well-formed anchor is not in the index", which is a different fact
+ * from "this page has no sections", and a caller cannot tell them apart from
+ * `total: 0` alone. It lives here rather than in each transport because a
+ * transport that had to derive it would be defining behaviour.
+ */
+export type ListSectionsResult = Page<SectionListItem> & { is_known?: boolean };
 
 export interface GetSectionInput {
   anchor: string;
