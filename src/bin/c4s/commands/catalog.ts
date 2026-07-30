@@ -1,16 +1,19 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { ParsedArgs } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import type { CliCommandContribution } from '../registry.js';
 
+/**
+ * M39: `c4s catalog` is the CLI's name for the core's `overview` operation.
+ * The command no longer assembles a catalogue itself — it resolves the project,
+ * calls one operation and prints it. The payload gains the project's page roots
+ * with their properties and a tag count; it still carries no schemas, so it
+ * stays the cheap smoke test it was (`c4s describe` remains the way to schemas).
+ */
 export async function runCatalog(args: ParsedArgs): Promise<void> {
   const ctx = await createContext(args);
   try {
-    const catalog = ctx.registry.catalog(ctx.reader);
-    writeOutput({ ...catalog, claude4spec: readPackageVersion() }, args);
+    writeOutput(await ctx.discovery.overview(), args);
   } finally {
     ctx.close();
   }
@@ -22,24 +25,3 @@ export const catalogCommand: CliCommandContribution = {
   errorCodes: [],
   handler: runCatalog,
 };
-
-function readPackageVersion(): string {
-  try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    // dist/bin/c4s/commands → packageRoot, or src/bin/c4s/commands → packageRoot
-    const roots = [
-      path.resolve(here, '..', '..', '..', '..'),
-      path.resolve(here, '..', '..', '..'),
-    ];
-    for (const root of roots) {
-      const pkgPath = path.join(root, 'package.json');
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { version?: string };
-        if (pkg.version) return pkg.version;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return 'unknown';
-}

@@ -20,7 +20,7 @@ import {
   type RawEntityReader,
   type RawEntityType,
   isRawEntityType,
-} from '../domain/raw-entity-reader.js';
+} from '../discovery/raw-entity-reader.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { canonicalize } from '../serialization/snapshot.js';
 import { DomainError } from './tags.js';

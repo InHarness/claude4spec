@@ -39,6 +39,25 @@ export class PagesService {
     };
   }
 
+  /**
+   * The file exactly as authored — frontmatter included, XML tags untouched.
+   *
+   * M39 `get_page` returns a page as-authored because a tag IS an edge: expanding
+   * it pastes a payload in and destroys the edge the agent was going to follow.
+   * `read()` cannot serve that: it splits frontmatter off through gray-matter,
+   * which is right for the editor and wrong for a verbatim read. Both go through
+   * the same `resolveSafe`, so the path guarantees are shared rather than copied.
+   */
+  async readRaw(relPath: string): Promise<string> {
+    return await fs.readFile(this.resolveSafe(relPath), 'utf-8');
+  }
+
+  /** Size + mtime without reading the file — `list_pages` measures before fetching. */
+  async stat(relPath: string): Promise<{ size: number; mtimeMs: number }> {
+    const st = await fs.stat(this.resolveSafe(relPath));
+    return { size: st.size, mtimeMs: st.mtimeMs };
+  }
+
   async write(relPath: string, input: PageWriteInput): Promise<PageContent> {
     const abs = this.resolveSafe(relPath);
     await fs.mkdir(path.dirname(abs), { recursive: true });

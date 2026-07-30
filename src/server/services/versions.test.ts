@@ -4,7 +4,7 @@ import { runMigrations } from '../db/migrate.js';
 import { VersionService } from './versions.js';
 import { DomainError } from './tags.js';
 import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
-import { RawEntityReader } from '../domain/raw-entity-reader.js';
+import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { fixtureModule } from '../../../tests/helpers/fixture-module.js';
 import type { MountContext, PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore } from './entity-store.js';

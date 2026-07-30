@@ -4,9 +4,20 @@ import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { withMeta } from './_meta.js';
-import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
+import { listEntitiesAll } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
+/**
+ * The mixed tag traversal is a COMPOSITION on the transport side, not a core
+ * operation: the core answers per type (`list_entities`), and grouping those
+ * answers under plural keys is presentation.
+ *
+ * M39 also drops the hardcoded seven-bucket map this command carried. All seven
+ * core buckets were the type name plus an `s`, and the literal map meant a
+ * plugin-contributed type indexed into `undefined` and crashed the command. The
+ * output for the core types is unchanged; a plugin type now gets its own bucket
+ * instead of taking the command down.
+ */
 export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   const tags = requireStringList(args, 'tags');
   const filterRaw = optionalString(args, 'filter') ?? 'or';
@@ -15,7 +26,9 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   }
   const ctx = await createContext(args);
   try {
-    const entities = ctx.reader.findByTag({ tags, filter: filterRaw });
+    // The seven original buckets are seeded first: a shell pipeline reading
+    // `.endpoints` must keep getting `[]` for a deactivated type rather than
+    // `null`.
     const grouped: Record<string, unknown[]> = {
       endpoints: [],
       dtos: [],
@@ -25,25 +38,13 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
       'design-systems': [],
       diagrams: [],
     };
-    const bucket: Record<RawEntityType, keyof typeof grouped> = {
-      endpoint: 'endpoints',
-      dto: 'dtos',
-      'database-table': 'database-tables',
-      'ui-view': 'ui-views',
-      ac: 'acs',
-      'design-system': 'design-systems',
-      diagram: 'diagrams',
-    };
-    for (const entity of entities) {
-      const result = ctx.registry.serializeEntity(
-        entity.type,
-        'tagged_list_item',
-        entity,
-        ctx.reader
-      );
-      // findByTag only ever returns core RawEntityTypes (out of scope of the
-      // M17 generic-capture widening) — safe to narrow back here.
-      grouped[bucket[entity.type as RawEntityType]]!.push(withMeta(result));
+    for (const type of ctx.reader.listTypes()) {
+      grouped[`${type}s`] = listEntitiesAll(ctx.discovery, {
+        type,
+        tags,
+        filter: filterRaw,
+        view: 'tagged_list_item',
+      }).map(withMeta);
     }
     writeOutput({ ...grouped, query: { tags, filter: filterRaw } }, args);
   } finally {

@@ -113,6 +113,12 @@ export interface EntityCrudService<T = unknown> {
     limit: number;
     offset: number;
   }): { items: T[]; total: number };
+  /**
+   * Optional — an escape hatch for a type with a non-standard ranking. M39: its
+   * absence does NOT exclude the type from search. The host searches the text
+   * paths of `createSchema` by default; declare `backend.crud.searchableFields`
+   * to narrow or re-weight that.
+   */
   search?(query: string, opts: { limit: number; offset: number }): { items: T[]; total: number };
 }
 

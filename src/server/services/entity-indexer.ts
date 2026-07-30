@@ -28,7 +28,7 @@ import type { EntitiesWatcher } from '../fs/entities-watcher.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { TagsService } from './tags.js';
-import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { RestoreContext } from '../serialization/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import { HostEntityWriter } from './entity-writer.js';

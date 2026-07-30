@@ -6,7 +6,7 @@ import {
   RawEntityReader,
   isRawEntityType,
   type RawEntityType,
-} from '../../domain/raw-entity-reader.js';
+} from '../../discovery/raw-entity-reader.js';
 
 export interface AcAnalysisOptions {
   /** Limit to ACs carrying this tag slug. Omit for no tag filter. */

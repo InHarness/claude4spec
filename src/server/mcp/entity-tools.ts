@@ -23,15 +23,24 @@ import type { EntityType } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
+import { getEntitiesAll, hasDeclaredSearchFields, type DiscoveryCore } from '../discovery/index.js';
+import { resolveSearchFields } from '../discovery/search/fields.js';
 
 export interface EntityToolsDeps {
   host: ProjectPluginHost;
   registry: SerializationEngine;
   reader: RawEntityReader;
+  /**
+   * M39: reads go through the discovery core. This server keeps the WRITE path
+   * — create/update/delete are the substance of M13 and stay here — while its
+   * read tools become adapters, so the chat agent sees exactly the semantics
+   * the CLI and the external MCP server see.
+   */
+  discovery: DiscoveryCore;
   db: Database.Database;
   ws: WsEmitter;
   referencesService: ReferencesService;
@@ -166,13 +175,11 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       if (!resolved.ok) return resolved.response;
       const slugs = (args.slugs as string[]).map(String);
 
-      const results = slugs.map((slug) => {
-        const raw = deps.reader.getEntity(type as RawEntityType, slug);
-        if (!raw) return { slug, entity: null };
-        const serialized = deps.registry.serializeEntity(type, 'detail', raw, deps.reader);
-        return { slug, entity: serialized.data };
-      });
-      return ok({ type, results });
+      // M39: the read goes through the discovery core, which owns the slug-list
+      // limit and the response budget. A missing slug still comes back as
+      // `{ slug, entity: null }` rather than an error — absence is an answer.
+      const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'detail' });
+      return ok({ type, results: results.map((r) => ({ slug: r.slug, entity: r.entity })) });
     },
   );
 
@@ -256,11 +263,20 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
-  /** Batch slug list → serialized L9 element_list_item views, via the same reader.getEntities used by c4s-reader/get_entities (no ad-hoc missing-slug handling duplicated here). */
+  /**
+   * Batch slug list → L9 `element_list_item` views.
+   *
+   * M39: the projection is the discovery core's, not this server's. The service
+   * still decides WHICH slugs (its own filters, its own ranking); the core
+   * decides what a serialized record looks like.
+   */
   const serializeSlugs = (type: string, slugs: string[]) =>
-    deps.reader
-      .getEntities(type as RawEntityType, slugs)
-      .items.map((raw) => deps.registry.serializeEntity(type, 'element_list_item', raw, deps.reader).data);
+    // getEntitiesAll: the service decided how many slugs this page has (the
+    // caller's own `limit`), so refusing to serialize them past 50 would turn a
+    // documented `list_entities({ limit: 100 })` into a thrown error.
+    getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' })
+      .filter((r) => r.entity !== null)
+      .map((r) => r.entity);
 
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
@@ -295,7 +311,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search across one or all active entity types that support search (see describe_entity_type.searchSupported). Omit `type` to search every searchable active type, grouped by type in the response. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total }] }.',
+    'Plain text search across one or all active entity types. EVERY active type is searchable — omit `type` to search all of them, grouped by type in the response. A type is searched over the paths in describe_entity_type.searchableFields (its own declaration if it has one, otherwise every text path of its schema); `searchSupported` reports only whether the type NARROWED that default, and never means a type is excluded. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total, searchedFields? }] }.',
     {
       type: z.string().optional(),
       query: z.string(),
@@ -313,7 +329,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         ? [String(args.type)]
         : deps.host.listEntities().map((m) => m.type);
 
-      const results: Array<{ type: string; items: unknown[]; total: number }> = [];
+      const results: Array<{ type: string; items: unknown[]; total: number; searchedFields?: string[] }> = [];
       for (const type of types) {
         const resolved = resolveType(type);
         if (!resolved.ok) {
@@ -321,10 +337,25 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           continue; // omitted type: skip types that aren't CRUD-active
         }
         const { service } = resolved;
-        if (typeof service.search !== 'function') continue; // searchSupported: false — silently skipped, per brief
-        const page = service.search(query, { limit, offset, filters });
-        const slugs = page.items.map((item) => (item as { slug: string }).slug);
-        results.push({ type, items: serializeSlugs(type, slugs), total: page.total });
+        // M39: a type WITHOUT its own `search` is no longer skipped. That
+        // exclusion meant search covered one of eight types while claiming to
+        // cover the specification. The optional service method stays as an
+        // escape hatch for a non-standard ranking; when it is absent the core's
+        // default over the type's schema text paths answers instead.
+        if (typeof service.search === 'function') {
+          const page = service.search(query, { limit, offset, filters });
+          const slugs = page.items.map((item) => (item as { slug: string }).slug);
+          results.push({ type, items: serializeSlugs(type, slugs), total: page.total });
+          continue;
+        }
+        const page = deps.discovery.searchEntities({ type, query, limit, offset });
+        if (page.mode !== 'hits') continue;
+        results.push({
+          type,
+          items: page.items.map((item) => item.data),
+          total: page.total,
+          searchedFields: page.searchedFields,
+        });
       }
       return ok({ results });
     },
@@ -333,7 +364,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
-    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD/search is supported, L9 views, and the custom server\'s tool line (if any). Omit `type` for all active types.',
+    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchSupported` means "this type declared its own searchableFields", NOT "this type can be searched" — every active type can. Omit `type` for all active types.',
     {
       type: z.string().optional(),
     },
@@ -349,15 +380,21 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         // type never aborts the whole describe-all batch.
         try {
           const crudSupported = module.backend?.crud != null;
-          const service = deps.host.getEntityService(module.type) as EntityCrudService | null;
-          const searchSupported = typeof service?.search === 'function';
           const views = deps.registry.describe(module.type, undefined, deps.db);
           return {
             type: module.type,
             label: module.label,
             createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
             updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
-            searchSupported,
+            /**
+             * M39 — this no longer means "the service has a `search` method".
+             * It means the type NARROWED the host's default scope with its own
+             * `searchableFields` declaration. It never means "not searchable":
+             * every active type is searchable, and `searchableFields` below says
+             * over what.
+             */
+            searchSupported: hasDeclaredSearchFields(module),
+            searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
             crudSupported,
             views: views?.views ?? [],
             customToolsLine: module.systemPrompt.mcpToolsLine,

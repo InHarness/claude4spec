@@ -9,7 +9,7 @@ import type { PagesService } from './pages.js';
 import type { PagesWatcher } from '../fs/watcher.js';
 import type { EntityStore } from './entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import { isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
+import { isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import type { PagesSource, ReferencePage } from '../../core/references/index.js';
 
@@ -24,7 +24,10 @@ export function pagesServiceSource(pages: PagesService): PagesSource {
       const out: ReferencePage[] = [];
       for (const rel of files) {
         const page = await pages.read(rel);
-        out.push({ path: rel, body: page.body });
+        // M39: `rootId` is required on a reference page — the service knows
+        // which root it serves, and dropping it here made every hit from a user
+        // root claim to come from the built-in one.
+        out.push({ rootId: pages.rootId, path: rel, body: page.body });
       }
       return out;
     },

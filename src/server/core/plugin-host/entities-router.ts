@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
-import { isRawEntityType, type RawEntityReader } from '../../domain/raw-entity-reader.js';
+import { isRawEntityType, type RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { EntityCountsResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';

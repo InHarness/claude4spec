@@ -7,7 +7,7 @@ import type { PagesService } from '../services/pages.js';
 import type { SectionsService } from '../services/sections.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { DomainError } from '../services/tags.js';
-import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
+import { RawEntityReader, isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import { pagesServiceSource } from '../services/references.js';
@@ -16,6 +16,7 @@ import type { Ac, AcBrokenVerify, AcListQuery, AcVerifyRef, EntityType } from '.
 import { readConfig, type ConsistencySeverity } from '../config.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import type { DiscoveryCore } from '../discovery/index.js';
 
 /**
  * 0.2.2 — the two AC-specific methods consistency rules 9/10/11 need, named
@@ -40,6 +41,12 @@ export interface ReferenceToolsDeps {
   tagsService: TagsService;
   referencesService: ReferencesService;
   pagesService: PagesService;
+  /**
+   * M39: the read tools on this server (`list_sections`, `find_references`,
+   * `check_consistency`) are adapters over the discovery core. Tag CRUD stays
+   * the substance of this module; reading does not.
+   */
+  discovery: DiscoveryCore;
   sectionsService: SectionsService;
   ws: WsEmitter;
   db: Database;
@@ -277,324 +284,45 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const checkConsistency = mcpTool(
     'check_consistency',
-    'Run a full consistency check across pages, entities, and tags. Reports broken references in 3 categories (broken-reference / inactive-plugin / unknown-type) — including for extension tags with no `type` attr whose registered type carries an `entityType`, e.g. <diagram/> (rule 12) — plus orphaned entity_tag rows, unreferenced entities, broken extension references (rule 8 — e.g. <section_ref/> with unknown anchor), broken AC verifies (rule 9 — always on when AC plugin active), entity-without-AC-coverage (rule 10 — config-flagged via config.consistency.requireAcCoverage), module-without-AC (rule 11 — config-flagged via config.consistency.requireModuleAc).',
-    {},
-    async () => {
+    'Run a full consistency check across pages, entities, and tags. Reports broken references in 3 categories (broken-reference / inactive-plugin / unknown-type) — including for extension tags with no `type` attr whose registered type carries an `entityType`, e.g. <diagram/> (rule 12) — plus unreferenced entities, invalid tag references, broken extension references (rule 8 — e.g. <section_ref/> with unknown anchor), broken AC verifies (rule 9), entity-without-AC-coverage (rule 10 — config-flagged via config.consistency.requireAcCoverage), module-without-AC (rule 11 — config-flagged via config.consistency.requireModuleAc). Optional filters: `severity` ("error" | "warning"), `rule` (number or name), `limit` (per-section cap; `summary` always carries full counts so a cut stays visible).',
+    {
+      severity: z.enum(['error', 'warning']).optional(),
+      rule: z.union([z.string(), z.number()]).optional(),
+      limit: z.number().int().positive().optional(),
+    },
+    async (args) => {
       try {
-        // Build slug sets generically — iterate the host's available plugins and
-        // pull rows from SQLite via the shared RawEntityReader. Active vs.
-        // inactive distinction comes from `pluginHost.getEntity(type)`.
-        // Listed types stay in scope for unreferenced-entity reporting below.
-        const reader = new RawEntityReader(deps.db);
-
-        const slugSetsByType: Record<string, Set<string>> = {};
-        const referencedByType: Record<string, Set<string>> = {};
-        const entitiesByType: Record<string, Array<{ slug: string }>> = {};
-        // Per-entity tag sets, used by rule 3 to mark tag-driven references
-        // (<tagged_list>/<tagged_list_mixed>) via the shared taggedListVia predicate.
-        const entityTagsByType: Record<string, Map<string, Set<string>>> = {};
-        for (const m of pluginHost.listEntities()) {
-          if (!isRawEntityType(m.type)) continue;
-          const slugs = reader.listSlugs(m.type as RawEntityType);
-          entitiesByType[m.type] = slugs.map((s) => ({ slug: s }));
-          slugSetsByType[m.type] = new Set(slugs);
-          referencedByType[m.type] = new Set<string>();
-          const tagMap = new Map<string, Set<string>>();
-          for (const s of slugs) {
-            tagMap.set(s, new Set(deps.tagsService.getEntityTagSlugs(m.type, s)));
-          }
-          entityTagsByType[m.type] = tagMap;
-        }
-        const tagSlugs = new Set(deps.tagsService.list().map((t) => t.slug));
-
-        const brokenReferences: BrokenReferenceRow[] = [];
-        const invalidTagReferences: Array<{ pagePath: string; tagType: string; tag: string; line: number }> = [];
-        const brokenExtensionReferences: Array<{
-          pagePath: string;
-          tagType: string;
-          attrs: Record<string, string>;
-          line: number;
-          category: string;
-        }> = [];
-
-        // M30: only .md pages carry references; .html previews are excluded
-        // here (read() rejects non-.md paths via resolveSafe).
-        const pagePaths = await deps.pagesService.listMarkdownFiles();
-
-        // 0.1.96: section-based checks (rule 8 <section_ref/> anchor validation)
-        // only apply to SECTION-INDEXED roots. Gated on the root PROPERTY, never
-        // on `rootId === 'pages'`. This context scans a single page root
-        // (deps.pagesService); look up its `sectionIndexed` flag from config.
-        const scanRootId = deps.pagesService.rootId;
-        const scanRoot = readConfig(deps.cwd).roots.find((r) => r.id === scanRootId);
-        const sectionIndexed = scanRoot?.sectionIndexed ?? false;
-
-        const categorise = (type: string): BrokenReferenceRow['category'] | 'active' => {
-          if (pluginHost.getEntity(type)) return 'active';
-          if (pluginHost.getAvailable(type)) return 'inactive-plugin';
-          return 'unknown-type';
-        };
-
-        for (const p of pagePaths) {
-          const page = await deps.pagesService.read(p);
-          for (const tag of parseXmlTagsExcludingCode(page.body)) {
-            // Rule 12 — an extension tag with no `type` attr (e.g. <diagram/>, the
-            // tag name IS the type) still gets existence checking for free when its
-            // registered ExtensionReferenceType carries an `entityType`: fall back to
-            // it here so such tags flow through the SAME categorise/slugSetsByType/
-            // referencedByType machinery the 5 core types already use below, instead
-            // of a separate bandaid branch. Extensions without an entityType (e.g.
-            // <section_ref/>, resolved by anchor) are unaffected and fall through to
-            // the dedicated rule 8 handling further down.
-            const extType = tag.source === 'extension' ? getExtensionReferenceType(tag.kind) : undefined;
-            const tagType = tag.attrs.type ?? extType?.entityType;
-            if (tag.kind !== 'tagged_list_mixed' && tagType) {
-              const cat = categorise(tagType);
-              const slugs =
-                tag.kind === 'element_list'
-                  ? (tag.attrs.slugs ?? '').split(',').map((s) => s.trim()).filter(Boolean)
-                  : tag.attrs.slug
-                  ? [tag.attrs.slug]
-                  : [];
-              if (cat !== 'active') {
-                // Whole tag is broken because the type itself is not addressable.
-                for (const s of slugs) {
-                  brokenReferences.push({
-                    pagePath: p,
-                    tagType: tag.kind,
-                    type: tagType,
-                    slug: s,
-                    line: tag.line,
-                    category: cat,
-                  });
-                }
-                continue;
-              }
-              const set = slugSetsByType[tagType];
-              const referenced = referencedByType[tagType];
-              if (!set) continue; // Active plugin but not raw-readable (shouldn't happen).
-              for (const s of slugs) {
-                if (set.has(s)) {
-                  referenced?.add(s);
-                } else {
-                  brokenReferences.push({
-                    pagePath: p,
-                    tagType: tag.kind,
-                    type: tagType,
-                    slug: s,
-                    line: tag.line,
-                    category: 'broken-reference',
-                  });
-                }
-              }
-            }
-            if (tag.kind === 'tagged_list' || tag.kind === 'tagged_list_mixed') {
-              for (const t of (tag.attrs.tags ?? '').split(',').map((x) => x.trim()).filter(Boolean)) {
-                if (!tagSlugs.has(t)) invalidTagReferences.push({ pagePath: p, tagType: tag.kind, tag: t, line: tag.line });
-              }
-              // Rule 3 — tag-driven references: mark every entity whose tag set intersects
-              // this tagged_list/tagged_list_mixed, via the shared taggedListVia predicate.
-              const candidateTypes =
-                tag.kind === 'tagged_list'
-                  ? (tag.attrs.type ? [tag.attrs.type] : [])
-                  : Object.keys(entityTagsByType);
-              for (const t of candidateTypes) {
-                const tagMap = entityTagsByType[t];
-                const referenced = referencedByType[t];
-                if (!tagMap || !referenced) continue;
-                for (const [slug, etags] of tagMap) {
-                  if (taggedListVia(tag, t, etags).length > 0) referenced.add(slug);
-                }
-              }
-            }
-            // Rule 8 — broken extension reference (e.g. <section_ref/> with unknown anchor).
-            // M31: section_ref anchors validate against THIS context's
-            // SectionsService (the process-global registry can no longer hold a
-            // per-project validate closure — it would leak across workspace
-            // projects). Other extensions keep the registered `validate` slot.
-            if (tag.source === 'extension') {
-              if (tag.kind === 'section_ref') {
-                // Section rules are scoped to section-indexed roots; a non-indexed
-                // root has no anchor space to validate against. anchor lookup stays
-                // global (anchors are unique across roots) — no rootId to thread.
-                if (!sectionIndexed) continue;
-                const anchor = tag.attrs.anchor ?? '';
-                if (!anchor || !deps.sectionsService.has(anchor)) {
-                  brokenExtensionReferences.push({
-                    pagePath: p,
-                    tagType: tag.kind,
-                    attrs: tag.attrs,
-                    line: tag.line,
-                    category: 'unknown-anchor',
-                  });
-                }
-              } else if (!extType?.entityType) {
-                // entityType-bearing extensions (e.g. diagram) are already covered
-                // by the widened rule-12 main-loop branch above — don't double-check.
-                if (extType?.validate) {
-                  const result = extType.validate(tag.attrs);
-                  if (!result.ok) {
-                    brokenExtensionReferences.push({
-                      pagePath: p,
-                      tagType: tag.kind,
-                      attrs: tag.attrs,
-                      line: tag.line,
-                      category: result.category,
-                    });
-                  }
-                }
-              }
-            }
-          }
-        }
-
-        const unreferencedEntities: Array<{ type: string; slug: string }> = [];
-        for (const [type, list] of Object.entries(entitiesByType)) {
-          const referenced = referencedByType[type];
-          if (!referenced) continue;
-          for (const e of list) if (!referenced.has(e.slug)) unreferencedEntities.push({ type, slug: e.slug });
-        }
-
-        // Rules 9/10/11 — AC-specific. Silent skip when AC plugin is not active
-        // (host.getEntity('ac') === null) so projects without AC don't crash.
-        const brokenAcVerifies: Array<{
-          acSlug: string;
-          verifyType: string;
-          verifySlug: string;
-          category: 'missing' | 'inactive' | 'unknown';
-        }> = [];
-        const entitiesWithoutAcCoverage: Array<{
-          type: string;
-          slug: string;
-          severity: ConsistencySeverity;
-        }> = [];
-        const modulesWithoutAc: Array<{ module: string; severity: ConsistencySeverity }> = [];
-
-        const acActive = pluginHost.getEntity('ac');
-        if (acActive) {
-          const acService = pluginHost.getEntityService('ac') as AcConsistencyService | null;
-          const config = readConfig(deps.cwd);
-          const requireAcCoverage = config.consistency?.requireAcCoverage ?? 'off';
-          const requireModuleAc = config.consistency?.requireModuleAc ?? 'off';
-
-          if (acService) {
-            const activeAcs = acService.listRaw({ status: 'active' });
-
-            // Rule 9 — broken AC verifies. AcService.classifyVerifies already
-            // categorises into missing|inactive|unknown via the plugin host.
-            for (const ac of activeAcs) {
-              const broken = acService.classifyVerifies(ac.verifies);
-              for (const b of broken) {
-                brokenAcVerifies.push({
-                  acSlug: ac.slug,
-                  verifyType: b.type,
-                  verifySlug: b.slug,
-                  category: b.reason,
-                });
-              }
-            }
-
-            // Rule 10 — entity-without-AC-coverage. Coverage = at least one AC
-            // either lists the entity in `verifies[]` or carries an `entity-{slug}` tag.
-            if (requireAcCoverage !== 'off') {
-              const coveredByVerifies = new Set<string>();
-              const coveredByTag = new Set<string>();
-              for (const ac of activeAcs) {
-                for (const v of ac.verifies) {
-                  coveredByVerifies.add(`${v.type}:${v.slug}`);
-                }
-                for (const t of ac.tags) {
-                  if (t.startsWith('entity-')) {
-                    coveredByTag.add(t.slice('entity-'.length));
-                  }
-                }
-              }
-              for (const [type, list] of Object.entries(entitiesByType)) {
-                if (type === 'ac') continue;
-                for (const e of list) {
-                  const key = `${type}:${e.slug}`;
-                  if (coveredByVerifies.has(key)) continue;
-                  if (coveredByTag.has(e.slug)) continue;
-                  entitiesWithoutAcCoverage.push({
-                    type,
-                    slug: e.slug,
-                    severity: requireAcCoverage,
-                  });
-                }
-              }
-            }
-
-            // Rule 11 — module-without-AC. Module = `mNN` derived from a
-            // `modules/mNN-…\.md` page path. Coverage = AC carrying that mNN tag.
-            if (requireModuleAc !== 'off') {
-              const moduleRe = /modules\/(m\d{2})-[^/]+\.md$/;
-              const modules = new Set<string>();
-              for (const p of pagePaths) {
-                const m = moduleRe.exec(p);
-                if (m && m[1]) modules.add(m[1]);
-              }
-              const taggedModules = new Set<string>();
-              for (const ac of activeAcs) {
-                for (const t of ac.tags) {
-                  if (/^m\d{2}$/.test(t)) taggedModules.add(t);
-                }
-              }
-              for (const mod of modules) {
-                if (!taggedModules.has(mod)) {
-                  modulesWithoutAc.push({ module: mod, severity: requireModuleAc });
-                }
-              }
-            }
-          }
-        }
-
-        const acErrorRows =
-          brokenAcVerifies.length +
-          entitiesWithoutAcCoverage.filter((e) => e.severity === 'error').length +
-          modulesWithoutAc.filter((m) => m.severity === 'error').length;
-        const acWarningRows =
-          entitiesWithoutAcCoverage.filter((e) => e.severity === 'warn').length +
-          modulesWithoutAc.filter((m) => m.severity === 'warn').length;
-
-        const errors =
-          brokenReferences.length +
-          invalidTagReferences.length +
-          brokenExtensionReferences.length +
-          acErrorRows;
-        const warnings = unreferencedEntities.length + acWarningRows;
-        const counts = brokenReferences.reduce<Record<string, number>>((acc, r) => {
-          acc[r.category] = (acc[r.category] ?? 0) + 1;
-          return acc;
-        }, {});
-        const extensionCounts = brokenExtensionReferences.reduce<Record<string, number>>((acc, r) => {
-          const key = `${r.tagType}:${r.category}`;
-          acc[key] = (acc[key] ?? 0) + 1;
-          return acc;
-        }, {});
-        const acVerifyCounts = brokenAcVerifies.reduce<Record<string, number>>((acc, r) => {
-          acc[r.category] = (acc[r.category] ?? 0) + 1;
-          return acc;
-        }, {});
-        return ok({
-          brokenReferences,
-          brokenReferenceCounts: counts,
-          orphanedEntityTags: [],
-          unreferencedEntities,
-          invalidTagReferences,
-          brokenExtensionReferences,
-          brokenExtensionReferenceCounts: extensionCounts,
-          brokenAcVerifies,
-          brokenAcVerifyCounts: acVerifyCounts,
-          entitiesWithoutAcCoverage,
-          modulesWithoutAc,
-          summary: { total: errors + warnings, errors, warnings },
-        });
+        // M39: the rules live in the discovery core, which sweeps every
+        // reference-validated root. This server used to own them and could only
+        // ever see the one page root it happened to hold.
+        return ok(
+          await deps.discovery.checkConsistency({
+            severity: args.severity as 'error' | 'warning' | undefined,
+            rule: args.rule as string | number | undefined,
+            limit: args.limit as number | undefined,
+          }),
+        );
       } catch (err) {
         return fail(err);
       }
     },
   );
 
+  /**
+   * Deliberately NOT migrated to the core in this tier.
+   *
+   * The core's `list_sections` is a discriminated union (`by: "page" | "anchor"`)
+   * with renamed rows and no fuzzy `query`. Putting that on this tool here would
+   * have broken every existing caller — `list_sections({ pagePath })` fails zod
+   * validation on the new required discriminator, and rows lose `pagePath` /
+   * `headingText` / `lineStart` — which is exactly the kind of change this tier
+   * promised not to make. An earlier revision of this branch did make it; this
+   * is the revert.
+   *
+   * The union, the `size` measurement and the `search_pages`-then-anchor
+   * replacement for `query` all land with the rest of the new tool surface in
+   * Tier B, where the break is declared rather than smuggled in.
+   */
   const listSections = mcpTool(
     'list_sections',
     'List sections from the section index. Filter by `anchor` (exact match), `query` (substring match on heading_text/heading_path), or `pagePath` (sections of a single page). Thin proxy over SectionsService — `section_index` is owned by M06.',

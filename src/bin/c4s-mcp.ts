@@ -5,8 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { openDbReadonly, ReadonlyDbError } from '../server/db/readonly.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../core/workspace/resolve.js';
-import { RawEntityReader } from '../server/domain/raw-entity-reader.js';
+import { RawEntityReader } from '../server/discovery/raw-entity-reader.js';
 import { buildCliSerializationEngineAsync } from './c4s/context.js';
+import { createDiscoveryCore } from '../server/discovery/index.js';
+import { readConfig } from '../server/config.js';
 import { createC4sReaderServer } from '../server/mcp/c4s-reader.js';
 import { CliError } from './c4s/errors.js';
 
@@ -88,7 +90,6 @@ async function main(): Promise<void> {
   }
 
   let projectDir: string | null = null;
-  let reader: RawEntityReader | null = null;
   let db: import('better-sqlite3').Database | null = null;
   let close: (() => void) | null = null;
   // M33: workspace plugin packages resolved alongside the project (empty on a
@@ -105,7 +106,6 @@ async function main(): Promise<void> {
     const opened = openDbReadonly(resolved.dbPath);
     db = opened.handle;
     close = opened.close;
-    reader = new RawEntityReader(db);
     process.stderr.write(
       `c4s-mcp ${version} ready (project: ${projectDir}, workspace: ${resolved.workspaceName})\n`,
     );
@@ -121,9 +121,32 @@ async function main(): Promise<void> {
     );
   }
 
+  // The engine is built AFTER resolution so it carries the workspace's declared
+  // plugin packages, and the reader is given the same host — one view of which
+  // types exist, shared by serialization and by discovery.
+  const { engine, host } = await buildCliSerializationEngineAsync(pluginPackages);
+  const reader = db ? new RawEntityReader(db, host) : null;
+
+  // M39: the server is a thin transport over the discovery core, so the core is
+  // built here — where the project, the db slot and the plugin set are already
+  // resolved — and handed in. A degraded start (no project) hands in `null`, and
+  // every tool answers PROJECT_NOT_FOUND instead of the process dying: an stdio
+  // server that exits gives the agent an EOF where it needed a diagnosis.
   const { server } = createC4sReaderServer({
     reader,
-    registry: await buildCliSerializationEngineAsync(pluginPackages),
+    registry: engine,
+    discovery:
+      reader && db && projectDir
+        ? createDiscoveryCore({
+            reader,
+            db,
+            host,
+            serialization: engine,
+            roots: readConfig(projectDir).roots,
+            projectDir,
+            packageVersion: version,
+          })
+        : null,
     db,
     projectDir,
     packageVersion: version,

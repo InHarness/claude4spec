@@ -3,19 +3,37 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import {
   isRawEntityType,
-  type RawEntity,
   type RawEntityReader,
   type RawEntityType,
-} from '../domain/raw-entity-reader.js';
+} from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
+import {
+  getEntitiesAll,
+  isDiscoveryError,
+  listEntitiesAll,
+  listTagsAll,
+  type DiscoveryCore,
+  type SerializedMeta,
+} from '../discovery/index.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
-import type { SerializeResult, ViewKind } from '../serialization/types.js';
+import type { ViewKind } from '../serialization/types.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
 export interface C4sReaderDeps {
   reader: RawEntityReader | null;
   registry: SerializationEngine;
+  /**
+   * M39: the discovery core, already bound to a resolved project. Null on a
+   * degraded start (no project) — the tools then answer `PROJECT_NOT_FOUND`
+   * rather than the process exiting, because an stdio server that dies hands
+   * the agent an EOF where it needed a diagnosis.
+   *
+   * This server is a TRANSPORT: it maps tool names and the MCP protocol onto
+   * core operations, and core error codes onto `tool_result`. It does not
+   * serialize entities, iterate types, or decide what pagination means.
+   */
+  discovery: DiscoveryCore | null;
   db: Database.Database | null;
   projectDir: string | null;
   packageVersion: string;
@@ -46,9 +64,9 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   });
 
   const requireProject = ():
-    | { ok: true; reader: RawEntityReader; db: Database.Database; projectDir: string }
+    | { ok: true; reader: RawEntityReader; db: Database.Database; projectDir: string; discovery: DiscoveryCore }
     | { ok: false; response: ReturnType<typeof fail> } => {
-    if (!deps.reader || !deps.db || !deps.projectDir) {
+    if (!deps.reader || !deps.db || !deps.projectDir || !deps.discovery) {
       return {
         ok: false,
         response: fail(
@@ -58,17 +76,35 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
         ),
       };
     }
-    return { ok: true, reader: deps.reader, db: deps.db, projectDir: deps.projectDir };
+    return { ok: true, reader: deps.reader, db: deps.db, projectDir: deps.projectDir, discovery: deps.discovery };
   };
 
   const wrapDb = <T>(fn: () => T): { ok: true; value: T } | { ok: false; response: ReturnType<typeof fail> } => {
     try {
       return { ok: true, value: fn() };
     } catch (err) {
+      // M39: a core error already carries its own code and its navigation —
+      // the transport RE-FRAMES it, it does not re-invent it.
+      if (isDiscoveryError(err)) {
+        return { ok: false, response: fail(err.code, err.message, err.hint) };
+      }
       const message = err instanceof Error ? err.message : String(err);
       const code = /no such table|no such column/i.test(message) ? 'SCHEMA_OUT_OF_DATE' : 'INTERNAL';
       const hint = code === 'SCHEMA_OUT_OF_DATE' ? 'run `npx @inharness-ai/claude4spec` to migrate' : undefined;
       return { ok: false, response: fail(code, message, hint) };
+    }
+  };
+
+  /** Same mapping as `wrapDb`, for the operations that touch the filesystem. */
+  const wrapDbAsync = async <T>(
+    fn: () => Promise<T>,
+  ): Promise<{ ok: true; value: T } | { ok: false; response: ReturnType<typeof fail> }> => {
+    try {
+      return { ok: true, value: await fn() };
+    } catch (err) {
+      if (isDiscoveryError(err)) return { ok: false, response: fail(err.code, err.message, err.hint) };
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, response: fail('INTERNAL', message) };
     }
   };
 
@@ -95,11 +131,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
       const view: ViewKind = (args.view as ViewKind | undefined) ?? 'single_element';
       const slug = String(args.slug);
-      const lookup = wrapDb(() => ctx.reader.getEntity(type, slug));
+      const lookup = wrapDb(() => ctx.discovery.getEntities({ type, slugs: [slug], view }));
       if (!lookup.ok) return lookup.response;
-      if (!lookup.value) return fail('ENTITY_NOT_FOUND', `${type}/${slug} not found`);
-      const serialized = deps.registry.serializeEntity(type, view, lookup.value, ctx.reader);
-      return ok({ type, slug, view, ...envelope(serialized) });
+      const record = lookup.value.results[0];
+      if (!record || record.entity === null) return fail('ENTITY_NOT_FOUND', `${type}/${slug} not found`);
+      return ok({ type, slug, view, ...envelope(record.entity, record) });
     },
   );
 
@@ -121,13 +157,15 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
       const view: ViewKind = (args.view as ViewKind | undefined) ?? 'element_list_item';
       const slugs = (args.slugs as string[]).map(String);
-      const lookup = wrapDb(() => ctx.reader.getEntities(type, slugs));
+      const lookup = wrapDb(() => getEntitiesAll(ctx.discovery, { type, slugs, view }));
       if (!lookup.ok) return lookup.response;
-      const items = lookup.value.items.map((entity) => ({
-        slug: entity.slug,
-        ...envelope(deps.registry.serializeEntity(type, view, entity, ctx.reader)),
-      }));
-      return ok({ type, view, items, missing: lookup.value.missing });
+      const found = lookup.value.filter((r) => r.entity !== null);
+      return ok({
+        type,
+        view,
+        items: found.map((r) => ({ slug: r.slug, ...envelope(r.entity, r) })),
+        missing: lookup.value.filter((r) => r.entity === null).map((r) => r.slug),
+      });
     },
   );
 
@@ -156,45 +194,43 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (args.type && !typeArg) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
 
       if (typeArg) {
-        const lookup = wrapDb(() => ctx.reader.findByTag({ type: typeArg, tags, filter }));
+        // Exhaustive: this tool was unbounded before, and a truncated list that
+        // does not say it is truncated is worse than a slow one.
+        const lookup = wrapDb(() => listEntitiesAll(ctx.discovery, { type: typeArg, tags, filter, view }));
         if (!lookup.ok) return lookup.response;
-        const items = lookup.value.map((entity: RawEntity) => ({
-          slug: entity.slug,
-          ...envelope(deps.registry.serializeEntity(typeArg, view, entity, ctx.reader)),
-        }));
+        const items = lookup.value.map((item) => ({ slug: item.slug, ...envelope(item.data, item) }));
         return ok({ type: typeArg, view, query: { tags, filter }, items });
       }
 
-      const lookup = wrapDb(() => ctx.reader.findByTag({ tags, filter }));
-      if (!lookup.ok) return lookup.response;
-      const groups: Record<string, unknown[]> = {
-        endpoints: [],
-        dtos: [],
-        'database-tables': [],
-        'ui-views': [],
-        acs: [],
-        'design-systems': [],
-        diagrams: [],
-      };
-      const bucket: Record<RawEntityType, string> = {
-        endpoint: 'endpoints',
-        dto: 'dtos',
-        'database-table': 'database-tables',
-        'ui-view': 'ui-views',
-        ac: 'acs',
-        'design-system': 'design-systems',
-        diagram: 'diagrams',
-      };
-      for (const entity of lookup.value) {
-        const item = {
-          slug: entity.slug,
-          ...envelope(deps.registry.serializeEntity(entity.type, view, entity, ctx.reader)),
+      // The mixed grouping is a TRANSPORT composition over the per-type
+      // operation. Its bucket key was a hardcoded seven-type map that a
+      // plugin-contributed type indexed straight into `undefined`; every one of
+      // those keys was the type name plus an `s`, so deriving it keeps the same
+      // output and stops dropping the rest.
+      const grouped = wrapDb(() => {
+        // The seven documented buckets are seeded unconditionally. Deriving keys
+        // purely from the ACTIVE type set made a deactivated type's key vanish,
+        // so a consumer reading `result.endpoints.length` threw instead of
+        // reading 0 — and this tool's own description still promises those keys.
+        const groups: Record<string, unknown[]> = {
+          endpoints: [],
+          dtos: [],
+          'database-tables': [],
+          'ui-views': [],
+          acs: [],
+          'design-systems': [],
+          diagrams: [],
         };
-        // findByTag only ever returns core RawEntityTypes (out of scope of
-        // the M17 generic-capture widening) — safe to narrow back here.
-        groups[bucket[entity.type as RawEntityType]]!.push(item);
-      }
-      return ok({ view, query: { tags, filter }, ...groups });
+        for (const t of ctx.reader.listTypes()) {
+          groups[`${t}s`] = listEntitiesAll(ctx.discovery, { type: t, tags, filter, view }).map((item) => ({
+            slug: item.slug,
+            ...envelope(item.data, item),
+          }));
+        }
+        return groups;
+      });
+      if (!grouped.ok) return grouped.response;
+      return ok({ view, query: { tags, filter }, ...grouped.value });
     },
   );
 
@@ -209,16 +245,13 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       const ctx = requireProject();
       if (!ctx.ok) return ctx.response;
       const anchor = String(args.anchor);
-      const view: ViewKind = (args.view as ViewKind | undefined) ?? 'single_element';
-      const lookup = wrapDb(() => ctx.reader.getSection(anchor));
-      if (!lookup.ok) return lookup.response;
-      if (!lookup.value) return fail('SECTION_NOT_FOUND', `section '${anchor}' not found`);
-      const serialized = deps.registry.serializeSection(view, lookup.value, ctx.reader);
-      return ok({
-        anchor,
-        view,
-        ...envelope(serialized),
-      });
+      // M39: the section arrives with its BODY and its outgoing document edges
+      // — returning coordinates alone was one of the three gaps that motivated
+      // the core. The `view` parameter is accepted for compatibility and no
+      // longer selects a narrower shape.
+      const result = await wrapDbAsync(() => ctx.discovery.getSection({ anchor }));
+      if (!result.ok) return result.response;
+      return ok(result.value);
     },
   );
 
@@ -237,7 +270,10 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (!fs.existsSync(abs)) return fail('FILE_NOT_FOUND', `file not found: ${abs}`);
       const md = fs.readFileSync(abs, 'utf8');
       const result = wrapDb(() =>
-        resolvePageContent(md, { reader: ctx.reader, registry: deps.registry }),
+        resolvePageContent(md, {
+          discovery: ctx.discovery,
+          activeTypes: ctx.reader.listTypes(),
+        }),
       );
       if (!result.ok) return result.response;
       const format = (args.format as 'inline' | 'json' | undefined) ?? 'inline';
@@ -256,9 +292,9 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     async () => {
       const ctx = requireProject();
       if (!ctx.ok) return ctx.response;
-      const result = wrapDb(() => deps.registry.catalog(ctx.reader));
+      const result = await wrapDbAsync(() => ctx.discovery.overview());
       if (!result.ok) return result.response;
-      return ok({ ...result.value, claude4spec: deps.packageVersion });
+      return ok(result.value);
     },
   );
 
@@ -284,10 +320,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
         }
         view = String(args.view) as ViewKind;
       }
-      const result = wrapDb(() => deps.registry.describe(type, view, ctx.db));
+      const result = wrapDb(() => ctx.discovery.describeTypes({ types: [type], view }));
       if (!result.ok) return result.response;
-      if (!result.value) return fail('INVALID_TYPE', `entity type '${type}' is not active`);
-      return ok(result.value);
+      const described = result.value.types[0];
+      if (!described) return fail('INVALID_TYPE', `entity type '${type}' is not active`);
+      return ok(described);
     },
   );
 
@@ -298,9 +335,14 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     async () => {
       const ctx = requireProject();
       if (!ctx.ok) return ctx.response;
-      const result = wrapDb(() => ctx.reader.listTags());
+      // Counts stay ON for this tool: its documented contract is per-type
+      // counts, and the opt-in default belongs to the new surface, not to a
+      // tool whose consumers already depend on the field being there.
+      // "List ALL tags" is this tool's contract, so it exhausts the pages
+      // rather than inheriting the core's default page size.
+      const result = wrapDb(() => listTagsAll(ctx.discovery, { withCounts: true }));
       if (!result.ok) return result.response;
-      return ok({ tags: result.value });
+      return ok({ tags: result.value, total: result.value.length });
     },
   );
 
@@ -317,14 +359,15 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       const type = normalizeType(String(args.type));
       if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
       const filterTag = args.filterTag ? String(args.filterTag) : undefined;
-      if (filterTag) {
-        const lookup = wrapDb(() => ctx.reader.findByTag({ type, tags: [filterTag], filter: 'and' }));
-        if (!lookup.ok) return lookup.response;
-        return ok({ type, filterTag, slugs: lookup.value.map((e) => e.slug) });
-      }
-      const lookup = wrapDb(() => ctx.reader.listSlugs(type));
+      const lookup = wrapDb(() =>
+        listEntitiesAll(ctx.discovery, {
+          type,
+          ...(filterTag ? { tags: [filterTag], filter: 'and' as const } : {}),
+          view: 'inline_mention',
+        }),
+      );
       if (!lookup.ok) return lookup.response;
-      return ok({ type, slugs: lookup.value });
+      return ok({ type, ...(filterTag ? { filterTag } : {}), slugs: lookup.value.map((i) => i.slug) });
     },
   );
 
@@ -345,19 +388,20 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   });
 }
 
-function envelope(result: SerializeResult): Record<string, unknown> {
-  const data = result.data;
-  if (typeof data === 'object' && data !== null) {
-    return {
-      data,
-      ...(result.fallback ? { fallback: true } : {}),
-      ...(result.error ? { error: result.error } : {}),
-      ...(result.brokenRefs ? { brokenRefs: result.brokenRefs } : {}),
-    };
-  }
+/**
+ * The tool-result envelope: the payload plus the serializer's own outcome.
+ *
+ * M39 — the outcome now travels FROM the core rather than being read off a
+ * `SerializeResult` this file produced. A consumer that cannot tell a real
+ * record from a fallback will present a degraded one as the truth.
+ */
+function envelope(data: unknown, meta: SerializedMeta): Record<string, unknown> {
   return {
     data,
-    ...(result.fallback ? { fallback: true } : {}),
-    ...(result.error ? { error: result.error } : {}),
+    ...(meta.fallback ? { fallback: true } : {}),
+    ...(meta.error ? { error: meta.error } : {}),
+    ...(meta.brokenRefs && typeof data === 'object' && data !== null
+      ? { brokenRefs: meta.brokenRefs }
+      : {}),
   };
 }

@@ -119,10 +119,11 @@ describe('Single Abstraction Rule', () => {
       // three dead branches beside it (endpoint/dto/database-table, left behind
       // when those types moved out) ARE gone. Filed as a patch.
       expect.stringContaining('_shared/EntityBreadcrumbBar.tsx'),
-      // PRE-EXISTING, and out of scope for the 0.2.2 envelope work: the
-      // cross-cutting reference-tools server skips `ac` when sweeping for
-      // unreferenced entities. Filed as a patch rather than widened into.
-      expect.stringContaining('mcp/reference-tools.ts'),
+      // The reference-tools hit is GONE as of M39. That server's `ac` literal
+      // came from the consistency rules it owned; those moved into the
+      // discovery core, and the "AC needs no AC coverage of itself" exemption
+      // there compares the resolved AC module's identity rather than
+      // re-hardcoding the literal a second time.
     ]);
   });
 

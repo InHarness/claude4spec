@@ -39,7 +39,7 @@ import type {
 } from '../../shared/entities.js';
 import type { EntityWriter, UpsertResult } from '../serialization/writer.js';
 import type { PluginHost, WriteOpts } from '../core/plugin-host/types.js';
-import type { RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import { DomainError } from './tags.js';
 

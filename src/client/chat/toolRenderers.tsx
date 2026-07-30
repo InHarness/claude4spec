@@ -404,7 +404,8 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
             <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
               {t.type}{' '}
               <span style={{ color: 'var(--c-subtle)' }}>
-                crud={String(t.crudSupported)} search={String(t.searchSupported)} fields=
+                crud={String(t.crudSupported)} search=
+                {t.searchSupported ? 'narrowed' : 'default'} fields=
                 {Object.keys(t.createSchema?.properties ?? {}).length}
               </span>
             </div>

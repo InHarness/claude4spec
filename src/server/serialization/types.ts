@@ -1,4 +1,4 @@
-import type { RawEntityReader } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { EntityWriter } from './writer.js';
 
 export type ViewKind =

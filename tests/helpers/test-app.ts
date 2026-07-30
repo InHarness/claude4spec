@@ -16,7 +16,7 @@ import { ChatService } from '../../src/server/services/chat.js';
 import { TagsService } from '../../src/server/services/tags.js';
 import { VersionService } from '../../src/server/services/versions.js';
 import { ReferencesService } from '../../src/server/services/references.js';
-import { RawEntityReader } from '../../src/server/domain/raw-entity-reader.js';
+import { RawEntityReader } from '../../src/server/discovery/raw-entity-reader.js';
 import { PagesService } from '../../src/server/services/pages.js';
 import { PagesWatcher } from '../../src/server/fs/watcher.js';
 import { FileSerializer } from '../../src/server/services/file-serializer.js';

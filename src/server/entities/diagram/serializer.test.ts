@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
 import { canonicalize } from '../../serialization/snapshot.js';
-import type { RawEntity } from '../../domain/raw-entity-reader.js';
+import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
 const ctx = { reader: {} as never, depth: 0, maxDepth: 1 };
 

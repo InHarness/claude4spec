@@ -18,6 +18,9 @@ let db: Database.Database;
 function host(modules: Array<{ type: string; table: string }>): ProjectPluginHost {
   return {
     getEntity: (t: string) => modules.find((m) => m.type === t) ?? null,
+    // M39: `listTypes()` stopped being a frozen list of the seven core types and
+    // now asks the host, so a fixture host has to answer this too.
+    listEntities: () => modules,
   } as unknown as ProjectPluginHost;
 }
 
@@ -106,7 +109,15 @@ describe('a core type whose table was never created', () => {
       INSERT INTO tag VALUES ('core', 'Core');
       INSERT INTO entity_tag VALUES ('endpoint', 'e1', 'core');
     `);
-    const reader = new RawEntityReader(db, host([]));
+    // `dto` is active for the host and absent from the database — the shipped
+    // failure. The sweep must skip it and still return the endpoint's hit.
+    const reader = new RawEntityReader(
+      db,
+      host([
+        { type: 'endpoint', table: 'endpoint' },
+        { type: 'dto', table: 'dto' },
+      ]),
+    );
     const hits = reader.findByTag({ tags: ['core'], filter: 'or' });
     expect(hits.map((h) => h.slug)).toEqual(['e1']);
   });

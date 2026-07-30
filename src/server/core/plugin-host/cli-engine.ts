@@ -1,5 +1,6 @@
 import { SerializationEngine } from './serialization-engine.js';
 import { PluginRegistryImpl } from './registry.js';
+import type { ProjectPluginHost } from './types.js';
 import { registerAllPlugins } from '../../serialization/registerAll.js';
 import { sectionSerializer } from '../../serialization/serializers/section.js';
 import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './loader.js';
@@ -17,7 +18,7 @@ import { loadBuiltinEnvelopes, loadWorkspacePlugins } from './loader.js';
  */
 export async function buildCliSerializationEngineAsync(
   packageNames: string[],
-): Promise<SerializationEngine> {
+): Promise<{ engine: SerializationEngine; host: ProjectPluginHost }> {
   const pluginRegistry = new PluginRegistryImpl();
   registerAllPlugins(pluginRegistry);
   // 0.2.2 — tier (b) FIRST: built-in envelopes from `<hostRoot>/plugins/*` register
@@ -27,5 +28,10 @@ export async function buildCliSerializationEngineAsync(
   await loadBuiltinEnvelopes(pluginRegistry);
   await loadWorkspacePlugins(pluginRegistry, packageNames);
   // CLI applies no whitelist and no project-local overlay (read-only parity).
-  return new SerializationEngine(pluginRegistry.consolidate({}), sectionSerializer);
+  const host = pluginRegistry.consolidate({});
+  // M39: the host comes back too. The discovery core needs it directly — for
+  // the active type set, for `searchableFields`, for `RawEntityReader.listTypes`
+  // — and rebuilding a second one per process would give the CLI a different
+  // view of which types exist than its own serialization engine has.
+  return { engine: new SerializationEngine(host, sectionSerializer), host };
 }

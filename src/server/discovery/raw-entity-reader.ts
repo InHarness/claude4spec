@@ -18,12 +18,21 @@ export interface RawEntity {
 }
 
 export interface RawSection {
+  /**
+   * M39: the `section_index.rootId` column has existed since migration 044, but
+   * nothing ever read it back out — every consumer re-derived the built-in
+   * `pages` root. A discovery operation addresses a page as `(rootId, path)`,
+   * so a section that cannot name its own root cannot be turned back into a
+   * page address.
+   */
+  rootId: string;
   anchor: string;
   pagePath: string;
   headingPath: string;
   headingSlug: string;
   headingText: string;
   headingLevel: number;
+  contentHash: string;
   lineStart: number;
   lineEnd: number;
 }
@@ -40,7 +49,7 @@ export interface RawTag {
 }
 
 export interface FindByTagParams {
-  type?: RawEntityType;
+  type?: string;
   tags: string[];
   filter: 'and' | 'or';
 }
@@ -179,7 +188,7 @@ export class RawEntityReader {
     return this.hydrate(type, row);
   }
 
-  getEntities(type: RawEntityType, slugs: string[]): { items: RawEntity[]; missing: string[] } {
+  getEntities(type: string, slugs: string[]): { items: RawEntity[]; missing: string[] } {
     const items: RawEntity[] = [];
     const missing: string[] = [];
     for (const slug of slugs) {
@@ -193,7 +202,10 @@ export class RawEntityReader {
   findByTag(params: FindByTagParams): RawEntity[] {
     const tagSlugs = params.tags.filter(Boolean);
     if (!tagSlugs.length) return [];
-    const types = params.type ? [params.type] : ALL_ENTITY_TYPES;
+    // Untyped sweep goes through `listTypes()` for the same reason it exists:
+    // a tag on a plugin-contributed entity is still a tag, and the frozen
+    // seven-type list made those entities unreachable by tag alone.
+    const types = params.type ? [params.type] : this.listTypes();
     const out: RawEntity[] = [];
     for (const type of types) {
       out.push(...this.findByTagForType(type, tagSlugs, params.filter));
@@ -202,7 +214,7 @@ export class RawEntityReader {
   }
 
   private findByTagForType(
-    type: RawEntityType,
+    type: string,
     tagSlugs: string[],
     filter: 'and' | 'or'
   ): RawEntity[] {
@@ -248,8 +260,23 @@ export class RawEntityReader {
     return this.hydrateSection(row);
   }
 
-  listTypes(): RawEntityType[] {
-    return [...ALL_ENTITY_TYPES];
+  /**
+   * The types this reader can actually address.
+   *
+   * M39: was a frozen list of the seven core types, which made every consumer
+   * of `listTypes` (entity counts, the M29 export sweep, `check_consistency`)
+   * blind to plugin-contributed types — they existed in the host and had rows
+   * in their own table, and the reader claimed they were not there. Now the
+   * host is the source: `listEntities()` is already the ACTIVE set, so a
+   * deactivated type drops out here for free.
+   *
+   * Without a host the reader keeps answering the seven core types, because a
+   * host is optional by construction (CLI tools, ac-analysis) and returning
+   * nothing would silently empty those sweeps rather than fail them.
+   */
+  listTypes(): string[] {
+    if (!this.host) return [...ALL_ENTITY_TYPES];
+    return this.host.listEntities().map((m) => m.type);
   }
 
   /**
@@ -267,7 +294,7 @@ export class RawEntityReader {
    * cannot address" is the honest answer, and it keeps the caller on its normal
    * path instead of exploding.
    */
-  listSlugs(type: RawEntityType): string[] {
+  listSlugs(type: string): string[] {
     const table = this.resolveTable(type);
     if (!table) return [];
     const rows = this.db
@@ -277,7 +304,7 @@ export class RawEntityReader {
   }
 
   /** Cheap row count for a type — used by `catalog`. */
-  count(type: RawEntityType): number {
+  count(type: string): number {
     // `resolveTable` already answers undefined for a type with no table, so an
     // absent type reads as zero rather than throwing. The caller is
     // `GET /entities/counts`, where one throw blanked every badge in the
@@ -329,7 +356,7 @@ export class RawEntityReader {
   }
 
   /** Returns sections that referenced the given entity (populated by section-indexer). */
-  findSectionReferences(type: RawEntityType, slug: string): SectionEntityRef[] {
+  findSectionReferences(type: string, slug: string): SectionEntityRef[] {
     const rows = this.db
       .prepare(
         `SELECT sel.anchor AS anchor, sel.relation AS relation,
@@ -379,6 +406,8 @@ export class RawEntityReader {
 
   private hydrateSection(row: Record<string, unknown>): RawSection {
     return {
+      rootId: row.rootId as string,
+      contentHash: row.content_hash as string,
       anchor: row.anchor as string,
       pagePath: row.page_path as string,
       headingPath: row.heading_path as string,

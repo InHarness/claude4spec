@@ -57,7 +57,15 @@ export interface EntityCrudService<T = unknown> {
   update(slug: string, data: unknown): EntityMutateResult | Promise<EntityMutateResult>;
   delete(slug: string): void;
   list(opts: EntityListOpts): EntityListResult<T>;
-  /** Optional — types without a meaningful text search omit this. */
+  /**
+   * Optional — an escape hatch for a type with a NON-STANDARD ranking.
+   *
+   * M39: its absence no longer excludes a type from search. The host has its
+   * own default over the text paths of the type's schema, so every active type
+   * is searchable whether or not this method exists; `searchableFields` on the
+   * manifest narrows that default declaratively. The paths actually searched
+   * are PART OF THE CONTRACT — they come back as `searchedFields`.
+   */
   search?(
     query: string,
     opts: { limit: number; offset: number; filters?: Record<string, unknown> },

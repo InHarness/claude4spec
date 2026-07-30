@@ -2,6 +2,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readPackageVersion } from './c4s/package-version.js';
 import { parseArgs } from './c4s/args.js';
 import { CliError } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
@@ -156,24 +157,6 @@ async function main(): Promise<void> {
   return command.handler(args);
 }
 
-function readPackageVersion(): string {
-  try {
-    const here = path.dirname(fileURLToPath(import.meta.url));
-    const candidates = [
-      path.resolve(here, '..', 'package.json'),
-      path.resolve(here, '..', '..', 'package.json'),
-    ];
-    for (const pkgPath of candidates) {
-      if (fs.existsSync(pkgPath)) {
-        const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8')) as { version?: string };
-        if (pkg.version) return pkg.version;
-      }
-    }
-  } catch {
-    /* ignore */
-  }
-  return 'unknown';
-}
 
 main().catch((err) => {
   if (err instanceof CliError) {

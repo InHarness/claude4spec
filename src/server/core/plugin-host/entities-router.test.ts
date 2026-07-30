@@ -6,7 +6,7 @@ import type { ProjectPluginHost } from './types.js';
 import type { VersionService } from '../../services/versions.js';
 import type { TagsService } from '../../services/tags.js';
 import type { EntityStore } from '../../services/entity-store.js';
-import type { RawEntityReader } from '../../domain/raw-entity-reader.js';
+import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { VersionDetail } from '../../../shared/entities.js';
 
 /**

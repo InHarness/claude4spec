@@ -7,7 +7,7 @@ import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { VersionService } from './versions.js';
 import type { FileVersionService } from './file-version.js';
-import type { RawEntityReader } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
 
