@@ -396,6 +396,40 @@ describe('discovery core', () => {
     });
   });
 
+  /**
+   * A well-formed anchor that is not in the index is a DIFFERENT fact from a
+   * page with no sections, and both come back as an empty list. An agent that
+   * cannot tell them apart re-indexes when it should have searched for the
+   * anchor, or vice versa.
+   */
+  it('list_sections says whether an anchor is known, not just what it points at', async () => {
+    await writePage('pages', 'm.md', ['# Top', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
+    indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Top', start: 1, end: 5 });
+    const c = core([pagesRoot()]);
+
+    await expect(c.listSections({ by: 'anchor', anchor: 'abcdef12' })).resolves.toMatchObject({ is_known: true });
+    await expect(c.listSections({ by: 'anchor', anchor: 'zzzzzz99' })).resolves.toMatchObject({
+      is_known: false,
+      total: 0,
+    });
+    // Absent for the page variant: there is no anchor whose existence to report.
+    expect(await c.listSections({ by: 'page', rootId: 'pages', path: 'm.md' })).not.toHaveProperty('is_known');
+  });
+
+  /**
+   * The barrier that keeps a page operation from naming a brief, a patch or the
+   * entity catalogue is `PagesService`'s root containment — and it always held.
+   * What it lacked was a CODE: the refusal arrived as a generic error, so a
+   * transport reported "the server broke" where the honest answer was "that is
+   * not an address, here is what is".
+   */
+  it('a path escaping the root is refused as an ARGUMENT, with the shape of a real one', async () => {
+    const c = core([pagesRoot()]);
+    await expect(
+      c.getPage({ rootId: 'pages', path: '../.claude4spec/briefs/some-brief.md' }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', hint: expect.stringContaining('list_pages') });
+  });
+
   it('get_entities refuses an oversized slug list rather than half-answering it', () => {
     const c = core([pagesRoot()]);
     expect(() =>

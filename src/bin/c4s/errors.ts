@@ -1,3 +1,5 @@
+import { isDiscoveryError } from '../../server/discovery/index.js';
+
 export type CliErrorCode =
   | 'PROJECT_NOT_FOUND'
   | 'ENTITY_NOT_FOUND'
@@ -72,4 +74,21 @@ export class CliError extends Error {
     super(message);
     this.name = 'CliError';
   }
+}
+
+/**
+ * 0.2.3 M39 — a discovery-core error, as a CLI error.
+ *
+ * Every command converts its own failures today, so this is a NET rather than
+ * the usual path: it catches a core error that no command anticipated. Without
+ * it such an error lands in the bin's generic branch and is reported as
+ * `UNKNOWN_COMMAND` with its `hint` discarded — the code replaced by a wrong one
+ * and the repair path, which is the half the caller needed, gone. Returns null
+ * for anything that is not a core error so the caller keeps its own fallback.
+ */
+export function cliErrorFromDiscovery(err: unknown): CliError | null {
+  if (!isDiscoveryError(err)) return null;
+  // The code is the core's, not a translation of it: both unions spell these the
+  // same way precisely so a caller scripting `c4s` sees one vocabulary.
+  return new CliError(err.code as CliErrorCode, err.message, err.hint);
 }

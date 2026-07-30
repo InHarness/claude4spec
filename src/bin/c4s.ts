@@ -4,8 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
 import { parseArgs } from './c4s/args.js';
-import { CliError, type CliErrorCode } from './c4s/errors.js';
-import { isDiscoveryError } from '../server/discovery/index.js';
+import { CliError, cliErrorFromDiscovery } from './c4s/errors.js';
 import { writeError } from './c4s/output.js';
 import type { CliCommandContribution } from './c4s/registry.js';
 import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
@@ -164,16 +163,10 @@ main().catch((err) => {
     writeError(err);
     process.exit(codeToExit(err.code));
   }
-  /**
-   * 0.2.3 M39 — a discovery-core error is a TYPED error with a message and a
-   * repair path, so it reaches the user as itself. It used to fall through to
-   * the generic branch below and get reported as `UNKNOWN_COMMAND`: the code was
-   * replaced by a wrong one and the hint — the alternatives for a
-   * `*_NOT_FOUND`, the working call for an `INVALID_ARGUMENT` — was dropped
-   * entirely. Mapping, not re-inventing: the code and the hint are the core's.
-   */
-  if (isDiscoveryError(err)) {
-    const mapped = new CliError(err.code as CliErrorCode, err.message, err.hint);
+  // A core error reaches the user as itself, with its own code and its repair
+  // path — see `cliErrorFromDiscovery`.
+  const mapped = cliErrorFromDiscovery(err);
+  if (mapped) {
     writeError(mapped);
     process.exit(codeToExit(mapped.code));
   }

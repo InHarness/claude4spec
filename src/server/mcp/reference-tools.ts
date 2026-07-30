@@ -316,18 +316,16 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     },
     async (args) => {
       try {
-        const page = await deps.discovery.listSections({
-          by: args.by,
-          rootId: args.rootId === undefined ? undefined : String(args.rootId),
-          path: args.path === undefined ? undefined : String(args.path),
-          anchor: args.anchor === undefined ? undefined : String(args.anchor),
-          limit: args.limit as number | undefined,
-          offset: args.offset as number | undefined,
-        } as Parameters<DiscoveryCore['listSections']>[0]);
-        // An anchor lookup that finds nothing is a well-formed anchor that is
-        // not in the index — a different fact from "this page has no sections",
-        // and the caller cannot tell them apart from an empty list alone.
-        return ok(args.by === 'anchor' ? { ...page, is_known: page.items.length > 0 } : page);
+        return ok(
+          await deps.discovery.listSections({
+            by: args.by,
+            rootId: args.rootId === undefined ? undefined : String(args.rootId),
+            path: args.path === undefined ? undefined : String(args.path),
+            anchor: args.anchor === undefined ? undefined : String(args.anchor),
+            limit: args.limit as number | undefined,
+            offset: args.offset as number | undefined,
+          } as Parameters<DiscoveryCore['listSections']>[0]),
+        );
       } catch (err) {
         return fail(err);
       }

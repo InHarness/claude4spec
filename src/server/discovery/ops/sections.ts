@@ -76,7 +76,11 @@ export async function listSections(
   }));
 
   items.sort((a, b) => a.rootId.localeCompare(b.rootId) || a.anchor.localeCompare(b.anchor));
-  return paginate(items, input, DEFAULT_LIMITS.listSections);
+  const page = paginate(items, input, DEFAULT_LIMITS.listSections);
+  // An anchor lookup answers whether the anchor EXISTS, not only what it points
+  // at: an empty list would otherwise be indistinguishable from a page with no
+  // sections, and an agent that cannot tell those apart retries the wrong fix.
+  return input.by === 'anchor' ? { ...page, is_known: items.length > 0 } : page;
 }
 
 async function measure(pages: PageSource, sections: readonly RawSection[]): Promise<Map<string, number>> {
