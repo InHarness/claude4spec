@@ -342,9 +342,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const offset = (args.offset as number | undefined) ?? 0;
       const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
 
-      const resolved = resolveType(type);
+      /**
+       * ANY active type, CRUD or not. Searching is not writing: gating it behind
+       * `backend.crud` (as `resolveType` does, correctly, for the mutations)
+       * would keep excluding types from search for a reason that has nothing to
+       * do with reading them — the same class of exclusion this release removed.
+       */
+      const resolved = resolveActiveType(type);
       if (!resolved.ok) return resolved.response;
-      const { module, service } = resolved;
+      const { module } = resolved;
+      const service = deps.host.getEntityService(type) as EntityCrudService | null;
 
       /**
        * The type's own `search` is an ESCAPE HATCH for a non-standard ranking,
@@ -357,7 +364,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        * scope the agent asked for would invert the top of it — then report
        * `searchedFields` it never searched.
        */
-      if (typeof service.search === 'function' && !fields) {
+      if (service && typeof service.search === 'function' && !fields) {
         const page = service.search(query, { limit, offset, filters });
         // The paths this type advertises through describe_entity_type. The
         // ranking is the service's; the SCOPE it ranks over is still the

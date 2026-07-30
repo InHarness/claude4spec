@@ -298,6 +298,16 @@ describe('entity-tools: search_entities requires one type', () => {
     expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
   });
 
+  it('an active type without CRUD is searchable — reading is not writing', async () => {
+    // `no-crud` is refused by every mutation and by list_entities, which is
+    // right. Refusing to SEARCH it would be the same exclusion this release
+    // removed, wearing a different reason.
+    const { deps } = fakeDeps();
+    const result = await tool(deps, 'search_entities').handler({ type: 'no-crud', query: 'x' });
+    expect(result.isError).toBeUndefined();
+    expect(parse(result)).toMatchObject({ type: 'no-crud', mode: 'hits' });
+  });
+
   it('mode "count" answers with a total and the scope, and no rows', async () => {
     const { deps } = fakeDeps();
     const payload = parse(await tool(deps, 'search_entities').handler({ type: 'widget', query: 'e', mode: 'count' }));
