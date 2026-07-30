@@ -130,6 +130,12 @@ export interface EntityContribution extends EntityModuleManifest {
       /** server `ZodRawShape`; default `createSchema.partial()`. */
       updateSchema?: unknown;
       descriptions?: { entity?: string };
+      /**
+       * M39 — optional narrowing of what `search_entities` covers for this
+       * type. Dotted paths with `[]` for arrays (`fields[].description`).
+       * Omit it and the host searches every text path of `createSchema`.
+       */
+      searchableFields?: Array<{ path: string; weight?: number }>;
     };
     /**
      * A factory receiving the SAME service instance as `crud`/`mcpServer`

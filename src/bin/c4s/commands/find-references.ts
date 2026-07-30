@@ -42,11 +42,20 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
     // PagesService).
     const override = optionalString(args, 'pages');
     const dirs = override
-      ? [override]
+      ? // `--pages <dir>` names a directory and not a root, so the hit's root is
+        // whichever config root owns that dir — falling back to the built-in one
+        // only when the override points somewhere no root claims.
+        [
+          {
+            rootId:
+              readConfig(ctx.projectDir).roots.find((r) => r.dir === override)?.id ?? 'pages',
+            dir: override,
+          },
+        ]
       : readConfig(ctx.projectDir)
           .roots.filter((r) => r.referenceValidated)
-          .map((r) => r.dir);
-    const pageRoots = dirs.map((d) => path.join(ctx.projectDir, d));
+          .map((r) => ({ rootId: r.id, dir: r.dir }));
+    const pageRoots = dirs.map((d) => ({ rootId: d.rootId, dir: path.join(ctx.projectDir, d.dir) }));
     const hits = await findReferences(
       {
         pages: { listPages: () => collectPages(pageRoots) },
@@ -80,9 +89,9 @@ export const findReferencesCommand: CliCommandContribution = {
  * stripped bodies with root-relative posix paths (parity with PagesService). A
  * missing dir yields no refs.
  */
-async function collectPages(pageRoots: string[]): Promise<ReferencePage[]> {
+async function collectPages(pageRoots: Array<{ rootId: string; dir: string }>): Promise<ReferencePage[]> {
   const out: ReferencePage[] = [];
-  async function walk(absDir: string, rel: string): Promise<void> {
+  async function walk(rootId: string, absDir: string, rel: string): Promise<void> {
     let entries;
     try {
       entries = await fs.readdir(absDir, { withFileTypes: true });
@@ -94,15 +103,15 @@ async function collectPages(pageRoots: string[]): Promise<ReferencePage[]> {
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       const childAbs = path.join(absDir, e.name);
       if (e.isDirectory()) {
-        await walk(childAbs, childRel);
+        await walk(rootId, childAbs, childRel);
       } else if (e.isFile() && isMarkdownPath(e.name)) {
         const raw = await fs.readFile(childAbs, 'utf-8');
-        out.push({ path: childRel, body: matter(raw).content });
+        out.push({ rootId, path: childRel, body: matter(raw).content });
       }
     }
   }
   for (const root of pageRoots) {
-    await walk(root, '');
+    await walk(root.rootId, root.dir, '');
   }
   return out;
 }

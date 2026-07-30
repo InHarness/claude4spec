@@ -190,6 +190,15 @@ export interface BackendModule extends EntityModuleManifest {
       createSchema: ZodRawShape;
       updateSchema?: ZodRawShape;
       descriptions?: { entity?: string };
+      /**
+       * M39 — the type's own narrowing of what `search_entities` covers, as
+       * DATA rather than code. Dotted paths with `[]` for arrays
+       * (`fields[].description`, `columns[].name`). Absent means the host
+       * default applies: every text path derivable from `createSchema`, so a
+       * type is searchable without declaring anything. A declaration NARROWS
+       * and re-weights; it is not a way to opt out of being searched.
+       */
+      searchableFields?: Array<{ path: string; weight?: number }>;
     };
     /**
      * A factory receiving the same service instance as `crud`/`mcpServer`.

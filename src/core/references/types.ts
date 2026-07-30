@@ -8,8 +8,16 @@
 
 /** A single markdown page: its project-relative path and frontmatter-stripped body. */
 export interface ReferencePage {
-  /** 0.1.96: which root this page came from (default 'pages' for single-root sources). */
-  rootId?: string;
+  /**
+   * Which root this page came from.
+   *
+   * M39 made it REQUIRED. It was optional with a `?? 'pages'` fallback in the
+   * matcher, and two of the three sources never set it — so hits from a user
+   * root were reported as belonging to the built-in one. A page position is
+   * `(rootId, path)`; a source that cannot say which root it read from cannot
+   * produce an addressable hit.
+   */
+  rootId: string;
   path: string;
   body: string;
 }

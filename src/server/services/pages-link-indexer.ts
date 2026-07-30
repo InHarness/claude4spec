@@ -363,7 +363,13 @@ function extractAnchors(body: string): string[] {
   return out;
 }
 
-function parseLinks(body: string): { candidates: PageLink[] } {
+/**
+ * M39: exported so the discovery core's section edges and `find_references`
+ * `target: "page"` variant reuse THIS parser rather than becoming a third
+ * implementation of "what counts as a page link". The consumer of an edge must
+ * not be parsing markdown itself, and neither must a second module here.
+ */
+export function parseLinks(body: string): { candidates: PageLink[] } {
   const masked = maskFences(body);
   const lineOffsets = computeLineOffsets(masked);
   const candidates: PageLink[] = [];
