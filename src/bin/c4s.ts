@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readPackageVersion } from './c4s/package-version.js';
 import { parseArgs } from './c4s/args.js';
-import { CliError } from './c4s/errors.js';
+import { CliError, type CliErrorCode } from './c4s/errors.js';
+import { isDiscoveryError } from '../server/discovery/index.js';
 import { writeError } from './c4s/output.js';
 import type { CliCommandContribution } from './c4s/registry.js';
 import { inlineMentionCommand } from './c4s/commands/inline-mention.js';
@@ -163,6 +164,19 @@ main().catch((err) => {
     writeError(err);
     process.exit(codeToExit(err.code));
   }
+  /**
+   * 0.2.3 M39 — a discovery-core error is a TYPED error with a message and a
+   * repair path, so it reaches the user as itself. It used to fall through to
+   * the generic branch below and get reported as `UNKNOWN_COMMAND`: the code was
+   * replaced by a wrong one and the hint — the alternatives for a
+   * `*_NOT_FOUND`, the working call for an `INVALID_ARGUMENT` — was dropped
+   * entirely. Mapping, not re-inventing: the code and the hint are the core's.
+   */
+  if (isDiscoveryError(err)) {
+    const mapped = new CliError(err.code as CliErrorCode, err.message, err.hint);
+    writeError(mapped);
+    process.exit(codeToExit(mapped.code));
+  }
   const message = err instanceof Error ? err.message : String(err);
   writeError(new CliError('UNKNOWN_COMMAND', message));
   process.exit(1);
@@ -177,8 +191,15 @@ function codeToExit(code: string): number {
     case 'INVALID_TYPE':
     case 'INVALID_VIEW':
     case 'INVALID_ARGS':
+    // M39 — the core's refusal shares the "you asked for something the contract
+    // does not allow" exit, since a caller scripting c4s branches on the class
+    // of failure and these are the same class.
+    case 'INVALID_ARGUMENT':
       return 4;
     case 'FILE_NOT_FOUND':
+    // M39 — a page named by (rootId, path) that does not exist is the same
+    // outcome for a script as a file that does not exist.
+    case 'PAGE_NOT_FOUND':
       return 5;
     case 'SCHEMA_OUT_OF_DATE':
       return 6;

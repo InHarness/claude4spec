@@ -53,7 +53,19 @@ export type CliErrorCode =
   // without it a read-only target or ENOSPC escapes untyped and the bin reports
   // it as UNKNOWN_COMMAND/exit 1. Rolls back like the two above it.
   | 'SCAFFOLD_WRITE_FAILED'
-  | 'INSTALL_FAILED';
+  | 'INSTALL_FAILED'
+  // 0.2.3 M39 — MAPPED FROM THE DISCOVERY CORE, not raised by the CLI itself.
+  // The other core codes (ENTITY_NOT_FOUND, SECTION_NOT_FOUND, INVALID_TYPE,
+  // INVALID_VIEW, AMBIGUOUS_*, INDEX_NOT_MATERIALIZED) were already in this
+  // union under their own names; these two are new here because no CLI command
+  // used to be able to address a page or to refuse an argument the way the core
+  // does. `INVALID_ARGUMENT` is deliberately NOT folded into the CLI's own
+  // `INVALID_ARGS`: one means "you typed the flags wrong", the other carries a
+  // correction from the core, and collapsing them would lose the hint.
+  | 'PAGE_NOT_FOUND'
+  | 'INVALID_ARGUMENT'
+  | 'AMBIGUOUS_ENTITY'
+  | 'AMBIGUOUS_PAGE';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

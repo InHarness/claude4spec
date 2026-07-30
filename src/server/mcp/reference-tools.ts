@@ -1,68 +1,45 @@
 import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
 import { z } from 'zod';
-import type { Database } from 'better-sqlite3';
 import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
-import type { PagesService } from '../services/pages.js';
-import type { SectionsService } from '../services/sections.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { DomainError } from '../services/tags.js';
-import { RawEntityReader, isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
-import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
-import { findReferences as findReferencesCore } from '../../core/references/index.js';
-import { pagesServiceSource } from '../services/references.js';
-import { getExtensionReferenceType } from '../../shared/reference-extensions.js';
-import type { Ac, AcBrokenVerify, AcListQuery, AcVerifyRef, EntityType } from '../../shared/entities.js';
-import { readConfig, type ConsistencySeverity } from '../config.js';
+import { isRawEntityType } from '../discovery/raw-entity-reader.js';
+import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import type { DiscoveryCore } from '../discovery/index.js';
+import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
 
 /**
- * 0.2.2 — the two AC-specific methods consistency rules 9/10/11 need, named
- * STRUCTURALLY rather than by importing `AcService`.
+ * `reference-tools` — tag CRUD, and the in-process transport over the M39
+ * discovery core's read side.
  *
- * The rules are host-level (they run over every entity type), but their AC half
- * needs `listRaw`/`classifyVerifies`, which no generic service contract names.
- * Importing the concrete class to get them would put a plugin service back in the
- * host's compile graph — exactly what the 0.2.2 Single Abstraction Rule test
- * (`grep "import .*Service.*from '.*entities/"` outside `entities/` → 0) forbids.
- * The `Ac*` types below are host-owned shared types, so naming them is fine; it is
- * the SERVICE that must stay resolved by shape through `getEntityService('ac')`.
+ * Two ownerships in one server, deliberately. Writing a tag is the substance of
+ * this module. READING — sections, pages, references, consistency, tags — is
+ * the core's, and every read tool here is a thin adapter over it, so the chat
+ * agent sees exactly the semantics the CLI and the external `c4s-reader` see.
+ * The asymmetry where the built-in agent reached for the filesystem while an
+ * external one got operations is gone at the level of the contract.
+ *
+ * 0.2.3 moved the last read tools across: `list_sections` takes the core's
+ * discriminated union, `find_references` its target union and full sweep,
+ * `list_tags` its opt-in counts — and `list_pages` / `search_pages` /
+ * `get_page` / `get_section` arrived, which is what makes `Glob` / `Grep` /
+ * `Read` replaceable at all.
  */
-interface AcConsistencyService {
-  listRaw(query?: AcListQuery): Ac[];
-  classifyVerifies(verifies: AcVerifyRef[]): AcBrokenVerify[];
-}
-
 export interface ReferenceToolsDeps {
   /** M31: per-project host (was the process singleton). */
   pluginHost: ProjectPluginHost;
   tagsService: TagsService;
   referencesService: ReferencesService;
-  pagesService: PagesService;
   /**
-   * M39: the read tools on this server (`list_sections`, `find_references`,
-   * `check_consistency`) are adapters over the discovery core. Tag CRUD stays
-   * the substance of this module; reading does not.
+   * M39: every read tool on this server is an adapter over the discovery core.
+   * Tag CRUD stays the substance of this module; reading does not.
    */
   discovery: DiscoveryCore;
-  sectionsService: SectionsService;
   ws: WsEmitter;
-  db: Database;
-  cwd: string;
   /** M29: persist an entity file after a tag_entity/untag_entity mutation. */
   entityStore: EntityStore;
-}
-
-interface BrokenReferenceRow {
-  pagePath: string;
-  tagType: string;
-  type: string;
-  slug: string;
-  line: number;
-  /** broken-reference | inactive-plugin | unknown-type — Phase 5 categorisation. */
-  category: 'broken-reference' | 'inactive-plugin' | 'unknown-type';
 }
 
 export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerInstance {
@@ -71,6 +48,21 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
   });
   const fail = (err: unknown) => {
+    /**
+     * A core error already carries its code, its message AND its navigation —
+     * every `*_NOT_FOUND` lists alternatives, every `INVALID_ARGUMENT` states
+     * the call that would have worked. Collapsing it to `INTERNAL` here would
+     * throw away the half that tells the agent what to do next, which is the
+     * whole point of the core's error catalogue.
+     */
+    if (isDiscoveryError(err)) {
+      return {
+        content: [
+          { type: 'text' as const, text: JSON.stringify({ error: err.message, code: err.code, hint: err.hint }) },
+        ],
+        isError: true,
+      };
+    }
     const code = err instanceof DomainError ? err.code : 'INTERNAL';
     const message = err instanceof Error ? err.message : String(err);
     return {
@@ -170,20 +162,25 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const listTags = mcpTool(
     'list_tags',
-    'List all tags with usage counts (per active plugin entity type).',
-    {},
-    async () => {
+    'List the project tags, paginated. `withCounts` is OFF by default because full per-type counts are a cartesian product of tags by active types — ask for them when you need them, or use `minCount` to keep only tags used at least N times. `coOccurringWith` takes a tag slug and returns the tags sharing entities with it, with multiplicity: the way to discover a taxonomy without already knowing it. Returns { items, total, hasMore }.',
+    {
+      withCounts: z.boolean().optional().describe('Include per-type usage counts; default false'),
+      minCount: z.number().int().nonnegative().optional().describe('Only tags used at least this many times'),
+      coOccurringWith: z.string().optional().describe('Tag slug — return the tags sharing entities with it'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
       try {
-        const tags = deps.tagsService.list();
-        return ok({
-          tags: tags.map((t) => ({
-            slug: t.slug,
-            name: t.name,
-            color: t.color,
-            description: t.description,
-            counts: t.counts,
-          })),
-        });
+        return ok(
+          deps.discovery.listTags({
+            withCounts: args.withCounts === true,
+            minCount: args.minCount as number | undefined,
+            coOccurringWith: args.coOccurringWith as string | undefined,
+            limit: args.limit as number | undefined,
+            offset: args.offset as number | undefined,
+          }),
+        );
       } catch (err) {
         return fail(err);
       }
@@ -244,38 +241,36 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const findReferences = mcpTool(
     'find_references',
-    'Find all pages that reference a specific entity. Static refs match by (type, slug); when `includeTagMatches` is true, dynamic refs are also reported — pages with <tagged_list/> or <tagged_list_mixed/> whose `tags` attribute intersects the entity\'s tag set (rows include `via: string[]` listing matched tags). Use to understand where an entity is used before modifying or deleting it.',
+    'Who points at this? Three targets: { target: "entity", type, slug } — which pages embed it, and with `includeTagMatches` also the <tagged_list/> / <tagged_list_mixed/> pages whose `tags` intersect the entity\'s (those rows carry `via: string[]`); { target: "section", anchor } — who cites this section; { target: "page", rootId, path } — who links this page, full key required. Calling without `target` returns INVALID_ARGUMENT listing the variants. A target with no references is a SUCCESS with an empty list and total: 0. Rows carry `rootId`, and the sweep covers every reference-validated root. Scope is document edges — entity-to-entity links specific to a type (ac.verifies, foreign keys) are entity data, and check_consistency rule 9 reports their integrity. Use it to see where something is used before modifying or deleting it.',
     {
-      type: entityTypeSchema,
-      slug: z.string(),
+      target: z.enum(['entity', 'section', 'page']).optional().describe('Identity regime of the target; required'),
+      type: entityTypeSchema.optional().describe('With target:"entity" — entity type'),
+      slug: z.string().optional().describe('With target:"entity" — entity slug'),
+      anchor: z.string().optional().describe('With target:"section" — section anchor'),
+      rootId: z.string().optional().describe('With target:"page" — which page root'),
+      path: z.string().optional().describe('With target:"page" — page path relative to the root'),
       includeTagMatches: z.boolean().optional(),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
     },
     async (args) => {
       try {
-        const type = validateActiveType(String(args.type));
-        const slug = String(args.slug);
-        const includeTagMatches = args.includeTagMatches === true;
-
-        // Delegate to the serverless core (M19). Project the superset onto the
-        // MCP shape: keep `via`, drop `raw`. Byte-identical to the pre-refactor
-        // output (static rows first, then tag-driven rows).
-        const hits = await findReferencesCore(
-          {
-            pages: pagesServiceSource(deps.pagesService),
-            host: pluginHost,
-            getEntityTagSlugs: (t, s) => deps.tagsService.getEntityTagSlugs(t as EntityType, s),
-          },
-          type,
-          slug,
-          { includeTagMatches },
+        // M39: the sweep is the core's. This tool used to call the M19 core
+        // directly over ONE page source — the one `PagesService` it happened to
+        // hold — so a reference from any other root was invisible to it.
+        return ok(
+          await deps.discovery.findReferences({
+            target: args.target,
+            type: args.type === undefined ? undefined : String(args.type),
+            slug: args.slug === undefined ? undefined : String(args.slug),
+            anchor: args.anchor === undefined ? undefined : String(args.anchor),
+            rootId: args.rootId === undefined ? undefined : String(args.rootId),
+            path: args.path === undefined ? undefined : String(args.path),
+            includeTagMatches: args.includeTagMatches === true,
+            limit: args.limit as number | undefined,
+            offset: args.offset as number | undefined,
+          } as Parameters<DiscoveryCore['findReferences']>[0]),
         );
-        const references = hits.map((h) =>
-          h.via
-            ? { pagePath: h.pagePath, tagType: h.tagType, line: h.line, via: h.via }
-            : { pagePath: h.pagePath, tagType: h.tagType, line: h.line },
-        );
-
-        return ok({ references });
       } catch (err) {
         return fail(err);
       }
@@ -308,67 +303,150 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     },
   );
 
-  /**
-   * Deliberately NOT migrated to the core in this tier.
-   *
-   * The core's `list_sections` is a discriminated union (`by: "page" | "anchor"`)
-   * with renamed rows and no fuzzy `query`. Putting that on this tool here would
-   * have broken every existing caller — `list_sections({ pagePath })` fails zod
-   * validation on the new required discriminator, and rows lose `pagePath` /
-   * `headingText` / `lineStart` — which is exactly the kind of change this tier
-   * promised not to make. An earlier revision of this branch did make it; this
-   * is the revert.
-   *
-   * The union, the `size` measurement and the `search_pages`-then-anchor
-   * replacement for `query` all land with the rest of the new tool surface in
-   * Tier B, where the break is declared rather than smuggled in.
-   */
   const listSections = mcpTool(
     'list_sections',
-    'List sections from the section index. Filter by `anchor` (exact match), `query` (substring match on heading_text/heading_path), or `pagePath` (sections of a single page). Thin proxy over SectionsService — `section_index` is owned by M06.',
+    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it with get_section. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
     {
-      anchor: z.string().optional(),
-      query: z.string().optional(),
-      pagePath: z.string().optional(),
-      limit: z.number().int().positive().max(2000).optional(),
+      by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
+      rootId: z.string().optional().describe('With by:"page" — which page root'),
+      path: z.string().optional().describe('With by:"page" — page path relative to the root'),
+      anchor: z.string().optional().describe('With by:"anchor" — 6-12 lowercase alphanumerics'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
     },
     async (args) => {
       try {
-        const anchor = args.anchor ? String(args.anchor) : undefined;
-        if (anchor) {
-          const entry = deps.sectionsService.getByAnchor(anchor);
-          return ok({
-            sections: entry
-              ? [
-                  {
-                    anchor: entry.anchor,
-                    pagePath: entry.pagePath,
-                    headingText: entry.headingText,
-                    headingPath: entry.headingPath,
-                    headingLevel: entry.headingLevel,
-                    lineStart: entry.lineStart,
-                    lineEnd: entry.lineEnd,
-                  },
-                ]
-              : [],
-          });
-        }
-        const entries = deps.sectionsService.list({
-          pagePath: args.pagePath ? String(args.pagePath) : undefined,
-          search: args.query ? String(args.query) : undefined,
+        const page = await deps.discovery.listSections({
+          by: args.by,
+          rootId: args.rootId === undefined ? undefined : String(args.rootId),
+          path: args.path === undefined ? undefined : String(args.path),
+          anchor: args.anchor === undefined ? undefined : String(args.anchor),
           limit: args.limit as number | undefined,
-        });
-        return ok({
-          sections: entries.map((e) => ({
-            anchor: e.anchor,
-            pagePath: e.pagePath,
-            headingText: e.headingText,
-            headingPath: e.headingPath,
-            headingLevel: e.headingLevel,
-            lineStart: e.lineStart,
-            lineEnd: e.lineEnd,
-          })),
-        });
+          offset: args.offset as number | undefined,
+        } as Parameters<DiscoveryCore['listSections']>[0]);
+        // An anchor lookup that finds nothing is a well-formed anchor that is
+        // not in the index — a different fact from "this page has no sections",
+        // and the caller cannot tell them apart from an empty list alone.
+        return ok(args.by === 'anchor' ? { ...page, is_known: page.items.length > 0 } : page);
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  /**
+   * 0.2.3 item 14, stage one: operational parity.
+   *
+   * Reading the specification used to be something this agent did with `Glob`,
+   * `Grep` and `Read` — an undocumented fourth transport with no pagination, no
+   * measurement, and no notion of a page root, which is why `Glob **\/*.md`
+   * could see briefs, patches and the entity catalogue. These four tools are
+   * the domain replacement: they address pages as `(rootId, relPath)` over
+   * `config.roots[]`, so there is no value of any parameter that names those
+   * directories. The barrier is the absence of an address, not a rule in a
+   * prompt.
+   *
+   * Stage one is parity ONLY. The built-ins stay available and the prompt does
+   * not yet prefer these; that call belongs to the next release and to turn
+   * telemetry, not to this diff.
+   */
+  const listPages = mcpTool(
+    'list_pages',
+    'List the pages of one root, paginated, each with a title, section count, byte size and mtime — the domain replacement for globbing the specification. `rootId` is required because the same relative path can exist in several roots; `sort` is an explicit parameter ("path" by default and deterministic, or "modified"). The root list holds page roots only, so no call here can name a brief, a patch or the entity catalogue.',
+    {
+      rootId: z.string().describe('Which page root'),
+      prefix: z.string().optional().describe('Restrict to paths starting with this prefix'),
+      sort: z.enum(['path', 'modified']).optional().describe('Order; default "path"'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        return ok(
+          await deps.discovery.listPages({
+            rootId: String(args.rootId),
+            prefix: args.prefix === undefined ? undefined : String(args.prefix),
+            sort: args.sort as 'path' | 'modified' | undefined,
+            limit: args.limit as number | undefined,
+            offset: args.offset as number | undefined,
+          }),
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  const searchPages = mcpTool(
+    'search_pages',
+    'Search the prose of the pages by phrase (`query`) or regex (`regex`) — the domain replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). Three modes: "hits" (default) returns matches, "pages" returns which pages match and how often, "count" returns only a total. A hit on a section-indexed root comes back as an `anchor` — feed it to get_section; on a plain root as (rootId, path, line).',
+    {
+      query: z.string().optional().describe('Phrase to look for'),
+      regex: z.string().optional().describe('Regular expression; first-class, not a fallback'),
+      rootId: z.string().optional().describe('Restrict to one root; omit to search all of them'),
+      mode: z.enum(['hits', 'pages', 'count']).optional().describe('Shape of the answer; default "hits"'),
+      limit: z.number().int().positive().optional(),
+      offset: z.number().int().nonnegative().optional(),
+    },
+    async (args) => {
+      try {
+        return ok(
+          await deps.discovery.searchPages({
+            query: args.query === undefined ? undefined : String(args.query),
+            regex: args.regex === undefined ? undefined : String(args.regex),
+            rootId: args.rootId === undefined ? undefined : String(args.rootId),
+            mode: args.mode as 'hits' | 'pages' | 'count' | undefined,
+            limit: args.limit as number | undefined,
+            offset: args.offset as number | undefined,
+          }),
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  const getSection = mcpTool(
+    'get_section',
+    'Read one section BY ANCHOR: its heading, its coordinates, and its body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (`edges.sectionRefs` / `entityEmbeds` / `pageLinks`), so you never parse markdown yourself; to follow an embed, call get_entities with the slug it carries. `includeSubtree` adds the lower headings beneath this one.',
+    {
+      anchor: z.string().describe('Section anchor (6-12 lowercase alphanumerics)'),
+      includeSubtree: z.boolean().optional().describe('Include the subtree of lower headings'),
+    },
+    async (args) => {
+      try {
+        return ok(
+          await deps.discovery.getSection({
+            anchor: String(args.anchor),
+            includeSubtree: args.includeSubtree === true,
+          }),
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    },
+  );
+
+  const getPage = mcpTool(
+    'get_page',
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_section, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead.',
+    {
+      rootId: z.string().optional().describe('Which page root — required'),
+      path: z.string().optional().describe('Page path relative to the root'),
+      range: z
+        .object({ start: z.number().int().positive(), end: z.number().int().positive() })
+        .optional()
+        .describe('1-based inclusive line window; only on roots without a section index'),
+    },
+    async (args) => {
+      try {
+        return ok(
+          await deps.discovery.getPage({
+            rootId: args.rootId === undefined ? undefined : String(args.rootId),
+            path: args.path === undefined ? undefined : String(args.path),
+            range: args.range as { start: number; end: number } | undefined,
+          } as Parameters<DiscoveryCore['getPage']>[0]),
+        );
       } catch (err) {
         return fail(err);
       }
@@ -387,6 +465,10 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
       findReferences,
       checkConsistency,
       listSections,
+      listPages,
+      searchPages,
+      getSection,
+      getPage,
     ],
   });
 }

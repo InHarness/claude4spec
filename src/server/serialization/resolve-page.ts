@@ -16,6 +16,13 @@ import { getEntitiesAll, listEntitiesAll, type DiscoveryCore, type SerializedMet
  * M39 still routes the reads through the core rather than serializing here.
  * The renderer decides what a resolved tag LOOKS like; it does not get its own
  * copy of what an entity IS.
+ *
+ * 0.2.3 removed the external MCP `resolve_page` tool, so `c4s resolve` is now
+ * this module's ONLY surface. That is the point rather than an accident: the
+ * `resolved: [...]` sidecar and the `inline` variant have no successor as a read
+ * contract for an agent, which asks `get_page` for the page as authored and
+ * `get_entities` for the slug an embed carries. Do not re-expose this through a
+ * tool — an expanded embed hands the consumer a payload where it had an edge.
  */
 export interface ResolvePageDeps {
   discovery: DiscoveryCore;

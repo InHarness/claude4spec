@@ -248,6 +248,80 @@ describe('entity-tools: filters escape hatch (list_entities/search_entities)', (
   });
 });
 
+/**
+ * 0.2.3 — the read tools take the core's parameters now, and two of those
+ * changes are breaking. Each test below is a claim that only shows up as a bug
+ * in an agent's session: an answer that came from a scope it never asked for, a
+ * page-2 request against a `total` with no `hasMore` to say whether one exists.
+ */
+describe('entity-tools: search_entities requires one type', () => {
+  it('a call with no `type` is refused rather than searching everything', async () => {
+    const { deps } = fakeDeps();
+    // The zod schema makes `type` required, so the SDK refuses the call before
+    // the handler runs. Asserting through the handler covers the other half:
+    // that nothing here treats an absent type as "all types" any more.
+    const result = await tool(deps, 'search_entities').handler({ query: 'a' });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_TYPE' } });
+  });
+
+  it('the schema declares `type` required', () => {
+    const { deps } = fakeDeps();
+    const schema = tool(deps, 'search_entities').inputSchema as Record<string, { isOptional?: () => boolean }>;
+    expect(schema.type!.isOptional?.()).toBe(false);
+    expect(schema.fields).toBeDefined();
+    expect(schema.mode).toBeDefined();
+  });
+
+  it('returns one flat result with searchedFields, not a per-type grouping', async () => {
+    const { deps } = fakeDeps();
+    const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
+    const payload = parse(result);
+    expect(payload.results).toBeUndefined();
+    expect(payload).toMatchObject({ type: 'widget', mode: 'hits', total: 1, hasMore: false });
+    expect(payload.searchedFields).toEqual(expect.arrayContaining([expect.any(String)]));
+  });
+
+  /**
+   * Precedence is agent > type > host. A custom ranking that ignored an explicit
+   * `fields` would invert the top of it and then report a scope it never used —
+   * the exact failure `searchedFields` exists to make impossible.
+   */
+  it('an explicit `fields` bypasses the type\'s custom ranking and goes to the core', async () => {
+    const { deps, service } = fakeDeps();
+    const result = await tool(deps, 'search_entities').handler({
+      type: 'widget',
+      query: 'existing',
+      fields: ['name'],
+    });
+    expect(service.search).not.toHaveBeenCalled();
+    expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
+  });
+
+  it('mode "count" answers with a total and the scope, and no rows', async () => {
+    const { deps } = fakeDeps();
+    const payload = parse(await tool(deps, 'search_entities').handler({ type: 'widget', query: 'e', mode: 'count' }));
+    expect(payload).toMatchObject({ mode: 'count', total: 1 });
+    expect(payload.items).toBeUndefined();
+    expect(payload.searchedFields).toBeDefined();
+  });
+});
+
+describe('entity-tools: list_entities measurement', () => {
+  it('carries hasMore, so a caller can tell a full page from the last one', async () => {
+    const { deps } = fakeDeps();
+    const payload = parse(await tool(deps, 'list_entities').handler({ type: 'widget' }));
+    expect(payload).toMatchObject({ mode: 'items', total: 1, hasMore: false });
+  });
+
+  it('mode "count" answers without walking the entities', async () => {
+    const { deps } = fakeDeps();
+    const payload = parse(await tool(deps, 'list_entities').handler({ type: 'widget', mode: 'count' }));
+    expect(payload).toMatchObject({ mode: 'count', total: 1 });
+    expect(payload.items).toBeUndefined();
+  });
+});
+
 describe('entity-tools: describe_entity_type', () => {
   /**
    * M39 changed what `searchSupported` MEANS. It used to be "the service has a

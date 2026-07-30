@@ -281,12 +281,13 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total } (L9 list view per item). `filters` is a type-specific escape hatch (e.g. ac: { status: "all", kind: "edge-case" }) — see describe_entity_type for what a type accepts; unrecognized keys are ignored by types that don\'t support them.',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` is a type-specific escape hatch (e.g. ac: { status: "all", kind: "edge-case" }) — see describe_entity_type for what a type accepts; unrecognized keys are ignored by types that don\'t support them.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
       tagFilter: z.enum(['and', 'or']).optional(),
       filters: z.record(z.string(), z.unknown()).optional(),
+      mode: z.enum(['items', 'count']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     },
@@ -295,69 +296,95 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
       const { service } = resolved;
+      const offset = (args.offset as number | undefined) ?? 0;
       const opts = {
         tags: args.tags as string[] | undefined,
         tagFilter: (args.tagFilter as 'and' | 'or' | undefined) ?? 'and',
         filters: args.filters as Record<string, unknown> | undefined,
         limit: (args.limit as number | undefined) ?? 50,
-        offset: (args.offset as number | undefined) ?? 0,
+        offset,
       };
+      // `count` still asks the service, not the core: the service owns `filters`
+      // and therefore owns what "matching" means for this type. Asking the core
+      // instead would count a different set whenever a filter is in play.
+      if (args.mode === 'count') return ok({ type, mode: 'count', total: service.list(opts).total });
       const page = service.list(opts);
       const slugs = page.items.map((item) => (item as { slug: string }).slug);
-      return ok({ type, items: serializeSlugs(type, slugs), total: page.total });
+      return ok({
+        type,
+        mode: 'items',
+        items: serializeSlugs(type, slugs),
+        total: page.total,
+        hasMore: offset + page.items.length < page.total,
+      });
     },
   );
 
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search across one or all active entity types. EVERY active type is searchable — omit `type` to search all of them, grouped by type in the response. A type is searched over the paths in describe_entity_type.searchableFields (its own declaration if it has one, otherwise every text path of its schema); `searchSupported` reports only whether the type NARROWED that default, and never means a type is excluded. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total, searchedFields? }] }.',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else the type\'s own declaration, else every text path of its schema (`searchSupported` reports only whether the type NARROWED that default, never that a type is excluded). The response always carries `searchedFields`, so an empty result is distinguishable from a field that was never in scope. `filters` is the same type-specific escape hatch as list_entities. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
-      type: z.string().optional(),
+      type: z.string(),
       query: z.string(),
+      fields: z.array(z.string()).optional(),
       filters: z.record(z.string(), z.unknown()).optional(),
+      mode: z.enum(['hits', 'count']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
     },
     async (args) => {
+      const type = String(args.type);
       const query = String(args.query);
+      const fields = args.fields as string[] | undefined;
       const filters = args.filters as Record<string, unknown> | undefined;
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
+      const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
 
-      const types: string[] = args.type
-        ? [String(args.type)]
-        : deps.host.listEntities().map((m) => m.type);
+      const resolved = resolveType(type);
+      if (!resolved.ok) return resolved.response;
+      const { module, service } = resolved;
 
-      const results: Array<{ type: string; items: unknown[]; total: number; searchedFields?: string[] }> = [];
-      for (const type of types) {
-        const resolved = resolveType(type);
-        if (!resolved.ok) {
-          if (args.type) return resolved.response; // explicit single type: surface the type-level error
-          continue; // omitted type: skip types that aren't CRUD-active
-        }
-        const { service } = resolved;
-        // M39: a type WITHOUT its own `search` is no longer skipped. That
-        // exclusion meant search covered one of eight types while claiming to
-        // cover the specification. The optional service method stays as an
-        // escape hatch for a non-standard ranking; when it is absent the core's
-        // default over the type's schema text paths answers instead.
-        if (typeof service.search === 'function') {
-          const page = service.search(query, { limit, offset, filters });
-          const slugs = page.items.map((item) => (item as { slug: string }).slug);
-          results.push({ type, items: serializeSlugs(type, slugs), total: page.total });
-          continue;
-        }
-        const page = deps.discovery.searchEntities({ type, query, limit, offset });
-        if (page.mode !== 'hits') continue;
-        results.push({
+      /**
+       * The type's own `search` is an ESCAPE HATCH for a non-standard ranking,
+       * not a gate: a type without one is answered by the core's default over
+       * its schema text paths (that exclusion used to mean search covered one
+       * type of eight while presenting itself as searching the specification).
+       *
+       * An explicit `fields` argument bypasses the hatch. The precedence is
+       * agent > type > host, and a custom ranking that silently ignores the
+       * scope the agent asked for would invert the top of it — then report
+       * `searchedFields` it never searched.
+       */
+      if (typeof service.search === 'function' && !fields) {
+        const page = service.search(query, { limit, offset, filters });
+        // The paths this type advertises through describe_entity_type. The
+        // ranking is the service's; the SCOPE it ranks over is still the
+        // declaration, so this is the honest answer rather than a guess.
+        const searchedFields = resolveSearchFields(module, undefined).map((f) => f.path);
+        if (mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields });
+        const slugs = page.items.map((item) => (item as { slug: string }).slug);
+        return ok({
           type,
-          items: page.items.map((item) => item.data),
+          mode: 'hits',
+          items: serializeSlugs(type, slugs),
           total: page.total,
-          searchedFields: page.searchedFields,
+          hasMore: offset + page.items.length < page.total,
+          searchedFields,
         });
       }
-      return ok({ results });
+
+      const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset });
+      if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
+      return ok({
+        type,
+        mode: 'hits',
+        items: page.items.map((item) => item.data),
+        total: page.total,
+        hasMore: page.hasMore,
+        searchedFields: page.searchedFields,
+      });
     },
   );
 

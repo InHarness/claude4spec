@@ -602,12 +602,8 @@ async function buildInner(
       pluginHost,
       tagsService,
       referencesService,
-      pagesService: pages,
       discovery,
-      sectionsService,
       ws,
-      db: db.handle,
-      cwd,
       entityStore,
     }),
   );

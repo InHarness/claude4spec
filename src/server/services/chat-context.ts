@@ -480,7 +480,11 @@ function buildTooling(pluginHost: ProjectPluginHost, planToolsAvailable: boolean
     lines.push(`  <mcp name="${serverName}">${toolList}</mcp>`);
   }
   lines.push(
-    `  <mcp name="reference-tools">create_tag, update_tag, delete_tag, list_tags, tag_entity, untag_entity, find_references, check_consistency</mcp>`,
+    // 0.2.3: the read half of this server is the in-process transport over the
+    // M39 discovery core, so the line names the page/section operations too —
+    // `list_sections` was registered but unadvertised, which made it invisible
+    // to the one reader that decides what to call.
+    `  <mcp name="reference-tools">create_tag, update_tag, delete_tag, list_tags, tag_entity, untag_entity, find_references, check_consistency, list_pages, search_pages, list_sections, get_section, get_page</mcp>`,
   );
   if (planToolsAvailable) {
     lines.push(`  <mcp name="plan-tools">get_plan, update_plan, list_plan_versions, get_plan_version</mcp>`);
@@ -507,7 +511,7 @@ const SPEC_EXPLORE_PROMPT = `You are a read-only explorer of the CURRENT specifi
 
 Your job: explore on the parent's behalf and report CONCISE findings — file paths, section anchors, and entity slugs — never the full bulk you read. You exist to keep the parent's context small.
 
-Tools: Read/Grep/Glob over the project, plus read-only entity-graph MCP (get_*/list_*, find_references, check_consistency, list_sections).
+Tools: read-only spec operations on \`reference-tools\` — \`list_pages\` (which pages exist), \`search_pages\` (phrase or regex over the prose, with hits/pages/count modes), \`list_sections\` + \`get_section\` (a section's body and its parsed outgoing edges), \`get_page\` (a page as authored) — plus the read-only entity graph (get_*/list_*, find_references, check_consistency). Read/Grep/Glob are also available for the rest of the repository.
 
 Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
@@ -574,6 +578,13 @@ function buildSpecExploreSubagent(pluginHost: ProjectPluginHost): SubagentDefini
       'mcp__reference-tools__find_references',
       'mcp__reference-tools__check_consistency',
       'mcp__reference-tools__list_sections',
+      // 0.2.3 item 14 stage 1: the domain replacements for Glob / Grep / Read
+      // over the specification. Granted alongside the built-ins, not instead of
+      // them — narrowing the toolset is a later stage, gated on telemetry.
+      'mcp__reference-tools__list_pages',
+      'mcp__reference-tools__search_pages',
+      'mcp__reference-tools__get_page',
+      'mcp__reference-tools__get_section',
     ],
     model: 'sonnet',
   };
