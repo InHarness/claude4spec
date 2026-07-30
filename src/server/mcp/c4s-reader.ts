@@ -198,7 +198,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas come from the type\'s serializer, or are derived by index reflection and flagged "_auto". A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback.',
     {
       types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
-      view: z.string().optional().describe('Narrow to one view; omit for all views of each type'),
+      // An enum, not a free string: an unrecognized view used to be forwarded to
+      // the serializer, which answered with whatever its if-chain fell through
+      // to. The tool then reported a view that does not exist, and the LATER
+      // call using it was the one that failed.
+      view: viewShape,
     },
     (discovery, args) =>
       discovery.describeTypes({
@@ -358,7 +362,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
 
   const getEntities = op(
     'get_entities',
-    'Fetch entities of one type by slug list — one slug is simply a list of one. Resolves <single_element type="..." slug="..."/>, <inline_mention .../> and <element_list type="..." slugs="a,b,c"/>; `view` picks which of those shapes comes back. `slugs` has a hard length limit (exceeding it is INVALID_ARGUMENT stating the limit), and the response has a size budget: a cut is reported as `truncated: true` with instructions for the remainder, never dropped in silence. A slug that does not exist comes back as entity: null rather than failing the batch.',
+    'Fetch entities of one type by slug list — one slug is simply a list of one. Resolves <single_element type="..." slug="..."/>, <inline_mention .../> and <element_list type="..." slugs="a,b,c"/>; `view` picks which of those shapes comes back. Without `view`, one slug defaults to `single_element` and several default to `element_list_item`, matching the tags each resolves. `slugs` has a hard length limit (exceeding it is INVALID_ARGUMENT stating the limit), and the response has a size budget: a cut is reported as `truncated: true` with instructions for the remainder, never dropped in silence. A slug that does not exist comes back as entity: null rather than failing the batch. The response echoes the `view` it used.',
     {
       type: z.string().describe('Entity type'),
       slugs: z.array(z.string()).describe('Slugs to fetch, in order'),

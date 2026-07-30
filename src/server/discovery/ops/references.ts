@@ -25,7 +25,7 @@ import { findReferences as findEntityReferences } from '../../../core/references
 import type { PagesSource } from '../../../core/references/types.js';
 import { parseXmlTagsExcludingCode } from '../../../shared/xml-tags.js';
 import { parseLinks } from '../../services/pages-link-indexer.js';
-import { invalidArgument } from '../errors.js';
+import { invalidArgument, invalidType } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RootSet } from '../roots.js';
@@ -80,6 +80,20 @@ async function entityReferences(
   scanned: RootSet['all'],
   input: Extract<FindReferencesInput, { target: 'entity' }>,
 ): Promise<ReferenceHit[]> {
+  /**
+   * An unknown or inactive type is REFUSED, not answered.
+   *
+   * The sweep below matches the type literally against page XML attributes, so
+   * a type nobody has heard of simply matches nothing — and an empty list here
+   * is read as "nothing references this entity", which is the answer that
+   * authorizes a rename or a delete. `endpoint_dto` for `endpoint-dto` would
+   * hand back a confident, wrong "no consumers"; the mis-typed type is exactly
+   * the case the caller most needs told about.
+   */
+  if (!deps.host.getEntity(input.type)) {
+    throw invalidType(input.type, deps.host.listEntities().map((m) => m.type));
+  }
+
   const source: PagesSource = {
     listPages: async () => await pages.readAll(scanned),
   };

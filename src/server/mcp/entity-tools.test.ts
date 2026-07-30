@@ -135,13 +135,24 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
         view: 'detail',
         results: slugs.map((slug) => ({ slug, entity: service.get(slug) ?? null })),
       }),
-      searchEntities: ({ type }: { type: string }) => ({
-        mode: 'hits',
-        items: [],
-        total: 0,
-        hasMore: false,
-        searchedFields: [`${type}.name`],
-      }),
+      /**
+       * Projects the same fake store, and honours `mode` — the real core does.
+       * A stub that answered `mode: "hits"` regardless would let a handler
+       * ignore the parameter and still pass, which is the bug these tests are
+       * here to catch now that search routes through the core by default.
+       */
+      searchEntities: ({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
+        const hits = service.list().items.filter((w) => (w as Widget).name.includes(query));
+        const searchedFields = [`${type}.name`];
+        if (mode === 'count') return { mode: 'count', total: hits.length, searchedFields };
+        return {
+          mode: 'hits',
+          items: hits.map((w) => ({ slug: (w as Widget).slug, score: 1, data: w })),
+          total: hits.length,
+          hasMore: false,
+          searchedFields,
+        };
+      },
     } as unknown as EntityToolsDeps['discovery'],
     db: {} as EntityToolsDeps['db'],
     ws: { broadcast: vi.fn() },
@@ -241,10 +252,23 @@ describe('entity-tools: filters escape hatch (list_entities/search_entities)', (
     );
   });
 
-  it('search_entities forwards `filters` through to service.search(query, opts) untouched', async () => {
+  /**
+   * `filters` used to be forwarded to `service.search(query, opts)` — and
+   * dropped there: the one service with a custom `search` takes only
+   * `{limit, offset}`, and the core path takes no filters at all. Forwarding an
+   * argument nobody reads is indistinguishable, from the caller's side, from
+   * applying it.
+   */
+  it('search_entities REFUSES `filters` rather than accepting one nobody applies', async () => {
     const { deps, service } = fakeDeps();
-    await tool(deps, 'search_entities').handler({ type: 'widget', query: 'a', filters: { status: 'all' } });
-    expect(service.search).toHaveBeenCalledWith('a', expect.objectContaining({ filters: { status: 'all' } }));
+    const result = await tool(deps, 'search_entities').handler({
+      type: 'widget',
+      query: 'a',
+      filters: { status: 'all' },
+    });
+    expect(result.isError).toBe(true);
+    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
+    expect(service.search).not.toHaveBeenCalled();
   });
 });
 
@@ -295,6 +319,23 @@ describe('entity-tools: search_entities requires one type', () => {
       fields: ['name'],
     });
     expect(service.search).not.toHaveBeenCalled();
+    expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
+  });
+
+  /**
+   * `searchedFields` is a promise about what was CONSULTED. A service ranks over
+   * columns the host cannot see, so the only honest scope to report for it is
+   * one the same package stated as data — which is what gates the escape hatch.
+   * Undeclared, the host would have reported every text path of the schema while
+   * the query ran against whichever columns the service happened to pick, and an
+   * empty result would read as "not in the spec".
+   */
+  it('a custom `search` is used only when the type also DECLARED its scope', async () => {
+    const { deps, service } = fakeDeps();
+    // `widget` has a `search` method but no `searchableFields` declaration.
+    const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
+    expect(service.search).not.toHaveBeenCalled();
+    // Answered by the core, whose searchedFields is exactly what it searched.
     expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
   });
 

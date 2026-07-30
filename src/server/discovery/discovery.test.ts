@@ -417,6 +417,66 @@ describe('discovery core', () => {
   });
 
   /**
+   * `is_known` answers about the ANCHOR, not about which roots are currently
+   * listable. An anchor indexed on a root that has since lost `sectionIndexed`
+   * is still a real anchor — saying "no such anchor" about one `get_section`
+   * resolves gives the caller two contradictory facts about the same string,
+   * and the plausible next move is to delete or re-author a live section.
+   */
+  it('an anchor on a de-indexed root is still known, even though it does not list', async () => {
+    await writePage('notes', 'n.md', ['# Note', '', 'body', ''].join('\n'));
+    indexSection({ rootId: 'notes', anchor: 'abcdef12', page: 'n.md', heading: 'Note', start: 1, end: 4 });
+    const c = core([pagesRoot(), flatRoot()]); // `notes` has sectionIndexed: false
+
+    const listed = await c.listSections({ by: 'anchor', anchor: 'abcdef12' });
+
+    expect(listed.items).toEqual([]); // not listable — the root has no section index
+    expect(listed.is_known).toBe(true); // but the anchor exists
+  });
+
+  /**
+   * Every sibling operation refuses a half-named page; this one used to answer.
+   * `page_path = NULL` matches no row, so the caller got "that page has no
+   * sections" for a call that never named a page.
+   */
+  it('list_sections by page refuses a missing path instead of answering empty', async () => {
+    const c = core([pagesRoot()]);
+    await expect(
+      c.listSections({ by: 'page', rootId: 'pages' } as Parameters<typeof c.listSections>[0]),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT', hint: expect.stringContaining('list_pages') });
+  });
+
+  /**
+   * An unknown type matches no XML tag, so the sweep returns `[]` — and `[]`
+   * from this operation is the answer that authorizes a rename or a delete.
+   * A mis-spelled type is exactly the case the caller most needs told about.
+   */
+  it('find_references on an unknown entity type refuses instead of reporting no consumers', async () => {
+    const c = core([pagesRoot()]);
+    await expect(c.findReferences({ target: 'entity', type: 'widgets', slug: 'w' })).rejects.toMatchObject({
+      code: 'INVALID_TYPE',
+      hint: expect.stringContaining('widget'),
+    });
+  });
+
+  /**
+   * One slug is a lookup and wants the whole record; many slugs are a list and
+   * want a row each. A flat `single_element` default made a view-less batch as
+   * wide as N detail records — enough to hit the budget and come back truncated
+   * where the same call used to return everything.
+   */
+  it('get_entities defaults narrow for a batch and wide for a single slug', () => {
+    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('a', 'mermaid', 'graph TD;')`).run();
+    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('b', 'mermaid', 'graph TD;')`).run();
+    const c = core([pagesRoot()]);
+
+    expect(c.getEntities({ type: 'widget', slugs: ['a'] }).view).toBe('single_element');
+    expect(c.getEntities({ type: 'widget', slugs: ['a', 'b'] }).view).toBe('element_list_item');
+    // An explicit view still wins over both.
+    expect(c.getEntities({ type: 'widget', slugs: ['a', 'b'], view: 'detail' }).view).toBe('detail');
+  });
+
+  /**
    * The barrier that keeps a page operation from naming a brief, a patch or the
    * entity catalogue is `PagesService`'s root containment — and it always held.
    * What it lacked was a CODE: the refusal arrived as a generic error, so a

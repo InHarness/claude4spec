@@ -323,12 +323,11 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else the type\'s own declaration, else every text path of its schema (`searchSupported` reports only whether the type NARROWED that default, never that a type is excluded). The response always carries `searchedFields`, so an empty result is distinguishable from a field that was never in scope. `filters` is the same type-specific escape hatch as list_entities. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else the type\'s own `searchableFields` declaration, else every text path of its schema (`searchSupported` reports only whether the type NARROWED that default, never that a type is excluded). The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
       type: z.string(),
       query: z.string(),
       fields: z.array(z.string()).optional(),
-      filters: z.record(z.string(), z.unknown()).optional(),
       mode: z.enum(['hits', 'count']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
@@ -337,10 +336,24 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const query = String(args.query);
       const fields = args.fields as string[] | undefined;
-      const filters = args.filters as Record<string, unknown> | undefined;
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
       const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
+
+      /**
+       * `filters` is REFUSED rather than ignored. It was advertised here as "the
+       * same escape hatch as list_entities", but no type has ever honoured it on
+       * this path: the core takes no filters, and the one service with a custom
+       * `search` drops the argument. Silently returning unfiltered rows under a
+       * parameter that promises filtering is how an agent acts on deprecated ACs
+       * it explicitly excluded.
+       */
+      if (args.filters !== undefined) {
+        return fail(
+          'INVALID_ARGUMENT',
+          'search_entities does not support `filters` — no entity type applies them on the search path',
+          );
+      }
 
       /**
        * ANY active type, CRUD or not. Searching is not writing: gating it behind
@@ -355,20 +368,23 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
 
       /**
        * The type's own `search` is an ESCAPE HATCH for a non-standard ranking,
-       * not a gate: a type without one is answered by the core's default over
-       * its schema text paths (that exclusion used to mean search covered one
-       * type of eight while presenting itself as searching the specification).
+       * and it is reachable only when the type ALSO declares `searchableFields`.
        *
-       * An explicit `fields` argument bypasses the hatch. The precedence is
-       * agent > type > host, and a custom ranking that silently ignores the
-       * scope the agent asked for would invert the top of it — then report
-       * `searchedFields` it never searched.
+       * The reason is `searchedFields`, which is a promise about what was
+       * consulted. A service ranks over columns the host cannot see, so the only
+       * honest scope to report for it is one the same package stated as data. A
+       * type with a custom `search` and no declaration got the host's derived
+       * paths reported instead — every text path of its schema — while the query
+       * ran against three columns; an empty result then read as "not in the
+       * spec" rather than "not in the three columns searched".
+       *
+       * An explicit `fields` also bypasses the hatch: precedence is agent > type
+       * > host, and a custom ranking that ignored the scope the agent asked for
+       * would invert the top of it.
        */
-      if (service && typeof service.search === 'function' && !fields) {
-        const page = service.search(query, { limit, offset, filters });
-        // The paths this type advertises through describe_entity_type. The
-        // ranking is the service's; the SCOPE it ranks over is still the
-        // declaration, so this is the honest answer rather than a guess.
+      if (service && typeof service.search === 'function' && hasDeclaredSearchFields(module) && !fields) {
+        const page = service.search(query, { limit, offset });
+        // Safe to claim: the type declared these, and the service is its own.
         const searchedFields = resolveSearchFields(module, undefined).map((f) => f.path);
         if (mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields });
         const slugs = page.items.map((item) => (item as { slug: string }).slug);

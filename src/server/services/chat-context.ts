@@ -306,25 +306,25 @@ Four use-cases that should trigger discovery:
   4. **Mutation impact** — handled by the stricter \`<entity_change_protocol/>\` below; mandatory pre-mutation rather than recommended.
 
 Four channels to use (cover all four when the question demands completeness; pick the relevant subset for narrower questions; a sweep spanning MORE THAN ONE channel can be delegated to the \`spec-explore\` subagent as a single task — see \`<delegation_policy/>\`):
-  1. \`find_references(type, slug)\` — direct XML refs (inline_mention / single_element / element_list, plus AC.verifies via consistency rule 9, plus structured endpoint↔dto links).
-  2. **Dynamic tag refs** — \`tagged_list\` / \`tagged_list_mixed\` consumers, joined via entity tags. Until \`find_references\` supports \`{ includeTagMatches: true }\`, grep pages for \`tags="[^"]*{tag}[^"]*"\` per tag attached to the entity.
+  1. \`find_references({ target: "entity", type, slug })\` — direct XML refs (inline_mention / single_element / element_list, plus AC.verifies via consistency rule 9, plus structured endpoint↔dto links). \`target\` is REQUIRED and there is no positional form; the other variants are \`{ target: "section", anchor }\` (who cites this section) and \`{ target: "page", rootId, path }\` (who links this page).
+  2. **Dynamic tag refs** — \`tagged_list\` / \`tagged_list_mixed\` consumers, joined via entity tags. Add \`includeTagMatches: true\` to the channel-1 call to fold them in (rows carry \`via: string[]\`); otherwise search pages for \`tags="[^"]*{tag}[^"]*"\` per tag attached to the entity.
   3. **Structured links** — \`get_endpoint(slug).dtos\` / \`get_dto(slug).endpoints\` / \`check_consistency\` rule 9 for \`ac.verifies\`.
   4. **Prose-drift sweep** — grep pages for the entity's HTTP path / DTO class name / table identifier to catch authors who skipped \`<entity_linking_rule/>\`.
 
 Ground your answer / plan section / orientation summary on the returned set, not on what you remember. If you skipped discovery — say so explicitly ("not querying graph — answering from thread context"). Silent skipping looks identical to forgetting.
 
 Traps (each has cost a real answer here):
-  - **Reflex, not deliberation.** \`find_references\` is the first move for any (type, slug) topic; fallback channels are for when it doesn't apply.
+  - **Reflex, not deliberation.** \`find_references({ target: "entity", … })\` is the first move for any (type, slug) topic; fallback channels are for when it doesn't apply.
   - **Verbalize non-entity fallbacks.** Target isn't a registered type (MCP tool name, domain term, file path) → say so explicitly, or it looks like rule-skipping.
   - **Verify the slug before calling.** Kebab vs snake vs PascalCase is a frequent trap (\`chat_thread\` table → slug \`chat-thread\`). \`list_*\`/\`get_*\` first, or a false \`[]\` reads as "unused".
-  - **\`[]\` ≠ no consumers.** Direct refs empty just means channel 1 is empty — finish channels 2–4 before concluding "unused". (\`includeTagMatches: true\` will later collapse 1+2.)
+  - **\`[]\` ≠ no consumers.** Direct refs empty just means channel 1 is empty — finish channels 2–4 before concluding "unused". (\`includeTagMatches: true\` collapses 1+2 into one call.)
 </entity_discovery>
 
 <entity_change_protocol severity="mandatory">
 Before any \`update_*\` / \`delete_*\` / slug rename / re-tag on an active entity, run the four-channel discovery from \`<entity_discovery/>\` AND present the impact list to the user BEFORE mutating. Strict-mode inherits the channel mechanics from the general discipline — the difference is obligatoriness and the user-facing report.
 
 Protocol:
-  1. Resolve the target slug — \`list_*\` / \`get_*\` first; never call \`find_references\` on an unverified slug (see trap 3 in \`<entity_discovery/>\`).
+  1. Resolve the target slug — \`list_*\` / \`get_*\` first; never call \`find_references({ target: "entity", type, slug })\` on an unverified slug (see trap 3 in \`<entity_discovery/>\`).
   2. Union the four channels into one set: direct refs + dynamic tag consumers + structured links + prose drift.
   3. Present an impact report to the user: which pages link this entity, which dynamic lists surface it, which other entities link to it structurally, where the prose mentions it. List counts AND specific anchors / file paths.
   4. For renames — propose propagation (M19 sync sweep) as part of the report. For deletes — show what will break (broken refs, AC.verifies pointing into the void). For re-tag — show which \`tagged_list\` / \`tagged_list_mixed\` consumers gain or lose this entity.

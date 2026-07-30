@@ -214,6 +214,14 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       expect(body).toMatchObject({ total: 1, hasMore: false });
     });
 
+    it('list_sections by page without a path refuses instead of answering "no sections"', async () => {
+      const client = await connectClient(deps());
+      const { isError, body } = await call(client, 'list_sections', { by: 'page', rootId: 'pages' });
+      expect(isError).toBe(true);
+      expect(body.code).toBe('INVALID_ARGUMENT');
+      expect(body.hint).toContain('path');
+    });
+
     it('list_sections by an unknown anchor reports is_known: false, not just an empty list', async () => {
       const client = await connectClient(deps());
       const { isError, body } = await call(client, 'list_sections', { by: 'anchor', anchor: 'zzzzzz99' });
@@ -228,6 +236,25 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
       expect(body.hint).toContain('target');
+    });
+
+    /**
+     * The old handler validated the type before sweeping. Routing to the core
+     * dropped that, and the sweep matches types literally against page XML — so
+     * `database_table` (snake, the exact trap the chat prompt warns about) came
+     * back as a confident, successful "nothing references this", which is the
+     * answer that authorizes a rename or a delete.
+     */
+    it('find_references on an unknown entity type refuses rather than reporting no consumers', async () => {
+      const client = await connectClient(deps());
+      const { isError, body } = await call(client, 'find_references', {
+        target: 'entity',
+        type: 'diagrams',
+        slug: 'flow',
+      });
+      expect(isError).toBe(true);
+      expect(body.code).toBe('INVALID_TYPE');
+      expect(body.hint).toContain('diagram');
     });
 
     it('find_references on a target with no references is a SUCCESS with total 0', async () => {

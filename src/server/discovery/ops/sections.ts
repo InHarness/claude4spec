@@ -47,15 +47,29 @@ export async function listSections(
 
   let rows: RawSection[];
   if (input.by === 'anchor') {
-    if (!ANCHOR_RE.test(input.anchor)) {
+    if (!ANCHOR_RE.test(input.anchor ?? '')) {
       throw invalidArgument(
-        `'${input.anchor}' is not an anchor`,
+        `'${input.anchor ?? ''}' is not an anchor`,
         'an anchor is 6-12 lowercase alphanumerics; use search_pages to find one by text',
       );
     }
     rows = selectSections(db, 'WHERE anchor = ?', [input.anchor]);
   } else {
     const root = roots.requireSectionIndexed(input.rootId, 'list_sections');
+    /**
+     * A missing `path` is refused rather than answered. `page_path = NULL`
+     * matches no row, so without this the call comes back "that page has no
+     * sections" for a call that never named a page — the caller cannot tell an
+     * unsectioned page from its own omission, and every sibling operation
+     * (`get_page`, `search_pages`, `find_references({ target: "page" })`)
+     * refuses the same shape.
+     */
+    if (!input.path) {
+      throw invalidArgument(
+        'list_sections({ by: "page" }) requires path',
+        `list_sections({ by: "page", rootId: "${root.id}", path: "<relative path>" }) — use list_pages({ rootId: "${root.id}" }) to see them`,
+      );
+    }
     rows = selectSections(db, 'WHERE rootId = ? AND page_path = ?', [root.id, input.path]);
   }
 
@@ -77,10 +91,18 @@ export async function listSections(
 
   items.sort((a, b) => a.rootId.localeCompare(b.rootId) || a.anchor.localeCompare(b.anchor));
   const page = paginate(items, input, DEFAULT_LIMITS.listSections);
-  // An anchor lookup answers whether the anchor EXISTS, not only what it points
-  // at: an empty list would otherwise be indistinguishable from a page with no
-  // sections, and an agent that cannot tell those apart retries the wrong fix.
-  return input.by === 'anchor' ? { ...page, is_known: items.length > 0 } : page;
+  /**
+   * An anchor lookup answers whether the anchor EXISTS, not only what it points
+   * at: an empty list would otherwise be indistinguishable from a page with no
+   * sections, and an agent that cannot tell those apart retries the wrong fix.
+   *
+   * Existence is asked of `rows`, NOT of the root-filtered `visible`. An anchor
+   * indexed on a root that has since lost `sectionIndexed` is still a real
+   * anchor — reporting `is_known: false` there would say "no such anchor" about
+   * one `get_section` resolves, and the two answers would contradict each other
+   * about the same string.
+   */
+  return input.by === 'anchor' ? { ...page, is_known: rows.length > 0 } : page;
 }
 
 async function measure(pages: PageSource, sections: readonly RawSection[]): Promise<Map<string, number>> {

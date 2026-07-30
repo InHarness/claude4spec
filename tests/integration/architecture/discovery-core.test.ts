@@ -184,6 +184,44 @@ describe('M39 — Discovery Core', () => {
       }
     });
 
+    /**
+     * Three of this tier's review findings were the same mistake: a tool's
+     * response shape or call form changed, the tool's own description was
+     * updated, and a CONSUMER elsewhere in the repo kept reading the old one.
+     * The chat renderer showed "Found 0 matches" beside a reply listing twelve,
+     * and the system prompt kept teaching a call form that now hard-refuses.
+     * Neither is reachable from a unit test of the tool.
+     */
+    it('no consumer still reads a response key this tier removed', () => {
+      const renderers = fs.readFileSync(path.join(SRC, 'client/chat/toolRenderers.tsx'), 'utf-8');
+      /**
+       * Scoped to the two renderers whose tool changed shape — `results` is
+       * still the right key for `get_entities` and the CRUD tools, so a
+       * file-wide ban would be wrong rather than strict.
+       */
+      const rendererBlock = (name: string): string => {
+        const start = renderers.indexOf(`\n  ${name}: {`);
+        expect(start, `no ${name} renderer found`).toBeGreaterThan(-1);
+        const next = renderers.indexOf('\n  },\n', start);
+        return renderers.slice(start, next === -1 ? undefined : next);
+      };
+      expect(rendererBlock('search_entities'), 'search_entities renderer still reads the removed `results` grouping')
+        .not.toMatch(/result\??[.!]\.?\??results\b/);
+      expect(rendererBlock('list_tags'), 'list_tags renderer still reads the removed `tags` key')
+        .not.toMatch(/result\??[.!]\.?\??tags\b/);
+    });
+
+    it('the chat prompt teaches the call form the tool actually accepts', () => {
+      // `find_references` takes a required `target` discriminator. Every mention
+      // that shows a call must show that form — a prompt that teaches the old
+      // positional one costs a failed tool call on the move it calls reflex.
+      const prompt = fs.readFileSync(path.join(SRC, 'server/services/chat-context.ts'), 'utf-8');
+      expect(
+        Array.from(prompt.matchAll(/find_references\((?!\{)/g)).map((m) => m[0]),
+        'chat-context still shows a positional find_references(...) call',
+      ).toEqual([]);
+    });
+
     it('the chat agent is TOLD about every read tool it is given', () => {
       // `list_sections` shipped registered but unadvertised for a release: the
       // only reader that decides what to call never saw it. An unlisted tool is
