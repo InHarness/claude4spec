@@ -7,7 +7,7 @@ import type { PagesService } from '../services/pages.js';
 import type { SectionsService } from '../services/sections.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { DomainError } from '../services/tags.js';
-import { RawEntityReader, isRawEntityType, type RawEntityType } from '../domain/raw-entity-reader.js';
+import { RawEntityReader, isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../shared/xml-tags.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import { pagesServiceSource } from '../services/references.js';

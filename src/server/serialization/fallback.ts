@@ -1,4 +1,4 @@
-import type { RawEntity, RawSection } from '../domain/raw-entity-reader.js';
+import type { RawEntity, RawSection } from '../discovery/raw-entity-reader.js';
 import type { ViewKind } from './types.js';
 
 export function fallbackEntity(entity: RawEntity, view: ViewKind): Record<string, unknown> {

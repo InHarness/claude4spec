@@ -16,7 +16,7 @@ import type { EntityStore } from './entity-store.js';
 import type { TagsService } from './tags.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { EntitiesWatcher } from '../fs/entities-watcher.js';
-import type { RawEntityReader } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 
 let db: Database.Database;
 let warn: ReturnType<typeof vi.spyOn>;

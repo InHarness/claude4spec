@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { EntityType, Tag, TagCreateInput, TagUpdateInput } from '../../shared/entities.js';
 import { tagSlug } from './slug.js';
 import type { EntityStore } from './entity-store.js';
-import type { RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 const COLOR_PALETTE = [

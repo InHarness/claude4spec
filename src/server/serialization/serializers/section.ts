@@ -1,4 +1,4 @@
-import type { RawSection } from '../../domain/raw-entity-reader.js';
+import type { RawSection } from '../../discovery/raw-entity-reader.js';
 import type { EntitySerializer } from '../types.js';
 
 const serializer: EntitySerializer<RawSection> = {

@@ -11,7 +11,7 @@ import type { ReferencePage } from '../../../core/references/index.js';
 import { isMarkdownPath } from '../../../shared/page-files.js';
 import { TagsService } from '../../../server/services/tags.js';
 import { readConfig } from '../../../server/config.js';
-import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
+import type { RawEntityType } from '../../../server/discovery/raw-entity-reader.js';
 import type { EntityType } from '../../../shared/entities.js';
 import type { CliCommandContribution } from '../registry.js';
 

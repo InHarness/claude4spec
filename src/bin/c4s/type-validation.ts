@@ -1,4 +1,4 @@
-import { isRawEntityType, type RawEntityType } from '../../server/domain/raw-entity-reader.js';
+import { isRawEntityType, type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
 import type { ViewKind } from '../../server/serialization/types.js';
 import { CliError } from './errors.js';
 

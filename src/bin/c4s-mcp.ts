@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { openDbReadonly, ReadonlyDbError } from '../server/db/readonly.js';
 import { resolveWorkspaceProject, WorkspaceResolveError } from '../core/workspace/resolve.js';
-import { RawEntityReader } from '../server/domain/raw-entity-reader.js';
+import { RawEntityReader } from '../server/discovery/raw-entity-reader.js';
 import { buildCliSerializationEngineAsync } from './c4s/context.js';
 import { createC4sReaderServer } from '../server/mcp/c4s-reader.js';
 import { CliError } from './c4s/errors.js';

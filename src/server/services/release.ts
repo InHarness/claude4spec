@@ -27,7 +27,7 @@ import type {
 } from '../../shared/entities.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
-import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { VersionService } from './versions.js';
 import type { FileVersionService } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';

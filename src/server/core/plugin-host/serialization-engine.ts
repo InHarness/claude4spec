@@ -17,7 +17,7 @@ import type {
   RawEntityReader,
   RawEntityType,
   RawSection,
-} from '../../domain/raw-entity-reader.js';
+} from '../../discovery/raw-entity-reader.js';
 import { fallbackEntity, fallbackSection } from '../../serialization/fallback.js';
 import { autoDerivedSchema } from '../../serialization/auto-schema.js';
 import type {

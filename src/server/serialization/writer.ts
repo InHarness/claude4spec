@@ -33,7 +33,7 @@ import type {
   UiView,
   UiViewCreateInput,
 } from '../../shared/entities.js';
-import type { RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 
 export interface UpsertResult<T> {
   entity: T;

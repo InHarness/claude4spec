@@ -11,7 +11,7 @@ import { HostEntityWriter } from './entity-writer.js';
 import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
-import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 
 export type VersionOp = 'create' | 'update' | 'delete';
 

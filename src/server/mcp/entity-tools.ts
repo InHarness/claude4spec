@@ -23,7 +23,7 @@ import type { EntityType } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { RawEntityReader, RawEntityType } from '../domain/raw-entity-reader.js';
+import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { openDbReadonly, ReadonlyDbError } from '../../server/db/readonly.js';
-import { RawEntityReader } from '../../server/domain/raw-entity-reader.js';
+import { RawEntityReader } from '../../server/discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../../server/core/plugin-host/serialization-engine.js';
 import { buildCliSerializationEngineAsync } from '../../server/core/plugin-host/cli-engine.js';
 import {

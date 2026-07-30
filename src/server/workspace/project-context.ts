@@ -41,7 +41,7 @@ import { PagesLinkIndexerService } from '../services/pages-link-indexer.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
-import { RawEntityReader } from '../domain/raw-entity-reader.js';
+import { isRawEntityType, RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { ReleasePushService } from '../services/release-push.js';
@@ -1031,6 +1031,11 @@ async function buildInner(
       backupDbBeforeMigration(dbSlotDir);
       for (const type of rawReader.listTypes()) {
         if (!pluginHost.getEntity(type)) continue;
+        // The M29 store still lays out one directory per CORE type, so it only
+        // accepts those; `listTypes()` widened to every active type in M39.
+        // Narrowing here keeps this one-time export exactly as it was rather
+        // than quietly extending the on-disk layout as a side effect.
+        if (!isRawEntityType(type)) continue;
         for (const slug of rawReader.listSlugs(type)) entityStore.persist(type, slug);
       }
       entityStore.persistTags();

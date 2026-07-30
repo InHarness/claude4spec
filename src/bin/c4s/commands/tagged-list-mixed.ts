@@ -4,7 +4,7 @@ import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { withMeta } from './_meta.js';
-import type { RawEntityType } from '../../../server/domain/raw-entity-reader.js';
+import type { RawEntityType } from '../../../server/discovery/raw-entity-reader.js';
 import type { CliCommandContribution } from '../registry.js';
 
 export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {

@@ -1,5 +1,5 @@
 import { parseXmlTagsExcludingCode, type XmlTag } from '../../shared/xml-tags.js';
-import { isRawEntityType, type RawEntity, type RawEntityReader } from '../domain/raw-entity-reader.js';
+import { isRawEntityType, type RawEntity, type RawEntityReader } from '../discovery/raw-entity-reader.js';
 import {
   renderElementList,
   renderInlineMention,

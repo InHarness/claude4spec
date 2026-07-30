@@ -6,7 +6,7 @@ import {
   type RawEntity,
   type RawEntityReader,
   type RawEntityType,
-} from '../domain/raw-entity-reader.js';
+} from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
 import type { SerializeResult, ViewKind } from '../serialization/types.js';

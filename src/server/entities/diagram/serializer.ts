@@ -1,4 +1,4 @@
-import type { RawEntity } from '../../domain/raw-entity-reader.js';
+import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 import type {
   EntityDiff,
   EntitySerializer,
