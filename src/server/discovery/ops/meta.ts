@@ -18,7 +18,7 @@ import type { ViewKind } from '../../serialization/types.js';
 import { invalidType } from '../errors.js';
 import { PageSource } from '../page-source.js';
 import { RootSet } from '../roots.js';
-import { hostDefaultFields, resolveSearchFields } from '../search/fields.js';
+import { resolveSearchFields } from '../search/fields.js';
 
 export async function overview(deps: DiscoveryDeps, pages: PageSource, roots: RootSet): Promise<OverviewResult> {
   const catalog = deps.serialization.catalog(deps.reader);
@@ -87,12 +87,3 @@ export function describeTypes(deps: DiscoveryDeps, input: DescribeTypesInput = {
   }
   return { types };
 }
-
-/** Exported for `describe_entity_type`, which reports the same list per type. */
-export function searchableFieldsOf(deps: DiscoveryDeps, type: string): string[] {
-  const module = deps.host.getEntity(type);
-  if (!module) return [];
-  return resolveSearchFields(module, undefined).map((f) => f.path);
-}
-
-export { hostDefaultFields };

@@ -11,7 +11,7 @@
 
 import type { Database } from 'better-sqlite3';
 import { truncateText } from '../budget.js';
-import { invalidArgument, pageNotFound } from '../errors.js';
+import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RootSet } from '../roots.js';
@@ -117,6 +117,3 @@ export async function getPage(
     hasMore: hasMore || budgeted.truncated,
   };
 }
-
-/** Re-exported so the section hydrator can report a missing page identically. */
-export { pageNotFound };

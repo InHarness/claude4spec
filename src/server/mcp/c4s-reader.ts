@@ -3,14 +3,13 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import {
   isRawEntityType,
-  type RawEntity,
   type RawEntityReader,
   type RawEntityType,
 } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { isDiscoveryError, type DiscoveryCore, type SerializedMeta } from '../discovery/index.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
-import type { SerializeResult, ViewKind } from '../serialization/types.js';
+import type { ViewKind } from '../serialization/types.js';
 import fs from 'node:fs';
 import path from 'node:path';
 

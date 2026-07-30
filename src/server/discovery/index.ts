@@ -52,5 +52,4 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
 
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
 export type * from './types.js';
-export { searchableFieldsOf } from './ops/meta.js';
 export { hasDeclaredSearchFields } from './search/fields.js';
