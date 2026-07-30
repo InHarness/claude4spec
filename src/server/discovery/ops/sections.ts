@@ -92,7 +92,7 @@ async function measure(pages: PageSource, sections: readonly RawSection[]): Prom
     const first = group[0]!;
     let content: string;
     try {
-      content = await pages.read(first.rootId, first.pagePath);
+      content = await pages.readBody(first.rootId, first.pagePath);
     } catch {
       // An index row whose page is gone still lists — with size 0 rather than
       // taking the whole listing down over one stale row.

@@ -5,6 +5,7 @@ import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import { withMeta } from './_meta.js';
+import { getEntitiesAll } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
 export async function runElementList(args: ParsedArgs): Promise<void> {
@@ -12,16 +13,15 @@ export async function runElementList(args: ParsedArgs): Promise<void> {
   const slugs = requireStringList(args, 'slugs');
   const ctx = await createContext(args);
   try {
-    const result = ctx.discovery.getEntities({ type, slugs, view: 'element_list_item' });
-    const found = result.results.filter((r) => r.entity !== null);
+    const results = getEntitiesAll(ctx.discovery, { type, slugs, view: 'element_list_item' });
+    const found = results.filter((r) => r.entity !== null);
     if (found.length === 0) {
       throw new CliError('ENTITY_NOT_FOUND', `no ${type} found for slugs: ${slugs.join(', ')}`);
     }
     writeOutput(
       {
         items: found.map(withMeta),
-        missing: result.results.filter((r) => r.entity === null).map((r) => r.slug),
-        ...(result.truncated ? { truncated: true, truncationHint: result.truncationHint } : {}),
+        missing: results.filter((r) => r.entity === null).map((r) => r.slug),
       },
       args,
     );

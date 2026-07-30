@@ -7,7 +7,14 @@ import {
   type RawEntityType,
 } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { isDiscoveryError, type DiscoveryCore, type SerializedMeta } from '../discovery/index.js';
+import {
+  getEntitiesAll,
+  isDiscoveryError,
+  listEntitiesAll,
+  listTagsAll,
+  type DiscoveryCore,
+  type SerializedMeta,
+} from '../discovery/index.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
 import type { ViewKind } from '../serialization/types.js';
 import fs from 'node:fs';
@@ -150,17 +157,14 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
       const view: ViewKind = (args.view as ViewKind | undefined) ?? 'element_list_item';
       const slugs = (args.slugs as string[]).map(String);
-      const lookup = wrapDb(() => ctx.discovery.getEntities({ type, slugs, view }));
+      const lookup = wrapDb(() => getEntitiesAll(ctx.discovery, { type, slugs, view }));
       if (!lookup.ok) return lookup.response;
-      const found = lookup.value.results.filter((r) => r.entity !== null);
+      const found = lookup.value.filter((r) => r.entity !== null);
       return ok({
         type,
         view,
         items: found.map((r) => ({ slug: r.slug, ...envelope(r.entity, r) })),
-        missing: lookup.value.results.filter((r) => r.entity === null).map((r) => r.slug),
-        ...(lookup.value.truncated
-          ? { truncated: true, truncationHint: lookup.value.truncationHint }
-          : {}),
+        missing: lookup.value.filter((r) => r.entity === null).map((r) => r.slug),
       });
     },
   );
@@ -190,12 +194,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (args.type && !typeArg) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
 
       if (typeArg) {
-        const lookup = wrapDb(() => ctx.discovery.listEntities({ type: typeArg, tags, filter, view, limit: 1000 }));
+        // Exhaustive: this tool was unbounded before, and a truncated list that
+        // does not say it is truncated is worse than a slow one.
+        const lookup = wrapDb(() => listEntitiesAll(ctx.discovery, { type: typeArg, tags, filter, view }));
         if (!lookup.ok) return lookup.response;
-        const items =
-          lookup.value.mode === 'items'
-            ? lookup.value.items.map((item) => ({ slug: item.slug, ...envelope(item.data, item) }))
-            : [];
+        const items = lookup.value.map((item) => ({ slug: item.slug, ...envelope(item.data, item) }));
         return ok({ type: typeArg, view, query: { tags, filter }, items });
       }
 
@@ -205,13 +208,24 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       // those keys was the type name plus an `s`, so deriving it keeps the same
       // output and stops dropping the rest.
       const grouped = wrapDb(() => {
-        const groups: Record<string, unknown[]> = {};
+        // The seven documented buckets are seeded unconditionally. Deriving keys
+        // purely from the ACTIVE type set made a deactivated type's key vanish,
+        // so a consumer reading `result.endpoints.length` threw instead of
+        // reading 0 — and this tool's own description still promises those keys.
+        const groups: Record<string, unknown[]> = {
+          endpoints: [],
+          dtos: [],
+          'database-tables': [],
+          'ui-views': [],
+          acs: [],
+          'design-systems': [],
+          diagrams: [],
+        };
         for (const t of ctx.reader.listTypes()) {
-          const result = ctx.discovery.listEntities({ type: t, tags, filter, view, limit: 1000 });
-          groups[`${t}s`] =
-            result.mode === 'items'
-              ? result.items.map((item) => ({ slug: item.slug, ...envelope(item.data, item) }))
-              : [];
+          groups[`${t}s`] = listEntitiesAll(ctx.discovery, { type: t, tags, filter, view }).map((item) => ({
+            slug: item.slug,
+            ...envelope(item.data, item),
+          }));
         }
         return groups;
       });
@@ -324,9 +338,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       // Counts stay ON for this tool: its documented contract is per-type
       // counts, and the opt-in default belongs to the new surface, not to a
       // tool whose consumers already depend on the field being there.
-      const result = wrapDb(() => ctx.discovery.listTags({ withCounts: true }));
+      // "List ALL tags" is this tool's contract, so it exhausts the pages
+      // rather than inheriting the core's default page size.
+      const result = wrapDb(() => listTagsAll(ctx.discovery, { withCounts: true }));
       if (!result.ok) return result.response;
-      return ok({ tags: result.value.items, total: result.value.total, hasMore: result.value.hasMore });
+      return ok({ tags: result.value, total: result.value.length });
     },
   );
 
@@ -344,16 +360,14 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       if (!type) return fail('INVALID_TYPE', `unknown entity type '${args.type}'`);
       const filterTag = args.filterTag ? String(args.filterTag) : undefined;
       const lookup = wrapDb(() =>
-        ctx.discovery.listEntities({
+        listEntitiesAll(ctx.discovery, {
           type,
           ...(filterTag ? { tags: [filterTag], filter: 'and' as const } : {}),
           view: 'inline_mention',
-          limit: 1000,
         }),
       );
       if (!lookup.ok) return lookup.response;
-      const slugs = lookup.value.mode === 'items' ? lookup.value.items.map((i) => i.slug) : [];
-      return ok({ type, ...(filterTag ? { filterTag } : {}), slugs });
+      return ok({ type, ...(filterTag ? { filterTag } : {}), slugs: lookup.value.map((i) => i.slug) });
     },
   );
 

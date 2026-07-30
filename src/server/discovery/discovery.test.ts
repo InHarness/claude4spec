@@ -13,7 +13,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
-import { createDiscoveryCore } from './index.js';
+import { createDiscoveryCore, getEntitiesAll, listEntitiesAll } from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
@@ -22,6 +22,7 @@ import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types
 import type { Root } from '../../shared/types.js';
 import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/types.js';
 import { z } from 'zod';
+import matter from 'gray-matter';
 
 function widgetModule(): BackendModule {
   return {
@@ -124,6 +125,46 @@ describe('discovery core', () => {
           content_hash, line_start, line_end, paragraph_count)
        VALUES (?, ?, ?, ?, ?, 2, ?, 'hash', ?, ?, 1)`,
     ).run(row.rootId, row.anchor, row.page, row.heading, row.heading.toLowerCase(), row.heading, row.start, row.end);
+  }
+
+  /**
+   * Indexes a page the way `section-indexer.ts` does: over the
+   * frontmatter-STRIPPED body, `line_start` = 1-based heading line,
+   * `line_end` = the next same-or-shallower heading's anchor line (exclusive),
+   * else the line count.
+   *
+   * Deriving the coordinates instead of hand-writing them is the point: a test
+   * that hardcodes them can agree with a buggy reader by accident, which is how
+   * the frontmatter shift below went unnoticed the first time.
+   */
+  async function indexPageLikeTheIndexer(rootId: string, dir: string, relPath: string): Promise<void> {
+    const raw = await fs.readFile(path.join(cwd, dir, relPath), 'utf-8');
+    const lines = matter(raw).content.split('\n');
+    const heads: Array<{ level: number; text: string; line: number; anchor?: string; anchorLine?: number }> = [];
+    for (let i = 0; i < lines.length; i++) {
+      const m = /^(#{1,6})\s+(.+?)\s*$/.exec(lines[i] ?? '');
+      if (!m) continue;
+      const anchorMatch = /<!--\s*anchor:\s*([a-z0-9]{6,12})\s*-->/.exec(lines[i + 1] ?? '');
+      heads.push({
+        level: m[1]!.length,
+        text: m[2]!,
+        line: i,
+        anchor: anchorMatch?.[1],
+        anchorLine: anchorMatch ? i + 1 : undefined,
+      });
+    }
+    for (let idx = 0; idx < heads.length; idx++) {
+      const h = heads[idx]!;
+      if (!h.anchor) continue;
+      let end = lines.length;
+      for (let j = idx + 1; j < heads.length; j++) {
+        if (heads[j]!.level <= h.level) {
+          end = heads[j]!.anchorLine ?? heads[j]!.line;
+          break;
+        }
+      }
+      indexSection({ rootId, anchor: h.anchor, page: relPath, heading: h.text, start: h.line + 1, end });
+    }
   }
 
   beforeEach(async () => {
@@ -271,6 +312,62 @@ describe('discovery core', () => {
       );
     });
 
+    /**
+     * The regression that a code review caught and this suite did not.
+     *
+     * The indexer computes `line_start`/`line_end` against
+     * `PagesService.read(...).body` — gray-matter has already removed the
+     * frontmatter. Reading the RAW file and slicing it by those numbers shifts
+     * every section down by the height of the frontmatter block. The original
+     * test wrote a page with no frontmatter, so the offset was zero and the bug
+     * was invisible.
+     */
+    it('is not shifted by frontmatter', async () => {
+      const frontmatter = ['---', 'title: Shifted', 'order: 3', 'tags: [a, b]', '---', ''];
+      const body = [
+        '# Top',
+        '',
+        '## First',
+        '<!-- anchor: aaaaaa11 -->',
+        '',
+        'FIRST SECTION BODY',
+        '',
+        '## Second',
+        '<!-- anchor: bbbbbb22 -->',
+        '',
+        'SECOND SECTION BODY',
+        '',
+      ];
+      await writePage('pages', 'fm.md', [...frontmatter, ...body].join('\n'));
+      await indexPageLikeTheIndexer('pages', 'pages', 'fm.md');
+      const c = core([pagesRoot()]);
+
+      const second = await c.getSection({ anchor: 'bbbbbb22' });
+
+      expect(second.body).toContain('SECOND SECTION BODY');
+      // The precise symptom: slicing the raw file drags in the previous
+      // section's text (and its heading) instead of this one's.
+      expect(second.body).not.toContain('FIRST SECTION BODY');
+      expect(second.body).not.toContain('## Second');
+    });
+
+    it('search hits on a page with frontmatter still resolve to the right anchor', async () => {
+      await writePage(
+        'pages',
+        'fm2.md',
+        ['---', 'title: X', '---', '', '# Top', '', '## S', '<!-- anchor: cccccc33 -->', '', 'needle', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'fm2.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.searchPages({ query: 'needle' });
+      if (result.mode !== 'hits') throw new Error('expected hit mode');
+
+      // A hit whose line is measured in raw-file coordinates falls outside the
+      // section's range and comes back as a bare line hit with no anchor.
+      expect(result.items[0]).toMatchObject({ kind: 'section', anchor: 'cccccc33' });
+    });
+
     it('an unknown anchor is SECTION_NOT_FOUND with a way to find one', async () => {
       const c = core([pagesRoot()]);
       await expect(c.getSection({ anchor: 'nosuchan' })).rejects.toMatchObject({
@@ -304,6 +401,60 @@ describe('discovery core', () => {
     expect(() =>
       c.getEntities({ type: 'widget', slugs: Array.from({ length: 200 }, (_, i) => `s${i}`) }),
     ).toThrowError(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
+  });
+
+  /**
+   * Regressions from a code review of this branch. Each one is a place where
+   * routing a previously UNBOUNDED read through a bounded core op changed an
+   * answer, which is the failure mode of the whole rewiring.
+   */
+  describe('bounds do not change answers', () => {
+    beforeEach(() => {
+      const insert = db.prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, 'mermaid', 'graph TD')`);
+      for (let i = 0; i < 120; i++) insert.run(`w${String(i).padStart(3, '0')}`);
+    });
+
+    it('an EMPTY tag list matches nothing, while an absent one means no filter', () => {
+      const c = core([pagesRoot()]);
+      const filtered = c.listEntities({ type: 'widget', tags: [], filter: 'or' });
+      const unfiltered = c.listEntities({ type: 'widget' });
+      if (filtered.mode !== 'items' || unfiltered.mode !== 'items') throw new Error('expected item mode');
+      // `<tagged_list tags=""/>` must render nothing, not the entire type.
+      expect(filtered.total).toBe(0);
+      expect(unfiltered.total).toBe(120);
+    });
+
+    it('getEntitiesAll serves more slugs than one call may ask for', () => {
+      const c = core([pagesRoot()]);
+      const slugs = Array.from({ length: 120 }, (_, i) => `w${String(i).padStart(3, '0')}`);
+      // The agent-facing op still refuses: that cap is its contract.
+      expect(() => c.getEntities({ type: 'widget', slugs })).toThrowError(
+        expect.objectContaining({ code: 'INVALID_ARGUMENT' }),
+      );
+      // Host-side composition (a page renderer, the CLI) batches instead.
+      const all = getEntitiesAll(c, { type: 'widget', slugs });
+      expect(all).toHaveLength(120);
+      expect(all.map((r) => r.slug)).toEqual(slugs);
+    });
+
+    it('listEntitiesAll exhausts past the page size instead of truncating', () => {
+      const c = core([pagesRoot()]);
+      const page = c.listEntities({ type: 'widget' });
+      if (page.mode !== 'items') throw new Error('expected item mode');
+      expect(page.items.length).toBeLessThan(120);
+      expect(page.hasMore).toBe(true);
+      expect(listEntitiesAll(c, { type: 'widget' })).toHaveLength(120);
+    });
+  });
+
+  it('check_consistency severity filters by ROW, not by bucket', async () => {
+    // The AC-coverage buckets carry a per-row severity from config, so filtering
+    // them wholesale made `severity: "error"` return an empty list while
+    // `summary.errors` still counted those rows.
+    const c = core([pagesRoot()]);
+    const report = await c.checkConsistency({ severity: 'error' });
+    const rows = report.entitiesWithoutAcCoverage as Array<{ severity: string }>;
+    expect(rows.every((r) => r.severity === 'error')).toBe(true);
   });
 
   it('overview declares each root identity regime up front', async () => {

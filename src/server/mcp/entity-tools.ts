@@ -27,7 +27,7 @@ import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-rea
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
-import { hasDeclaredSearchFields, type DiscoveryCore } from '../discovery/index.js';
+import { getEntitiesAll, hasDeclaredSearchFields, type DiscoveryCore } from '../discovery/index.js';
 import { resolveSearchFields } from '../discovery/search/fields.js';
 
 export interface EntityToolsDeps {
@@ -178,12 +178,8 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       // M39: the read goes through the discovery core, which owns the slug-list
       // limit and the response budget. A missing slug still comes back as
       // `{ slug, entity: null }` rather than an error — absence is an answer.
-      const result = deps.discovery.getEntities({ type, slugs, view: 'detail' });
-      return ok({
-        type,
-        results: result.results.map((r) => ({ slug: r.slug, entity: r.entity })),
-        ...(result.truncated ? { truncated: true, truncationHint: result.truncationHint } : {}),
-      });
+      const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'detail' });
+      return ok({ type, results: results.map((r) => ({ slug: r.slug, entity: r.entity })) });
     },
   );
 
@@ -275,9 +271,11 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
    * decides what a serialized record looks like.
    */
   const serializeSlugs = (type: string, slugs: string[]) =>
-    deps.discovery
-      .getEntities({ type, slugs, view: 'element_list_item' })
-      .results.filter((r) => r.entity !== null)
+    // getEntitiesAll: the service decided how many slugs this page has (the
+    // caller's own `limit`), so refusing to serialize them past 50 would turn a
+    // documented `list_entities({ limit: 100 })` into a thrown error.
+    getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' })
+      .filter((r) => r.entity !== null)
       .map((r) => r.entity);
 
   // ─── list_entities ────────────────────────────────────────────────────────
@@ -313,7 +311,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search across one or all active entity types that support search (see describe_entity_type.searchSupported). Omit `type` to search every searchable active type, grouped by type in the response. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total }] }.',
+    'Plain text search across one or all active entity types. EVERY active type is searchable — omit `type` to search all of them, grouped by type in the response. A type is searched over the paths in describe_entity_type.searchableFields (its own declaration if it has one, otherwise every text path of its schema); `searchSupported` reports only whether the type NARROWED that default, and never means a type is excluded. `filters` is the same type-specific escape hatch as list_entities. Returns { results: [{ type, items, total, searchedFields? }] }.',
     {
       type: z.string().optional(),
       query: z.string(),
@@ -366,7 +364,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
-    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD/search is supported, L9 views, and the custom server\'s tool line (if any). Omit `type` for all active types.',
+    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchSupported` means "this type declared its own searchableFields", NOT "this type can be searched" — every active type can. Omit `type` for all active types.',
     {
       type: z.string().optional(),
     },

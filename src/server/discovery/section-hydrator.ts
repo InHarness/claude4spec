@@ -64,7 +64,10 @@ export async function hydrateSection(
   section: RawSection,
   includeSubtree = false,
 ): Promise<HydratedSection> {
-  const pageContent = await pages.read(section.rootId, section.pagePath);
+  // readBody, NOT read: `line_start`/`line_end` index the frontmatter-stripped
+  // body (see PageSource.readBody). Slicing the raw file by them shifts every
+  // section by the height of the frontmatter block.
+  const pageContent = await pages.readBody(section.rootId, section.pagePath);
   const body = sliceBody(pageContent, section, includeSubtree);
   return { ...section, body, edges: parseEdges(db, section, body) };
 }

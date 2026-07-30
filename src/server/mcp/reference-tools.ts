@@ -308,29 +308,67 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     },
   );
 
+  /**
+   * Deliberately NOT migrated to the core in this tier.
+   *
+   * The core's `list_sections` is a discriminated union (`by: "page" | "anchor"`)
+   * with renamed rows and no fuzzy `query`. Putting that on this tool here would
+   * have broken every existing caller — `list_sections({ pagePath })` fails zod
+   * validation on the new required discriminator, and rows lose `pagePath` /
+   * `headingText` / `lineStart` — which is exactly the kind of change this tier
+   * promised not to make. An earlier revision of this branch did make it; this
+   * is the revert.
+   *
+   * The union, the `size` measurement and the `search_pages`-then-anchor
+   * replacement for `query` all land with the rest of the new tool surface in
+   * Tier B, where the break is declared rather than smuggled in.
+   */
   const listSections = mcpTool(
     'list_sections',
-    'List sections from the section index, either for one page (`by: "page"` with rootId + path) or by exact anchor (`by: "anchor"`). Each row carries the anchor, its heading and heading path, and the section\'s BYTE SIZE — measure before fetching, then read one with get_section. The old fuzzy `query` mode is gone: search prose with search_pages, then follow the anchor it returns.',
+    'List sections from the section index. Filter by `anchor` (exact match), `query` (substring match on heading_text/heading_path), or `pagePath` (sections of a single page). Thin proxy over SectionsService — `section_index` is owned by M06.',
     {
-      by: z.enum(['page', 'anchor']).describe('Identity regime: a page key, or an anchor'),
-      rootId: z.string().optional().describe('Required with by: "page"'),
-      path: z.string().optional().describe('Required with by: "page"'),
-      anchor: z.string().optional().describe('Required with by: "anchor"'),
+      anchor: z.string().optional(),
+      query: z.string().optional(),
+      pagePath: z.string().optional(),
       limit: z.number().int().positive().max(2000).optional(),
-      offset: z.number().int().nonnegative().optional(),
     },
     async (args) => {
       try {
-        const input =
-          args.by === 'anchor'
-            ? ({ by: 'anchor' as const, anchor: String(args.anchor ?? '') })
-            : ({ by: 'page' as const, rootId: String(args.rootId ?? ''), path: String(args.path ?? '') });
-        const page = await deps.discovery.listSections({
-          ...input,
+        const anchor = args.anchor ? String(args.anchor) : undefined;
+        if (anchor) {
+          const entry = deps.sectionsService.getByAnchor(anchor);
+          return ok({
+            sections: entry
+              ? [
+                  {
+                    anchor: entry.anchor,
+                    pagePath: entry.pagePath,
+                    headingText: entry.headingText,
+                    headingPath: entry.headingPath,
+                    headingLevel: entry.headingLevel,
+                    lineStart: entry.lineStart,
+                    lineEnd: entry.lineEnd,
+                  },
+                ]
+              : [],
+          });
+        }
+        const entries = deps.sectionsService.list({
+          pagePath: args.pagePath ? String(args.pagePath) : undefined,
+          search: args.query ? String(args.query) : undefined,
           limit: args.limit as number | undefined,
-          offset: args.offset as number | undefined,
         });
-        return ok({ sections: page.items, total: page.total, hasMore: page.hasMore });
+        return ok({
+          sections: entries.map((e) => ({
+            anchor: e.anchor,
+            pagePath: e.pagePath,
+            headingText: e.headingText,
+            headingPath: e.headingPath,
+            headingLevel: e.headingLevel,
+            lineStart: e.lineStart,
+            lineEnd: e.lineEnd,
+          })),
+        });
       } catch (err) {
         return fail(err);
       }

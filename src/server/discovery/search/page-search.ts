@@ -43,7 +43,9 @@ export async function searchPages(
     for (const rel of await safeList(pages, root.id)) {
       let content: string;
       try {
-        content = await pages.read(root.id, rel);
+        // Frontmatter-stripped: a hit's `line` has to be comparable with the
+        // section index's line ranges, or the anchor attached to it is wrong.
+        content = await pages.readBody(root.id, rel);
       } catch {
         continue;
       }

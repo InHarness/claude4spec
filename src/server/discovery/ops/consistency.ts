@@ -58,13 +58,31 @@ const RULES: Record<string, { id: number; bucket: string }> = {
   'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
 };
 
-/** Which buckets count as errors; everything else in the report is a warning. */
+/** Buckets whose every row is an error, regardless of configuration. */
 const ERROR_BUCKETS = new Set([
   'brokenReferences',
   'invalidTagReferences',
   'brokenExtensionReferences',
   'brokenAcVerifies',
 ]);
+
+/**
+ * The severity of ONE row.
+ *
+ * The AC-coverage buckets carry a per-row `severity` taken from config
+ * (`'error' | 'warn' | 'off'`), so they are neither wholly errors nor wholly
+ * warnings. Filtering them at bucket granularity made `severity: 'error'` hand
+ * back an empty list while `summary.errors` still counted those very rows —
+ * a report that contradicts its own summary is worse than no filter at all.
+ */
+function severityOf(bucket: string, row: unknown): 'error' | 'warning' {
+  if (ERROR_BUCKETS.has(bucket)) return 'error';
+  const declared = (row as { severity?: string } | null)?.severity;
+  if (declared === 'error') return 'error';
+  // `warn` (the config spelling) and everything else — an unreferenced entity
+  // has no per-row severity and has always been a warning.
+  return 'warning';
+}
 
 function bucketsFor(rule: string | number | undefined): Set<string> | null {
   if (rule === undefined) return null;
@@ -334,15 +352,8 @@ export async function checkConsistency(
       report[name] = [];
       continue;
     }
-    if (input.severity === 'error' && !ERROR_BUCKETS.has(name)) {
-      report[name] = [];
-      continue;
-    }
-    if (input.severity === 'warning' && ERROR_BUCKETS.has(name)) {
-      report[name] = [];
-      continue;
-    }
-    report[name] = input.limit === undefined ? rows : rows.slice(0, input.limit);
+    const kept = input.severity ? rows.filter((row) => severityOf(name, row) === input.severity) : rows;
+    report[name] = input.limit === undefined ? kept : kept.slice(0, input.limit);
   }
 
   return report;

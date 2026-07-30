@@ -55,9 +55,19 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
   requireActiveType(deps, input.type);
   const filter = input.filter ?? 'and';
 
-  const slugs = input.tags?.length
-    ? deps.reader.findByTag({ type: input.type, tags: input.tags, filter }).map((e) => e.slug)
-    : deps.reader.listSlugs(input.type);
+  /**
+   * An ABSENT `tags` is "no tag filter"; an EMPTY `tags` is "filter by nothing",
+   * which matches nothing. Collapsing the two is how `<tagged_list tags=""/>`
+   * would render the entire type instead of an empty list — `reader.findByTag`
+   * has always returned `[]` for an empty tag set, and this is the surface that
+   * replaced it.
+   */
+  const slugs =
+    input.tags === undefined
+      ? deps.reader.listSlugs(input.type)
+      : input.tags.length === 0
+        ? []
+        : deps.reader.findByTag({ type: input.type, tags: input.tags, filter }).map((e) => e.slug);
   const sorted = [...slugs].sort((a, b) => a.localeCompare(b));
 
   // "How many entities carry tag X" without walking them: the count mode exists

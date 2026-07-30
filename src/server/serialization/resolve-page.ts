@@ -5,7 +5,7 @@ import {
   renderSingleElement,
   renderTaggedListMixed,
 } from './inline-renderer.js';
-import type { DiscoveryCore, SerializedMeta } from '../discovery/index.js';
+import { getEntitiesAll, listEntitiesAll, type DiscoveryCore, type SerializedMeta } from '../discovery/index.js';
 
 /**
  * Expanding tags inline is a RENDER concern — the editor preview, the static
@@ -158,7 +158,10 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
       error: 'unknown_type',
     };
   }
-  const { results } = deps.discovery.getEntities({ type, slugs, view: 'element_list_item' });
+  // getEntitiesAll, not getEntities: the agent-facing op caps its slug list, and
+  // an author who wrote 51 slugs on a page must still see 51 entities rendered
+  // rather than an error comment where the list was.
+  const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' });
   const items = results.filter((r) => r.entity !== null).map((r) => withMeta(r.entity, r));
   const missing = results.filter((r) => r.entity === null).map((r) => r.slug);
   const data = { items, missing };
@@ -203,7 +206,10 @@ function resolveTaggedListMixed(tag: XmlTag, deps: ResolvePageDeps): ResolveOutc
   // of any other type silently vanished from a mixed list. Every one of those
   // four keys was the type name plus an `s`, so deriving it covers the same
   // four identically and stops dropping the rest.
-  const groups: Record<string, unknown[]> = {};
+  // The four original keys are seeded FIRST and unconditionally: a consumer
+  // doing `groups.endpoints.length` must keep reading 0 when the type is
+  // deactivated or its plugin failed to load, not throw on `undefined`.
+  const groups: Record<string, unknown[]> = { endpoints: [], dtos: [], 'database-tables': [], 'ui-views': [] };
   for (const type of deps.activeTypes) {
     groups[`${type}s`] = itemsFor(deps, type, tags, filter);
   }
@@ -220,14 +226,11 @@ function itemsFor(
   tags: string[],
   filter: 'and' | 'or',
 ): unknown[] {
-  const result = deps.discovery.listEntities({
-    type,
-    tags,
-    filter,
-    view: 'tagged_list_item',
-    limit: 1000,
-  });
-  return result.mode === 'items' ? result.items.map((item) => withMeta(item.data, item)) : [];
+  // A rendered tagged list is complete or it is wrong: a reader cannot tell a
+  // truncated list from a short one, so this exhausts the pages.
+  return listEntitiesAll(deps.discovery, { type, tags, filter, view: 'tagged_list_item' }).map((item) =>
+    withMeta(item.data, item),
+  );
 }
 
 function normalizeType(raw: string, deps: ResolvePageDeps): string | null {

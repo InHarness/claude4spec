@@ -4,6 +4,7 @@ import { createContext } from '../context.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { withMeta } from './_meta.js';
+import { listEntitiesAll } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -25,16 +26,25 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   }
   const ctx = await createContext(args);
   try {
-    const grouped: Record<string, unknown[]> = {};
+    // The seven original buckets are seeded first: a shell pipeline reading
+    // `.endpoints` must keep getting `[]` for a deactivated type rather than
+    // `null`.
+    const grouped: Record<string, unknown[]> = {
+      endpoints: [],
+      dtos: [],
+      'database-tables': [],
+      'ui-views': [],
+      acs: [],
+      'design-systems': [],
+      diagrams: [],
+    };
     for (const type of ctx.reader.listTypes()) {
-      const result = ctx.discovery.listEntities({
+      grouped[`${type}s`] = listEntitiesAll(ctx.discovery, {
         type,
         tags,
         filter: filterRaw,
         view: 'tagged_list_item',
-        limit: 1000,
-      });
-      grouped[`${type}s`] = result.mode === 'items' ? result.items.map(withMeta) : [];
+      }).map(withMeta);
     }
     writeOutput({ ...grouped, query: { tags, filter: filterRaw } }, args);
   } finally {
