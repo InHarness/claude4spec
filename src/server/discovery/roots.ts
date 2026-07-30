@@ -53,9 +53,16 @@ export class RootSet {
    */
   require(rootId: string | undefined, operation: string): Root {
     if (!rootId) {
+      // The correction names a root that ACTUALLY EXISTS in this project. The
+      // old page API filled the gap with the built-in root's name, which is how
+      // a missing argument turned into a confident answer from the wrong
+      // directory — so an example is only offered when there is a real one.
+      const example = this.ids()[0];
       throw invalidArgument(
         `${operation} requires rootId — a page path alone is ambiguous across roots`,
-        `${operation}({ rootId: "${this.ids()[0] ?? 'pages'}", … }); roots in this project: ${this.ids().join(', ')}`,
+        example
+          ? `${operation}({ rootId: "${example}", … }); roots in this project: ${this.ids().join(', ')}`
+          : `${operation} needs a rootId, but this project declares no page roots`,
       );
     }
     const root = this.byId.get(rootId);
