@@ -323,16 +323,14 @@ describe('entity-tools: search_entities requires one type', () => {
   });
 
   /**
-   * `searchedFields` is a promise about what was CONSULTED. A service ranks over
-   * columns the host cannot see, so the only honest scope to report for it is
-   * one the same package stated as data — which is what gates the escape hatch.
-   * Undeclared, the host would have reported every text path of the schema while
-   * the query ran against whichever columns the service happened to pick, and an
-   * empty result would read as "not in the spec".
+   * 0.2.4 removed the per-type escape hatch. `searchedFields` is a promise about
+   * what was CONSULTED, and a service ranking over columns the host cannot see
+   * could only keep that promise by echoing a second declaration back. One
+   * derivation, one ranking, one answer — so a service that still ships a
+   * `search` method is simply never reached.
    */
-  it('a custom `search` is used only when the type also DECLARED its scope', async () => {
+  it('never delegates to a service `search`, even when the type has one', async () => {
     const { deps, service } = fakeDeps();
-    // `widget` has a `search` method but no `searchableFields` declaration.
     const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
     expect(service.search).not.toHaveBeenCalled();
     // Answered by the core, whose searchedFields is exactly what it searched.
@@ -375,40 +373,36 @@ describe('entity-tools: list_entities measurement', () => {
 
 describe('entity-tools: describe_entity_type', () => {
   /**
-   * M39 changed what `searchSupported` MEANS. It used to be "the service has a
-   * `search` method", which excluded seven of eight types from search entirely.
-   * It now means "the type narrowed the host's default scope with its own
-   * `searchableFields` declaration" — and never means "not searchable", which
-   * is why `searchableFields` comes back either way.
+   * 0.2.4 removed `searchSupported` from this output entirely.
+   *
+   * Its meaning had already moved once — from "the service implements `search`"
+   * to "the type narrowed the default scope" — and with both type-side layers
+   * gone there is nothing left for it to report: every active type is
+   * searchable, over a scope that is guaranteed non-empty, so the flag could
+   * only ever be `true`. `searchableFields` stays, but as a DERIVED field.
    */
-  it('reports crudSupported, and searchSupported as "the type declared its own fields"', async () => {
+  it('reports crudSupported and a derived scope, with no searchSupported flag at all', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'describe_entity_type').handler({ type: 'widget' });
     const { types } = parse(result) as { types: Array<Record<string, unknown>> };
     expect(types).toHaveLength(1);
-    // The widget service HAS a `search` method and declares no fields — under
-    // the old meaning this said `true`.
-    expect(types[0]).toMatchObject({ type: 'widget', crudSupported: true, searchSupported: false });
-    // ...and it is searchable regardless, over the host default derived from
-    // its create schema.
+    expect(types[0]).toMatchObject({ type: 'widget', crudSupported: true });
+    expect(types[0]).not.toHaveProperty('searchSupported');
+    // Derived from the create schema — the only source of scope since 0.2.4.
     expect(types[0]!.searchableFields).toEqual(expect.arrayContaining(['name']));
   });
 
-  it('a type that declares searchableFields reports searchSupported: true and exactly those fields', async () => {
-    const declaring = widgetModule({
-      type: 'declaring',
-      backend: {
-        crud: {
-          createSchema: { name: z.string(), note: z.string() },
-          searchableFields: [{ path: 'note', weight: 2 }],
-        },
-      } as BackendModule['backend'],
-    });
-    const { deps } = fakeDeps([declaring]);
-    const result = await tool(deps, 'describe_entity_type').handler({ type: 'declaring' });
+  /**
+   * The scope is non-empty for EVERY active type. A type with no CRUD slot at
+   * all derives nothing from a schema it does not have, and the fallback is
+   * what stops it from answering every query with silence.
+   */
+  it('never reports an empty scope, even for a type with no create schema', async () => {
+    const { deps } = fakeDeps();
+    const result = await tool(deps, 'describe_entity_type').handler({ type: 'no-crud' });
     const { types } = parse(result) as { types: Array<Record<string, unknown>> };
-    expect(types[0]).toMatchObject({ type: 'declaring', searchSupported: true });
-    expect(types[0]!.searchableFields).toEqual(['note']);
+    expect(types[0]!.searchableFields).toEqual(expect.arrayContaining(['slug']));
+    expect((types[0]!.searchableFields as string[]).length).toBeGreaterThan(0);
   });
 
   it('omitting type describes every active type (widget + no-crud), not the inactive one', async () => {

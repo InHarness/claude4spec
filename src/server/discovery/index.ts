@@ -125,6 +125,5 @@ export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): Ge
 
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
 export type * from './types.js';
-export { hasDeclaredSearchFields } from './search/fields.js';
 export { MAX_SLUGS_PER_CALL } from './budget.js';
 export { MAX_LIMIT } from './pagination.js';

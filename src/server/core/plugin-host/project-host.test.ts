@@ -82,6 +82,38 @@ describe('consolidate — overlay', () => {
     expect(host.isActive('glossary')).toBe(true);
   });
 
+  /**
+   * The three sets ARE the payload of `GET /api/_meta/entities`, so their
+   * properties are an API contract, not an internal detail: the client reapplies
+   * activation from this response on project navigation (activation is a lazy
+   * resolution, not a process restart), and a set that reordered between two
+   * calls would churn the client's module registry for no reason.
+   */
+  it('partitions into three disjoint, total, deterministically ordered sets', () => {
+    const registry = baseRegistry('endpoint', 'dto', 'ac');
+    const config = { entities: ['ac', 'endpoint', 'ghost'] };
+    const host = registry.consolidate(config, overlayOf([mod('glossary')]));
+
+    const part = host.partition();
+    expect(part).toEqual({
+      active: ['endpoint', 'ac'],
+      inactive: ['dto', 'glossary'],
+      unknown: ['ghost'],
+    });
+
+    // Disjoint and total over the effective pool.
+    const all = [...part.active, ...part.inactive];
+    expect(new Set(all).size).toBe(all.length);
+    expect(all.sort()).toEqual(host.listAvailable().map((m) => m.type).sort());
+
+    // Stable across calls, and PER PROJECT: the same process serving a second
+    // config answers with different sets, which is why this cannot be cached
+    // process-wide.
+    expect(host.partition()).toEqual(part);
+    const other = registry.consolidate({ entities: ['dto'] }, overlayOf([mod('glossary')]));
+    expect(other.partition().active).toEqual(['dto']);
+  });
+
   it('a whitelist entry in neither layer is unknown', () => {
     const host = baseRegistry('endpoint').consolidate(
       { entities: ['endpoint', 'ghost'] },

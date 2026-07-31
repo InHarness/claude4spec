@@ -412,7 +412,11 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
             type: string;
             label: string;
             crudSupported: boolean;
-            searchSupported: boolean;
+            // 0.2.4: `searchSupported` is gone from the tool's output — with a
+            // non-empty scope mandatory for every active type it was always
+            // true. What is worth showing instead is how WIDE the scope is,
+            // which is the count of derived paths.
+            searchableFields?: string[];
             createSchema?: { properties?: Record<string, unknown> };
           }>)
         : [];
@@ -423,9 +427,9 @@ const entityToolsRenderers: Record<string, ToolRenderer> = {
             <div key={i} className="font-mono text-[12px]" style={{ color: 'var(--c-ink)' }}>
               {t.type}{' '}
               <span style={{ color: 'var(--c-subtle)' }}>
-                crud={String(t.crudSupported)} search=
-                {t.searchSupported ? 'narrowed' : 'default'} fields=
-                {Object.keys(t.createSchema?.properties ?? {}).length}
+                crud={String(t.crudSupported)} fields=
+                {Object.keys(t.createSchema?.properties ?? {}).length} searchable=
+                {t.searchableFields?.length ?? 0}
               </span>
             </div>
           ))}

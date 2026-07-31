@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { compositionOf } from '../../shared/plugin-host/composition.js';
 
 export type RawEntityType =
   | 'endpoint'
@@ -144,7 +145,10 @@ export class RawEntityReader {
    * class, and keeps `hasTable` honest for the callers that must fail loudly.
    */
   private resolveTable(type: string): string | undefined {
-    const table = ENTITY_TABLES[type as RawEntityType] ?? this.host?.getEntity(type)?.table;
+    // 0.2.4: the descriptor is the source; ENTITY_TABLES survives only as the
+    // host-less fallback and is deleted once every reader is built with a host.
+    const table =
+      compositionOf(this.host?.getEntity(type))?.mainTable ?? ENTITY_TABLES[type as RawEntityType];
     if (!table) return undefined;
     return this.tableExists(table) ? table : undefined;
   }

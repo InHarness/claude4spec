@@ -57,19 +57,14 @@ export interface EntityCrudService<T = unknown> {
   update(slug: string, data: unknown): EntityMutateResult | Promise<EntityMutateResult>;
   delete(slug: string): void;
   list(opts: EntityListOpts): EntityListResult<T>;
-  /**
-   * Optional — an escape hatch for a type with a NON-STANDARD ranking.
-   *
-   * M39: its absence no longer excludes a type from search. The host has its
-   * own default over the text paths of the type's schema, so every active type
-   * is searchable whether or not this method exists; `searchableFields` on the
-   * manifest narrows that default declaratively. The paths actually searched
-   * are PART OF THE CONTRACT — they come back as `searchedFields`.
+  /*
+   * 0.2.4 — the optional `search` slot was REMOVED. Ranking belongs to the M39
+   * core, which derives its scope from `createSchema` and applies one order
+   * relation for every type; a per-type implementation meant the same entity
+   * ranked differently depending on which tool asked. This interface keeps the
+   * write path and the operations that cannot be derived from the composition
+   * descriptor.
    */
-  search?(
-    query: string,
-    opts: { limit: number; offset: number; filters?: Record<string, unknown> },
-  ): EntityListResult<T>;
 }
 
 /**
@@ -79,8 +74,8 @@ export interface EntityCrudService<T = unknown> {
  * an earlier draft required a `listRaw()` abstract shape here purely to back a
  * default `list()`, which added an artificial constraint no concrete service
  * actually used, since every one of them overrides `list` with real SQL
- * anyway). `search` stays optional per the interface; a subclass adds it
- * directly when the type supports it.
+ * anyway). 0.2.4: `search` is gone from the interface entirely — ranking is the
+ * M39 core's, over the composition descriptor's table.
  */
 export abstract class BaseEntityCrudService<T = unknown> implements EntityCrudService<T> {
   abstract create(data: unknown): EntityMutateResult | Promise<EntityMutateResult>;

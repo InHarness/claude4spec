@@ -19,7 +19,16 @@ export const DEFAULT_LIMITS = {
   listSections: 100,
   listEntities: 50,
   listTags: 200,
-  searchPages: 50,
+  /**
+   * The tightest default in the core, deliberately. Every other operation here
+   * pages over something already materialized — rows in a table, slugs in a
+   * list. `search_pages` stands on no index at all: each call rereads the
+   * markdown of every root in scope, line by line, with no cache between calls,
+   * so its cost grows with the size of the corpus rather than with the size of
+   * the answer. `rootId` is the only lever a caller has on that cost, and a
+   * conservative default is the only one the core has.
+   */
+  searchPages: 20,
   searchEntities: 50,
   findReferences: 100,
   resolveIdentity: 20,

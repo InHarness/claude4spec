@@ -28,6 +28,7 @@ import type {
   SerializeContext,
   SnapshotData,
 } from '../../serialization/types.js';
+import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
 import { runPluginMigrations } from './plugin-migrate.js';
 
@@ -324,20 +325,36 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     return diffEntity(this, type, a, b, slug);
   }
 
+  /**
+   * One reader per database handle. `count()` memoizes table existence, so
+   * rebuilding it every turn would re-probe `sqlite_master` for each type; and
+   * a project context owns exactly one handle, so the map holds one entry.
+   */
+  private readonly counters = new WeakMap<Database, RawEntityReader>();
+
+  private readerFor(db: Database): RawEntityReader {
+    let reader = this.counters.get(db);
+    if (!reader) {
+      reader = new RawEntityReader(db, this);
+      this.counters.set(db, reader);
+    }
+    return reader;
+  }
+
   computeEntityCounts(db: Database): Record<string, number> {
+    // 0.2.4: the host counts. `systemPrompt.countStat.sqlQuery` is no longer
+    // executed — it was the only place a module handed the host raw SQL to run,
+    // and closing that surface is the point of the slot's deprecation.
+    //
+    // The switch is observable: AC's query carried `WHERE status='active'` and
+    // nothing else does, so its count now includes deprecated AC. That is the
+    // intended direction — the sidebar has always counted without the
+    // predicate, so the agent and the user stop seeing different numbers for
+    // the same type.
+    const reader = this.readerFor(db);
     const counts: Record<string, number> = {};
     for (const m of this.listEntities()) {
-      const sql = m.systemPrompt.countStat.sqlQuery;
-      if (!sql) continue;
-      try {
-        const row = db.prepare(sql).get() as { count?: number } | undefined;
-        counts[m.type] = row?.count ?? 0;
-      } catch (err) {
-        console.warn(
-          `[plugin-host] computeEntityCounts: countStat query failed for type=${m.type}: ${(err as Error).message}`,
-        );
-        counts[m.type] = 0;
-      }
+      counts[m.type] = reader.count(m.type);
     }
     return counts;
   }

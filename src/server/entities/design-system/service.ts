@@ -391,10 +391,4 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
     const total = this.count({ tags: opts.tags, tagFilter: opts.tagFilter });
     return { items, total };
   }
-
-  search(query: string, opts: { limit: number; offset: number }): EntityListResult<DesignSystem> {
-    const items = this.listRaw({ search: query, limit: opts.limit, offset: opts.offset });
-    const total = this.count({ search: query });
-    return { items, total };
-  }
 }
