@@ -23,8 +23,6 @@ export interface StampedRow {
   created_at?: unknown;
 }
 
-const warned = new Set<string>();
-
 /** ISO-8601 with milliseconds, UTC — the one format the write path agrees on. */
 export function nowIso(): string {
   return new Date().toISOString();
@@ -56,21 +54,9 @@ export function resolveStamp(
 ): SystemStamp {
   if (opts?.stamp) return opts.stamp;
 
-  if (opts?.writeFile === false && !warned.has(type)) {
-    warned.add(type);
-    console.warn(
-      `[system-stamp] entity type '${type}' was mutated with writeFile:false and no stamp — ` +
-        `minting a fresh timestamp the file cannot justify. The caller should pass ` +
-        `opts.stamp read from the entity file.`,
-    );
-  }
-
+  // No `writeFile: false` warning — see the host original for why the predicate
+  // cannot carry that meaning (`HostEntityWriter` sets it on every path).
   const now = nowIso();
   if (!existing) return { createdAt: now, updatedAt: now };
   return { createdAt: toIsoMs(existing.created_at) ?? now, updatedAt: now };
-}
-
-/** Test seam: forget which types have warned. */
-export function resetStampWarnings(): void {
-  warned.clear();
 }

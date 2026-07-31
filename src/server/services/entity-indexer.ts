@@ -320,7 +320,10 @@ export class EntityIndexerService {
      * services honour that; this catches the types whose SQL predates the rule.
      */
     const stamp = readSystemFields(snap);
-    if (stamp) projectStamp(this.db, this.host, type, slug, stamp);
+    // `expectServiceWrote` — the restore above DID run a service mutation with
+    // this stamp on the writer, so a surviving mismatch is the service ignoring
+    // it, which is exactly what the warning claims.
+    if (stamp) projectStamp(this.db, this.host, type, slug, stamp, { expectServiceWrote: true });
     if (broadcast) this.ws.broadcast({ kind: 'entity:indexed', type, slug, op: 'upsert' });
     return true;
   }

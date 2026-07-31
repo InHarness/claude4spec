@@ -51,6 +51,15 @@ export function safeTable(table: string | undefined, type: string): string | nul
 /** Types already warned about, so a full rebuild logs once per type, not once per entity. */
 const warned = new Set<string>();
 
+export interface ProjectStampOpts {
+  /**
+   * True when a service mutation just ran and was handed `opts.stamp`, so a
+   * surviving mismatch really is the service ignoring it. False (default) on
+   * paths where the host is the only writer and a write proves nothing.
+   */
+  expectServiceWrote?: boolean;
+}
+
 /**
  * Write `stamp` into the type's audit columns if they disagree with it.
  *
@@ -68,6 +77,7 @@ export function projectStamp(
   type: string,
   slug: string,
   stamp: SystemStamp,
+  opts: ProjectStampOpts = {},
 ): boolean {
   const module = host.getAvailable(type);
   if (!module) return false;
@@ -83,7 +93,19 @@ export function projectStamp(
       .prepare(`SELECT created_at, updated_at FROM ${table} WHERE ${identity} = ?`)
       .get(slug) as { created_at?: unknown; updated_at?: unknown } | undefined;
     if (!row) return false;
-    if (toIsoMs(row.created_at) === stamp.createdAt && toIsoMs(row.updated_at) === stamp.updatedAt) {
+    /**
+     * RAW text comparison, deliberately — not `toIsoMs(...) === stamp....`.
+     *
+     * Both forms denote the same instant, so a normalized comparison calls
+     * `2026-07-31 14:00:00` and `2026-07-31T14:00:00.000Z` equal and returns
+     * early, leaving the legacy `datetime('now')` text in the column forever.
+     * That matters because `ORDER BY created_at` is a BYTE-WISE TEXT sort in
+     * SQLite: `' '` (0x20) sorts before `'T'` (0x54), so a table holding both
+     * forms orders every space-separated row ahead of every ISO one regardless
+     * of the instants involved. One format per column is not cosmetic — it is
+     * what makes the unified order mean anything.
+     */
+    if (row.created_at === stamp.createdAt && row.updated_at === stamp.updatedAt) {
       return false;
     }
     db.prepare(`UPDATE ${table} SET created_at = ?, updated_at = ? WHERE ${identity} = ?`).run(
@@ -91,7 +113,19 @@ export function projectStamp(
       stamp.updatedAt,
       slug,
     );
-    if (!warned.has(type)) {
+    /**
+     * The warning accuses the type's SERVICE of ignoring `opts.stamp`, so it may
+     * only fire on a path where a service actually ran. The release restore's
+     * `noop` branch calls this as the SOLE writer — no mutation happened at all
+     * — where a write is expected rather than evidence of a bug. Warning there
+     * would libel a compliant type AND burn its one warning slot, permanently
+     * suppressing the real signal this exists to carry.
+     *
+     * Only a genuine value CHANGE is reportable, too: rewriting `datetime('now')`
+     * text into the same instant's ISO form is normalization, not a broken type.
+     */
+    const changed = toIsoMs(row.created_at) !== stamp.createdAt || toIsoMs(row.updated_at) !== stamp.updatedAt;
+    if (opts.expectServiceWrote && changed && !warned.has(type)) {
       warned.add(type);
       console.warn(
         `[system-stamp] entity type '${type}' did not honour the supplied stamp — the host ` +

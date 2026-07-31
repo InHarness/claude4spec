@@ -34,9 +34,6 @@ export interface StampedRow {
   created_at?: unknown;
 }
 
-/** Types that have already warned, so a noisy rebuild logs once per type. */
-const warned = new Set<string>();
-
 /**
  * Decide the stamp for one mutation.
  *
@@ -56,27 +53,25 @@ export function resolveStamp(
   if (opts?.stamp) return opts.stamp;
 
   /**
-   * `writeFile: false` says "the caller owns the file". A mutation that also
-   * carries no stamp is therefore minting a timestamp that no file will ever
-   * justify — the next `persist` writes the invented value into the file, and
-   * the round trip silently drifts. That used to be invisible (the column
-   * DEFAULT fired and nobody looked); surfacing it one layer up is the point.
+   * There is deliberately NO warning here on `writeFile: false`.
+   *
+   * The first draft warned when a mutation had no stamp and did not own the
+   * file write, on the theory that it was minting a value no file could justify.
+   * The predicate cannot carry that meaning: `HostEntityWriter` sets
+   * `writeFile: false` on EVERY path it drives, so the flag does not separate
+   * the reindex (which supplies a stamp) from `VersionService.restore` (which
+   * deliberately does not, because a version restore is a mutation and must
+   * mint a fresh `updatedAt`). It fired on the correct path, sending an operator
+   * to debug a non-bug — and because it warned once per type and then went
+   * quiet, it also spent the only warning that type would ever get, muting the
+   * real signal it existed to carry.
+   *
+   * The invariant is enforced where it can actually be observed instead: the
+   * round-trip fixpoint test asserts `file → index → file` is byte-identical,
+   * which fails loudly if any write path mints a timestamp the file cannot
+   * justify.
    */
-  if (opts?.writeFile === false && !warned.has(type)) {
-    warned.add(type);
-    console.warn(
-      `[system-stamp] entity type '${type}' was mutated with writeFile:false and no stamp — ` +
-        `minting a fresh timestamp the file cannot justify. The caller should pass ` +
-        `opts.stamp read from the entity file.`,
-    );
-  }
-
   const now = nowIso();
   if (!existing) return { createdAt: now, updatedAt: now };
   return { createdAt: toIsoMs(existing.created_at) ?? now, updatedAt: now };
-}
-
-/** Test seam: forget which types have warned. */
-export function resetStampWarnings(): void {
-  warned.clear();
 }

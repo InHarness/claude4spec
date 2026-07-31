@@ -51,6 +51,21 @@ function placeholderStamp(): string {
   return new Date(0).toISOString();
 }
 
+/** Absolute path of the git work tree containing `cwd`, or null when there is none. */
+function repoRoot(cwd: string): string | null {
+  try {
+    const out = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf-8',
+      timeout: 10_000,
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return out.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * First and last commit date per entity file, from ONE `git log` pass.
  *
@@ -58,6 +73,17 @@ function placeholderStamp(): string {
  * hundred entities that is minutes of boot time. One pass over the entities
  * directory, walked newest-first, gives `last` on first sight of a path and
  * `first` on the final sight, which is all we need.
+ *
+ * Keys are REPO-ROOT-relative, because that is what git prints. `git log
+ * --name-status` reports paths relative to the work-tree top level no matter
+ * what `cwd` or pathspec it was given, so a project living in a subdirectory of
+ * its repo (`<repo>/packages/spec/`) emits `packages/spec/.claude4spec/…` while
+ * a cwd-relative key would say `.claude4spec/…`. Those never match, and the
+ * failure is SILENT: every entity simply falls through to the `mtime` rung,
+ * which on a fresh clone is the checkout time — so every file in the project
+ * gets the same fabricated timestamp, gets committed, and the next clone
+ * fabricates a different one. That is the exact outcome this module exists to
+ * prevent, so the key is derived from the repo root the same way git derives it.
  */
 function gitDatesByPath(cwd: string, entitiesDir: string): Map<string, { first: string; last: string }> {
   const out = new Map<string, { first: string; last: string }>();
@@ -65,7 +91,16 @@ function gitDatesByPath(cwd: string, entitiesDir: string): Map<string, { first: 
   try {
     stdout = execFileSync(
       'git',
-      ['log', `--format=${COMMIT_MARK}%aI`, '--name-status', '--diff-filter=AMR', '--', entitiesDir],
+      /**
+       * `%cI` — the COMMIT date, not `%aI` (author date). `git log` walks in
+       * commit-date order by default, and the newest-first logic below depends
+       * on the emitted date agreeing with that traversal. They diverge whenever
+       * history is rewritten: a squash-merge carries the branch's first author
+       * date but the merge's commit date, so PRs that land out of authoring
+       * order yield `first > last` — and the clamp at the end of the backfill
+       * then collapses both timestamps onto the wrong one.
+       */
+      ['log', `--format=${COMMIT_MARK}%cI`, '--name-status', '--diff-filter=AMR', '--', entitiesDir],
       { cwd, encoding: 'utf-8', timeout: 30_000, maxBuffer: 64 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] },
     );
   } catch {
@@ -123,8 +158,20 @@ export function backfillEntityTimestamps(
     byRung: { entity_version: 0, git: 0, mtime: 0, placeholder: 0 },
   };
 
-  // Candidates first — a project already on 0.2.4 must not spawn `git`.
-  const candidates: Array<{ type: string; slug: string; relPath: string; data: SnapshotData }> = [];
+  /**
+   * Candidates first — a project already on 0.2.4 must not spawn `git`.
+   *
+   * A candidate must be STAMPABLE, not merely unstamped. A snapshot that is not
+   * a plain object cannot carry the flat envelope at all (`attachSystemFields`
+   * documents that it passes arrays and scalars through untouched), so such a
+   * file would be re-detected as unstamped on every single boot — and because
+   * the early return below is what keeps this cheap, one such file would
+   * re-spawn the full `git log` pass over the entities directory forever. It is
+   * not a candidate; it is a type whose snapshot shape has no room for the
+   * envelope, which is a different fact and not this module's to fix.
+   */
+  const candidates: Array<{ type: string; slug: string; relPath: string; data: Record<string, unknown> }> = [];
+  let unstampable = 0;
   for (const file of store.listAll()) {
     report.scanned += 1;
     let data: SnapshotData;
@@ -134,7 +181,17 @@ export function backfillEntityTimestamps(
       continue; // unreadable/invalid JSON — the indexer reports it, not us
     }
     if (readSystemFields(data)) continue;
-    candidates.push({ ...file, data });
+    if (data === null || typeof data !== 'object' || Array.isArray(data)) {
+      unstampable += 1;
+      continue;
+    }
+    candidates.push({ ...file, data: data as Record<string, unknown> });
+  }
+  if (unstampable) {
+    console.warn(
+      `[timestamp-backfill] ${unstampable} entity file(s) have a non-object snapshot and cannot ` +
+        `carry createdAt/updatedAt — they will order by slug alone`,
+    );
   }
   if (!candidates.length) return report;
 
@@ -151,7 +208,14 @@ export function backfillEntityTimestamps(
 
   const gitDates = gitDatesByPath(cwd, entitiesDir);
   const placeholder = placeholderStamp();
+  let failedWrites = 0;
   const storeRoot = path.resolve(cwd, entitiesDir);
+  // git prints repo-root-relative paths; build the lookup key the same way.
+  // Falls back to `cwd` when there is no work tree, which is harmless — the
+  // git map is empty in that case anyway.
+  const root = repoRoot(cwd) ?? cwd;
+  const gitKeyFor = (relPath: string): string =>
+    path.relative(root, path.join(storeRoot, relPath)).replaceAll(path.sep, '/');
 
   for (const candidate of candidates) {
     let rung: Rung = 'placeholder';
@@ -161,7 +225,7 @@ export function backfillEntityTimestamps(
     const version = byEntity.get(`${candidate.type}/${candidate.slug}`);
     const versionFirst = toIsoMs(version?.first);
     const versionLast = toIsoMs(version?.last);
-    const gitEntry = gitDates.get(path.posix.join(entitiesDir, candidate.relPath));
+    const gitEntry = gitDates.get(gitKeyFor(candidate.relPath));
 
     if (versionFirst && versionLast) {
       rung = 'entity_version';
@@ -182,16 +246,18 @@ export function backfillEntityTimestamps(
 
     if (createdAt > updatedAt) createdAt = updatedAt;
 
-    const data = candidate.data;
-    if (data === null || typeof data !== 'object' || Array.isArray(data)) continue;
     try {
       store.write(
         candidate.type as never,
         candidate.slug,
-        { ...(data as Record<string, unknown>), createdAt, updatedAt } as SnapshotData,
+        { ...candidate.data, createdAt, updatedAt } as SnapshotData,
       );
     } catch {
-      continue; // non-kebab slug, unwritable path — never fail boot over it
+      // Non-kebab slug, unwritable path. Never fail boot over it — but this
+      // file stays unstamped, so say so once rather than silently retrying the
+      // whole pass on every future boot.
+      failedWrites += 1;
+      continue;
     }
     report.byRung[rung] += 1;
     report.written += 1;
@@ -202,6 +268,20 @@ export function backfillEntityTimestamps(
       `(entity_version: ${report.byRung.entity_version}, git: ${report.byRung.git}, ` +
       `mtime: ${report.byRung.mtime}, placeholder: ${report.byRung.placeholder})`,
   );
+  if (failedWrites) {
+    console.warn(
+      `[timestamp-backfill] ${failedWrites} entity file(s) could not be written and remain ` +
+        `unstamped — this pass will run again on the next boot until they are fixed or removed`,
+    );
+  }
+  if (!report.byRung.git && gitDates.size === 0 && report.written) {
+    // Loud because it is the difference between real history and fabricated
+    // history, and because the previous shape of this code failed here silently.
+    console.warn(
+      `[timestamp-backfill] no git history was available for the entities directory — ` +
+        `timestamps fell back to file mtime or a placeholder`,
+    );
+  }
   return report;
 }
 
