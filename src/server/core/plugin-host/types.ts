@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { UpsertResult } from '../../serialization/writer.js';
+import type { SystemStamp } from '../../serialization/system-fields.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type {
   PluginCommandContribution,
@@ -64,10 +65,15 @@ export type SqlMigration = {
  *                 (false on the index-rebuild path, true on a real restore).
  *   - `writeFile` gates re-persisting the entity's JSON file (always false on
  *                 both restore paths — the caller owns the file write).
+ *   - `stamp`     (0.2.4) carries the entity file's `createdAt`/`updatedAt` so
+ *                 the service writes them into its columns VERBATIM instead of
+ *                 minting `datetime('now')`. Optional: a user mutation has no
+ *                 file behind it yet and lets the service mint one.
  */
 export interface WriteOpts {
   capture: boolean;
   writeFile: boolean;
+  stamp?: SystemStamp;
 }
 
 /**
@@ -190,15 +196,15 @@ export interface BackendModule extends EntityModuleManifest {
       createSchema: ZodRawShape;
       updateSchema?: ZodRawShape;
       descriptions?: { entity?: string };
-      /**
-       * M39 — the type's own narrowing of what `search_entities` covers, as
-       * DATA rather than code. Dotted paths with `[]` for arrays
-       * (`fields[].description`, `columns[].name`). Absent means the host
-       * default applies: every text path derivable from `createSchema`, so a
-       * type is searchable without declaring anything. A declaration NARROWS
-       * and re-weights; it is not a way to opt out of being searched.
+      /*
+       * 0.2.4 — `searchableFields` was REMOVED (not deprecated). Search scope
+       * now has exactly one source: the text paths derivable from
+       * `createSchema`, with the agent's `fields` parameter as the only
+       * override. Had one of the two type-side layers survived, the same type
+       * would rank differently depending on which MCP tool asked. Both had zero
+       * producers across the host repo, the preinstalled envelope and external
+       * packages — the sole occurrence was a test fixture.
        */
-      searchableFields?: Array<{ path: string; weight?: number }>;
     };
     /**
      * A factory receiving the same service instance as `crud`/`mcpServer`.
@@ -453,9 +459,15 @@ export interface ProjectPluginHost {
   buildMcpServers(): Array<{ name: string; server: McpServerFactory }>;
 
   /**
-   * Run each active plugin's `systemPrompt.countStat.sqlQuery` against the db
-   * and return the results indexed by `module.type`. Used by the chat handler
-   * to populate `SystemPromptInput.entityCounts`.
+   * Entity counts for the active types, keyed by `module.type`, in
+   * `listEntities()` order. Used by the chat handler to populate
+   * `SystemPromptInput.entityCounts`.
+   *
+   * 0.2.4: counted by the host through `RawEntityReader.count(type)` and
+   * labelled with the manifest's `labelPlural`. It no longer executes
+   * `systemPrompt.countStat.sqlQuery` — that slot was the one place a module
+   * handed the host raw SQL to run. The acceptance criterion is that this
+   * aggregate and the sidebar's return the SAME number for the same type.
    */
   computeEntityCounts(db: Database): Record<string, number>;
 

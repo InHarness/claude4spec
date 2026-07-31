@@ -47,6 +47,21 @@ export function pagesRouter(
     }
   });
 
+  /**
+   * Text search over page content (query param `q`) — a FILE SCAN, not an index.
+   *
+   * There is no full-text index of page content anywhere in this system: no FTS
+   * table, no derived structure holding the text. Every call rereads the
+   * markdown of this root, line by line, with no cache between calls. Cost grows
+   * linearly with the number and size of pages, and narrowing the scope (the
+   * root, which is already in the path here) is the only input-side lever on it.
+   *
+   * Agent-facing search semantics — regex, `hits`/`pages`/`count` modes,
+   * pagination — belong to the M39 core operation `search_pages`. This endpoint
+   * is the HTTP surface for the UI, not the MCP tool's contract, which is why
+   * the two have different shapes and why this one is not the place to add
+   * modes.
+   */
   router.get('/search', async (req, res, next) => {
     try {
       const rt = resolve(req, res);

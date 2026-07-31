@@ -38,6 +38,7 @@ import type {
   UiViewCreateInput,
 } from '../../shared/entities.js';
 import type { EntityWriter, UpsertResult } from '../serialization/writer.js';
+import type { SystemStamp } from '../serialization/system-fields.js';
 import type { PluginHost, WriteOpts } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
@@ -103,8 +104,30 @@ export class HostEntityWriter implements EntityWriter {
    */
   private readonly mutateOpts: WriteOpts;
 
-  constructor(private host: PluginHost, private tags: TagsService, opts: { capture?: boolean } = {}) {
-    this.mutateOpts = { capture: opts.capture ?? true, writeFile: false };
+  constructor(
+    private host: PluginHost,
+    private tags: TagsService,
+    private readonly opts: { capture?: boolean; stamp?: SystemStamp } = {},
+  ) {
+    this.mutateOpts = {
+      capture: opts.capture ?? true,
+      writeFile: false,
+      ...(opts.stamp ? { stamp: opts.stamp } : {}),
+    };
+  }
+
+  /**
+   * 0.2.4 — a clone that writes `stamp` into every mutation's audit columns
+   * instead of letting the service mint one.
+   *
+   * A clone rather than a mutable field: `restoreEntity` builds one per entity
+   * from that entity's own file, and the writer it hands the per-type `restore`
+   * slot may be retained by it for the length of the call. Sharing one mutable
+   * writer across a batch restore would leak the previous entity's timestamps
+   * into the next one.
+   */
+  withStamp(stamp: SystemStamp): HostEntityWriter {
+    return new HostEntityWriter(this.host, this.tags, { ...this.opts, stamp });
   }
 
   // ─── the one generic write door ───────────────────────────────────────────

@@ -13,6 +13,7 @@
 import type { EntityDef } from '../../entities/registry.js';
 import type { FrontendModule } from './types.js';
 import { clientPluginHost } from './host.js';
+import { legacyComposition } from '../../../shared/plugin-host/composition.js';
 
 interface LegacyDefaults {
   table: string;
@@ -43,6 +44,11 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
   const module: FrontendModule = {
     type: def.type,
     table: defaults.table,
+    // 0.2.4 — synthesized through the SHARED normalizer, so a legacy client
+    // module describes its composition by exactly the rule the server uses. The
+    // fifth consumer of `manifest.table` had to move with the other four:
+    // leaving one behind is what leaves two sources of truth for one table.
+    composition: legacyComposition(def.type, defaults.table),
     label: def.label,
     labelPlural: def.labelPlural,
     displayOrder: defaults.displayOrder,

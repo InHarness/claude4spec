@@ -1,7 +1,7 @@
 /**
  * M39 — `list_pages` and `get_page`.
  *
- * Together with `list_sections` + `get_section` these are the full replacement
+ * Together with `list_sections` + `get_sections` these are the full replacement
  * for reading the specification with `Glob` and `Read`. The difference that
  * matters is not the name: a glob has no pagination, no measurement and no
  * notion of a root, so it can address a brief, a patch or the entity catalogue.
@@ -82,7 +82,7 @@ export async function getPage(
   if (input.range && root.sectionIndexed) {
     throw invalidArgument(
       `root '${root.id}' is section-indexed, so a line range is the wrong window onto it`,
-      `use list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }) then get_section({ anchor })`,
+      `use list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }) then get_sections({ anchors })`,
     );
   }
 

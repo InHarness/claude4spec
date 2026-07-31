@@ -147,6 +147,9 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
   return {
     type: c.type,
     table: c.table,
+    // 0.2.4 — carried through verbatim; `PluginRegistryImpl` validates it and
+    // caches the resolved descriptor immediately after this lowering.
+    composition: c.composition,
     label: c.label,
     labelPlural: c.labelPlural,
     displayOrder: c.displayOrder,

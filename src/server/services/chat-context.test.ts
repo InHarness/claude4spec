@@ -35,6 +35,54 @@ const PEERS: PeerProject[] = [
   { name: 'Auth', path: '/ws/auth' },
 ];
 
+/**
+ * 0.2.4 — the `<project>` element carries one count attribute per entity type,
+ * and `attrs()` escapes VALUES but interpolates KEYS verbatim. So whatever the
+ * key is drawn from is, in effect, unescaped XML: a human label ("AC (active)",
+ * "Acceptance Criteria") produced a malformed attribute, and this is the assertion
+ * that catches the next attempt to key it by one.
+ */
+describe('buildSystemPrompt — <project> count attributes are well-formed', () => {
+  const typed = (types: Array<{ type: string; labelPlural: string }>) =>
+    ({
+      listEntities: () =>
+        types.map((t) => ({ ...t, label: t.labelPlural, systemPrompt: { roleNoun: t.type } })),
+    }) as unknown as ProjectPluginHost;
+
+  it('keys each count by the type slug, never by a human label', () => {
+    const out = build({
+      host: typed([
+        { type: 'ac', labelPlural: 'Acceptance Criteria' },
+        { type: 'ui-view', labelPlural: 'UI Views' },
+      ]),
+      entityCounts: { ac: 12, 'ui-view': 3 },
+    });
+    expect(out).toContain('ac="12"');
+    expect(out).toContain('ui-view="3"');
+    expect(out).not.toContain('Acceptance Criteria=');
+    expect(out).not.toContain('UI Views=');
+  });
+
+  /**
+   * The general form of the rule, so a future key source is held to it too: an
+   * XML Name may not contain a space, a quote or a parenthesis.
+   */
+  it('emits only valid XML Names as attribute keys', () => {
+    const out = build({
+      host: typed([
+        { type: 'ac', labelPlural: 'Acceptance Criteria' },
+        { type: 'design-system', labelPlural: 'Design Systems' },
+      ]),
+      entityCounts: { ac: 1, 'design-system': 1 },
+    });
+    const projectTag = /<project\s([^>]*)\/>/.exec(out)?.[1] ?? '';
+    expect(projectTag).not.toBe('');
+    for (const [, key] of projectTag.matchAll(/([^\s=]+)="/g)) {
+      expect({ key, valid: /^[A-Za-z_][A-Za-z0-9_.-]*$/.test(key!) }).toEqual({ key, valid: true });
+    }
+  });
+});
+
 describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
   it('omits the block when c4sToolsAvailable is false, regardless of peers', () => {
     const out = build({ c4sToolsAvailable: false, workspaceProjects: PEERS, workspaceName: 'acme' });

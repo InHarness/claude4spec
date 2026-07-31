@@ -11,7 +11,7 @@
  * looking for a write tool finds none, by construction rather than by policy.
  *
  * Operations are grouped by subject rather than one file per operation —
- * `list_sections` and `get_section` share the same row shape and the same root
+ * `list_sections` and `get_sections` share the same row shape and the same root
  * gate, and splitting them would mean exporting that shared machinery just to
  * re-import it next door.
  */
@@ -21,7 +21,7 @@ import { getEntities, listEntities, resolveIdentity, searchEntities } from './op
 import { describeTypes, overview } from './ops/meta.js';
 import { getPage, listPages } from './ops/pages.js';
 import { findReferences } from './ops/references.js';
-import { getSection, listSections } from './ops/sections.js';
+import { getSections, listSections } from './ops/sections.js';
 import { listTags } from './ops/tags.js';
 import { PageSource } from './page-source.js';
 import { RootSet } from './roots.js';
@@ -48,7 +48,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     describeTypes: (input) => describeTypes(deps, input),
     listPages: (input) => listPages(deps.db, pages, roots, input),
     listSections: (input) => listSections(deps.db, pages, roots, input),
-    getSection: (input) => getSection(deps.db, pages, roots, deps.reader, deps.serialization, input),
+    getSections: (input) => getSections(deps.db, pages, roots, deps.reader, deps.serialization, input),
     getPage: (input) => getPage(pages, roots, input),
     searchPages: (input) => searchPages(deps.db, pages, roots, input),
     searchEntities: (input) => searchEntities(deps, input),
@@ -125,6 +125,5 @@ export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): Ge
 
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
 export type * from './types.js';
-export { hasDeclaredSearchFields } from './search/fields.js';
-export { MAX_SLUGS_PER_CALL } from './budget.js';
+export { MAX_ANCHORS_PER_CALL, MAX_SLUGS_PER_CALL } from './budget.js';
 export { MAX_LIMIT } from './pagination.js';

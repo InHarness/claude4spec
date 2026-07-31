@@ -22,6 +22,29 @@ import type {
 } from './types.js';
 import { SnapshotNotImplementedError } from './types.js';
 import type { RawDeltaEntityChange } from '../../shared/entities.js';
+import {
+  attachSystemFields,
+  readSystemFields,
+  stripSystemFields,
+  type SystemStamp,
+} from './system-fields.js';
+
+/**
+ * 0.2.4 — the `createdAt`/`updatedAt` envelope is attached here and NOWHERE
+ * else. Serializers neither read nor write it; they never learn it exists.
+ *
+ * The stamp comes off the entity row's audit columns, which since 0.2.4 hold a
+ * verbatim copy of the file's value — so reading it off the row is reading it
+ * off the file. `entity` is a `RawEntity` on every call site (the entity store's
+ * `persist`, the release layer's diff/restore); anything else, or a row whose
+ * table has no audit columns, simply gets no envelope.
+ */
+function stampOf(entity: unknown): SystemStamp | null {
+  if (entity === null || typeof entity !== 'object') return null;
+  const system = (entity as { system?: unknown }).system;
+  if (system === null || typeof system !== 'object') return null;
+  return readSystemFields(system);
+}
 
 export function snapshotEntity(
   host: PluginHost,
@@ -33,7 +56,7 @@ export function snapshotEntity(
   if (!module) throw new SnapshotNotImplementedError(type);
   const fn = module.serializer.snapshot;
   if (!fn) throw new SnapshotNotImplementedError(type);
-  return fn(entity, ctx);
+  return attachSystemFields(fn(entity, ctx), stampOf(entity));
 }
 
 /**
@@ -65,9 +88,28 @@ export function restoreEntity(
       warnings: [`entity service for type '${type}' is not available — restore skipped`],
     };
   }
-  return fn(data, ctx);
+  /**
+   * 0.2.4 — detach the envelope and put it on the WRITER, not in the payload.
+   *
+   * The per-type `restore` slot therefore sees exactly the snapshot shape it saw
+   * before 0.2.4 (it would reject the extra keys, or worse, pass them through to
+   * a column that does not exist), while the service it drives writes the file's
+   * timestamps into its audit columns verbatim.
+   */
+  const stamp = readSystemFields(data);
+  if (!stamp) return fn(data, ctx);
+  const stamped = ctx.writer.withStamp?.(stamp);
+  return fn(stripSystemFields(data), stamped ? { ...ctx, writer: stamped } : ctx);
 }
 
+/**
+ * 0.2.4 — the envelope is stripped from BOTH sides before dispatch, so a delta
+ * that is nothing but a timestamp difference is structurally `noop`.
+ *
+ * Host-global and per-type-agnostic on purpose: this is the one place that can
+ * state "a timestamp is not a substantive change" once, for every type at once,
+ * including plugin-contributed types whose `diff` slot we cannot edit.
+ */
 export function diffEntity(
   host: PluginHost,
   type: string,
@@ -75,14 +117,16 @@ export function diffEntity(
   b: SnapshotData,
   slug: string
 ): EntityDiff {
+  const lhs = stripSystemFields(a);
+  const rhs = stripSystemFields(b);
   const module = host.getEntity(type);
   if (!module) {
     // Inactive plugin — fall back to default; consumers (UI, M18) will see raw deep-diff.
-    return defaultDeepDiff(type, slug, a, b);
+    return defaultDeepDiff(type, slug, lhs, rhs);
   }
   const fn = module.serializer.diff;
-  if (!fn) return defaultDeepDiff(type, slug, a, b);
-  return fn(a, b, slug);
+  if (!fn) return defaultDeepDiff(type, slug, lhs, rhs);
+  return fn(lhs, rhs, slug);
 }
 
 /**
@@ -105,13 +149,23 @@ export function toRawDeltaEntityChange(
   };
 }
 
-/** Compute deep-diff between two SnapshotData JSONs and wrap as EntityDiff. */
+/**
+ * Compute deep-diff between two SnapshotData JSONs and wrap as EntityDiff.
+ *
+ * Strips the 0.2.4 timestamp envelope itself rather than relying on
+ * `diffEntity` having done it: this is exported and called directly (the M18
+ * page/entity delta paths), and a stamp-only difference must read as `noop`
+ * from every entrance, not just the dispatching one. `stripSystemFields` is a
+ * no-op on already-stripped data, so the double call costs nothing.
+ */
 export function defaultDeepDiff(
   type: string,
   slug: string,
-  a: SnapshotData,
-  b: SnapshotData
+  aIn: SnapshotData,
+  bIn: SnapshotData
 ): EntityDiff {
+  const a = stripSystemFields(aIn);
+  const b = stripSystemFields(bIn);
   if (a == null && b == null) return { type, slug, op: 'noop' };
   if (a == null) return { type, slug, op: 'created', raw: deepDiffPartition(undefined, b) };
   if (b == null) return { type, slug, op: 'deleted', raw: deepDiffPartition(a, undefined) };

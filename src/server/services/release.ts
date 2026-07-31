@@ -37,7 +37,9 @@ import type { PagesWatcher } from '../fs/watcher.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
-import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
+import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
 import { hasDotSegment } from '../../shared/page-files.js';
@@ -719,7 +721,7 @@ export class ReleaseService {
     ]);
     if (!gitDiff) return null;
 
-    const { entities, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
+    const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
 
     // Read old/new content per changed page directly from the two resolved
     // refs and run it through the same section/line-diff algorithm the SQL
@@ -738,7 +740,12 @@ export class ReleaseService {
     return {
       from: { id: fromRow.id, name: fromRow.name },
       to: { id: toRow.id, name: toRow.name },
-      entities,
+      entities: await this.dropStampOnlyEntityChanges(
+        entities,
+        entityPaths,
+        (absPath) => gitService.showFile(refA, absPath, gitStatus),
+        (absPath) => gitService.showFile(refB, absPath, gitStatus),
+      ),
       pages,
     };
   }
@@ -767,6 +774,12 @@ export class ReleaseService {
     if (!refA) return null;
 
     const scope = this.resolveGitDiffScope(config, opts);
+    // Probed ONCE, exactly as `tryGitAnchoredDiff` does. Without it every
+    // `showFile` below re-runs `detect()` and its four git spawns — and the
+    // motivating case for this branch is the boot backfill commit, which marks
+    // every entity file modified, so a few hundred entities would fan out into
+    // over a thousand concurrent `git` processes on one `GET /diff/current`.
+    const gitStatus = await gitService.detect();
     const gitDiff = await gitService.diffRefToWorkingTree(refA, [
       ...scope.scopedRootDirs,
       scope.entitiesAbs,
@@ -774,7 +787,7 @@ export class ReleaseService {
     ]);
     if (!gitDiff) return null;
 
-    const { entities, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
+    const { entities, entityPaths, pageCandidates } = this.classifyGitDiffFiles(gitDiff, scope);
 
     const readWorkingTreeFile = (absPath: string): Promise<string | null> => {
       try {
@@ -785,7 +798,7 @@ export class ReleaseService {
     };
     const pages = await this.diffPageCandidates(
       pageCandidates,
-      (absPath) => gitService.showFile(refA, absPath),
+      (absPath) => gitService.showFile(refA, absPath, gitStatus),
       readWorkingTreeFile,
       'tryGitAnchoredUnreleasedDiff',
     );
@@ -793,7 +806,12 @@ export class ReleaseService {
     return {
       from: { id: fromRow.id, name: fromRow.name },
       to: { id: 0, name: 'current' },
-      entities,
+      entities: await this.dropStampOnlyEntityChanges(
+        entities,
+        entityPaths,
+        (absPath) => gitService.showFile(refA, absPath, gitStatus),
+        readWorkingTreeFile,
+      ),
       pages,
     };
   }
@@ -866,6 +884,8 @@ export class ReleaseService {
     scope: ReturnType<typeof this.resolveGitDiffScope>,
   ): {
     entities: RawDeltaEntityChange[];
+    /** Absolute path per entity change, same index — needed to re-read content for stamp-only filtering. */
+    entityPaths: string[];
     pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }>;
   } {
     const isInside = (parent: string, child: string): boolean => {
@@ -875,6 +895,7 @@ export class ReleaseService {
     const { entitiesAbs, releasesAbs, briefsAbs, patchesAbs, cwdAbs, rootIds, rootDirsById } = scope;
 
     const entities: RawDeltaEntityChange[] = [];
+    const entityPaths: string[] = [];
     const pageCandidates: Array<{ relPath: string; absPath: string; status: 'A' | 'M' | 'D' | 'R' }> = [];
 
     for (const file of gitDiff.files) {
@@ -893,6 +914,7 @@ export class ReleaseService {
         const parsed = this.entityStore?.parseRelPath(relPath);
         if (parsed) {
           entities.push({ type: parsed.type, slug: parsed.slug, op: STATUS_TO_OP[file.status] });
+          entityPaths.push(file.path);
         }
         continue;
       }
@@ -911,7 +933,67 @@ export class ReleaseService {
         break;
       }
     }
-    return { entities, pageCandidates };
+    return { entities, entityPaths, pageCandidates };
+  }
+
+  /**
+   * 0.2.4 — drop entity changes whose only difference is the timestamp envelope.
+   *
+   * The git-anchored branches classify an entity as changed from git's file
+   * STATUS alone, with no content comparison. That was sound while an entity
+   * file held only content: a git-visible change was necessarily a real one.
+   * Since Tier B the file also carries `createdAt`/`updatedAt`, and three
+   * ordinary events rewrite it without changing anything a reader cares about —
+   * the one-time boot backfill (which rewrites EVERY pre-0.2.4 entity file), a
+   * re-persist, and the release-restore `noop` branch that realigns stamps.
+   *
+   * Left alone, the first commit of the backfill makes `GET /diff/current`
+   * report every entity in the project as `modified` — while the SQL path, which
+   * goes through `diffEntity` and strips the envelope, correctly reports `noop`
+   * for the same pair. Two diff paths for one release, disagreeing. This applies
+   * the same stripping rule the host applies everywhere else, so they agree.
+   *
+   * Only `modified` is filtered: a create or a delete is a real change no matter
+   * what the timestamps say. A read failure leaves the change in place — the
+   * safe direction is reporting a change that turns out to be cosmetic, never
+   * hiding one.
+   */
+  private async dropStampOnlyEntityChanges(
+    entities: RawDeltaEntityChange[],
+    entityPaths: string[],
+    readOld: (absPath: string) => Promise<string | null>,
+    readNew: (absPath: string) => Promise<string | null>,
+  ): Promise<RawDeltaEntityChange[]> {
+    const decide = async (change: RawDeltaEntityChange, i: number): Promise<boolean> => {
+      if (change.op !== 'modified') return true;
+      const absPath = entityPaths[i];
+      if (!absPath) return true;
+      const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
+      if (oldText === null || newText === null) return true;
+      try {
+        const a = canonicalize(stripSystemFields(JSON.parse(oldText) as unknown));
+        const b = canonicalize(stripSystemFields(JSON.parse(newText) as unknown));
+        return JSON.stringify(a) !== JSON.stringify(b);
+      } catch {
+        return true; // unparseable on either side — report it rather than hide it
+      }
+    };
+
+    /**
+     * Bounded, not `Promise.all` over everything. `readOld` is a `git show`
+     * subprocess, and the case this method exists for — the boot backfill
+     * commit — marks EVERY entity file modified, so an unbounded fan-out puts
+     * one process per entity in flight at once on a single `GET /diff/current`.
+     */
+    const keep = new Array<boolean>(entities.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (let i = next++; i < entities.length; i = next++) {
+        keep[i] = await decide(entities[i]!, i);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, entities.length) }, worker));
+    return entities.filter((_, i) => keep[i]);
   }
 
   /**
@@ -1216,11 +1298,71 @@ export class ReleaseService {
       });
       const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot, input.slug);
       if (diff.op === 'noop') {
+        /**
+         * 0.2.4 — "no substantive change" governs the DIFF REPORT and the
+         * version log. It never governs the projection.
+         *
+         * Since `diffEntity` strips the timestamp envelope from both sides,
+         * content-equal-but-stamps-different now lands here rather than going
+         * through a real mutation. If we returned outright, the entity file
+         * would stay at its current timestamps and never become byte-identical
+         * to the release snapshot — quietly breaking the round-trip invariant
+         * that restore is supposed to establish. So: no mutation, no
+         * `entity_version` row, but the stamp still gets projected and the file
+         * still gets rewritten.
+         */
+        const stamp = readSystemFields(targetSnapshot);
+        if (stamp) {
+          // No service ran on this path — the host is the sole writer, so a
+          // write here proves nothing about the type's own SQL.
+          /**
+           * The file is rewritten whether or not `projectStamp` reported a
+           * change. `projected` answers "did the COLUMNS move", which says
+           * nothing about the file: a row already realigned by a prior partial
+           * restore (or by the indexer's own backstop) reports `false` while the
+           * JSON on disk still carries the older stamps. Gating the rewrite on
+           * it would leave that file diverged and still return success — the
+           * exact round-trip invariant this branch exists to establish.
+           */
+          projectStamp(this.db, this.host, input.type, input.slug, stamp);
+          {
+            try {
+              this.entityStore?.persist(input.type, input.slug);
+            } catch {
+              /* index row missing — skip */
+            }
+            /**
+             * `noop` describes the CONTENT and the version log, and that stays
+             * true. But it must not read as "nothing happened": this branch
+             * rewrote the row and the entity file, and moved `updatedAt`
+             * BACKWARDS to the release's value with no `entity_version` row to
+             * attribute it. A user who restores a release to inspect it, is told
+             * "no changes", and then commits would otherwise silently roll back
+             * the timestamps of every entity in that release. Say so.
+             */
+            return {
+              type: input.type,
+              slug: input.slug,
+              op: 'noop',
+              warnings: [
+                `content already matches release ${releaseRow.id}; timestamps realigned to the ` +
+                  `release snapshot and the entity file rewritten (no version row captured)`,
+              ],
+            };
+          }
+        }
         return { type: input.type, slug: input.slug, op: 'noop' };
       }
     }
 
     const result = this.host.restore(input.type, targetSnapshot, restoreCtx);
+    // 0.2.4: same backstop as the indexer — a type whose own SQL predates the
+    // stamp still gets the release snapshot's timestamps into its columns, so
+    // the file written just below matches the snapshot byte for byte.
+    if (result.op !== 'noop' && result.op !== 'deleted') {
+      const stamp = readSystemFields(targetSnapshot);
+      if (stamp) projectStamp(this.db, this.host, input.type, input.slug, stamp);
+    }
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     if (result.op !== 'noop' && result.op !== 'deleted') {
       try {

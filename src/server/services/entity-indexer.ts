@@ -32,6 +32,8 @@ import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-rea
 import type { RestoreContext } from '../serialization/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
 import { HostEntityWriter } from './entity-writer.js';
+import { projectStamp, safeTable } from './system-stamp-projection.js';
+import { readSystemFields } from '../serialization/system-fields.js';
 
 export class EntityIndexerService {
   private debounceMs = 300;
@@ -76,23 +78,13 @@ export class EntityIndexerService {
   /**
    * A `module.table` value safe to interpolate into DDL/DML, or `null`.
    *
-   * Table names reach us from a plugin MANIFEST and are only null-checked at
-   * registration, yet they are interpolated into `db.exec` — which happily runs
-   * multiple statements, so a `table` containing `;` would execute arbitrary SQL
-   * that the deleted `ENTITY_TABLE` constant map made structurally impossible.
-   * Restore that guarantee with a shape check rather than a name allowlist (an
-   * allowlist is exactly the host-knows-every-type coupling 0.2.2 removes).
+   * 0.2.4: the implementation MOVED to `system-stamp-projection.ts` — the stamp
+   * projection interpolates a table name too, and one guard written twice is
+   * one guard that drifts. This stays as a thin forwarder so the indexer's own
+   * call sites read unchanged.
    */
   private safeTable(table: string | undefined, type: string): string | null {
-    if (!table) return null;
-    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table)) {
-      console.warn(
-        `[entity-indexer] type '${type}' declares an unusable table name ` +
-          `${JSON.stringify(table)} — expected a bare SQL identifier; skipping it`,
-      );
-      return null;
-    }
-    return table;
+    return safeTable(table, type);
   }
 
   /** True when `table` exists in this database. */
@@ -322,6 +314,16 @@ export class EntityIndexerService {
       console.warn(`[entity-indexer] restore failed ${type}/${slug}: ${(err as Error).message}`);
       return false;
     }
+    /**
+     * 0.2.4 — the file's timestamps are authoritative, so verify they actually
+     * landed. `host.restore` already put them on the writer, and the six in-repo
+     * services honour that; this catches the types whose SQL predates the rule.
+     */
+    const stamp = readSystemFields(snap);
+    // `expectServiceWrote` — the restore above DID run a service mutation with
+    // this stamp on the writer, so a surviving mismatch is the service ignoring
+    // it, which is exactly what the warning claims.
+    if (stamp) projectStamp(this.db, this.host, type, slug, stamp, { expectServiceWrote: true });
     if (broadcast) this.ws.broadcast({ kind: 'entity:indexed', type, slug, op: 'upsert' });
     return true;
   }

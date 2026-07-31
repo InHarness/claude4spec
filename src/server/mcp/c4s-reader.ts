@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
+import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
 import type { ViewKind } from '../serialization/types.js';
 
 /**
@@ -68,7 +68,7 @@ export const C4S_READER_TOOL_NAMES = [
   'describe_types',
   'list_pages',
   'list_sections',
-  'get_section',
+  'get_sections',
   'get_page',
   'search_pages',
   'search_entities',
@@ -253,23 +253,25 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       } as Parameters<DiscoveryCore['listSections']>[0]),
   );
 
-  const getSection = op(
-    'get_section',
-    'Read one section BY ANCHOR: its heading, its coordinates, and its body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (`edges.sectionRefs` / `entityEmbeds` / `pageLinks`), so a consumer never parses markdown itself; to follow an embed, call get_entities with the slug it carries. `includeSubtree` adds the lower headings beneath this one.',
+  const getSections = op(
+    'get_sections',
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a section listing all hand you a LIST of anchors, and fetching them one per call is the cost this operation exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (\`edges.sectionRefs\` / \`entityEmbeds\` / \`pageLinks\`), so a consumer never parses markdown itself; to follow an embed, call get_entities with the slug it carries. An anchor that does not exist comes back as \`{ anchor, error, code }\` in its own slot rather than failing the batch. \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates and edges but lose \`body\` and are marked \`truncated: true\` — never dropped in silence. \`includeSubtree\` adds the lower headings beneath each anchor; an anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body.`,
     {
-      anchor: z.string().describe('Section anchor (6-12 lowercase alphanumerics)'),
+      anchors: z
+        .array(z.string())
+        .describe('Section anchors (6-12 lowercase alphanumerics each), in order'),
       includeSubtree: z.boolean().optional().describe('Include the subtree of lower headings'),
     },
     (discovery, args) =>
-      discovery.getSection({
-        anchor: String(args.anchor),
+      discovery.getSections({
+        anchors: (args.anchors as string[]).map(String),
         includeSubtree: args.includeSubtree === true,
       }),
   );
 
   const getPage = op(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_section, which is a better window in every way. Embeds are never expanded — fetch the entity by slug instead.',
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is a better window in every way. Embeds are never expanded — fetch the entity by slug instead.',
     {
       rootId: z.string().optional().describe('Which page root — required; see overview().roots'),
       path: z.string().optional().describe('Page path relative to the root'),
@@ -462,7 +464,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
       describeTypes,
       listPages,
       listSections,
-      getSection,
+      getSections,
       getPage,
       searchPages,
       searchEntities,

@@ -328,7 +328,7 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       expect(isError).toBe(true);
       expect(body.code).toBe('INVALID_ARGUMENT');
       expect(body.hint).toContain('list_sections');
-      expect(body.hint).toContain('get_section');
+      expect(body.hint).toContain('get_sections');
     });
 
     it('get_page returns the page AS AUTHORED — an embed stays an embed', async () => {
@@ -341,7 +341,7 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       expect(body.content).toContain('<diagram slug="flow" caption="x"/>');
     });
 
-    it('get_section returns the body with its tag intact AND that tag as a parsed edge', async () => {
+    it('get_sections returns each body with its tag intact AND that tag as a parsed edge', async () => {
       await pagesService.write('page.md', {
         body: '# Alpha\n\n<diagram slug="flow" caption="x"/>\n',
       });
@@ -349,11 +349,32 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       indexSection('bbbbbb22', 'page.md', 'Alpha', 1, 4);
       const client = await connectClient(deps());
 
-      const { isError, body } = await call(client, 'get_section', { anchor: 'bbbbbb22' });
+      const { isError, body } = await call(client, 'get_sections', { anchors: ['bbbbbb22'] });
 
       expect(isError).toBe(false);
-      expect(body.body).toContain('<diagram slug="flow"');
-      expect(body.edges).toBeDefined();
+      expect(body.results).toHaveLength(1);
+      expect(body.results[0].body).toContain('<diagram slug="flow"');
+      expect(body.results[0].edges).toBeDefined();
+    });
+
+    /**
+     * The transport has to carry the per-item error THROUGH, not collapse the
+     * call. `fail()` maps a thrown `DiscoveryError` onto `isError: true`, so a
+     * batch that half-failed could easily have come back as a whole-call
+     * failure — which is precisely the behaviour 0.2.5 removed.
+     */
+    it('get_sections reports an unknown anchor per item, not as a failed call', async () => {
+      await pagesService.write('page.md', { body: '# Alpha\n\nbody\n' });
+      indexSection('bbbbbb22', 'page.md', 'Alpha', 1, 4);
+      const client = await connectClient(deps());
+
+      const { isError, body } = await call(client, 'get_sections', {
+        anchors: ['nosuchan', 'bbbbbb22'],
+      });
+
+      expect(isError).toBe(false);
+      expect(body.results[0]).toMatchObject({ anchor: 'nosuchan', code: 'SECTION_NOT_FOUND' });
+      expect(body.results[1].body).toContain('body');
     });
 
     it('search_pages finds prose the entity graph cannot: a bare path in running text', async () => {

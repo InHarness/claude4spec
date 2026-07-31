@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { JsonSchema } from './types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import { compositionOf } from '../../shared/plugin-host/composition.js';
 
 const AUDIT_COLUMNS = new Set(['id', 'created_at', 'updated_at']);
 const JSON_COLUMN_HINTS = new Set(['fields', 'columns', 'indexes']);
@@ -14,7 +15,8 @@ function resolveTable(type: string, host: ProjectPluginHost): string | undefined
   if (NON_ENTITY_TABLES[type]) return NON_ENTITY_TABLES[type];
   // Use getAvailable so auto-schema works even when type is registered but
   // currently inactive (catalog/CLI/MCP enumerate inactive types for diagnostics).
-  return host.getAvailable(type)?.table;
+  // 0.2.4: the table comes from the composition descriptor, not `module.table`.
+  return compositionOf(host.getAvailable(type))?.mainTable;
 }
 
 export function autoDerivedSchema(db: Database.Database, type: string, host: ProjectPluginHost): JsonSchema {

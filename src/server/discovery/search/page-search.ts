@@ -34,12 +34,28 @@ export async function searchPages(
 ): Promise<SearchPagesResult> {
   const matcher = buildMatcher(input);
   const targets = input.rootId ? [roots.require(input.rootId, 'search_pages')] : [...roots.all];
+  const mode = input.mode ?? 'hits';
+
+  /**
+   * 0.2.4 — in `count` mode nothing is materialized: no fragment slice, no
+   * anchor lookup, no per-page bookkeeping, just a tally.
+   *
+   * This is the opposite of `search_entities`, where counting costs the same
+   * scan and the same sort and saves only serialization. Here the scan is the
+   * floor and everything above it is avoidable, which is what makes `count` a
+   * genuine budget valve on this operation rather than a cosmetic one.
+   */
+  const countOnly = mode === 'count';
+  let total = 0;
 
   const hits: Array<SearchPageHit & { key: string }> = [];
   const perPage = new Map<string, { rootId: string; path: string; matchCount: number }>();
 
   for (const root of targets) {
-    const anchors = root.sectionIndexed ? anchorIndex(db, root.id) : null;
+    // The anchor index is the largest allocation on this path — every section
+    // row of the root, materialized up front — and count mode has no hit to
+    // attach an anchor to, so it is skipped entirely rather than per-hit.
+    const anchors = !countOnly && root.sectionIndexed ? anchorIndex(db, root.id) : null;
     for (const rel of await safeList(pages, root.id)) {
       let content: string;
       try {
@@ -53,6 +69,8 @@ export async function searchPages(
       for (let i = 0; i < lines.length; i++) {
         const text = lines[i] ?? '';
         if (!matcher(text)) continue;
+        total++;
+        if (countOnly) continue;
         const line = i + 1;
         const key = `${root.id}:${rel}:${line}`;
         const fragment = text.trim().slice(0, MAX_FRAGMENT);
@@ -74,8 +92,7 @@ export async function searchPages(
     }
   }
 
-  const mode = input.mode ?? 'hits';
-  if (mode === 'count') return { mode: 'count', total: hits.length };
+  if (countOnly) return { mode: 'count', total };
   if (mode === 'pages') {
     const items = [...perPage.values()].sort(
       (a, b) => b.matchCount - a.matchCount || a.rootId.localeCompare(b.rootId) || a.path.localeCompare(b.path),

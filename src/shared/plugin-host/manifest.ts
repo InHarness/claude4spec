@@ -75,6 +75,27 @@ export type ReferenceTypeContribution = ExtensionReferenceType;
  *     `McpServerFactory` contract) is preserved. This is the whole point of the
  *     facade: it decouples the Host API major from vendor dependency churn.
  *   - A `hostApiVersion` MAJOR bumps only when the facade shape itself changes.
+ *
+ * 0.2.4 — three changes, none of which bumps the version:
+ *   - The COMPOSITION DESCRIPTOR (`EntityModuleManifest.composition`) is a new
+ *     optional slot beside the old `table` field; a manifest without one gets an
+ *     equivalent descriptor synthesized from `table` + `backend.auxTables`.
+ *     Additive within the baseline, same precedent as M13.
+ *   - `SystemPromptContribution.countStat` goes from REQUIRED to optional and
+ *     its `sqlQuery` is no longer executed. Required→optional is an additive
+ *     relaxation: no plugin stops compiling or loading. The behaviour change
+ *     (who counts, and under what label) belongs to M05, not to this contract.
+ *   - REMOVING `backend.crud.searchableFields` and `EntityCrudService.search?`
+ *     is the one genuine removal of the round. Formally a breaking shape
+ *     change; factually not, since both were optional and had zero producers.
+ *     It does NOT bump the major during stabilization — but it DOES carry a
+ *     mandatory changelog entry (see `HOST_API_CHANGELOG` in `host-api.ts`),
+ *     because an unrecorded removal is worse than a recorded breaking change.
+ *
+ * Why the descriptor in particular stays additive rather than bumping: the
+ * semver gate `continue`s BEFORE `registerPlugin`, so raising the major would
+ * reject every external package wholesale — including ones that never touched
+ * any of these slots. The cost is asymmetric, and it favours the additive form.
  */
 export const HOST_API_VERSION = '1.0.0';
 
@@ -130,12 +151,6 @@ export interface EntityContribution extends EntityModuleManifest {
       /** server `ZodRawShape`; default `createSchema.partial()`. */
       updateSchema?: unknown;
       descriptions?: { entity?: string };
-      /**
-       * M39 — optional narrowing of what `search_entities` covers for this
-       * type. Dotted paths with `[]` for arrays (`fields[].description`).
-       * Omit it and the host searches every text path of `createSchema`.
-       */
-      searchableFields?: Array<{ path: string; weight?: number }>;
     };
     /**
      * A factory receiving the SAME service instance as `crud`/`mcpServer`

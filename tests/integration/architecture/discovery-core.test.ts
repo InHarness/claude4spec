@@ -135,7 +135,7 @@ describe('M39 — Discovery Core', () => {
         'describe_types',
         'list_pages',
         'list_sections',
-        'get_section',
+        'get_sections',
         'get_page',
         'search_pages',
         'search_entities',
@@ -149,15 +149,77 @@ describe('M39 — Discovery Core', () => {
       expect(declared.sort()).toEqual([...expected].sort());
     });
 
-    it('the nine tools that 0.2.3 replaced are gone from c4s-reader', () => {
+    it('every tool a later release replaced is gone from c4s-reader', () => {
       // Not a subset relationship: each of these fronted an operation that was
       // renamed or absorbed, and `resolve_page` fronted one that was withdrawn.
       // Leaving any of them behind would ship two answers to the same question.
+      //
+      // The pattern matches BOTH declaration spellings. It used to look only for
+      // `mcpTool(`, which this file's own helper already knew was half the story
+      // — every tool in `c4s-reader` is declared through the `op(...)` wrapper,
+      // so the assertion could not have failed for any name on this list. A gate
+      // that cannot fail is worse than no gate: it reads as coverage.
       const source = readerSource();
-      for (const gone of ['get_entity', 'find_by_tag', 'resolve_page', 'catalog', 'describe', 'list_slugs']) {
+      for (const gone of [
+        'get_entity',
+        'get_section',
+        'find_by_tag',
+        'resolve_page',
+        'catalog',
+        'describe',
+        'list_slugs',
+      ]) {
         expect(source, `c4s-reader still declares '${gone}'`).not.toMatch(
-          new RegExp(`mcpTool\\(\\s*\\n?\\s*'${gone}'`),
+          new RegExp(`(?:mcpTool|op)\\(\\s*\\n?\\s*'${gone}'`),
         );
+      }
+    });
+
+    /**
+     * 0.2.5 — "fetch by key" is the SECOND kind of exemption from the rule that
+     * every listing tool paginates.
+     *
+     * The first kind is a response bounded by construction (`overview`,
+     * `describe_types`), which gets a projection instead. `get_entities` and
+     * `get_sections` are different: the caller names the rows, so the height of
+     * the result is its choice rather than the collection's. Their valve is the
+     * input-length cap plus the response budget — an over-long list is
+     * `INVALID_ARGUMENT`, an over-budget response is cut deterministically and
+     * says so.
+     *
+     * Until now this was prose in `pagination.ts` and an accident of which
+     * declarations happened to spread `pageShape`. Nothing asserted it, so
+     * `limit`/`offset` could be added to a fetch-by-key tool (giving it two
+     * disagreeing valves) or dropped from a listing one (making it unbounded)
+     * and the suite would stay green.
+     */
+    it('fetch-by-key tools take no limit/offset, and every other listing tool does', () => {
+      const source = readerSource();
+      /** The body of one `op('name', …)` declaration, up to the next one. */
+      const declaration = (name: string): string => {
+        const start = source.search(new RegExp(`op\\(\\s*\\n?\\s*'${name}'`));
+        expect(start, `no declaration of '${name}' in c4s-reader`).toBeGreaterThan(-1);
+        const next = source.indexOf('\n  const ', start);
+        return source.slice(start, next === -1 ? undefined : next);
+      };
+
+      for (const byKey of ['get_entities', 'get_sections']) {
+        const decl = declaration(byKey);
+        expect(decl, `'${byKey}' is fetch-by-key and must not paginate`).not.toMatch(/pageShape|\blimit:|\boffset:/);
+      }
+
+      // The counterpart: a tool that returns a COLLECTION the caller did not
+      // enumerate has to be bounded, or one call can return the whole project.
+      for (const listing of [
+        'list_pages',
+        'list_sections',
+        'search_pages',
+        'search_entities',
+        'list_entities',
+        'list_tags',
+        'find_references',
+      ]) {
+        expect(declaration(listing), `'${listing}' returns a collection and must paginate`).toContain('pageShape');
       }
     });
 
@@ -179,7 +241,7 @@ describe('M39 — Discovery Core', () => {
         path.join(SRC, 'server/mcp/reference-tools.ts'),
         path.join(SRC, 'server/mcp/entity-tools.ts'),
       ].flatMap(toolNames);
-      for (const parity of ['list_pages', 'search_pages', 'get_page', 'get_section', 'list_sections']) {
+      for (const parity of ['list_pages', 'search_pages', 'get_page', 'get_sections', 'list_sections']) {
         expect(inProcess, `no in-process tool named '${parity}'`).toContain(parity);
       }
     });
@@ -244,7 +306,7 @@ describe('M39 — Discovery Core', () => {
       'describeTypes',
       'listPages',
       'listSections',
-      'getSection',
+      'getSections',
       'getPage',
       'searchPages',
       'searchEntities',

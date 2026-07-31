@@ -29,7 +29,7 @@ import { SerializationEngine } from '../core/plugin-host/serialization-engine.js
 import { sectionSerializer } from '../serialization/serializers/section.js';
 import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
-import type { DiscoveryCore } from './types.js';
+import type { DiscoveryCore, GetSectionsResult, SectionResultItem } from './types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 const host = {
@@ -43,6 +43,13 @@ const host = {
 } as unknown as ProjectPluginHost;
 
 const pagesRoot: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS };
+
+/** Unwraps a single-anchor `get_sections` call, asserting the item IS a section. */
+function sectionItem(result: GetSectionsResult): SectionResultItem {
+  const item = result.results[0];
+  if (!item || !('edges' in item)) throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+  return item;
+}
 
 describe('discovery core over the real section indexer', () => {
   let cwd: string;
@@ -115,14 +122,14 @@ describe('discovery core over the real section indexer', () => {
       ].join('\n'),
     );
 
-    const beta = await core.getSection({ anchor: anchorOf('Beta') });
+    const beta = sectionItem(await core.getSections({ anchors: [anchorOf('Beta')] }));
 
     expect(beta.body).toContain('BETA BODY LINE');
     // The frontmatter shift dragged the PREVIOUS section in and cut this one's tail.
     expect(beta.body).not.toContain('ALPHA BODY LINE');
     expect(beta.body).not.toContain('title: A page with frontmatter');
 
-    const alpha = await core.getSection({ anchor: anchorOf('Alpha') });
+    const alpha = sectionItem(await core.getSections({ anchors: [anchorOf('Alpha')] }));
     expect(alpha.body).toContain('ALPHA BODY LINE');
     expect(alpha.body).not.toContain('BETA BODY LINE');
   });
@@ -132,11 +139,11 @@ describe('discovery core over the real section indexer', () => {
 
     const listed = await core.listSections({ by: 'page', rootId: 'pages', path: 'fm2.md' });
     const row = listed.items.find((s) => s.heading === 'Only');
-    const fetched = await core.getSection({ anchor: row!.anchor });
+    const fetched = sectionItem(await core.getSections({ anchors: [row!.anchor] }));
 
     // `size` exists so a caller can decide whether to fetch. A size that
     // describes different bytes than the fetch returns is worse than none.
-    expect(row!.size).toBe(Buffer.byteLength(fetched.body, 'utf8'));
+    expect(row!.size).toBe(Buffer.byteLength(fetched.body!, 'utf8'));
   });
 
   it('attaches the right anchor to a search hit on a page with frontmatter', async () => {

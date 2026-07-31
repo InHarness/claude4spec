@@ -16,6 +16,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -106,12 +107,24 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
       if (conflict)
         throw new DomainError('SLUG_CONFLICT', `ui view slug '${slug}' already exists`);
 
+      // 0.2.4: both audit columns written explicitly — see `system-stamp.ts`.
+      const stamp = resolveStamp('ui-view', opts);
       this.db
         .prepare(
-          `INSERT INTO ui_view (slug, name, url, description, params, design_system_slug)
-           VALUES (?, ?, ?, ?, ?, ?)`
+          `INSERT INTO ui_view (slug, name, url, description, params, design_system_slug,
+                                created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(slug, input.name, url, input.description ?? null, JSON.stringify(params), designSystemSlug);
+        .run(
+          slug,
+          input.name,
+          url,
+          input.description ?? null,
+          JSON.stringify(params),
+          designSystemSlug,
+          stamp.createdAt,
+          stamp.updatedAt,
+        );
       if (input.tags?.length) this.tags.assignTags('ui-view', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
@@ -135,7 +148,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
     const rows = this.db
       .prepare(
         `SELECT * FROM ui_view ${whereSql}
-         ORDER BY name
+         ORDER BY ${ENTITY_LIST_ORDER}
          LIMIT ? OFFSET ?`
       )
       .all(...params, limit, offset) as UiViewRow[];
@@ -191,11 +204,14 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
           ? normaliseSlugRef(input.designSystemSlug)
           : current.design_system_slug;
 
+      // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
+      // existing entity is an UPDATE, and the file's value must win.
+      const stamp = resolveStamp('ui-view', opts, current);
       this.db
         .prepare(
           `UPDATE ui_view
              SET slug = ?, name = ?, url = ?, description = ?, params = ?,
-                 design_system_slug = ?, updated_at = datetime('now')
+                 design_system_slug = ?, created_at = ?, updated_at = ?
            WHERE slug = ?`
         )
         .run(
@@ -205,6 +221,8 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
           input.description !== undefined ? input.description : current.description,
           nextParams,
           nextDesignSystemSlug,
+          stamp.createdAt,
+          stamp.updatedAt,
           slug
         );
 

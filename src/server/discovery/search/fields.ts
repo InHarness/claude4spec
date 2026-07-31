@@ -1,21 +1,30 @@
 /**
- * M39 — what `search_entities` actually looks at, in three layers.
+ * M39 — what `search_entities` actually looks at. Since 0.2.4: TWO layers.
  *
- * Precedence is **agent > type > host**:
+ * 1. **core** (default, always present, THE ONLY SOURCE OF SCOPE) — every text
+ *    path derivable from the type's `backend.crud.createSchema`.
+ * 2. **agent** (explicit, per call) — the `fields` parameter, the only override.
  *
- * 1. **host** (default, always present) — every text path derivable from the
- *    type's `createSchema`. No declaration is needed for a type to be
- *    searchable, which is the whole point: before this, "searchable" meant "the
- *    service implements the optional `search` method", and exactly one type in
- *    the repo did. Search covered 1/8 types while claiming to cover the spec.
- * 2. **type** (declarative, optional) — `backend.crud.searchableFields`, DATA on
- *    the manifest rather than code: a list of paths with optional weights. A
- *    type uses it to NARROW and to rank, never to opt out.
- * 3. **agent** (explicit, per call) — the `fields` parameter overrides both.
+ * Both type-side layers are gone as of 0.2.4: `backend.crud.searchableFields`
+ * (declarative narrowing) and `EntityCrudService.search?` (a per-type ranking
+ * implementation). They were removed together rather than one at a time,
+ * because leaving either would let the same type rank differently depending on
+ * which MCP tool asked. Neither had a single producer across the host repo, the
+ * preinstalled envelope, or external packages — the only occurrence was a test
+ * fixture.
  *
  * Whatever wins, the resolved list travels back in `searchedFields`. Without it
  * an empty result is indistinguishable from "you searched a field that isn't in
  * scope", and the agent cannot tell a real absence from its own mistake.
+ *
+ * HARD REQUIREMENT: the scope is non-empty for every active type. If derivation
+ * yields nothing, the fix is to the DERIVATION (see `hostDefaultFields`'s
+ * identity fallback), never a restored declaration layer.
+ *
+ * Documented limits — recorded, not bugs:
+ *   - map/record schema branches without declared `properties` are skipped
+ *     silently; there are no known paths under them to enumerate.
+ *   - recursion into nested schemas stops at depth 4 with no signal.
  *
  * Path notation is dotted with `[]` for arrays: `fields[].description`,
  * `columns[].name`, `verifies[].slug`.
@@ -38,40 +47,31 @@ const IDENTITY_PATHS: SearchableField[] = [
 ];
 
 /**
- * Resolves the three layers into the concrete list a call will search.
- * `declared` and `requested` are taken as authored — a path that does not exist
- * in the schema is NOT dropped here, because silently repairing a caller's
- * field list is how `searchedFields` would start lying.
+ * Resolves the two layers into the concrete list a call will search.
+ * `requested` is taken as authored — a path that does not exist in the schema
+ * is NOT dropped here, because silently repairing a caller's field list is how
+ * `searchedFields` would start lying.
  */
 export function resolveSearchFields(
   module: BackendModule | null,
   requested: readonly string[] | undefined,
 ): SearchableField[] {
   if (requested?.length) return requested.map((path) => ({ path }));
-  let declared: Array<{ path: string; weight?: number }> | undefined;
-  try {
-    declared = module?.backend?.crud?.searchableFields;
-  } catch {
-    declared = undefined;
-  }
-  if (declared?.length) return declared.map((f) => ({ path: f.path, weight: f.weight }));
   return hostDefaultFields(module);
 }
 
-/** Whether the type NARROWED the host default with its own declaration. */
-export function hasDeclaredSearchFields(module: BackendModule | null): boolean {
-  try {
-    return (module?.backend?.crud?.searchableFields?.length ?? 0) > 0;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * The host default: string-typed leaves of the type's create schema, plus the
- * identity paths. Derived through `z.toJSONSchema`, which is the same route
- * `describe_entity_type` already takes, so what search covers and what the
- * schema advertises cannot drift apart.
+ * The core default — since 0.2.4 the ONLY source of scope: string-typed leaves
+ * of the type's create schema, plus the identity paths. Derived through
+ * `z.toJSONSchema`, the same route `describe_entity_type` takes, so what search
+ * covers and what the schema advertises cannot drift apart.
+ *
+ * Guaranteed non-empty. A type whose schema derives no text path at all (a
+ * throwing getter, a schema that will not render, a shape with only numeric
+ * leaves) still gets `slug` plus whichever identity paths it declares — because
+ * "this type has no searchable scope" is not a state any active type may be in,
+ * and the alternative to a fallback here is a type that silently answers every
+ * query with nothing.
  */
 export function hostDefaultFields(module: BackendModule | null): SearchableField[] {
   // Reading the slot is itself guarded: a manifest can expose `createSchema` as
@@ -95,6 +95,13 @@ export function hostDefaultFields(module: BackendModule | null): SearchableField
     // advertise a field that cannot ever match.
     out[out.findIndex((f) => f.path === id.path)] = id;
   }
+  // 0.2.4 — the non-empty guarantee, and it is `slug` ALONE. Every entity has a
+  // slug (it is the identity column), so this is the one path that can be added
+  // unconditionally without breaking the rule stated just above: a field in
+  // `searchedFields` must be one that can actually match. Padding a schema-less
+  // type with a guessed `name` would reintroduce exactly the ambiguity
+  // `searchedFields` exists to remove — an empty result on a field the type
+  // never had, which an agent reads as "not in the specification".
   if (!seen.has('slug')) out.unshift({ path: 'slug', weight: 3 });
   return out;
 }

@@ -29,6 +29,7 @@ import {
   type PluginLoadRecord,
 } from './loader.js';
 import { lowerEntityContribution, synthesizeMount, validateWritingStyle } from './manifest-adapter.js';
+import { attachComposition } from './composition-validation.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import { registerExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
@@ -213,7 +214,22 @@ export async function loadProjectOverlay(
       // or an overlay entity authored with the declarative backend.{service,
       // crud,routes,mcpServer} style would register successfully but never
       // get a mount, silently going inert (no DI, no REST, no MCP tools).
-      lowered = (manifest.contributes?.entities ?? []).map(lowerEntityContribution).map(synthesizeMount);
+      // 0.2.4: and so is `attachComposition`, for the same reason. A descriptor
+      // is a licence to DELETE from named tables; an overlay plugin is
+      // project-committed code that arrives with a `git clone`, so it is the
+      // LAST layer that should be exempt from the check base-layer plugins get.
+      // Peers are the overlay's own modules — the prefix rule is what stops a
+      // type claiming another layer's table (`note` cannot name `ac`), so the
+      // cross-layer case needs no cross-layer peer list.
+      const overlayBatch: BackendModule[] = [...modules.values()];
+      lowered = (manifest.contributes?.entities ?? [])
+        .map(lowerEntityContribution)
+        .map(synthesizeMount)
+        .map((m) => {
+          const validated = attachComposition(m, overlayBatch);
+          overlayBatch.push(validated);
+          return validated;
+        });
       styles = (manifest.contributes?.writingStyles ?? []).map(validateWritingStyle);
     } catch (err) {
       const reason = (err as Error).message;

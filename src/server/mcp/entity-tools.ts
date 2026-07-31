@@ -27,7 +27,7 @@ import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-rea
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
-import { getEntitiesAll, hasDeclaredSearchFields, type DiscoveryCore } from '../discovery/index.js';
+import { getEntitiesAll, type DiscoveryCore } from '../discovery/index.js';
 import { resolveSearchFields } from '../discovery/search/fields.js';
 
 export interface EntityToolsDeps {
@@ -323,7 +323,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else the type\'s own `searchableFields` declaration, else every text path of its schema (`searchSupported` reports only whether the type NARROWED that default, never that a type is excluded). The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s createSchema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
       type: z.string(),
       query: z.string(),
@@ -364,40 +364,14 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const resolved = resolveActiveType(type);
       if (!resolved.ok) return resolved.response;
       const { module } = resolved;
-      const service = deps.host.getEntityService(type) as EntityCrudService | null;
 
-      /**
-       * The type's own `search` is an ESCAPE HATCH for a non-standard ranking,
-       * and it is reachable only when the type ALSO declares `searchableFields`.
-       *
-       * The reason is `searchedFields`, which is a promise about what was
-       * consulted. A service ranks over columns the host cannot see, so the only
-       * honest scope to report for it is one the same package stated as data. A
-       * type with a custom `search` and no declaration got the host's derived
-       * paths reported instead — every text path of its schema — while the query
-       * ran against three columns; an empty result then read as "not in the
-       * spec" rather than "not in the three columns searched".
-       *
-       * An explicit `fields` also bypasses the hatch: precedence is agent > type
-       * > host, and a custom ranking that ignored the scope the agent asked for
-       * would invert the top of it.
+      /*
+       * 0.2.4 — the per-type `search` escape hatch is GONE, along with the
+       * `searchableFields` declaration that gated it. `searchedFields` is a
+       * promise about what was consulted, and a service ranking over columns
+       * the host cannot see could only ever keep that promise by echoing a
+       * second declaration back. One derivation, one ranking, one answer.
        */
-      if (service && typeof service.search === 'function' && hasDeclaredSearchFields(module) && !fields) {
-        const page = service.search(query, { limit, offset });
-        // Safe to claim: the type declared these, and the service is its own.
-        const searchedFields = resolveSearchFields(module, undefined).map((f) => f.path);
-        if (mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields });
-        const slugs = page.items.map((item) => (item as { slug: string }).slug);
-        return ok({
-          type,
-          mode: 'hits',
-          items: serializeSlugs(type, slugs),
-          total: page.total,
-          hasMore: offset + page.items.length < page.total,
-          searchedFields,
-        });
-      }
-
       const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset });
       if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
       return ok({
@@ -414,7 +388,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
-    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchSupported` means "this type declared its own searchableFields", NOT "this type can be searched" — every active type can. Omit `type` for all active types.',
+    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchableFields` is DERIVED from createSchema, not declared by the type — it is what a search_entities call would actually consult, and it is never empty for an active type. Omit `type` for all active types.',
     {
       type: z.string().optional(),
     },
@@ -437,13 +411,13 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
             createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
             updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
             /**
-             * M39 — this no longer means "the service has a `search` method".
-             * It means the type NARROWED the host's default scope with its own
-             * `searchableFields` declaration. It never means "not searchable":
-             * every active type is searchable, and `searchableFields` below says
-             * over what.
+             * 0.2.4 — `searchSupported` was REMOVED from this output. With a
+             * non-empty scope mandatory for every active type it was always
+             * `true`, and with the declaration layer gone there is nothing left
+             * for it to report. `searchableFields` stays, but as a DERIVED
+             * field: the paths the core would consult, not an echo of a
+             * manifest slot that no longer exists.
              */
-            searchSupported: hasDeclaredSearchFields(module),
             searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
             crudSupported,
             views: views?.views ?? [],

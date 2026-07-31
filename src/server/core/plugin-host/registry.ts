@@ -33,6 +33,7 @@ import {
   synthesizeMount,
   validateWritingStyle,
 } from './manifest-adapter.js';
+import { attachComposition } from './composition-validation.js';
 import {
   registerExtensionReferenceType,
   sameExtensionReferenceSpec,
@@ -80,7 +81,12 @@ export class PluginRegistryImpl implements PluginRegistry {
     // an equivalent `mount` for every module — in-repo entities build a
     // `BackendModule` directly (never touching `EntityContribution`), so this
     // is the one place both origins are guaranteed to pass through.
-    this.modules.set(module.type, synthesizeMount(module));
+    // 0.2.4: the composition descriptor is validated and cached here too, not
+    // only in `validateAndLower` — same reason as `synthesizeMount` above. A
+    // descriptor naming a baseline table or another type's table must reject
+    // the manifest, and a direct caller (a built-in's `onRegister`) has to hit
+    // the identical bar as one routed through `registerPlugin`.
+    this.modules.set(module.type, attachComposition(synthesizeMount(module), this.modules.values()));
     // v0.1.129 (M19 Slot B) — a module owning its own XML reference tag (e.g.
     // diagram) declares it here instead of a standalone bootstrap side-effect
     // call; entityType is always the module's own type, never author-supplied.
@@ -117,9 +123,19 @@ export class PluginRegistryImpl implements PluginRegistry {
     // only then fail at registerPlugin — the exact "old stays" gap this
     // two-pass validate-before-teardown design exists to prevent. Idempotent:
     // registerEntityModule reapplies it at commit time, a no-op once mount is set.
+    // 0.2.4: validate each composition descriptor against the already-registered
+    // modules AND against the ones earlier in this same batch — two entities of
+    // one manifest claiming the same table must be rejected as surely as a
+    // cross-plugin collision, and neither is committed yet at this point.
+    const batch: BackendModule[] = [];
     const entityModules = (manifest.contributes.entities ?? [])
       .map(lowerEntityContribution)
-      .map(synthesizeMount);
+      .map(synthesizeMount)
+      .map((m) => {
+        const validated = attachComposition(m, [...this.modules.values(), ...batch]);
+        batch.push(validated);
+        return validated;
+      });
     const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
 
     // `onUnregister` is a required slot from the HOST_API 1.0.0 baseline. A

@@ -69,6 +69,59 @@ export interface PluginMigrationInfo {
  */
 const HOST_API_CHANGELOG: HostApiMigration[] = [];
 
+/** One slot removed WITHOUT crossing a major, during stabilization. */
+export interface HostApiUnversionedChange {
+  /** Release that removed it, e.g. "0.2.4". */
+  release: string;
+  /** The removed slot's path on the manifest / interface. */
+  slot: string;
+  kind: 'slot-removed';
+  /** Why it could be removed without a bump, and what replaces it. */
+  summary: string;
+}
+
+/**
+ * Removals made inside the `1.0.0` baseline.
+ *
+ * This list exists because "no version bump" must never mean "no record". A
+ * removal that nobody wrote down is strictly worse than a recorded breaking
+ * change: the plugin author who eventually trips over it has nothing to read.
+ *
+ * Deliberately NOT part of {@link HOST_API_CHANGELOG}: that list is keyed by
+ * major boundaries and drives `migrationsBetween`/`buildMigrationInfo`, so a
+ * 1→1 entry there would surface as a migration instruction on a crossing that
+ * never happened. These entries are documentation, not a migration path —
+ * their whole point is that no migration is required.
+ */
+export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] = [
+  {
+    release: '0.2.4',
+    slot: 'backend.crud.searchableFields',
+    kind: 'slot-removed',
+    summary:
+      'Declarative narrowing of search scope. Removed together with ' +
+      '`EntityCrudService.search?`: leaving either would let one type rank ' +
+      'differently depending on which MCP tool asked. Search scope now has a ' +
+      "single source — the text paths derived from `backend.crud.createSchema` — " +
+      "with the agent's `fields` parameter as the only override. Both slots were " +
+      'optional and had zero producers across the host repo, the preinstalled ' +
+      'envelope and external packages; the sole occurrence was a test fixture. ' +
+      'No action is required of any plugin.',
+  },
+  {
+    release: '0.2.4',
+    slot: 'EntityCrudService.search',
+    kind: 'slot-removed',
+    summary:
+      'Per-type search implementation. Ranking belongs to the M39 core, which ' +
+      'applies one order relation (exact > prefix > earlier substring position > ' +
+      'slug ascending) to every type on every surface. A service ranking over ' +
+      'columns the host cannot see could not honestly report `searchedFields`. ' +
+      'The interface keeps the write path and the operations that cannot be ' +
+      'derived from the composition descriptor.',
+  },
+];
+
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */
 export function rangeMajor(range: string): number | null {
   const m = /(\d+)/.exec(range);

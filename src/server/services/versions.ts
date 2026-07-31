@@ -11,6 +11,7 @@ import { HostEntityWriter } from './entity-writer.js';
 import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
+import { stripSystemFields } from '../serialization/system-fields.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 
 export type VersionOp = 'create' | 'update' | 'delete';
@@ -94,7 +95,23 @@ export class VersionService {
       throw new DomainError('NOT_FOUND', `${type} '${entitySlug}' not found`);
     }
 
-    host.restore(type, target.data, ctx);
+    /**
+     * 0.2.4 — the ONE restore path that does NOT replay the stamp verbatim.
+     *
+     * `ReleaseService.restoreEntity` writes the snapshot's timestamps back
+     * unchanged, because its whole contract is "make this entity byte-identical
+     * to what the release captured". This one is different by its own design:
+     * it deliberately captures a NEW `update` version immediately below, so the
+     * restore is an append-only, undoable action rather than a rewind. An entity
+     * whose version log says "updated just now" while its `updatedAt` points
+     * backwards is self-contradictory — and it is the file, not the log, that
+     * every list order and every diff reads.
+     *
+     * Stripping the envelope is how that is expressed: with no stamp on the
+     * writer, the service mints `updatedAt = now` and preserves `created_at`
+     * from the existing row, which is exactly the user-mutation rule.
+     */
+    host.restore(type, stripSystemFields(target.data), ctx);
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 
@@ -287,7 +304,21 @@ export class VersionService {
     const from = this.getVersion(entityType, entitySlug, fromVersion);
     const to = this.getVersion(entityType, entitySlug, toVersion);
     if (!from || !to) throw new DomainError('NOT_FOUND', 'version not found');
-    return { from, to, changes: computeDiff(from.data, to.data) };
+    /**
+     * 0.2.4 — the timestamp envelope is stripped from both sides, the same rule
+     * `diffEntity` applies host-wide.
+     *
+     * Every captured snapshot now carries `updatedAt`, and every capture is by
+     * definition a change — so without this, EVERY version diff in the UI gains
+     * an `updatedAt: <then> → <now>` row that says nothing the version list is
+     * not already showing beside it. The timestamps are metadata about the
+     * change, not part of what changed.
+     */
+    return {
+      from,
+      to,
+      changes: computeDiff(stripSystemFields(from.data), stripSystemFields(to.data)),
+    };
   }
 
   private nextVersionNumber(entityType: string, entitySlug: string): number {

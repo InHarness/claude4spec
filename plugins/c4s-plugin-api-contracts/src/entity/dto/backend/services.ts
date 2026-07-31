@@ -19,6 +19,7 @@ import type { TagsServiceLike as TagsService } from '../../../host-kit/host-type
 import type { VersionServiceLike as VersionService } from '../../../host-kit/host-types.js';
 import type { EntityStoreLike as EntityStore } from '../../../host-kit/host-types.js';
 import type { MutateOpts } from '../../../host-kit/mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../../../host-kit/system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -99,17 +100,22 @@ export class DtoService extends BaseEntityCrudService<Dto> {
       const conflict = this.db.prepare(`SELECT 1 FROM dto WHERE slug = ?`).get(slug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `dto slug '${slug}' already exists`);
 
+      // 0.2.4: both audit columns written explicitly — see `host-kit/system-stamp.ts`.
+      const stamp = resolveStamp('dto', opts);
       this.db
         .prepare(
-          `INSERT INTO dto (slug, name, description, fields, examples)
-           VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO dto (slug, name, description, fields, examples,
+                            created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           slug,
           input.name,
           input.description ?? null,
           JSON.stringify(input.fields ?? []),
-          JSON.stringify(examples)
+          JSON.stringify(examples),
+          stamp.createdAt,
+          stamp.updatedAt
         );
       if (input.tags?.length) this.tags.assignTags('dto', slug, input.tags);
       const created = this.getBySlugInternal(slug);
@@ -133,7 +139,7 @@ export class DtoService extends BaseEntityCrudService<Dto> {
     const rows = this.db
       .prepare(
         `SELECT * FROM dto ${whereSql}
-         ORDER BY name
+         ORDER BY ${ENTITY_LIST_ORDER}
          LIMIT ? OFFSET ?`
       )
       .all(...params, limit, offset) as DtoRow[];
@@ -184,11 +190,14 @@ export class DtoService extends BaseEntityCrudService<Dto> {
         nextExamples = JSON.stringify(input.examples);
       }
 
+      // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
+      // existing entity is an UPDATE, and the file's value must win.
+      const stamp = resolveStamp('dto', opts, current);
       this.db
         .prepare(
           `UPDATE dto
              SET slug = ?, name = ?, description = ?, fields = ?, examples = ?,
-                 updated_at = datetime('now')
+                 created_at = ?, updated_at = ?
            WHERE slug = ?`
         )
         .run(
@@ -197,6 +206,8 @@ export class DtoService extends BaseEntityCrudService<Dto> {
           input.description !== undefined ? input.description : current.description,
           nextFields,
           nextExamples,
+          stamp.createdAt,
+          stamp.updatedAt,
           slug
         );
 

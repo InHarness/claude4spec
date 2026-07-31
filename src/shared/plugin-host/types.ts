@@ -8,12 +8,82 @@
  * pulling better-sqlite3/express into the client bundle.
  */
 
+/**
+ * A table carrying N rows per entity, owned by the type that declares it
+ * (spreadsheet cells, an endpoint↔dto junction). The host clears and reads it
+ * generically; only the owning type knows what the rows MEAN.
+ */
+export interface CompositionDerivedTable {
+  /** Table name. Must be prefixed with the declaring type's slug. */
+  table: string;
+  /** Column holding the owning entity's identity (FK to the main table). */
+  bindingColumn: string;
+}
+
+/**
+ * A HOST-OWNED table shared between types (today: `entity_tag`). Because rows
+ * of several types coexist in it, a scope predicate is MANDATORY — without one
+ * the host cannot clear this type's rows without clearing everyone else's.
+ */
+export interface CompositionSharedTable {
+  table: string;
+  /** SQL boolean expression isolating THIS type's rows, e.g. `entity_type = 'ac'`. */
+  scopePredicate: string;
+}
+
+/**
+ * 0.2.4 — how an entity is COMPOSED out of tables, declared by the envelope so
+ * the host never has to guess.
+ *
+ * Before this, identity carried a single `table` field and every operation that
+ * needed more (clearing junctions, scoping a shared table, counting) either
+ * hardcoded the answer or asked the module for raw SQL to execute. The
+ * descriptor replaces both: the host derives clearing, rebuilding, counting and
+ * reading from it, and executes no envelope-supplied SQL.
+ *
+ * INVARIANT OF PROJECTION: every non-surrogate column of every table named here
+ * must be reproducible from the entity files. Dropping the index and rebuilding
+ * from `entitiesDir` yields value-identical rows, except the local `id` rowid —
+ * the only permitted exception, and one no identity or ordering may rest on
+ * (the PK is the slug). `created_at`/`updated_at` are NOT an exception.
+ *
+ * What it deliberately does NOT cover: `section_entity_link` (derived from
+ * markdown, owned by the M06 section indexer), the M17 baseline
+ * (`entity_version` / `file_version` / `spec_release`), and runtime state
+ * tables that are not reproducible from files.
+ */
+export interface EntityComposition {
+  /** One row per entity, keyed by slug. */
+  mainTable: string;
+  /** Name of the column on `mainTable` carrying the slug. */
+  identityColumn: string;
+  derivedTables?: CompositionDerivedTable[];
+  sharedTables?: CompositionSharedTable[];
+}
+
 export interface EntityModuleManifest {
   /** Stable type discriminator, kebab-case. 1:1 with XML tag attribute. */
   type: string;
 
-  /** SQLite table name; differs from `type` when type contains a hyphen. */
+  /**
+   * SQLite table name; differs from `type` when type contains a hyphen.
+   *
+   * @deprecated 0.2.4 — superseded by {@link EntityModuleManifest.composition}.
+   * Retained as the fallback: a manifest without a descriptor gets an
+   * equivalent one composed from this field plus `backend.auxTables`.
+   */
   table: string;
+
+  /**
+   * 0.2.4 — the composition descriptor. Optional: when absent the host
+   * synthesizes an equivalent one from `table` + `backend.auxTables`, so this
+   * is an ADDITIVE change and `HOST_API_VERSION` does not move.
+   *
+   * Never read this slot directly — go through `compositionOf(module)` from
+   * `./composition.js`, which returns the normalized descriptor whether the
+   * type declared one or not.
+   */
+  composition?: EntityComposition;
 
   /** Singular human label, e.g. "Endpoint". */
   label: string;
@@ -75,11 +145,27 @@ export interface SystemPromptContribution {
   /** Plural noun for role description, e.g. "Endpoints". */
   roleNoun: string;
 
-  /** Count statistic injection point. */
-  countStat: {
+  /**
+   * Count statistic injection point.
+   *
+   * @deprecated 0.2.4 — OPTIONAL and IGNORED. `sqlQuery` is NOT executed; the
+   * host counts through `RawEntityReader.count(type)` and labels the result
+   * with `labelPlural` from the manifest. This slot was the ONLY place a module
+   * handed the host raw SQL to execute, and that surface is now closed. It
+   * survives purely as a deprecation window and is removed in the next Host API
+   * major.
+   *
+   * Two consequences of the switch, both intended:
+   *   - a type whose query carried a predicate loses it (AC counted only
+   *     `status='active'`; the sidebar never did, so the agent and the user now
+   *     see the same number);
+   *   - labels with spaces or parentheses no longer reach the `<project>` block,
+   *     where they produced malformed XML attributes (`AC (active)="…"`).
+   */
+  countStat?: {
     /** Placeholder name in the prompt template, e.g. "endpointCount". */
     placeholder: string;
-    /** SQL returning a single COUNT(*) row. */
+    /** SQL returning a single COUNT(*) row. Never executed since 0.2.4. */
     sqlQuery: string;
     /** Human label after the count, e.g. "endpoints". */
     label: string;
