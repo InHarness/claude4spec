@@ -10,14 +10,19 @@
 
 import { describe, expect, it } from 'vitest';
 import { PluginRegistryImpl } from './registry.js';
-import { compositionOf } from '../../../shared/plugin-host/composition.js';
+import { compositionOf, legacyComposition } from '../../../shared/plugin-host/composition.js';
 import type { BackendModule } from './types.js';
 import type { EntityComposition } from '../../../shared/plugin-host/types.js';
 
+/**
+ * `table` follows `composition.mainTable` when one is declared: the two name the
+ * SAME table while the deprecated slot survives, and the validator enforces it.
+ * A fixture that let them drift would be testing a shape the host rejects.
+ */
 function mod(type: string, composition?: EntityComposition, auxTables?: string[]): BackendModule {
   return {
     type,
-    table: type.replaceAll('-', '_'),
+    table: composition?.mainTable ?? type.replaceAll('-', '_'),
     ...(composition ? { composition } : {}),
     label: type,
     labelPlural: `${type}s`,
@@ -68,6 +73,73 @@ describe('composition descriptor — the legacy fallback', () => {
     expect(compositionOf(registry.getAvailable('endpoint')!).derivedTables).toEqual([
       { table: 'endpoint_dto', bindingColumn: null },
     ]);
+  });
+
+  /**
+   * `auxTables` is merged on the DECLARED branch too. Declaring a composition
+   * for one reason must not silently drop tables the type still owns through
+   * the legacy slot — a dropped junction raises no error anywhere downstream,
+   * it is simply rows nobody ever clears.
+   */
+  it('keeps auxTables when a composition is declared for some other reason', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(
+      mod('endpoint', { mainTable: 'endpoint', identityColumn: 'slug' }, ['endpoint_dto']),
+    );
+    const resolved = compositionOf(registry.getAvailable('endpoint')!);
+    expect(resolved.legacy).toBe(false);
+    expect(resolved.derivedTables).toEqual([{ table: 'endpoint_dto', bindingColumn: null }]);
+  });
+
+  it('emits no derivedTables from legacyComposition, since it cannot know a binding', () => {
+    expect(legacyComposition('endpoint', 'endpoint')).not.toHaveProperty('derivedTables');
+  });
+});
+
+/**
+ * The prefix and cross-type rules are 0.2.4 CONVENTIONS. Applying them to a
+ * descriptor synthesized from a legacy `table` + `auxTables` pair would take
+ * every entity type in an already-installed plugin offline, with no warning
+ * from the semver gate — the descriptor is additive within HOST_API 1.0.0.
+ */
+describe('composition descriptor — what the legacy fallback is NOT held to', () => {
+  it('accepts a legacy table that is not named after its type', () => {
+    const registry = new PluginRegistryImpl();
+    const legacy = { ...mod('use-case'), table: 'usecase' };
+    expect(() => registry.registerEntityModule(legacy)).not.toThrow();
+    expect(compositionOf(registry.getAvailable('use-case')!).mainTable).toBe('usecase');
+  });
+
+  /**
+   * The common shape: a junction listed from BOTH ends, which is how a legacy
+   * two-sided relation says "clear this too". Under the prefix rule the second
+   * registration would fail; under the collision rule, so would it.
+   */
+  it('accepts one junction listed in auxTables by both types it joins', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(mod('endpoint', undefined, ['endpoint_dto']));
+    expect(() =>
+      registry.registerEntityModule(mod('dto', undefined, ['endpoint_dto'])),
+    ).not.toThrow();
+  });
+
+  /**
+   * The exemption stops at conventions. An identifier that is not an identifier
+   * reaches `db.exec`, and a claim on `entity_tag` destroys every other type's
+   * tag assignments — neither is a naming preference, so both still reject.
+   */
+  it('still rejects a legacy table that is not a bare identifier', () => {
+    const registry = new PluginRegistryImpl();
+    expect(() =>
+      registry.registerEntityModule({ ...mod('evil'), table: 'evil; DROP TABLE tag' }),
+    ).toThrow(/bare SQL identifier/);
+  });
+
+  it('still rejects a legacy table claiming a host-owned shared table', () => {
+    const registry = new PluginRegistryImpl();
+    expect(() =>
+      registry.registerEntityModule({ ...mod('tagger'), table: 'entity_tag' }),
+    ).toThrow(/declare it under sharedTables/);
   });
 });
 
@@ -189,6 +261,55 @@ describe('composition descriptor — rejection at registration', () => {
         }),
       ),
     ).toThrow(/bindingColumn/);
+  });
+
+  /**
+   * The character allowlist bounds what SQL a predicate can EXPRESS; it says
+   * nothing about what the predicate SELECTS. Every string below passes it
+   * while matching other types' rows — so without an anchor check, the rule
+   * whose entire purpose is "a type may only clear its own rows" is satisfiable
+   * by a predicate that clears everyone's.
+   */
+  it('rejects a scope predicate that does not anchor on the declaring type', () => {
+    for (const predicate of ["1=1", "entity_type <> 'ac'", "entity_slug IN (SELECT slug FROM ac)"]) {
+      expect(
+        register(
+          mod('ac', {
+            mainTable: 'ac',
+            identityColumn: 'slug',
+            sharedTables: [{ table: 'entity_tag', scopePredicate: predicate }],
+          }),
+        ),
+      ).toThrow(/must be `entity_type = 'ac'`/);
+    }
+  });
+
+  it('accepts an anchored predicate narrowed with AND', () => {
+    expect(
+      register(
+        mod('ac', {
+          mainTable: 'ac',
+          identityColumn: 'slug',
+          sharedTables: [
+            { table: 'entity_tag', scopePredicate: "entity_type = 'ac' AND tag_slug <> 'pinned'" },
+          ],
+        }),
+      ),
+    ).not.toThrow();
+  });
+
+  /**
+   * `table` is still what the M29 indexer and every service's own SQL read;
+   * `composition` is what the migrated readers read. A descriptor naming a
+   * different table splits reads from writes — and reopens every check above,
+   * which only ever sees `resolved.mainTable`.
+   */
+  it("rejects a declared mainTable that disagrees with the module's `table`", () => {
+    const split: BackendModule = {
+      ...mod('widget', { mainTable: 'widget', identityColumn: 'slug' }),
+      table: 'legacy_widget',
+    };
+    expect(register(split)).toThrow(/does not match the module's `table`/);
   });
 
   it('accepts a fully declared descriptor and reports it as non-legacy', () => {

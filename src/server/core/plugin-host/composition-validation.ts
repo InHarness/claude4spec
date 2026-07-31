@@ -20,6 +20,7 @@ import { BASELINE_TABLES, COLLISION_EXEMPT_TABLES } from '../../db/baseline-tabl
 import {
   HOST_SHARED_TABLES,
   attachResolvedComposition,
+  defaultSharedScope,
   resolveComposition,
   typeTablePrefix,
   type ResolvedComposition,
@@ -68,7 +69,27 @@ function checkPredicate(module: BackendModule, table: string, predicate: unknown
     fail(
       module,
       `scopePredicate for shared table "${table}" contains characters outside the allowed set ` +
-        `(comparison, AND/OR/IN, quoted literals, parentheses): ${JSON.stringify(predicate)}`,
+        `(comparison, AND, quoted literals, parentheses): ${JSON.stringify(predicate)}`,
+    );
+  }
+  /**
+   * The character allowlist bounds what SQL the predicate can express; it says
+   * nothing about what the predicate SELECTS. `1=1`, `entity_type <> 'ac'` and
+   * `entity_slug IN (SELECT slug FROM ac)` all pass it while matching every
+   * other type's rows — so a rule whose entire purpose is "this type may only
+   * clear its own rows" would be satisfiable by a predicate that clears
+   * everyone's. The predicate must therefore be ANCHORED on the declaring
+   * type's own identity, and may only narrow from there with `AND`.
+   */
+  const canonical = defaultSharedScope(module.type);
+  const normalized = predicate.replace(/\s+/g, ' ').trim();
+  if (normalized !== canonical && !normalized.startsWith(`${canonical} AND `)) {
+    fail(
+      module,
+      `scopePredicate for shared table "${table}" must be \`${canonical}\`, optionally narrowed ` +
+        `with \` AND …\` — a predicate that does not anchor on this type can clear other types' ` +
+        `rows, which is the exact outcome requiring a predicate exists to prevent. ` +
+        `Got: ${JSON.stringify(predicate)}`,
     );
   }
 }
@@ -104,6 +125,7 @@ function checkOwnedTable(
   table: string,
   what: string,
   peerOwned: Map<string, string>,
+  legacy: boolean,
 ): void {
   checkIdentifier(module, table, what);
   if (HOST_SHARED_TABLES.has(table)) {
@@ -116,6 +138,24 @@ function checkOwnedTable(
   if (BASELINE_TABLES.has(table) && !COLLISION_EXEMPT_TABLES.has(table)) {
     fail(module, `${what} "${table}" belongs to the core baseline schema and cannot be claimed`);
   }
+  /**
+   * The prefix and cross-type rules bind DECLARED descriptors only.
+   *
+   * Both are 0.2.4 conventions, and applying them to the descriptor synthesized
+   * from a legacy `table` + `auxTables` pair would retroactively outlaw manifest
+   * shapes that have always loaded: a type whose table simply is not named after
+   * it (`use-case` → `usecase`), and — the common one — a junction listed in
+   * `auxTables` from BOTH ends, which is how a legacy two-sided relation says
+   * "clear this too". Neither was ever checked before, and a plugin author gets
+   * no warning from the semver gate, since the descriptor is additive within
+   * HOST_API 1.0.0. Rejecting those at registration would take every entity type
+   * in the plugin offline and make its already-indexed rows unreadable.
+   *
+   * The checks above this line are NOT conventions and do bind legacy modules:
+   * an identifier that is not an identifier reaches `db.exec`, and a claim on
+   * `entity_tag` or a core baseline table destroys other types' data.
+   */
+  if (legacy) return;
   checkPrefix(module, table, what);
   const owner = peerOwned.get(table);
   if (owner && owner !== module.type) {
@@ -151,22 +191,44 @@ export function validateComposition(
   const resolved = resolveComposition(module);
   const peerOwned = ownedByPeers(peers, module.type);
 
-  checkOwnedTable(module, resolved.mainTable, 'mainTable', peerOwned);
+  checkOwnedTable(module, resolved.mainTable, 'mainTable', peerOwned, resolved.legacy);
   checkIdentifier(module, resolved.identityColumn, 'identityColumn');
 
+  /**
+   * The descriptor is the source of truth for the consumers that were migrated
+   * in 0.2.4; `module.table` is still the source for the ones that were not
+   * (the M29 indexer, and every service's own SQL). Until that slot is deleted,
+   * the two must AGREE — a descriptor naming a different table than the one the
+   * writers use splits reads from writes: the rebuild fills one table while
+   * every read resolves the other, so the type answers empty to the agent while
+   * the UI lists rows. It also reopens the checks above, which only ever see
+   * `resolved.mainTable`: a manifest with a compliant descriptor and a hostile
+   * `table` would pass validation and still reach `DELETE FROM <hostile>`.
+   */
+  if (module.composition && resolved.mainTable !== module.table) {
+    fail(
+      module,
+      `mainTable "${resolved.mainTable}" does not match the module's \`table\` ` +
+        `"${module.table}". While \`table\` remains (deprecated in 0.2.4, removed once every ` +
+        `consumer reads the descriptor) the two are the same table and must be written the same`,
+    );
+  }
+
+  // Which derived tables were DECLARED, as opposed to merged in from the legacy
+  // `backend.auxTables` slot. Only a declared one is required to name its
+  // binding column — an auxTables entry resolves to a null binding by design,
+  // on a declared and a synthesized descriptor alike.
+  const declaredDerived = new Set((module.composition?.derivedTables ?? []).map((d) => d.table));
   const seen = new Set<string>([resolved.mainTable]);
   for (const derived of resolved.derivedTables) {
-    checkOwnedTable(module, derived.table, 'derivedTables[].table', peerOwned);
+    checkOwnedTable(module, derived.table, 'derivedTables[].table', peerOwned, resolved.legacy);
     if (seen.has(derived.table)) {
       fail(module, `table "${derived.table}" is declared twice`);
     }
     seen.add(derived.table);
-    // null marks a table inherited from the legacy `auxTables` slot, where the
-    // host genuinely does not know the binding; a DECLARED derived table must
-    // name it, since that is the whole point of declaring one.
     if (derived.bindingColumn !== null) {
       checkIdentifier(module, derived.bindingColumn, `derivedTables["${derived.table}"].bindingColumn`);
-    } else if (!resolved.legacy) {
+    } else if (declaredDerived.has(derived.table)) {
       fail(module, `derivedTables["${derived.table}"] must declare a bindingColumn`);
     }
   }

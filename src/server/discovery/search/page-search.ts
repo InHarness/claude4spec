@@ -52,7 +52,10 @@ export async function searchPages(
   const perPage = new Map<string, { rootId: string; path: string; matchCount: number }>();
 
   for (const root of targets) {
-    const anchors = root.sectionIndexed ? anchorIndex(db, root.id) : null;
+    // The anchor index is the largest allocation on this path — every section
+    // row of the root, materialized up front — and count mode has no hit to
+    // attach an anchor to, so it is skipped entirely rather than per-hit.
+    const anchors = !countOnly && root.sectionIndexed ? anchorIndex(db, root.id) : null;
     for (const rel of await safeList(pages, root.id)) {
       let content: string;
       try {

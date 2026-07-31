@@ -994,12 +994,14 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   };
   for (const m of host.listEntities()) {
     if (!m.systemPrompt.roleNoun) continue; // opt-out (legacy ui-view)
-    // 0.2.4: the label comes from the manifest's `labelPlural`, not from the
-    // deprecated `countStat`. Besides removing the last read of that slot, it
-    // fixes a real defect: a label with a space or parentheses ("AC (active)")
-    // produced a malformed XML attribute in the `<project>` block. `labelPlural`
-    // is single-word by definition, so the shape can no longer go wrong.
-    projectAttrs[m.labelPlural] = entityCounts[m.type] ?? 0;
+    // 0.2.4: the attribute is keyed by the TYPE SLUG, not by the deprecated
+    // `countStat.label`. Besides removing the last read of that slot, it fixes a
+    // real defect: a human label ("AC (active)", "Acceptance Criteria") produced
+    // a malformed XML attribute here, because `attrs()` escapes values but
+    // interpolates keys verbatim. A type slug is kebab-case by construction —
+    // a valid XML Name, unique per type, and the same token every entity tool
+    // takes as its `type` argument, so the count and the tool call now agree.
+    projectAttrs[m.type] = entityCounts[m.type] ?? 0;
   }
   projectAttrs.tags = tagCount;
   parts.push(selfClose('project', attrs(projectAttrs)));

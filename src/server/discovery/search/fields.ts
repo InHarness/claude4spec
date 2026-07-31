@@ -95,15 +95,14 @@ export function hostDefaultFields(module: BackendModule | null): SearchableField
     // advertise a field that cannot ever match.
     out[out.findIndex((f) => f.path === id.path)] = id;
   }
+  // 0.2.4 — the non-empty guarantee, and it is `slug` ALONE. Every entity has a
+  // slug (it is the identity column), so this is the one path that can be added
+  // unconditionally without breaking the rule stated just above: a field in
+  // `searchedFields` must be one that can actually match. Padding a schema-less
+  // type with a guessed `name` would reintroduce exactly the ambiguity
+  // `searchedFields` exists to remove — an empty result on a field the type
+  // never had, which an agent reads as "not in the specification".
   if (!seen.has('slug')) out.unshift({ path: 'slug', weight: 3 });
-  // 0.2.4 — the non-empty guarantee. Reached only when derivation produced
-  // nothing at all, i.e. the schema is absent or unrenderable. There `name` is
-  // no longer an invented field: the record search reads is the entity's stored
-  // data, which carries one far more often than a broken schema can say so, and
-  // scoping a type down to its slug alone is barely searchable.
-  if (derived.length === 0 && !out.some((f) => f.path === 'name')) {
-    out.push({ path: 'name', weight: 3 });
-  }
   return out;
 }
 

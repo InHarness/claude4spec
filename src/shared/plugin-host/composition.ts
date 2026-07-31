@@ -71,15 +71,27 @@ type CompositionInput = Pick<EntityModuleManifest, 'type' | 'table' | 'compositi
  */
 export function resolveComposition(module: CompositionInput): ResolvedComposition {
   const declared = module.composition;
+  const derived: Array<{ table: string; bindingColumn: string | null }> = (
+    declared?.derivedTables ?? []
+  ).map((d) => ({ table: d.table, bindingColumn: d.bindingColumn }));
+  // `backend.auxTables` is merged on BOTH branches. Declaring a `composition`
+  // for one reason (say, a non-default `identityColumn`) must not silently drop
+  // tables the type still owns through the legacy slot — a dropped junction is
+  // not an error anywhere downstream, it is just rows nobody clears. Every
+  // auxTables entry keeps a null binding regardless of branch, because the slot
+  // never carried one to begin with.
+  const seen = new Set(derived.map((d) => d.table));
+  for (const table of module.backend?.auxTables ?? []) {
+    if (seen.has(table)) continue;
+    seen.add(table);
+    derived.push({ table, bindingColumn: null });
+  }
   if (declared) {
     return {
       type: module.type,
       mainTable: declared.mainTable,
       identityColumn: declared.identityColumn,
-      derivedTables: (declared.derivedTables ?? []).map((d) => ({
-        table: d.table,
-        bindingColumn: d.bindingColumn,
-      })),
+      derivedTables: derived,
       sharedTables: (declared.sharedTables ?? []).map((s) => ({
         table: s.table,
         scopePredicate: s.scopePredicate,
@@ -91,10 +103,7 @@ export function resolveComposition(module: CompositionInput): ResolvedCompositio
     type: module.type,
     mainTable: module.table,
     identityColumn: 'slug',
-    derivedTables: (module.backend?.auxTables ?? []).map((table) => ({
-      table,
-      bindingColumn: null,
-    })),
+    derivedTables: derived,
     sharedTables: [{ table: 'entity_tag', scopePredicate: defaultSharedScope(module.type) }],
     legacy: true,
   };
@@ -137,29 +146,24 @@ export function compositionOf(module: CompositionInput | null | undefined): Reso
 }
 
 /**
- * The DECLARABLE descriptor equivalent to a legacy `table` + `auxTables` pair.
+ * The DECLARABLE descriptor equivalent to a legacy `table`.
  *
  * `resolveComposition` returns the normalized read shape, whose `derivedTables`
  * carry a nullable binding column and which is `readonly`; a manifest slot needs
  * the authored shape. Both come from this one rule, so a synthesized descriptor
  * cannot drift from a declared one.
+ *
+ * It deliberately emits NO `derivedTables`. A legacy aux table has no known
+ * binding column, and `CompositionDerivedTable.bindingColumn` is required — so
+ * the only way to express one here would be to invent a column, which is the
+ * one thing {@link ResolvedComposition.derivedTables} says must never happen.
+ * Aux tables stay in `backend.auxTables` and are merged by `resolveComposition`
+ * with the null binding they actually have.
  */
-export function legacyComposition(
-  type: string,
-  table: string,
-  auxTables: readonly string[] = [],
-): EntityComposition {
+export function legacyComposition(type: string, table: string): EntityComposition {
   return {
     mainTable: table,
     identityColumn: 'slug',
-    // A legacy aux table has no known binding column; name it after the type's
-    // identity so the DECLARED shape stays well-formed, and note that nothing
-    // scopes a delete by it — `resolveComposition` is what the host reads, and
-    // there the column is null precisely so such a table is only ever cleared
-    // wholesale.
-    ...(auxTables.length
-      ? { derivedTables: auxTables.map((t) => ({ table: t, bindingColumn: 'slug' })) }
-      : {}),
     sharedTables: [{ table: 'entity_tag', scopePredicate: defaultSharedScope(type) }],
   };
 }
