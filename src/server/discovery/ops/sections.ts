@@ -1,5 +1,5 @@
 /**
- * M39 — `list_sections` and `get_section`.
+ * M39 — `list_sections` and `get_sections`.
  *
  * `list_sections` takes a DISCRIMINATED UNION, `{ by: "page" }` or
  * `{ by: "anchor" }`, replacing three optional flags that were silently ANDed
@@ -13,6 +13,7 @@
  */
 
 import type { Database } from 'better-sqlite3';
+import type { DiscoveryError, DiscoveryErrorCode } from '../errors.js';
 import { invalidArgument, sectionNotFound } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
@@ -20,13 +21,15 @@ import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
 import type { SerializationEngine } from '../../core/plugin-host/serialization-engine.js';
 import { bodySize, hydrateSection } from '../section-hydrator.js';
-import { truncateText } from '../budget.js';
+import { applyItemBudget, MAX_ANCHORS_PER_CALL, truncateText } from '../budget.js';
 import type {
-  GetSectionInput,
-  GetSectionResult,
+  GetSectionsInput,
+  GetSectionsItem,
+  GetSectionsResult,
   ListSectionsInput,
   ListSectionsResult,
   SectionListItem,
+  SectionResultItem,
 } from '../types.js';
 
 /** The indexer's own anchor alphabet — an anchor is `[a-z0-9]{6,12}`, nothing else. */
@@ -99,7 +102,7 @@ export async function listSections(
    * Existence is asked of `rows`, NOT of the root-filtered `visible`. An anchor
    * indexed on a root that has since lost `sectionIndexed` is still a real
    * anchor — reporting `is_known: false` there would say "no such anchor" about
-   * one `get_section` resolves, and the two answers would contradict each other
+   * one `get_sections` resolves, and the two answers would contradict each other
    * about the same string.
    */
   return input.by === 'anchor' ? { ...page, is_known: rows.length > 0 } : page;
@@ -151,27 +154,95 @@ export function toRawSection(row: Record<string, unknown>): RawSection {
   };
 }
 
-export async function getSection(
+/**
+ * 0.2.5 — `get_sections`, the batched successor to `get_section`.
+ *
+ * The batching lives HERE and nowhere below: the `detail` view (M06) still
+ * serializes exactly one section, and this loop calls it once per anchor. A
+ * serializer that knew about lists would be a second definition of what a
+ * section is.
+ *
+ * Four rules, in the order they are applied — the order matters, because
+ * coverage has to be known before anything is fetched (or the covered bodies
+ * are read and thrown away), and budget has to be applied before `truncated` is
+ * propagated (or a covered item inherits a flag its parent does not have yet).
+ */
+export async function getSections(
   db: Database,
   pages: PageSource,
   roots: RootSet,
   reader: RawEntityReader,
   serialization: SerializationEngine,
-  input: GetSectionInput,
-): Promise<GetSectionResult> {
-  const section = reader.getSection(input.anchor);
-  if (!section) {
-    const near = db
-      .prepare('SELECT anchor FROM section_index ORDER BY anchor LIMIT 12')
-      .all() as Array<{ anchor: string }>;
-    throw sectionNotFound(input.anchor, near.map((r) => r.anchor));
+  input: GetSectionsInput,
+): Promise<GetSectionsResult> {
+  const requested = Array.isArray(input.anchors) ? input.anchors : [];
+  if (requested.length === 0 || requested.length > MAX_ANCHORS_PER_CALL) {
+    throw invalidArgument(
+      `anchors[] must contain 1..${MAX_ANCHORS_PER_CALL} entries, got ${requested.length}`,
+      `get_sections({ anchors: ["<anchor>", …] }) — split a longer list across calls; this operation does not paginate`,
+    );
   }
-  // Anchors are globally unique, so the root comes from the row rather than the
-  // caller — but the gate still applies: a section on a root that lost its
-  // index is not addressable.
-  roots.requireSectionIndexed(section.rootId, 'get_section');
 
-  const hydrated = await hydrateSection(db, pages, section, input.includeSubtree ?? false);
+  // Silent de-duplication, first occurrence wins its position. Repeating an
+  // anchor is a caller mistake with an obvious intent, not something to refuse.
+  const anchors = [...new Set(requested)];
+  const includeSubtree = input.includeSubtree ?? false;
+
+  const rows = new Map<string, RawSection | null>();
+  for (const anchor of anchors) rows.set(anchor, reader.getSection(anchor) ?? null);
+
+  const coveredBy = includeSubtree ? computeCoverage(db, anchors, rows) : new Map<string, string>();
+
+  const items: GetSectionsItem[] = [];
+  for (const anchor of anchors) {
+    const cover = coveredBy.get(anchor);
+    if (cover) {
+      items.push({ anchor, coveredBy: cover });
+      continue;
+    }
+    const section = rows.get(anchor) ?? null;
+    if (!section) {
+      items.push({ anchor, ...itemError(sectionNotFound(anchor, nearbyAnchors(db))) });
+      continue;
+    }
+    /**
+     * A section on a root that has LOST its section index is not addressable —
+     * the same gate `get_section` applied, but demoted from a throw to a
+     * per-item error. In a batch a throw would let one de-indexed root suppress
+     * every other section the caller asked for, which contradicts the rule that
+     * makes this operation worth having.
+     */
+    if (!roots.sectionIndexed().some((r) => r.id === section.rootId)) {
+      items.push({
+        anchor,
+        error: `section '${anchor}' is on root '${section.rootId}', which has no section index`,
+        code: 'SECTION_NOT_FOUND',
+      });
+      continue;
+    }
+    items.push(await fetchOne(db, pages, reader, serialization, section, includeSubtree));
+  }
+
+  const budgeted = applyItemBudget(items, metaOnly, RETRY_HINT);
+  return {
+    results: propagateTruncation(budgeted.items),
+    ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint } : {}),
+  };
+}
+
+const RETRY_HINT =
+  'response budget reached — every item after the first oversized one came back without its `body` (coordinates and edges kept, `truncated: true`). Retry those anchors as a smaller subset.';
+
+/** Serializes ONE section, exactly as the pre-batch operation did. */
+async function fetchOne(
+  db: Database,
+  pages: PageSource,
+  reader: RawEntityReader,
+  serialization: SerializationEngine,
+  section: RawSection,
+  includeSubtree: boolean,
+): Promise<SectionResultItem> {
+  const hydrated = await hydrateSection(db, pages, section, includeSubtree);
   // The `detail` view IS the source for this operation — the core does not
   // hand-roll a second section shape beside the serializer's. What it does own
   // is the WIRE naming: the operation's contract is snake_case, while the
@@ -179,8 +250,14 @@ export async function getSection(
   // `single_element` already compile against. Projecting here keeps one source
   // of truth without renaming a shipped shape out from under its consumers.
   const detail = serialization.serializeSection('detail', hydrated, reader).data as Record<string, unknown>;
-  const edges = (detail.edges as GetSectionResult['edges']) ?? hydrated.edges;
+  const edges = (detail.edges as SectionResultItem['edges']) ?? hydrated.edges;
 
+  /**
+   * A single body over the whole budget is truncated as TEXT rather than
+   * dropped. `applyItemBudget` never degrades the first item, so without this
+   * one huge section would come back meta-only with no smaller subset left to
+   * ask for — a dead end where the pre-batch operation gave a usable answer.
+   */
   const budgeted = truncateText(
     String(detail.body ?? hydrated.body),
     `section body truncated by response budget — read the page window with get_page, or narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" })`,
@@ -192,11 +269,89 @@ export async function getSection(
     page_path: section.pagePath,
     heading_text: section.headingText,
     heading_level: section.headingLevel,
-    content_hash: section.contentHash,
     line_start: section.lineStart,
     line_end: section.lineEnd,
     body: budgeted.text,
-    ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
+    ...(budgeted.truncated ? { truncated: true } : {}),
     edges,
   };
+}
+
+function itemError(err: DiscoveryError): { error: string; code: DiscoveryErrorCode } {
+  return { error: err.message, code: err.code };
+}
+
+function nearbyAnchors(db: Database): string[] {
+  const near = db
+    .prepare('SELECT anchor FROM section_index ORDER BY anchor LIMIT 12')
+    .all() as Array<{ anchor: string }>;
+  return near.map((r) => r.anchor);
+}
+
+/**
+ * Which requested anchors fall inside another requested anchor's subtree.
+ *
+ * Derived from `section_index`, NOT from re-scanning page text the way
+ * `sliceBody(includeSubtree)` does. Both answer the same question, but the rows
+ * are what the batch was keyed from, so an index-derived answer cannot disagree
+ * with the items being assembled — and it needs no page read at all. A section
+ * is inside `covering`'s subtree while its heading is DEEPER than covering's;
+ * the first row at the same or shallower level ends the subtree.
+ *
+ * Ties are resolved by input order: the first requested anchor that covers
+ * another wins, so `coveredBy` is stable regardless of page layout.
+ */
+function computeCoverage(
+  db: Database,
+  anchors: readonly string[],
+  rows: ReadonlyMap<string, RawSection | null>,
+): Map<string, string> {
+  const byPage = new Map<string, RawSection[]>();
+  const covered = new Map<string, string>();
+
+  for (const anchor of anchors) {
+    const section = rows.get(anchor);
+    if (!section) continue;
+    const key = `${section.rootId} ${section.pagePath}`;
+    if (!byPage.has(key)) {
+      byPage.set(key, selectSections(db, 'WHERE rootId = ? AND page_path = ?', [section.rootId, section.pagePath]));
+    }
+  }
+
+  const requested = new Set(anchors);
+  for (const anchor of anchors) {
+    const covering = rows.get(anchor);
+    if (!covering || covered.has(anchor)) continue;
+    const page = byPage.get(`${covering.rootId} ${covering.pagePath}`) ?? [];
+    const start = page.findIndex((s) => s.anchor === covering.anchor);
+    if (start === -1) continue;
+    for (let i = start + 1; i < page.length; i++) {
+      const row = page[i]!;
+      if (row.headingLevel <= covering.headingLevel) break;
+      if (requested.has(row.anchor) && !covered.has(row.anchor)) covered.set(row.anchor, anchor);
+    }
+  }
+  return covered;
+}
+
+/** Strips the expensive half, keeping everything that says what was cut. */
+function metaOnly(item: GetSectionsItem): GetSectionsItem {
+  if (!('body' in item)) return item;
+  const { body: _body, ...rest } = item as SectionResultItem;
+  return { ...rest, truncated: true };
+}
+
+/**
+ * A `coveredBy` item promises its body lives in the covering item. When that one
+ * was cut, the promise is void — so the flag travels down, and `coveredBy`
+ * WITHOUT `truncated` stays a guarantee rather than a hopeful pointer.
+ */
+function propagateTruncation(items: readonly GetSectionsItem[]): GetSectionsItem[] {
+  const truncatedAnchors = new Set(
+    items.filter((i) => 'body' in i || 'edges' in i).filter((i) => i.truncated).map((i) => i.anchor),
+  );
+  if (!truncatedAnchors.size) return [...items];
+  return items.map((item) =>
+    'coveredBy' in item && truncatedAnchors.has(item.coveredBy) ? { ...item, truncated: true } : item,
+  );
 }

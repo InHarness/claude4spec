@@ -13,11 +13,11 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
-import { createDiscoveryCore, getEntitiesAll, listEntitiesAll } from './index.js';
+import { createDiscoveryCore, getEntitiesAll, listEntitiesAll, MAX_ANCHORS_PER_CALL } from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
-import type { DiscoveryCore } from './types.js';
+import type { DiscoveryCore, SectionResultItem } from './types.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Root } from '../../shared/types.js';
 import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/types.js';
@@ -111,6 +111,13 @@ describe('discovery core', () => {
     await fs.writeFile(abs, body, 'utf-8');
   }
 
+  /**
+   * `level` used to be hardcoded to 2 here, which made the index disagree with
+   * the document for any page that nests: a `###` heading was recorded as a
+   * sibling of the `##` above it. Nothing noticed until `get_sections` started
+   * deriving subtree COVERAGE from `heading_level` — the real indexer has always
+   * written the true level, so the helper was the only liar.
+   */
   function indexSection(row: {
     rootId: string;
     anchor: string;
@@ -118,13 +125,24 @@ describe('discovery core', () => {
     heading: string;
     start: number;
     end: number;
+    level?: number;
   }): void {
     db.prepare(
       `INSERT INTO section_index
          (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
           content_hash, line_start, line_end, paragraph_count)
-       VALUES (?, ?, ?, ?, ?, 2, ?, 'hash', ?, ?, 1)`,
-    ).run(row.rootId, row.anchor, row.page, row.heading, row.heading.toLowerCase(), row.heading, row.start, row.end);
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'hash', ?, ?, 1)`,
+    ).run(
+      row.rootId,
+      row.anchor,
+      row.page,
+      row.heading,
+      row.heading.toLowerCase(),
+      row.level ?? 2,
+      row.heading,
+      row.start,
+      row.end,
+    );
   }
 
   /**
@@ -163,7 +181,15 @@ describe('discovery core', () => {
           break;
         }
       }
-      indexSection({ rootId, anchor: h.anchor, page: relPath, heading: h.text, start: h.line + 1, end });
+      indexSection({
+        rootId,
+        anchor: h.anchor,
+        page: relPath,
+        heading: h.text,
+        start: h.line + 1,
+        end,
+        level: h.level,
+      });
     }
   }
 
@@ -187,14 +213,14 @@ describe('discovery core', () => {
       });
     });
 
-    it('with a range on a section-indexed root, points at list_sections + get_section', async () => {
+    it('with a range on a section-indexed root, points at list_sections + get_sections', async () => {
       await writePage('pages', 'a.md', '# A\n\nbody\n');
       const c = core([pagesRoot()]);
       await expect(
         c.getPage({ rootId: 'pages', path: 'a.md', range: { start: 1, end: 2 } }),
       ).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
-        hint: expect.stringMatching(/list_sections.*get_section/),
+        hint: expect.stringMatching(/list_sections.*get_sections/),
       });
     });
 
@@ -272,7 +298,21 @@ describe('discovery core', () => {
     );
   });
 
-  describe('get_section returns a body and its edges', () => {
+  describe('get_sections returns bodies and their edges', () => {
+    /**
+     * 0.2.5 — the operation batches, so every assertion below reaches through
+     * `results[]`. `one()` keeps the single-anchor cases readable without
+     * hiding the envelope: it asserts the item IS a section (rather than an
+     * error or a `coveredBy` pointer), which is exactly what a bare
+     * `results[0]` would let slip past.
+     */
+    const one = (result: Awaited<ReturnType<DiscoveryCore['getSections']>>): SectionResultItem => {
+      expect(result.results).toHaveLength(1);
+      const item = result.results[0]!;
+      if (!('edges' in item)) throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+      return item;
+    };
+
     it('the body is as authored — the XML tag is an edge, not an expansion', async () => {
       await writePage(
         'pages',
@@ -292,7 +332,7 @@ describe('discovery core', () => {
       indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'm.md', heading: 'Section', start: 3, end: 9 });
       const c = core([pagesRoot()]);
 
-      const section = await c.getSection({ anchor: 'abcdef12' });
+      const section = one(await c.getSections({ anchors: ['abcdef12'] }));
 
       expect(section.body).toContain('<single_element type="widget" slug="flow"/>');
       expect(section.rootId).toBe('pages');
@@ -342,7 +382,7 @@ describe('discovery core', () => {
       await indexPageLikeTheIndexer('pages', 'pages', 'fm.md');
       const c = core([pagesRoot()]);
 
-      const second = await c.getSection({ anchor: 'bbbbbb22' });
+      const second = one(await c.getSections({ anchors: ['bbbbbb22'] }));
 
       expect(second.body).toContain('SECOND SECTION BODY');
       // The precise symptom: slicing the raw file drags in the previous
@@ -368,12 +408,212 @@ describe('discovery core', () => {
       expect(result.items[0]).toMatchObject({ kind: 'section', anchor: 'cccccc33' });
     });
 
-    it('an unknown anchor is SECTION_NOT_FOUND with a way to find one', async () => {
+    /**
+     * 0.2.5 — the failure is per-ITEM, which is the property that makes a batch
+     * worth calling. Before, one bad anchor threw and the caller lost every
+     * good section it had asked for in the same call, so the safe move was to
+     * go back to one call per anchor — exactly the N+1 this operation removes.
+     */
+    it('an unknown anchor fails its own item while the rest still come back with bodies', async () => {
+      await writePage(
+        'pages',
+        'mix.md',
+        ['# Top', '', '## Real', '<!-- anchor: aaaaaa11 -->', '', 'REAL BODY', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'mix.md');
       const c = core([pagesRoot()]);
-      await expect(c.getSection({ anchor: 'nosuchan' })).rejects.toMatchObject({
-        code: 'SECTION_NOT_FOUND',
-        hint: expect.stringContaining('search_pages'),
+
+      const result = await c.getSections({ anchors: ['nosuchan', 'aaaaaa11'] });
+
+      expect(result.results).toHaveLength(2);
+      expect(result.results[0]).toMatchObject({ anchor: 'nosuchan', code: 'SECTION_NOT_FOUND' });
+      expect(result.results[1]).toMatchObject({ anchor: 'aaaaaa11' });
+      expect((result.results[1] as SectionResultItem).body).toContain('REAL BODY');
+    });
+
+    it('returns items in input order, after silently de-duplicating', async () => {
+      await writePage(
+        'pages',
+        'ord.md',
+        [
+          '# Top',
+          '',
+          '## First',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          'ONE',
+          '',
+          '## Second',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'TWO',
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'ord.md');
+      const c = core([pagesRoot()]);
+
+      // Asked out of page order, with a repeat: the answer follows the CALLER's
+      // order, not the page's, and the duplicate collapses onto its first slot.
+      const result = await c.getSections({ anchors: ['bbbbbb22', 'aaaaaa11', 'bbbbbb22'] });
+
+      expect(result.results.map((i) => i.anchor)).toEqual(['bbbbbb22', 'aaaaaa11']);
+    });
+
+    it('refuses an empty or over-long anchors[] with the limit it enforces', async () => {
+      const c = core([pagesRoot()]);
+
+      // The limit is the ONLY valve on the request side — this operation does
+      // not paginate — so the refusal has to state it rather than just say no.
+      await expect(c.getSections({ anchors: [] })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining(String(MAX_ANCHORS_PER_CALL)),
       });
+      await expect(
+        c.getSections({ anchors: Array.from({ length: MAX_ANCHORS_PER_CALL + 1 }, (_, i) => `a${i}`) }),
+      ).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+        message: expect.stringContaining(String(MAX_ANCHORS_PER_CALL)),
+      });
+    });
+
+    /**
+     * The budget cut has to be a FUNCTION of the input order, or a caller
+     * cannot act on it: the documented remedy is "retry with a smaller subset",
+     * which is only sound if the same call cuts in the same place every time.
+     */
+    it('cuts deterministically — same input order, same meta-only items', async () => {
+      const big = 'x'.repeat(60_000);
+      await writePage(
+        'pages',
+        'big.md',
+        [
+          '# Top',
+          '',
+          '## One',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          big,
+          '',
+          '## Two',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          big,
+          '',
+          '## Three',
+          '<!-- anchor: cccccc33 -->',
+          '',
+          big,
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'big.md');
+      const c = core([pagesRoot()]);
+
+      const anchors = ['aaaaaa11', 'bbbbbb22', 'cccccc33'];
+      const first = await c.getSections({ anchors });
+      const second = await c.getSections({ anchors });
+
+      expect(first.truncated).toBe(true);
+      expect(first.message).toBeTruthy();
+      const cut = (r: typeof first): string[] =>
+        r.results.filter((i) => 'edges' in i && i.body === undefined).map((i) => i.anchor);
+      expect(cut(first)).toEqual(cut(second));
+      expect(cut(first).length).toBeGreaterThan(0);
+
+      // Degraded, not dropped: a caller can still see WHAT it did not get.
+      // Dropping would be indistinguishable from "that anchor does not exist".
+      expect(first.results).toHaveLength(3);
+      for (const item of first.results.filter((i) => 'edges' in i && i.body === undefined)) {
+        expect(item).toMatchObject({ truncated: true, line_start: expect.any(Number) });
+        expect((item as SectionResultItem).edges).toBeDefined();
+      }
+      // The first item keeps a body even though it alone exceeds the budget —
+      // otherwise a one-anchor call has no answer AND no smaller subset to ask.
+      expect((first.results[0] as SectionResultItem).body).toBeTruthy();
+    });
+
+    it('a section covered by another requested subtree points at it instead of repeating the body', async () => {
+      await writePage(
+        'pages',
+        'tree.md',
+        [
+          '# Top',
+          '',
+          '## Parent',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          'PARENT BODY',
+          '',
+          '### Child',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'CHILD BODY',
+          '',
+          '## Sibling',
+          '<!-- anchor: cccccc33 -->',
+          '',
+          'SIBLING BODY',
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'tree.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22', 'cccccc33'], includeSubtree: true });
+
+      const parent = result.results[0] as SectionResultItem;
+      expect(parent.body).toContain('CHILD BODY');
+      // No duplicate body: the child's text is already inside the parent's item.
+      expect(result.results[1]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11' });
+      // A SIBLING is not covered — the subtree ends at the next same-or-shallower
+      // heading, so `cccccc33` still gets its own body.
+      expect((result.results[2] as SectionResultItem).body).toContain('SIBLING BODY');
+    });
+
+    it('a covered item inherits truncation from the item that holds its body', async () => {
+      const big = 'y'.repeat(130_000);
+      await writePage(
+        'pages',
+        'cut.md',
+        [
+          '# Top',
+          '',
+          '## Lead',
+          '<!-- anchor: dddddd44 -->',
+          '',
+          'y'.repeat(119_000),
+          '',
+          '## Parent',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          big,
+          '',
+          '### Child',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'CHILD BODY',
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'cut.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({
+        anchors: ['dddddd44', 'aaaaaa11', 'bbbbbb22'],
+        includeSubtree: true,
+      });
+
+      const parent = result.results[1] as SectionResultItem;
+      expect(parent.truncated).toBe(true);
+      expect(parent.body).toBeUndefined();
+      /**
+       * The flag has to travel. `coveredBy` promises the body lives upstream;
+       * when the upstream item was cut, an un-flagged pointer would send the
+       * caller to fetch something that is not there — worse than saying nothing,
+       * because it looks like a successful answer.
+       */
+      expect(result.results[2]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11', truncated: true });
     });
   });
 

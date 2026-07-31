@@ -25,6 +25,7 @@ import type { SerializationEngine } from '../core/plugin-host/serialization-engi
 import type { ViewKind } from '../serialization/types.js';
 import type { RawEntityReader } from './raw-entity-reader.js';
 import type { Page } from './pagination.js';
+import type { DiscoveryErrorCode } from './errors.js';
 
 /**
  * Everything the core needs, ALREADY RESOLVED. Resolving a project, a
@@ -132,8 +133,22 @@ export interface SectionListItem {
  */
 export type ListSectionsResult = Page<SectionListItem> & { is_known?: boolean };
 
-export interface GetSectionInput {
-  anchor: string;
+/**
+ * 0.2.5 — `get_sections` takes a LIST. One anchor is a list of one.
+ *
+ * Every path that produces an anchor produces several: `search_pages` hits,
+ * `find_references` referents, a pick out of `list_sections`. Fetching them one
+ * at a time is the N+1 the minimal `list_entities` view already removed once —
+ * except over stdio the cost is model turns, not I/O. `includeSubtree` was never
+ * the answer to it: a subtree covers ADJACENT sections, and search hits are
+ * scattered across pages.
+ *
+ * `includeSubtree` stays a flag of the whole call rather than of each anchor.
+ * Per-anchor granularity would let one call mix two definitions of what a
+ * section is, and the caller can always split the call instead.
+ */
+export interface GetSectionsInput {
+  anchors: string[];
   includeSubtree?: boolean;
 }
 
@@ -152,20 +167,63 @@ export interface SectionEdges {
   pageLinks: Array<{ rootId: string; path: string; anchor?: string; raw: string; line: number }>;
 }
 
-export interface GetSectionResult {
+/**
+ * The section itself. `body` is OPTIONAL because a budget cut degrades an item
+ * to meta-only rather than dropping it: the coordinates and the edges are the
+ * cheap half and stay, so a caller can still see what it did not get and go
+ * fetch it. An item with no `body` always carries `truncated: true`, which is
+ * what separates "cut" from "empty section".
+ */
+export interface SectionResultItem {
   anchor: string;
   rootId: string;
   page_path: string;
   heading_text: string;
   heading_level: number;
-  content_hash: string;
   line_start: number;
   line_end: number;
   /** AS AUTHORED — XML tags untouched, because a tag is an edge. */
-  body: string;
+  body?: string;
   truncated?: boolean;
-  truncationHint?: string;
   edges: SectionEdges;
+}
+
+/**
+ * An anchor that was asked for explicitly AND fell inside another requested
+ * anchor's subtree. Its body is not repeated — it is already in `coveredBy`'s
+ * item.
+ *
+ * `truncated` is inherited from the covering item when that one was cut. The
+ * absence of `truncated` is therefore a GUARANTEE that the body is present
+ * upstream; without the inheritance, `coveredBy` would sometimes point at an
+ * item that has no body either, and the caller would follow the pointer to
+ * nothing.
+ */
+export interface SectionCoveredItem {
+  anchor: string;
+  coveredBy: string;
+  truncated?: boolean;
+}
+
+/**
+ * A per-ITEM failure. One unknown anchor does not fail the batch — the other
+ * sections still come back with their bodies, which is the whole reason the
+ * operation takes a list.
+ */
+export interface SectionErrorItem {
+  anchor: string;
+  error: string;
+  code: DiscoveryErrorCode;
+}
+
+export type GetSectionsItem = SectionResultItem | SectionCoveredItem | SectionErrorItem;
+
+export interface GetSectionsResult {
+  /** In input order, after silently de-duplicating anchors. */
+  results: GetSectionsItem[];
+  truncated?: boolean;
+  /** Present only on a cut: how to fetch the remainder. */
+  message?: string;
 }
 
 export interface GetPageInput {
@@ -336,7 +394,7 @@ export interface DiscoveryCore {
   describeTypes(input?: DescribeTypesInput): DescribeTypesResult;
   listPages(input: ListPagesInput): Promise<ListPagesResult>;
   listSections(input: ListSectionsInput): Promise<ListSectionsResult>;
-  getSection(input: GetSectionInput): Promise<GetSectionResult>;
+  getSections(input: GetSectionsInput): Promise<GetSectionsResult>;
   getPage(input: GetPageInput): Promise<GetPageResult>;
   searchPages(input: SearchPagesInput): Promise<SearchPagesResult>;
   searchEntities(input: SearchEntitiesInput): SearchEntitiesResult;

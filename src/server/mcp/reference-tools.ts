@@ -8,7 +8,7 @@ import { isRawEntityType } from '../discovery/raw-entity-reader.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
+import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
 
 /**
  * `reference-tools` — tag CRUD, and the in-process transport over the M39
@@ -24,7 +24,7 @@ import { isDiscoveryError, type DiscoveryCore } from '../discovery/index.js';
  * 0.2.3 moved the last read tools across: `list_sections` takes the core's
  * discriminated union, `find_references` its target union and full sweep,
  * `list_tags` its opt-in counts — and `list_pages` / `search_pages` /
- * `get_page` / `get_section` arrived, which is what makes `Glob` / `Grep` /
+ * `get_page` / `get_sections` arrived, which is what makes `Glob` / `Grep` /
  * `Read` replaceable at all.
  */
 export interface ReferenceToolsDeps {
@@ -305,7 +305,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const listSections = mcpTool(
     'list_sections',
-    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching it with get_section. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
+    'List sections, either of one page — { by: "page", rootId, path } — or the single section an anchor names — { by: "anchor", anchor }, which also reports `is_known` for an anchor that does not exist. Every row carries its `size`, so the volume of a section is knowable BEFORE fetching them with get_sections. There is no fuzzy heading search: a heading substring is not an identity, so to find a section by text call search_pages and then list_sections({ by: "anchor" }) on the hit. Calling without `by` returns INVALID_ARGUMENT listing both variants.',
     {
       by: z.enum(['page', 'anchor']).optional().describe('Identity regime; required'),
       rootId: z.string().optional().describe('With by:"page" — which page root'),
@@ -377,7 +377,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const searchPages = mcpTool(
     'search_pages',
-    'Search the prose of the pages by phrase (`query`) or regex (`regex`) — the domain replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). Three modes: "hits" (default) returns matches, "pages" returns which pages match and how often, "count" returns only a total. A hit on a section-indexed root comes back as an `anchor` — feed it to get_section; on a plain root as (rootId, path, line).',
+    'Search the prose of the pages by phrase (`query`) or regex (`regex`) — the domain replacement for grepping the specification, and the one search the entity graph cannot stand in for, because it looks for exactly what fell OUT of the graph (a bare HTTP path, a DTO name mentioned in running text). Three modes: "hits" (default) returns matches, "pages" returns which pages match and how often, "count" returns only a total. A hit on a section-indexed root comes back as an `anchor` — collect the anchors and feed them to get_sections in one call; on a plain root as (rootId, path, line).',
     {
       query: z.string().optional().describe('Phrase to look for'),
       regex: z.string().optional().describe('Regular expression; first-class, not a fallback'),
@@ -404,18 +404,20 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
     },
   );
 
-  const getSection = mcpTool(
-    'get_section',
-    'Read one section BY ANCHOR: its heading, its coordinates, and its body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (`edges.sectionRefs` / `entityEmbeds` / `pageLinks`), so you never parse markdown yourself; to follow an embed, call get_entities with the slug it carries. `includeSubtree` adds the lower headings beneath this one.',
+  const getSections = mcpTool(
+    'get_sections',
+    `Read sections BY ANCHOR — pass every anchor you need in ONE call; one anchor is simply a list of one. Search hits, a reference sweep and a section listing all hand you a LIST of anchors, and fetching them one per call is the cost this tool exists to remove. Each comes back as its own item in \`results\`, in the order asked for (duplicates silently collapsed), carrying the heading, the coordinates and the body as authored — XML tags left untouched, because a tag is an edge and expanding it would paste the payload in and destroy the edge. The outgoing edges arrive parsed alongside the body (\`edges.sectionRefs\` / \`entityEmbeds\` / \`pageLinks\`), so you never parse markdown yourself; to follow an embed, call get_entities with the slug it carries. An anchor that does not exist comes back as \`{ anchor, error, code }\` in its own slot rather than failing the batch. \`anchors\` has a hard length limit of ${MAX_ANCHORS_PER_CALL} (exceeding it, or passing none, is INVALID_ARGUMENT stating the limit) and the response has a size budget: past it, items keep their coordinates and edges but lose \`body\` and are marked \`truncated: true\` — never dropped in silence. \`includeSubtree\` adds the lower headings beneath each anchor; an anchor already covered by another one's subtree comes back as \`{ anchor, coveredBy }\` instead of repeating the body.`,
     {
-      anchor: z.string().describe('Section anchor (6-12 lowercase alphanumerics)'),
+      anchors: z
+        .array(z.string())
+        .describe('Section anchors (6-12 lowercase alphanumerics each), in order'),
       includeSubtree: z.boolean().optional().describe('Include the subtree of lower headings'),
     },
     async (args) => {
       try {
         return ok(
-          await deps.discovery.getSection({
-            anchor: String(args.anchor),
+          await deps.discovery.getSections({
+            anchors: (args.anchors as string[]).map(String),
             includeSubtree: args.includeSubtree === true,
           }),
         );
@@ -427,7 +429,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
 
   const getPage = mcpTool(
     'get_page',
-    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_section, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead.',
+    'Read one page as authored — XML tags untouched — addressed by the FULL key (rootId, path). A bare path is ambiguous across roots, so a call without `rootId` returns INVALID_ARGUMENT with the root list rather than guessing the built-in one. `range` is a line window and is allowed only on roots WITHOUT a section index; on an indexed root it is refused with a pointer to list_sections + get_sections, which is semantic, measurable up front and carries its own edges. Embeds are never expanded — fetch the entity by slug instead.',
     {
       rootId: z.string().optional().describe('Which page root — required'),
       path: z.string().optional().describe('Page path relative to the root'),
@@ -465,7 +467,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
       listSections,
       listPages,
       searchPages,
-      getSection,
+      getSections,
       getPage,
     ],
   });
