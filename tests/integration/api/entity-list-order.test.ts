@@ -58,7 +58,7 @@ describe('entity list order is unified', () => {
     return slugs;
   }
 
-  it('[ac:ac-unified-list-order] REST returns entities oldest-first, not alphabetically', async () => {
+  it('[ac:ac-porzadek-listy-encji-bez-zapytania-opier] REST returns entities oldest-first, not alphabetically', async () => {
     const created = await seedAcs();
     const res = await request(t.app).get('/api/acs');
     expect(res.status).toBe(200);
@@ -68,7 +68,7 @@ describe('entity list order is unified', () => {
     expect(slugs).not.toEqual([...created].sort());
   });
 
-  it('[ac:ac-unified-list-order] the discovery core agrees with REST, with no re-sort of its own', async () => {
+  it('[ac:ac-odczyt-generyczny-encji-lista-wiersz-p] the discovery core agrees with REST, with no re-sort of its own', async () => {
     const created = await seedAcs();
     const rest = await request(t.app).get('/api/acs');
     const restSlugs = (rest.body.acs as Array<{ slug: string }>).map((a) => a.slug);

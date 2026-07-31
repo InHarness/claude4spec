@@ -68,7 +68,7 @@ describe('entity round trip is a fixpoint', () => {
   });
   afterEach(() => t.cleanup());
 
-  it('[ac:ac-roundtrip-byte-equality] re-persisting every entity leaves its file byte-identical', async () => {
+  it('[ac:ac-dwa-kolejne-snapshot-tej-samej-niezm] re-persisting every entity leaves its file byte-identical', async () => {
     await seed(t);
     await indexerFor(t).indexAll();
 
@@ -86,7 +86,7 @@ describe('entity round trip is a fixpoint', () => {
     }
   });
 
-  it('[ac:ac-roundtrip-byte-equality] a second indexAll with no mutation leaves the files unchanged', async () => {
+  it('[ac:ac-rebuild-indeksu-ani-restore-nie-zmie] a second indexAll with no mutation leaves the files unchanged', async () => {
     await seed(t);
     const indexer = indexerFor(t);
     await indexer.indexAll();
@@ -114,7 +114,7 @@ describe('entity round trip is a fixpoint', () => {
     }
   });
 
-  it('a rebuild does not move updatedAt — the value survives the index round trip', async () => {
+  it('[ac:ac-rebuild-indeksu-ani-restore-nie-zmie] a rebuild does not move updatedAt — the value survives the index round trip', async () => {
     await seed(t);
     const indexer = indexerFor(t);
     await indexer.indexAll();
@@ -184,7 +184,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
     return service;
   }
 
-  it('[ac:ac-roundtrip-byte-equality] a stamp-only restore is reported noop, yet the file becomes identical', async () => {
+  it('[ac:ac-round-trip-release-u-zachowuje-pola-syst] a stamp-only restore is reported noop, yet the file becomes identical', async () => {
     const created = await request(t.app).post('/api/acs').send({ text: 'the rule holds' });
     expect(created.status).toBe(201);
     const slug = created.body.slug as string;
