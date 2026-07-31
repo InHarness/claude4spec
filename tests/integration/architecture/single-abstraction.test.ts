@@ -144,3 +144,80 @@ describe('Single Abstraction Rule', () => {
     expect(hits(/endpoint_dto/, isProduction)).toEqual([]);
   });
 });
+
+/**
+ * Every file under a per-type directory — the exact set `hostSourceFiles()`
+ * deliberately skips.
+ *
+ * The gates above police the HOST for knowledge it should not have. The two
+ * below police the TYPES for a decision that is no longer theirs to make: since
+ * 0.2.4 a service does not mint its own timestamps and a serializer does not
+ * know the entity has any. Both regressions would be invisible — a service that
+ * quietly re-adds `datetime('now')` still passes its own tests, and the file it
+ * writes just starts drifting from its row.
+ */
+function typePackageFiles(match: RegExp): string[] {
+  const roots = [path.join(SRC, 'server', 'entities'), path.join(REPO_ROOT, 'plugins')];
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const abs = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+        walk(abs);
+      } else if (match.test(entry.name)) {
+        out.push(abs);
+      }
+    }
+  };
+  for (const root of roots) walk(root);
+  return out;
+}
+
+function hitsIn(files: string[], pattern: RegExp): string[] {
+  const found: string[] = [];
+  for (const file of files) {
+    if (/\.test\.tsx?$/.test(file)) continue;
+    for (const { line, text } of codeLines(file)) {
+      if (pattern.test(text)) found.push(`${path.relative(REPO_ROOT, file)}:${line}: ${text.trim()}`);
+    }
+  }
+  return found;
+}
+
+describe('0.2.4 — the file owns the timestamps', () => {
+  it('no entity service mints its own timestamp', () => {
+    /**
+     * `datetime('now')` in a service is the pre-0.2.4 behaviour verbatim: it
+     * makes the COLUMN authoritative and the file derived, which inverts the
+     * direction the whole tier establishes. A rebuild is a write, so every such
+     * call turns "the indexer ran" into "the content changed".
+     *
+     * Migrations are exempt and not scanned: `DEFAULT (datetime('now'))` on the
+     * column is now unreachable, not wrong, and a migration is an applied ledger
+     * that must not be edited after the fact.
+     */
+    const services = typePackageFiles(/^services?\.ts$/);
+    expect(services.length).toBeGreaterThan(5); // the walker actually found them
+    expect(hitsIn(services, /datetime\('now'\)/)).toEqual([]);
+  });
+
+  it('no serializer knows the timestamps exist', () => {
+    /**
+     * The envelope is attached and detached at the three host chokepoints in
+     * `serialization/snapshot.ts`. A serializer that emits `createdAt` itself
+     * would collide with the host's key on the way out and survive the strip on
+     * the way in — the one collision the flat top-level envelope is only safe
+     * without.
+     */
+    const serializers = typePackageFiles(/^serializer\.ts$/);
+    expect(serializers.length).toBeGreaterThan(3);
+    expect(hitsIn(serializers, /\bcreatedAt\b|\bupdatedAt\b/)).toEqual([]);
+  });
+});

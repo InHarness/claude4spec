@@ -39,6 +39,9 @@ export interface TestApp {
   versionService: VersionService;
   referencesService: ReferencesService;
   entityStore: EntityStore;
+  /** 0.2.4: exposed so a test can build a real EntityIndexerService for round-trip checks. */
+  tagsService: TagsService;
+  entitiesWatcher: EntitiesWatcher;
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
   plansPages: PagesService;
@@ -178,6 +181,8 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     versionService,
     referencesService,
     entityStore,
+    tagsService,
+    entitiesWatcher,
     cwd,
     plansPages,
     plansSerializer,

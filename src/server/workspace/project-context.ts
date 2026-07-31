@@ -25,6 +25,7 @@ import { slugify } from '../../shared/slug.js';
 import { PlanService } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
 import { backfillPlansToFilesystem } from './plan-migration.js';
+import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
 import { PatchService } from '../services/patch.js';
@@ -1063,6 +1064,28 @@ async function buildInner(
         `[m29] entity file count (${fileEntityCount}) != DB count (${dbEntityCount}); rebuilding from files (db backed up)`,
       );
       backupDbBeforeMigration(dbSlotDir);
+    }
+
+    /**
+     * 0.2.4 — before the rebuild, never after.
+     *
+     * The rebuild reads the files and projects their timestamps into the
+     * columns. Running the backfill afterwards would mean the rebuild had
+     * already minted a fresh "now" for every pre-0.2.4 entity, and the backfill
+     * would then be writing files that disagree with the index it just built.
+     * It also has to come after the DB→text export above, since that export is
+     * what creates the files this walks.
+     *
+     * Idempotent by construction: a project whose files already carry both
+     * fields short-circuits before any `git` spawn, so this costs one directory
+     * walk per boot forever after.
+     */
+    try {
+      backfillEntityTimestamps(db.handle, entityStore, cwd, entitiesDir);
+    } catch (err) {
+      // A missing timestamp degrades ordering; it does not stop the project
+      // from serving. Never let the backfill be the reason boot fails.
+      console.warn('[timestamp-backfill] skipped:', (err as Error).message);
     }
 
     await entityIndexer.indexAll();

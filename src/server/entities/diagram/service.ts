@@ -16,6 +16,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
 import { validateDiagramSource } from './validate.js';
 import {
   BaseEntityCrudService,
@@ -76,10 +77,16 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
     const format = readFormat(input.format);
     const source = input.source ?? '';
 
+    // 0.2.4: both audit columns written explicitly — see `system-stamp.ts`.
+    const stamp = resolveStamp('diagram', opts);
+
     const tx = this.db.transaction(() => {
       this.db
-        .prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, ?, ?)`)
-        .run(slug, format, source);
+        .prepare(
+          `INSERT INTO diagram (slug, format, source, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(slug, format, source, stamp.createdAt, stamp.updatedAt);
       if (input.tags?.length) this.tags.assignTags('diagram', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
@@ -97,7 +104,7 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
     const rows = this.db
-      .prepare(`SELECT * FROM diagram ${whereSql} ORDER BY slug LIMIT ? OFFSET ?`)
+      .prepare(`SELECT * FROM diagram ${whereSql} ORDER BY ${ENTITY_LIST_ORDER} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as DiagramRow[];
     return rows.map((r) => this.hydrate(r));
   }
@@ -138,12 +145,16 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
       const nextFormat = input.format !== undefined ? readFormat(input.format) : current.format;
       const nextSource = input.source !== undefined ? input.source : current.source;
 
+      // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
+      // existing entity is an UPDATE, and the file's value must win.
+      const stamp = resolveStamp('diagram', opts, current);
       this.db
         .prepare(
-          `UPDATE diagram SET slug = ?, format = ?, source = ?, updated_at = datetime('now')
+          `UPDATE diagram
+              SET slug = ?, format = ?, source = ?, created_at = ?, updated_at = ?
             WHERE slug = ?`
         )
-        .run(nextSlug, nextFormat, nextSource, slug);
+        .run(nextSlug, nextFormat, nextSource, stamp.createdAt, stamp.updatedAt, slug);
 
       // M29: entity_tag is polymorphic (no FK on entity_slug) — follow the rename.
       if (nextSlug !== slug) {

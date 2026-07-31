@@ -17,6 +17,7 @@ import type { TagsServiceLike as TagsService } from '../../../host-kit/host-type
 import type { VersionServiceLike as VersionService } from '../../../host-kit/host-types.js';
 import type { EntityStoreLike as EntityStore } from '../../../host-kit/host-types.js';
 import type { MutateOpts } from '../../../host-kit/mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../../../host-kit/system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -110,17 +111,22 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       const conflict = this.db.prepare(`SELECT 1 FROM endpoint WHERE slug = ?`).get(slug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `endpoint slug '${slug}' already exists`);
 
+      // 0.2.4: both audit columns written explicitly — see `host-kit/system-stamp.ts`.
+      const stamp = resolveStamp('endpoint', opts);
       this.db
         .prepare(
-          `INSERT INTO endpoint (slug, method, path, summary, description)
-           VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO endpoint (slug, method, path, summary, description,
+                                 created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
         .run(
           slug,
           method,
           input.path,
           input.summary ?? '',
-          input.description ?? null
+          input.description ?? null,
+          stamp.createdAt,
+          stamp.updatedAt
         );
       if (input.tags?.length) this.tags.assignTags('endpoint', slug, input.tags);
       const created = this.getBySlugInternal(slug);
@@ -145,7 +151,7 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       .prepare(
         `SELECT * FROM endpoint
          ${whereSql}
-         ORDER BY path, method
+         ORDER BY ${ENTITY_LIST_ORDER}
          LIMIT ? OFFSET ?`
       )
       .all(...params, limit, offset) as EndpointRow[];
@@ -195,11 +201,14 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
         description: input.description !== undefined ? input.description : current.description,
       };
 
+      // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
+      // existing entity is an UPDATE, and the file's value must win.
+      const stamp = resolveStamp('endpoint', opts, current);
       this.db
         .prepare(
           `UPDATE endpoint
              SET slug = ?, method = ?, path = ?, summary = ?, description = ?,
-                 updated_at = datetime('now')
+                 created_at = ?, updated_at = ?
            WHERE slug = ?`
         )
         .run(
@@ -208,6 +217,8 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
           nextRow.path,
           nextRow.summary,
           nextRow.description,
+          stamp.createdAt,
+          stamp.updatedAt,
           slug
         );
 

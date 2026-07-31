@@ -19,6 +19,7 @@ import type { VersionService } from '../../services/versions.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -120,15 +121,29 @@ export class AcService extends BaseEntityCrudService<Ac> {
     const status = normalizeStatus(input.status);
     const verifies = normalizeVerifies(input.verifies);
 
+    // 0.2.4: both audit columns are written EXPLICITLY, never left to the
+    // column DEFAULT. The value belongs to the entity file; on the reindex path
+    // `opts.stamp` carries the file's own value straight back in.
+    const stamp = resolveStamp('ac', opts);
+
     const tx = this.db.transaction(() => {
       const conflict = this.db.prepare(`SELECT 1 FROM ac WHERE slug = ?`).get(slug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `ac slug '${slug}' already exists`);
       this.db
         .prepare(
-          `INSERT INTO ac (slug, text, kind, status, verifies, description)
-           VALUES (?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO ac (slug, text, kind, status, verifies, description, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         )
-        .run(slug, text, kind, status, JSON.stringify(verifies), input.description ?? null);
+        .run(
+          slug,
+          text,
+          kind,
+          status,
+          JSON.stringify(verifies),
+          input.description ?? null,
+          stamp.createdAt,
+          stamp.updatedAt,
+        );
       if (input.tags?.length) this.tags.assignTags('ac', slug, input.tags);
       const ac = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
@@ -151,7 +166,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
     const rows = this.db
       .prepare(
         `SELECT * FROM ac ${whereSql}
-         ORDER BY created_at DESC
+         ORDER BY ${ENTITY_LIST_ORDER}
          LIMIT ? OFFSET ?`,
       )
       .all(...params, limit, offset) as AcRow[];
@@ -195,11 +210,17 @@ export class AcService extends BaseEntityCrudService<Ac> {
       const nextDescription =
         input.description !== undefined ? input.description : current.description;
 
+      // 0.2.4: `created_at` is set on UPDATE too, not just INSERT. An
+      // incremental single-file reindex reaches an existing row and is therefore
+      // an UPDATE; leaving `created_at` alone would let the column keep whatever
+      // the previous rebuild invented while the file says something else, and
+      // the next `persist` would write that divergence into the file.
+      const stamp = resolveStamp('ac', opts, current);
       this.db
         .prepare(
           `UPDATE ac
              SET slug = ?, text = ?, kind = ?, status = ?, verifies = ?, description = ?,
-                 updated_at = datetime('now')
+                 created_at = ?, updated_at = ?
            WHERE slug = ?`,
         )
         .run(
@@ -209,6 +230,8 @@ export class AcService extends BaseEntityCrudService<Ac> {
           nextStatus,
           nextVerifies,
           nextDescription,
+          stamp.createdAt,
+          stamp.updatedAt,
           slug,
         );
 

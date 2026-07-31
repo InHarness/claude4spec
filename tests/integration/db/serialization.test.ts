@@ -11,7 +11,7 @@ describe('entity snapshot serialization', () => {
   });
   afterEach(() => t.cleanup());
 
-  it('[ac:ac-dwa-kolejne-snapshot-tej-samej-niezm] two consecutive snapshots of the same unchanged entity are byte-identical, free of DB ids and audit timestamps, with stably sorted arrays', async () => {
+  it('[ac:ac-dwa-kolejne-snapshot-tej-samej-niezm] two consecutive snapshots of the same unchanged entity are byte-identical, free of DB ids and raw audit columns, with stably sorted arrays', async () => {
     // tags and linked dtos created deliberately out of alphabetical order
     const dtoSlugsCreated: string[] = [];
     for (const name of ['ZetaDto', 'AlphaDto']) {
@@ -42,10 +42,25 @@ describe('entity snapshot serialization', () => {
     const secondJson = JSON.stringify(canonicalize(second));
     expect(secondJson).toBe(firstJson);
 
-    // no DB ids and no audit timestamps anywhere in the snapshot
+    // No DB ids, and no RAW audit columns — `created_at`/`updated_at` are index
+    // implementation detail and must never reach the file.
     expect(firstJson).not.toMatch(/"id":/);
-    expect(firstJson).not.toMatch(/"created_at":|"createdAt":/);
-    expect(firstJson).not.toMatch(/"updated_at":|"updatedAt":/);
+    expect(firstJson).not.toMatch(/"created_at":/);
+    expect(firstJson).not.toMatch(/"updated_at":/);
+
+    /**
+     * 0.2.4 inverts the other half of this assertion. `createdAt`/`updatedAt`
+     * used to be banned from a snapshot because the DB minted them on every
+     * index pass, which made two snapshots of an unchanged entity differ — the
+     * very determinism this test defends. Now the FILE owns them and the
+     * columns are its verbatim projection, so they are stable across snapshots
+     * and belong in the file. The determinism check above is what proves it:
+     * it ran before these two lines and passed with the envelope present.
+     */
+    const stamped = first as { createdAt?: unknown; updatedAt?: unknown };
+    expect(typeof stamped.createdAt).toBe('string');
+    expect(typeof stamped.updatedAt).toBe('string');
+    expect(stamped.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
 
     // arrays sorted stably despite reversed insertion order
     const snap = first as { tags: string[]; linked_dtos: Array<{ dtoSlug?: string; dto_slug?: string }> };

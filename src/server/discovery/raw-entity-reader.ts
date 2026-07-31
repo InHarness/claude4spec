@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
+import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 export type RawEntityType =
   | 'endpoint'
@@ -16,6 +17,16 @@ export interface RawEntity {
   slug: string;
   data: Record<string, unknown>;
   tags: string[];
+  /**
+   * 0.2.4: the entity's `createdAt`/`updatedAt`, kept OUT of `data` (where the
+   * raw columns were always stripped) and read back off the audit columns.
+   *
+   * Reading them off the row is reading them off the file: since 0.2.4 the
+   * write path only ever copies the file's value into the column, so the two
+   * are the same value by construction. Absent when the type's table has no
+   * audit columns, or when they are unparseable.
+   */
+  system?: SystemStamp;
 }
 
 export interface RawSection {
@@ -171,6 +182,44 @@ export class RawEntityReader {
     return found;
   }
 
+  /** Memoized `ORDER BY` clause per table — the `PRAGMA` runs once per table. */
+  private readonly orderClauses = new Map<string, string>();
+
+  /**
+   * 0.2.4 — THE default list order: `created_at ASC, slug ASC`, for every type,
+   * on every transport.
+   *
+   * Before this, order was whatever each service happened to write: `name` for
+   * three types, `slug` for one, `path, method` for another, `created_at DESC`
+   * for `ac`. So the same entity set came back in a different order from the
+   * UI, REST, MCP and the CLI, and the boot rebuild reshuffled `ac` because
+   * `created_at` was re-minted on every index pass. With the timestamp now
+   * owned by the file, `created_at` is stable and means what it says.
+   *
+   * ASCENDING because this is presentation order, not ranking order — a list of
+   * acceptance criteria reads oldest-first like a document, and "newest first"
+   * is a ranking reflex that belongs to search. `slug` breaks ties, which is
+   * what stops `LIMIT`/`OFFSET` paging from losing or duplicating rows when two
+   * entities share a timestamp (the common case right after a rebuild).
+   *
+   * Falls back to `slug` alone when the table has no `created_at` — a
+   * plugin-contributed table is not required to have one, and an ordering
+   * helper must never be the reason a read throws.
+   */
+  private orderClause(table: string): string {
+    const cached = this.orderClauses.get(table);
+    if (cached) return cached;
+    let clause = 'slug';
+    try {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: unknown }>;
+      if (columns.some((c) => c.name === 'created_at')) clause = 'created_at, slug';
+    } catch {
+      /* unreadable pragma — `slug` is always safe */
+    }
+    this.orderClauses.set(table, clause);
+    return clause;
+  }
+
   /**
    * Whether `type` resolves to a real table — distinguishes "this type can't
    * be read at all" (misconfigured/inactive plugin, or a reader built without
@@ -226,6 +275,11 @@ export class RawEntityReader {
     const table = this.resolveTable(type);
     if (!table) return [];
     const placeholders = tagSlugs.map(() => '?').join(',');
+    // Qualified with the `e` alias — the subquery below also has a `slug`.
+    const order = this.orderClause(table)
+      .split(', ')
+      .map((column) => `e.${column}`)
+      .join(', ');
     let sql: string;
     const params: unknown[] = [];
     if (filter === 'and') {
@@ -238,7 +292,7 @@ export class RawEntityReader {
         GROUP BY et.entity_slug
           HAVING COUNT(DISTINCT et.tag_slug) = ?
          )
-         ORDER BY e.slug
+         ORDER BY ${order}
       `;
       params.push(type, ...tagSlugs, tagSlugs.length);
     } else {
@@ -248,7 +302,7 @@ export class RawEntityReader {
           SELECT et.entity_slug FROM entity_tag et
            WHERE et.entity_type = ? AND et.tag_slug IN (${placeholders})
          )
-         ORDER BY e.slug
+         ORDER BY ${order}
       `;
       params.push(type, ...tagSlugs);
     }
@@ -302,7 +356,7 @@ export class RawEntityReader {
     const table = this.resolveTable(type);
     if (!table) return [];
     const rows = this.db
-      .prepare(`SELECT slug FROM ${table} ORDER BY slug`)
+      .prepare(`SELECT slug FROM ${table} ORDER BY ${this.orderClause(table)}`)
       .all() as Array<{ slug: string }>;
     return rows.map((r) => r.slug);
   }
@@ -405,7 +459,11 @@ export class RawEntityReader {
       data[key] = safeJsonArray(value);
     }
 
-    return { type, slug, data, tags };
+    const createdAt = toIsoMs(row.created_at);
+    const updatedAt = toIsoMs(row.updated_at);
+    const system = createdAt && updatedAt ? { createdAt, updatedAt } : undefined;
+
+    return { type, slug, data, tags, ...(system ? { system } : {}) };
   }
 
   private hydrateSection(row: Record<string, unknown>): RawSection {

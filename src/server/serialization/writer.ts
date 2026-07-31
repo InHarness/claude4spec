@@ -34,6 +34,7 @@ import type {
   UiViewCreateInput,
 } from '../../shared/entities.js';
 import type { RawEntityType } from '../discovery/raw-entity-reader.js';
+import type { SystemStamp } from './system-fields.js';
 
 export interface UpsertResult<T> {
   entity: T;
@@ -59,6 +60,21 @@ export interface EntityWriter {
     input: unknown,
     actor: ChangedBy,
   ): UpsertResult<T> | null;
+
+  /**
+   * 0.2.4 — return a writer that stamps every mutation with `stamp` instead of
+   * minting `datetime('now')`.
+   *
+   * The stamp rides on the WRITER, not in the payload, because the per-type
+   * `restore` slot must keep seeing exactly the snapshot shape it saw before
+   * 0.2.4. `restoreEntity` strips the envelope off the data and pre-loads it
+   * here, so the serializer call site is byte-identical and no per-type code
+   * learns that timestamps exist.
+   *
+   * Optional so a hand-built test writer need not implement it; the host's own
+   * `HostEntityWriter` always does.
+   */
+  withStamp?(stamp: SystemStamp): EntityWriter;
 
   // ─── deprecated per-type shims ────────────────────────────────────────────
   //

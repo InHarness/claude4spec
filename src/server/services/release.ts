@@ -38,6 +38,8 @@ import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { readSystemFields } from '../serialization/system-fields.js';
+import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
 import { hasDotSegment } from '../../shared/page-files.js';
@@ -1216,11 +1218,40 @@ export class ReleaseService {
       });
       const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot, input.slug);
       if (diff.op === 'noop') {
+        /**
+         * 0.2.4 — "no substantive change" governs the DIFF REPORT and the
+         * version log. It never governs the projection.
+         *
+         * Since `diffEntity` strips the timestamp envelope from both sides,
+         * content-equal-but-stamps-different now lands here rather than going
+         * through a real mutation. If we returned outright, the entity file
+         * would stay at its current timestamps and never become byte-identical
+         * to the release snapshot — quietly breaking the round-trip invariant
+         * that restore is supposed to establish. So: no mutation, no
+         * `entity_version` row, but the stamp still gets projected and the file
+         * still gets rewritten.
+         */
+        const stamp = readSystemFields(targetSnapshot);
+        if (stamp) {
+          projectStamp(this.db, this.host, input.type, input.slug, stamp);
+          try {
+            this.entityStore?.persist(input.type, input.slug);
+          } catch {
+            /* index row missing — skip */
+          }
+        }
         return { type: input.type, slug: input.slug, op: 'noop' };
       }
     }
 
     const result = this.host.restore(input.type, targetSnapshot, restoreCtx);
+    // 0.2.4: same backstop as the indexer — a type whose own SQL predates the
+    // stamp still gets the release snapshot's timestamps into its columns, so
+    // the file written just below matches the snapshot byte for byte.
+    if (result.op !== 'noop' && result.op !== 'deleted') {
+      const stamp = readSystemFields(targetSnapshot);
+      if (stamp) projectStamp(this.db, this.host, input.type, input.slug, stamp);
+    }
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     if (result.op !== 'noop' && result.op !== 'deleted') {
       try {

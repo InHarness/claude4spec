@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { UpsertResult } from '../../serialization/writer.js';
+import type { SystemStamp } from '../../serialization/system-fields.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type {
   PluginCommandContribution,
@@ -64,10 +65,15 @@ export type SqlMigration = {
  *                 (false on the index-rebuild path, true on a real restore).
  *   - `writeFile` gates re-persisting the entity's JSON file (always false on
  *                 both restore paths — the caller owns the file write).
+ *   - `stamp`     (0.2.4) carries the entity file's `createdAt`/`updatedAt` so
+ *                 the service writes them into its columns VERBATIM instead of
+ *                 minting `datetime('now')`. Optional: a user mutation has no
+ *                 file behind it yet and lets the service mint one.
  */
 export interface WriteOpts {
   capture: boolean;
   writeFile: boolean;
+  stamp?: SystemStamp;
 }
 
 /**

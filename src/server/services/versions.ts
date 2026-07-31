@@ -11,6 +11,7 @@ import { HostEntityWriter } from './entity-writer.js';
 import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
+import { stripSystemFields } from '../serialization/system-fields.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 
 export type VersionOp = 'create' | 'update' | 'delete';
@@ -287,7 +288,21 @@ export class VersionService {
     const from = this.getVersion(entityType, entitySlug, fromVersion);
     const to = this.getVersion(entityType, entitySlug, toVersion);
     if (!from || !to) throw new DomainError('NOT_FOUND', 'version not found');
-    return { from, to, changes: computeDiff(from.data, to.data) };
+    /**
+     * 0.2.4 — the timestamp envelope is stripped from both sides, the same rule
+     * `diffEntity` applies host-wide.
+     *
+     * Every captured snapshot now carries `updatedAt`, and every capture is by
+     * definition a change — so without this, EVERY version diff in the UI gains
+     * an `updatedAt: <then> → <now>` row that says nothing the version list is
+     * not already showing beside it. The timestamps are metadata about the
+     * change, not part of what changed.
+     */
+    return {
+      from,
+      to,
+      changes: computeDiff(stripSystemFields(from.data), stripSystemFields(to.data)),
+    };
   }
 
   private nextVersionNumber(entityType: string, entitySlug: string): number {

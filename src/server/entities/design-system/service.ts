@@ -17,6 +17,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
+import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -111,12 +112,23 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       if (conflict)
         throw new DomainError('SLUG_CONFLICT', `design system slug '${slug}' already exists`);
 
+      // 0.2.4: both audit columns written explicitly — see `system-stamp.ts`.
+      const stamp = resolveStamp('design-system', opts);
       this.db
         .prepare(
-          `INSERT INTO design_system (slug, name, description, groups, modes)
-           VALUES (?, ?, ?, ?, ?)`
+          `INSERT INTO design_system (slug, name, description, groups, modes,
+                                      created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(slug, input.name, input.description ?? null, JSON.stringify(groups), JSON.stringify(modes));
+        .run(
+          slug,
+          input.name,
+          input.description ?? null,
+          JSON.stringify(groups),
+          JSON.stringify(modes),
+          stamp.createdAt,
+          stamp.updatedAt,
+        );
       if (input.tags?.length) this.tags.assignTags('design-system', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
@@ -141,7 +153,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
     const limit = Math.min(Math.max(query.limit ?? 200, 1), 500);
     const offset = Math.max(query.offset ?? 0, 0);
     const rows = this.db
-      .prepare(`SELECT * FROM design_system ${whereSql} ORDER BY name LIMIT ? OFFSET ?`)
+      .prepare(`SELECT * FROM design_system ${whereSql} ORDER BY ${ENTITY_LIST_ORDER} LIMIT ? OFFSET ?`)
       .all(...params, limit, offset) as DesignSystemRow[];
     return rows.map((r) => this.hydrate(r));
   }
@@ -193,11 +205,14 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       const nextGroups = input.groups !== undefined ? JSON.stringify(input.groups) : current.groups;
       const nextModes = input.modes !== undefined ? JSON.stringify(input.modes) : current.modes;
 
+      // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
+      // existing entity is an UPDATE, and the file's value must win.
+      const stamp = resolveStamp('design-system', opts, current);
       this.db
         .prepare(
           `UPDATE design_system
              SET slug = ?, name = ?, description = ?, groups = ?, modes = ?,
-                 updated_at = datetime('now')
+                 created_at = ?, updated_at = ?
            WHERE slug = ?`
         )
         .run(
@@ -206,6 +221,8 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
           input.description !== undefined ? input.description : current.description,
           nextGroups,
           nextModes,
+          stamp.createdAt,
+          stamp.updatedAt,
           slug
         );
 

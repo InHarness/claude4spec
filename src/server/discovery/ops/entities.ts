@@ -68,7 +68,15 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
       : input.tags.length === 0
         ? []
         : deps.reader.findByTag({ type: input.type, tags: input.tags, filter }).map((e) => e.slug);
-  const sorted = [...slugs].sort((a, b) => a.localeCompare(b));
+  /**
+   * 0.2.4 — NO re-sort here. The reader owns the order (`created_at, slug`,
+   * `RawEntityReader.orderClause`) and it is the same order the REST and UI
+   * paths get. Re-sorting by slug meant this transport alone disagreed with
+   * every other one about what "the list of X" looks like, which is exactly the
+   * discrepancy the unified order removes. Paging still works because the
+   * reader's order is total: `slug` breaks ties.
+   */
+  const sorted = slugs;
 
   // "How many entities carry tag X" without walking them: the count mode exists
   // so measurement never costs a full traversal.
