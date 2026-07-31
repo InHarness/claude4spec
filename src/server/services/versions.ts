@@ -95,7 +95,23 @@ export class VersionService {
       throw new DomainError('NOT_FOUND', `${type} '${entitySlug}' not found`);
     }
 
-    host.restore(type, target.data, ctx);
+    /**
+     * 0.2.4 — the ONE restore path that does NOT replay the stamp verbatim.
+     *
+     * `ReleaseService.restoreEntity` writes the snapshot's timestamps back
+     * unchanged, because its whole contract is "make this entity byte-identical
+     * to what the release captured". This one is different by its own design:
+     * it deliberately captures a NEW `update` version immediately below, so the
+     * restore is an append-only, undoable action rather than a rewind. An entity
+     * whose version log says "updated just now" while its `updatedAt` points
+     * backwards is self-contradictory — and it is the file, not the log, that
+     * every list order and every diff reads.
+     *
+     * Stripping the envelope is how that is expressed: with no stamp on the
+     * writer, the service mints `updatedAt = now` and preserves `created_at`
+     * from the existing row, which is exactly the user-mutation rule.
+     */
+    host.restore(type, stripSystemFields(target.data), ctx);
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 

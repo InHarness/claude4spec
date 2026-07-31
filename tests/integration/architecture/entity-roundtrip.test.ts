@@ -223,4 +223,30 @@ describe('release restore projects the stamp even when the diff is a noop', () =
       .get() as { n: number };
     expect(rows.n).toBe(0);
   });
+
+  /**
+   * The counterpart, and the one place the verbatim rule is deliberately NOT
+   * applied. `VersionService.restore` captures a fresh `update` version as part
+   * of the restore — so it is a mutation, not a rewind, and its `updatedAt` has
+   * to say so. `createdAt` is still immutable.
+   */
+  it('a version restore mints a new updatedAt rather than replaying the old one', async () => {
+    const created = await request(t.app).post('/api/acs').send({ text: 'first text' });
+    expect(created.status).toBe(201);
+    const slug = created.body.slug as string;
+    const originalStamp = t.rawReader.getEntity('ac', slug)!.system!;
+
+    await new Promise((r) => setTimeout(r, 5));
+    const patched = await request(t.app).patch(`/api/acs/${slug}`).send({ text: 'second text' });
+    expect(patched.status).toBe(200);
+
+    t.versionService.configureRestore(t.entityStore, t.tagsService);
+    await new Promise((r) => setTimeout(r, 5));
+    t.versionService.restore('ac', slug, 1, 'user');
+
+    const after = t.rawReader.getEntity('ac', slug)!;
+    expect((after.data as { text: string }).text).toBe('first text'); // content really rewound
+    expect(after.system!.createdAt).toBe(originalStamp.createdAt); // never moves
+    expect(after.system!.updatedAt > originalStamp.updatedAt).toBe(true); // the restore IS a change
+  });
 });
