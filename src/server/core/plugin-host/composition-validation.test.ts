@@ -91,6 +91,25 @@ describe('composition descriptor — the legacy fallback', () => {
     expect(resolved.derivedTables).toEqual([{ table: 'endpoint_dto', bindingColumn: null }]);
   });
 
+  /**
+   * The same argument as the `auxTables` merge above, applied to the OTHER
+   * inherited slot. A type that declares a composition to change its
+   * `identityColumn` has said nothing about tags, so it must keep the
+   * `entity_tag` scope every legacy module gets for free — otherwise the moment
+   * the rebuild derives its clear from the descriptor, that type's tag rows
+   * become rows nobody clears. Silent today, load-bearing tomorrow.
+   */
+  it('keeps the entity_tag scope when a composition is declared without sharedTables', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerEntityModule(mod('endpoint', { mainTable: 'endpoint', identityColumn: 'id' }));
+    const resolved = compositionOf(registry.getAvailable('endpoint')!);
+    expect(resolved.legacy).toBe(false);
+    expect(resolved.sharedTables.map((s) => s.table)).toContain('entity_tag');
+    // …and it is scoped to this type, not a blanket licence over the table.
+    const tag = resolved.sharedTables.find((s) => s.table === 'entity_tag')!;
+    expect(JSON.stringify(tag.scopePredicate)).toContain('endpoint');
+  });
+
   it('emits no derivedTables from legacyComposition, since it cannot know a binding', () => {
     expect(legacyComposition('endpoint', 'endpoint')).not.toHaveProperty('derivedTables');
   });

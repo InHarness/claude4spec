@@ -51,6 +51,15 @@ function placeholderStamp(): string {
   return new Date(0).toISOString();
 }
 
+/** `fs.realpathSync`, degrading to the path as given when it does not resolve. */
+function realpathOr(p: string): string {
+  try {
+    return fs.realpathSync(p);
+  } catch {
+    return p;
+  }
+}
+
 /** Absolute path of the git work tree containing `cwd`, or null when there is none. */
 function repoRoot(cwd: string): string | null {
   try {
@@ -206,14 +215,22 @@ export function backfillEntityTimestamps(
     versionDates.map((r) => [`${r.entity_type}/${r.entity_slug}`, { first: r.first, last: r.last }]),
   );
 
-  const gitDates = gitDatesByPath(cwd, entitiesDir);
+  const realCwd = realpathOr(cwd);
+  const gitDates = gitDatesByPath(realCwd, entitiesDir);
   const placeholder = placeholderStamp();
   let failedWrites = 0;
-  const storeRoot = path.resolve(cwd, entitiesDir);
   // git prints repo-root-relative paths; build the lookup key the same way.
   // Falls back to `cwd` when there is no work tree, which is harmless — the
   // git map is empty in that case anyway.
-  const root = repoRoot(cwd) ?? cwd;
+  //
+  // Both sides must be realpath'd or neither. `repoRoot` returns git's
+  // `--show-toplevel`, which is ALWAYS symlink-resolved, so a raw `cwd` (on
+  // macOS, /tmp and /var are symlinks) yields `../..`-prefixed keys that match
+  // nothing: every entity silently falls to the `mtime` rung, and the guard at
+  // the end does NOT warn, because `gitDates` is non-empty — it is the lookup
+  // that failed, not the collection.
+  const storeRoot = path.resolve(realCwd, entitiesDir);
+  const root = repoRoot(realCwd) ?? realCwd;
   const gitKeyFor = (relPath: string): string =>
     path.relative(root, path.join(storeRoot, relPath)).replaceAll(path.sep, '/');
 

@@ -191,9 +191,28 @@ export async function getSections(
   const rows = new Map<string, RawSection | null>();
   for (const anchor of anchors) rows.set(anchor, reader.getSection(anchor) ?? null);
 
-  const coveredBy = includeSubtree ? computeCoverage(db, anchors, rows) : new Map<string, string>();
+  /**
+   * Which anchors can actually produce a body — resolved BEFORE coverage, not
+   * after. `coveredBy` is a pointer at another item's body, so pointing it at an
+   * anchor that turns out to be an error item would report a section's
+   * unavailability as "your body is upstream", which is the one thing that
+   * pointer must never say. A de-indexed root takes its whole page down
+   * together, so nothing on it can cover anything either.
+   */
+  const indexed = new Set(roots.sectionIndexed().map((r) => r.id));
+  const resolvable = new Map<string, RawSection>();
+  for (const anchor of anchors) {
+    const section = rows.get(anchor);
+    if (section && indexed.has(section.rootId)) resolvable.set(anchor, section);
+  }
+
+  const coveredBy = includeSubtree ? computeCoverage(db, anchors, resolvable) : new Map<string, string>();
 
   const items: GetSectionsItem[] = [];
+  // Text truncation of one oversized body is a DIFFERENT cut from the response
+  // budget dropping later items, and the caller needs telling about both: the
+  // item carries the flag, the envelope carries the instruction.
+  const textHints: string[] = [];
   for (const anchor of anchors) {
     const cover = coveredBy.get(anchor);
     if (cover) {
@@ -212,7 +231,7 @@ export async function getSections(
      * every other section the caller asked for, which contradicts the rule that
      * makes this operation worth having.
      */
-    if (!roots.sectionIndexed().some((r) => r.id === section.rootId)) {
+    if (!resolvable.has(anchor)) {
       items.push({
         anchor,
         error: `section '${anchor}' is on root '${section.rootId}', which has no section index`,
@@ -220,20 +239,33 @@ export async function getSections(
       });
       continue;
     }
-    items.push(await fetchOne(db, pages, reader, serialization, section, includeSubtree));
+    const fetched = await fetchOne(db, pages, reader, serialization, section, includeSubtree);
+    items.push(fetched.item);
+    if (fetched.hint) textHints.push(fetched.hint);
   }
 
   const budgeted = applyItemBudget(items, metaOnly, RETRY_HINT);
+  const messages = [
+    ...(budgeted.truncated ? [budgeted.truncationHint ?? RETRY_HINT] : []),
+    ...textHints.slice(0, 1),
+  ];
   return {
     results: propagateTruncation(budgeted.items),
-    ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint } : {}),
+    ...(messages.length ? { truncated: true, message: messages.join(' ') } : {}),
   };
 }
 
 const RETRY_HINT =
   'response budget reached — every item after the first oversized one came back without its `body` (coordinates and edges kept, `truncated: true`). Retry those anchors as a smaller subset.';
 
-/** Serializes ONE section, exactly as the pre-batch operation did. */
+/**
+ * Serializes ONE section, exactly as the pre-batch operation did.
+ *
+ * Returns the remediation `hint` alongside the item rather than embedding it:
+ * the item shape lost `truncationHint` in 0.2.5, and the envelope's `message` is
+ * where the instruction now lives. Dropping it on the floor would leave a
+ * `truncated: true` item with nothing saying what to do about it.
+ */
 async function fetchOne(
   db: Database,
   pages: PageSource,
@@ -241,7 +273,7 @@ async function fetchOne(
   serialization: SerializationEngine,
   section: RawSection,
   includeSubtree: boolean,
-): Promise<SectionResultItem> {
+): Promise<{ item: SectionResultItem; hint?: string }> {
   const hydrated = await hydrateSection(db, pages, section, includeSubtree);
   // The `detail` view IS the source for this operation — the core does not
   // hand-roll a second section shape beside the serializer's. What it does own
@@ -264,16 +296,19 @@ async function fetchOne(
   );
 
   return {
-    anchor: section.anchor,
-    rootId: section.rootId,
-    page_path: section.pagePath,
-    heading_text: section.headingText,
-    heading_level: section.headingLevel,
-    line_start: section.lineStart,
-    line_end: section.lineEnd,
-    body: budgeted.text,
-    ...(budgeted.truncated ? { truncated: true } : {}),
-    edges,
+    item: {
+      anchor: section.anchor,
+      rootId: section.rootId,
+      page_path: section.pagePath,
+      heading_text: section.headingText,
+      heading_level: section.headingLevel,
+      line_start: section.lineStart,
+      line_end: section.lineEnd,
+      body: budgeted.text,
+      ...(budgeted.truncated ? { truncated: true } : {}),
+      edges,
+    },
+    ...(budgeted.truncationHint ? { hint: budgeted.truncationHint } : {}),
   };
 }
 
@@ -300,11 +335,14 @@ function nearbyAnchors(db: Database): string[] {
  *
  * Ties are resolved by input order: the first requested anchor that covers
  * another wins, so `coveredBy` is stable regardless of page layout.
+ *
+ * `rows` holds only the RESOLVABLE anchors — one that will end up an error item
+ * must not appear on either side of the relation.
  */
 function computeCoverage(
   db: Database,
   anchors: readonly string[],
-  rows: ReadonlyMap<string, RawSection | null>,
+  rows: ReadonlyMap<string, RawSection>,
 ): Map<string, string> {
   const byPage = new Map<string, RawSection[]>();
   const covered = new Map<string, string>();
@@ -331,7 +369,23 @@ function computeCoverage(
       if (requested.has(row.anchor) && !covered.has(row.anchor)) covered.set(row.anchor, anchor);
     }
   }
-  return covered;
+
+  /**
+   * Collapse chains to the OUTERMOST coverer. Containment is transitive, but the
+   * loop above is first-writer-wins per covered anchor, so an intermediate
+   * section can claim a deeper one and then itself be claimed by a shallower
+   * ancestor — leaving `#### Grand -> ### Child` where `### Child` has no body of
+   * its own. Following that pointer lands on nothing, which is exactly what the
+   * `coveredBy`-without-`truncated` guarantee forbids. The walk terminates
+   * because each hop is strictly shallower than the last.
+   */
+  const resolved = new Map<string, string>();
+  for (const [anchor, cover] of covered) {
+    let outermost = cover;
+    while (covered.has(outermost)) outermost = covered.get(outermost)!;
+    resolved.set(anchor, outermost);
+  }
+  return resolved;
 }
 
 /** Strips the expensive half, keeping everything that says what was cut. */

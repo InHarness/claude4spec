@@ -774,6 +774,12 @@ export class ReleaseService {
     if (!refA) return null;
 
     const scope = this.resolveGitDiffScope(config, opts);
+    // Probed ONCE, exactly as `tryGitAnchoredDiff` does. Without it every
+    // `showFile` below re-runs `detect()` and its four git spawns — and the
+    // motivating case for this branch is the boot backfill commit, which marks
+    // every entity file modified, so a few hundred entities would fan out into
+    // over a thousand concurrent `git` processes on one `GET /diff/current`.
+    const gitStatus = await gitService.detect();
     const gitDiff = await gitService.diffRefToWorkingTree(refA, [
       ...scope.scopedRootDirs,
       scope.entitiesAbs,
@@ -792,7 +798,7 @@ export class ReleaseService {
     };
     const pages = await this.diffPageCandidates(
       pageCandidates,
-      (absPath) => gitService.showFile(refA, absPath),
+      (absPath) => gitService.showFile(refA, absPath, gitStatus),
       readWorkingTreeFile,
       'tryGitAnchoredUnreleasedDiff',
     );
@@ -803,7 +809,7 @@ export class ReleaseService {
       entities: await this.dropStampOnlyEntityChanges(
         entities,
         entityPaths,
-        (absPath) => gitService.showFile(refA, absPath),
+        (absPath) => gitService.showFile(refA, absPath, gitStatus),
         readWorkingTreeFile,
       ),
       pages,
@@ -958,22 +964,35 @@ export class ReleaseService {
     readOld: (absPath: string) => Promise<string | null>,
     readNew: (absPath: string) => Promise<string | null>,
   ): Promise<RawDeltaEntityChange[]> {
-    const keep = await Promise.all(
-      entities.map(async (change, i) => {
-        if (change.op !== 'modified') return true;
-        const absPath = entityPaths[i];
-        if (!absPath) return true;
-        const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
-        if (oldText === null || newText === null) return true;
-        try {
-          const a = canonicalize(stripSystemFields(JSON.parse(oldText) as unknown));
-          const b = canonicalize(stripSystemFields(JSON.parse(newText) as unknown));
-          return JSON.stringify(a) !== JSON.stringify(b);
-        } catch {
-          return true; // unparseable on either side — report it rather than hide it
-        }
-      }),
-    );
+    const decide = async (change: RawDeltaEntityChange, i: number): Promise<boolean> => {
+      if (change.op !== 'modified') return true;
+      const absPath = entityPaths[i];
+      if (!absPath) return true;
+      const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
+      if (oldText === null || newText === null) return true;
+      try {
+        const a = canonicalize(stripSystemFields(JSON.parse(oldText) as unknown));
+        const b = canonicalize(stripSystemFields(JSON.parse(newText) as unknown));
+        return JSON.stringify(a) !== JSON.stringify(b);
+      } catch {
+        return true; // unparseable on either side — report it rather than hide it
+      }
+    };
+
+    /**
+     * Bounded, not `Promise.all` over everything. `readOld` is a `git show`
+     * subprocess, and the case this method exists for — the boot backfill
+     * commit — marks EVERY entity file modified, so an unbounded fan-out puts
+     * one process per entity in flight at once on a single `GET /diff/current`.
+     */
+    const keep = new Array<boolean>(entities.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      for (let i = next++; i < entities.length; i = next++) {
+        keep[i] = await decide(entities[i]!, i);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, entities.length) }, worker));
     return entities.filter((_, i) => keep[i]);
   }
 
@@ -1296,8 +1315,17 @@ export class ReleaseService {
         if (stamp) {
           // No service ran on this path — the host is the sole writer, so a
           // write here proves nothing about the type's own SQL.
-          const projected = projectStamp(this.db, this.host, input.type, input.slug, stamp);
-          if (projected) {
+          /**
+           * The file is rewritten whether or not `projectStamp` reported a
+           * change. `projected` answers "did the COLUMNS move", which says
+           * nothing about the file: a row already realigned by a prior partial
+           * restore (or by the indexer's own backstop) reports `false` while the
+           * JSON on disk still carries the older stamps. Gating the rewrite on
+           * it would leave that file diverged and still return success — the
+           * exact round-trip invariant this branch exists to establish.
+           */
+          projectStamp(this.db, this.host, input.type, input.slug, stamp);
+          {
             try {
               this.entityStore?.persist(input.type, input.slug);
             } catch {

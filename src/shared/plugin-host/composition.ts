@@ -87,15 +87,28 @@ export function resolveComposition(module: CompositionInput): ResolvedCompositio
     derived.push({ table, bindingColumn: null });
   }
   if (declared) {
+    /**
+     * `entity_tag` is defaulted in on BOTH branches, for the same reason
+     * `auxTables` is merged on both: a type that declares a `composition` for
+     * one reason (a non-default `identityColumn`, say) must not thereby lose the
+     * tag scope every legacy module gets for free. An unscoped junction is not
+     * an error anywhere downstream — it is just rows nobody clears. A module
+     * that genuinely owns `entity_tag` differently overrides it by naming the
+     * table itself, which wins here.
+     */
+    const shared = (declared.sharedTables ?? []).map((s) => ({
+      table: s.table,
+      scopePredicate: s.scopePredicate,
+    }));
+    if (!shared.some((s) => s.table === 'entity_tag')) {
+      shared.push({ table: 'entity_tag', scopePredicate: defaultSharedScope(module.type) });
+    }
     return {
       type: module.type,
       mainTable: declared.mainTable,
       identityColumn: declared.identityColumn,
       derivedTables: derived,
-      sharedTables: (declared.sharedTables ?? []).map((s) => ({
-        table: s.table,
-        scopePredicate: s.scopePredicate,
-      })),
+      sharedTables: shared,
       legacy: false,
     };
   }

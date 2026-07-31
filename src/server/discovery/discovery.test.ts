@@ -615,6 +615,112 @@ describe('discovery core', () => {
        */
       expect(result.results[2]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11', truncated: true });
     });
+
+    /**
+     * Three levels deep, requested INNERMOST FIRST. The middle section claims
+     * the deepest one before the outermost claims the middle, so a
+     * first-writer-wins map left `cccccc33 -> bbbbbb22` — a pointer at an item
+     * that has no body of its own. `coveredBy` without `truncated` is a promise
+     * that the body is present upstream, so it has to name the item that
+     * actually holds it, not the nearest ancestor that happens to be requested.
+     */
+    it('a coveredBy pointer always names an item that has a body, never a covered one', async () => {
+      await writePage(
+        'pages',
+        'chain.md',
+        [
+          '# Top',
+          '',
+          '## Parent',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          'PARENT BODY',
+          '',
+          '### Child',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'CHILD BODY',
+          '',
+          '#### Grand',
+          '<!-- anchor: cccccc33 -->',
+          '',
+          'GRAND BODY',
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'chain.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({
+        anchors: ['bbbbbb22', 'aaaaaa11', 'cccccc33'],
+        includeSubtree: true,
+      });
+
+      const holder = result.results[1] as SectionResultItem;
+      expect(holder.anchor).toBe('aaaaaa11');
+      expect(holder.body).toContain('GRAND BODY');
+      expect(result.results[0]).toEqual({ anchor: 'bbbbbb22', coveredBy: 'aaaaaa11' });
+      expect(result.results[2]).toEqual({ anchor: 'cccccc33', coveredBy: 'aaaaaa11' });
+
+      // The property, stated once so it survives a rewrite of the fixture: every
+      // pointer resolves in ONE hop to an item carrying a body.
+      for (const item of result.results) {
+        if (!('coveredBy' in item)) continue;
+        const target = result.results.find((i) => i.anchor === item.coveredBy);
+        expect((target as SectionResultItem).body).toBeTruthy();
+      }
+    });
+
+    /**
+     * A root that lost its section index takes its whole page down together, so
+     * the child cannot be answered with "your body is upstream" — upstream is an
+     * error item. Coverage is therefore resolved only among anchors that can
+     * actually produce a body.
+     */
+    it('a de-indexed root produces per-item errors, never a coveredBy at an error', async () => {
+      await writePage(
+        'pages',
+        'gone.md',
+        ['# Top', '', '## Parent', '<!-- anchor: aaaaaa11 -->', '', 'P', '', '### Child', '<!-- anchor: bbbbbb22 -->', '', 'C', ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'gone.md');
+      // Same rows, but the root no longer declares a section index.
+      const c = core([flatRoot()]);
+
+      const result = await c.getSections({
+        anchors: ['aaaaaa11', 'bbbbbb22'],
+        includeSubtree: true,
+      });
+
+      expect(result.results.every((i) => 'error' in i)).toBe(true);
+      expect(result.results.some((i) => 'coveredBy' in i)).toBe(false);
+    });
+
+    /**
+     * One anchor whose body alone overruns the budget. The item is text-
+     * truncated rather than emptied, and the instruction for what to do about it
+     * has to reach the caller: the item shape lost `truncationHint` in 0.2.5, so
+     * the envelope is the only place left for it. A silent `truncated: true`
+     * with no top-level flag reads as "nothing was cut" to anything branching on
+     * the envelope.
+     */
+    it('a text-truncated body still reports the cut and its remedy on the envelope', async () => {
+      await writePage(
+        'pages',
+        'huge.md',
+        ['# Top', '', '## Big', '<!-- anchor: eeeeee55 -->', '', 'z'.repeat(130_000), ''].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'huge.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['eeeeee55'] });
+
+      const item = result.results[0] as SectionResultItem;
+      expect(item.truncated).toBe(true);
+      expect(item.body).toBeTruthy(); // never a dead end — a usable prefix survives
+      expect(result.truncated).toBe(true);
+      expect(result.message).toContain('get_page');
+    });
   });
 
   it('list_sections measures each section before anything is fetched', async () => {
