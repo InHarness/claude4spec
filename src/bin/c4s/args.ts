@@ -21,6 +21,11 @@ const KNOWN_BOOLEAN_FLAGS = new Set([
   'version',
   'force',
   'no-install',
+  // 0.2.6 — declared for the same reason: `c4s get-sections --include-subtree
+  // --anchors a,b` must not swallow the next token as this flag's value.
+  'include-subtree',
+  'include-tag-matches',
+  'with-counts',
 ]);
 
 export function parseArgs(argv: string[]): ParsedArgs {
@@ -105,6 +110,30 @@ export function optionalInt(args: ParsedArgs, flag: string): number | undefined 
     throw new CliError('INVALID_ARGS', `--${flag} must be an integer, got '${String(v)}'`);
   }
   return Number(v);
+}
+
+/**
+ * The two flags every LIST command takes, parsed in one place.
+ *
+ * 0.2.6 — `--limit`/`--offset` are dispatcher-level flags, not each command's
+ * invention: a caller that learned them from `list-entities` must not discover
+ * that `search-pages` spells them differently or ignores them. They are absent
+ * from exactly two kinds of command, and the absence is decidable from the
+ * signature alone: fetch-by-key (`get-entities`, `get-sections` — the caller
+ * names the rows, so the valve is the input-length cap plus the response
+ * budget) and projections bounded by construction (`catalog`, `describe`).
+ *
+ * An absent flag stays `undefined` rather than becoming a default here — the
+ * core owns the per-operation default limit, and a default injected at the
+ * transport would be a second answer to the same question.
+ */
+export function paginationFrom(args: ParsedArgs): { limit?: number; offset?: number } {
+  const limit = optionalInt(args, 'limit');
+  const offset = optionalInt(args, 'offset');
+  return {
+    ...(limit === undefined ? {} : { limit }),
+    ...(offset === undefined ? {} : { offset }),
+  };
 }
 
 export function requireStringList(args: ParsedArgs, flag: string): string[] {

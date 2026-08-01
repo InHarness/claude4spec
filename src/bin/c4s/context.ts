@@ -10,9 +10,10 @@ import {
   type ResolvedWorkspaceProject,
 } from '../../core/workspace/resolve.js';
 import { readConfig } from '../../server/config.js';
+import type { Root } from '../../shared/types.js';
 import { readPackageVersion } from './package-version.js';
 import { CliError } from './errors.js';
-import type { ParsedArgs } from './args.js';
+import { optionalString, type ParsedArgs } from './args.js';
 
 export interface CliContext {
   projectDir: string;
@@ -73,6 +74,23 @@ export function resolveBriefsPatchesDirs(args: {
   };
 }
 
+/**
+ * `--pages <dir>` overrides the `dir` of the BUILT-IN root, and nothing else.
+ *
+ * 0.2.6 moved this out of `find-references`, which used to build its own root
+ * list and walk it. The override is a property of the project's root
+ * configuration, so it belongs where the roots are assembled — that way the
+ * discovery core does the walking, gates on root properties as it does for every
+ * other transport, and no command needs an `if (dir === 'pages')` branch of its
+ * own.
+ */
+function applyPagesOverride(roots: readonly Root[], override: string | undefined): Root[] {
+  if (!override) return [...roots];
+  return roots.map((root) => (root.id === BUILTIN_PAGES_ROOT_ID ? { ...root, dir: override } : root));
+}
+
+const BUILTIN_PAGES_ROOT_ID = 'pages';
+
 export async function createContext(args: ParsedArgs): Promise<CliContext> {
   let resolved;
   try {
@@ -97,7 +115,7 @@ export async function createContext(args: ParsedArgs): Promise<CliContext> {
         db: handle,
         host,
         serialization: registry,
-        roots: readConfig(projectDir).roots,
+        roots: applyPagesOverride(readConfig(projectDir).roots, optionalString(args, 'pages')),
         projectDir,
         packageVersion: readPackageVersion(),
       }),

@@ -13,7 +13,7 @@
  * only, which is a different thing from a cross-type index.
  */
 
-import { applyBudget, MAX_SLUGS_PER_CALL } from '../budget.js';
+import { applyItemBudget, MAX_SLUGS_PER_CALL } from '../budget.js';
 import { invalidArgument, invalidType, invalidView } from '../errors.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import { compareRanked, relevance } from '../ranking.js';
@@ -137,23 +137,50 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
    */
   const view = requireView(input.view, input.slugs.length > 1 ? 'element_list_item' : 'single_element');
 
-  const results = input.slugs.map((slug) => {
+  // Silent de-duplication, first occurrence wins its position — the same rule
+  // `get_sections` applies to `anchors[]`. Repeating a key is a caller mistake
+  // with an obvious intent, and the two halves of "fetch by key" must not
+  // disagree about it.
+  const slugs = [...new Set(input.slugs)];
+
+  const results: GetEntitiesResult['results'] = slugs.map((slug) => {
     const { data, ...meta } = serialize(deps, input.type, view, slug);
     return { slug, entity: data, ...meta };
   });
-  // `detail` × N cannot be unbounded. Truncation is SIGNALLED, never silent —
-  // a consumer that cannot tell a cut from an absence will report the missing
-  // entities as non-existent.
-  const budgeted = applyBudget(
-    results,
-    `response truncated by budget — re-request the remaining slugs in a second get_entities call`,
-  );
+
+  /**
+   * `detail` × N cannot be unbounded — but nothing the caller NAMED may vanish.
+   *
+   * 0.2.6 moved this off `applyBudget`, which drops the tail. Dropping is right
+   * for a page the collection chose; here the caller listed these slugs, so a
+   * missing one reads as "that entity does not exist" — the one confusion the
+   * error catalogue exists to prevent. `applyItemBudget` is the SAME branch
+   * `get_sections` uses: every key is answered, and the ones past the line come
+   * back meta-only. The first item is never degraded, because a single-slug call
+   * is already the smallest possible retry.
+   */
+  const budgeted = applyItemBudget(results, metaOnly, RETRY_HINT);
   return {
     type: input.type,
     view,
     results: budgeted.items,
-    ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
+    ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
   };
+}
+
+const RETRY_HINT =
+  'response budget reached — every entity after the first oversized one came back without its `entity` payload (`truncated: true`). Re-request those slugs as a smaller subset.';
+
+/**
+ * Strips the expensive half, keeping everything that says what was cut.
+ *
+ * An entity payload is a serialized OBJECT, not a string, so there is no
+ * text-truncation counterpart to `get_sections`' oversized-body cut: half an
+ * entity is not a smaller entity, it is malformed data presented as a record.
+ * The first item is therefore kept whole rather than shortened.
+ */
+function metaOnly(item: GetEntitiesResult['results'][number]): GetEntitiesResult['results'][number] {
+  return { ...item, entity: null, truncated: true };
 }
 
 export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput): SearchEntitiesResult {
@@ -213,6 +240,17 @@ export function resolveIdentity(deps: DiscoveryDeps, input: ResolveIdentityInput
     }
   }
   candidates.sort(compareRanked);
+  /**
+   * `limit` ONLY — no `offset`, no `total`, no `hasMore`, and that is a third
+   * kind of exemption rather than an oversight.
+   *
+   * The first two are fetch-by-key (the caller names the rows) and bounded by
+   * construction (`overview`, `describe_types`). This is the third: an output
+   * bounded by its own nature. `resolve_identity` is a top-N RANKING over a
+   * fuzzy query — "what is this called?" — and paging deeper into a similarity
+   * ranking asks for the answers the ranking already judged worse. There is
+   * nothing on page two a caller wants.
+   */
   const limit = input.limit ?? DEFAULT_LIMITS.resolveIdentity;
   return {
     candidates: candidates.slice(0, limit).map(({ type, slug, label, score }) => ({ type, slug, label, score })),

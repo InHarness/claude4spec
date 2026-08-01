@@ -164,7 +164,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── get_entities ─────────────────────────────────────────────────────────
   const getEntities = mcpTool(
     'get_entities',
-    'Fetch multiple entities of the same type by slug. Missing slugs come back as { slug, entity: null }, not an error. Returns the full L9 detail view per entity.',
+    'Fetch multiple entities of the same type by slug. Missing slugs come back as { slug, entity: null } WITHOUT `truncated`, not an error. The response has a size budget: nothing you named is dropped, but an item past the budget comes back with `entity: null` AND `truncated: true` — which is what keeps "no such entity" distinguishable from "cut for size" — while the envelope\'s `message` says how to retry. The FIRST item is never degraded that way; a one-slug call is already the smallest retry, so it is emitted whole. Returns the full L9 detail view per entity.',
     {
       type: z.string().describe('Entity type, e.g. "endpoint"'),
       slugs: z.array(z.string()),

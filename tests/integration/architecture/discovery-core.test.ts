@@ -297,6 +297,56 @@ describe('M39 — Discovery Core', () => {
     });
   });
 
+  /**
+   * 0.2.6 — the CLI walks no directories of its own.
+   *
+   * `find-references` used to `readdir` the page roots itself, so the reference
+   * sweep existed twice: once in the core behind the server and once here,
+   * agreeing only while somebody kept them agreeing. They had already drifted —
+   * the CLI copy dropped `rootId` from every hit, making two roots'
+   * results indistinguishable. The claim "one walk, three transports" is a claim
+   * about code that does not exist, so it is asserted the only way such a claim
+   * can be: by failing the build when it comes back.
+   */
+  it('src/bin/c4s reads no directories — the walk belongs to the core', () => {
+    const found = hits(sourceFiles(path.join(SRC, 'bin/c4s')), /\breaddir(Sync)?\b|\bopendir(Sync)?\b/);
+    expect(found, `page/root iteration in the CLI: ${found.join(', ')}`).toEqual([]);
+  });
+
+  /**
+   * The CLI stops narrowing the core's operation set. Parity is OPERATIONAL, not
+   * nominal: six commands are aliases of `get_entities`/`list_entities` with a
+   * fixed view, and `list-slugs` is the minimal-view shorthand. What must not
+   * happen is an operation reachable from MCP and from nowhere on the CLI —
+   * silently, because nobody wrote the command.
+   */
+  it('every core operation is reachable from the c4s bin', () => {
+    const bin = fs.readFileSync(path.join(SRC, 'bin/c4s.ts'), 'utf-8');
+    const commandFiles = sourceFiles(path.join(SRC, 'bin/c4s/commands'))
+      .filter((f) => !f.endsWith('.test.ts'))
+      .map((f) => fs.readFileSync(f, 'utf-8'))
+      .join('\n');
+    for (const [op, reachedBy] of [
+      ['overview', 'catalog'],
+      ['describeTypes', 'describe'],
+      ['listPages', 'list-pages'],
+      ['listSections', 'list-sections'],
+      ['getSections', 'get-sections'],
+      ['getPage', 'get-page'],
+      ['searchPages', 'search-pages'],
+      ['searchEntities', 'search-entities'],
+      ['listEntities', 'list-entities'],
+      ['getEntities', 'get-entities'],
+      ['listTags', 'list-tags'],
+      ['findReferences', 'find-references'],
+      ['checkConsistency', 'check-consistency'],
+      ['resolveIdentity', 'resolve-identity'],
+    ] as const) {
+      expect(commandFiles, `no CLI command calls discovery.${op}`).toContain(`.${op}(`);
+      expect(bin, `'${reachedBy}' is not registered in the c4s dispatcher`).toContain(reachedBy);
+    }
+  });
+
   it('every operation named in the brief exists on the core', () => {
     // Guards against a rename drifting the surface away from the contract the
     // transports and the skill documentation are written against.

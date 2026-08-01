@@ -1,30 +1,25 @@
-import fs from 'node:fs/promises';
-import path from 'node:path';
-import matter from 'gray-matter';
 import type { ParsedArgs } from '../args.js';
-import { requireString, optionalString } from '../args.js';
+import { requireString, paginationFrom } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
-import { findReferences } from '../../../core/references/index.js';
-import type { ReferencePage } from '../../../core/references/index.js';
-import { isMarkdownPath } from '../../../shared/page-files.js';
-import { TagsService } from '../../../server/services/tags.js';
-import { readConfig } from '../../../server/config.js';
-import type { RawEntityType } from '../../../server/discovery/raw-entity-reader.js';
-import type { EntityType } from '../../../shared/entities.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
  * Graph reader (M11 owns the command, M19 owns the logic). Readonly: opens
- * SQLite `readonly: true, fileMustExist: true` and walks `pages/` directly — no
- * running `npx @inharness-ai/claude4spec` server required. Delegates to the references core;
- * no L9 serializers.
+ * SQLite `readonly: true, fileMustExist: true` — no running
+ * `npx @inharness-ai/claude4spec` server required.
  *
- *   c4s find-references --type <t> --slug <s> [--include-tag-matches] [--format json|text]
+ *   c4s find-references --type <t> --slug <s> [--include-tag-matches] [--pages <dir>]
  *
- * Output: array of refs. Direct rows carry no extra field; with
- * `--include-tag-matches`, dynamic rows add `via: [tag, ...]` — parity with MCP.
+ * 0.2.6 — this command has NO page walk of its own. It used to enumerate the
+ * root directories itself, which meant the reference sweep existed twice: once
+ * here and once behind the server, agreeing only for as long as somebody kept
+ * them agreeing. It now calls the same discovery-core operation MCP and REST
+ * call — which delegates to the same `src/core/references/` matcher it always
+ * did — so the CLI answer equals the UI answer by construction rather than by
+ * maintenance. `--pages <dir>` is applied where the roots are assembled
+ * (`createContext`), not here, so no command carries a root branch of its own.
  */
 export async function runFindReferences(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -34,44 +29,14 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 
   const ctx = await createContext(args);
   try {
-    const tags = new TagsService(ctx.db);
-    // Honor the project's configured page roots (CLI flag > config.roots). The
-    // reference walk spans every REFERENCE-VALIDATED root; a `--pages <dir>` flag
-    // overrides to a single dir. For a root at '.' the walk roots at the project
-    // dir and the dotfile skip below excludes .claude4spec/.git (parity with
-    // PagesService).
-    const override = optionalString(args, 'pages');
-    const dirs = override
-      ? // `--pages <dir>` names a directory and not a root, so the hit's root is
-        // whichever config root owns that dir — falling back to the built-in one
-        // only when the override points somewhere no root claims.
-        [
-          {
-            rootId:
-              readConfig(ctx.projectDir).roots.find((r) => r.dir === override)?.id ?? 'pages',
-            dir: override,
-          },
-        ]
-      : readConfig(ctx.projectDir)
-          .roots.filter((r) => r.referenceValidated)
-          .map((r) => ({ rootId: r.id, dir: r.dir }));
-    const pageRoots = dirs.map((d) => ({ rootId: d.rootId, dir: path.join(ctx.projectDir, d.dir) }));
-    const hits = await findReferences(
-      {
-        pages: { listPages: () => collectPages(pageRoots) },
-        host: { entityExists: (t, s) => ctx.reader.getEntity(t as RawEntityType, s) != null },
-        getEntityTagSlugs: (t, s) => tags.getEntityTagSlugs(t as EntityType, s),
-      },
+    const result = await ctx.discovery.findReferences({
+      target: 'entity',
       type,
       slug,
-      { includeTagMatches },
-    );
-    const refs = hits.map((h) =>
-      h.via
-        ? { pagePath: h.pagePath, tagType: h.tagType, line: h.line, via: h.via }
-        : { pagePath: h.pagePath, tagType: h.tagType, line: h.line },
-    );
-    writeOutput(refs, args);
+      includeTagMatches,
+      ...paginationFrom(args),
+    });
+    writeOutput(result, args);
   } finally {
     ctx.close();
   }
@@ -80,38 +45,6 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 export const findReferencesCommand: CliCommandContribution = {
   name: 'find-references',
   executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runFindReferences,
 };
-
-/**
- * Recursively collect `.md` pages under each root dir, returning frontmatter-
- * stripped bodies with root-relative posix paths (parity with PagesService). A
- * missing dir yields no refs.
- */
-async function collectPages(pageRoots: Array<{ rootId: string; dir: string }>): Promise<ReferencePage[]> {
-  const out: ReferencePage[] = [];
-  async function walk(rootId: string, absDir: string, rel: string): Promise<void> {
-    let entries;
-    try {
-      entries = await fs.readdir(absDir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const e of entries) {
-      if (e.name.startsWith('.')) continue; // skip .claude4spec/.git/... — parity with PagesService
-      const childRel = rel ? `${rel}/${e.name}` : e.name;
-      const childAbs = path.join(absDir, e.name);
-      if (e.isDirectory()) {
-        await walk(rootId, childAbs, childRel);
-      } else if (e.isFile() && isMarkdownPath(e.name)) {
-        const raw = await fs.readFile(childAbs, 'utf-8');
-        out.push({ rootId, path: childRel, body: matter(raw).content });
-      }
-    }
-  }
-  for (const root of pageRoots) {
-    await walk(root.rootId, root.dir, '');
-  }
-  return out;
-}

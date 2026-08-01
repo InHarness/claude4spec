@@ -50,12 +50,59 @@ payload over the reference, and the reference is the more useful half. To read a
 spec page, ask for it as authored and follow the embeds you care about by slug
 (\`c4s single_element --type <t> --slug <s>\`).
 
+## Navigating pages and sections
+
+A whole page is often more than you need. Pages are addressed by the full key
+\`(rootId, path)\` — the same relative path can exist in several roots, so
+\`--root-id\` is required and there is no silent fallback. Sections are addressed
+by \`anchor\` alone (globally unique), so section commands take no root.
+
+The normal path from "I have a phrase" to "I have the text":
+
+\`\`\`sh
+c4s search-pages --query "<phrase>" ${identity}          # hits carry an anchor (indexed root)
+c4s list-sections --by anchor --anchor <a> ${identity}   # subtree below that section, with per-section size
+c4s get-sections --anchors a,b,c ${identity}             # bodies of several sections in ONE call
+\`\`\`
+
+Fetch sections in **batches** — \`get-sections\` takes a comma-separated list and
+returns \`{ results: [...] }\` in input order. An unknown anchor comes back as an
+error **inside its own item**, so one bad anchor does not lose the other
+sections. Asking anchor-by-anchor costs one command per section for no benefit.
+
+To list what a page contains before pulling it, use \`--by page\`:
+
+\`\`\`sh
+c4s list-sections --by page --root-id pages --path some/page.md ${identity}
+c4s list-pages --root-id pages [--prefix modules/] ${identity}
+\`\`\`
+
+Whole page, when you really want the file:
+
+\`\`\`sh
+c4s get-page --root-id pages --path some/page.md ${identity}
+\`\`\`
+
+The page comes back **as authored**, with XML tags left untouched — the tag is
+the edge to another entity, so expanding it would replace a link with a payload.
+Resolve the tags you care about with the commands above. \`--range <from:to>\` is
+only accepted on a non-section-indexed root; on an indexed one the command
+refuses and tells you to use \`list-sections\` + \`get-sections\` instead.
+
 ## Discovery
 
 - \`c4s catalog ${identity}\` — the ENTRY POINT: page roots with their properties, active entity types with counts + version + description + roleNoun + mcpToolsLine per type, tag count. Start here; it is cheap and it tells you what else is worth asking.
 - \`c4s describe --type <t> [--view <v>] ${identity}\` — JSON Schema per view for one type, plus the paths a search would cover (on-demand).
 - \`c4s list-tags ${identity}\` — all tags with per-type counts.
 - \`c4s list-slugs --type endpoint ${identity}\` — all slugs for a given type.
+- \`c4s list-entities --type endpoint [--tags auth] [--view <v>] [--mode items|count] ${identity}\` — full paginated traversal of one type; \`--mode count\` answers "how many" without listing.
+- \`c4s get-entities --type dto --slugs a,b,c --view detail ${identity}\` — several entities in one call, any view.
+- \`c4s search-entities --type ac --query "<phrase>" [--fields <f1,f2>] ${identity}\` — text search inside one type (the type is required); the output always declares \`searchedFields\`, so an empty result is distinguishable from an unsearched field.
+- \`c4s resolve-identity --query "<fragment>" [--types endpoint,dto] ${identity}\` — the only cross-type command: "what is this called?" from a fragment of a name.
+- \`c4s check-consistency [--severity <s>] [--rule <r>] ${identity}\` — the spec's own diagnostics (broken references, drift between disk and index).
+
+Every list command accepts \`--limit\` / \`--offset\` and reports \`total\` +
+\`hasMore\` — measure before you fetch.
 
 Every command above is one of the fourteen read-only **discovery operations**
 under a CLI name. The operation owns the behaviour — pagination, response
@@ -68,9 +115,14 @@ transport over it. The mapping, when you need to read the operation's contract:
 | \`c4s describe\` | \`describe_types\` |
 | \`c4s list-tags\` | \`list_tags\` |
 | \`c4s list-slugs\` | \`list_entities\` (minimal view) |
-| \`c4s inline_mention\` / \`single_element\` / \`element_list\` | \`get_entities\` (one view each) |
+| \`c4s inline_mention\` / \`single_element\` / \`element_list\` / \`detail\` | \`get_entities\` (one view each) |
 | \`c4s tagged_list\` / \`tagged_list_mixed\` | \`list_entities\` (tag-filtered) |
-| \`c4s find-references\` | its own M11 path (not a core operation) |
+| \`c4s get-entities\` / \`c4s list-entities\` | \`get_entities\` / \`list_entities\` (the canonical surface the aliases above sit on) |
+| \`c4s list-pages\` / \`c4s get-page\` | \`list_pages\` / \`get_page\` |
+| \`c4s list-sections\` / \`c4s get-sections\` | \`list_sections\` / \`get_sections\` |
+| \`c4s search-pages\` / \`c4s search-entities\` | \`search_pages\` / \`search_entities\` |
+| \`c4s check-consistency\` / \`c4s resolve-identity\` | \`check_consistency\` / \`resolve_identity\` |
+| \`c4s find-references\` | \`find_references\` |
 
 All output is JSON (pretty) by default. Use \`--compact\` for pipelines and
 \`--format text\` for terminal-friendly output. Errors go to stderr as JSON with

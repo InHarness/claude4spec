@@ -313,6 +313,46 @@ describe('discovery core', () => {
       return item;
     };
 
+    /**
+     * 0.2.6 — the second breaking change of the `get_section` → `get_sections`
+     * migration, and the one a consumer would have learned about at runtime.
+     *
+     * A hash exists to settle "is what I hold still current". This response
+     * hands over the CONTENT, so there is nothing left for a version of it to
+     * settle — and a field kept "just in case" becomes a cache key somebody
+     * builds a stale-detection scheme on. It stays where it does work: the
+     * `section_index` column and the REST section endpoints.
+     */
+    it('carries no content_hash — the response is the content, not a version of it', async () => {
+      await writePage('pages', 'h.md', ['# Top', '', '## S', '<!-- anchor: abcdef12 -->', '', 'body', ''].join('\n'));
+      indexSection({ rootId: 'pages', anchor: 'abcdef12', page: 'h.md', heading: 'S', start: 3, end: 7 });
+      const c = core([pagesRoot()]);
+
+      const section = one(await c.getSections({ anchors: ['abcdef12'] }));
+
+      expect(section).not.toHaveProperty('content_hash');
+      expect(section).not.toHaveProperty('contentHash');
+      // Not merely absent from the wire projection — absent from the `detail`
+      // view that feeds it, which is where a re-projection would find it again.
+      const detail = new SerializationEngine(host([widgetModule()]), sectionSerializer).serializeSection(
+        'detail',
+        {
+          rootId: 'pages',
+          anchor: 'abcdef12',
+          pagePath: 'h.md',
+          headingPath: 'S',
+          headingSlug: 's',
+          headingText: 'S',
+          headingLevel: 2,
+          contentHash: 'hash',
+          lineStart: 3,
+          lineEnd: 7,
+        },
+        new RawEntityReader(db, host([widgetModule()])),
+      ).data as Record<string, unknown>;
+      expect(detail).not.toHaveProperty('contentHash');
+    });
+
     it('the body is as authored — the XML tag is an edge, not an expansion', async () => {
       await writePage(
         'pages',
@@ -841,6 +881,84 @@ describe('discovery core', () => {
     expect(() =>
       c.getEntities({ type: 'widget', slugs: Array.from({ length: 200 }, (_, i) => `s${i}`) }),
     ).toThrowError(expect.objectContaining({ code: 'INVALID_ARGUMENT' }));
+  });
+
+  /**
+   * 0.2.6 — the two halves of "fetch by key" now share ONE budget branch.
+   *
+   * `get_entities` used to DROP the tail it could not afford. The caller named
+   * those slugs, so a missing one reads as "that entity does not exist" — the
+   * confusion the whole error catalogue exists to prevent, and one that
+   * authorizes a rename or a delete on a false premise.
+   */
+  describe('get_entities answers every key it was given', () => {
+    beforeEach(() => {
+      // Each row is deliberately huge: three of them cannot share one budget.
+      const insert = db.prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, 'mermaid', ?)`);
+      for (const slug of ['w1', 'w2', 'w3']) insert.run(slug, 'g'.repeat(60_000));
+    });
+
+    it('degrades past the budget instead of dropping, and never degrades the first item', () => {
+      const c = core([pagesRoot()]);
+      const result = c.getEntities({ type: 'widget', slugs: ['w1', 'w2', 'w3'], view: 'detail' });
+
+      // Nothing the caller named goes missing.
+      expect(result.results.map((r) => r.slug)).toEqual(['w1', 'w2', 'w3']);
+      expect(result.truncated).toBe(true);
+      // The instruction lives on the envelope — the item only says THAT it was cut.
+      expect(result.message).toBeTruthy();
+      expect(result).not.toHaveProperty('truncationHint');
+
+      // A one-slug call is already the smallest possible retry, so the first
+      // item is emitted whole: degrading it would leave the caller with no
+      // answer AND no smaller subset to ask for.
+      expect(result.results[0]!.entity).not.toBeNull();
+      expect(result.results[0]).not.toHaveProperty('truncated');
+
+      const cut = result.results.filter((r) => r.truncated === true);
+      expect(cut.length).toBeGreaterThan(0);
+      for (const item of cut) expect(item.entity).toBeNull();
+    });
+
+    /**
+     * `entity: null` alone already means "no such entity". A budget cut must
+     * therefore carry its own marker, or the two answers — "does not exist" and
+     * "did not fit" — become the same answer, and only one of them is worth a
+     * retry.
+     */
+    it('a missing slug is null WITHOUT truncated, so absence stays distinct from a cut', () => {
+      const c = core([pagesRoot()]);
+      const result = c.getEntities({ type: 'widget', slugs: ['w1', 'nope'], view: 'single_element' });
+
+      const missing = result.results.find((r) => r.slug === 'nope')!;
+      expect(missing.entity).toBeNull();
+      expect(missing).not.toHaveProperty('truncated');
+    });
+
+    it('de-duplicates slugs, first occurrence keeping its position', () => {
+      const c = core([pagesRoot()]);
+      const result = c.getEntities({ type: 'widget', slugs: ['w2', 'w1', 'w2'], view: 'inline_mention' });
+      expect(result.results.map((r) => r.slug)).toEqual(['w2', 'w1']);
+    });
+  });
+
+  /**
+   * 0.2.6 — a typo in `rootId` and a page that is not there are different
+   * situations with different remedies, so they stop sharing a code.
+   * `PAGE_NOT_FOUND` is the answer that authorizes a caller to stop looking;
+   * saying it about an unknown root sent callers hunting for a file inside a
+   * directory that never existed.
+   */
+  it('an unknown rootId is an ARGUMENT error naming the roots, not a missing page', async () => {
+    const c = core([pagesRoot()]);
+    await expect(c.listPages({ rootId: 'nope' })).rejects.toMatchObject({
+      code: 'INVALID_ARGUMENT',
+      hint: expect.stringContaining('pages'),
+    });
+    // The root exists and the PATH does not — that one stays PAGE_NOT_FOUND.
+    await expect(c.getPage({ rootId: 'pages', path: 'absent.md' })).rejects.toMatchObject({
+      code: 'PAGE_NOT_FOUND',
+    });
   });
 
   /**
