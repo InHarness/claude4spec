@@ -1,4 +1,5 @@
 import type { ParsedArgs } from '../args.js';
+import { refuseFlags } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -11,6 +12,8 @@ import type { CliCommandContribution } from '../registry.js';
  * stays the cheap smoke test it was (`c4s describe` remains the way to schemas).
  */
 export async function runCatalog(args: ParsedArgs): Promise<void> {
+  refuseFlags(args, ['limit', 'offset'], 'catalog is a projection, bounded by construction');
+
   const ctx = await createContext(args);
   try {
     writeOutput(await ctx.discovery.overview(), args);

@@ -10,9 +10,10 @@ import {
   type ResolvedWorkspaceProject,
 } from '../../core/workspace/resolve.js';
 import { readConfig } from '../../server/config.js';
+import type { Root } from '../../shared/types.js';
 import { readPackageVersion } from './package-version.js';
 import { CliError } from './errors.js';
-import type { ParsedArgs } from './args.js';
+import { optionalString, type ParsedArgs } from './args.js';
 
 export interface CliContext {
   projectDir: string;
@@ -73,6 +74,38 @@ export function resolveBriefsPatchesDirs(args: {
   };
 }
 
+/**
+ * `--pages <dir>` NARROWS the walk to that one directory.
+ *
+ * 0.2.6 moved this out of `find-references`, which used to build its own root
+ * list and walk it. The override is a property of the project's root
+ * configuration, so it belongs where the roots are assembled — the discovery
+ * core then does the walking and gates on root properties, and no command needs
+ * an `if (dir === 'pages')` branch of its own.
+ *
+ * It REPLACES the root list rather than rewriting one entry, which is what the
+ * flag has always meant. Rewriting the built-in root's `dir` and leaving the
+ * others in place looks equivalent and is not: a caller that explicitly narrowed
+ * the scan would still get hits from every other reference-validated root, with
+ * paths relative to a root it never named — and pointing a second root id at a
+ * directory another root already covers slips past the overlap validation in
+ * `validateRootsConfig`, so every hit there is reported twice under two ids.
+ *
+ * The root's ID and properties are kept: the override names a DIRECTORY, not a
+ * root, so the hits stay attributable to whichever root claims that directory
+ * (falling back to the built-in id when none does).
+ */
+function applyPagesOverride(roots: readonly Root[], override: string | undefined): Root[] {
+  if (!override) return [...roots];
+  const owning = roots.find((r) => r.dir === override);
+  if (owning) return [owning];
+  const builtin = roots.find((r) => r.id === BUILTIN_PAGES_ROOT_ID) ?? roots[0];
+  if (!builtin) return [];
+  return [{ ...builtin, dir: override }];
+}
+
+const BUILTIN_PAGES_ROOT_ID = 'pages';
+
 export async function createContext(args: ParsedArgs): Promise<CliContext> {
   let resolved;
   try {
@@ -97,7 +130,7 @@ export async function createContext(args: ParsedArgs): Promise<CliContext> {
         db: handle,
         host,
         serialization: registry,
-        roots: readConfig(projectDir).roots,
+        roots: applyPagesOverride(readConfig(projectDir).roots, optionalString(args, 'pages')),
         projectDir,
         packageVersion: readPackageVersion(),
       }),

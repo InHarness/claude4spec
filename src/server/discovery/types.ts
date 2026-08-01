@@ -285,6 +285,7 @@ export type SearchEntitiesResult =
 export interface ResolveIdentityInput {
   query: string;
   types?: string[];
+  /** Top-N of a ranking — see the note in `resolveIdentity`. There is no `offset`. */
   limit?: number;
 }
 
@@ -324,9 +325,18 @@ export interface GetEntitiesInput {
 export interface GetEntitiesResult {
   type: string;
   view: ViewKind;
-  results: Array<{ slug: string; entity: unknown | null } & SerializedMeta>;
+  results: Array<{ slug: string; entity: unknown | null; truncated?: boolean } & SerializedMeta>;
   truncated?: boolean;
-  truncationHint?: string;
+  /**
+   * 0.2.6 — the instruction lives HERE, not on the item.
+   *
+   * `get_sections` already carried its retry instruction on the envelope while
+   * `get_entities` carried a `truncationHint` on its own result, so the two
+   * halves of one category ("fetch by key") disagreed about where a consumer
+   * should look. The item now says only THAT it was cut (`truncated: true`);
+   * what to do about it is said once, for the whole call.
+   */
+  message?: string;
 }
 
 export interface ListTagsInput {

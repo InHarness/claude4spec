@@ -18,6 +18,16 @@ import { describeCommand } from './c4s/commands/describe.js';
 import { listTagsCommand } from './c4s/commands/list-tags.js';
 import { listSlugsCommand } from './c4s/commands/list-slugs.js';
 import { findReferencesCommand } from './c4s/commands/find-references.js';
+import { getEntitiesCommand } from './c4s/commands/get-entities.js';
+import { listEntitiesCommand } from './c4s/commands/list-entities.js';
+import { listPagesCommand } from './c4s/commands/list-pages.js';
+import { listSectionsCommand } from './c4s/commands/list-sections.js';
+import { getSectionsCommand } from './c4s/commands/get-sections.js';
+import { getPageCommand } from './c4s/commands/get-page.js';
+import { searchPagesCommand } from './c4s/commands/search-pages.js';
+import { searchEntitiesCommand } from './c4s/commands/search-entities.js';
+import { checkConsistencyCommand } from './c4s/commands/check-consistency.js';
+import { resolveIdentityCommand } from './c4s/commands/resolve-identity.js';
 import { resolveCommand } from './c4s/commands/resolve.js';
 import { agentCommand } from './c4s/commands/agent.js';
 import { askCommand } from './c4s/commands/ask.js';
@@ -48,6 +58,20 @@ const COMMANDS: CliCommandContribution[] = [
   listTagsCommand,
   listSlugsCommand,
   findReferencesCommand,
+  // 0.2.6 — the CLI stops narrowing the core's operation set. Every one of the
+  // fourteen M39 operations is reachable from here: these ten by their own name,
+  // the other four through the tag commands and `catalog`/`describe` above,
+  // which are aliases with a fixed `--view`.
+  getEntitiesCommand,
+  listEntitiesCommand,
+  listPagesCommand,
+  listSectionsCommand,
+  getSectionsCommand,
+  getPageCommand,
+  searchPagesCommand,
+  searchEntitiesCommand,
+  checkConsistencyCommand,
+  resolveIdentityCommand,
   agentCommand,
   askCommand,
   pluginsCommand,
@@ -74,7 +98,13 @@ Detail view (no XML counterpart):
   detail --type <t> --slug <s>
 
 Graph reader (no XML counterpart):
-  find-references --type <t> --slug <s> [--include-tag-matches]
+  find-references --type <t> --slug <s> [--include-tag-matches] [--pages <dir>]
+                                    exhaustive sweep — every hit, no paging (takes no
+                                    --limit/--offset). Prints a JSON ARRAY; since 0.2.6
+                                    each hit also carries rootId (and anchor, when the
+                                    position falls inside an indexed section), so hits from
+                                    two roots are no longer indistinguishable.
+                                    --pages <dir> narrows the sweep to that one directory.
 
 Utility:
   resolve <file.md> [--format inline|json]
@@ -91,9 +121,46 @@ Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
 
 Discovery:
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
-  describe --type <t> [--view <v>] JSON Schema per view for one type (on-demand)
-  list-tags
-  list-slugs --type <t>
+  describe --type <t> [--view <v>] JSON Schema per view for one type, plus the paths a
+                                    search would cover. Since 0.2.6 the payload is the core's
+                                    { types: [ { type, label, version, views, schemas,
+                                    searchableFields } ] } — it was a bare { version, views,
+                                    schemas } before
+  list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>]
+                                    Since 0.2.6 this is the paginated { items, total, hasMore }
+                                    (was { tags: [...] }), and per-type counts are OPT-IN via
+                                    --with-counts — they are a product of tags by types.
+                                    --co-occurring-with names the tags sharing entities with one
+  list-slugs --type <t>            shorthand for list-entities in the minimal view
+  list-entities --type <t> [--tags <t1,t2>] [--filter and|or] [--view <v>] [--mode items|count]
+  get-entities --type <t> --slugs <s1,s2> [--view <v>]    several entities in one call, any view
+  search-entities --type <t> --query <q> [--fields <f1,f2>] [--view <v>] [--mode hits|count]
+                                    --type is required; output always declares searchedFields
+  resolve-identity --query <q> [--types <t1,t2>] [--limit <n>]
+                                    the only cross-type command: "what is this called?"
+  check-consistency [--severity error|warning] [--rule <r>] [--limit <n>]
+                                    broken references, drift between disk and index
+
+Pages and sections (a page is (rootId, path); an anchor is globally unique):
+  list-pages --root-id <id> [--prefix <p>] [--sort path|modified]
+  list-sections --by page --root-id <id> --path <p>
+  list-sections --by anchor --anchor <a>       subtree below that section, with per-section size
+  get-sections --anchors <a,b,c> [--include-subtree]
+                                    bodies of several sections in ONE call; an unknown anchor
+                                    errors inside its own item and the exit code stays 0
+  get-page --root-id <id> --path <p> [--range <from:to>]
+                                    the page as authored, XML tags untouched; --range is
+                                    accepted only on a root without a section index
+  search-pages (--query <q> | --regex <r>) [--root-id <id>] [--mode hits|pages|count]
+                                    hits on an indexed root carry an anchor
+
+Pagination (every list command above):
+  --limit <n> / --offset <m>        output carries total + hasMore under a stable sort.
+                                    Not accepted by catalog, describe, get-entities, get-sections
+                                    (the last two are fetch-by-key: the caller names the rows,
+                                    so the valve is the input-length cap plus the response budget),
+                                    nor by resolve-identity / check-consistency, whose output is
+                                    bounded by its own nature (a top-N ranking; a counted report).
 
 Plugins (M33 — reads loader state, no running server):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
@@ -180,6 +247,12 @@ function codeToExit(code: string): number {
     case 'PROJECT_NOT_FOUND':
       return 2;
     case 'ENTITY_NOT_FOUND':
+    // 0.2.6 — an anchor that names nothing is the same outcome for a script as a
+    // slug that names nothing. NOTE this is the CALL-level refusal only
+    // (`list-sections --by anchor`); in `get-sections` the same code arrives
+    // inside one item of a batch and the exit code stays 0, because the other
+    // sections in that call are real answers.
+    case 'SECTION_NOT_FOUND':
       return 3;
     case 'INVALID_TYPE':
     case 'INVALID_VIEW':
@@ -206,6 +279,13 @@ function codeToExit(code: string): number {
       return 10;
     case 'AMBIGUOUS_PROJECT':
       return 11;
+    // 0.2.6 — the core's two ambiguity codes. A caller that has to disambiguate
+    // must be able to see it from the exit status, the way it already can for
+    // the two workspace-level ambiguities above.
+    case 'AMBIGUOUS_ENTITY':
+      return 20;
+    case 'AMBIGUOUS_PAGE':
+      return 21;
     case 'BRIEF_NOT_FOUND':
       return 12;
     case 'PATCH_WRITE_FAILED':

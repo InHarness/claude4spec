@@ -31,7 +31,6 @@ const coordinates = (section: RawSection) => ({
   headingPath: section.headingPath,
   headingText: section.headingText,
   headingLevel: section.headingLevel,
-  contentHash: section.contentHash,
   href: href(section),
   lineStart: section.lineStart,
   lineEnd: section.lineEnd,

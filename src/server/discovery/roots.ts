@@ -67,7 +67,21 @@ export class RootSet {
     }
     const root = this.byId.get(rootId);
     if (!root) {
-      throw pageNotFound(rootId, '', this.ids());
+      /**
+       * 0.2.6 — an unknown ROOT is a bad argument, not a missing page.
+       *
+       * `PAGE_NOT_FOUND` is reserved for "the root exists, that path does not",
+       * which is the answer that authorizes a caller to stop looking. A typo in
+       * `rootId` is a different situation with a different remedy — pick one of
+       * these roots — and reporting it as a missing page sent callers hunting
+       * for a file when the directory they named never existed.
+       */
+      throw invalidArgument(
+        `unknown rootId '${rootId}'`,
+        this.ids().length
+          ? `roots in this project: ${this.ids().join(', ')}`
+          : 'this project declares no page roots',
+      );
     }
     return root;
   }

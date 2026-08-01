@@ -170,7 +170,18 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
   // rather than an error comment where the list was.
   const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' });
   const items = results.filter((r) => r.entity !== null).map((r) => withMeta(r.entity, r));
-  const missing = results.filter((r) => r.entity === null).map((r) => r.slug);
+  /**
+   * `entity: null` alone is NOT "missing" — since 0.2.6 it also marks a row the
+   * response budget could not carry, which `truncated` distinguishes. Rendering
+   * one of those under `_missing:_` would print an affirmative "this entity does
+   * not exist" onto the page about an entity that does exist: worse than the
+   * silent omission it replaced, because a reader believes the page.
+   *
+   * `getEntitiesAll` re-asks for truncated rows one slug at a time, so in
+   * practice none survive to here. The filter is the guarantee, not the
+   * optimism.
+   */
+  const missing = results.filter((r) => r.entity === null && r.truncated !== true).map((r) => r.slug);
   const data = { items, missing };
   return {
     data,

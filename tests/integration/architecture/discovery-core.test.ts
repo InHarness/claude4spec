@@ -297,6 +297,102 @@ describe('M39 — Discovery Core', () => {
     });
   });
 
+  /**
+   * 0.2.6 — the CLI walks no directories of its own.
+   *
+   * `find-references` used to `readdir` the page roots itself, so the reference
+   * sweep existed twice: once in the core behind the server and once here,
+   * agreeing only while somebody kept them agreeing. They had already drifted —
+   * the CLI copy dropped `rootId` from every hit, making two roots'
+   * results indistinguishable. The claim "one walk, three transports" is a claim
+   * about code that does not exist, so it is asserted the only way such a claim
+   * can be: by failing the build when it comes back.
+   */
+  it('src/bin/c4s reads no directories — the walk belongs to the core', () => {
+    const found = hits(sourceFiles(path.join(SRC, 'bin/c4s')), /\breaddir(Sync)?\b|\bopendir(Sync)?\b/);
+    expect(found, `page/root iteration in the CLI: ${found.join(', ')}`).toEqual([]);
+  });
+
+  /**
+   * The CLI stops narrowing the core's operation set. Parity is OPERATIONAL, not
+   * nominal: six commands are aliases of `get_entities`/`list_entities` with a
+   * fixed view, and `list-slugs` is the minimal-view shorthand. What must not
+   * happen is an operation reachable from MCP and from nowhere on the CLI —
+   * silently, because nobody wrote the command.
+   */
+  it('every core operation is reachable from the c4s bin', () => {
+    /**
+     * The REGISTERED command list, not the file text.
+     *
+     * Asserting `expect(binSource).toContain('list-pages')` was vacuous: the
+     * HELP string in the same file lists every command name, so deleting a
+     * contribution from the `COMMANDS` array left the assertion green while
+     * `c4s list-pages` died with UNKNOWN_COMMAND at runtime — the gate could not
+     * fail for the thing it exists to catch. The bin cannot simply be imported
+     * (its top level runs `main()`), so the array literal is parsed instead and
+     * the identifiers in it are resolved against each command module's declared
+     * `name`.
+     */
+    const bin = fs.readFileSync(path.join(SRC, 'bin/c4s.ts'), 'utf-8');
+    const arrayBlock = /const COMMANDS: CliCommandContribution\[\] = \[([\s\S]*?)\n\];/.exec(bin)?.[1];
+    expect(arrayBlock, 'could not find the COMMANDS array in src/bin/c4s.ts').toBeTruthy();
+    const registeredIdentifiers = new Set(
+      arrayBlock!
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('//'))
+        .map((l) => /^\s*([A-Za-z0-9_]+),\s*$/.exec(l)?.[1])
+        .filter((x): x is string => Boolean(x)),
+    );
+
+    // `export const fooCommand: CliCommandContribution = { name: 'foo-bar', … }`
+    // — the identifier the array must contain, keyed by the name a user types.
+    const identifierByCommandName = new Map<string, string>();
+    const commandFilesText: string[] = [];
+    for (const file of sourceFiles(path.join(SRC, 'bin/c4s/commands')).filter((f) => !f.endsWith('.test.ts'))) {
+      const text = fs.readFileSync(file, 'utf-8');
+      commandFilesText.push(text);
+      for (const m of text.matchAll(
+        /export const ([A-Za-z0-9_]+): CliCommandContribution = \{\s*\n\s*name: '([^']+)'/g,
+      )) {
+        identifierByCommandName.set(m[2]!, m[1]!);
+      }
+    }
+    const commandFiles = commandFilesText.join('\n');
+
+    for (const [op, reachedBy] of [
+      ['overview', 'catalog'],
+      ['describeTypes', 'describe'],
+      ['listPages', 'list-pages'],
+      ['listSections', 'list-sections'],
+      ['getSections', 'get-sections'],
+      ['getPage', 'get-page'],
+      ['searchPages', 'search-pages'],
+      ['searchEntities', 'search-entities'],
+      ['listEntities', 'list-entities'],
+      ['getEntities', 'get-entities'],
+      ['listTags', 'list-tags'],
+      ['findReferences', 'find-references'],
+      ['checkConsistency', 'check-consistency'],
+      ['resolveIdentity', 'resolve-identity'],
+    ] as const) {
+      /**
+       * Either the operation itself or its sanctioned exhaustive wrapper
+       * (`getEntitiesAll`, `findReferencesAll`, …). A command that has to read
+       * past a page boundary — `find-references` sweeps before a rename, so a
+       * capped answer is a wrong one — goes through the wrapper, and that is
+       * still the core answering.
+       */
+      const callsOp = commandFiles.includes(`.${op}(`) || commandFiles.includes(`${op}All(`);
+      expect(callsOp, `no CLI command calls discovery.${op} (or ${op}All)`).toBe(true);
+      const identifier = identifierByCommandName.get(reachedBy);
+      expect(identifier, `no command module declares name: '${reachedBy}'`).toBeTruthy();
+      expect(
+        registeredIdentifiers.has(identifier!),
+        `'${reachedBy}' (${identifier}) is declared but not in the COMMANDS array — it would be UNKNOWN_COMMAND at runtime`,
+      ).toBe(true);
+    }
+  });
+
   it('every operation named in the brief exists on the core', () => {
     // Guards against a rename drifting the surface away from the contract the
     // transports and the skill documentation are written against.

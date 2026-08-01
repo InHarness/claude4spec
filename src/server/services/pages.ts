@@ -28,6 +28,30 @@ export class PagesService {
     return this.collectMd(this.root, '');
   }
 
+  /**
+   * The same listing, WITHOUT creating the root — for readers that must not write.
+   *
+   * `listMarkdownFiles` calls `ensureRoot()`, which makes every caller a writer.
+   * That is tolerable for the server's own indexers, which run after bootstrap
+   * has created the roots anyway. It is not tolerable on the read path the
+   * `readonly-reader` CLI commands travel: `c4s find-references` in a project
+   * whose config names a root nobody has created yet would silently mkdir into
+   * the user's working tree, and on a read-only checkout would fail outright
+   * where the honest answer is "that root holds no pages".
+   *
+   * Kept as a separate method rather than by dropping `ensureRoot()` from the
+   * shared one: a dozen server-side indexers call that, and changing what they
+   * do to the filesystem is a much wider blast radius than the fix needs.
+   */
+  async listMarkdownFilesReadonly(): Promise<string[]> {
+    try {
+      return await this.collectMd(this.root, '');
+    } catch (err) {
+      if (err && typeof err === 'object' && 'code' in err && (err as { code: string }).code === 'ENOENT') return [];
+      throw err;
+    }
+  }
+
   async read(relPath: string): Promise<PageContent> {
     const abs = this.resolveSafe(relPath);
     const raw = await fs.readFile(abs, 'utf-8');

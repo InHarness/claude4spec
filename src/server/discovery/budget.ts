@@ -35,53 +35,28 @@ export interface Budgeted<T> {
 }
 
 /**
- * Keeps whole items until the budget is spent. Items are never partially
- * serialized — half an entity looks like a complete entity that is missing
- * fields, which is worse than a smaller page.
- */
-export function applyBudget<T>(
-  items: readonly T[],
-  hint: string,
-  budgetChars = DEFAULT_BUDGET_CHARS,
-): Budgeted<T> {
-  const kept: T[] = [];
-  let spent = 0;
-  for (const item of items) {
-    const cost = JSON.stringify(item)?.length ?? 0;
-    // The first item always goes in: a single item over budget still has to be
-    // answerable, or the operation degenerates to "no" with no way forward.
-    if (kept.length && spent + cost > budgetChars) {
-      return {
-        items: kept,
-        truncated: true,
-        truncationHint: hint,
-      };
-    }
-    kept.push(item);
-    spent += cost;
-  }
-  return { items: kept, truncated: false };
-}
-
-/**
  * Budget over items that must all be ANSWERED, even when they cannot all be
- * carried — `get_sections`.
+ * carried — the ONE branch behind both fetch-by-key operations, `get_sections`
+ * and `get_entities`.
  *
- * `applyBudget` drops what it cannot afford, which is right when the caller
- * chose a page and the tail is fetchable by asking for the next one. It is wrong
- * here: the caller named these anchors, so a dropped item reads as "that anchor
- * does not exist" — the one confusion the whole error catalogue exists to
- * prevent. So every item survives; the ones past the line lose only their
- * expensive half via `degrade`.
+ * 0.2.6 removed the alternative. There used to be a second function that DROPPED
+ * what it could not afford, and `get_entities` used it: the caller named forty
+ * slugs and got back thirty, with the missing ten indistinguishable from
+ * entities that do not exist — the one confusion the whole error catalogue
+ * exists to prevent. Dropping is right for a page the collection chose; it is
+ * never right for keys the caller listed. So every item survives; the ones past
+ * the line lose only their expensive half via `degrade`.
  *
  * The cut is positional and therefore deterministic: the same input order always
  * produces the same set of degraded items, which is what lets a caller retry
  * with a smaller subset and predict what it will get.
  *
- * The FIRST item is never degraded — `applyBudget` makes the same exception, for
- * the same reason. A single-anchor call whose one body exceeds the budget would
- * otherwise come back with no body at all and no smaller subset left to ask for:
- * a dead end rather than an answer. Its caller truncates that one body instead.
+ * The FIRST item is never degraded. A single-key call whose one payload exceeds
+ * the budget would otherwise come back empty with no smaller subset left to ask
+ * for — a dead end rather than an answer, and the retry instruction ("come back
+ * with fewer keys") would be unfollowable. `get_sections` shortens that one body
+ * as TEXT instead; `get_entities` keeps it whole, because half a serialized
+ * entity is not a smaller entity, it is malformed data presented as a record.
  */
 export function applyItemBudget<T>(
   items: readonly T[],

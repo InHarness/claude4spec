@@ -34,18 +34,30 @@ export class PageSource {
 
   private service(rootId: string): PagesService {
     const svc = this.services.get(rootId);
-    if (!svc) throw pageNotFound(rootId, '', [...this.services.keys()]);
+    // An unknown root is a bad argument, not a missing page — the same rule
+    // `RootSet.require` applies, restated here because this is the second door
+    // into the same mistake and the two must not answer it differently.
+    if (!svc)
+      throw invalidArgument(
+        `unknown rootId '${rootId}'`,
+        `roots in this project: ${[...this.services.keys()].join(', ') || 'none'}`,
+      );
     return svc;
   }
 
+  /**
+   * READ-ONLY listing: the discovery core is the read path, and a reader that
+   * creates the directory it was asked to read is not a reader. See
+   * `PagesService.listMarkdownFilesReadonly`.
+   */
   async list(rootId: string): Promise<string[]> {
-    return await this.service(rootId).listMarkdownFiles();
+    return await this.service(rootId).listMarkdownFilesReadonly();
   }
 
   /** Listing + measurement in one pass, so a caller can size a root before pulling it. */
   async listWithStats(rootId: string): Promise<PageFile[]> {
     const svc = this.service(rootId);
-    const rels = await svc.listMarkdownFiles();
+    const rels = await svc.listMarkdownFilesReadonly();
     const out: PageFile[] = [];
     for (const rel of rels) {
       try {
