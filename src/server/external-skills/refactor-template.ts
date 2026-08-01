@@ -52,7 +52,7 @@ full command reference. In short:
 
 \`\`\`sh
 c4s catalog ${identity}                                   # entity types + schemas
-c4s list-tags ${identity}                                 # tags + counts
+c4s list-tags --with-counts ${identity}                   # tags + counts (counts are opt-in)
 c4s list-slugs --type endpoint ${identity}                # slugs for a type
 c4s single_element --type endpoint --slug <x> ${identity}
 c4s resolve modules/<module>.md ${identity}               # expand a page's tags inline

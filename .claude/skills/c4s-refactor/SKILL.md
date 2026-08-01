@@ -56,7 +56,7 @@ full command reference. In short:
 
 ```sh
 c4s catalog --project 'app-spec' --workspace 'default'                                   # entity types + schemas
-c4s list-tags --project 'app-spec' --workspace 'default'                                 # tags + counts
+c4s list-tags --with-counts --project 'app-spec' --workspace 'default'                   # tags + counts (counts are opt-in)
 c4s list-slugs --type endpoint --project 'app-spec' --workspace 'default'                # slugs for a type
 c4s single_element --type endpoint --slug <x> --project 'app-spec' --workspace 'default'
 c4s resolve modules/<module>.md --project 'app-spec' --workspace 'default'               # expand a page's tags inline
