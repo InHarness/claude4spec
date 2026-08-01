@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **The `c4s` CLI reaches every discovery-core operation.** Ten new commands — `get-entities`, `list-entities`, `list-pages`, `list-sections`, `get-sections`, `get-page`, `search-pages`, `search-entities`, `check-consistency`, `resolve-identity` — make the path from a phrase to a section's text walkable with no server running: `search-pages` returns hits carrying an `anchor`, `list-sections --by anchor` measures the subtree, `get-sections` fetches several bodies in one call. Pages are addressed by the full `(rootId, path)` key (`--root-id` is required, with no fallback to the built-in root); sections are addressed by `anchor` alone and take no root. Every list command accepts `--limit`/`--offset` and reports `total` + `hasMore`.
+
+### Changed
+- **BREAKING (`c4s find-references`): each hit now carries `rootId`** (and `anchor` where the position falls inside an indexed section). The previous projection dropped the root, so hits from two roots were indistinguishable. The output is still a bare JSON array and still exhaustive — the command now refuses `--limit`/`--offset` rather than silently capping a sweep.
+- **BREAKING (`c4s describe`): the payload is the core's `{ types: [ … ] }`** instead of a bare `{ version, views, schemas }`, and it gains `label` + `searchableFields`. The command had been calling the serialization registry directly, so it was the one discovery command answering differently from the MCP tool of the same name — and it could not say what a search would cover, which the `c4s-spec-reader` skill had documented for two releases. Consumers doing `c4s describe … | jq .schemas` must read `.types[0].schemas`.
+- **BREAKING (`c4s list-tags`): the payload is the paginated `{ items, total, hasMore }`** instead of `{ tags: [ … ] }`, and per-type counts are now opt-in behind `--with-counts` (they are a product of tags by active types). Adds `--min-count` and `--co-occurring-with`. The command had been reading straight off the reader, so `list_tags`' pagination and flags were unreachable from the CLI.
+- **BREAKING (`get_sections` / section `detail` view): `content_hash` is gone.** The response carries the content, so nothing is left for a version of it to settle. The hash remains on the `section_index` table and on `GET /api/sections` + `/api/sections/:anchor`, where it still drives change detection and cache invalidation.
+- **`get_entities` no longer drops what it cannot afford.** It shares one budget branch with `get_sections`: every slug you name is answered, and rows past the response budget come back `entity: null` with `truncated: true` rather than vanishing (a vanished row read as "that entity does not exist"). The retry instruction moved from a per-result `truncationHint` to the envelope's `message`. The first item is never degraded. Host-side `getEntitiesAll` re-asks for truncated rows one slug at a time, so page rendering is unaffected.
+- **An unknown `rootId` is `INVALID_ARGUMENT`** naming the roots that exist, not `PAGE_NOT_FOUND` — that code is now reserved for "the root exists, the path does not", which is the answer that authorizes a caller to stop looking.
+- **`c4s find-references` has no page walk of its own**, consuming the same `src/core/references/` sweep behind MCP and REST, so the CLI answer equals the UI answer by construction. `--pages <dir>` still narrows the sweep to that one directory. Listing a page root no longer creates it: `PagesService.listMarkdownFiles()` returns an empty list for a missing directory instead of `mkdir`-ing it, so a `readonly-reader` command cannot write to the working tree.
+- **Commands that do not paginate now refuse `--limit`/`--offset`** instead of ignoring them (`catalog`, `describe`, `get-entities`, `get-sections`; `--offset` on `check-consistency` and `resolve-identity`). A silently ignored flag leaves the caller believing the answer was scoped.
+
 ## [1.0.25] - 2026-07-10
 
 ### Added

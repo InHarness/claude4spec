@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalStringList } from '../args.js';
+import { optionalStringList, refuseFlags } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
@@ -36,6 +36,8 @@ export async function runGetSections(args: ParsedArgs): Promise<void> {
    */
   const anchors = optionalStringList(args, 'anchors') ?? [];
   const includeSubtree = args.flags.get('include-subtree') === true || args.flags.get('include-subtree') === 'true';
+
+  refuseFlags(args, ['limit', 'offset'], 'get-sections is fetch-by-key: you name the rows, so the valve is the anchor-list cap plus the response budget');
 
   const ctx = await createContext(args);
   try {

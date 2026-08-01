@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalInt, optionalStringList, requireString } from '../args.js';
+import { optionalInt, optionalStringList, refuseFlags, requireString } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
@@ -22,6 +22,8 @@ export async function runResolveIdentity(args: ParsedArgs): Promise<void> {
   const query = requireString(args, 'query');
   const types = optionalStringList(args, 'types')?.map(normalizeEntityType);
   const limit = optionalInt(args, 'limit');
+
+  refuseFlags(args, ['offset'], 'resolve-identity is a top-N ranking: page two is the answers the ranking already judged worse');
 
   const ctx = await createContext(args);
   try {

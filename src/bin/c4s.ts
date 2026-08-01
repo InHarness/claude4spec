@@ -98,7 +98,13 @@ Detail view (no XML counterpart):
   detail --type <t> --slug <s>
 
 Graph reader (no XML counterpart):
-  find-references --type <t> --slug <s> [--include-tag-matches]
+  find-references --type <t> --slug <s> [--include-tag-matches] [--pages <dir>]
+                                    exhaustive sweep — every hit, no paging (takes no
+                                    --limit/--offset). Prints a JSON ARRAY; since 0.2.6
+                                    each hit also carries rootId (and anchor, when the
+                                    position falls inside an indexed section), so hits from
+                                    two roots are no longer indistinguishable.
+                                    --pages <dir> narrows the sweep to that one directory.
 
 Utility:
   resolve <file.md> [--format inline|json]
@@ -115,8 +121,16 @@ Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
 
 Discovery:
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
-  describe --type <t> [--view <v>] JSON Schema per view for one type (on-demand)
-  list-tags
+  describe --type <t> [--view <v>] JSON Schema per view for one type, plus the paths a
+                                    search would cover. Since 0.2.6 the payload is the core's
+                                    { types: [ { type, label, version, views, schemas,
+                                    searchableFields } ] } — it was a bare { version, views,
+                                    schemas } before
+  list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>]
+                                    Since 0.2.6 this is the paginated { items, total, hasMore }
+                                    (was { tags: [...] }), and per-type counts are OPT-IN via
+                                    --with-counts — they are a product of tags by types.
+                                    --co-occurring-with names the tags sharing entities with one
   list-slugs --type <t>            shorthand for list-entities in the minimal view
   list-entities --type <t> [--tags <t1,t2>] [--filter and|or] [--view <v>] [--mode items|count]
   get-entities --type <t> --slugs <s1,s2> [--view <v>]    several entities in one call, any view

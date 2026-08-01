@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalInt, optionalString } from '../args.js';
+import { optionalInt, optionalString, refuseFlags } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
@@ -24,6 +24,8 @@ export async function runCheckConsistency(args: ParsedArgs): Promise<void> {
   }
   const rule = optionalString(args, 'rule');
   const limit = optionalInt(args, 'limit');
+
+  refuseFlags(args, ['offset'], 'check-consistency is a report, not a collection: summary always carries the full counts');
 
   const ctx = await createContext(args);
   try {

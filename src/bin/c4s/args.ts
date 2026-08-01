@@ -136,6 +136,26 @@ export function paginationFrom(args: ParsedArgs): { limit?: number; offset?: num
   };
 }
 
+/**
+ * Refuses flags this command does not honour, instead of ignoring them.
+ *
+ * Ignoring is the worse failure: `c4s get-entities --slugs a,b,c,d,e --limit 2`
+ * that quietly returns five leaves the caller believing the answer was scoped to
+ * two, and a script built on that belief is wrong everywhere it is used. It is
+ * the same reasoning that makes the section commands refuse `--root-id` rather
+ * than drop it — a refusal costs one retry, a silent no-op costs trust in every
+ * answer the command ever gave.
+ */
+export function refuseFlags(args: ParsedArgs, flags: readonly string[], why: string): void {
+  const offending = flags.filter((flag) => args.flags.has(flag));
+  if (offending.length === 0) return;
+  throw new CliError(
+    'INVALID_ARGUMENT',
+    `${offending.map((f) => `--${f}`).join(', ')} ${offending.length > 1 ? 'are' : 'is'} not accepted here — ${why}`,
+    'run `c4s --help` for which commands paginate',
+  );
+}
+
 export function requireStringList(args: ParsedArgs, flag: string): string[] {
   const raw = requireString(args, flag);
   return raw

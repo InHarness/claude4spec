@@ -45,14 +45,19 @@ export class PageSource {
     return svc;
   }
 
+  /**
+   * READ-ONLY listing: the discovery core is the read path, and a reader that
+   * creates the directory it was asked to read is not a reader. See
+   * `PagesService.listMarkdownFilesReadonly`.
+   */
   async list(rootId: string): Promise<string[]> {
-    return await this.service(rootId).listMarkdownFiles();
+    return await this.service(rootId).listMarkdownFilesReadonly();
   }
 
   /** Listing + measurement in one pass, so a caller can size a root before pulling it. */
   async listWithStats(rootId: string): Promise<PageFile[]> {
     const svc = this.service(rootId);
-    const rels = await svc.listMarkdownFiles();
+    const rels = await svc.listMarkdownFilesReadonly();
     const out: PageFile[] = [];
     for (const rel of rels) {
       try {

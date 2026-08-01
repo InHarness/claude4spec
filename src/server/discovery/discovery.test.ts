@@ -13,7 +13,13 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
-import { createDiscoveryCore, getEntitiesAll, listEntitiesAll, MAX_ANCHORS_PER_CALL } from './index.js';
+import {
+  createDiscoveryCore,
+  findReferencesAll,
+  getEntitiesAll,
+  listEntitiesAll,
+  MAX_ANCHORS_PER_CALL,
+} from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
@@ -940,6 +946,67 @@ describe('discovery core', () => {
       const result = c.getEntities({ type: 'widget', slugs: ['w2', 'w1', 'w2'], view: 'inline_mention' });
       expect(result.results.map((r) => r.slug)).toEqual(['w2', 'w1']);
     });
+
+    /**
+     * The default view widens with the size of the request, so it has to be
+     * measured against the request that is actually served. Measuring the raw
+     * list made `["order","order"]` — which answers with exactly one entity —
+     * come back in the narrow list projection, while the identical de-duplicated
+     * call came back whole.
+     */
+    it('picks the default view AFTER de-duplication, so a repeated slug is still a lookup', () => {
+      const c = core([pagesRoot()]);
+      expect(c.getEntities({ type: 'widget', slugs: ['w1', 'w1'] }).view).toBe('single_element');
+      expect(c.getEntities({ type: 'widget', slugs: ['w1'] }).view).toBe('single_element');
+      expect(c.getEntities({ type: 'widget', slugs: ['w1', 'w2'] }).view).toBe('element_list_item');
+    });
+
+    /**
+     * The host-side composition must not hand a renderer a degraded row: the
+     * renderer reads `entity: null` as "no such entity" and prints it as missing.
+     * A single-slug retry cannot degrade (the first item is never demoted), which
+     * is what makes this terminate.
+     */
+    it('getEntitiesAll re-asks for truncated rows, so no caller sees a budget cut as absence', () => {
+      const c = core([pagesRoot()]);
+      const all = getEntitiesAll(c, { type: 'widget', slugs: ['w1', 'w2', 'w3'], view: 'detail' });
+      expect(all.map((r) => r.slug)).toEqual(['w1', 'w2', 'w3']);
+      expect(all.filter((r) => r.truncated === true)).toEqual([]);
+      for (const row of all) expect(row.entity).not.toBeNull();
+    });
+  });
+
+  /**
+   * The sweep must not stop at a page boundary.
+   *
+   * No project in this repo's own spec has more than a dozen references to one
+   * entity, so a live walk cannot exercise this — which is exactly how a silent
+   * cap at the core's default page size (100) would ship unnoticed and tell a
+   * caller that 150 real call sites do not exist. A fake core with a known
+   * population is the only honest way to assert it.
+   */
+  it('findReferencesAll pages past the default limit instead of taking the first page', async () => {
+    const all = Array.from({ length: 2500 }, (_, i) => ({
+      rootId: 'pages',
+      pagePath: `p${i}.md`,
+      tagType: 'single_element',
+      line: i,
+    }));
+    let calls = 0;
+    const fake = {
+      findReferences: (input: { limit?: number; offset?: number }) => {
+        calls++;
+        const offset = input.offset ?? 0;
+        const items = all.slice(offset, offset + (input.limit ?? 100));
+        return Promise.resolve({ references: items, total: all.length, hasMore: offset + items.length < all.length });
+      },
+    } as unknown as DiscoveryCore;
+
+    const hits = await findReferencesAll(fake, { target: 'entity', type: 'widget', slug: 'w' });
+
+    expect(hits).toHaveLength(2500);
+    expect(hits.map((h) => h.pagePath)).toEqual(all.map((h) => h.pagePath));
+    expect(calls).toBeGreaterThan(1);
   });
 
   /**

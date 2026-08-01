@@ -1,4 +1,4 @@
-import { optionalString, requireString, type ParsedArgs } from '../args.js';
+import { optionalString, refuseFlags, requireString, type ParsedArgs } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
@@ -8,6 +8,8 @@ export async function runDescribe(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const viewFlag = optionalString(args, 'view');
   const view = viewFlag ? normalizeViewKind(viewFlag) : undefined;
+  refuseFlags(args, ['limit', 'offset'], 'describe is a projection, bounded by construction');
+
   const ctx = await createContext(args);
   try {
     /**

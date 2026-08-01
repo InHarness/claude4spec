@@ -27,6 +27,7 @@ import { runResolveIdentity } from './resolve-identity.js';
 import { runCheckConsistency } from './check-consistency.js';
 import { runListEntities } from './list-entities.js';
 import { runGetEntities } from './get-entities.js';
+import { runFindReferences } from './find-references.js';
 
 describe('discovery commands on the CLI', () => {
   let registryDir: string;
@@ -204,6 +205,48 @@ describe('discovery commands on the CLI', () => {
         code: 'INVALID_ARGS',
       });
     });
+
+    /**
+     * Listing a root must not CREATE it. This command is declared
+     * `readonly-reader`, and the core's page walk used to `mkdir` the root it
+     * was about to list — so a reader wrote to the user's working tree, and
+     * failed outright on a read-only checkout. `--pages` names a directory that
+     * does not exist; the honest answer is "no pages there", not a new folder.
+     */
+    it('find-references does not create the page root it was pointed at', async () => {
+      const absent = path.join(projectDir, 'no-such-root');
+      await expect(
+        runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'x', '--pages', 'no-such-root')),
+      ).resolves.toBeUndefined();
+      // A bare ARRAY, unbounded — a sweep that paged would answer "nothing
+      // references this" while hits sat on page two.
+      expect(JSON.parse(stdout)).toEqual([]);
+      expect(fs.existsSync(absent)).toBe(false);
+    });
+
+    /**
+     * A flag that does nothing is worse than a flag that is refused: the caller
+     * believes the answer was scoped, and every script built on that belief is
+     * wrong wherever it runs. Same reasoning as the `--root-id` refusals above.
+     */
+    it('commands that do not paginate REFUSE --limit/--offset rather than ignoring them', async () => {
+      await expect(
+        runGetSections(args('get-sections', '--anchors', 'aaaaaa11', '--limit', '1')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(
+        runGetEntities(args('get-entities', '--type', 'diagram', '--slugs', 'a,b', '--offset', '1')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(runCheckConsistency(args('check-consistency', '--offset', '5'))).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+      await expect(
+        runResolveIdentity(args('resolve-identity', '--query', 'x', '--offset', '5')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      await expect(
+        runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'x', '--limit', '5')),
+      ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+    });
+
   });
 
   describe('entity commands map their flags onto the core', () => {

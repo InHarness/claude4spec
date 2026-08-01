@@ -321,11 +321,44 @@ describe('M39 — Discovery Core', () => {
    * silently, because nobody wrote the command.
    */
   it('every core operation is reachable from the c4s bin', () => {
+    /**
+     * The REGISTERED command list, not the file text.
+     *
+     * Asserting `expect(binSource).toContain('list-pages')` was vacuous: the
+     * HELP string in the same file lists every command name, so deleting a
+     * contribution from the `COMMANDS` array left the assertion green while
+     * `c4s list-pages` died with UNKNOWN_COMMAND at runtime — the gate could not
+     * fail for the thing it exists to catch. The bin cannot simply be imported
+     * (its top level runs `main()`), so the array literal is parsed instead and
+     * the identifiers in it are resolved against each command module's declared
+     * `name`.
+     */
     const bin = fs.readFileSync(path.join(SRC, 'bin/c4s.ts'), 'utf-8');
-    const commandFiles = sourceFiles(path.join(SRC, 'bin/c4s/commands'))
-      .filter((f) => !f.endsWith('.test.ts'))
-      .map((f) => fs.readFileSync(f, 'utf-8'))
-      .join('\n');
+    const arrayBlock = /const COMMANDS: CliCommandContribution\[\] = \[([\s\S]*?)\n\];/.exec(bin)?.[1];
+    expect(arrayBlock, 'could not find the COMMANDS array in src/bin/c4s.ts').toBeTruthy();
+    const registeredIdentifiers = new Set(
+      arrayBlock!
+        .split('\n')
+        .filter((l) => !l.trim().startsWith('//'))
+        .map((l) => /^\s*([A-Za-z0-9_]+),\s*$/.exec(l)?.[1])
+        .filter((x): x is string => Boolean(x)),
+    );
+
+    // `export const fooCommand: CliCommandContribution = { name: 'foo-bar', … }`
+    // — the identifier the array must contain, keyed by the name a user types.
+    const identifierByCommandName = new Map<string, string>();
+    const commandFilesText: string[] = [];
+    for (const file of sourceFiles(path.join(SRC, 'bin/c4s/commands')).filter((f) => !f.endsWith('.test.ts'))) {
+      const text = fs.readFileSync(file, 'utf-8');
+      commandFilesText.push(text);
+      for (const m of text.matchAll(
+        /export const ([A-Za-z0-9_]+): CliCommandContribution = \{\s*\n\s*name: '([^']+)'/g,
+      )) {
+        identifierByCommandName.set(m[2]!, m[1]!);
+      }
+    }
+    const commandFiles = commandFilesText.join('\n');
+
     for (const [op, reachedBy] of [
       ['overview', 'catalog'],
       ['describeTypes', 'describe'],
@@ -342,8 +375,21 @@ describe('M39 — Discovery Core', () => {
       ['checkConsistency', 'check-consistency'],
       ['resolveIdentity', 'resolve-identity'],
     ] as const) {
-      expect(commandFiles, `no CLI command calls discovery.${op}`).toContain(`.${op}(`);
-      expect(bin, `'${reachedBy}' is not registered in the c4s dispatcher`).toContain(reachedBy);
+      /**
+       * Either the operation itself or its sanctioned exhaustive wrapper
+       * (`getEntitiesAll`, `findReferencesAll`, …). A command that has to read
+       * past a page boundary — `find-references` sweeps before a rename, so a
+       * capped answer is a wrong one — goes through the wrapper, and that is
+       * still the core answering.
+       */
+      const callsOp = commandFiles.includes(`.${op}(`) || commandFiles.includes(`${op}All(`);
+      expect(callsOp, `no CLI command calls discovery.${op} (or ${op}All)`).toBe(true);
+      const identifier = identifierByCommandName.get(reachedBy);
+      expect(identifier, `no command module declares name: '${reachedBy}'`).toBeTruthy();
+      expect(
+        registeredIdentifiers.has(identifier!),
+        `'${reachedBy}' (${identifier}) is declared but not in the COMMANDS array — it would be UNKNOWN_COMMAND at runtime`,
+      ).toBe(true);
     }
   });
 

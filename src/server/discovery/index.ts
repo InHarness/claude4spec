@@ -31,10 +31,12 @@ import { MAX_LIMIT, type Page } from './pagination.js';
 import type {
   DiscoveryCore,
   DiscoveryDeps,
+  FindReferencesInput,
   GetEntitiesInput,
   GetEntitiesResult,
   ListEntitiesInput,
   ListTagsInput,
+  ReferenceHit,
   SerializedMeta,
   TagListItem,
 } from './types.js';
@@ -102,6 +104,30 @@ export function listEntitiesAll(
   });
 }
 
+/**
+ * Every reference to a target, no page boundary.
+ *
+ * `find_references` paginates for an agent, which is right: a tool answer has to
+ * be bounded. A SWEEP does not have the same shape — its whole purpose is
+ * "is anything still pointing at this before I rename or delete it", and a
+ * capped answer to that question is a wrong answer that looks like a right one.
+ * `c4s find-references` was unbounded before 0.2.6 routed it through the core;
+ * this is how it stays unbounded without the core growing an unbounded mode.
+ */
+export async function findReferencesAll(
+  core: DiscoveryCore,
+  /** `limit`/`offset` on the way in are ignored — this helper owns the paging. */
+  input: FindReferencesInput,
+): Promise<ReferenceHit[]> {
+  const out: ReferenceHit[] = [];
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const result = await core.findReferences({ ...input, limit: MAX_LIMIT, offset: out.length });
+    out.push(...result.references);
+    if (!result.hasMore || result.references.length === 0) break;
+  }
+  return out;
+}
+
 /** Every tag, no page boundary. */
 export function listTagsAll(core: DiscoveryCore, input: Omit<ListTagsInput, 'limit' | 'offset'> = {}): TagListItem[] {
   return collectAll((offset) => core.listTags({ ...input, limit: MAX_LIMIT, offset }));
@@ -119,6 +145,26 @@ export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): Ge
   const out: GetEntitiesResult['results'] = [];
   for (let i = 0; i < input.slugs.length; i += MAX_SLUGS_PER_CALL) {
     out.push(...core.getEntities({ ...input, slugs: input.slugs.slice(i, i + MAX_SLUGS_PER_CALL) }).results);
+  }
+  /**
+   * 0.2.6 — re-ask for anything the batch could not afford, ONE SLUG AT A TIME.
+   *
+   * The operation degrades past its response budget to `entity: null` +
+   * `truncated: true` rather than dropping the row. That is right for an agent,
+   * which can retry with a smaller subset — but this helper exists precisely so
+   * a HOST-side caller (a page renderer) does not have to, and a caller that
+   * does not know about the flag reads `entity: null` as "no such entity" and
+   * renders an existing entity as missing.
+   *
+   * A single-slug call cannot come back degraded: the first item is never
+   * demoted to meta-only, which is exactly the guarantee that makes this retry
+   * terminate rather than loop.
+   */
+  for (let i = 0; i < out.length; i++) {
+    const row = out[i]!;
+    if (row.truncated !== true) continue;
+    const [retried] = core.getEntities({ ...input, slugs: [row.slug] }).results;
+    if (retried) out[i] = retried;
   }
   return out;
 }

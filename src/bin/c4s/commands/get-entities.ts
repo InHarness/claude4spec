@@ -1,5 +1,5 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString, requireString, requireStringList } from '../args.js';
+import { optionalString, refuseFlags, requireString, requireStringList } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
@@ -24,6 +24,8 @@ export async function runGetEntities(args: ParsedArgs): Promise<void> {
   const slugs = requireStringList(args, 'slugs');
   const rawView = optionalString(args, 'view');
   const view = rawView === undefined ? undefined : normalizeViewKind(rawView);
+
+  refuseFlags(args, ['limit', 'offset'], 'get-entities is fetch-by-key: you name the rows, so the valve is the slug-list cap plus the response budget');
 
   const ctx = await createContext(args);
   try {

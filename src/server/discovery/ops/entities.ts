@@ -124,6 +124,12 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
       `split the call, or use list_entities({ type: "${input.type}" }) which paginates`,
     );
   }
+  // Silent de-duplication, first occurrence wins its position — the same rule
+  // `get_sections` applies to `anchors[]`. Repeating a key is a caller mistake
+  // with an obvious intent, and the two halves of "fetch by key" must not
+  // disagree about it.
+  const slugs = [...new Set(input.slugs)];
+
   /**
    * The default WIDENS with the size of the request, because the two shapes of
    * this call want different things: one slug is a lookup and wants the whole
@@ -134,14 +140,14 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
    * (`<element_list slugs="a,b,…"/>`) has always rendered — enough to hit the
    * response budget and come back `truncated`, where the identical call used to
    * return everything.
+   *
+   * Measured AFTER de-duplication, or `["order", "order"]` — which answers with
+   * exactly one entity, the same one `["order"]` answers with — would come back
+   * in the narrow list projection while the identical de-duplicated request
+   * comes back whole. A consumer reading the thin row as the complete record
+   * then reports fields as absent that are merely not in that view.
    */
-  const view = requireView(input.view, input.slugs.length > 1 ? 'element_list_item' : 'single_element');
-
-  // Silent de-duplication, first occurrence wins its position — the same rule
-  // `get_sections` applies to `anchors[]`. Repeating a key is a caller mistake
-  // with an obvious intent, and the two halves of "fetch by key" must not
-  // disagree about it.
-  const slugs = [...new Set(input.slugs)];
+  const view = requireView(input.view, slugs.length > 1 ? 'element_list_item' : 'single_element');
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
     const { data, ...meta } = serialize(deps, input.type, view, slug);
