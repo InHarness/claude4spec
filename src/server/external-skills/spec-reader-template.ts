@@ -93,7 +93,7 @@ refuses and tells you to use \`list-sections\` + \`get-sections\` instead.
 
 - \`c4s catalog ${identity}\` — the ENTRY POINT: page roots with their properties, active entity types with counts + version + description + roleNoun + mcpToolsLine per type, tag count. Start here; it is cheap and it tells you what else is worth asking.
 - \`c4s describe --type <t> [--view <v>] ${identity}\` — JSON Schema per view for one type, plus the paths a search would cover (on-demand).
-- \`c4s list-tags ${identity}\` — all tags with per-type counts.
+- \`c4s list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>] ${identity}\` — the project tags. Counts are OFF by default (they are a product of tags by types); \`--co-occurring-with\` returns the tags sharing entities with one you name, which is how you discover a taxonomy without already knowing it.
 - \`c4s list-slugs --type endpoint ${identity}\` — all slugs for a given type.
 - \`c4s list-entities --type endpoint [--tags auth] [--view <v>] [--mode items|count] ${identity}\` — full paginated traversal of one type; \`--mode count\` answers "how many" without listing.
 - \`c4s get-entities --type dto --slugs a,b,c --view detail ${identity}\` — several entities in one call, any view.
