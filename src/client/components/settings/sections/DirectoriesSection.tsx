@@ -82,6 +82,24 @@ function dirsOverlap(rootDir: string, otherDir: string): boolean {
   return false;
 }
 
+/**
+ * Pair verdict for the D4 sweep (mirror of server config.ts `targetsOverlap`). NOT a
+ * blind OR of both directions: `dirsOverlap`'s dot-dir exemption only makes sense when
+ * the containing side is a page root, so reading `.claude4spec/entities` as the container
+ * would flag every root at '.'. Only pairs where neither side walks compare plainly.
+ */
+function targetsOverlap(
+  a: { dir: string; isRoot: boolean },
+  b: { dir: string; isRoot: boolean },
+): boolean {
+  if (a.isRoot && b.isRoot) return dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir);
+  if (a.isRoot) return dirsOverlap(a.dir, b.dir);
+  if (b.isRoot) return dirsOverlap(b.dir, a.dir);
+  const na = normDir(a.dir);
+  const nb = normDir(b.dir);
+  return na === nb || isInsideDir(na, nb) || isInsideDir(nb, na);
+}
+
 /** A cwd-relative dir must be non-empty, not absolute, and not escape cwd via `..`. */
 function isPathSafeRelative(dir: string): boolean {
   const v = dir.trim();
@@ -115,17 +133,17 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
   // Pairwise and bidirectional over every write target, matching the server's D4 sweep —
   // roots are not the privileged left-hand side, so entitiesDir-vs-releasesDir is caught
   // here too. Message shape mirrors the server's symmetric form.
-  const writeTargets: Array<{ id: string; dir: string }> = [
-    ...roots.map((r) => ({ id: r.id, dir: r.dir })),
-    { id: 'entitiesDir', dir: draft.entitiesDir },
-    { id: 'releasesDir', dir: draft.releasesDir },
-    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
+  const writeTargets: Array<{ id: string; dir: string; isRoot: boolean }> = [
+    ...roots.map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
+    { id: 'entitiesDir', dir: draft.entitiesDir, isRoot: false },
+    { id: 'releasesDir', dir: draft.releasesDir, isRoot: false },
+    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d, isRoot: false })),
   ];
   for (let i = 0; i < writeTargets.length; i++) {
     for (let j = i + 1; j < writeTargets.length; j++) {
       const a = writeTargets[i]!;
       const b = writeTargets[j]!;
-      if (dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir)) {
+      if (targetsOverlap(a, b)) {
         errors.push(`'${a.id}' overlaps write-target '${b.id}'`);
       }
     }
@@ -137,7 +155,8 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
   ];
   for (const r of roots) {
     for (const t of softTargets) {
-      if (dirsOverlap(r.dir, t.dir) || dirsOverlap(t.dir, r.dir)) {
+      // The root is the walker here — one-directional, same as the server.
+      if (dirsOverlap(r.dir, t.dir)) {
         warnings.push(`Root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
       }
     }

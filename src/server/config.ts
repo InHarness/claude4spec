@@ -473,6 +473,35 @@ export function dirsOverlap(rootDir: string, otherDir: string): boolean {
 }
 
 /**
+ * Does this pair of write targets collide?
+ *
+ * `dirsOverlap` is asymmetric ON PURPOSE: its third clause asks whether the PAGES WALKER
+ * starting at the first dir would actually reach the second, and the walker skips
+ * `.`-prefixed directories. So a root at '.' does NOT conflict with `.claude4spec/entities`
+ * — the walker never descends there. That exemption is only meaningful when the containing
+ * side really is a page root, which is why this cannot be a blind OR of both directions:
+ * reading `.claude4spec/entities` as the container would flag every root at '.'.
+ *
+ *  - root vs root      → either direction counts (both sides walk), so the verdict no
+ *                        longer depends on the order of `roots[]`.
+ *  - root vs target    → the root is the walker; ask it that way round.
+ *  - target vs target  → neither walks. Plain equality-or-containment, no dot-dir
+ *                        exemption: two things WRITING into nested dirs clobber each
+ *                        other whether or not a walker would have found them.
+ */
+function targetsOverlap(
+  a: { dir: string; isRoot: boolean },
+  b: { dir: string; isRoot: boolean },
+): boolean {
+  if (a.isRoot && b.isRoot) return dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir);
+  if (a.isRoot) return dirsOverlap(a.dir, b.dir);
+  if (b.isRoot) return dirsOverlap(b.dir, a.dir);
+  const na = normDir(a.dir);
+  const nb = normDir(b.dir);
+  return na === nb || isInsideDir(na, nb) || isInsideDir(nb, na);
+}
+
+/**
  * 0.1.96: cross-field validation of `roots[]` dirs against each other and the
  * other write/read targets. Returns hard `errors` (→ 400 / boot throw) and
  * `warnings` (log-only). Kept separate from `validate()` because it needs the
@@ -490,21 +519,17 @@ export function validateRootDirs(
   // Before this, `entitiesDir` vs `releasesDir` (and either vs `.claude4spec/plugins`)
   // was never compared at all: two write targets could be pointed at the same directory
   // and nothing complained until something clobbered something else at runtime.
-  const writeTargets: Array<{ id: string; dir: string }> = [
-    ...roots.map((r) => ({ id: r.id, dir: r.dir })),
-    { id: 'entitiesDir', dir: opts.entitiesDir },
-    { id: 'releasesDir', dir: opts.releasesDir },
-    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
+  const writeTargets: Array<{ id: string; dir: string; isRoot: boolean }> = [
+    ...roots.map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
+    { id: 'entitiesDir', dir: opts.entitiesDir, isRoot: false },
+    { id: 'releasesDir', dir: opts.releasesDir, isRoot: false },
+    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d, isRoot: false })),
   ];
   for (let i = 0; i < writeTargets.length; i++) {
     for (let j = i + 1; j < writeTargets.length; j++) {
       const a = writeTargets[i]!;
       const b = writeTargets[j]!;
-      // `dirsOverlap` is asymmetric on purpose — its third clause asks whether the PAGES
-      // WALKER starting at the first dir would actually reach the second (dot-dir segments
-      // stop it). Neither side of a pair is inherently the walker, so a hazard in either
-      // direction is a hazard; ORing both readings is what makes the check bidirectional.
-      if (dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir)) {
+      if (targetsOverlap(a, b)) {
         errors.push(`config.json: '${a.id}' overlaps write-target '${b.id}'`);
       }
     }
@@ -522,7 +547,9 @@ export function validateRootDirs(
   ];
   for (const r of roots) {
     for (const t of softTargets) {
-      if (dirsOverlap(r.dir, t.dir) || dirsOverlap(t.dir, r.dir)) {
+      // The root is the walker here, so the one-directional reading is the right one —
+      // same reason as in `targetsOverlap`.
+      if (dirsOverlap(r.dir, t.dir)) {
         warnings.push(`config.json: root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
       }
     }

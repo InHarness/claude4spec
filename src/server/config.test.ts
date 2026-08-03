@@ -363,6 +363,46 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(errors).toContain("config.json: 'gen' overlaps write-target '.claude4spec/plugins'");
   });
 
+  it('validateRootDirs leaves a root at "." alone — the pages walker never descends into .claude4spec', () => {
+    // Regression for the D4 bidirectional sweep (0.2.9): `dirsOverlap` is asymmetric
+    // because the walker skips dot-dirs, so reading `.claude4spec/entities` as the
+    // CONTAINER of a root at '.' would hard-error every project migrated from the
+    // legacy `pagesDir: '.'`. Only pairs where neither side walks are compared plainly.
+    const { errors, warnings } = validateRootDirs([builtinPagesRoot('.')], {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('validateRootDirs catches two non-root write targets pointed at the same dir', () => {
+    // The genuinely new coverage in 0.2.9: before, only a root could be the left-hand
+    // side, so entitiesDir vs releasesDir was never compared at all.
+    const { errors } = validateRootDirs([builtinPagesRoot('pages')], {
+      entitiesDir: 'shared', releasesDir: 'shared', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  });
+
+  it('validateRootDirs catches a non-root write target NESTED in another one', () => {
+    const { errors } = validateRootDirs([builtinPagesRoot('pages')], {
+      entitiesDir: 'store', releasesDir: 'store/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  });
+
+  it('validateRootDirs verdict does not depend on the order of roots[]', () => {
+    const a = { id: 'a', name: 'A', dir: 'shared', builtin: false, releasable: false, sectionIndexed: false, referenceValidated: false, linkTargets: [], sidebar: 'accordion' as const, briefTarget: false };
+    const b = { ...a, id: 'b', name: 'B', dir: 'shared/nested' };
+    const opts = {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    };
+    const forward = validateRootDirs([builtinPagesRoot('pages'), a, b], opts).errors.length;
+    const reversed = validateRootDirs([builtinPagesRoot('pages'), b, a], opts).errors.length;
+    expect(forward).toBeGreaterThan(0);
+    expect(reversed).toBe(forward);
+  });
+
   it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {
     const roots = [builtinPagesRoot('pages'), {
       id: 'gen', name: 'Gen', dir: '.claude4spec/skills', builtin: false,
