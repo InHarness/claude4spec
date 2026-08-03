@@ -29,7 +29,10 @@ import {
   type PeerProject,
 } from '../services/chat-context.js';
 import { readConfig } from '../config.js';
-import { resolveAgentPathScope } from '../services/agent-path-scope.js';
+import {
+  normalizeResumePathScope,
+  resolveAgentExecutionScope,
+} from '../services/agent-execution-scope.js';
 import type { PlanService } from '../services/plan.js';
 import type { BriefService } from '../services/brief.js';
 import type { PatchService, PatchDetail } from '../services/patch.js';
@@ -523,19 +526,10 @@ export async function runAgentTurn(
     // even when the user configured nothing. The library keeps `cwd` writable as its base
     // (deny > allow > cwd), so an empty user allow-list means "cwd writable, artifact dirs
     // denied" — the agent can still touch its own project, just never hand-edit artifacts.
-    const agentAllowedPaths = cfg.agent?.allowedPaths ?? [];
-    const agentDisallowedPaths = cfg.agent?.disallowedPaths ?? [];
-    const resolvedPathScope = resolveAgentPathScope({
-      cwd: deps.cwd,
-      roots: deps.roots,
-      allowedPaths: agentAllowedPaths,
-      disallowedPaths: agentDisallowedPaths,
-      plansDir: cfg.plansDir,
-      briefsDir: cfg.briefsDir,
-      patchesDir: cfg.patchesDir,
-      entitiesDir: cfg.entitiesDir,
-      releasesDir: cfg.releasesDir,
-    });
+    // 0.2.8 (A19): composed by the shared builder, so the AC-analysis turn gets the
+    // identical deny-set from the identical code (it re-reads config itself — the extra
+    // disk read is the price of a single source of truth).
+    const resolvedPathScope = resolveAgentExecutionScope({ cwd: deps.cwd, roots: deps.roots });
     const systemPrompt = buildSystemPrompt({
       host: deps.pluginHost,
       projectName: cfg.name,
@@ -577,8 +571,8 @@ export async function runAgentTurn(
       // is now always emitted (non-brief) because `artifactDenyDirs` is always non-empty —
       // it carries the absolute artifact deny-set for the unconditional ALWAYS-DISALLOWED line.
       agentPathScope: {
-        allowedPaths: agentAllowedPaths,
-        disallowedPaths: agentDisallowedPaths,
+        allowedPaths: resolvedPathScope.userAllowedPaths,
+        disallowedPaths: resolvedPathScope.userDisallowedPaths,
         artifactDenyDirs: resolvedPathScope.artifactDenyDirs,
       },
       contextType: thread.contextType,
@@ -595,11 +589,30 @@ export async function runAgentTurn(
     // 0.1.62: `custom_env` jest wyłączane ze snapshotu — niesie odszyfrowany ANTHROPIC_API_KEY,
     // który nie może trafić do plaintextowego `db.sqlite` (to obeszłoby szyfrowanie at-rest);
     // nie jest też polem RESUME_CONFIG_LOCKED, więc snapshot go nie potrzebuje.
+    // 0.2.8 (C15): the FS path scope joins the snapshot. The library declares
+    // `allowedPaths`/`disallowedPaths` resume-immutable and `findResumeViolations` already
+    // checks them — it just never fired, because a field absent from the snapshot counts as
+    // "not changed". Normalized (deduped + sorted) on the way in, because the library
+    // compares by JSON.stringify and a mere reorder must not read as a change.
+    //
+    // 0.2.8: the snapshot is written WITH the session id, not before `adapter.execute`.
+    // The guard only engages once `lastSessionId` is set, so a snapshot persisted by a turn
+    // that died before producing a session (adapter init error, timeout, abort) would become
+    // a permanent reference point for a session it never created: the next turn is waved
+    // through (still no session), creates the session under the CURRENT config, and every
+    // turn after that is compared against the stale snapshot — an unresumable thread. The
+    // write stays idempotent (`… WHERE initial_architecture_config_json IS NULL`), so it
+    // still records the config of the turn that actually opened the session.
     const { custom_env: _customEnv, ...snapshotArchitectureConfig } = input.architectureConfig;
-    deps.chatService.setInitialArchitectureConfig(thread.id, {
-      model: input.model,
-      architectureConfig: snapshotArchitectureConfig,
-    });
+    const recordSession = (sessionId: string): void => {
+      deps.chatService.setLastSessionId(thread.id, sessionId);
+      deps.chatService.setInitialArchitectureConfig(thread.id, {
+        model: input.model,
+        architectureConfig: snapshotArchitectureConfig,
+        allowedPaths: normalizeResumePathScope(resolvedPathScope.allowedPaths),
+        disallowedPaths: normalizeResumePathScope(resolvedPathScope.disallowedPaths),
+      });
+    };
 
     // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
     // `mcp` descriptor — each server mounts iff its registry flag is set.
@@ -675,14 +688,7 @@ export async function runAgentTurn(
     // writable as its base, so empty allowWrite means "cwd writable, artifact dirs denied".
     const architectureConfigForExecute = {
       ...input.architectureConfig,
-      claude_sandbox: {
-        enabled: true,
-        filesystem: {
-          denyRead: resolvedPathScope.disallowedPaths,
-          denyWrite: resolvedPathScope.disallowedPaths,
-          allowWrite: resolvedPathScope.allowedPaths,
-        },
-      },
+      claude_sandbox: resolvedPathScope.claudeSandbox,
     };
     const baseExecuteArgs = {
       systemPrompt,
@@ -740,7 +746,7 @@ export async function runAgentTurn(
           // continue to the genuine final result.
           if (event.sessionId) {
             currentSessionId = event.sessionId;
-            deps.chatService.setLastSessionId(thread.id, event.sessionId);
+            recordSession(event.sessionId);
           }
           continue;
         } else {
@@ -880,7 +886,7 @@ export async function runAgentTurn(
             for (const tid of Array.from(subagentBuffers.keys())) flushSubBuf(tid);
             if (event.sessionId) {
               currentSessionId = event.sessionId;
-              deps.chatService.setLastSessionId(thread.id, event.sessionId);
+              recordSession(event.sessionId);
             }
             const turnAnchor = lastMainAssistantRowId ?? lastToolResultRowId;
             if (lastTurnUsage) {

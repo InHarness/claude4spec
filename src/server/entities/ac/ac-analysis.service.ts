@@ -2,6 +2,8 @@ import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
 import type { Database } from 'better-sqlite3';
 import type { AcService } from './service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { Root } from '../../../shared/types.js';
+import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
 import {
   RawEntityReader,
   isRawEntityType,
@@ -45,6 +47,12 @@ export interface AcAnalysisDeps {
   acService: AcService;
   db: Database;
   cwd: string;
+  /**
+   * 0.2.8 (A19): the project's effective page roots, needed to resolve the SAME FS path
+   * scope the chat turn runs under. Not derivable from `cwd` — the CLI `--pages` override
+   * can move the built-in root away from what `config.json` says.
+   */
+  roots: Root[];
   host: PluginHost;
 }
 
@@ -133,6 +141,22 @@ export class AcAnalysisService {
     }
 
     const prompt = buildPrompt(dossier);
+    // 0.2.8 (A19): this is the second `adapter.execute` call site in the server and it used
+    // to run with NO path scope at all. Without `allowedPaths`/`disallowedPaths` the
+    // library's scope gate (`allowed.length || disallowed.length`) never engages, which also
+    // means `permissionMode: 'bypassPermissions'` — so this turn, reachable as the MCP tool
+    // `analyze_ac_against_entities` from ANY turn including a read-only `ask` one, could
+    // hand-edit the C4S artifact dirs. It now takes the identical scope the chat turn takes,
+    // from the identical builder, resolved PER CALL so config edits hot-reload (the MCP
+    // server itself is constructed once at mount, so `roots` is fixed there — same as the
+    // chat turn's boot-time `deps.roots`; only the config half reloads).
+    //
+    // Side effect worth knowing: requesting a path scope makes the library set
+    // `settingSources: ['project','local']`, so the project's `.claude/settings.json` now
+    // loads into this audit turn too. That matches every chat turn, and the turn is still
+    // strictly more restricted than before (it used to run bypassPermissions, unscoped,
+    // with the full mutating toolset).
+    const scope = resolveAgentExecutionScope({ cwd: this.deps.cwd, roots: this.deps.roots });
     const adapter = createAdapter('claude-code');
     const stream = adapter.execute({
       prompt,
@@ -141,6 +165,12 @@ export class AcAnalysisService {
       model: 'sonnet-4.6',
       cwd: this.deps.cwd,
       maxTurns: 1,
+      // The audit reads ACs and entities through the host and returns a JSON verdict — it
+      // never needs to write, so it also runs plan-mode (read-only built-in toolset).
+      planMode: true,
+      allowedPaths: scope.allowedPaths,
+      disallowedPaths: scope.disallowedPaths,
+      architectureConfig: { claude_sandbox: scope.claudeSandbox },
     });
     const text = await extractText(stream);
     const issues = parseIssuesJson(text);

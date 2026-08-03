@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { nanoid } from 'nanoid';
-import { findResumeViolations, resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
+import { resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import {
   runAgentTurn,
@@ -9,6 +9,7 @@ import {
   type Model,
   type AgentTurnDeps,
 } from './agent-turn.js';
+import { checkResumeConfigLock } from './resume-lock.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
@@ -166,24 +167,15 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
 
       // M05 session-lock: ten sam invariant co `POST /api/chat`. Defensywny backstop dla
       // nie-UI konsumentow (`c4s ask`, skrypty) — resume z innym modelem/reasoningiem = 409.
-      if (thread.lastSessionId != null) {
-        const snapshot = chat.getInitialArchitectureConfig(thread.id);
-        if (snapshot) {
-          const violations = findResumeViolations('claude-code', JSON.parse(snapshot), {
-            model,
-            architectureConfig,
-          });
-          if (violations.length > 0) {
-            return res.status(409).json({
-              error: {
-                code: 'RESUME_CONFIG_LOCKED',
-                message: 'Model and reasoning settings are locked for the lifetime of a session.',
-                violations: violations.map((v) => ({ path: v.path, reason: v.reason })),
-              },
-            });
-          }
-        }
-      }
+      const resumeLock = checkResumeConfigLock({
+        snapshotJson: chat.getInitialArchitectureConfig(thread.id),
+        lastSessionId: thread.lastSessionId,
+        model,
+        architectureConfig,
+        cwd: deps.cwd,
+        roots: deps.roots,
+      });
+      if (resumeLock) return res.status(409).json(resumeLock);
 
       // Gating one-stream-per-thread — wspoldzielony rejestr z `POST /api/chat`.
       if (activeAdapters.has(thread.id)) {

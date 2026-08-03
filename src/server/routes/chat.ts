@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
   createConsoleObserver,
-  findResumeViolations,
   getSessionResumeConstraints,
   type StreamObserver,
   type UserInputRequest,
@@ -20,6 +19,7 @@ import {
   type ActiveAdapter,
   type AgentTurnDeps,
 } from './agent-turn.js';
+import { checkResumeConfigLock } from './resume-lock.js';
 
 export function chatRouter(deps: AgentTurnDeps): Router {
   const router = Router();
@@ -136,29 +136,19 @@ export function chatRouter(deps: AgentTurnDeps): Router {
         thread = deps.chatService.updateThreadSettings(thread.id, { planMode: planModeArg });
       }
 
-      // M05 session-lock: na turze wznawiajacej (`lastSessionId != null`) model i pola
-      // reasoningu sa immutable — claude-code wiaze bloki thinking ostatniej tury z konfiguracja,
-      // ktora je wyprodukowala, wiec ich zmiana na resume = twardy 400. Backstop dla nie-UI
-      // konsumentow i wyscigu (zmiana modelu miedzy fetchem a sendem). MUSI byc przed `setupSse`
-      // (po flush naglowkow SSE nie ustawimy juz statusu 409).
-      if (thread.lastSessionId != null) {
-        const snapshot = deps.chatService.getInitialArchitectureConfig(thread.id);
-        if (snapshot) {
-          const violations = findResumeViolations('claude-code', JSON.parse(snapshot), {
-            model,
-            architectureConfig,
-          });
-          if (violations.length > 0) {
-            return res.status(409).json({
-              error: {
-                code: 'RESUME_CONFIG_LOCKED',
-                message: 'Model and reasoning settings are locked for the lifetime of a session.',
-                violations: violations.map((v) => ({ path: v.path, reason: v.reason })),
-              },
-            });
-          }
-        }
-      }
+      // M05 session-lock: model, reasoning i (0.2.8) zakres FS sa immutable na turze
+      // wznawiajacej. Backstop dla nie-UI konsumentow i wyscigu (zmiana modelu miedzy
+      // fetchem a sendem). MUSI byc przed `setupSse` (po flush naglowkow SSE nie
+      // ustawimy juz statusu 409). Wspolny helper z `POST /api/threads/:id/ask`.
+      const resumeLock = checkResumeConfigLock({
+        snapshotJson: deps.chatService.getInitialArchitectureConfig(thread.id),
+        lastSessionId: thread.lastSessionId,
+        model,
+        architectureConfig,
+        cwd: deps.cwd,
+        roots: deps.roots,
+      });
+      if (resumeLock) return res.status(409).json(resumeLock);
 
       // One-stream-per-thread guard. Klient powinien dolaczyc przez GET /api/chat/stream/:threadId
       // albo abortowac poprzedni stream przez POST /api/chat/abort.

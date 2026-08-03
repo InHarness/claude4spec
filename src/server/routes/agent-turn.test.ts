@@ -59,6 +59,8 @@ interface Recorded {
 
 function makeDeps() {
   const messages: Recorded[] = [];
+  // 0.2.8 (C15): the turn-1 resume snapshot, captured instead of persisted.
+  const snapshots: Array<Record<string, unknown>> = [];
   const rows: Array<{
     id: number;
     role: string;
@@ -85,7 +87,9 @@ function makeDeps() {
     getMessages: () => rows,
     updateTitle: () => {},
     setInitialSystemPrompt: () => {},
-    setInitialArchitectureConfig: () => {},
+    setInitialArchitectureConfig: (_id: string, snapshot: Record<string, unknown>) => {
+      snapshots.push(snapshot);
+    },
     setLastUsage: () => {},
     setLastSessionId: () => {},
     attachTurnUsage: () => {},
@@ -148,7 +152,7 @@ function makeDeps() {
     db: { handle: {} },
   } as unknown as AgentTurnDeps;
 
-  return { deps, messages };
+  return { deps, messages, snapshots };
 }
 
 function makeInput(): AgentTurnInput {
@@ -433,6 +437,58 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103 / 0.
     // The resolved scope is always spread onto execute (library's own gate is non-empty deny).
     expect(hoisted.lastExecute?.allowedPaths).toEqual([]);
     expect(hoisted.lastExecute?.disallowedPaths).toEqual(ARTIFACT_ABS);
+  });
+});
+
+// 0.2.8 (C15): the FS path scope is resume-immutable per the library contract, but it was
+// missing from the turn-1 snapshot — and `findResumeViolations` treats a field absent on
+// either side as "not changed", so the guard could never fire on a scope change.
+describe('runAgentTurn — resume snapshot carries the FS path scope (0.2.8 / C15)', () => {
+  it('snapshots allowedPaths/disallowedPaths alongside model + architectureConfig', async () => {
+    hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: ['/deny/dir'] };
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps, snapshots } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(snapshots).toHaveLength(1);
+    const snapshot = snapshots[0] as {
+      model: string;
+      allowedPaths: string[];
+      disallowedPaths: string[];
+    };
+    expect(snapshot.model).toBeDefined();
+    expect(snapshot.allowedPaths).toEqual(['/allowed/dir']);
+    // Normalized: deduped and SORTED, because the library compares snapshots by
+    // JSON.stringify — a reordered but identical list must not read as a change.
+    expect(snapshot.disallowedPaths).toEqual([...ARTIFACT_ABS, '/deny/dir'].sort());
+  });
+
+  it('does NOT snapshot a turn that never produced a session', async () => {
+    // The guard only engages once `lastSessionId` is set. A snapshot left behind by a turn
+    // that died before its `result` would become the reference point for a session it never
+    // created — the next turn (still session-less) is waved through and opens the session
+    // under the CURRENT config, and every turn after that compares against the stale
+    // snapshot: a thread that can never be resumed again.
+    hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: [] };
+    hoisted.events = []; // stream ends with no `result`, so no sessionId
+    const { deps, snapshots } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(snapshots).toEqual([]);
+  });
+
+  it('snapshots the artifact deny-set even with no user path scope configured', async () => {
+    hoisted.agent = undefined;
+    hoisted.events = [{ type: 'result', sessionId: 's1' }];
+    const { deps, snapshots } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    const snapshot = snapshots[0] as { allowedPaths: string[]; disallowedPaths: string[] };
+    expect(snapshot.allowedPaths).toEqual([]);
+    expect(snapshot.disallowedPaths).toEqual([...ARTIFACT_ABS].sort());
   });
 });
 

@@ -77,6 +77,7 @@ export const acBackendModule: BackendModule = {
         acService: service as AcService,
         db: ctx.db,
         cwd: ctx.cwd,
+        roots: ctx.roots,
         host: ctx.host,
       }),
   },

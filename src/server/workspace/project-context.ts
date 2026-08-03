@@ -585,6 +585,7 @@ async function buildInner(
     db: db.handle,
     host: pluginHost,
     cwd,
+    roots: effectiveRoots,
     ws,
     tagsService,
     versionService,
