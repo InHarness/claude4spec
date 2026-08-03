@@ -181,7 +181,14 @@ export function DirectoriesSection() {
     setDraft(buildDraft(config));
   }, [config]);
 
-  const { errors, warnings } = useMemo(() => validateDraft(draft), [draft]);
+  // Nothing to validate until the config query resolves: `buildDraft` seeds every
+  // dir with '' while `config` is undefined, and the artifact-dir rules below
+  // would flag that empty placeholder as six errors on every hard load of
+  // /settings (MainShell mounts this section before the query lands).
+  const { errors, warnings } = useMemo(
+    () => (config ? validateDraft(draft) : { errors: [], warnings: [] }),
+    [draft, config],
+  );
 
   const dirty = useMemo(() => {
     if (!config) return false;

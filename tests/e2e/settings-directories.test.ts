@@ -81,8 +81,11 @@ describe.skipIf(!BASE)('settings — Directories: plansDir (0.2.8)', () => {
     await browser?.close();
   });
 
+  /** The settings page renders several cards, each with its own Save — scope to this one. */
+  const section = () => page.locator('#directories');
   const plansInput = () =>
-    page.locator('label', { hasText: 'Plans directory' }).locator('input').first();
+    section().locator('label', { hasText: 'Plans directory' }).locator('input').first();
+  const saveButton = () => section().getByRole('button', { name: 'Save' });
 
   it('renders a Plans directory control alongside the other artifact dirs', async () => {
     await expect.poll(() => plansInput().count()).toBeGreaterThan(0);
@@ -92,19 +95,24 @@ describe.skipIf(!BASE)('settings — Directories: plansDir (0.2.8)', () => {
   it('saves a new plansDir and persists it', async () => {
     const next = '.claude4spec/roadmap';
     await plansInput().fill(next);
-    await page.getByRole('button', { name: /^Save$/ }).click();
+    await saveButton().click();
     await expect.poll(async () => String((await readConfig(project.id)).plansDir), {
       timeout: 10_000,
     }).toBe(next);
   });
 
   it('refuses a plansDir colliding with briefsDir, with a visible message', async () => {
-    const config = await readConfig(project.id);
-    const briefsDir = String(config.briefsDir);
+    const before = await readConfig(project.id);
+    const briefsDir = String(before.briefsDir);
+    const plansBefore = String(before.plansDir);
     await plansInput().fill(briefsDir);
-    await expect.poll(() => page.getByText(/must differ/i).count(), { timeout: 5_000 }).toBeGreaterThan(0);
-    // …and the collision never reaches the server.
-    expect(String((await readConfig(project.id)).plansDir)).not.toBe(briefsDir);
+    await expect.poll(() => section().getByText(/must differ/i).count(), { timeout: 5_000 }).toBeGreaterThan(0);
+    // The rule is enforced before the request, not by a rejected round-trip: Save
+    // is disabled, so clicking it cannot send the colliding value…
+    await expect.poll(() => saveButton().isDisabled(), { timeout: 5_000 }).toBe(true);
+    await saveButton().click({ force: true }).catch(() => {});
+    // …and the persisted value is still exactly what it was before this case.
+    expect(String((await readConfig(project.id)).plansDir)).toBe(plansBefore);
   });
 
   it('logged no console errors and no failed responses along the way', () => {

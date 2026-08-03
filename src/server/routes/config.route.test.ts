@@ -320,6 +320,24 @@ describe('PATCH /config — plansDir is editable and collision-checked (C17, 0.2
     expect(res.body.error.message).toMatch(/plansDir must not escape project root/);
   });
 
+  // A config.json that already collides is reachable — boot only warns about it
+  // (project-context.ts). If the guard fired on every PATCH, such a project could
+  // never be repaired: even closing the onboarding wizard would 400.
+  it('does not block an unrelated PATCH on a project whose dirs already collide', async () => {
+    fs.writeFileSync(
+      configPath(dir),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', briefsDir: 'same', patchesDir: 'same' }),
+    );
+    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    expect(res.status).toBe(200);
+  });
+
+  it('still blocks a dir PATCH that would create the collision, normalizing the paths first', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: './.claude4spec/briefs/' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/briefsDir and plansDir must differ/);
+  });
+
   it('accepts a briefs/patches/plans triple moved together', async () => {
     const res = await request(app())
       .patch('/config')

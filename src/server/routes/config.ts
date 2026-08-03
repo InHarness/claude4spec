@@ -230,21 +230,35 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         plansDir: patch.plansDir ?? currentConfig.plansDir,
       };
 
-      // 0.2.8 (C17): briefs/patches/plans must differ — checked on ANY dir PATCH,
-      // not just one that also carries `roots`. The Settings screen sends a
-      // diff-only payload, so `{ plansDir: <briefsDir> }` arrives with no `roots`
-      // and used to slip past this guard entirely (boot-time validation would
-      // then reject the project on the next start).
-      const artifactDirPairs: Array<[string, string, string, string]> = [
-        ['briefsDir', effectiveDirs.briefsDir, 'patchesDir', effectiveDirs.patchesDir],
-        ['briefsDir', effectiveDirs.briefsDir, 'plansDir', effectiveDirs.plansDir],
-        ['patchesDir', effectiveDirs.patchesDir, 'plansDir', effectiveDirs.plansDir],
-      ];
-      for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
-        if (aDir === bDir) {
-          return res
-            .status(400)
-            .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
+      // 0.2.8 (C17): briefs/patches/plans must differ — checked on ANY PATCH that
+      // touches one of them, not just one that also carries `roots`. The Settings
+      // screen sends a diff-only payload, so `{ plansDir: <briefsDir> }` arrives
+      // with no `roots` and used to slip past this guard entirely, leaving the
+      // project silently double-indexing every file under two markers (boot only
+      // WARNS about a collision — see project-context.ts).
+      //
+      // Scoped to requests that touch the three dirs on purpose: a project whose
+      // config.json ALREADY collides is a reachable state (boot let it through,
+      // and so did this route before 0.2.8). Enforcing on every PATCH would make
+      // such a project unfixable — every unrelated write, including the
+      // `{ onboardingCompleted: true }` that closes the wizard, would 400.
+      const touchesArtifactDirs = (['briefsDir', 'patchesDir', 'plansDir'] as const).some(
+        (f) => f in body,
+      );
+      if (touchesArtifactDirs) {
+        // Compare RESOLVED paths, as boot does — './x', 'x/' and 'x' are the same
+        // directory, and a guard that only string-compares waves them through.
+        const artifactDirPairs: Array<[string, string, string, string]> = [
+          ['briefsDir', effectiveDirs.briefsDir, 'patchesDir', effectiveDirs.patchesDir],
+          ['briefsDir', effectiveDirs.briefsDir, 'plansDir', effectiveDirs.plansDir],
+          ['patchesDir', effectiveDirs.patchesDir, 'plansDir', effectiveDirs.plansDir],
+        ];
+        for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
+          if (path.resolve(cwd, aDir) === path.resolve(cwd, bDir)) {
+            return res
+              .status(400)
+              .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
+          }
         }
       }
 
