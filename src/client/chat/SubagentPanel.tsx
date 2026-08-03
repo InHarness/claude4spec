@@ -228,7 +228,7 @@ export function SubagentPanel({ block, agentName, prompt, invocation, result }: 
           title={agentName ?? 'subagent'}
           items={[
             {
-              toolName: agentName ?? 'Task',
+              toolName: agentName ?? 'Agent',
               input: invocation ?? { description: taskDescription, prompt },
               result: result ? parseToolResult(result.content) : null,
               isError: result?.isError ?? false,

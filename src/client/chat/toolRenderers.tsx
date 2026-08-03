@@ -578,6 +578,64 @@ const briefRenderers: Record<string, ToolRenderer> = {
 
 // --- Built-in tools ---
 
+/**
+ * Claude Code v2.1.63 renamed the native subagent tool `Task` → `Agent`. Both
+ * literals reach the client — the SDK emits `Agent` in `tool_use` blocks while
+ * `system:init` still reports `Task` — and `getRenderer` is an exact-name
+ * lookup, so the renderer is registered under both names (one object, aliased).
+ */
+const subagentRenderer: ToolRenderer = {
+  summary(i) {
+    const { description, subagent_type } = cx(i).input;
+    const base = typeof description === 'string' ? description : 'Subagent task';
+    return subagent_type ? `${base} (${subagent_type})` : base;
+  },
+  renderInput(i) {
+    const { description, subagent_type, prompt } = cx(i).input;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {description ? kv('What', String(description)) : null}
+        {subagent_type
+          ? kv(
+              'Agent',
+              <span
+                className="font-mono text-[11px] px-1.5 py-[1px] rounded-sm"
+                style={{
+                  background: 'var(--c-panel)',
+                  border: '1px solid var(--c-hair)',
+                  color: 'var(--c-ink)',
+                }}
+              >
+                {String(subagent_type)}
+              </span>,
+            )
+          : null}
+        {prompt
+          ? kv(
+              'Prompt',
+              <pre
+                className="font-mono text-[11.5px] scroll-thin"
+                style={{
+                  background: 'var(--c-panel)',
+                  color: 'var(--c-ink)',
+                  padding: '6px 8px',
+                  borderRadius: 4,
+                  margin: 0,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 200,
+                  overflow: 'auto',
+                }}
+              >
+                {clip(String(prompt), 1200)}
+              </pre>,
+            )
+          : null}
+      </div>
+    );
+  },
+};
+
 const builtinRenderers: Record<string, ToolRenderer> = {
   Read: {
     summary(i) {
@@ -924,57 +982,8 @@ const builtinRenderers: Record<string, ToolRenderer> = {
       );
     },
   },
-  Task: {
-    summary(i) {
-      const { description, subagent_type } = cx(i).input;
-      const base = typeof description === 'string' ? description : 'Subagent task';
-      return subagent_type ? `${base} (${subagent_type})` : base;
-    },
-    renderInput(i) {
-      const { description, subagent_type, prompt } = cx(i).input;
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-          {description ? kv('What', String(description)) : null}
-          {subagent_type
-            ? kv(
-                'Agent',
-                <span
-                  className="font-mono text-[11px] px-1.5 py-[1px] rounded-sm"
-                  style={{
-                    background: 'var(--c-panel)',
-                    border: '1px solid var(--c-hair)',
-                    color: 'var(--c-ink)',
-                  }}
-                >
-                  {String(subagent_type)}
-                </span>,
-              )
-            : null}
-          {prompt
-            ? kv(
-                'Prompt',
-                <pre
-                  className="font-mono text-[11.5px] scroll-thin"
-                  style={{
-                    background: 'var(--c-panel)',
-                    color: 'var(--c-ink)',
-                    padding: '6px 8px',
-                    borderRadius: 4,
-                    margin: 0,
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word',
-                    maxHeight: 200,
-                    overflow: 'auto',
-                  }}
-                >
-                  {clip(String(prompt), 1200)}
-                </pre>,
-              )
-            : null}
-        </div>
-      );
-    },
-  },
+  Task: subagentRenderer,
+  Agent: subagentRenderer,
   TodoWrite: {
     summary(i) {
       const todos = cx(i).input.todos;

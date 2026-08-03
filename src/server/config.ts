@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS } from '../shared/types.js';
+import { type Root, type RootSidebar, DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../shared/types.js';
 import { hasDotSegment } from '../shared/page-files.js';
 
 export interface Config {
@@ -124,9 +124,10 @@ export interface GitSyncConfig {
    *
    * 0.1.124: `enabled` alone now also gates commit-on-release/commit-on-pull —
    * the separate `syncCommitOnRelease` sub-toggle was removed (there is no
-   * longer a "git on, but doesn't commit" state). Any `config.json` still
-   * carrying `syncCommitOnRelease` has it silently dropped on load (no
-   * migration, no `$schemaVersion` bump).
+   * longer a "git on, but doesn't commit" state). 0.2.8: a `config.json` still
+   * carrying `syncCommitOnRelease` is no longer silently dropped — the v4
+   * migration maps `true` onto `enabled` (see {@link migrateConfigToV4}), so a
+   * project that had commit-on-release keeps it after upgrading.
    */
   enabled?: boolean;
   /** When on, a successful remote push best-effort `git push`es the current branch. */
@@ -768,9 +769,11 @@ function validate(raw: unknown): Partial<Config> {
       }
       git.enabled = gr.enabled;
     }
-    // 0.1.124: `syncCommitOnRelease` is no longer a field — an existing
-    // config.json that still carries it is silently dropped here (not copied
-    // into `git`), no error, no `$schemaVersion` bump.
+    // 0.1.124: `syncCommitOnRelease` is no longer a field — it is not copied
+    // into `git` here, and not an error either. Carrying it over to `enabled`
+    // is the v4 migration's job (`migrateConfigToV4`), which runs at project
+    // activation; this function must stay tolerant since it also runs on every
+    // boot, including on files the migration has not reached yet.
     if ('syncPushOnPush' in gr) {
       if (typeof gr.syncPushOnPush !== 'boolean') {
         throw typeError('git.syncPushOnPush', 'boolean', gr.syncPushOnPush);
@@ -1003,11 +1006,43 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
 }
 
 /**
+ * 0.2.8: fill in the fields a `roots[]` entry is MISSING. `validateRoot` rejects
+ * an incomplete entry outright (it no longer defaults anything at load time), so
+ * materializing starting values is the migration's job — a config written before
+ * a field existed would otherwise be permanently unloadable. Only ABSENT keys are
+ * filled; a present-but-malformed value stays for `validateRoot` to reject.
+ * Returns true when anything was written into `entry`.
+ */
+function materializeRootFields(entry: Record<string, unknown>): boolean {
+  const isBuiltinPages = entry.builtin === true || entry.id === 'pages';
+  // IDENTITY (`id`, `name`, `dir`) is deliberately absent from both default sets.
+  // A behaviour flag has a defensible starting value; an identity field does not
+  // — inventing `dir: 'pages'` for an entry that never had one would point the
+  // root at a directory nobody chose and hand back an empty sidebar instead of
+  // the loud `roots[i].dir expected non-empty string` the user can act on.
+  const { id: _id, name: _name, dir: _dir, ...builtinDefaults } = builtinPagesRoot();
+  const defaults: Record<string, unknown> = isBuiltinPages
+    ? builtinDefaults
+    : { builtin: false, ...DEFAULT_USER_ROOT_PROPS };
+  let changed = false;
+  for (const [key, value] of Object.entries(defaults)) {
+    if (key in entry) continue;
+    entry[key] = Array.isArray(value) ? [...value] : value;
+    changed = true;
+  }
+  return changed;
+}
+
+/**
  * 0.1.96 config v4 migration — runs from the project activation hook right after
  * `migrateConfigToV3`. Maps the legacy `pagesDir` scalar to the built-in `pages`
  * root (with default props), deletes `pagesDir`, and bumps `$schemaVersion` to 4.
  * Does NOT touch `briefsDir`/`patchesDir`/`entitiesDir` (they stay scalars).
- * Atomic write; no-op when already v4-shaped (`roots[]` present, no `pagesDir`).
+ *
+ * 0.2.8 adds two repairs that must run even on an ALREADY-v4 file, because both
+ * fix shapes the current loader rejects (or silently drops) rather than tolerates:
+ * `git.syncCommitOnRelease` → `git.enabled`, and materialization of every field
+ * on every `roots[]` entry. Atomic write; no-op when nothing needed changing.
  */
 export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migrated: boolean } {
   const file = configPath(cwd);
@@ -1026,23 +1061,70 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   }
   const raw = parsed as Record<string, unknown>;
 
+  // A file from a NEWER claude4spec is not ours to touch. Repairing it would
+  // mean re-adding fields that version deliberately dropped and stamping
+  // `$schemaVersion` back down to 4 — a silent downgrade. Hand it to readConfig,
+  // which refuses it with "schema version N not supported" and leaves it intact.
+  if (typeof raw.$schemaVersion === 'number' && raw.$schemaVersion > CURRENT_SCHEMA_VERSION) {
+    return { config: readConfig(cwd), migrated: false };
+  }
+
   const alreadyV4 =
     typeof raw.$schemaVersion === 'number' &&
     raw.$schemaVersion >= 4 &&
     Array.isArray(raw.roots) &&
     !('pagesDir' in raw);
-  if (alreadyV4) {
-    return { config: readConfig(cwd), migrated: false };
-  }
+
+  let changed = false;
 
   // Map legacy pagesDir → built-in pages root. Preserve an existing `roots[]` if
   // one is somehow already present (defensive); otherwise synthesize from pagesDir.
   if (!Array.isArray(raw.roots)) {
     const legacyDir = typeof raw.pagesDir === 'string' && raw.pagesDir.trim() !== '' ? raw.pagesDir : 'pages';
     raw.roots = [builtinPagesRoot(legacyDir)] as unknown as Root[];
+    changed = true;
   }
-  delete raw.pagesDir;
+  if ('pagesDir' in raw) {
+    delete raw.pagesDir;
+    changed = true;
+  }
+
+  // Every roots[] entry must carry all ten fields — see materializeRootFields.
+  for (const entry of raw.roots as unknown[]) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue;
+    if (materializeRootFields(entry as Record<string, unknown>)) changed = true;
+  }
+
+  // `git.syncCommitOnRelease` (removed in 0.1.124) becomes the `git.enabled`
+  // master toggle, which alone activates commit-on-release. Only a config that
+  // has not yet stated `enabled` is mapped — an explicit value always wins.
+  if (raw.git !== null && typeof raw.git === 'object' && !Array.isArray(raw.git)) {
+    const git = raw.git as Record<string, unknown>;
+    if ('syncCommitOnRelease' in git) {
+      if (!('enabled' in git) && git.syncCommitOnRelease === true) {
+        git.enabled = true;
+        // Say it out loud. `enabled` is the master switch, so restoring the
+        // pre-0.1.118 intent also re-arms commit-on-pull and stops `.gitignore`
+        // ignoring the artifact dirs. A user who has since come to rely on git
+        // being off must be able to see WHY their repo started taking commits.
+        console.log(
+          `[config] ${cwd}: legacy git.syncCommitOnRelease carried onto git.enabled — git sync is ON for this project (set "git": { "enabled": false } to turn it back off)`,
+        );
+      }
+      delete git.syncCommitOnRelease;
+      changed = true;
+    }
+  }
+
+  if (alreadyV4 && !changed) {
+    return { config: readConfig(cwd), migrated: false };
+  }
   raw.$schemaVersion = 4;
+  // Validate BEFORE writing. A file this migration cannot fully repair (missing
+  // `id`, dangling `linkTargets`, …) fails to load either way — but it must fail
+  // with the user's file untouched, not half-rewritten. In a git-tracked spec
+  // repo a partial rewrite is a dirty tree the next auto-commit would sweep up.
+  validate(raw);
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true };
 }
