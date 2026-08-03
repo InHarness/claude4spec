@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, type Config } from '../config.js';
+import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
 import { ensureMcpJson } from '../mcp/ensure-mcp-json.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
@@ -69,18 +69,29 @@ export function bootstrapProject(
   // M27: capture pre-bootstrap state for clone rollback — `.claude4spec/` is
   // created lazily by loadOrCreateConfig, so check existence BEFORE it.
   const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude4spec'));
-  const { created: configCreated, path: configFilePath } = loadOrCreateConfig(cwd, {
-    name: opts.name,
-    pagesDir: opts.pagesDir,
-    remoteApiUrl: opts.remoteApiUrl,
-  });
+  // 0.2.8: migrations run BEFORE `loadOrCreateConfig`, not after. That function
+  // validates the file it reads, so on exactly the outdated shapes a migration
+  // exists to repair it threw first and the repair never ran — the project
+  // stayed unloadable with the fix sitting one line below the throw. Both
+  // migrations no-op on a missing file, so a fresh bootstrap is unaffected.
+  //
   // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
   // the workspace registry (first-wins — an existing defaultPort stays).
   const { carried } = migrateConfigToV3(cwd);
   registry.carryDefaults(workspace.name, carried);
   // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
-  // root (config.roots[]). Idempotent; no-op for already-v4 configs.
-  const { config } = migrateConfigToV4(cwd);
+  // root (config.roots[]); 0.2.8 also materializes absent root fields and
+  // carries a legacy `git.syncCommitOnRelease`. Idempotent.
+  migrateConfigToV4(cwd);
+  const { created: configCreated, path: configFilePath } = loadOrCreateConfig(cwd, {
+    name: opts.name,
+    pagesDir: opts.pagesDir,
+    remoteApiUrl: opts.remoteApiUrl,
+  });
+  // Re-read AFTER loadOrCreateConfig so a freshly seeded file (and any CLI
+  // overrides it applied) is reflected — the migration's own return value
+  // predates that write.
+  const config = readConfig(cwd);
 
   const gitignoreExisted = fs.existsSync(path.join(cwd, '.gitignore'));
   ensureGitignore(cwd, {

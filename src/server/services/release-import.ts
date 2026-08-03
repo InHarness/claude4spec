@@ -140,7 +140,7 @@ export class ReleaseImportService {
       //     the clone. Checked BEFORE the restore so nothing is written for a clone
       //     that cannot be faithful — a clone that silently drops part of the source
       //     config is worse than one that fails loudly.
-      assertBundleWritingStyleAvailable(bundleConfig, this.skillRegistry);
+      assertCloneWritingStyleAvailable(bundleConfig, this.skillRegistry);
 
       // 5. Restore (M17) — UPSERTs entities + pages with release_id = NULL.
       await this.releaseService.restoreBundleArchive(createReadStream(tarGzPath));
@@ -359,7 +359,7 @@ export function buildClonePatch(
  *
  * `null`/absent = the source project deliberately had no style — not an error.
  */
-export function assertBundleWritingStyleAvailable(
+export function assertCloneWritingStyleAvailable(
   bundleConfig: BundleConfig | null,
   skillRegistry: Pick<SkillRegistry, 'isSelectable' | 'unselectableReason'>,
 ): void {

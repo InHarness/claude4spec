@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildClonePatch, assertBundleWritingStyleAvailable } from './release-import.js';
+import { buildClonePatch, assertCloneWritingStyleAvailable } from './release-import.js';
 import type { BundleConfig } from './release-bundle.js';
 import { DomainError } from './tags.js';
 import { builtinPagesRoot } from '../config.js';
@@ -82,7 +82,7 @@ describe('buildClonePatch — the clone is faithful to its bundle (C6/C7, 0.2.8)
   });
 });
 
-describe('assertBundleWritingStyleAvailable — a style we cannot honour aborts the clone (C6)', () => {
+describe('assertCloneWritingStyleAvailable — a style we cannot honour aborts the clone (C6)', () => {
   const registry = (selectable: string[]) => ({
     isSelectable: (slug: string) => selectable.includes(slug),
     unselectableReason: (slug: string) => `is not a selectable writing-style skill (${slug})`,
@@ -91,27 +91,31 @@ describe('assertBundleWritingStyleAvailable — a style we cannot honour aborts 
   it('throws naming the missing style when the bundle points at one we do not have', () => {
     let thrown: unknown;
     try {
-      assertBundleWritingStyleAvailable(bundle({ writingStyle: 'acme-house-style' }), registry([]));
+      assertCloneWritingStyleAvailable(bundle({ writingStyle: 'acme-house-style' }), registry([]));
     } catch (err) {
       thrown = err;
     }
     expect(thrown).toBeInstanceOf(DomainError);
+    // The code is API-visible (it reaches the CLI's rollback path and the spec's
+    // error list), so it is pinned here — a message-only assertion let the
+    // identifier drift from the spec unnoticed.
+    expect((thrown as DomainError).code).toBe('CLONE_WRITING_STYLE_UNAVAILABLE');
     expect((thrown as DomainError).message).toContain('acme-house-style');
     expect((thrown as DomainError).message).toContain('clone aborted');
   });
 
   it('passes when the style is installed locally', () => {
     expect(() =>
-      assertBundleWritingStyleAvailable(bundle({ writingStyle: 'inharness' }), registry(['inharness'])),
+      assertCloneWritingStyleAvailable(bundle({ writingStyle: 'inharness' }), registry(['inharness'])),
     ).not.toThrow();
   });
 
   // `null` is a legal value — the source project deliberately had no style.
   it('passes for an explicit null style', () => {
-    expect(() => assertBundleWritingStyleAvailable(bundle({ writingStyle: null }), registry([]))).not.toThrow();
+    expect(() => assertCloneWritingStyleAvailable(bundle({ writingStyle: null }), registry([]))).not.toThrow();
   });
 
   it('passes for a bundle with no config at all', () => {
-    expect(() => assertBundleWritingStyleAvailable(null, registry([]))).not.toThrow();
+    expect(() => assertCloneWritingStyleAvailable(null, registry([]))).not.toThrow();
   });
 });

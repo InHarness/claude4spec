@@ -1015,8 +1015,14 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
  */
 function materializeRootFields(entry: Record<string, unknown>): boolean {
   const isBuiltinPages = entry.builtin === true || entry.id === 'pages';
+  // IDENTITY (`id`, `name`, `dir`) is deliberately absent from both default sets.
+  // A behaviour flag has a defensible starting value; an identity field does not
+  // — inventing `dir: 'pages'` for an entry that never had one would point the
+  // root at a directory nobody chose and hand back an empty sidebar instead of
+  // the loud `roots[i].dir expected non-empty string` the user can act on.
+  const { id: _id, name: _name, dir: _dir, ...builtinDefaults } = builtinPagesRoot();
   const defaults: Record<string, unknown> = isBuiltinPages
-    ? { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }
+    ? builtinDefaults
     : { builtin: false, ...DEFAULT_USER_ROOT_PROPS };
   let changed = false;
   for (const [key, value] of Object.entries(defaults)) {
@@ -1055,6 +1061,14 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   }
   const raw = parsed as Record<string, unknown>;
 
+  // A file from a NEWER claude4spec is not ours to touch. Repairing it would
+  // mean re-adding fields that version deliberately dropped and stamping
+  // `$schemaVersion` back down to 4 — a silent downgrade. Hand it to readConfig,
+  // which refuses it with "schema version N not supported" and leaves it intact.
+  if (typeof raw.$schemaVersion === 'number' && raw.$schemaVersion > CURRENT_SCHEMA_VERSION) {
+    return { config: readConfig(cwd), migrated: false };
+  }
+
   const alreadyV4 =
     typeof raw.$schemaVersion === 'number' &&
     raw.$schemaVersion >= 4 &&
@@ -1087,7 +1101,16 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
   if (raw.git !== null && typeof raw.git === 'object' && !Array.isArray(raw.git)) {
     const git = raw.git as Record<string, unknown>;
     if ('syncCommitOnRelease' in git) {
-      if (!('enabled' in git) && git.syncCommitOnRelease === true) git.enabled = true;
+      if (!('enabled' in git) && git.syncCommitOnRelease === true) {
+        git.enabled = true;
+        // Say it out loud. `enabled` is the master switch, so restoring the
+        // pre-0.1.118 intent also re-arms commit-on-pull and stops `.gitignore`
+        // ignoring the artifact dirs. A user who has since come to rely on git
+        // being off must be able to see WHY their repo started taking commits.
+        console.log(
+          `[config] ${cwd}: legacy git.syncCommitOnRelease carried onto git.enabled — git sync is ON for this project (set "git": { "enabled": false } to turn it back off)`,
+        );
+      }
       delete git.syncCommitOnRelease;
       changed = true;
     }
@@ -1097,6 +1120,11 @@ export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migr
     return { config: readConfig(cwd), migrated: false };
   }
   raw.$schemaVersion = 4;
+  // Validate BEFORE writing. A file this migration cannot fully repair (missing
+  // `id`, dangling `linkTargets`, …) fails to load either way — but it must fail
+  // with the user's file untouched, not half-rewritten. In a git-tracked spec
+  // repo a partial rewrite is a dirty tree the next auto-commit would sweep up.
+  validate(raw);
   atomicWrite(file, JSON.stringify(raw, null, 2) + '\n');
   return { config: readConfig(cwd), migrated: true };
 }

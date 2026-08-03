@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
-import { readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
+import { migrateConfigToV4, readConfig, resolveDirAbs, validateRootDirs } from '../config.js';
 import type { Root } from '../../shared/types.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
@@ -238,6 +238,13 @@ async function buildInner(
   const pendingInputs = new Map<string, PendingInput>();
 
   const skillRegistry = SkillRegistry.load(findSkillsRoots(cwd));
+  // 0.2.8: config migrations belong to project ACTIVATION, not to bootstrap
+  // alone. `bootstrapProject` runs only for the CLI `--cwd` project and for
+  // freshly added ones, so a workspace's other projects — opened here, from the
+  // switcher — never saw a migration: the same workspace could hold one repaired
+  // project and two carrying the shape that no longer loads. Idempotent, and it
+  // writes only when something actually changed.
+  migrateConfigToV4(cwd);
   const bootConfig = readConfig(cwd);
   // 0.1.96: page roots come from config.roots[]. The CLI --pages override
   // applies to the built-in 'pages' root's dir only.

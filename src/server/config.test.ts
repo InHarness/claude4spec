@@ -287,6 +287,27 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(migrateConfigToV4(dir).migrated).toBe(false);
   });
 
+  it('migrateConfigToV4 does NOT invent a root identity field', () => {
+    // A missing `dir` must stay the loud `roots[0].dir` error, not become './pages'.
+    writeRaw({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [{ id: 'pages', name: 'Pages', builtin: true, sidebar: 'accordion' }],
+    });
+    expect(() => migrateConfigToV4(dir)).toThrow(/roots\[0\]\.dir/);
+    // ...and the unrepairable file is left exactly as it was, not half-written.
+    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+    expect(raw.roots[0]).toEqual({ id: 'pages', name: 'Pages', builtin: true, sidebar: 'accordion' });
+    expect('briefTarget' in raw.roots[0]).toBe(false);
+  });
+
+  it('migrateConfigToV4 refuses a config from a NEWER schema version', () => {
+    writeRaw({ $schemaVersion: 99, name: 'X', roots: [builtinPagesRoot('pages')] });
+    expect(() => migrateConfigToV4(dir)).toThrow(/schema version 99 not supported/);
+    // Not downgraded to 4 on the way out.
+    expect(JSON.parse(fs.readFileSync(configPath(dir), 'utf8')).$schemaVersion).toBe(99);
+  });
+
   it('migrateConfigToV4 carries a legacy git.syncCommitOnRelease onto git.enabled', () => {
     writeRaw({
       $schemaVersion: 4,
