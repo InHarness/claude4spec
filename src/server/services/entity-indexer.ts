@@ -102,9 +102,15 @@ export class EntityIndexerService {
    * The rebuild must clear a deactivated type's rows even though it will not
    * refill them: the pre-0.2.2 code cleared all seven core tables
    * unconditionally, so switching to active-only left orphaned rows that nothing
-   * would ever re-index or remove. Their `entity_tag` rows ARE still cleared
-   * unconditionally, so the leftovers would have been tag-less phantoms visible
-   * to reference resolution and count stats with no way to correct them.
+   * would ever re-index or remove.
+   *
+   * 0.2.7 — their `entity_tag` rows are NO LONGER cleared with them. The clear
+   * is now scoped to the types the rebuild will actually refill, so a deactivated
+   * type's tag assignments survive and are still correct when it is reactivated;
+   * wiping them made reactivation lose data the files never stopped describing.
+   * The assignments outlive the entity rows in the meantime, which is harmless:
+   * `entity_tag.entity_slug` carries no FK (it is polymorphic on `entity_type`),
+   * and nothing resolves an assignment whose type is not mounted.
    */
   private clearableTables(): string[] {
     const seen = new Set<string>();
@@ -161,7 +167,21 @@ export class EntityIndexerService {
         // order (dependents first), so a dependent's FK never blocks the parent's
         // DELETE. Table names come from `module.table`, so an active plugin type is
         // cleared too — the old hardcoded list silently left plugin rows behind.
-        this.db.exec('DELETE FROM entity_tag;');
+        // 0.2.7 — SCOPED to the types this rebuild will refill. The unscoped
+        // `DELETE FROM entity_tag` used to take every assignment in the project,
+        // including those of types outside the rebuild, and nothing put them back.
+        // The scope rule is a property of the whole transaction, not of one
+        // statement: when it closes, no row whose type lies outside the rebuild
+        // may be missing — by explicit DELETE or by FK cascade (see the `tag`
+        // reconcile below, which is the other half of the same rule).
+        const rebuiltTypes = ordered.map((m) => m.type);
+        if (rebuiltTypes.length > 0) {
+          this.db
+            .prepare(
+              `DELETE FROM entity_tag WHERE entity_type IN (${rebuiltTypes.map(() => '?').join(', ')})`,
+            )
+            .run(...rebuiltTypes);
+        }
         // Module-declared auxiliary tables (junctions, side indexes) before the
         // entity tables they hang off. The host does not know what any of them
         // mean — a module declares `backend.auxTables` and the rebuild clears
@@ -197,8 +217,21 @@ export class EntityIndexerService {
           }
           this.db.exec(`DELETE FROM ${table};`);
         }
-        this.db.exec('DELETE FROM tag;');
-        this.indexTagsFile(); // tags first — so entity tag refs resolve to real rows
+        /**
+         * 0.2.7 — `tag` is NOT cleared. `entity_tag.tag_slug` is a real FK with
+         * `ON DELETE CASCADE`, enforced by the engine (`PRAGMA foreign_keys = ON`),
+         * so emptying `tag` swept every assignment in the table — globally, for
+         * every type, in scope or not — a few statements after the scoped DELETE
+         * above had done its job correctly. Scoping that DELETE alone looks like
+         * the fix and is not: it passes "the delete touched only its own types"
+         * while the cascade still takes everything.
+         *
+         * The registry is RECONCILED instead of emptied (see `indexTagsFile`), so
+         * the cascade fires only for tags that genuinely left `tags.json`. General
+         * rule: a table whose clearing has effects beyond its own scope must not
+         * be cleared.
+         */
+        this.indexTagsFile({ reconcile: true }); // tags first — so entity tag refs resolve to real rows
         for (const m of ordered) {
           const type = m.type as RawEntityType;
           for (const slug of this.store.listType(type)) {
@@ -328,7 +361,21 @@ export class EntityIndexerService {
     return true;
   }
 
-  private indexTagsFile(): void {
+  /**
+   * Project `tags.json` onto the `tag` table.
+   *
+   * `reconcile: true` (the full rebuild) additionally DELETES the slugs that have
+   * disappeared from the file — the half of the rebuild that used to be done by
+   * emptying the table first. Reconciling is not the same operation: emptying
+   * cascaded `entity_tag` away for every tag, reconciling cascades only for the
+   * ones actually removed.
+   *
+   * The watch path leaves `reconcile` off. It is handed ONE changed file and has
+   * no way to tell "this tag was deleted" from "this write has not landed yet",
+   * and a wrong guess there cascades away real assignments; the next full rebuild
+   * settles it.
+   */
+  private indexTagsFile(opts: { reconcile?: boolean } = {}): void {
     let tags;
     try {
       tags = this.store.readTags();
@@ -336,6 +383,10 @@ export class EntityIndexerService {
       console.warn(`[entity-indexer] tags.json parse failed: ${(err as Error).message}`);
       return;
     }
+    // `readTags()` answers `[]` for an absent file too. Reconciling against a file
+    // that is not there would delete the whole registry (and cascade every
+    // assignment) on a project that has not exported its tags to text yet.
+    const reconcile = opts.reconcile === true && this.store.tagsFileExists();
     const upsert = this.db.prepare(
       `INSERT INTO tag (slug, name, color, description) VALUES (?, ?, ?, ?)
          ON CONFLICT(slug) DO UPDATE SET name = excluded.name, color = excluded.color, description = excluded.description`,
@@ -343,6 +394,15 @@ export class EntityIndexerService {
     this.db
       .transaction(() => {
         for (const t of tags) upsert.run(t.slug, t.name, t.color ?? null, t.description ?? null);
+        if (!reconcile) return;
+        const slugs = tags.map((t) => t.slug);
+        if (slugs.length === 0) {
+          this.db.exec('DELETE FROM tag;');
+          return;
+        }
+        this.db
+          .prepare(`DELETE FROM tag WHERE slug NOT IN (${slugs.map(() => '?').join(', ')})`)
+          .run(...slugs);
       })();
   }
 }

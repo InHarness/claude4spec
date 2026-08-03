@@ -147,6 +147,41 @@ describe('entity round trip is a fixpoint', () => {
     expect(after.createdAt).toBe(before.createdAt);
     expect(after.updatedAt >= before.updatedAt).toBe(true);
   });
+
+  /**
+   * 0.2.7 — where a partial update takes `createdAt` FROM, when the two possible
+   * sources disagree.
+   *
+   * Every test above keeps file and row in step, so both answers look right and
+   * the question never gets asked. Force them apart and only one source is
+   * admissible: the file is authoritative and the row is its projection, so
+   * reading the row reverses the direction of flow — and since `persist`
+   * regenerates the file from the row, the wrong answer does not stay in the
+   * index, it is written back into the source.
+   *
+   * Unreachable through `snapshot → restore → snapshot`, which never assembles
+   * an object from a delta — which is why this was invisible until 0.2.7.
+   */
+  it('a partial update takes createdAt from the FILE, not from the index row', async () => {
+    await seed(t);
+    await indexerFor(t).indexAll();
+
+    const fileCreatedAt = readSystemFields(t.entityStore.read('ui-view', 'users'))!.createdAt;
+    // Push the projection out of step with its source, behind the write path's
+    // back — the state a stale or hand-edited index lands in.
+    const rowCreatedAt = '2001-01-01T00:00:00.000Z';
+    t.db.prepare(`UPDATE ui_view SET created_at = ? WHERE slug = 'users'`).run(rowCreatedAt);
+
+    const res = await request(t.app).patch('/api/ui-views/users').send({ description: 'changed again' });
+    expect(res.status).toBe(200);
+
+    const after = t.rawReader.getEntity('ui-view', 'users')!.system!;
+    expect(after.createdAt).toBe(fileCreatedAt);
+    expect(after.createdAt).not.toBe(rowCreatedAt);
+    // And the file the update just rewrote still says the same thing.
+    expect(readSystemFields(t.entityStore.read('ui-view', 'users'))!.createdAt).toBe(fileCreatedAt);
+    expect(after.updatedAt).not.toBe(fileCreatedAt);
+  });
 });
 
 /**

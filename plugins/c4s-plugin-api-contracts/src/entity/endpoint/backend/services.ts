@@ -17,7 +17,7 @@ import type { TagsServiceLike as TagsService } from '../../../host-kit/host-type
 import type { VersionServiceLike as VersionService } from '../../../host-kit/host-types.js';
 import type { EntityStoreLike as EntityStore } from '../../../host-kit/host-types.js';
 import type { MutateOpts } from '../../../host-kit/mutate-opts.js';
-import { ENTITY_LIST_ORDER, resolveStamp } from '../../../host-kit/system-stamp.js';
+import { ENTITY_LIST_ORDER, existingStampFromFile, resolveStamp } from '../../../host-kit/system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -203,7 +203,11 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
 
       // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
       // existing entity is an UPDATE, and the file's value must win.
-      const stamp = resolveStamp('endpoint', opts, current);
+      // 0.2.7: which is why it is read from the FILE. The row is a projection of
+      // the file; sourcing `createdAt` from it reverses the flow, and the
+      // `persist` below writes the divergence back into the source. The row
+      // survives only as the fallback for when there is no usable file.
+      const stamp = resolveStamp('endpoint', opts, existingStampFromFile(this.store, 'endpoint', slug) ?? current);
       this.db
         .prepare(
           `UPDATE endpoint

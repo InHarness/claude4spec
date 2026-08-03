@@ -88,6 +88,44 @@ describe('host-kit system-stamp is in parity with the host original', () => {
     expect(b.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
   });
 
+  /**
+   * 0.2.7 — the kit inlines its own `readSystemFields` (the host's lives in
+   * `serialization/system-fields.ts`, which a plugin cannot import), so the two
+   * implementations of "read the envelope off a file" can drift apart on exactly
+   * the inputs that matter: a legacy timestamp form, a half-written envelope.
+   */
+  it('reads the pre-update createdAt off the file identically', () => {
+    const probe = (data: unknown) => ({ exists: () => true, read: () => data });
+    for (const data of [
+      { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-06-01T00:00:00.000Z' },
+      { createdAt: '2026-01-01 00:00:00', updatedAt: '2026-06-01 00:00:00' }, // legacy SQLite form
+      { createdAt: '2026-01-01T00:00:00.000Z' }, // half an envelope is not one
+      { updatedAt: '2026-06-01T00:00:00.000Z' },
+      { createdAt: 'not a date', updatedAt: 'not a date' },
+      {},
+      null,
+      [],
+      'a string, not an object',
+    ]) {
+      expect(kit.existingStampFromFile(probe(data), 'dto', 'x'), JSON.stringify(data)).toEqual(
+        host.existingStampFromFile(probe(data), 'dto', 'x'),
+      );
+    }
+    // No file behind the write, and a store that throws, both answer `null` —
+    // the caller falls back to the row rather than failing the mutation.
+    const absent = { exists: () => false, read: () => ({}) };
+    const broken = {
+      exists: () => true,
+      read: () => {
+        throw new Error('unreadable');
+      },
+    };
+    for (const store of [absent, broken]) {
+      expect(kit.existingStampFromFile(store, 'dto', 'x')).toBeNull();
+      expect(host.existingStampFromFile(store, 'dto', 'x')).toBeNull();
+    }
+  });
+
   it('exports the same public surface', () => {
     // A slot added on one side and not the other is the other way this drifts.
     // The kit is allowed to omit host-only helpers it has no use for
@@ -97,7 +135,7 @@ describe('host-kit system-stamp is in parity with the host original', () => {
     const kitOnly = Object.keys(kit).filter((k) => !hostSurface.has(k));
     expect(kitOnly).toEqual([]);
     // And it must carry the three the plugin services actually call.
-    for (const required of ['ENTITY_LIST_ORDER', 'resolveStamp', 'toIsoMs']) {
+    for (const required of ['ENTITY_LIST_ORDER', 'resolveStamp', 'toIsoMs', 'existingStampFromFile']) {
       expect(Object.keys(kit)).toContain(required);
     }
   });

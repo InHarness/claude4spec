@@ -51,6 +51,17 @@ export interface VersionServiceLike {
 export interface EntityStoreLike {
   persist(type: string, slug: string): void;
   remove(type: string, slug: string): void;
+  /**
+   * 0.2.7 — the read side. A partial update assembles the object to write from
+   * the existing FILE plus the delta, so a plugin's update path needs to reach
+   * the file it is about to overwrite (see `existingStampFromFile`). Narrowing
+   * this interface to persist/remove made the file write-only from inside a
+   * plugin, which left the derived SQLite row as the only reachable source of
+   * `createdAt` — the one source that is not allowed to be it.
+   */
+  exists(type: string, slug: string): boolean;
+  /** Throws on a missing file or invalid JSON — callers guard with `exists`. */
+  read(type: string, slug: string): unknown;
 }
 
 export interface ReferencesServiceLike {

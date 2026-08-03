@@ -218,10 +218,34 @@ describe('discovery commands on the CLI', () => {
       await expect(
         runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'x', '--pages', 'no-such-root')),
       ).resolves.toBeUndefined();
-      // A bare ARRAY, unbounded — a sweep that paged would answer "nothing
-      // references this" while hits sat on page two.
-      expect(JSON.parse(stdout)).toEqual([]);
+      // 0.2.7 — the CORE'S envelope, not a bare array and not a transport
+      // projection of it. Still exhaustive: `hasMore` is false because the sweep
+      // ran to the end, not because the first page was taken.
+      expect(JSON.parse(stdout)).toEqual({ references: [], total: 0, hasMore: false });
       expect(fs.existsSync(absent)).toBe(false);
+    });
+
+    /**
+     * 0.2.7 — the CLI consumes the core directly, so a hit is ADDRESSABLE: a
+     * page is keyed by `(rootId, pagePath)`, and the projection that used to sit
+     * between the two dropped `rootId`, making two hits from different roots
+     * indistinguishable.
+     */
+    it('find-references returns the core envelope, and each hit carries its rootId', async () => {
+      fs.writeFileSync(
+        path.join(projectDir, 'pages', 'refs.md'),
+        '# Refs\n\n<inline_mention type="diagram" slug="alpha"/>\n',
+        'utf-8',
+      );
+      await runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'alpha'));
+      const out = printed() as {
+        references: Array<{ rootId: string; pagePath: string }>;
+        total: number;
+        hasMore: boolean;
+      };
+      expect(out.total).toBe(1);
+      expect(out.hasMore).toBe(false);
+      expect(out.references[0]).toMatchObject({ rootId: 'pages', pagePath: 'refs.md' });
     });
 
     /**

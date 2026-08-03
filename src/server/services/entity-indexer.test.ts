@@ -12,7 +12,7 @@ import Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { EntityIndexerService } from './entity-indexer.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
-import type { EntityStore } from './entity-store.js';
+import type { EntityStore, TagSnapshot } from './entity-store.js';
 import type { TagsService } from './tags.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { EntitiesWatcher } from '../fs/entities-watcher.js';
@@ -64,9 +64,22 @@ function makeIndexer(host: PluginHost, store: Partial<EntityStore> = {}) {
 
 beforeEach(() => {
   db = new Database(':memory:');
+  /**
+   * 0.2.7 — `entity_tag.tag_slug` carries the REAL FK here, cascade and all, and
+   * `foreign_keys` is ON. The double used to declare three bare TEXT columns, so
+   * the cascade that wiped every assignment in the project when the rebuild
+   * emptied `tag` could not reproduce in this file at all: the clearing tests
+   * passed while the bug shipped.
+   */
+  db.pragma('foreign_keys = ON');
   db.exec(`
-    CREATE TABLE entity_tag (entity_type TEXT, entity_slug TEXT, tag_slug TEXT);
-    CREATE TABLE tag (slug TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE tag (slug TEXT PRIMARY KEY, name TEXT, color TEXT, description TEXT);
+    CREATE TABLE entity_tag (
+      entity_type TEXT NOT NULL,
+      entity_slug TEXT NOT NULL,
+      tag_slug    TEXT NOT NULL REFERENCES tag(slug) ON DELETE CASCADE ON UPDATE CASCADE,
+      PRIMARY KEY (entity_type, entity_slug, tag_slug)
+    );
     CREATE TABLE endpoint_dto (endpoint_slug TEXT, dto_slug TEXT);
     CREATE TABLE endpoint (slug TEXT PRIMARY KEY);
     CREATE TABLE diagram (slug TEXT PRIMARY KEY);
@@ -84,9 +97,9 @@ const rowCount = (t: string) =>
 describe('indexAll — clearing', () => {
   it('clears a DEACTIVATED type’s table, not just the active ones', async () => {
     // Pre-0.2.2 all seven tables were wiped unconditionally. Switching to
-    // active-only left rows nothing would ever re-index or remove — and since
-    // entity_tag IS still wiped unconditionally, they became tag-less phantoms
-    // visible to reference resolution and count stats.
+    // active-only left rows nothing would ever re-index or remove. (0.2.7: the
+    // ENTITY rows of a deactivated type are still cleared here; what changed is
+    // that its `entity_tag` rows are not — see the tag-registry block below.)
     db.prepare(`INSERT INTO diagram (slug) VALUES ('ghost')`).run();
     db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
 
@@ -180,6 +193,104 @@ describe('indexAll — clearing', () => {
     // The table survives: the injected statement never ran.
     expect(() => rowCount('endpoint')).not.toThrow();
     expect(warn.mock.calls.flat().join(' ')).toMatch(/unusable table name/);
+  });
+});
+
+/**
+ * 0.2.7 — the rebuild's scope rule is a property of the WHOLE TRANSACTION, not
+ * of one statement: when `indexAll()` closes, no row whose type lies outside the
+ * rebuild may be missing — whether an explicit DELETE or an FK cascade would
+ * have taken it. Every assertion here therefore reads the state after the
+ * transaction, never a single statement's effect.
+ */
+describe('indexAll — the tag registry and its assignments', () => {
+  const TAGS: TagSnapshot[] = [
+    { slug: 'auth', name: 'Auth', color: null, description: null },
+    { slug: 'legacy', name: 'Legacy', color: null, description: null },
+  ];
+  /** Store double whose `tags.json` lists TAGS unless a test overrides it. */
+  const storeWithTags = (tags: TagSnapshot[] = TAGS, exists = true): Partial<EntityStore> => ({
+    readTags: () => tags,
+    tagsFileExists: () => exists,
+  });
+
+  const seedTags = (slugs: string[]) => {
+    const ins = db.prepare(`INSERT INTO tag (slug, name) VALUES (?, ?)`);
+    for (const s of slugs) ins.run(s, s);
+  };
+  const assign = (type: string, slug: string, tag: string) =>
+    db.prepare(`INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES (?, ?, ?)`).run(type, slug, tag);
+  const assignments = () =>
+    db
+      .prepare(`SELECT entity_type, entity_slug, tag_slug FROM entity_tag ORDER BY entity_type, entity_slug`)
+      .all() as Array<{ entity_type: string; entity_slug: string; tag_slug: string }>;
+
+  it('keeps the assignments of a type OUTSIDE the rebuild', async () => {
+    // The unscoped `DELETE FROM entity_tag` took these, and nothing put them
+    // back: a deactivated type came back from reactivation with its tags gone.
+    seedTags(['auth', 'legacy']);
+    assign('diagram', 'ghost', 'legacy'); // diagram is deactivated below
+    assign('endpoint', 'e1', 'auth'); // in scope — the rebuild owns this one
+
+    const host = hostWith(
+      [
+        { type: 'endpoint', table: 'endpoint' },
+        { type: 'diagram', table: 'diagram' },
+      ],
+      ['endpoint'],
+    );
+    await makeIndexer(host, storeWithTags()).indexer.indexAll();
+
+    expect(assignments()).toEqual([{ entity_type: 'diagram', entity_slug: 'ghost', tag_slug: 'legacy' }]);
+  });
+
+  it('does not let the tag registry cascade the assignments away', async () => {
+    // The real bug: `DELETE FROM tag` ran a few statements after the scoped
+    // delete and the FK cascade swept everything — including rows the scoped
+    // delete had deliberately spared. Both tags are still in `tags.json`, so
+    // nothing here justifies losing a single assignment.
+    seedTags(['auth', 'legacy']);
+    assign('diagram', 'ghost', 'auth');
+    assign('diagram', 'ghost', 'legacy');
+
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint' }, { type: 'diagram', table: 'diagram' }], [
+      'endpoint',
+    ]);
+    await makeIndexer(host, storeWithTags()).indexer.indexAll();
+
+    expect(assignments()).toHaveLength(2);
+    expect(rowCount('tag')).toBe(2);
+  });
+
+  it('reconciles the registry: a slug gone from tags.json is deleted, and only then does it cascade', async () => {
+    // The cascade is not forbidden — it is scoped to tags that genuinely left
+    // the file. That is the whole difference between reconciling and emptying.
+    seedTags(['auth', 'legacy', 'stale']);
+    assign('diagram', 'ghost', 'stale');
+    assign('diagram', 'ghost', 'auth');
+
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint' }]);
+    await makeIndexer(host, storeWithTags()).indexer.indexAll(); // tags.json has no 'stale'
+
+    expect(db.prepare(`SELECT slug FROM tag ORDER BY slug`).all()).toEqual([
+      { slug: 'auth' },
+      { slug: 'legacy' },
+    ]);
+    expect(assignments()).toEqual([{ entity_type: 'diagram', entity_slug: 'ghost', tag_slug: 'auth' }]);
+  });
+
+  it('does not reconcile against a tags.json that is not there', async () => {
+    // `readTags()` answers `[]` for an absent file as readily as for an empty
+    // one. Treating the two alike would empty the registry — and cascade every
+    // assignment — on a project that has not exported its tags to text yet.
+    seedTags(['auth']);
+    assign('diagram', 'ghost', 'auth');
+
+    const host = hostWith([{ type: 'endpoint', table: 'endpoint' }]);
+    await makeIndexer(host, storeWithTags([], false)).indexer.indexAll();
+
+    expect(rowCount('tag')).toBe(1);
+    expect(assignments()).toHaveLength(1);
   });
 });
 

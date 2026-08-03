@@ -19,7 +19,7 @@ import type { VersionService } from '../../services/versions.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
-import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
+import { ENTITY_LIST_ORDER, existingStampFromFile, resolveStamp } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -215,7 +215,11 @@ export class AcService extends BaseEntityCrudService<Ac> {
       // an UPDATE; leaving `created_at` alone would let the column keep whatever
       // the previous rebuild invented while the file says something else, and
       // the next `persist` would write that divergence into the file.
-      const stamp = resolveStamp('ac', opts, current);
+      // 0.2.7: which is why it is read from the FILE. The row is a projection of
+      // the file; sourcing `createdAt` from it reverses the flow, and the
+      // `persist` below writes the divergence back into the source. The row
+      // survives only as the fallback for when there is no usable file.
+      const stamp = resolveStamp('ac', opts, existingStampFromFile(this.store, 'ac', slug) ?? current);
       this.db
         .prepare(
           `UPDATE ac

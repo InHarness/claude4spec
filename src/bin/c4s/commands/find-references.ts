@@ -22,14 +22,23 @@ import type { CliCommandContribution } from '../registry.js';
  * maintenance. `--pages <dir>` is applied where the roots are assembled
  * (`createContext`), not here, so no command carries a root branch of its own.
  *
- * Output stays a BARE ARRAY of hits, unbounded. This command is a sweep — it
- * answers "is anything still pointing at this before I rename or delete it" —
- * and a capped answer to that is a wrong answer that reads like a right one. So
- * it exhausts the core's pages rather than taking the first, takes no
- * `--limit`/`--offset`, and needs no `total`/`hasMore` envelope, since an
- * exhaustive answer's total is its own length. Each hit GAINS `rootId` (and
- * `anchor` where the position falls inside an indexed section): the old
- * projection dropped the root, so hits from two roots were indistinguishable.
+ * 0.2.7 — output is the CORE'S ENVELOPE, `{ references, total, hasMore }`, not
+ * a bare array. The transports used to each project the core hit onto their own
+ * narrower shape (REST kept `raw` without `via`, MCP and CLI kept `via` without
+ * `raw`); the projection is gone here, so the CLI hands back exactly what
+ * `find_references` returned. The flags are unchanged (`--type`, `--slug`,
+ * `--include-tag-matches`, `--pages`) — only the shape moved.
+ *
+ * The sweep itself is still EXHAUSTIVE and unbounded. This command answers "is
+ * anything still pointing at this before I rename or delete it", and a capped
+ * answer to that is a wrong answer that reads like a right one — so it exhausts
+ * the core's pages rather than taking the first, and still refuses
+ * `--limit`/`--offset`. Hence `hasMore: false` and a `total` that equals the
+ * list's own length: the envelope reports a sweep that already ran to the end,
+ * it does not turn the command into a paginating one. Each hit carries `rootId`
+ * (and `anchor` where the position falls inside an indexed section) — a page is
+ * keyed by `(rootId, pagePath)`, so a projection dropping the root makes two
+ * hits from different roots indistinguishable.
  */
 export async function runFindReferences(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -40,13 +49,13 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 
   const ctx = await createContext(args);
   try {
-    const hits = await findReferencesAll(ctx.discovery, {
+    const references = await findReferencesAll(ctx.discovery, {
       target: 'entity',
       type,
       slug,
       includeTagMatches,
     });
-    writeOutput(hits, args);
+    writeOutput({ references, total: references.length, hasMore: false }, args);
   } finally {
     ctx.close();
   }

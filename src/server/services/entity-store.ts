@@ -168,6 +168,19 @@ export class EntityStore {
 
   // ─── tags.json ──────────────────────────────────────────────────────────
 
+  /**
+   * Does `tags.json` exist at all?
+   *
+   * `readTags()` answers `[]` both for "the file lists no tags" and for "there is
+   * no file", and the rebuild's tag reconcile has to tell those apart: reconciling
+   * against an absent file would delete every row in `tag` — and cascade away every
+   * assignment in `entity_tag` — on a project that simply has not exported its
+   * registry to text yet.
+   */
+  tagsFileExists(): boolean {
+    return fs.existsSync(path.join(this.root, TAGS_FILE));
+  }
+
   readTags(): TagSnapshot[] {
     const abs = path.join(this.root, TAGS_FILE);
     if (!fs.existsSync(abs)) return [];

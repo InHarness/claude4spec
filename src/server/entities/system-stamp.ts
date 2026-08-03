@@ -10,7 +10,7 @@
  * behind the write.
  */
 
-import { nowIso, toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
+import { nowIso, readSystemFields, toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 import type { MutateOpts } from './mutate-opts.js';
 
 /**
@@ -32,6 +32,48 @@ export const ENTITY_LIST_ORDER = 'created_at, slug';
 /** The columns `resolveStamp` reads off the pre-update row. */
 export interface StampedRow {
   created_at?: unknown;
+}
+
+/** The two `EntityStore` methods `existingStampFromFile` needs. */
+export interface EntityFileProbe {
+  exists(type: string, slug: string): boolean;
+  read(type: string, slug: string): unknown;
+}
+
+/**
+ * 0.2.7 — read the pre-update `createdAt` off the ENTITY FILE.
+ *
+ * A partial update carries no system fields, so the host assembles the object to
+ * write from "the existing entity file + the delta". Every update path used to
+ * take `createdAt` from the SQLite row it had just `SELECT`ed instead — and the
+ * row is a PROJECTION of the file, so reading it reverses the direction of flow:
+ * once the two disagree, `EntityStore.persist` regenerates the file from the row
+ * and writes the divergence into the source. The file is the only admissible
+ * source here.
+ *
+ * Returns `null` when there is no file behind the write, or its envelope is
+ * missing/unparseable — the caller falls back to the row, which is still a better
+ * answer than minting a fresh `createdAt`. Pass the INCOMING slug: on a rename
+ * the file is still at the old one when this runs.
+ *
+ * The round-trip fixpoint test never let file and row disagree, which is exactly
+ * why this was invisible for three releases.
+ */
+export function existingStampFromFile(
+  store: EntityFileProbe,
+  type: string,
+  slug: string,
+): StampedRow | null {
+  try {
+    if (!store.exists(type, slug)) return null;
+    const stamp = readSystemFields(store.read(type, slug));
+    return stamp ? { created_at: stamp.createdAt } : null;
+  } catch {
+    // A file that is unreadable or not JSON is not a reason to fail the mutation:
+    // the row fallback keeps the write path working, and the next rebuild reports
+    // the unreadable file through its own warning.
+    return null;
+  }
 }
 
 /**
