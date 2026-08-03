@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 /**
  * 0.2.2 (brief item 10) — tier (b), built-in envelopes.
  *
@@ -40,11 +41,12 @@ function writeEnvelope(
 function entity(type: string): EntityContribution {
   return {
     type,
-    table: type.replace(/-/g, '_'),
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
     displayOrder: 10,
-    slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? type),
     pathPrefix: `/${type}s`,
     serializer: { type, version: '1.0.0' },
     systemPrompt: {
@@ -58,7 +60,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: 'c4s-plugin-api-contracts',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('endpoint'), entity('dto')] },
     ...over,

@@ -2,11 +2,6 @@ import type { SystemPromptContribution } from '../../../shared/plugin-host/types
 
 export const diagramSystemPrompt: SystemPromptContribution = {
   roleNoun: 'Diagrams',
-  countStat: {
-    placeholder: 'diagramCount',
-    sqlQuery: 'SELECT COUNT(*) AS count FROM diagram',
-    label: 'diagrams',
-  },
   // M13: CRUD moved to the generic entity-tools server (composed by the host);
   // this line now covers ONLY diagram's custom pre-flight validation tool.
   mcpToolsLine: 'diagram-tools: validate_diagram',

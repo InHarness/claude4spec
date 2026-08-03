@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
 import { buildEntityTools, type EntityToolsDeps } from './entity-tools.js';
@@ -13,16 +14,16 @@ interface Widget {
 function widgetModule(overrides: Partial<BackendModule> = {}): BackendModule {
   return {
     type: 'widget',
-    table: 'widget',
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
     displayOrder: 1,
-    slugFrom: () => 'widget-x',
     pathPrefix: '/widgets',
     serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Widgets',
-      countStat: { placeholder: 'widgetCount', sqlQuery: 'SELECT 0', label: 'widgets' },
     },
     backend: {
       crud: { createSchema: { name: z.string() } },

@@ -1,3 +1,4 @@
+import { uiViewData, uiViewSlugPattern } from '../../../shared/entities/ui-view/schema.js';
 import { ChevronRight, Monitor } from 'lucide-react';
 import type { UiView } from '../../../shared/entities.js';
 import { useUiView } from '../../hooks/useUiViews.js';
@@ -198,20 +199,13 @@ function UiViewCard({ slug, entity, onOpen }: EntityCardProps<UiView>) {
 
 const uiViewFrontendModule: FrontendModule = {
   type: 'ui-view',
-  table: 'ui_view',
+  data: uiViewData,
+  slugPattern: uiViewSlugPattern,
+  payloadVersion: 1,
   label: 'UI View',
   labelPlural: 'UI Views',
   displayOrder: 40,
   pathPrefix: '/ui-views',
-  slugFrom: (data) => {
-    const name = (data as { name?: string }).name ?? '';
-    return name
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  },
   renderRow: UiViewRow as FrontendModule['renderRow'],
   renderChip: UiViewChip as FrontendModule['renderChip'],
   renderCard: UiViewCard as FrontendModule['renderCard'],

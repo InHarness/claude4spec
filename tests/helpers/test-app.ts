@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createTestDb } from './test-db.js';
+import { applyProjection } from '../../src/server/db/projection.js';
 import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
@@ -93,6 +94,15 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     new Map([['pages', pages]]),
     new Map([['pages', watcher]]),
   );
+  /**
+   * 2.0.0: build the projection before anything mounts, over every AVAILABLE
+   * module — the same call, in the same place, that `buildProjectContext` makes.
+   * `createTestDb` covers only the four directly-built-in types, because it is
+   * synchronous and the envelope loads asynchronously; this is where `endpoint`,
+   * `dto`, `endpoint_dto` and any `extraModules` fixture get their tables.
+   */
+  applyProjection(db, host.listAvailable());
+
   const router = Router();
   host.mountBackend({
     app: router,

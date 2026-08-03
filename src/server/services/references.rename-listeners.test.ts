@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 /**
  * 0.2.2 — a rename fans out to the modules that declared `backend.onEntityRenamed`.
  *
@@ -19,12 +20,13 @@ import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/pl
 function listenerModule(type: string, onRenamed: (ev: EntityRenamedEvent) => void): BackendModule {
   return synthesizeMount({
     type,
-    table: type.replace(/-/g, '_'),
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
     displayOrder: 900,
     pathPrefix: `/${type}s`,
-    slugFrom: () => 'x',
     serializer: {} as BackendModule['serializer'],
     systemPrompt: { roleNoun: type },
     backend: { onEntityRenamed: onRenamed },

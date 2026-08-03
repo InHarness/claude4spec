@@ -1,0 +1,16 @@
+-- Host API 2.0.0 — the per-plugin migration ledger ceases to exist.
+--
+-- `plugin_schema_migrations` recorded which of a module's own `backend.migrations`
+-- had been applied. There are no such migrations any more: entity tables are a
+-- projection generated from `data.schema` at ProjectContext construction, and a
+-- schema change regenerates the projection rather than migrating it. A ledger
+-- with nothing to record is worse than no ledger — the next reader has to work
+-- out whether it is authoritative.
+--
+-- The entity TABLES it tracked are untouched. This drops the bookkeeping only;
+-- `CREATE TABLE IF NOT EXISTS` in the generator no-ops against every one of them
+-- on an existing database, and their columns are asserted equivalent to the
+-- retired hand-written DDL by src/server/db/projection.golden.test.ts.
+--
+-- One host chain remains, `schema_migrations`, run only from `openDb`.
+DROP TABLE IF EXISTS plugin_schema_migrations;

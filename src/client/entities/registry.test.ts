@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 import { describe, expect, it } from 'vitest';
 import { getEntityDef } from './registry.js';
 import { clientPluginHost } from '../core/plugin-host/host.js';
@@ -12,12 +13,13 @@ describe('getEntityDef resolves plugin-host-registered types', () => {
   const Noop = (() => null) as unknown as FrontendModule['renderCard'];
   const fakeModule = {
     type: 'test-plugin-entity',
-    table: 'test_plugin_entity',
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: 'Test Plugin Entity',
     labelPlural: 'Test Plugin Entities',
     displayOrder: 500,
     pathPrefix: '/test-plugin-entities',
-    slugFrom: () => 'x',
     renderChip: Noop,
     renderCard: Noop,
     renderRow: Noop,

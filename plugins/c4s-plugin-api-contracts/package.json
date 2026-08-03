@@ -1,7 +1,7 @@
 {
   "name": "@inharness-ai/c4s-plugin-api-contracts",
-  "version": "0.2.2",
-  "description": "claude4spec builtin envelope contributing the `endpoint` and `dto` entity types and the junction that couples them (host API 1.0.0).",
+  "version": "0.2.9",
+  "description": "claude4spec builtin envelope contributing the `endpoint` and `dto` entity types and the junction that couples them (host API 2.0.0).",
   "private": true,
   "type": "module",
   "exports": {

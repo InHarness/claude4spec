@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, vi } from 'vitest';
 import { reloadPlugin } from './loader.js';
 import { PluginRegistryImpl } from './registry.js';
@@ -8,22 +9,22 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
   return {
     name: '@c4s/reloadable',
     version,
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister,
     contributes: {
       entities: [
         {
           type: 'thing',
-          table: 'thing',
+          data: FIXTURE_DATA,
+          slugPattern: FIXTURE_SLUG_PATTERN,
+          payloadVersion: 1,
           label: 'Thing',
           labelPlural: 'Things',
           displayOrder: 100,
-          slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? 'thing'),
           pathPrefix: '/things',
           serializer: {},
           systemPrompt: {
             roleNoun: 'thing',
-            countStat: { placeholder: 'thingCount', sqlQuery: 'SELECT 0 AS count', label: 'thing' },
             mcpToolsLine: 'thing-tools: ...',
           },
         },
@@ -103,11 +104,14 @@ describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
     registry.registerPlugin(pluginV('1.0.0', oldTeardown));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^2.0.0' };
+    // A different MAJOR than the host's (2.0.0) — `^3.0.0`, not `^1.0.0`, so the
+    // case keeps testing a forward mismatch rather than becoming the 1→2
+    // migration every real plugin now has to make.
+    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^3.0.0' };
     const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: incompatible }));
 
     expect(rec).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(rec.migration?.targetHostApiVersion).toBe('1.0.0');
+    expect(rec.migration?.targetHostApiVersion).toBe('2.0.0');
     expect(oldTeardown).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
     warn.mockRestore();

@@ -1,5 +1,4 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import { acSlug } from '../../services/slug.js';
 import type { EntitySerializer } from '../../serialization/types.js';
 import { acSerializer } from './serializer.js';
 import { acSystemPrompt } from './system-prompt.js';
@@ -7,16 +6,17 @@ import { acsRouter } from './routes.js';
 import { AcService } from './service.js';
 import { createAcToolsServer } from './mcp-server.js';
 import { acCreateSchema, acUpdateSchema } from './crud-schemas.js';
-import { acMigrations } from './migrations.js';
+import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
 export const acBackendModule: BackendModule = {
   type: 'ac',
-  table: 'ac',
+  data: acData,
+  slugPattern: acSlugPattern,
+  payloadVersion: 1,
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
   pathPrefix: '/acs',
-  slugFrom: (data) => acSlug((data as { text?: string }).text ?? ''),
   serializer: acSerializer as EntitySerializer<unknown>,
   systemPrompt: acSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
@@ -24,7 +24,6 @@ export const acBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router, mount the custom MCP
   // server for ac's semantic-audit tool.
   backend: {
-    migrations: acMigrations,
     /**
      * `ac.verifies[]` holds `{type, slug}` soft references — JSON, no FK — so a
      * rename of ANY entity type has to be followed by hand: repoint the refs in

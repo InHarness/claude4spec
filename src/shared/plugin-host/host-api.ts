@@ -47,7 +47,7 @@ export interface HostApiMigration {
    * component (M34/L12). The others cover the manifest/contributes/editor
    * surfaces.
    */
-  kind: 'slot-required' | 'field-rename' | 'contributes-reshape' | 'ui-prop-reshape';
+  kind: 'slot-required' | 'slot-removed' | 'field-rename' | 'contributes-reshape' | 'ui-prop-reshape';
   /** Human-readable migration instruction. */
   summary: string;
 }
@@ -64,10 +64,52 @@ export interface PluginMigrationInfo {
 
 /**
  * The Host API changelog, one entry per breaking change at a major boundary.
- * Empty at the `1.0.0` baseline — no major has been crossed yet. The first
- * breaking slot-shape change will add an entry here (and bump the major).
+ *
+ * 1 → 2 is the first crossing, and it is the whole point of 2.0.0: an entity
+ * type stops CARRYING behaviour (DDL, a slug function, a serializer's
+ * snapshot/restore) and starts DECLARING data, from which the host generates
+ * the rest. Every entry below is a removal, and every one has
+ * `shimAvailable: false` — a shim would have to invent a logical schema out of
+ * hand-written SQL, which is exactly the inference this release exists to stop
+ * doing. There is no deprecation window: a package built against 1.x does not
+ * load, and `c4s plugins doctor` prints these lines.
  */
-const HOST_API_CHANGELOG: HostApiMigration[] = [];
+const HOST_API_CHANGELOG: HostApiMigration[] = [
+  {
+    fromMajor: 1,
+    toMajor: 2,
+    slot: 'backend.migrations',
+    kind: 'slot-removed',
+    summary:
+      'Per-plugin DDL is gone, along with the `plugin_schema_migrations` ledger. ' +
+      'Declare `data.schema` — a logical field set — and the host generates the ' +
+      'SQLite projection from it. A schema change regenerates the projection ' +
+      'rather than migrating it: the entity files are authoritative and the index ' +
+      'is rebuilt from them.',
+  },
+  {
+    fromMajor: 1,
+    toMajor: 2,
+    slot: 'slugFrom',
+    kind: 'slot-removed',
+    summary:
+      'Replaced by `slugPattern`, the same derivation as DATA: a closed grammar of ' +
+      'literal | slugify(field) | truncate(n) | nanoid(n). A function could read ' +
+      'the database or answer differently on a second call, which made slug ' +
+      'derivation the one part of a type\'s identity the host could neither inspect ' +
+      'nor reproduce.',
+  },
+  {
+    fromMajor: 1,
+    toMajor: 2,
+    slot: 'routes.prefix',
+    kind: 'slot-removed',
+    summary:
+      "A domain router inherits the type's `pathPrefix` rather than declaring its " +
+      'own. Two spellings of one path meant a type could answer on one prefix and ' +
+      'be linked at another.',
+  },
+];
 
 /** One slot removed WITHOUT crossing a major, during stabilization. */
 export interface HostApiUnversionedChange {
@@ -149,8 +191,15 @@ export function buildMigrationInfo(pluginRange: string): PluginMigrationInfo | n
   return {
     targetHostApiVersion: HOST_API_VERSION,
     migrations,
-    // No shim without descriptors, and a slot becoming required can never be
-    // shimmed (the author must implement it). Empty changelog ⇒ false.
-    shimAvailable: migrations.length > 0 && migrations.every((m) => m.kind !== 'slot-required'),
+    /**
+     * No shim without descriptors, and two kinds can never be shimmed:
+     * `slot-required` (the author must implement it) and `slot-removed` (there
+     * is nothing left to forward to). Shimming 2.0.0's removals would mean
+     * inferring a logical schema from hand-written DDL — the exact inference the
+     * release exists to stop making. Empty changelog ⇒ false.
+     */
+    shimAvailable:
+      migrations.length > 0 &&
+      migrations.every((m) => m.kind !== 'slot-required' && m.kind !== 'slot-removed'),
   };
 }

@@ -29,7 +29,6 @@ import type {
   EntityRenamedEvent,
   MountContext,
   PluginMountFn,
-  SqlMigration,
 } from './types.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
@@ -73,13 +72,35 @@ export function validateWritingStyle(c: WritingStyleContribution): WritingStyleC
 
 const MANIFEST_FIELDS = [
   'type',
-  'table',
+  'data',
+  'slugPattern',
+  'payloadVersion',
   'label',
   'labelPlural',
   'displayOrder',
-  'slugFrom',
   'pathPrefix',
 ] as const;
+
+/**
+ * Slots removed in Host API 2.0.0, each with the successor to name in the error.
+ *
+ * A manifest still carrying one of these is REJECTED rather than tolerated. It
+ * was authored against 1.x, so its DDL, its slug function and its snapshot are
+ * all describing a contract the host no longer honours — loading it would
+ * produce a type whose table is never created and whose slugs are never
+ * generated. The semver gate catches the well-behaved case (a declared
+ * `hostApiVersion` range); this catches the manifest that lies about its range,
+ * and gives the author the same migration line `plugins doctor` prints.
+ */
+const REMOVED_SLOTS: ReadonlyArray<[string, string]> = [
+  ['slugFrom', 'slugPattern'],
+  ['table', 'data.schema (the projection is generated)'],
+  ['composition', 'data.schema (the descriptor is derived)'],
+];
+const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
+  ['migrations', 'data.schema (the projection is generated)'],
+  ['auxTables', "data.schema (declare the collection that owns the table)"],
+];
 
 function assertContribution(c: EntityContribution): void {
   if (!c || typeof c !== 'object') {
@@ -91,8 +112,21 @@ function assertContribution(c: EntityContribution): void {
       throw new PluginManifestError(`entity "${c.type ?? '?'}" missing required field "${f}"`);
     }
   }
-  if (typeof c.slugFrom !== 'function') {
-    throw new PluginManifestError(`entity "${c.type}" — slugFrom must be a function`);
+  for (const [slot, successor] of REMOVED_SLOTS) {
+    if (record[slot] != null) {
+      throw new PluginManifestError(
+        `entity "${c.type}" — \`${slot}\` was removed in Host API 2.0.0; declare \`${successor}\` instead`,
+      );
+    }
+  }
+  const backendRecord = record.backend as Record<string, unknown> | undefined;
+  for (const [slot, successor] of REMOVED_BACKEND_SLOTS) {
+    if (backendRecord?.[slot] != null) {
+      throw new PluginManifestError(
+        `entity "${c.type}" — \`backend.${slot}\` was removed in Host API 2.0.0; declare ` +
+          `\`${successor}\` instead`,
+      );
+    }
   }
   if (c.serializer == null) {
     throw new PluginManifestError(`entity "${c.type}" — serializer is required`);
@@ -120,14 +154,12 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
   let backendSlot: BackendModule['backend'];
 
   if (backend) {
-    const migrations = backend.migrations as SqlMigration[] | undefined;
     const mount = backend.mount as PluginMountFn | undefined;
     if (mount && typeof mount !== 'function') {
       throw new PluginManifestError(`entity "${c.type}" — backend.mount must be a function`);
     }
 
     backendSlot = {
-      migrations,
       mount,
       service: backend.service as ((ctx: MountContext) => EntityCrudService) | undefined,
       crud: backend.crud as NonNullable<BackendModule['backend']>['crud'],
@@ -146,14 +178,12 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
 
   return {
     type: c.type,
-    table: c.table,
-    // 0.2.4 — carried through verbatim; `PluginRegistryImpl` validates it and
-    // caches the resolved descriptor immediately after this lowering.
-    composition: c.composition,
     label: c.label,
     labelPlural: c.labelPlural,
     displayOrder: c.displayOrder,
-    slugFrom: c.slugFrom,
+    data: c.data,
+    slugPattern: c.slugPattern,
+    payloadVersion: c.payloadVersion,
     pathPrefix: c.pathPrefix,
     dependsOn: c.dependsOn,
     serializer: c.serializer as EntitySerializer<unknown>,

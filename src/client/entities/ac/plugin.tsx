@@ -12,7 +12,7 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { AcDetail } from './detail-panel.js';
-import { acSlugClient } from './slug.js';
+import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
 function truncate(s: string, n: number): string {
   if (s.length <= n) return s;
@@ -153,12 +153,13 @@ function AcCard({ slug, entity, onOpen }: EntityCardProps<Ac>) {
 
 const acFrontendModule: FrontendModule = {
   type: 'ac',
-  table: 'ac',
+  data: acData,
+  slugPattern: acSlugPattern,
+  payloadVersion: 1,
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
   pathPrefix: '/acs',
-  slugFrom: (data) => acSlugClient((data as { text?: string }).text ?? ''),
   renderRow: AcRow as FrontendModule['renderRow'],
   renderChip: AcChip as FrontendModule['renderChip'],
   renderCard: AcCard as FrontendModule['renderCard'],

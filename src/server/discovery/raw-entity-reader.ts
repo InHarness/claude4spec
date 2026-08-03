@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
+import { columnOf, type CountPredicate } from '../../shared/plugin-host/data-schema.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 export type RawEntityType =
@@ -361,16 +362,65 @@ export class RawEntityReader {
     return rows.map((r) => r.slug);
   }
 
-  /** Cheap row count for a type — used by `catalog`. */
-  count(type: string): number {
+  /**
+   * Cheap row count for a type, optionally filtered — used by `catalog` and by
+   * the `<project>` block's per-type counts.
+   *
+   * The predicate is DATA, not SQL: equality and set membership over the type's
+   * own schema fields, compiled here into a parameterised `WHERE`. That is the
+   * whole vocabulary, deliberately — joins and cross-entity conditions are out
+   * of scope, and a raw-SQL slot is excluded permanently, because a module able
+   * to hand the host arbitrary SQL to execute breaks M13's read-exclusivity
+   * invariant no matter how narrow the intended use.
+   *
+   * Both counts in the product now read through this ONE call with the SAME
+   * predicate, which is what stops the agent's number and the sidebar's from
+   * drifting apart the way they did when `countStat.sqlQuery` was silently
+   * dropped in 0.2.4.
+   */
+  count(type: string, predicate?: CountPredicate): number {
     // `resolveTable` already answers undefined for a type with no table, so an
     // absent type reads as zero rather than throwing. The caller is
     // `GET /entities/counts`, where one throw blanked every badge in the
     // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
-    const row = this.db.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
+    const where = this.compileCountPredicate(type, predicate);
+    const row = this.db
+      .prepare(`SELECT COUNT(*) AS c FROM ${table}${where.sql}`)
+      .get(...where.params) as { c: number };
     return row.c;
+  }
+
+  /**
+   * Predicate → `WHERE` clause + bound parameters.
+   *
+   * A predicate naming a field the type does not declare is IGNORED rather than
+   * thrown on, and the count comes back unfiltered. The caller is a sidebar
+   * badge and a system-prompt line: a slightly-too-large number is a cosmetic
+   * defect, while a throw blanks the whole sidebar. Registration validation is
+   * where a bad field name gets rejected loudly; by the time a count runs, the
+   * schema has already been vetted.
+   */
+  private compileCountPredicate(
+    type: string,
+    predicate: CountPredicate | undefined,
+  ): { sql: string; params: unknown[] } {
+    if (!predicate?.field) return { sql: '', params: [] };
+    const schema = this.host?.getEntity(type)?.data?.schema;
+    const node = schema?.[predicate.field];
+    if (!node) return { sql: '', params: [] };
+    const column = columnOf(predicate.field, node);
+    if (predicate.in?.length) {
+      return {
+        sql: ` WHERE ${column} IN (${predicate.in.map(() => '?').join(', ')})`,
+        params: [...predicate.in],
+      };
+    }
+    if (predicate.eq !== undefined) {
+      return { sql: ` WHERE ${column} = ?`, params: [predicate.eq] };
+    }
+    return { sql: '', params: [] };
   }
 
   listTags(): RawTag[] {

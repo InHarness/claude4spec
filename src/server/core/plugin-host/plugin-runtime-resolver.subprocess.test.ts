@@ -58,7 +58,7 @@ describe('M33 — backend @c4s/plugin-runtime resolver (real runtime)', () => {
     const got = JSON.parse(res.out) as Record<string, unknown>;
     expect(got.same).toBe(true);
     expect(got.sameFn).toBe(true);
-    expect(got.version).toBe('1.0.0');
+    expect(got.version).toBe('2.0.0');
     expect(got.builders).toEqual(['function', 'function']);
   });
 
@@ -133,7 +133,7 @@ describe('M33 — resolver from a plugin-like location', () => {
       if (!res.ok) return;
 
       const got = JSON.parse(res.out) as Record<string, unknown>;
-      expect(got.version).toBe('1.0.0');
+      expect(got.version).toBe('2.0.0');
       expect(got.builders).toEqual(['function', 'function']);
       expect(got.sharesHostInstance).toBe(true);
     } finally {

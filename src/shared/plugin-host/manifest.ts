@@ -97,7 +97,7 @@ export type ReferenceTypeContribution = ExtensionReferenceType;
  * reject every external package wholesale — including ones that never touched
  * any of these slots. The cost is asymmetric, and it favours the additive form.
  */
-export const HOST_API_VERSION = '1.0.0';
+export const HOST_API_VERSION = '2.0.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {
@@ -121,8 +121,6 @@ export interface EntityContribution extends EntityModuleManifest {
   systemPrompt: SystemPromptContribution;
 
   backend?: {
-    /** Per-plugin idempotent SQL migrations (server `SqlMigration[]`). */
-    migrations?: unknown[];
     /**
      * ESCAPE HATCH — full-power imperative mount hook (server `PluginMountFn`).
      * A typical plugin does not write this; declare `service`/`crud`/`routes`/

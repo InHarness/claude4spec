@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,11 +14,12 @@ import type { BackendModule } from './types.js';
 function entity(type: string): EntityContribution {
   return {
     type,
-    table: type,
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
     displayOrder: 100,
-    slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? type),
     pathPrefix: `/${type}s`,
     serializer: {},
     systemPrompt: {
@@ -43,7 +45,7 @@ function manifestWithRefType(over: Partial<PluginManifest> = {}): PluginManifest
   return {
     name: '@acme/c4s-plugin-figure',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: {
       referenceTypes: [{ tag: 'figure_ref', attrOrder: ['id', 'caption'] }],
@@ -55,16 +57,16 @@ function manifestWithRefType(over: Partial<PluginManifest> = {}): PluginManifest
 function widgetModule(refTag?: string): BackendModule {
   return {
     type: 'widget',
-    table: 'widget',
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
     displayOrder: 100,
-    slugFrom: () => 'widget-x',
     pathPrefix: '/widgets',
     serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'widget',
-      countStat: { placeholder: 'widgetCount', sqlQuery: 'SELECT 0 AS count', label: 'widget' },
     },
     ...(refTag
       ? { frontend: { referenceType: { tag: refTag, attrOrder: ['slug'] } } }

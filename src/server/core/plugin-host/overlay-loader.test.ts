@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -13,11 +14,12 @@ import type { PluginManifest, EntityContribution } from '../../../shared/plugin-
 function entity(type: string): EntityContribution {
   return {
     type,
-    table: type,
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
     displayOrder: 100,
-    slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? type),
     pathPrefix: `/${type}s`,
     serializer: {},
     systemPrompt: {
@@ -32,7 +34,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@local/c4s-plugin',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
@@ -136,7 +138,7 @@ describe('overlay-loader', () => {
       fakeImporter({ [url]: { manifest: manifest({ hostApiVersion: '^99.0.0' }) } }),
     );
     expect(res.records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('1.0.0');
+    expect(res.records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
     expect(res.overlay).toBeUndefined();
   });
 

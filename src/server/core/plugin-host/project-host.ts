@@ -30,7 +30,6 @@ import type {
 } from '../../serialization/types.js';
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { diffEntity, restoreEntity, snapshotEntity } from '../../serialization/snapshot.js';
-import { runPluginMigrations } from './plugin-migrate.js';
 
 export class ProjectPluginHostImpl implements ProjectPluginHost {
   private activeTypes: Set<string> | null = null; // null = all active
@@ -139,61 +138,31 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     return out;
   }
 
+  /**
+   * Host API 2.0.0 — `mountBackend` runs NO migrations.
+   *
+   * It used to run each module's `backend.migrations` before mounting it, in two
+   * passes over different sets, with a warn-and-continue arm for deactivated
+   * types whose DDL would not apply. All of that is gone: there is no
+   * per-plugin migration chain and no `plugin_schema_migrations` ledger. Tables
+   * come from `applyProjection`, generated from `data.schema` at ProjectContext
+   * construction, before this method and before `indexAll()`.
+   *
+   * The properties that machinery existed to provide are now structural rather
+   * than sequenced:
+   *   - the projection covers every AVAILABLE type, not just active ones, so a
+   *     deactivated type still has its (empty) table and `GET /entities/counts`
+   *     cannot 500 on a missing one;
+   *   - creating every table before mounting anything is what it always was, but
+   *     now it is one call rather than an ordering constraint between passes;
+   *   - a schema that "will not apply" no longer exists as a failure mode. The
+   *     generator only CREATEs and ADDs COLUMNs; anything more is the rebuild's
+   *     job, and the rebuild reads files, which always apply.
+   *
+   * A throwing mount still propagates — M31 turns it into a per-project build
+   * failure (500 PROJECT_BUILD_FAILED), never a process crash.
+   */
   mountBackend(ctx: MountContext): void {
-    // A throwing plugin migration/mount propagates — M31 turns it into a
-    // per-project build failure (500 PROJECT_BUILD_FAILED), never a process
-    // crash. L1 (M13): the host runs each plugin's declared `backend.migrations`
-    // (schema_version per plugin, idempotent) BEFORE its mount, so the entity
-    // table exists by the time `mount` builds its service and the first query runs.
-    //
-    // 0.2.2 Tier B: TWO passes, over DIFFERENT sets.
-    //
-    // MIGRATE every AVAILABLE module — including deactivated ones. The schema is
-    // a function of what is INSTALLED, not of what is enabled. That was true
-    // before this release for free, because entity DDL sat in the host chain and
-    // ran unconditionally; migrating only active modules quietly changed it, and
-    // any host code that walks all available types then hit a missing table.
-    // `GET /entities/counts` did exactly that and returned 500 for the whole
-    // sidebar because one deactivated type had no table. A deactivated type
-    // keeps an empty table, exactly as it always did.
-    //
-    // MOUNT only the ACTIVE ones: a deactivated type contributes no service, no
-    // routes and no tools. That half is unchanged.
-    //
-    // Migrations run before ANY mount, not interleaved per module. A module's
-    // table may be referenced by another module's schema — `endpoint_dto`
-    // carries an FK to `dto(slug)` — and this iterates in `displayOrder`, not
-    // `dependsOn` order, so interleaving would make correctness depend on two
-    // unrelated numbers lining up. It also means no mount can observe a
-    // half-migrated schema.
-    // A DEACTIVATED module's migration failure is isolated; an ACTIVE one's is
-    // not. Before this release, dropping a type from `config.entities` was the
-    // operator's way out of a plugin whose schema will not apply against this
-    // project's data — it stopped being consulted at all. Migrating every
-    // available module took that escape away: the migration ran regardless, threw
-    // out of here, and M31 turned it into a permanent PROJECT_BUILD_FAILED that
-    // no configuration could clear short of uninstalling the package.
-    //
-    // A deactivated type contributes no service, no routes and no tools, so its
-    // missing table costs only itself — and every host read resolves a table
-    // through existence now, so absence is handled rather than thrown. An ACTIVE
-    // type's schema IS load-bearing, and a project serving one with no table
-    // would fail later and more confusingly than it fails here.
-    const active = new Set(this.listEntities().map((m) => m.type));
-    for (const m of this.listAvailable()) {
-      if (active.has(m.type)) {
-        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
-        continue;
-      }
-      try {
-        runPluginMigrations(ctx.db, m.type, m.backend?.migrations);
-      } catch (err) {
-        console.warn(
-          `[plugin-host] migrations for DEACTIVATED type '${m.type}' failed — ` +
-            `continuing without its table: ${(err as Error).message}`,
-        );
-      }
-    }
     for (const m of this.listEntities()) m.backend?.mount?.(ctx);
   }
 
@@ -342,19 +311,16 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   }
 
   computeEntityCounts(db: Database): Record<string, number> {
-    // 0.2.4: the host counts. `systemPrompt.countStat.sqlQuery` is no longer
-    // executed — it was the only place a module handed the host raw SQL to run,
-    // and closing that surface is the point of the slot's deprecation.
-    //
-    // The switch is observable: AC's query carried `WHERE status='active'` and
-    // nothing else does, so its count now includes deprecated AC. That is the
-    // intended direction — the sidebar has always counted without the
-    // predicate, so the agent and the user stop seeing different numbers for
-    // the same type.
+    // 2.0.0: the host counts, and a type that wants a subset declares
+    // `systemPrompt.countPredicate` — data the host evaluates, never SQL it
+    // executes. 0.2.4 closed the raw-SQL surface but had no replacement, so
+    // `ac` lost its `status='active'` filter along the way; this restores it
+    // through the ONE call both the sidebar and the `<project>` block make, so
+    // the agent and the user cannot see different numbers for the same type.
     const reader = this.readerFor(db);
     const counts: Record<string, number> = {};
     for (const m of this.listEntities()) {
-      counts[m.type] = reader.count(m.type);
+      counts[m.type] = reader.count(m.type, m.systemPrompt?.countPredicate);
     }
     return counts;
   }

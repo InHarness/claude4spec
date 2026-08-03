@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
+import { applyProjection } from '../db/projection.js';
 import { VersionService } from './versions.js';
 import { DomainError } from './tags.js';
 import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
@@ -121,6 +122,9 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
     const registry = new PluginRegistryImpl();
     registry.registerEntityModule(fixtureModule(type, opts));
     const host = registry.consolidate({ entities: [type] });
+    // 2.0.0: the fixture's table comes from its `data.schema`, generated here
+    // exactly as ProjectContext generates it — before mount, not by it.
+    applyProjection(db, host.listAvailable());
     host.mountBackend({ db } as unknown as MountContext);
     const reader = new RawEntityReader(db, host);
     const versions = new VersionService(db);

@@ -14,12 +14,17 @@ import {
   syncEndpointDtos,
   type JunctionCapable,
 } from '../../src/entity/junction/index.js';
-import { endpointMigrations } from '../../src/entity/endpoint/backend/migrations.js';
-import { dtoMigrations } from '../../src/entity/dto/backend/migrations.js';
+import { generateProjectionDDL } from '../../../../src/server/db/projection.js';
+import { dtoData } from '../../src/entity/dto/schema.js';
+import { endpointData } from '../../src/entity/endpoint/schema.js';
 
 function db(): Database.Database {
   const handle = new Database(':memory:');
-  for (const m of [...dtoMigrations, ...endpointMigrations]) handle.exec(m.up);
+  // 2.0.0: the tables come from the same generator the host runs at boot, over
+  // the same declarations the envelope ships — not from a second copy of the DDL.
+  for (const module of [{ type: 'dto', data: dtoData }, { type: 'endpoint', data: endpointData }]) {
+    for (const statement of generateProjectionDDL(module)) handle.exec(statement);
+  }
   return handle;
 }
 

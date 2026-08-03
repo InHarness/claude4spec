@@ -2,11 +2,14 @@ import type { SystemPromptContribution } from '../../../shared/plugin-host/types
 
 export const acSystemPrompt: SystemPromptContribution = {
   roleNoun: 'Acceptance criteria',
-  countStat: {
-    placeholder: 'acCount',
-    sqlQuery: "SELECT COUNT(*) AS count FROM ac WHERE status='active'",
-    label: 'AC (active)',
-  },
+  /**
+   * The predicate 0.2.4 dropped, restored as data. `ac` is the only built-in
+   * type that ever counted a subset: the agent saw `status='active'` while the
+   * sidebar counted every row, and deprecating that SQL silently made the agent
+   * agree with the sidebar rather than the other way round. Both now read
+   * `RawEntityReader.count('ac', countPredicate)`.
+   */
+  countPredicate: { field: 'status', in: ['active'] },
   // M13: CRUD moved to the generic entity-tools server (composed by the host);
   // this line now covers ONLY ac's custom semantic-audit tool.
   mcpToolsLine: 'ac-tools: analyze_ac_against_entities',

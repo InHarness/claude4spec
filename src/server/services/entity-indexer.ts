@@ -10,7 +10,7 @@
  *
  * 0.2.2: neither the order nor the table names are hardcoded here any more. The
  * order comes from each module's declared `dependsOn` (so `dto` precedes
- * `endpoint` because `endpoint` says so) and the table from `module.table` in its
+ * `endpoint` because `endpoint` says so) and the table from `compositionOf(module)` in its
  * manifest — so a plugin-contributed type is cleared and rebuilt on exactly the
  * same path as a built-in one, instead of being silently missing from three
  * hand-maintained parallel arrays.
@@ -31,6 +31,7 @@ import type { TagsService } from './tags.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { RestoreContext } from '../serialization/types.js';
 import { topoSortModules } from '../core/plugin-host/entity-order.js';
+import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { HostEntityWriter } from './entity-writer.js';
 import { projectStamp, safeTable } from './system-stamp-projection.js';
 import { readSystemFields } from '../serialization/system-fields.js';
@@ -66,7 +67,7 @@ export class EntityIndexerService {
    * The ACTIVE modules in declared dependency order. Inactive types are absent —
    * their files are kept on disk, just not indexed.
    */
-  private orderedModules(): Array<{ type: string; table: string }> {
+  private orderedModules(): Array<{ type: string; table?: string }> {
     return topoSortModules(this.host.listEntities(), (remaining) =>
       console.warn(
         `[entity-indexer] dependsOn cycle among [${remaining.join(', ')}] — ` +
@@ -76,7 +77,7 @@ export class EntityIndexerService {
   }
 
   /**
-   * A `module.table` value safe to interpolate into DDL/DML, or `null`.
+   * A table name safe to interpolate into DDL/DML, or `null`.
    *
    * 0.2.4: the implementation MOVED to `system-stamp-projection.ts` — the stamp
    * projection interpolates a table name too, and one guard written twice is
@@ -122,7 +123,7 @@ export class EntityIndexerService {
     const seen = new Set<string>();
     const out: string[] = [];
     for (const m of this.host.listAvailable()) {
-      const table = this.safeTable(m.table, m.type);
+      const table = this.safeTable(compositionOf(m).mainTable, m.type);
       if (!table || seen.has(table)) continue;
       seen.add(table);
       out.push(table);
@@ -171,7 +172,7 @@ export class EntityIndexerService {
       .transaction(() => {
         // Children before parents. Entity tables are cleared in REVERSE dependency
         // order (dependents first), so a dependent's FK never blocks the parent's
-        // DELETE. Table names come from `module.table`, so an active plugin type is
+        // DELETE. Table names come from the derived descriptor, so an active plugin type is
         // cleared too — the old hardcoded list silently left plugin rows behind.
         // 0.2.7 — SCOPED to the types this rebuild will refill. The unscoped
         // `DELETE FROM entity_tag` used to take every assignment in the project,
@@ -202,7 +203,7 @@ export class EntityIndexerService {
         // their rows never linger as un-reindexable phantoms.
         const orderedTables = [...ordered]
           .reverse()
-          .map((m) => this.safeTable(m.table, m.type))
+          .map((m) => this.safeTable(compositionOf(m).mainTable, m.type))
           .filter((t): t is string => t !== null);
         const clearOrder = [...orderedTables];
         for (const table of this.clearableTables()) {
@@ -288,7 +289,7 @@ export class EntityIndexerService {
     // migration never ran, which since 0.2.2 includes an envelope that failed to
     // load. `DELETE FROM` a missing table throws out of the watcher callback,
     // where nothing catches it.
-    const named = this.safeTable(this.host.getAvailable(type)?.table, type);
+    const named = this.safeTable(compositionOf(this.host.getAvailable(type))?.mainTable, type);
     const table = named && this.tableExists(named) ? named : null;
     if (!table) {
       console.warn(

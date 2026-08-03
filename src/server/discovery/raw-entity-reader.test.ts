@@ -28,9 +28,9 @@ beforeEach(() => {
   db = new Database(':memory:');
   db.exec(`
     CREATE TABLE endpoint (slug TEXT PRIMARY KEY);
-    CREATE TABLE use_cases (slug TEXT PRIMARY KEY);
+    CREATE TABLE use_case (slug TEXT PRIMARY KEY);
     INSERT INTO endpoint (slug) VALUES ('e1');
-    INSERT INTO use_cases (slug) VALUES ('uc-1'), ('uc-2');
+    INSERT INTO use_case (slug) VALUES ('uc-1'), ('uc-2');
   `);
 });
 afterEach(() => db.close());
@@ -42,7 +42,7 @@ describe('listSlugs', () => {
   });
 
   it('resolves a PLUGIN type through the host manifest instead of throwing', () => {
-    const reader = new RawEntityReader(db, host([{ type: 'use-case', table: 'use_cases' }]));
+    const reader = new RawEntityReader(db, host([{ type: 'use-case' }]));
     expect(reader.listSlugs('use-case' as never)).toEqual(['uc-1', 'uc-2']);
   });
 
@@ -62,7 +62,7 @@ describe('listSlugs', () => {
 
 describe('count', () => {
   it('resolves a plugin type, and reports 0 for an unresolvable one', () => {
-    const reader = new RawEntityReader(db, host([{ type: 'use-case', table: 'use_cases' }]));
+    const reader = new RawEntityReader(db, host([{ type: 'use-case' }]));
     expect(reader.count('use-case' as never)).toBe(2);
     expect(reader.count('ghost' as never)).toBe(0);
   });
