@@ -20,6 +20,7 @@ import {
   listEntitiesAll,
   MAX_ANCHORS_PER_CALL,
 } from './index.js';
+import { DEFAULT_BUDGET_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
@@ -235,8 +236,34 @@ describe('discovery core', () => {
       const c = core([pagesRoot(), flatRoot()]);
       const page = await c.getPage({ rootId: 'notes', path: 'n.md', range: { start: 2, end: 2 } });
       expect(page.content).toBe('two');
-      expect(page.total).toBe(4);
-      expect(page.hasMore).toBe(true);
+      // No `total`, no `hasMore`: the budget that truncates counts CHARACTERS,
+      // so a line counter beside it measures in the wrong unit. `truncated` is
+      // the whole cut signal.
+      expect(page).not.toHaveProperty('total');
+      expect(page).not.toHaveProperty('hasMore');
+    });
+
+    /**
+     * The loop this closes: a page on an indexed root came back truncated with
+     * an instruction to re-read it via `range` — the argument the very same
+     * operation refuses. Following the hint produced INVALID_ARGUMENT, which
+     * sent the agent back to get_page, which produced the same hint.
+     */
+    it('the truncation hint on an indexed root never proposes the range that get_page refuses', async () => {
+      await writePage('pages', 'big.md', `# H\n\n${'x'.repeat(DEFAULT_BUDGET_CHARS + 1000)}\n`);
+      const c = core([pagesRoot()]);
+      const page = await c.getPage({ rootId: 'pages', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.truncationHint).toMatch(/list_sections.*get_sections/);
+      expect(page.truncationHint).not.toMatch(/range/);
+    });
+
+    it('the truncation hint on a root without a section index still proposes range', async () => {
+      await writePage('notes', 'big.md', 'x'.repeat(DEFAULT_BUDGET_CHARS + 1000));
+      const c = core([pagesRoot(), flatRoot()]);
+      const page = await c.getPage({ rootId: 'notes', path: 'big.md' });
+      expect(page.truncated).toBe(true);
+      expect(page.truncationHint).toMatch(/range/);
     });
   });
 
@@ -765,7 +792,14 @@ describe('discovery core', () => {
       expect(item.truncated).toBe(true);
       expect(item.body).toBeTruthy(); // never a dead end — a usable prefix survives
       expect(result.truncated).toBe(true);
-      expect(result.message).toContain('get_page');
+      // The remedy has to be one the caller can actually run. It used to offer
+      // "the page window with get_page" first — but a section only ever lives on
+      // a section-indexed root, and that is exactly where get_page refuses a
+      // `range`, so the page-window half was dead on every input that can reach
+      // this line. Narrowing to a child section is what remains true.
+      expect(result.message).toContain('list_sections');
+      expect(result.message).toContain('get_sections');
+      expect(result.message).not.toContain('get_page');
     });
   });
 

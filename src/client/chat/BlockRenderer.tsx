@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList, Clock, X } from 'lucide-react';
+import { AlertTriangle, ChevronDown, ChevronRight, Cpu, HelpCircle, ClipboardList, Clock, X } from 'lucide-react';
 import type { UIContentBlock } from '@inharness-ai/agent-chat';
 import type { UserInputRequest, UserInputResponse } from '@inharness-ai/agent-adapters';
 import { SubagentPanel } from './SubagentPanel.js';
 import { ToolCard, type ToolItem } from './ToolCard.js';
 import { UserTextMarkdown } from './UserTextMarkdown.js';
-import { USER_INPUT_TOOL_NAME } from './useChat.js';
+import { USER_INPUT_TOOL_NAME, WARNING_TOOL_NAME } from './useChat.js';
 import { ChatMarkdown } from './ChatMarkdown.js';
 
 export type BlockSide = 'user' | 'assistant';
@@ -36,6 +36,9 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
       }
       const paired = siblings.find((b) => b.type === 'toolResult' && b.toolUseId === block.toolUseId);
       const result = paired && paired.type === 'toolResult' ? paired : null;
+      if (block.toolName === WARNING_TOOL_NAME) {
+        return <WarningBlock message={warningMessage(block.input)} />;
+      }
       if (block.toolName === USER_INPUT_TOOL_NAME) {
         return (
           <PersistedUserInputCard
@@ -79,6 +82,32 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
       );
     }
     case 'toolBatch': {
+      // A warning is not a tool call and must never be folded into a tool card,
+      // even when the batcher put it next to one. Pull the warnings out and hand
+      // the remainder BACK to this switch rather than straight to <ToolCard> —
+      // going straight there would strip the other special case below it, so a
+      // warning batched next to a `__user_input__` would render the prompt as a
+      // raw tool call and quietly make it non-interactive.
+      if (block.items.some((i) => i.toolName === WARNING_TOOL_NAME)) {
+        const warnings = block.items.filter((i) => i.toolName === WARNING_TOOL_NAME);
+        const rest = block.items.filter((i) => i.toolName !== WARNING_TOOL_NAME);
+        return (
+          <>
+            {warnings.map((item) => (
+              <WarningBlock key={item.toolUseId} message={warningMessage(item.input)} />
+            ))}
+            {rest.length > 0 && (
+              <BlockRenderer
+                block={{ ...block, items: rest }}
+                siblings={siblings}
+                side={side}
+                annotations={annotations}
+                planMode={planMode}
+              />
+            )}
+          </>
+        );
+      }
       if (block.items.every((i) => i.toolName === USER_INPUT_TOOL_NAME)) {
         return (
           <>
@@ -103,6 +132,42 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
     default:
       return null;
   }
+}
+
+// --- Runtime warning (C21) ---
+
+/** The synthetic block carries `{ message }`; be forgiving about what arrives. */
+function warningMessage(input: unknown): string {
+  const message = (input as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && message.length > 0 ? message : String(input ?? '');
+}
+
+/**
+ * A runtime warning is the ONLY channel telling the reader a guarantee got
+ * weaker — an FS scope that fell back from a hard OS sandbox to a soft one, an
+ * execute param the adapter architecture ignores. It must not read as assistant
+ * prose, so it gets the yellow notice treatment (the annotation chip's palette)
+ * rather than `--c-red*`, which stays reserved for errors: this is a live
+ * caveat, not a failure.
+ */
+function WarningBlock({ message }: { message: string }) {
+  return (
+    <div className="msg-enter mb-4 flex gap-2">
+      <div
+        className="rounded-md px-3 py-2 text-[12.5px] max-w-[85%]"
+        style={{ background: 'var(--c-yellow)', border: '1px solid rgba(0,0,0,0.08)' }}
+      >
+        <div
+          className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider mb-1"
+          style={{ color: 'var(--c-yellow-ink)' }}
+        >
+          <AlertTriangle size={11} />
+          runtime warning
+        </div>
+        <div style={{ color: 'var(--c-ink)' }}>{message}</div>
+      </div>
+    </div>
+  );
 }
 
 // --- User message ---

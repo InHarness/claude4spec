@@ -19,6 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
+import { parseHeadings } from '../../services/section-indexer.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
@@ -56,6 +57,7 @@ const RULES: Record<string, { id: number; bucket: string }> = {
   'module-without-ac': { id: 11, bucket: 'modulesWithoutAc' },
   'unknown-type': { id: 12, bucket: 'brokenReferences' },
   'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
+  'duplicate-anchor': { id: 13, bucket: 'duplicateAnchors' },
 };
 
 /** Buckets whose every row is an error, regardless of configuration. */
@@ -64,6 +66,7 @@ const ERROR_BUCKETS = new Set([
   'invalidTagReferences',
   'brokenExtensionReferences',
   'brokenAcVerifies',
+  'duplicateAnchors',
 ]);
 
 /**
@@ -154,9 +157,21 @@ export async function checkConsistency(
   const scanned = roots.referenceValidated();
   const allPagePaths: Array<{ rootId: string; path: string }> = [];
 
+  /**
+   * Rule 13's evidence is collected INSIDE this sweep rather than by a second
+   * pass. `PageSource.readAll` has no cache, and the two root sets overlap
+   * almost entirely in practice, so a separate scan meant reading the whole
+   * specification off disk twice on every consistency check. The counts still
+   * have to be exact regardless of the `rule` filter — `summary` promises full
+   * numbers — so the answer is to read once, not to skip when filtered.
+   */
+  const sectionIndexedIds = new Set(roots.sectionIndexed().map((r) => r.id));
+  const anchorOccurrences = new Map<string, AnchorOccurrence[]>();
+
   for (const root of scanned) {
     for (const page of await pages.readAll([root])) {
       allPagePaths.push({ rootId: root.id, path: page.path });
+      if (sectionIndexedIds.has(root.id)) collectAnchors(anchorOccurrences, root.id, page);
       for (const tag of parseXmlTagsExcludingCode(page.body)) {
         const extType = tag.source === 'extension' ? getExtensionReferenceType(tag.kind) : undefined;
         const tagType = tag.attrs.type ?? extType?.entityType;
@@ -316,8 +331,20 @@ export async function checkConsistency(
     }
   }
 
+  // Section-indexed roots the reference sweep above did NOT cover.
+  for (const root of roots.sectionIndexed()) {
+    if (scanned.some((r) => r.id === root.id)) continue;
+    for (const page of await pages.readAll([root])) collectAnchors(anchorOccurrences, root.id, page);
+  }
+
+  const duplicateAnchors = [...anchorOccurrences.entries()]
+    .filter(([, occurrences]) => occurrences.length > 1)
+    .map(([anchor, occurrences]) => ({ anchor, occurrences }))
+    .sort((a, b) => a.anchor.localeCompare(b.anchor));
+
   const buckets: Record<string, unknown[]> = {
     brokenReferences,
+    duplicateAnchors,
     orphanedEntityTags: [],
     unreferencedEntities,
     invalidTagReferences,
@@ -337,7 +364,11 @@ export async function checkConsistency(
     entitiesWithoutAcCoverage.filter((e) => e.severity === 'warn').length +
     modulesWithoutAc.filter((m) => m.severity === 'warn').length;
   const errors =
-    brokenReferences.length + invalidTagReferences.length + brokenExtensionReferences.length + acErrors;
+    brokenReferences.length +
+    invalidTagReferences.length +
+    brokenExtensionReferences.length +
+    duplicateAnchors.length +
+    acErrors;
   const warnings = unreferencedEntities.length + acWarnings;
 
   const report: ConsistencyReport = {
@@ -357,6 +388,54 @@ export async function checkConsistency(
   }
 
   return report;
+}
+
+interface AnchorOccurrence {
+  rootId: string;
+  pagePath: string;
+  /** 1-based, within the page BODY — the same space `section_index` uses. */
+  line: number;
+  heading: string;
+}
+
+/**
+ * Rule 13 — one anchor, two headings.
+ *
+ * An anchor is an identity: `get_sections({ anchors })`,
+ * `list_sections({ by: "anchor" })` and `<section_ref anchor="…"/>` all assume it
+ * names exactly one section. A duplicate makes every reference to it ambiguous.
+ *
+ * The evidence comes from the PAGE TEXT, not from `section_index`. It cannot come
+ * from the index: `anchor` is UNIQUE there, so by the time a duplicate reaches
+ * the table one of the two occurrences has already been discarded — the index is
+ * the one place where the collision is guaranteed to be invisible.
+ *
+ * Occurrences are resolved by the INDEXER'S OWN `parseHeadings`, not by a second
+ * matcher written to look equivalent. Two implementations of "which anchor
+ * belongs to which heading" are two answers, and they fail in opposite
+ * directions: a stricter rule misses real collisions (an anchor comment the
+ * indexer accepts mid-sentence above a heading), a looser one reports prose as a
+ * defect (the `xxxxxxxx` placeholder on the pages that DOCUMENT the anchor
+ * format — a false positive this rule actually produced against the real
+ * specification). Sharing the function makes the two agree by construction —
+ * the same lesson as B10 in this release, one layer down.
+ */
+function collectAnchors(
+  into: Map<string, AnchorOccurrence[]>,
+  rootId: string,
+  page: { path: string; body: string },
+): void {
+  for (const h of parseHeadings(page.body.split('\n'))) {
+    if (h.anchor === null) continue;
+    const list = into.get(h.anchor) ?? [];
+    list.push({
+      rootId,
+      pagePath: page.path,
+      line: (h.anchorLineIndex ?? h.lineIndex) + 1,
+      heading: h.text,
+    });
+    into.set(h.anchor, list);
+  }
 }
 
 function countBy<T>(rows: readonly T[], key: (row: T) => string): Record<string, number> {

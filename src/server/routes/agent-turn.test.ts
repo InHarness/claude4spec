@@ -576,3 +576,60 @@ describe('runAgentTurn — M17 background tasks (0-1-141-to-next-2)', () => {
     expect(setSession).toHaveBeenCalledWith('t1', 's-final');
   });
 });
+
+/**
+ * C21 — the adapter's `warning` event is the ONLY channel reporting a weakened
+ * runtime guarantee: an FS scope that fell back from a hard OS sandbox to a soft
+ * one, an execute param this architecture ignores. It used to reach a
+ * `console.warn` on the server and nothing else — forwarded over SSE, but
+ * swallowed by a client with no branch for it, absent from the replay buffer and
+ * never written to history. A security notice nobody can see is not a notice.
+ */
+describe('runAgentTurn — adapter warnings reach the user (C21)', () => {
+  it('persists a warning as its own complete row and forwards it to the client', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'Starting. ' },
+      { type: 'warning', message: 'filesystem scope degraded to soft enforcement' },
+      { type: 'text_delta', text: 'Done.' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, messages } = makeDeps();
+    const emitted: Array<Record<string, unknown>> = [];
+    const input = makeInput();
+    input.onEvent = (e) => emitted.push(e as Record<string, unknown>);
+
+    await runAgentTurn(deps, input);
+
+    const warnings = messages.filter((m) => m.role === 'warning');
+    expect(warnings).toHaveLength(1);
+
+    // Content is `{ message }`, not `{ text }` — the row is a warning, not prose.
+    const row = (deps.chatService as unknown as { getMessages: () => Array<{ role: string; content: string }> })
+      .getMessages()
+      .find((r) => r.role === 'warning');
+    expect(JSON.parse(row!.content)).toEqual({
+      message: 'filesystem scope degraded to soft enforcement',
+    });
+
+    // It still reaches the live client too.
+    expect(emitted.filter((e) => e.type === 'warning')).toHaveLength(1);
+  });
+
+  it('lands between the assistant blocks it interrupted, not after the turn', async () => {
+    hoisted.events = [
+      { type: 'text_delta', text: 'Before. ' },
+      { type: 'warning', message: 'execute param ignored by this architecture' },
+      { type: 'text_delta', text: 'After.' },
+      { type: 'result', sessionId: 's1' },
+    ];
+    const { deps, messages } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    // The preceding assistant buffer is flushed first, so ordering in history
+    // matches when the guarantee actually weakened.
+    expect(messages.map((m) => m.role)).toEqual(['user', 'assistant', 'warning', 'assistant']);
+    expect(messages[1]!.text).toBe('Before. ');
+    expect(messages[3]!.text).toBe('After.');
+  });
+});

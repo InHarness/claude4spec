@@ -73,13 +73,26 @@ export async function getPage(
   }
 
   /**
+   * ONE predicate, two consumers: the refusal below and the truncation hint
+   * further down. They used to be independent `if`s, which is how a page on an
+   * indexed root came back cut with an instruction to re-read it via `range` —
+   * the very argument the refusal rejects. An agent following that hint looped:
+   * get_page → hint → range → INVALID_ARGUMENT → get_page.
+   *
+   * The rule this encodes: a hint never proposes a call the same operation
+   * would refuse. Keep the two gated by this single value, not by two
+   * conditions that happen to agree today.
+   */
+  const lineWindowsRefused = root.sectionIndexed;
+
+  /**
    * `range` on a section-indexed root is refused rather than served. Line
    * windows are the tool of last resort — on a root that HAS anchors, a section
    * is a better window in every way (it is semantic, it is measurable up front,
    * and it carries its own edges), and quietly serving lines would teach an
    * agent to keep asking for the worse thing.
    */
-  if (input.range && root.sectionIndexed) {
+  if (input.range && lineWindowsRefused) {
     throw invalidArgument(
       `root '${root.id}' is section-indexed, so a line range is the wrong window onto it`,
       `use list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }) then get_sections({ anchors })`,
@@ -87,9 +100,6 @@ export async function getPage(
   }
 
   let content = await pages.read(root.id, input.path);
-  const lines = content.split('\n');
-  const total = lines.length;
-  let hasMore = false;
 
   if (input.range) {
     const { start, end } = input.range;
@@ -99,13 +109,14 @@ export async function getPage(
         'range is 1-based and inclusive: { start: 1, end: 200 }',
       );
     }
-    content = lines.slice(start - 1, end).join('\n');
-    hasMore = end < total;
+    content = content.split('\n').slice(start - 1, end).join('\n');
   }
 
   const budgeted = truncateText(
     content,
-    `page truncated by response budget — re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } })`,
+    lineWindowsRefused
+      ? `page truncated by response budget — list this page's sections with list_sections({ by: "page", rootId: "${root.id}", path: "${input.path}" }), then read them with get_sections({ anchors })`
+      : `page truncated by response budget — re-read a window with get_page({ rootId: "${root.id}", path: "${input.path}", range: { start, end } })`,
   );
 
   return {
@@ -113,7 +124,5 @@ export async function getPage(
     path: input.path,
     content: budgeted.text,
     ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
-    total,
-    hasMore: hasMore || budgeted.truncated,
   };
 }
