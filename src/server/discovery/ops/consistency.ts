@@ -396,7 +396,15 @@ async function findDuplicateAnchors(
   pages: PageSource,
   roots: RootSet,
 ): Promise<Array<{ anchor: string; occurrences: AnchorOccurrence[] }>> {
-  const anchorRe = new RegExp(ANCHOR_PATTERN_SOURCE);
+  /**
+   * Anchored, not a substring search — the spec's canonical "anchor line" regex.
+   * A sentence that MENTIONS `<!-- anchor: xxxxxxxx -->` while explaining the
+   * format is prose, not an identifier, and a rule that cannot tell the two
+   * apart reports noise. A noisy rule gets ignored, which costs more than the
+   * rule was worth. (Caught on the real specification: the placeholder
+   * `xxxxxxxx` appears in two pages' prose and was reported as a collision.)
+   */
+  const anchorLineRe = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
   const headingRe = /^#{1,6}\s+(.+?)\s*$/;
   const found = new Map<string, AnchorOccurrence[]>();
 
@@ -404,18 +412,19 @@ async function findDuplicateAnchors(
     for (const page of await pages.readAll([root])) {
       const lines = page.body.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        const m = anchorRe.exec(lines[i] ?? '');
-        const anchor = m?.[1];
+        const anchor = anchorLineRe.exec(lines[i] ?? '')?.[1];
         if (!anchor) continue;
-        // The heading the anchor comments, found the way the indexer finds it:
-        // the next non-blank line.
-        let heading = '';
+        // The heading this anchor names, resolved the way the indexer resolves
+        // it: the next non-blank line. An anchor line that heads nothing is not
+        // indexed either, so it cannot collide with anything.
+        let heading: string | null = null;
         for (let j = i + 1; j < lines.length; j++) {
           const next = (lines[j] ?? '').trim();
           if (next === '') continue;
-          heading = headingRe.exec(next)?.[1] ?? '';
+          heading = headingRe.exec(next)?.[1] ?? null;
           break;
         }
+        if (heading === null) continue;
         const list = found.get(anchor) ?? [];
         list.push({ rootId: root.id, pagePath: page.path, line: i + 1, heading });
         found.set(anchor, list);

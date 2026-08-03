@@ -191,6 +191,32 @@ describe('discovery core over the real section indexer', () => {
       expect((report.summary as { errors: number }).errors).toBeGreaterThan(0);
     });
 
+    /**
+     * Found by running the rule against the real specification: the placeholder
+     * `xxxxxxxx` appears in two pages that DOCUMENT the anchor format, and was
+     * reported as a collision. The indexer only ever counts an anchor comment
+     * that occupies a whole line and heads a heading; the rule has to draw the
+     * same line, or it reports prose as a defect — and a rule that cries wolf
+     * gets filtered out, which is worse than not having it.
+     */
+    it('an anchor MENTIONED in prose is not an occurrence', async () => {
+      const prose = `Line that merely explains the format: ${dup} is the shape.`;
+      await index('doc-a.md', ['# Top', '', prose, '', 'body', ''].join('\n'));
+      await index('doc-b.md', ['# Top', '', prose, '', 'body', ''].join('\n'));
+
+      const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
+      expect(report.duplicateAnchors).toEqual([]);
+    });
+
+    it('an anchor line that heads nothing is not an occurrence', async () => {
+      // Trailing anchor with no heading after it — the indexer skips it too.
+      await index('orphan-a.md', ['# Top', '', 'body', '', dup, ''].join('\n'));
+      await index('orphan-b.md', ['# Top', '', 'body', '', dup, ''].join('\n'));
+
+      const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
+      expect(report.duplicateAnchors).toEqual([]);
+    });
+
     it('within one page the FIRST occurrence owns the anchor', async () => {
       await index(
         'dup2.md',
