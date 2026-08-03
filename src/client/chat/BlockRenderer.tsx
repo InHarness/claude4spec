@@ -83,8 +83,11 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
     }
     case 'toolBatch': {
       // A warning is not a tool call and must never be folded into a tool card,
-      // even when the batcher put it next to one. Split it back out; the rest of
-      // the batch renders as it always did.
+      // even when the batcher put it next to one. Pull the warnings out and hand
+      // the remainder BACK to this switch rather than straight to <ToolCard> —
+      // going straight there would strip the other special case below it, so a
+      // warning batched next to a `__user_input__` would render the prompt as a
+      // raw tool call and quietly make it non-interactive.
       if (block.items.some((i) => i.toolName === WARNING_TOOL_NAME)) {
         const warnings = block.items.filter((i) => i.toolName === WARNING_TOOL_NAME);
         const rest = block.items.filter((i) => i.toolName !== WARNING_TOOL_NAME);
@@ -94,13 +97,12 @@ export function BlockRenderer({ block, siblings, side, annotations, planMode }: 
               <WarningBlock key={item.toolUseId} message={warningMessage(item.input)} />
             ))}
             {rest.length > 0 && (
-              <ToolCard
-                items={rest.map((i) => ({
-                  toolUseId: i.toolUseId,
-                  toolName: i.toolName,
-                  input: i.input,
-                  result: i.result ? { content: i.result.content, isError: i.result.isError } : null,
-                }))}
+              <BlockRenderer
+                block={{ ...block, items: rest }}
+                siblings={siblings}
+                side={side}
+                annotations={annotations}
+                planMode={planMode}
               />
             )}
           </>

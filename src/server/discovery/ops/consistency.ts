@@ -19,7 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
-import { ANCHOR_PATTERN_SOURCE } from '../../../shared/anchor-pattern.js';
+import { parseHeadings } from '../../services/section-indexer.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
@@ -157,9 +157,21 @@ export async function checkConsistency(
   const scanned = roots.referenceValidated();
   const allPagePaths: Array<{ rootId: string; path: string }> = [];
 
+  /**
+   * Rule 13's evidence is collected INSIDE this sweep rather than by a second
+   * pass. `PageSource.readAll` has no cache, and the two root sets overlap
+   * almost entirely in practice, so a separate scan meant reading the whole
+   * specification off disk twice on every consistency check. The counts still
+   * have to be exact regardless of the `rule` filter — `summary` promises full
+   * numbers — so the answer is to read once, not to skip when filtered.
+   */
+  const sectionIndexedIds = new Set(roots.sectionIndexed().map((r) => r.id));
+  const anchorOccurrences = new Map<string, AnchorOccurrence[]>();
+
   for (const root of scanned) {
     for (const page of await pages.readAll([root])) {
       allPagePaths.push({ rootId: root.id, path: page.path });
+      if (sectionIndexedIds.has(root.id)) collectAnchors(anchorOccurrences, root.id, page);
       for (const tag of parseXmlTagsExcludingCode(page.body)) {
         const extType = tag.source === 'extension' ? getExtensionReferenceType(tag.kind) : undefined;
         const tagType = tag.attrs.type ?? extType?.entityType;
@@ -319,7 +331,16 @@ export async function checkConsistency(
     }
   }
 
-  const duplicateAnchors = await findDuplicateAnchors(pages, roots);
+  // Section-indexed roots the reference sweep above did NOT cover.
+  for (const root of roots.sectionIndexed()) {
+    if (scanned.some((r) => r.id === root.id)) continue;
+    for (const page of await pages.readAll([root])) collectAnchors(anchorOccurrences, root.id, page);
+  }
+
+  const duplicateAnchors = [...anchorOccurrences.entries()]
+    .filter(([, occurrences]) => occurrences.length > 1)
+    .map(([anchor, occurrences]) => ({ anchor, occurrences }))
+    .sort((a, b) => a.anchor.localeCompare(b.anchor));
 
   const buckets: Record<string, unknown[]> = {
     brokenReferences,
@@ -389,53 +410,32 @@ interface AnchorOccurrence {
  * the table one of the two occurrences has already been discarded — the index is
  * the one place where the collision is guaranteed to be invisible.
  *
- * Every location is reported in ONE row, because the author's question is "which
- * copy do I re-anchor?" and that is unanswerable from a single location.
+ * Occurrences are resolved by the INDEXER'S OWN `parseHeadings`, not by a second
+ * matcher written to look equivalent. Two implementations of "which anchor
+ * belongs to which heading" are two answers, and they fail in opposite
+ * directions: a stricter rule misses real collisions (an anchor comment the
+ * indexer accepts mid-sentence above a heading), a looser one reports prose as a
+ * defect (the `xxxxxxxx` placeholder on the pages that DOCUMENT the anchor
+ * format — a false positive this rule actually produced against the real
+ * specification). Sharing the function makes the two agree by construction —
+ * the same lesson as B10 in this release, one layer down.
  */
-async function findDuplicateAnchors(
-  pages: PageSource,
-  roots: RootSet,
-): Promise<Array<{ anchor: string; occurrences: AnchorOccurrence[] }>> {
-  /**
-   * Anchored, not a substring search — the spec's canonical "anchor line" regex.
-   * A sentence that MENTIONS `<!-- anchor: xxxxxxxx -->` while explaining the
-   * format is prose, not an identifier, and a rule that cannot tell the two
-   * apart reports noise. A noisy rule gets ignored, which costs more than the
-   * rule was worth. (Caught on the real specification: the placeholder
-   * `xxxxxxxx` appears in two pages' prose and was reported as a collision.)
-   */
-  const anchorLineRe = new RegExp(`^\\s*${ANCHOR_PATTERN_SOURCE}\\s*$`);
-  const headingRe = /^#{1,6}\s+(.+?)\s*$/;
-  const found = new Map<string, AnchorOccurrence[]>();
-
-  for (const root of roots.sectionIndexed()) {
-    for (const page of await pages.readAll([root])) {
-      const lines = page.body.split('\n');
-      for (let i = 0; i < lines.length; i++) {
-        const anchor = anchorLineRe.exec(lines[i] ?? '')?.[1];
-        if (!anchor) continue;
-        // The heading this anchor names, resolved the way the indexer resolves
-        // it: the next non-blank line. An anchor line that heads nothing is not
-        // indexed either, so it cannot collide with anything.
-        let heading: string | null = null;
-        for (let j = i + 1; j < lines.length; j++) {
-          const next = (lines[j] ?? '').trim();
-          if (next === '') continue;
-          heading = headingRe.exec(next)?.[1] ?? null;
-          break;
-        }
-        if (heading === null) continue;
-        const list = found.get(anchor) ?? [];
-        list.push({ rootId: root.id, pagePath: page.path, line: i + 1, heading });
-        found.set(anchor, list);
-      }
-    }
+function collectAnchors(
+  into: Map<string, AnchorOccurrence[]>,
+  rootId: string,
+  page: { path: string; body: string },
+): void {
+  for (const h of parseHeadings(page.body.split('\n'))) {
+    if (h.anchor === null) continue;
+    const list = into.get(h.anchor) ?? [];
+    list.push({
+      rootId,
+      pagePath: page.path,
+      line: (h.anchorLineIndex ?? h.lineIndex) + 1,
+      heading: h.text,
+    });
+    into.set(h.anchor, list);
   }
-
-  return [...found.entries()]
-    .filter(([, occurrences]) => occurrences.length > 1)
-    .map(([anchor, occurrences]) => ({ anchor, occurrences }))
-    .sort((a, b) => a.anchor.localeCompare(b.anchor));
 }
 
 function countBy<T>(rows: readonly T[], key: (row: T) => string): Record<string, number> {

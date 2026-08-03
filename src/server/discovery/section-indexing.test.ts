@@ -55,9 +55,11 @@ describe('discovery core over the real section indexer', () => {
   let cwd: string;
   let db: Database.Database;
   let pages: PagesService;
+  let indexer: SectionIndexerService | undefined;
   let core: DiscoveryCore;
 
   beforeEach(async () => {
+    indexer = undefined;
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-section-index-test-'));
     db = createTestDb();
     pages = new PagesService(cwd, 'pages', 'pages');
@@ -80,8 +82,11 @@ describe('discovery core over the real section indexer', () => {
 
   async function index(relPath: string, content: string): Promise<void> {
     await pages.write(relPath, { body: content });
+    // ONE long-lived indexer per test, as in production. A fresh instance per
+    // call would discard the service's own state and quietly make the
+    // cross-page anchor cases pass for the wrong reason.
     const watcher = { suppress: () => {} } as unknown as PagesWatcher;
-    const indexer = new SectionIndexerService(
+    indexer ??= new SectionIndexerService(
       db,
       new Map([['pages', { pages, watcher }]]),
       { broadcast: () => {} } as never,
@@ -199,13 +204,32 @@ describe('discovery core over the real section indexer', () => {
      * same line, or it reports prose as a defect — and a rule that cries wolf
      * gets filtered out, which is worse than not having it.
      */
-    it('an anchor MENTIONED in prose is not an occurrence', async () => {
+    it('an anchor MENTIONED in prose, heading nothing, is not an occurrence', async () => {
       const prose = `Line that merely explains the format: ${dup} is the shape.`;
       await index('doc-a.md', ['# Top', '', prose, '', 'body', ''].join('\n'));
       await index('doc-b.md', ['# Top', '', prose, '', 'body', ''].join('\n'));
 
       const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
       expect(report.duplicateAnchors).toEqual([]);
+    });
+
+    /**
+     * The mirror image, and the one that matters more: the indexer's anchor
+     * matcher is NOT anchored to the whole line, so a comment sitting
+     * mid-sentence directly above a heading DOES become that heading's anchor.
+     * A rule that only recognised whole-line anchors would call this clean while
+     * the index quietly lost one of the two sections — precisely the silent loss
+     * the rule exists to catch.
+     */
+    it('an inline anchor that the indexer DOES accept is reported when duplicated', async () => {
+      const inline = `The format is ${dup} by the way.`;
+      await index('inline-a.md', ['# Top', '', inline, '## One', '', 'ONE', ''].join('\n'));
+      await index('inline-b.md', ['# Top', '', inline, '## Two', '', 'TWO', ''].join('\n'));
+
+      const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
+      const rows = report.duplicateAnchors as Array<{ anchor: string; occurrences: unknown[] }>;
+      expect(rows.map((r) => r.anchor)).toEqual(['dupdupdu']);
+      expect(rows[0]!.occurrences).toHaveLength(2);
     });
 
     it('an anchor line that heads nothing is not an occurrence', async () => {
@@ -244,6 +268,41 @@ describe('discovery core over the real section indexer', () => {
       expect(afterOneOrder.page_path).toBe('aaa.md');
       expect(afterReindex.page_path).toBe('aaa.md');
       expect(afterReindex.body).toContain('A BODY');
+    });
+
+    /**
+     * The cross-page tie-break must not eat an ordinary edit. A MOVE and a
+     * DUPLICATE look identical at the instant of the conflict — both are
+     * "another page's row holds this anchor" — so a tie-break that simply
+     * refuses the write deletes the section: the new page's write is blocked,
+     * then the old page's re-index drops a row for an anchor it no longer has,
+     * and nothing owns it. Cutting a section from one page into another is far
+     * more common than a duplicate, so this is the case that must not break.
+     */
+    it('a section cut from one page and pasted into a later-sorting one stays addressable', async () => {
+      const moved = '<!-- anchor: movedanc -->';
+      await index('aaa.md', ['# Top', '', moved, '## Moved', '', 'MOVED BODY', ''].join('\n'));
+
+      // Paste lands first, cut lands second — the order that breaks a naive guard.
+      await index('zzz.md', ['# Top', '', moved, '## Moved', '', 'MOVED BODY', ''].join('\n'));
+      await index('aaa.md', ['# Top', '', 'nothing left here', ''].join('\n'));
+
+      const item = sectionItem(await core.getSections({ anchors: ['movedanc'] }));
+      expect(item.page_path).toBe('zzz.md');
+      expect(item.body).toContain('MOVED BODY');
+    });
+
+    it('re-anchoring the winning page hands the anchor to the surviving claimant', async () => {
+      await index('aaa.md', ['# Top', '', dup, '## Winner', '', 'A BODY', ''].join('\n'));
+      await index('zzz.md', ['# Top', '', dup, '## Loser', '', 'Z BODY', ''].join('\n'));
+      expect(sectionItem(await core.getSections({ anchors: ['dupdupdu'] })).page_path).toBe('aaa.md');
+
+      // Author fixes the duplicate by re-anchoring the winner.
+      await index('aaa.md', ['# Top', '', '<!-- anchor: freshanc -->', '## Winner', '', 'A BODY', ''].join('\n'));
+
+      const item = sectionItem(await core.getSections({ anchors: ['dupdupdu'] }));
+      expect(item.page_path).toBe('zzz.md');
+      expect(item.body).toContain('Z BODY');
     });
 
     it('a freshly injected anchor never lands on one already in use', async () => {

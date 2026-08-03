@@ -14,7 +14,7 @@ const nanoid8 = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789', 8);
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{1,6})\s+(.+?)\s*$/;
 
-interface ParsedHeading {
+export interface ParsedHeading {
   level: number;
   text: string;
   lineIndex: number;
@@ -46,6 +46,17 @@ export class SectionIndexerService {
   /** Keyed by `${rootId}:${relPath}` so the same path in two roots debounces
    * independently. */
   private pending = new Map<string, NodeJS.Timeout>();
+  /**
+   * anchor → pages that wanted it but lost the duplicate tie-break. A loser
+   * writes no row, so when the WINNER later drops the anchor (the author fixing
+   * the duplicate, or the tail of a cut-and-paste move) the row would be deleted
+   * and the surviving claimant left unindexed until a full rebuild. This lets
+   * the delete hand the anchor over instead of dropping it.
+   *
+   * In-memory on purpose: `indexAll()` resolves the same thing from scratch, so
+   * a restart is already a repair, and this only has to cover the live session.
+   */
+  private blockedClaims = new Map<string, Set<string>>();
 
   constructor(
     private db: Database.Database,
@@ -114,6 +125,96 @@ export class SectionIndexerService {
     // Eight straight collisions in a 2.8e12 space is not bad luck, it is a
     // broken generator. Failing loudly beats minting a duplicate.
     throw new Error('[section-indexer] could not mint a free anchor in 8 attempts');
+  }
+
+  /**
+   * Deterministic rule, half two — across pages.
+   *
+   * `section_index.anchor` is UNIQUE, so a cross-page duplicate never raised: the
+   * upsert quietly took the row from whichever page was scanned last, making the
+   * winner a function of directory order.
+   *
+   * The fix cannot be a plain SQL guard ("only overwrite from a lower-sorting
+   * path"), because at the moment of the conflict a MOVE and a DUPLICATE look
+   * identical — both are "another page's row holds this anchor". Refusing the
+   * write unconditionally breaks the common case badly: cut a section out of
+   * `aaa.md`, paste it into `zzz.md`, and `zzz.md`'s write is blocked while
+   * `aaa.md`'s re-index then deletes the row for an anchor it no longer has —
+   * the section disappears from the index entirely and stays gone.
+   *
+   * So ask the question that actually separates the two: does the incumbent page
+   * STILL claim this anchor? If not, this is a move and the row is ours. If it
+   * does, it is a genuine duplicate, and the winner is the lowest
+   * `(rootId, page_path)` — the same answer on every machine, regardless of scan
+   * order. `check_consistency` rule 13 reports the collision so it gets fixed
+   * rather than silently tolerated.
+   *
+   * Costs one page read per conflicting anchor, on a path that is empty in
+   * normal operation.
+   */
+  private async anchorsOwnedElsewhere(
+    rootId: string,
+    relPath: string,
+    sections: readonly SectionInfo[],
+  ): Promise<Set<string>> {
+    const blocked = new Set<string>();
+    const incumbentStmt = this.db.prepare(
+      'SELECT rootId, page_path FROM section_index WHERE anchor = ?',
+    );
+    for (const s of sections) {
+      const row = incumbentStmt.get(s.anchor) as
+        | { rootId: string; page_path: string }
+        | undefined;
+      if (!row) continue;
+      // Our own row — an ordinary re-index (body edited, heading moved).
+      if (row.rootId === rootId && row.page_path === relPath) continue;
+      // Stale row: the incumbent no longer carries it, so this is a move.
+      if (!(await this.pageClaimsAnchor(row.rootId, row.page_path, s.anchor))) continue;
+      const incumbentSortsLower =
+        row.rootId < rootId || (row.rootId === rootId && row.page_path < relPath);
+      if (incumbentSortsLower) {
+        blocked.add(s.anchor);
+        const claimants = this.blockedClaims.get(s.anchor) ?? new Set<string>();
+        claimants.add(this.key(rootId, relPath));
+        this.blockedClaims.set(s.anchor, claimants);
+      }
+    }
+    return blocked;
+  }
+
+  /**
+   * A row for `anchor` has just been deleted. If a page lost the tie-break for
+   * it earlier, that page is now the rightful owner — re-index it rather than
+   * leaving a section that exists on disk unreachable by its own anchor.
+   */
+  private async reindexBlockedClaimants(anchor: string): Promise<void> {
+    const claimants = this.blockedClaims.get(anchor);
+    if (!claimants) return;
+    // Cleared FIRST so the re-index below cannot recurse back into this anchor.
+    this.blockedClaims.delete(anchor);
+    for (const key of claimants) {
+      const sep = key.indexOf(':');
+      const rootId = key.slice(0, sep);
+      const relPath = key.slice(sep + 1);
+      try {
+        await this.indexPage(rootId, relPath);
+      } catch (err) {
+        console.error(`[section-indexer] failed to re-index claimant ${key}:`, err);
+      }
+    }
+  }
+
+  /** Does this page, as it is on disk right now, attach `anchor` to a heading? */
+  private async pageClaimsAnchor(rootId: string, relPath: string, anchor: string): Promise<boolean> {
+    const root = this.roots.get(rootId);
+    if (!root) return false;
+    try {
+      const page = await root.pages.read(relPath);
+      return parseHeadings(page.body.split('\n')).some((h) => h.anchor === anchor);
+    } catch {
+      // Page gone (deleted or renamed) — it claims nothing.
+      return false;
+    }
   }
 
   private removeSectionIndex(anchor: string): void {
@@ -186,22 +287,9 @@ export class SectionIndexerService {
       if (!currentAnchors.has(anchor)) deletedAnchors.push(anchor);
     }
 
+    const blocked = await this.anchorsOwnedElsewhere(rootId, relPath, sections);
+
     const tx = this.db.transaction(() => {
-      /**
-       * Deterministic rule, half two — across pages.
-       *
-       * `section_index.anchor` is UNIQUE, so a duplicate never raised here: the
-       * upsert quietly took the row from whichever page was scanned last, which
-       * made the winner a function of directory order. The WHERE makes the
-       * winner a function of the DATA instead: lowest (rootId, page_path) owns
-       * the anchor, and the same page always updates itself so an ordinary
-       * re-index (heading moved, body edited) still lands.
-       *
-       * Consequence, documented in the tool descriptions: with a live duplicate,
-       * `get_sections` serves the lowest-sorting location, every time, on every
-       * machine. `check_consistency` reports the collision so it gets fixed
-       * rather than silently tolerated.
-       */
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
             (rootId, anchor, page_path, heading_path, heading_slug, heading_level,
@@ -219,12 +307,10 @@ export class SectionIndexerService {
             line_start = excluded.line_start,
             line_end = excluded.line_end,
             paragraph_count = excluded.paragraph_count,
-            updated_at = datetime('now')
-          WHERE excluded.rootId < section_index.rootId
-             OR (excluded.rootId = section_index.rootId
-                 AND excluded.page_path <= section_index.page_path)`
+            updated_at = datetime('now')`
       );
       for (const s of sections) {
+        if (blocked.has(s.anchor)) continue;
         upsertStmt.run(
           rootId,
           s.anchor,
@@ -296,6 +382,10 @@ export class SectionIndexerService {
     });
     tx();
 
+    // After the transaction: an anchor this page gave up may be claimed by a
+    // page that lost the tie-break for it earlier.
+    for (const anchor of deletedAnchors) await this.reindexBlockedClaimants(anchor);
+
     this.ws.broadcast({
       kind: 'section:indexed',
       rootId,
@@ -305,7 +395,15 @@ export class SectionIndexerService {
   }
 }
 
-function parseHeadings(lines: string[]): ParsedHeading[] {
+/**
+ * The single definition of "which anchor belongs to which heading".
+ *
+ * Exported because `check_consistency`'s duplicate-anchor rule has to answer
+ * exactly this question, and a second implementation of it is a second answer:
+ * a rule that recognizes fewer anchors than the indexer misses real collisions,
+ * and one that recognizes more reports prose as a defect.
+ */
+export function parseHeadings(lines: string[]): ParsedHeading[] {
   const out: ParsedHeading[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
