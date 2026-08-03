@@ -462,7 +462,7 @@ function TextField({
  * affordance opens the shared `DirectoryPickerModal` in relative mode, which
  * converts the chosen absolute path back to a project-cwd-relative string (and
  * rejects a selection outside the project). Serves every dir field here — each
- * root's Directory plus briefs/patches/entities.
+ * root's Directory plus briefs/patches/plans/entities/releases.
  */
 function DirField({
   label,
