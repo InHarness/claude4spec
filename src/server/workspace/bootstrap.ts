@@ -75,14 +75,21 @@ export function bootstrapProject(
   // stayed unloadable with the fix sitting one line below the throw. Both
   // migrations no-op on a missing file, so a fresh bootstrap is unaffected.
   //
-  // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
-  // the workspace registry (first-wins — an existing defaultPort stays).
-  const { carried } = migrateConfigToV3(cwd);
-  registry.carryDefaults(workspace.name, carried);
+  // v4 BEFORE v3, deliberately. Both end by reading the config back, so
+  // whichever runs first must leave the file loadable — and v4 is the one that
+  // repairs the shapes the loader rejects (incomplete `roots[]`). Running v3
+  // first meant its own read threw on exactly those files. v3 still harvests
+  // `port`/`mode` correctly afterwards: its already-v3 check requires their
+  // absence, not just a version number.
+  //
   // 0.1.96 config v4: map the legacy `pagesDir` scalar to the built-in `pages`
   // root (config.roots[]); 0.2.8 also materializes absent root fields and
   // carries a legacy `git.syncCommitOnRelease`. Idempotent.
   migrateConfigToV4(cwd);
+  // M31 config v3: physically remove pre-v3 port/mode; harvested values seed
+  // the workspace registry (first-wins — an existing defaultPort stays).
+  const { carried } = migrateConfigToV3(cwd);
+  registry.carryDefaults(workspace.name, carried);
   const { created: configCreated, path: configFilePath } = loadOrCreateConfig(cwd, {
     name: opts.name,
     pagesDir: opts.pagesDir,
