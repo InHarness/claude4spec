@@ -24,7 +24,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { configPath, readConfig, type GitCommitTargetConfig } from '../config.js';
+import { configPath, readConfig, type NormalizedGitCommitTargetConfig } from '../config.js';
 import type {
   GitAheadBehindStatus,
   GitBranchesResponse,
@@ -305,8 +305,8 @@ export class GitService {
     const status = await this.detect();
     const message = opts.description ? `${opts.name}\n\n${opts.description}` : opts.name;
     const config = readConfig(this.cwd);
-    const commitTarget: GitCommitTargetConfig = config.git?.commitTarget ?? {};
-    const mode = commitTarget.mode ?? 'current';
+    const commitTarget: NormalizedGitCommitTargetConfig = config.git.commitTarget;
+    const mode = commitTarget.mode;
 
     let result: GitCommitResult;
     if (mode === 'named' && status.detected && status.rootPath && commitTarget.branch) {
@@ -327,7 +327,7 @@ export class GitService {
     } else if (mode === 'new' && status.detected && status.rootPath && commitTarget.template) {
       result = await this.commitToNewBranch(status, message, {
         template: commitTarget.template,
-        base: commitTarget.base ?? null,
+        base: commitTarget.base,
         releaseName: opts.name,
         date: localDateYYYYMMDD(new Date()),
       });
@@ -341,7 +341,7 @@ export class GitService {
     if (
       result.status === 'committed' &&
       mode !== 'current' &&
-      config.git?.switchAfterRelease &&
+      config.git.switchAfterRelease &&
       result.branch &&
       status.rootPath
     ) {
@@ -637,7 +637,7 @@ export class GitService {
    */
   async commitPull(latest: { name: string }): Promise<GitCommitResult> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return { status: 'skipped' };
+    if (!config.git.enabled) return { status: 'skipped' };
     const status = await this.detect();
     if (!status.detected || !status.branch) return { status: 'skipped' };
     return this.stageAndCommit(status, `Pull to ${latest.name}`, 'pull');
@@ -730,10 +730,10 @@ export class GitService {
    */
   async commitOnRelease(release: { name: string; description: string }): Promise<GitCommitResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected) return null;
-    const mode = config.git.commitTarget?.mode ?? 'current';
+    const mode = config.git.commitTarget.mode;
     if (mode === 'current' && !status.branch) return null;
     return this.commit(release);
   }
@@ -750,7 +750,7 @@ export class GitService {
    */
   async pushOnPush(branch?: string): Promise<GitPushResult | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled || !config.git?.syncPushOnPush) return null;
+    if (!config.git.enabled || !config.git.syncPushOnPush) return null;
     const status = await this.detect();
     if (!status.detected || !status.branch) return null;
     return this.push(branch);
@@ -830,7 +830,7 @@ export class GitService {
    */
   async resolveReleaseCommit(absPath: string): Promise<string | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     let real: string;
@@ -933,7 +933,7 @@ export class GitService {
    */
   async diffRefs(shaA: string, shaB: string, paths: string[]): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
@@ -979,7 +979,7 @@ export class GitService {
    */
   async diffRefToWorkingTree(sha: string, paths: string[]): Promise<GitRefDiff | null> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return null;
     const root = status.rootPath;
@@ -1021,7 +1021,7 @@ export class GitService {
    */
   async isAncestorOfHead(sha: string): Promise<boolean> {
     const config = readConfig(this.cwd);
-    if (!config.git?.enabled) return false;
+    if (!config.git.enabled) return false;
     const status = await this.detect();
     if (!status.detected || !status.rootPath) return false;
     try {
@@ -1062,7 +1062,7 @@ export class GitService {
     } catch {
       return null;
     }
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath) return null;
     let real: string;
@@ -1102,7 +1102,7 @@ export class GitService {
       // every other failure mode here — this route is otherwise always-200.
       return null;
     }
-    if (!config.git?.enabled) return null;
+    if (!config.git.enabled) return null;
     const status = precomputedStatus ?? (await this.detect());
     if (!status.detected || !status.rootPath || !status.branch) return null;
 
@@ -1155,7 +1155,7 @@ export class GitService {
     } catch {
       return { current: null, branches: [] };
     }
-    if (!config.git?.enabled) return { current: null, branches: [] };
+    if (!config.git.enabled) return { current: null, branches: [] };
     const rootPath = await this.probeRoot();
     if (!rootPath) return { current: null, branches: [] };
     const [current, branches] = await Promise.all([this.currentBranch(rootPath), this.listBranchesAt(rootPath)]);
@@ -1182,7 +1182,7 @@ export class GitService {
     } catch {
       return { status: 'skipped', branch: null, message: null };
     }
-    if (!config.git?.enabled) return { status: 'skipped', branch: null, message: null };
+    if (!config.git.enabled) return { status: 'skipped', branch: null, message: null };
 
     // Doesn't need detect()'s remote-URL/status probe — just the root, plus
     // its own dirty check below (narrower than detect()'s isDirty).

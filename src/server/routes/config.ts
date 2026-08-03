@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import path from 'node:path';
-import { readConfig, writeConfig, parseRootsArray, validateRootDirs, type Config } from '../config.js';
+import { readConfig, writeConfig, parseRootsArray, validateRootDirs, type NormalizedConfig } from '../config.js';
 import type { Root } from '../../shared/types.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { C4S_VERSION } from '../services/release-bundle.js';
@@ -44,9 +44,10 @@ const CONTEXT_DEFINING_FIELDS = ['roots', 'briefsDir', 'patchesDir', 'plansDir',
  * inline in startServer before the M31 carve). M31 drops port/mode (workspace
  * settings now) and serverStartedAt (nothing requires a restart anymore).
  */
-function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
-  const agentAllowedPaths = c.agent?.allowedPaths ?? [];
-  const agentDisallowedPaths = c.agent?.disallowedPaths ?? [];
+function configResponse(c: NormalizedConfig, cwd: string, skillRegistry: SkillRegistry) {
+  // 0.2.8 (C23): `readConfig` normalizes every branch below — no `??` here.
+  const agentAllowedPaths = c.agent.allowedPaths;
+  const agentDisallowedPaths = c.agent.disallowedPaths;
   // 0.1.103: mirrors agent-turn.ts's exact pathScopeRequested gate — a pure
   // host-capability + current-config probe (what a turn run right now WOULD
   // get), not a specific past turn's actual adapter_ready event.
@@ -83,8 +84,8 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
     writingStyleUnavailable: c.writingStyle !== null && !skillRegistry.isSelectable(c.writingStyle)
       ? { reason: skillRegistry.unselectableReason(c.writingStyle) }
       : null,
-    language: c.language ?? null,
-    description: c.description ?? null,
+    language: c.language,
+    description: c.description,
     onboarding: { completed: c.onboardingCompleted },
     briefsDir: c.briefsDir,
     patchesDir: c.patchesDir,
@@ -93,8 +94,8 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
     releasesDir: c.releasesDir,
     entities: c.entities,
     agent: {
-      claudeUsePreset: c.agent?.claudeUsePreset ?? true,
-      conversationalLanguage: c.agent?.conversationalLanguage ?? null,
+      claudeUsePreset: c.agent.claudeUsePreset,
+      conversationalLanguage: c.agent.conversationalLanguage,
       allowedPaths: agentAllowedPaths,
       disallowedPaths: agentDisallowedPaths,
       // 0.1.103: real probed runtime enforcement strength for the current
@@ -102,18 +103,18 @@ function configResponse(c: Config, cwd: string, skillRegistry: SkillRegistry) {
       pathScopeStrength,
     },
     git: {
-      enabled: c.git?.enabled ?? false,
-      syncPushOnPush: c.git?.syncPushOnPush ?? false,
+      enabled: c.git.enabled,
+      syncPushOnPush: c.git.syncPushOnPush,
       commitTarget: {
-        mode: c.git?.commitTarget?.mode ?? 'current',
-        branch: c.git?.commitTarget?.branch ?? null,
-        template: c.git?.commitTarget?.template ?? null,
-        base: c.git?.commitTarget?.base ?? null,
+        mode: c.git.commitTarget.mode,
+        branch: c.git.commitTarget.branch,
+        template: c.git.commitTarget.template,
+        base: c.git.commitTarget.base,
       },
-      switchAfterRelease: c.git?.switchAfterRelease ?? false,
+      switchAfterRelease: c.git.switchAfterRelease,
     },
     // M33 phase 3: persisted plugin settings namespace (absent ⇒ {}).
-    plugins: c.plugins ?? {},
+    plugins: c.plugins,
     remoteProjectId: c.remoteProjectId ?? null,
     remoteApiUrl: c.remoteApiUrl ?? null,
     $schemaVersion: c.$schemaVersion,
@@ -218,6 +219,35 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         }
       }
 
+      // The effective post-write artifact dirs (patched value, else current) —
+      // the basis for both cross-field checks below.
+      const currentConfig = readConfig(cwd);
+      const effectiveDirs = {
+        entitiesDir: patch.entitiesDir ?? currentConfig.entitiesDir,
+        releasesDir: patch.releasesDir ?? currentConfig.releasesDir,
+        briefsDir: patch.briefsDir ?? currentConfig.briefsDir,
+        patchesDir: patch.patchesDir ?? currentConfig.patchesDir,
+        plansDir: patch.plansDir ?? currentConfig.plansDir,
+      };
+
+      // 0.2.8 (C17): briefs/patches/plans must differ — checked on ANY dir PATCH,
+      // not just one that also carries `roots`. The Settings screen sends a
+      // diff-only payload, so `{ plansDir: <briefsDir> }` arrives with no `roots`
+      // and used to slip past this guard entirely (boot-time validation would
+      // then reject the project on the next start).
+      const artifactDirPairs: Array<[string, string, string, string]> = [
+        ['briefsDir', effectiveDirs.briefsDir, 'patchesDir', effectiveDirs.patchesDir],
+        ['briefsDir', effectiveDirs.briefsDir, 'plansDir', effectiveDirs.plansDir],
+        ['patchesDir', effectiveDirs.patchesDir, 'plansDir', effectiveDirs.plansDir],
+      ];
+      for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
+        if (aDir === bDir) {
+          return res
+            .status(400)
+            .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
+        }
+      }
+
       // 0.1.96: full-array replace of roots[]. Structural validation (types,
       // path-safety, unique ids, dangling linkTargets, built-in pages present)
       // via parseRootsArray; cross-field overlap via validateRootDirs against the
@@ -229,27 +259,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
         } catch (err) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
         }
-        const current = readConfig(cwd);
-        const effective = {
-          entitiesDir: (patch.entitiesDir ?? current.entitiesDir),
-          releasesDir: (patch.releasesDir ?? current.releasesDir),
-          briefsDir: (patch.briefsDir ?? current.briefsDir),
-          patchesDir: (patch.patchesDir ?? current.patchesDir),
-          plansDir: (patch.plansDir ?? current.plansDir),
-        };
-        const artifactDirPairs: Array<[string, string, string, string]> = [
-          ['briefsDir', effective.briefsDir, 'patchesDir', effective.patchesDir],
-          ['briefsDir', effective.briefsDir, 'plansDir', effective.plansDir],
-          ['patchesDir', effective.patchesDir, 'plansDir', effective.plansDir],
-        ];
-        for (const [aName, aDir, bName, bDir] of artifactDirPairs) {
-          if (aDir === bDir) {
-            return res
-              .status(400)
-              .json({ error: { code: 'VALIDATION', message: `${aName} and ${bName} must differ` } });
-          }
-        }
-        const { errors } = validateRootDirs(roots, effective);
+        const { errors } = validateRootDirs(roots, effectiveDirs);
         if (errors.length > 0) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: errors[0] } });
         }
@@ -406,7 +416,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           // legacy 'current'-mode semantics at commit time with no error
           // anywhere. Same precedent as the `roots` validation above
           // (effective entitiesDir/releasesDir/etc.).
-          const currentCommitTarget = readConfig(cwd).git?.commitTarget;
+          const currentCommitTarget = readConfig(cwd).git.commitTarget;
           const effectiveCt = { ...currentCommitTarget, ...nextCt };
           if (effectiveCt.mode === 'named' && !effectiveCt.branch) {
             return res
@@ -488,7 +498,7 @@ export function configRouter(deps: ConfigRouterDeps): Router {
             patchesDir: updated.patchesDir,
             plansDir: updated.plansDir,
             releasesDir: updated.releasesDir,
-            gitEnabled: updated.git?.enabled ?? false,
+            gitEnabled: updated.git.enabled,
           });
         } catch (err) {
           console.error('[config] ensureGitignore re-sync failed:', err);

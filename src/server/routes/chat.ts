@@ -103,7 +103,7 @@ export function chatRouter(deps: AgentTurnDeps): Router {
           : {};
       const architectureConfig: Record<string, unknown> = {
         ...clientArchitectureConfig,
-        claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
+        claude_usePreset: readConfig(deps.cwd).agent.claudeUsePreset,
       };
       // M05 0.1.62: own ANTHROPIC API key. When set, decrypt and inject per-turn into
       // `custom_env` — the SDK gives `ANTHROPIC_API_KEY` precedence over the local OAuth,

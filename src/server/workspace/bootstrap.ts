@@ -88,15 +88,15 @@ export function bootstrapProject(
     patchesDir: config.patchesDir,
     plansDir: config.plansDir,
     releasesDir: config.releasesDir,
-    gitEnabled: config.git?.enabled ?? false,
+    gitEnabled: config.git.enabled,
   });
   // 0.1.56: welcome page deferred to onboarding close — see ensureWelcomePage.
-  fs.mkdirSync(path.resolve(cwd, config.entitiesDir ?? '.claude4spec/entities'), {
+  fs.mkdirSync(path.resolve(cwd, config.entitiesDir), {
     recursive: true,
   });
   // 0.1.118: releasesDir — same forward-compat default as entitiesDir, so a
   // fresh project has the dir before the ReleasesWatcher roots there.
-  fs.mkdirSync(path.resolve(cwd, config.releasesDir ?? '.claude4spec/releases'), {
+  fs.mkdirSync(path.resolve(cwd, config.releasesDir), {
     recursive: true,
   });
   ensureMcpJson({ projectAbsPath: cwd, workspace: workspace.name });

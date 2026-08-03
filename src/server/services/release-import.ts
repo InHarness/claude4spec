@@ -34,6 +34,7 @@ import {
   type SnapshotDownloadResult,
 } from './remote-http-client.js';
 import type { ReleaseService } from './release.js';
+import type { SkillRegistry } from './skill-registry.js';
 import { readBundleMeta, sha256File, type BundleConfig } from './release-bundle.js';
 import type { ReleaseImportResponse } from '../../shared/release-import.js';
 
@@ -80,6 +81,8 @@ export class ReleaseImportService {
     private releaseService: ReleaseService,
     private remote: RemoteHttpClient,
     private cwd: string,
+    /** 0.2.8 (C6): decides whether the bundle's writing style exists locally. */
+    private skillRegistry: SkillRegistry,
   ) {}
 
   /**
@@ -129,9 +132,15 @@ export class ReleaseImportService {
       }
 
       // 4b. Read the manifest + bundled config (schema version for the audit row;
-      //     name/entities for the post-restore config patch).
+      //     the sanitized config for the post-restore config patch).
       const { manifest, config: bundleConfig } = await readBundleMeta(tarGzPath);
       bundleSchemaVersion = manifest.bundleSchemaVersion;
+
+      // 4c. 0.2.8 (C6): a bundle whose writing style is not installed here aborts
+      //     the clone. Checked BEFORE the restore so nothing is written for a clone
+      //     that cannot be faithful — a clone that silently drops part of the source
+      //     config is worse than one that fails loudly.
+      assertBundleWritingStyleAvailable(bundleConfig, this.skillRegistry);
 
       // 5. Restore (M17) — UPSERTs entities + pages with release_id = NULL.
       await this.releaseService.restoreBundleArchive(createReadStream(tarGzPath));
@@ -149,21 +158,17 @@ export class ReleaseImportService {
       );
       localReleaseId = release.id;
 
-      // 7 + 8. Persist remoteProjectId (subsequent-push target) + name (CLI
-      //         override wins, else bundle config.name) + skip onboarding.
+      // 7 + 8. Persist remoteProjectId (subsequent-push target) + the whole
+      //         sanitized config the bundle carries (0.2.8 — C6/C7).
       const projectId = download.projectId ?? project.id;
-      const patch: Partial<Config> = {
-        remoteProjectId: projectId,
-        name: opts.nameOverride ?? bundleConfig?.name ?? project.name,
-        onboardingCompleted: true,
-      };
-      if (bundleConfig?.entities !== undefined) patch.entities = bundleConfig.entities;
-      // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
-      // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
-      // root via the v3→v4 path so the cloned project is v4-shaped.
-      const restoredRoots = resolveBundleRoots(bundleConfig);
-      if (restoredRoots) patch.roots = restoredRoots;
-      writeConfig(this.cwd, patch);
+      writeConfig(
+        this.cwd,
+        buildClonePatch(bundleConfig, {
+          projectId,
+          nameOverride: opts.nameOverride,
+          fallbackName: project.name,
+        }),
+      );
 
       // 9. Audit success.
       const id = this.insertRow({
@@ -307,6 +312,64 @@ function resolveBundleRoots(bundleConfig: BundleConfig | null): Root[] | undefin
   const legacyDir = (bundleConfig as { pagesDir?: string }).pagesDir;
   if (typeof legacyDir === 'string') return [builtinPagesRoot(legacyDir)];
   return undefined;
+}
+
+/**
+ * 0.2.8 (C6/C7): the config a clone writes — the FULL sanitized allow-list the
+ * bundle carries, plus the `remoteProjectId` the import itself determines.
+ * Before 0.2.8 this dropped `writingStyle` and `agent.claudeUsePreset` on the
+ * floor and hardcoded `onboardingCompleted: true`, so a clone silently lost the
+ * writing convention its whole specification was authored in and could never
+ * reproduce a pre-onboarding project.
+ *
+ * Pure on purpose: the clone flow around it needs a remote, a tarball and a DB,
+ * this decision does not.
+ */
+export function buildClonePatch(
+  bundleConfig: BundleConfig | null,
+  opts: { projectId: string; nameOverride?: string; fallbackName: string },
+): Partial<Config> {
+  const patch: Partial<Config> = {
+    remoteProjectId: opts.projectId,
+    name: opts.nameOverride ?? bundleConfig?.name ?? opts.fallbackName,
+    // C7: read from the bundle. A bundle with no config.json at all keeps the
+    // pre-0.2.8 fallback — there is no onboarding state to reproduce.
+    onboardingCompleted: bundleConfig?.onboardingCompleted ?? true,
+  };
+  if (bundleConfig === null) return patch;
+  // C6: `writingStyle: null` is a legal value ("no style"), so the key's
+  // presence decides — not its truthiness.
+  if (bundleConfig.writingStyle !== undefined) patch.writingStyle = bundleConfig.writingStyle;
+  if (bundleConfig.entities !== undefined) patch.entities = bundleConfig.entities;
+  if (bundleConfig.agent?.claudeUsePreset !== undefined) {
+    patch.agent = { claudeUsePreset: bundleConfig.agent.claudeUsePreset };
+  }
+  // 0.1.96: migrate the bundle's releasable roots into the new cwd. A v1
+  // bundle carries `pagesDir` (no `roots[]`) → map it to the built-in 'pages'
+  // root via the v3→v4 path so the cloned project is v4-shaped.
+  const restoredRoots = resolveBundleRoots(bundleConfig);
+  if (restoredRoots) patch.roots = restoredRoots;
+  return patch;
+}
+
+/**
+ * 0.2.8 (C6): abort the clone when the bundle names a writing style that is not
+ * installed locally. Degrading to "no style" silently would surface weeks later
+ * as a specification written in two conventions.
+ *
+ * `null`/absent = the source project deliberately had no style — not an error.
+ */
+export function assertBundleWritingStyleAvailable(
+  bundleConfig: BundleConfig | null,
+  skillRegistry: Pick<SkillRegistry, 'isSelectable' | 'unselectableReason'>,
+): void {
+  const slug = bundleConfig?.writingStyle;
+  if (typeof slug !== 'string' || slug.trim() === '') return;
+  if (skillRegistry.isSelectable(slug)) return;
+  throw new DomainError(
+    'BUNDLE_WRITING_STYLE_UNAVAILABLE',
+    `writing style "${slug}" from the bundle ${skillRegistry.unselectableReason(slug)} — clone aborted`,
+  );
 }
 
 /** Map a remote-client failure to a clone DomainError (404 ⇒ not-found). */

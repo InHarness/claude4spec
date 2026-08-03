@@ -10,6 +10,8 @@ interface DraftState {
   roots: Root[];
   briefsDir: string;
   patchesDir: string;
+  /** 0.2.8 (C17): the fifth artifact dir — editable here like the other four. */
+  plansDir: string;
   entitiesDir: string;
   releasesDir: string;
 }
@@ -28,6 +30,7 @@ function buildDraft(config: ReturnType<typeof useConfig>['data']): DraftState {
     roots: (config?.roots ?? []).map((r) => ({ ...r, linkTargets: [...r.linkTargets] })),
     briefsDir: config?.briefsDir ?? '',
     patchesDir: config?.patchesDir ?? '',
+    plansDir: config?.plansDir ?? '',
     entitiesDir: config?.entitiesDir ?? '',
     releasesDir: config?.releasesDir ?? '',
   };
@@ -134,6 +137,29 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
       warnings.push(`Root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
     }
   }
+
+  // 0.2.8 (C17): mirror of the server's artifact-dir rules — briefs, patches and
+  // plans must be three DIFFERENT relative directories inside the project.
+  // Blocking here keeps the controls from suggesting a collision is allowed; the
+  // server re-validates and 400s regardless.
+  const artifactDirs: Array<[string, string]> = [
+    ['briefsDir', draft.briefsDir],
+    ['patchesDir', draft.patchesDir],
+    ['plansDir', draft.plansDir],
+  ];
+  for (const [name, dir] of artifactDirs) {
+    if (!isPathSafeRelative(dir)) {
+      errors.push(`${name} must be a non-empty relative path inside the project`);
+    }
+  }
+  for (let i = 0; i < artifactDirs.length; i++) {
+    for (let j = i + 1; j < artifactDirs.length; j++) {
+      const [aName, aDir] = artifactDirs[i]!;
+      const [bName, bDir] = artifactDirs[j]!;
+      if (normDir(aDir) === normDir(bDir)) errors.push(`${aName} and ${bName} must differ`);
+    }
+  }
+
   return { errors, warnings };
 }
 
@@ -213,6 +239,7 @@ export function DirectoriesSection() {
     }
     if (draft.briefsDir !== config.briefsDir) patchBody.briefsDir = draft.briefsDir;
     if (draft.patchesDir !== config.patchesDir) patchBody.patchesDir = draft.patchesDir;
+    if (draft.plansDir !== config.plansDir) patchBody.plansDir = draft.plansDir;
     if (draft.entitiesDir !== config.entitiesDir) patchBody.entitiesDir = draft.entitiesDir;
     if (draft.releasesDir !== config.releasesDir) patchBody.releasesDir = draft.releasesDir;
     if (Object.keys(patchBody).length === 0) return;
@@ -292,6 +319,11 @@ export function DirectoriesSection() {
             label="Patches directory"
             value={draft.patchesDir}
             onChange={(v) => setDraft((d) => ({ ...d, patchesDir: v }))}
+          />
+          <DirField
+            label="Plans directory"
+            value={draft.plansDir}
+            onChange={(v) => setDraft((d) => ({ ...d, plansDir: v }))}
           />
           <DirField
             label="Entities directory"

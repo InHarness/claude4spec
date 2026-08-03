@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   readConfig,
   writeConfig,
+  loadOrCreateConfig,
   configPath,
   migrateConfigToV4,
   validateRootDirs,
@@ -48,9 +49,11 @@ describe('config — description field (0.1.58)', () => {
     expect(readConfig(dir).description).toBeNull();
   });
 
-  it('treats a missing description as absent (no error)', () => {
+  // 0.2.8 (C23): a missing description is normalized to the default `null`
+  // (previously `undefined` — every consumer re-defaulted it with `?? null`).
+  it('normalizes a missing description to null', () => {
     write({});
-    expect(readConfig(dir).description).toBeUndefined();
+    expect(readConfig(dir).description).toBeNull();
   });
 });
 
@@ -133,9 +136,10 @@ describe('config — plugins namespace (M33 phase 3)', () => {
     fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 3, name: 'X', ...cfg }));
   };
 
-  it('treats a missing plugins field as absent', () => {
+  // 0.2.8 (C23): normalized to the `{}` default rather than left undefined.
+  it('normalizes a missing plugins field to {}', () => {
     write({});
-    expect(readConfig(dir).plugins).toBeUndefined();
+    expect(readConfig(dir).plugins).toEqual({});
   });
 
   it('reads a plugins namespace of per-plugin objects', () => {
@@ -195,10 +199,12 @@ describe('config — agent path scope (0.1.90)', () => {
     expect(cfg.agent?.disallowedPaths).toEqual(['/a/secret']);
   });
 
-  it('treats missing path-scope fields as absent (no error)', () => {
+  // 0.2.8 (C23): missing path-scope fields normalize to empty lists — an empty
+  // scope reads as "no user scope", exactly what `?? []` meant at each call site.
+  it('normalizes missing path-scope fields to empty arrays', () => {
     write({ claudeUsePreset: true });
-    expect(readConfig(dir).agent?.allowedPaths).toBeUndefined();
-    expect(readConfig(dir).agent?.disallowedPaths).toBeUndefined();
+    expect(readConfig(dir).agent.allowedPaths).toEqual([]);
+    expect(readConfig(dir).agent.disallowedPaths).toEqual([]);
   });
 
   it('rejects a non-array allowedPaths', () => {
@@ -216,7 +222,14 @@ describe('config — agent path scope (0.1.90)', () => {
   it('deep-merges agent: writing allowedPaths alone preserves claudeUsePreset', () => {
     write({ claudeUsePreset: false });
     const merged = writeConfig(dir, { agent: { allowedPaths: ['/extra'] } });
-    expect(merged.agent).toEqual({ claudeUsePreset: false, allowedPaths: ['/extra'] });
+    expect(merged.agent).toEqual({
+      claudeUsePreset: false,
+      allowedPaths: ['/extra'],
+      // 0.2.8: writeConfig returns the NORMALIZED view, so untouched fields
+      // carry their defaults; the file itself keeps only the two written keys.
+      conversationalLanguage: null,
+      disallowedPaths: [],
+    });
   });
 });
 
@@ -324,5 +337,123 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
 
   it('parseRootsArray rejects a root dir escaping cwd', () => {
     expect(() => parseRootsArray([{ ...builtinPagesRoot('../evil') }])).toThrow(/relative path inside cwd/);
+  });
+});
+
+// 0.2.8 (C23): one central normalizer applies default values deeply at read
+// time, so consumers never re-apply them with `??`. These cases pin the four
+// rules the normalizer must obey — the fourth (arrays replace wholesale) is the
+// one a naive deep-merge gets wrong.
+describe('config — central default normalizer (C23, 0.2.8)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-norm-'));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const write = (cfg: Record<string, unknown>) => {
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'X', ...cfg }));
+  };
+
+  it('fills every nested branch a config omits entirely', () => {
+    write({});
+    const cfg = readConfig(dir);
+    expect(cfg.agent).toEqual({
+      claudeUsePreset: true,
+      conversationalLanguage: null,
+      allowedPaths: [],
+      disallowedPaths: [],
+    });
+    expect(cfg.git).toEqual({
+      enabled: false,
+      syncPushOnPush: false,
+      commitTarget: { mode: 'current', branch: null, template: null, base: null },
+      switchAfterRelease: false,
+    });
+    expect(cfg.consistency).toEqual({ requireAcCoverage: 'off', requireModuleAc: 'off' });
+    expect(cfg.plugins).toEqual({});
+  });
+
+  it('merges a partial branch instead of replacing it', () => {
+    write({ git: { enabled: true } });
+    const cfg = readConfig(dir);
+    expect(cfg.git.enabled).toBe(true);
+    expect(cfg.git.syncPushOnPush).toBe(false);
+    expect(cfg.git.commitTarget.mode).toBe('current');
+  });
+
+  it('merges one level deeper (git.commitTarget)', () => {
+    write({ git: { commitTarget: { mode: 'named', branch: 'spec' } } });
+    const { commitTarget } = readConfig(dir).git;
+    expect(commitTarget).toEqual({ mode: 'named', branch: 'spec', template: null, base: null });
+  });
+
+  it('keeps an explicit null where null carries meaning (writingStyle, remoteApiUrl)', () => {
+    write({ writingStyle: null, remoteApiUrl: null });
+    const cfg = readConfig(dir);
+    expect(cfg.writingStyle).toBeNull();
+    expect(cfg.remoteApiUrl).toBeNull();
+  });
+
+  it('keeps an explicit null inside a nested branch', () => {
+    write({ agent: { conversationalLanguage: null }, git: { commitTarget: { branch: null } } });
+    const cfg = readConfig(dir);
+    expect(cfg.agent.conversationalLanguage).toBeNull();
+    expect(cfg.git.commitTarget.branch).toBeNull();
+  });
+
+  it('replaces arrays wholesale — never element-wise', () => {
+    write({
+      roots: [{ ...builtinPagesRoot('docs') }],
+      agent: { allowedPaths: ['/only'] },
+    });
+    const cfg = readConfig(dir);
+    expect(cfg.roots).toHaveLength(1);
+    expect(cfg.roots[0]!.dir).toBe('docs');
+    expect(cfg.agent.allowedPaths).toEqual(['/only']);
+  });
+
+  it('leaves `entities` undefined when absent — undefined means "all types", not "none"', () => {
+    write({});
+    expect(readConfig(dir).entities).toBeUndefined();
+    write({ entities: [] });
+    expect(readConfig(dir).entities).toEqual([]);
+  });
+
+  it('does not persist the normalized branches — defaults stay live for the project', () => {
+    write({ writingStyle: null });
+    writeConfig(dir, { name: 'Renamed' });
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Record<string, unknown>;
+    expect(onDisk.name).toBe('Renamed');
+    expect(onDisk.git).toBeUndefined();
+    expect(onDisk.agent).toBeUndefined();
+    expect(onDisk.consistency).toBeUndefined();
+    // …while the read-back view still carries them.
+    expect(readConfig(dir).git.commitTarget.mode).toBe('current');
+  });
+
+  it('a fresh bootstrap writes only the historical key set', () => {
+    const fresh = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-boot-'));
+    try {
+      const { config, created } = loadOrCreateConfig(fresh, {});
+      expect(created).toBe(true);
+      // Normalized in memory…
+      expect(config.git.enabled).toBe(false);
+      expect(config.agent.claudeUsePreset).toBe(true);
+      // …absent on disk.
+      const onDisk = JSON.parse(fs.readFileSync(configPath(fresh), 'utf8')) as Record<string, unknown>;
+      expect(onDisk.git).toBeUndefined();
+      expect(onDisk.agent).toBeUndefined();
+      expect(onDisk.plugins).toBeUndefined();
+      expect(onDisk.onboardingCompleted).toBe(false);
+      expect(onDisk.briefsDir).toBe('.claude4spec/briefs');
+    } finally {
+      fs.rmSync(fresh, { recursive: true, force: true });
+    }
   });
 });
