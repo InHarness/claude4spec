@@ -19,7 +19,9 @@ export function listTags(db: Database, reader: RawEntityReader, input: ListTagsI
   // them on rather than filtering on numbers nobody computed.
   const needCounts = withCounts || input.minCount !== undefined;
 
-  const coOccurrence = input.coOccurringWith ? coOccurrenceFor(db, input.coOccurringWith) : null;
+  const coOccurrence = input.coOccurringWith
+    ? coOccurrenceFor(db, input.coOccurringWith, reader.listTypes())
+    : null;
 
   let items: TagListItem[] = reader.listTags().map((tag) => {
     const total = needCounts ? Object.values(tag.counts).reduce((n, c) => n + c, 0) : 0;
@@ -55,8 +57,17 @@ export function listTags(db: Database, reader: RawEntityReader, input: ListTagsI
   return paginate(items, input, DEFAULT_LIMITS.listTags);
 }
 
-/** How many entities each other tag shares with `slug`. */
-function coOccurrenceFor(db: Database, slug: string): Map<string, number> {
+/**
+ * How many entities each other tag shares with `slug`.
+ *
+ * 0.2.7 — scoped to the ACTIVE types, for the same reason the counts above are:
+ * a deactivated type's assignments now survive the rebuild, and counting them
+ * here would answer "these tags co-occur on N entities" about entities the
+ * project does not serve.
+ */
+function coOccurrenceFor(db: Database, slug: string, activeTypes: string[]): Map<string, number> {
+  if (activeTypes.length === 0) return new Map();
+  const placeholders = activeTypes.map(() => '?').join(', ');
   const rows = db
     .prepare(
       `SELECT other.tag_slug AS slug, COUNT(*) AS c
@@ -65,8 +76,9 @@ function coOccurrenceFor(db: Database, slug: string): Map<string, number> {
            ON other.entity_type = base.entity_type
           AND other.entity_slug = base.entity_slug
         WHERE base.tag_slug = ? AND other.tag_slug != base.tag_slug
+          AND base.entity_type IN (${placeholders})
         GROUP BY other.tag_slug`,
     )
-    .all(slug) as Array<{ slug: string; c: number }>;
+    .all(slug, ...activeTypes) as Array<{ slug: string; c: number }>;
   return new Map(rows.map((r) => [r.slug, r.c]));
 }

@@ -77,6 +77,27 @@ export function existingStampFromFile(
 }
 
 /**
+ * `resolveStamp` for the UPDATE path: the file is consulted first, the row is the
+ * fallback.
+ *
+ * This exists so the file read is SKIPPED when `opts.stamp` is present, which is
+ * the whole reindex path — `indexAll()` supplies a stamp for every entity, and
+ * passing `existingStampFromFile(...)` as an argument would read and parse each
+ * file a second time, inside the one rebuild transaction, to produce a value
+ * `resolveStamp` discards on its first line.
+ */
+export function resolveStampForUpdate(
+  type: string,
+  opts: MutateOpts | undefined,
+  store: EntityFileProbe,
+  slug: string,
+  current: StampedRow | null | undefined,
+): SystemStamp {
+  if (opts?.stamp) return opts.stamp;
+  return resolveStamp(type, opts, existingStampFromFile(store, type, slug) ?? current);
+}
+
+/**
  * Decide the stamp for one mutation.
  *
  *   - `opts.stamp` present  ⇒ verbatim. This is the reindex/restore path: the

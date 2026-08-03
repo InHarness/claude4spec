@@ -16,7 +16,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
-import { ENTITY_LIST_ORDER, existingStampFromFile, resolveStamp } from '../system-stamp.js';
+import { ENTITY_LIST_ORDER, resolveStamp, resolveStampForUpdate } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -210,7 +210,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
       // the file; sourcing `createdAt` from it reverses the flow, and the
       // `persist` below writes the divergence back into the source. The row
       // survives only as the fallback for when there is no usable file.
-      const stamp = resolveStamp('ui-view', opts, existingStampFromFile(this.store, 'ui-view', slug) ?? current);
+      const stamp = resolveStampForUpdate('ui-view', opts, this.store, slug, current);
       this.db
         .prepare(
           `UPDATE ui_view

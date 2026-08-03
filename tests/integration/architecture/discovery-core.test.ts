@@ -377,12 +377,15 @@ describe('M39 — Discovery Core', () => {
     ] as const) {
       /**
        * Either the operation itself or its sanctioned exhaustive wrapper
-       * (`getEntitiesAll`, `findReferencesAll`, …). A command that has to read
-       * past a page boundary — `find-references` sweeps before a rename, so a
-       * capped answer is a wrong one — goes through the wrapper, and that is
-       * still the core answering.
+       * (`getEntitiesAll`, `findReferencesAll`, `findReferencesAllPaged`, …). A
+       * command that has to read past a page boundary — `find-references` sweeps
+       * before a rename, so a capped answer is a wrong one — goes through the
+       * wrapper, and that is still the core answering. The `…All` stem is
+       * matched as a PREFIX so a wrapper variant (one that also reports whether
+       * the sweep reached the end) does not read as "the CLI stopped calling the
+       * core".
        */
-      const callsOp = commandFiles.includes(`.${op}(`) || commandFiles.includes(`${op}All(`);
+      const callsOp = commandFiles.includes(`.${op}(`) || commandFiles.includes(`${op}All`);
       expect(callsOp, `no CLI command calls discovery.${op} (or ${op}All)`).toBe(true);
       const identifier = identifierByCommandName.get(reachedBy);
       expect(identifier, `no command module declares name: '${reachedBy}'`).toBeTruthy();

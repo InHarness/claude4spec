@@ -3,7 +3,7 @@ import { refuseFlags, requireString } from '../args.js';
 import { createContext } from '../context.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
-import { findReferencesAll } from '../../../server/discovery/index.js';
+import { findReferencesAllPaged } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -33,9 +33,11 @@ import type { CliCommandContribution } from '../registry.js';
  * anything still pointing at this before I rename or delete it", and a capped
  * answer to that is a wrong answer that reads like a right one — so it exhausts
  * the core's pages rather than taking the first, and still refuses
- * `--limit`/`--offset`. Hence `hasMore: false` and a `total` that equals the
- * list's own length: the envelope reports a sweep that already ran to the end,
- * it does not turn the command into a paginating one. Each hit carries `rootId`
+ * `--limit`/`--offset`. So `total` equals the list's own length and `hasMore` is
+ * normally false: the envelope reports a sweep that already ran to the end, it
+ * does not turn the command into a paginating one. It is reported rather than
+ * hardcoded because the underlying helper has a runaway guard that can stop the
+ * sweep short — see below. Each hit carries `rootId`
  * (and `anchor` where the position falls inside an indexed section) — a page is
  * keyed by `(rootId, pagePath)`, so a projection dropping the root makes two
  * hits from different roots indistinguishable.
@@ -49,13 +51,17 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
 
   const ctx = await createContext(args);
   try {
-    const references = await findReferencesAll(ctx.discovery, {
+    const { references, exhausted } = await findReferencesAllPaged(ctx.discovery, {
       target: 'entity',
       type,
       slug,
       includeTagMatches,
     });
-    writeOutput({ references, total: references.length, hasMore: false }, args);
+    // `hasMore` is REPORTED, not asserted. The sweep normally runs to the end and
+    // answers false — but the helper's runaway guard can stop it short, and a
+    // command that claims "that was all of them" on a truncated sweep is exactly
+    // the wrong answer that reads like a right one.
+    writeOutput({ references, total: references.length, hasMore: !exhausted }, args);
   } finally {
     ctx.close();
   }

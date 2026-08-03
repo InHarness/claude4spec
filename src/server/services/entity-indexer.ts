@@ -108,9 +108,15 @@ export class EntityIndexerService {
    * is now scoped to the types the rebuild will actually refill, so a deactivated
    * type's tag assignments survive and are still correct when it is reactivated;
    * wiping them made reactivation lose data the files never stopped describing.
-   * The assignments outlive the entity rows in the meantime, which is harmless:
-   * `entity_tag.entity_slug` carries no FK (it is polymorphic on `entity_type`),
-   * and nothing resolves an assignment whose type is not mounted.
+   * The assignments outlive the entity rows in the meantime. That is safe only
+   * because `entity_tag.entity_slug` carries no FK (it is polymorphic on
+   * `entity_type`), so nothing cascades — but it is NOT free: every reader that
+   * aggregates `entity_tag` has to scope itself to the active types, or it
+   * reports entities under a type whose table it just watched go empty. Two did
+   * not, and were corrected alongside this change: `RawEntityReader.listTags`
+   * and `coOccurrenceFor`. `TagsService.countsByTagSlug` already filtered on
+   * `host.listEntities()`, which is why `GET /api/tags` was right all along and
+   * is the answer the discovery surfaces now agree with.
    */
   private clearableTables(): string[] {
     const seen = new Set<string>();
@@ -397,7 +403,20 @@ export class EntityIndexerService {
         if (!reconcile) return;
         const slugs = tags.map((t) => t.slug);
         if (slugs.length === 0) {
-          this.db.exec('DELETE FROM tag;');
+          // An EMPTY `tags.json` does not authorize emptying the registry. The
+          // reconcile below deletes what the file no longer lists; with nothing
+          // listed that degenerates into the unscoped `DELETE FROM tag` this
+          // whole change exists to remove — and it would cascade away every
+          // assignment in the project, including the ones the scoped DELETE
+          // above deliberately spared. A truncated or mid-write file is
+          // indistinguishable from a deliberately emptied one, and the two cost
+          // wildly different amounts to get wrong: a stale tag row survives
+          // until the next real edit (Tag CRUD already removes rows at deletion
+          // time), whereas a wrong wipe takes data no file describes any more.
+          console.warn(
+            '[entity-indexer] tags.json lists no tags — skipping the registry reconcile ' +
+              'rather than emptying `tag` (a cleared registry cascades every tag assignment away)',
+          );
           return;
         }
         this.db

@@ -17,7 +17,7 @@ import type { TagsServiceLike as TagsService } from '../../../host-kit/host-type
 import type { VersionServiceLike as VersionService } from '../../../host-kit/host-types.js';
 import type { EntityStoreLike as EntityStore } from '../../../host-kit/host-types.js';
 import type { MutateOpts } from '../../../host-kit/mutate-opts.js';
-import { ENTITY_LIST_ORDER, existingStampFromFile, resolveStamp } from '../../../host-kit/system-stamp.js';
+import { ENTITY_LIST_ORDER, resolveStamp, resolveStampForUpdate } from '../../../host-kit/system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -207,7 +207,7 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       // the file; sourcing `createdAt` from it reverses the flow, and the
       // `persist` below writes the divergence back into the source. The row
       // survives only as the fallback for when there is no usable file.
-      const stamp = resolveStamp('endpoint', opts, existingStampFromFile(this.store, 'endpoint', slug) ?? current);
+      const stamp = resolveStampForUpdate('endpoint', opts, this.store, slug, current);
       this.db
         .prepare(
           `UPDATE endpoint

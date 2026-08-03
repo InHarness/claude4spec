@@ -17,7 +17,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
-import { ENTITY_LIST_ORDER, existingStampFromFile, resolveStamp } from '../system-stamp.js';
+import { ENTITY_LIST_ORDER, resolveStamp, resolveStampForUpdate } from '../system-stamp.js';
 import {
   BaseEntityCrudService,
   type EntityListOpts,
@@ -211,7 +211,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       // the file; sourcing `createdAt` from it reverses the flow, and the
       // `persist` below writes the divergence back into the source. The row
       // survives only as the fallback for when there is no usable file.
-      const stamp = resolveStamp('design-system', opts, existingStampFromFile(this.store, 'design-system', slug) ?? current);
+      const stamp = resolveStampForUpdate('design-system', opts, this.store, slug, current);
       this.db
         .prepare(
           `UPDATE design_system

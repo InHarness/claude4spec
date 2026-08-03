@@ -431,5 +431,37 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
       const on = await call(client, 'list_tags', { withCounts: true });
       expect(on.body.items[0].counts).toBeDefined();
     });
+
+    /**
+     * 0.2.7 — counts are over the ACTIVE types, which they always claimed to be.
+     *
+     * The claim used to be self-enforcing for the wrong reason: a full rebuild
+     * emptied `entity_tag` outright, so a deactivated type had no rows left to
+     * miscount. Now that its assignments survive the rebuild, the predicate has
+     * to be real — otherwise `list_tags` reports entities under a type whose
+     * table the same rebuild just emptied, and disagrees with `GET /api/tags`
+     * (which has always filtered) about the same project.
+     */
+    it('list_tags counts only the ACTIVE types, not every row in entity_tag', async () => {
+      db.prepare(`INSERT INTO tag (slug, name) VALUES ('auth', 'Auth')`).run();
+      const assign = db.prepare(
+        `INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES (?, ?, 'auth')`,
+      );
+      assign.run('diagram', 'd1'); // active in this host
+      assign.run('endpoint', 'e1'); // NOT mounted here
+      const client = await connectClient(deps());
+
+      const { body } = await call(client, 'list_tags', { withCounts: true });
+      expect(body.items[0].counts).toEqual({ diagram: 1 });
+
+      // Same predicate on the co-occurrence join: a second tag sharing only the
+      // inactive entity co-occurs zero times, so it drops out entirely.
+      db.prepare(`INSERT INTO tag (slug, name) VALUES ('legacy', 'Legacy')`).run();
+      db.prepare(
+        `INSERT INTO entity_tag (entity_type, entity_slug, tag_slug) VALUES ('endpoint', 'e1', 'legacy')`,
+      ).run();
+      const co = await call(client, 'list_tags', { coOccurringWith: 'auth' });
+      expect(co.body.items).toEqual([]);
+    });
   });
 });

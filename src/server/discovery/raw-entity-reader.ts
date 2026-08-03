@@ -380,13 +380,27 @@ export class RawEntityReader {
       color: string | null;
       description: string | null;
     }>;
+    /**
+     * 0.2.7 — counts are over the ACTIVE types only.
+     *
+     * They always claimed to be ("a cartesian product of tags × active types"),
+     * and `GET /api/tags` has always filtered — but this query did not, and the
+     * discrepancy was invisible while the rebuild wiped `entity_tag` wholesale:
+     * a deactivated type had no rows left to count. Now that its assignments
+     * survive the rebuild, an unfiltered count would report entities under a
+     * type with zero rows, and the REST and discovery surfaces would answer
+     * differently for the same project.
+     */
+    const active = this.listTypes();
+    if (active.length === 0) return rows.map((r) => ({ ...r, counts: {} }));
     const countRows = this.db
       .prepare(
         `SELECT et.tag_slug AS slug, et.entity_type AS entity_type, COUNT(*) AS c
            FROM entity_tag et
+          WHERE et.entity_type IN (${active.map(() => '?').join(', ')})
          GROUP BY et.tag_slug, et.entity_type`
       )
-      .all() as Array<{ slug: string; entity_type: string; c: number }>;
+      .all(...active) as Array<{ slug: string; entity_type: string; c: number }>;
 
     const countMap = new Map<string, RawTagCounts>();
     for (const row of countRows) {
