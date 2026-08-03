@@ -6,6 +6,7 @@ import type { Database } from 'better-sqlite3';
 import type { AcService } from './service.js';
 import { AcAnalysisService } from './ac-analysis.service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { Root } from '../../../shared/types.js';
 import { DomainError } from '../../services/tags.js';
 
 /**
@@ -19,6 +20,8 @@ export interface AcToolsDeps {
   db: Database;
   /** M19→AC: project root for the LLM adapter. */
   cwd: string;
+  /** 0.2.8 (A19): page roots — part of the LLM turn's FS path scope. */
+  roots: Root[];
   /** Brief 0.1.45 §1: inactive guard for the semantic audit. */
   host: PluginHost;
 }
@@ -40,6 +43,7 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
     acService: deps.acService,
     db: deps.db,
     cwd: deps.cwd,
+    roots: deps.roots,
     host: deps.host,
   });
 

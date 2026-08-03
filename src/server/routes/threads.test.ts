@@ -75,6 +75,9 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       agentCredentialService: { getDecrypted: () => null },
       activeAdapters: new Map(),
       cwd: dir,
+      // 0.2.8 (C15): the resume guard resolves the turn's FS scope, which folds in the
+      // page roots. No roots configured in this fixture — the artifact deny-set alone.
+      roots: [],
     } as unknown as AgentTurnDeps;
     const router = threadsRouter(deps);
     return express().use(express.json()).use('/threads', router);
@@ -199,6 +202,95 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  // 0.2.8 (C15): the FS path scope is resume-immutable too. Before this, changing
+  // `agent.allowedPaths` in Settings and resuming a thread silently ran the turn under a
+  // different scope than the session was created with — the guard had nothing to compare.
+  describe('resume guard — FS path scope (C15)', () => {
+    /** Write `.claude4spec/config.json` into the fixture cwd. */
+    const writeConfig = (cfg: Record<string, unknown>) => {
+      fs.mkdirSync(path.join(dir, '.claude4spec'), { recursive: true });
+      fs.writeFileSync(path.join(dir, '.claude4spec', 'config.json'), JSON.stringify(cfg));
+    };
+    const snapshotWith = (paths: { allowedPaths?: string[]; disallowedPaths?: string[] }) =>
+      JSON.stringify({ model: 'sonnet-4.6', architectureConfig: {}, ...paths });
+
+    beforeEach(() => {
+      thread = makeThread({ lastSessionId: 'sess-1' });
+    });
+
+    it('409 RESUME_CONFIG_LOCKED when agent.allowedPaths changed since turn 1', async () => {
+      writeConfig({ agent: { allowedPaths: ['new'] } });
+      initialArchitectureConfigSnapshot = snapshotWith({
+        allowedPaths: [path.join(dir, 'old')],
+      });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-4.6' });
+      expect(res.status).toBe(409);
+      expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
+      // The message names the field, so the UI can lock the right control.
+      expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
+        'allowedPaths',
+      );
+      expect(res.body.error.message).toContain('allowedPaths');
+      expect(runAgentTurnMock).not.toHaveBeenCalled();
+    });
+
+    it('409 when agent.disallowedPaths changed since turn 1', async () => {
+      writeConfig({ agent: { disallowedPaths: ['secrets'] } });
+      // Snapshot holds only the artifact deny-set — the user entry is new.
+      initialArchitectureConfigSnapshot = snapshotWith({
+        disallowedPaths: ['plans', 'briefs', 'patches', 'entities', 'releases']
+          .map((d) => path.join(dir, '.claude4spec', d))
+          .sort(),
+      });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-4.6' });
+      expect(res.status).toBe(409);
+      expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
+        'disallowedPaths',
+      );
+    });
+
+    it('no 409 when the same paths are merely REORDERED (set comparison, not array)', async () => {
+      writeConfig({ agent: { allowedPaths: ['a', 'b'] } });
+      // Same two paths, opposite order — the library compares by JSON.stringify, so this
+      // is exactly the case that would produce a bogus 409 without normalization.
+      initialArchitectureConfigSnapshot = snapshotWith({
+        allowedPaths: [path.join(dir, 'b'), path.join(dir, 'a')].sort(),
+      });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-4.6' });
+      expect(res.status).toBe(200);
+      expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('no 409 for a pre-0.2.8 snapshot that has no path fields (back-compat)', async () => {
+      writeConfig({ agent: { allowedPaths: ['anything'] } });
+      initialArchitectureConfigSnapshot = JSON.stringify({
+        model: 'sonnet-4.6',
+        architectureConfig: {},
+      });
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-4.6' });
+      expect(res.status).toBe(200);
+    });
+
+    it('a NEW thread (no session yet) starts on the current scope with no error', async () => {
+      writeConfig({ agent: { allowedPaths: ['whatever'] } });
+      thread = makeThread({ lastSessionId: null });
+      initialArchitectureConfigSnapshot = null;
+      const res = await request(app())
+        .post(`/threads/${thread.id}/ask`)
+        .send({ message: 'hi', model: 'sonnet-4.6' });
+      expect(res.status).toBe(200);
+      expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('POST /:id/ask — headless-only turn timeout (0-1-110-to-next)', () => {
@@ -223,6 +315,9 @@ describe('POST /:id/ask — headless-only turn timeout (0-1-110-to-next)', () =>
       agentCredentialService: { getDecrypted: () => null },
       activeAdapters: new Map(),
       cwd: dir,
+      // 0.2.8 (C15): the resume guard resolves the turn's FS scope, which folds in the
+      // page roots. No roots configured in this fixture — the artifact deny-set alone.
+      roots: [],
     } as unknown as AgentTurnDeps;
     const app = express().use(express.json()).use('/threads', threadsRouter(deps));
 

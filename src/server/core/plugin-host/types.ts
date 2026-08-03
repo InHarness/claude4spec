@@ -17,6 +17,7 @@ import type {
   SystemPromptContribution,
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
+import type { Root } from '../../../shared/types.js';
 import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
 import type { EntityCrudService } from './entity-crud-service.js';
@@ -126,6 +127,12 @@ export interface MountContext {
   host: ProjectPluginHost;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
   cwd: string;
+  /**
+   * 0.2.8 (A19): the project's effective page roots. Plugins that run an LLM adapter need
+   * them together with `cwd` to resolve the same FS path scope as the chat turn — the CLI
+   * `--pages` override means they are not always what `config.json` holds.
+   */
+  roots: Root[];
   ws: WsEmitter;
   tagsService: TagsService;
   versionService: VersionService;

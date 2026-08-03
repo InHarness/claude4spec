@@ -754,8 +754,15 @@ export interface ChatThread {
   title: string | null;
   lastSessionId: string | null;
   /** M05 0.1.61: turn-1 architecture snapshot (model + reasoning config). null until the
-   *  thread has a session; controls hydrate from this when session-locked. */
-  initialArchitectureConfig: { model: string; architectureConfig: Record<string, unknown> } | null;
+   *  thread has a session; controls hydrate from this when session-locked.
+   *  0.2.8 (C15): plus the turn-1 FS path scope, also resume-immutable. Optional — threads
+   *  created before 0.2.8 have a snapshot without those two fields. */
+  initialArchitectureConfig: {
+    model: string;
+    architectureConfig: Record<string, unknown>;
+    allowedPaths?: string[];
+    disallowedPaths?: string[];
+  } | null;
   currentTodoItems: TodoItem[] | null;
   planMode: boolean;
   usage: UsageStats | null;

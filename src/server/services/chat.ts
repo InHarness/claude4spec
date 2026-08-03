@@ -610,10 +610,20 @@ export class ChatService {
    * Punkt odniesienia dla guarda `RESUME_CONFIG_LOCKED` — model i pola reasoningu
    * sa session-immutable. Idempotentny (UPDATE tylko gdy kolumna jest NULL), wiec
    * no-op na 2.+ turze. Wzorowane na `setInitialSystemPrompt`.
+   *
+   * 0.2.8 (C15): snapshot niesie tez `allowedPaths`/`disallowedPaths` (zakres FS jest
+   * resume-immutable po stronie biblioteki). Oba pola sa OPCJONALNE — watki sprzed 0.2.8
+   * maja snapshot bez nich, a `findResumeViolations` traktuje pole nieobecne po ktorejs
+   * stronie jako "niezmienione", wiec stare watki nie zaczynaja nagle dostawac 409.
    */
   setInitialArchitectureConfig(
     threadId: string,
-    snapshot: { model: string; architectureConfig: Record<string, unknown> },
+    snapshot: {
+      model: string;
+      architectureConfig: Record<string, unknown>;
+      allowedPaths?: string[];
+      disallowedPaths?: string[];
+    },
   ): void {
     this.db
       .prepare(
