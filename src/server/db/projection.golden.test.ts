@@ -20,7 +20,7 @@
 
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { generateProjectionDDL, type ProjectableModule } from './projection.js';
+import { applyProjection, generateProjectionDDL, type ProjectableModule } from './projection.js';
 import { acData } from '../../shared/entities/ac/schema.js';
 import { uiViewData } from '../../shared/entities/ui-view/schema.js';
 import { designSystemData } from '../../shared/entities/design-system/schema.js';
@@ -247,6 +247,42 @@ describe('projection generator — equivalence with the retired hand-written DDL
     expect(coveredColumns(generatedDb(), 'endpoint_dto')).toEqual(
       coveredColumns(retiredDb(), 'endpoint_dto'),
     );
+  });
+});
+
+describe('projection generator — creation order does not matter', () => {
+  /**
+   * `applyProjection` iterates modules in `displayOrder`, which has nothing to
+   * do with `dependsOn` — so the junction's `REFERENCES dto(slug)` can be
+   * emitted before `dto` exists. SQLite resolves a forward FK reference at DML
+   * time rather than at CREATE time, and the call runs with foreign keys off
+   * inside one transaction, so this holds; asserting it means a future change to
+   * either the ordering or the pragma handling cannot break it silently.
+   */
+  it('creates a junction whose FK forward-references a table not yet created', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    expect(() =>
+      applyProjection(db, [
+        { type: 'endpoint', data: endpointData },
+        { type: 'dto', data: dtoData },
+      ]),
+    ).not.toThrow();
+
+    db.prepare(`INSERT INTO dto (slug, name) VALUES ('d', 'D')`).run();
+    db.prepare(`INSERT INTO endpoint (slug, method, path) VALUES ('e', 'GET', '/x')`).run();
+    db.prepare(
+      `INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','d','response')`,
+    ).run();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM endpoint_dto').get()).toEqual({ n: 1 });
+
+    // And the constraint is live afterwards — foreign keys go back ON.
+    expect(() =>
+      db
+        .prepare(`INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','ghost','response')`)
+        .run(),
+    ).toThrow();
+    db.close();
   });
 });
 
