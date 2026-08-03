@@ -47,10 +47,9 @@ describe('checkResumeConfigLock', () => {
     const res = check({ model: 'opus-4.7', architectureConfig: {} });
     expect(res?.error.code).toBe('RESUME_CONFIG_LOCKED');
     expect(res?.error.violations.map((v) => v.path)).toContain('model');
-    expect(res?.error.message).toContain('model');
   });
 
-  it('flags an FS scope change and names the field in the message', () => {
+  it('flags an FS scope change and names the field in violations, not in the message', () => {
     writeConfig({ agent: { allowedPaths: ['new'] } });
     const res = check({
       model: 'sonnet-4.6',
@@ -58,9 +57,48 @@ describe('checkResumeConfigLock', () => {
       allowedPaths: [path.join(cwd, 'old')],
     });
     expect(res?.error.violations.map((v) => v.path)).toEqual(['allowedPaths']);
-    expect(res?.error.message).toContain('allowedPaths');
     // Every violation carries the library's reason text — the UI tooltip.
     expect(res?.error.violations[0].reason.length).toBeGreaterThan(0);
+  });
+
+  it('uses one static message for every violation — the per-field detail lives in violations[]', () => {
+    const STATIC =
+      'Model, reasoning and filesystem scope are locked for the lifetime of a session. Start a new conversation to use the new settings.';
+    const modelChange = check({ model: 'opus-4.7', architectureConfig: {} });
+    expect(modelChange?.error.message).toBe(STATIC);
+
+    writeConfig({ agent: { allowedPaths: ['new'] } });
+    const scopeChange = check({
+      model: 'sonnet-4.6',
+      architectureConfig: {},
+      allowedPaths: [path.join(cwd, 'old')],
+    });
+    // Two different violated fields, byte-identical message — a non-UI consumer can
+    // match on it, and the field that diverged is still recoverable from violations[].
+    expect(scopeChange?.error.message).toBe(STATIC);
+    expect(scopeChange?.error.violations.map((v) => v.path)).not.toEqual(
+      modelChange?.error.violations.map((v) => v.path),
+    );
+  });
+
+  it('does not 409 when a Settings write merely reshuffled the order of the same paths', () => {
+    // Regression: the library compares by JSON.stringify, so order matters, and a bare
+    // Set serializes in insertion order (config → page roots → default deny set). Both
+    // sides go through the same dedupe+sort, so a reordered — or duplicated — config
+    // entry has to resolve to the same array and let the turn proceed.
+    // Turn-1 stored the scope already deduped and sorted, as the column always does.
+    const snapshot = {
+      model: 'sonnet-4.6',
+      architectureConfig: {},
+      allowedPaths: [path.join(cwd, 'alpha'), path.join(cwd, 'beta'), path.join(cwd, 'gamma')],
+    };
+
+    writeConfig({ agent: { allowedPaths: ['alpha', 'beta', 'gamma'] } });
+    expect(check(snapshot)).toBeNull(); // baseline: same order resumes cleanly
+
+    // Same three directories, reordered and with one repeated — semantically identical.
+    writeConfig({ agent: { allowedPaths: ['gamma', 'alpha', 'beta', 'alpha'] } });
+    expect(check(snapshot)).toBeNull();
   });
 
   it('passes an unchanged scope through', () => {

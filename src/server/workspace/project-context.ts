@@ -277,8 +277,13 @@ async function buildInner(
   // 0.1.96: cross-field root overlap validation. Hard errors abort the build
   // (mirrors the PATCH /api/config guard); soft warnings (vs briefs/patches) log.
   {
-    const { errors, warnings } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir, plansDir });
+    const { errors, warnings, newPairConflicts } = validateRootDirs(effectiveRoots, { entitiesDir, releasesDir, briefsDir, patchesDir, plansDir });
     for (const w of warnings) console.warn(`[config] ${w}`);
+    // 0.2.9: entitiesDir/releasesDir/plugins were never compared against each other
+    // before, so an existing project may already violate the new pair rule. Refusing to
+    // boot would strand it — the Settings screen that repairs config lives inside this
+    // very context. Loud warning here, hard 400 on the next PATCH.
+    for (const c of newPairConflicts) console.warn(`[config] ${c} — writes will collide; fix this in Settings → Directories`);
     if (errors.length > 0) throw new Error(errors[0]);
     // Artifact catalogs are distinct — an identical dir double-captures every
     // file into file_version under two markers. Warn (the PATCH route hard-400s).
@@ -774,6 +779,9 @@ async function buildInner(
       cwd,
       skillRegistry,
       onContextConfigChanged,
+      // Validate overlaps against the roots THIS context runs on (`--pages` applied),
+      // so the route cannot accept a dir the next boot would reject.
+      effectiveRoots,
       onOnboardingCompleted: (effectivePagesDir) => ensureWelcomePage(cwd, effectivePagesDir),
       // M33 phase 3: lets the PATCH handler classify a `plugins` write by each
       // field's `kind` — an `executive` field invalidates the context (rebuild),

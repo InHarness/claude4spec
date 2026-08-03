@@ -360,9 +360,96 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     const { errors } = validateRootDirs(roots, {
       entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
     });
-    expect(errors).toContain(
-      "config.json: root 'gen' dir overlaps write-target '.claude4spec/plugins'",
-    );
+    expect(errors).toContain("config.json: 'gen' overlaps write-target '.claude4spec/plugins'");
+  });
+
+  it('validateRootDirs leaves a root at "." alone — the pages walker never descends into .claude4spec', () => {
+    // Regression for the D4 bidirectional sweep (0.2.9): `dirsOverlap` is asymmetric
+    // because the walker skips dot-dirs, so reading `.claude4spec/entities` as the
+    // CONTAINER of a root at '.' would hard-error every project migrated from the
+    // legacy `pagesDir: '.'`. Only pairs where neither side walks are compared plainly.
+    const { errors, warnings } = validateRootDirs([builtinPagesRoot('.')], {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('validateRootDirs reports two non-root write targets on the same dir as a NEW-PAIR conflict, not a boot error', () => {
+    // The genuinely new coverage in 0.2.9: before, only a root could be the left-hand
+    // side, so entitiesDir vs releasesDir was never compared at all. It lands in
+    // `newPairConflicts` rather than `errors` because boot throws on `errors[0]`, and a
+    // project already violating a rule invented in this release must still open — the
+    // screen that repairs config.json is served from the context that would fail.
+    const { errors, newPairConflicts } = validateRootDirs([builtinPagesRoot('pages')], {
+      entitiesDir: 'shared', releasesDir: 'shared', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toEqual([]);
+    expect(newPairConflicts).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  });
+
+  it('validateRootDirs catches a non-root write target NESTED in another one', () => {
+    const { newPairConflicts } = validateRootDirs([builtinPagesRoot('pages')], {
+      entitiesDir: 'store', releasesDir: 'store/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(newPairConflicts).toContain("config.json: 'entitiesDir' overlaps write-target 'releasesDir'");
+  });
+
+  it('validateRootDirs keeps a root-vs-write-target overlap a HARD error (pre-0.2.9 rule)', () => {
+    const { errors } = validateRootDirs([builtinPagesRoot('pages')], {
+      entitiesDir: 'pages', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    });
+    expect(errors).toContain("config.json: 'pages' overlaps write-target 'entitiesDir'");
+  });
+
+  it('validateRootDirs allows a root nested under another root inside a dot-directory', () => {
+    // Regression for the bidirectional D4 sweep: `dirsOverlap`'s "root nested under
+    // other" clause is unconditional, so ORing both directions reports a conflict for
+    // two roots that never see each other's files — the walker at '.' skips the dot-dir,
+    // and the one inside it never climbs out. Boot throws on errors[0], so a false
+    // positive here makes a legal, documented layout unopenable.
+    const skills = {
+      id: 'skills', name: 'Skills', dir: '.claude4spec/skills', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion' as const, briefTarget: false,
+    };
+    const opts = {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    };
+    expect(validateRootDirs([builtinPagesRoot('.'), skills], opts).errors).toEqual([]);
+    // Order must not change the verdict either.
+    expect(validateRootDirs([skills, builtinPagesRoot('.')], opts).errors).toEqual([]);
+
+    const archive = { ...skills, id: 'arch', dir: 'docs/.archive' };
+    const docs = { ...skills, id: 'docs', dir: 'docs' };
+    expect(validateRootDirs([docs, archive], opts).errors).toEqual([]);
+  });
+
+  it('validateRootDirs still flags a root nested under another when the walker DOES reach it', () => {
+    const opts = {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    };
+    const docs = {
+      id: 'docs', name: 'Docs', dir: 'docs', builtin: false, releasable: false,
+      sectionIndexed: false, referenceValidated: false, linkTargets: [],
+      sidebar: 'accordion' as const, briefTarget: false,
+    };
+    // No dot segment on the way down — the walker really would index both.
+    expect(validateRootDirs([docs, { ...docs, id: 'sub', dir: 'docs/sub' }], opts).errors).toHaveLength(1);
+    // And a root at '.' still swallows an ordinary sibling directory.
+    expect(validateRootDirs([builtinPagesRoot('.'), docs], opts).errors).toHaveLength(1);
+  });
+
+  it('validateRootDirs verdict does not depend on the order of roots[]', () => {
+    const a = { id: 'a', name: 'A', dir: 'shared', builtin: false, releasable: false, sectionIndexed: false, referenceValidated: false, linkTargets: [], sidebar: 'accordion' as const, briefTarget: false };
+    const b = { ...a, id: 'b', name: 'B', dir: 'shared/nested' };
+    const opts = {
+      entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
+    };
+    const forward = validateRootDirs([builtinPagesRoot('pages'), a, b], opts).errors.length;
+    const reversed = validateRootDirs([builtinPagesRoot('pages'), b, a], opts).errors.length;
+    expect(forward).toBeGreaterThan(0);
+    expect(reversed).toBe(forward);
   });
 
   it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {

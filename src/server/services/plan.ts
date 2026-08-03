@@ -480,14 +480,28 @@ function insertAfterSection(prior: string, fragment: string, anchor?: string, he
       const prev = i > 0 ? lines[i - 1]! : '';
       const anchorMatch = prev.match(ANCHOR_RE);
       if (anchorMatch && anchorMatch[1] === anchor) {
-        targetLine = i;
-        targetLevel = level;
-        break;
+        // Do NOT break: an anchor names exactly one section, so a second hit is a
+        // duplicate the write-path must refuse rather than silently resolve. Reads
+        // stay first-occurrence (see `getByAnchor`); only this mutation is strict.
+        matches.push({ line: i, level });
       }
     } else if (heading) {
       if (text === heading.trim()) {
         matches.push({ line: i, level });
       }
+    }
+  }
+
+  if (targetLine === -1 && anchor) {
+    if (matches.length > 1) {
+      throw new DomainError(
+        'AMBIGUOUS_ANCHOR',
+        `anchor "${anchor}" matches ${matches.length} sections`,
+      );
+    }
+    if (matches.length === 1) {
+      targetLine = matches[0]!.line;
+      targetLevel = matches[0]!.level;
     }
   }
 
@@ -525,8 +539,36 @@ function insertAfterSection(prior: string, fragment: string, anchor?: string, he
   return `${before}${separator}${fragment}${afterSep}${after}`.replace(/\n{3,}/g, '\n\n');
 }
 
+/**
+ * Mint an anchor that is free WITHIN THIS PLAN FILE. The uniqueness scope of a plan
+ * anchor is the file it lives in — never `section_index`, which indexes page roots and
+ * which plans are deliberately absent from. Colliding with a page's anchor is therefore
+ * not a collision at all: `update_plan` resolves anchors only inside
+ * `chat_thread.plan_path`, and page-side references resolve only through `section_index`.
+ *
+ * Bounded like the section indexer's mint loop: with 36^8 values a repeat is already
+ * vanishingly unlikely, so exhausting the attempts means something is wrong, not unlucky.
+ */
+function mintPlanAnchor(taken: Set<string>): string {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const candidate = nanoid8();
+    if (!taken.has(candidate)) {
+      taken.add(candidate);
+      return candidate;
+    }
+  }
+  throw new Error('[plan] could not mint a free anchor in 8 attempts');
+}
+
 function injectAnchors(content: string): string {
   const lines = content.split('\n');
+  // Seed with every anchor already composed into this plan, so a value injected in this
+  // pass can collide neither with an existing one nor with an earlier injection of the
+  // same pass. Auto-injected anchors must never duplicate.
+  const taken = new Set<string>();
+  const scan = new RegExp(ANCHOR_PATTERN_SOURCE, 'g');
+  for (const m of content.matchAll(scan)) taken.add(m[1]!);
+
   const out: string[] = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
@@ -540,7 +582,7 @@ function injectAnchors(content: string): string {
       out.push(line);
       continue;
     }
-    out.push(`<!-- anchor: ${nanoid8()} -->`);
+    out.push(`<!-- anchor: ${mintPlanAnchor(taken)} -->`);
     out.push(line);
   }
   return out.join('\n');

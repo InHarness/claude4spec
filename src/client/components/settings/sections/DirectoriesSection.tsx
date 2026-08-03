@@ -75,11 +75,42 @@ function dirsOverlap(rootDir: string, otherDir: string): boolean {
   const nb = normDir(otherDir);
   if (na === nb) return true;
   if (isInsideDir(nb, na)) return true; // root nested under other
-  if (isInsideDir(na, nb)) {
-    const rel = na === '' ? nb : nb.slice(na.length + 1);
-    return !hasDotSegment(rel);
-  }
+  if (walkerReaches(na, nb)) return true;
   return false;
+}
+
+/** Would a pages walker rooted at `container` descend into `child`? (mirror of server) */
+function walkerReaches(container: string, child: string): boolean {
+  if (!isInsideDir(container, child)) return false;
+  const rel = container === '' ? child : child.slice(container.length + 1);
+  return !hasDotSegment(rel);
+}
+
+/**
+ * Two page roots collide (mirror of server `rootsOverlap`). Symmetric, but the dot-dir
+ * exemption is kept in BOTH directions — that is what separates it from
+ * `dirsOverlap(a,b) || dirsOverlap(b,a)`, whose unconditional "root nested under other"
+ * clause reports a conflict for roots at '.' and `.claude4spec/skills` that never see
+ * each other's files.
+ */
+function rootsOverlap(aDir: string, bDir: string): boolean {
+  const na = normDir(aDir);
+  const nb = normDir(bDir);
+  if (na === nb) return true;
+  return walkerReaches(na, nb) || walkerReaches(nb, na);
+}
+
+/** Pair verdict for the D4 sweep (mirror of server config.ts `targetsOverlap`). */
+function targetsOverlap(
+  a: { dir: string; isRoot: boolean },
+  b: { dir: string; isRoot: boolean },
+): boolean {
+  if (a.isRoot && b.isRoot) return rootsOverlap(a.dir, b.dir);
+  if (a.isRoot) return dirsOverlap(a.dir, b.dir);
+  if (b.isRoot) return dirsOverlap(b.dir, a.dir);
+  const na = normDir(a.dir);
+  const nb = normDir(b.dir);
+  return na === nb || isInsideDir(na, nb) || isInsideDir(nb, na);
 }
 
 /** A cwd-relative dir must be non-empty, not absolute, and not escape cwd via `..`. */
@@ -112,29 +143,51 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
     }
   }
 
-  const hardTargets: Array<{ id: string; dir: string }> = [
-    { id: 'entitiesDir', dir: draft.entitiesDir },
-    { id: 'releasesDir', dir: draft.releasesDir },
-    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
+  // The server rejects an empty/escaping storage dir outright (`validateDir`), so say so
+  // here rather than letting it fall through to the overlap sweep: '' normalizes to ''
+  // and `isInsideDir('', x)` is true for every x, so a half-typed field would otherwise
+  // report three nonsensical "overlaps write-target" errors instead of "this is empty".
+  const storageDirs: Array<[string, string]> = [
+    ['entitiesDir', draft.entitiesDir],
+    ['releasesDir', draft.releasesDir],
   ];
-  for (let i = 0; i < roots.length; i++) {
-    const r = roots[i]!;
-    for (let j = i + 1; j < roots.length; j++) {
-      const other = roots[j]!;
-      if (dirsOverlap(r.dir, other.dir)) {
-        errors.push(`Root '${r.id}' dir overlaps root '${other.id}'`);
+  for (const [name, dir] of storageDirs) {
+    if (!isPathSafeRelative(dir)) {
+      errors.push(`${name} must be a non-empty relative path inside the project`);
+    }
+  }
+
+  // Pairwise over every write target, matching the server's D4 sweep — roots are not the
+  // privileged left-hand side, so entitiesDir-vs-releasesDir is caught here too. Message
+  // shape mirrors the server's symmetric form. Dirs already flagged as malformed above
+  // are left out; comparing them produces noise, not information.
+  const writeTargets: Array<{ id: string; dir: string; isRoot: boolean }> = [
+    ...roots.filter((r) => isPathSafeRelative(r.dir)).map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
+    ...storageDirs
+      .filter(([, dir]) => isPathSafeRelative(dir))
+      .map(([id, dir]) => ({ id, dir, isRoot: false })),
+    ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d, isRoot: false })),
+  ];
+  for (let i = 0; i < writeTargets.length; i++) {
+    for (let j = i + 1; j < writeTargets.length; j++) {
+      const a = writeTargets[i]!;
+      const b = writeTargets[j]!;
+      if (targetsOverlap(a, b)) {
+        errors.push(`'${a.id}' overlaps write-target '${b.id}'`);
       }
     }
-    for (const t of hardTargets) {
+  }
+  const softTargets: Array<{ id: string; dir: string }> = [
+    { id: 'briefsDir', dir: draft.briefsDir },
+    { id: 'patchesDir', dir: draft.patchesDir },
+    { id: 'plansDir', dir: draft.plansDir },
+  ];
+  for (const r of roots) {
+    for (const t of softTargets) {
+      // The root is the walker here — one-directional, same as the server.
       if (dirsOverlap(r.dir, t.dir)) {
-        errors.push(`Root '${r.id}' dir overlaps write-target '${t.id}'`);
+        warnings.push(`Root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
       }
-    }
-    if (dirsOverlap(r.dir, draft.briefsDir)) {
-      warnings.push(`Root '${r.id}' dir overlaps briefsDir — pages may appear in both`);
-    }
-    if (dirsOverlap(r.dir, draft.patchesDir)) {
-      warnings.push(`Root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
     }
   }
 
