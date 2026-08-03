@@ -75,24 +75,37 @@ function dirsOverlap(rootDir: string, otherDir: string): boolean {
   const nb = normDir(otherDir);
   if (na === nb) return true;
   if (isInsideDir(nb, na)) return true; // root nested under other
-  if (isInsideDir(na, nb)) {
-    const rel = na === '' ? nb : nb.slice(na.length + 1);
-    return !hasDotSegment(rel);
-  }
+  if (walkerReaches(na, nb)) return true;
   return false;
 }
 
+/** Would a pages walker rooted at `container` descend into `child`? (mirror of server) */
+function walkerReaches(container: string, child: string): boolean {
+  if (!isInsideDir(container, child)) return false;
+  const rel = container === '' ? child : child.slice(container.length + 1);
+  return !hasDotSegment(rel);
+}
+
 /**
- * Pair verdict for the D4 sweep (mirror of server config.ts `targetsOverlap`). NOT a
- * blind OR of both directions: `dirsOverlap`'s dot-dir exemption only makes sense when
- * the containing side is a page root, so reading `.claude4spec/entities` as the container
- * would flag every root at '.'. Only pairs where neither side walks compare plainly.
+ * Two page roots collide (mirror of server `rootsOverlap`). Symmetric, but the dot-dir
+ * exemption is kept in BOTH directions — that is what separates it from
+ * `dirsOverlap(a,b) || dirsOverlap(b,a)`, whose unconditional "root nested under other"
+ * clause reports a conflict for roots at '.' and `.claude4spec/skills` that never see
+ * each other's files.
  */
+function rootsOverlap(aDir: string, bDir: string): boolean {
+  const na = normDir(aDir);
+  const nb = normDir(bDir);
+  if (na === nb) return true;
+  return walkerReaches(na, nb) || walkerReaches(nb, na);
+}
+
+/** Pair verdict for the D4 sweep (mirror of server config.ts `targetsOverlap`). */
 function targetsOverlap(
   a: { dir: string; isRoot: boolean },
   b: { dir: string; isRoot: boolean },
 ): boolean {
-  if (a.isRoot && b.isRoot) return dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir);
+  if (a.isRoot && b.isRoot) return rootsOverlap(a.dir, b.dir);
   if (a.isRoot) return dirsOverlap(a.dir, b.dir);
   if (b.isRoot) return dirsOverlap(b.dir, a.dir);
   const na = normDir(a.dir);
@@ -130,13 +143,29 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
     }
   }
 
-  // Pairwise and bidirectional over every write target, matching the server's D4 sweep —
-  // roots are not the privileged left-hand side, so entitiesDir-vs-releasesDir is caught
-  // here too. Message shape mirrors the server's symmetric form.
+  // The server rejects an empty/escaping storage dir outright (`validateDir`), so say so
+  // here rather than letting it fall through to the overlap sweep: '' normalizes to ''
+  // and `isInsideDir('', x)` is true for every x, so a half-typed field would otherwise
+  // report three nonsensical "overlaps write-target" errors instead of "this is empty".
+  const storageDirs: Array<[string, string]> = [
+    ['entitiesDir', draft.entitiesDir],
+    ['releasesDir', draft.releasesDir],
+  ];
+  for (const [name, dir] of storageDirs) {
+    if (!isPathSafeRelative(dir)) {
+      errors.push(`${name} must be a non-empty relative path inside the project`);
+    }
+  }
+
+  // Pairwise over every write target, matching the server's D4 sweep — roots are not the
+  // privileged left-hand side, so entitiesDir-vs-releasesDir is caught here too. Message
+  // shape mirrors the server's symmetric form. Dirs already flagged as malformed above
+  // are left out; comparing them produces noise, not information.
   const writeTargets: Array<{ id: string; dir: string; isRoot: boolean }> = [
-    ...roots.map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
-    { id: 'entitiesDir', dir: draft.entitiesDir, isRoot: false },
-    { id: 'releasesDir', dir: draft.releasesDir, isRoot: false },
+    ...roots.filter((r) => isPathSafeRelative(r.dir)).map((r) => ({ id: r.id, dir: r.dir, isRoot: true })),
+    ...storageDirs
+      .filter(([, dir]) => isPathSafeRelative(dir))
+      .map(([id, dir]) => ({ id, dir, isRoot: false })),
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d, isRoot: false })),
   ];
   for (let i = 0; i < writeTargets.length; i++) {

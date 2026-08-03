@@ -465,25 +465,46 @@ export function dirsOverlap(rootDir: string, otherDir: string): boolean {
   const nb = normDir(otherDir);
   if (na === nb) return true;
   if (isInsideDir(nb, na)) return true; // root nested under other
-  if (isInsideDir(na, nb)) {
-    const rel = na === '' ? nb : path.relative(na, nb);
-    return !hasDotSegment(rel); // other under root — a hazard only if the walker reaches it
-  }
+  if (walkerReaches(na, nb)) return true; // other under root, and the walker gets there
   return false;
 }
 
 /**
- * Does this pair of write targets collide?
+ * Would a pages walker rooted at `container` actually descend into `child`? Containment
+ * alone is not enough: the walker skips `.`-prefixed directories, so a root at '.' never
+ * indexes `.claude4spec/*`.
+ */
+function walkerReaches(container: string, child: string): boolean {
+  if (!isInsideDir(container, child)) return false;
+  const rel = container === '' ? child : path.relative(container, child);
+  return !hasDotSegment(rel);
+}
+
+/**
+ * Do two PAGE ROOTS collide? Symmetric, so the verdict never depends on the order of
+ * `roots[]` — but the dot-dir exemption is kept in BOTH directions, which is what
+ * separates this from `dirsOverlap(a,b) || dirsOverlap(b,a)`.
  *
- * `dirsOverlap` is asymmetric ON PURPOSE: its third clause asks whether the PAGES WALKER
- * starting at the first dir would actually reach the second, and the walker skips
- * `.`-prefixed directories. So a root at '.' does NOT conflict with `.claude4spec/entities`
- * — the walker never descends there. That exemption is only meaningful when the containing
- * side really is a page root, which is why this cannot be a blind OR of both directions:
- * reading `.claude4spec/entities` as the container would flag every root at '.'.
+ * That naive OR is wrong because `dirsOverlap`'s clause 2 ("root nested under other")
+ * is unconditional: read `.claude4spec/skills` as the root and '.' as the other, and it
+ * reports a conflict for two roots that never see each other's files — the walker at '.'
+ * skips the dot-dir, and the one at `.claude4spec/skills` stays inside it. Roots laid out
+ * that way are legal (`validateRootDirs allows .claude4spec/skills as a user root`), and
+ * boot throws on the first error, so getting this wrong makes the project unopenable.
+ */
+function rootsOverlap(aDir: string, bDir: string): boolean {
+  const na = normDir(aDir);
+  const nb = normDir(bDir);
+  if (na === nb) return true;
+  return walkerReaches(na, nb) || walkerReaches(nb, na);
+}
+
+/**
+ * Does this pair of write targets collide? The reading depends on which side, if any,
+ * is a page root — the dot-dir exemption in `dirsOverlap`/`rootsOverlap` only means
+ * anything for a side that actually walks a tree.
  *
- *  - root vs root      → either direction counts (both sides walk), so the verdict no
- *                        longer depends on the order of `roots[]`.
+ *  - root vs root      → `rootsOverlap`: symmetric, exemption honoured both ways.
  *  - root vs target    → the root is the walker; ask it that way round.
  *  - target vs target  → neither walks. Plain equality-or-containment, no dot-dir
  *                        exemption: two things WRITING into nested dirs clobber each
@@ -493,7 +514,7 @@ function targetsOverlap(
   a: { dir: string; isRoot: boolean },
   b: { dir: string; isRoot: boolean },
 ): boolean {
-  if (a.isRoot && b.isRoot) return dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir);
+  if (a.isRoot && b.isRoot) return rootsOverlap(a.dir, b.dir);
   if (a.isRoot) return dirsOverlap(a.dir, b.dir);
   if (b.isRoot) return dirsOverlap(b.dir, a.dir);
   const na = normDir(a.dir);
@@ -506,13 +527,22 @@ function targetsOverlap(
  * other write/read targets. Returns hard `errors` (→ 400 / boot throw) and
  * `warnings` (log-only). Kept separate from `validate()` because it needs the
  * fully-merged config (entitiesDir/briefsDir/patchesDir), not a partial.
+ *
+ * 0.2.9 adds a third bucket, `newPairConflicts`: collisions between two non-root write
+ * targets (entitiesDir / releasesDir / `.claude4spec/plugins`). Those pairs were never
+ * compared before, so a project can already be violating one — and since boot throws on
+ * `errors[0]` before the HTTP listener exists, promoting them straight to `errors` would
+ * make such a project unopenable with no in-app route to the screen that repairs it.
+ * Boot logs them; `PATCH /api/config` refuses them. That is the same split the artifact
+ * dirs (briefs/patches/plans) already use.
  */
 export function validateRootDirs(
   roots: Root[],
   opts: { entitiesDir: string; releasesDir: string; briefsDir: string; patchesDir: string; plansDir: string },
-): { errors: string[]; warnings: string[] } {
+): { errors: string[]; warnings: string[]; newPairConflicts: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const newPairConflicts: string[] = [];
 
   // D4: every "smudging" write target is checked against every other one, PAIRWISE and
   // BIDIRECTIONALLY — a page root is no longer privileged as the only left-hand side.
@@ -529,9 +559,12 @@ export function validateRootDirs(
     for (let j = i + 1; j < writeTargets.length; j++) {
       const a = writeTargets[i]!;
       const b = writeTargets[j]!;
-      if (targetsOverlap(a, b)) {
-        errors.push(`config.json: '${a.id}' overlaps write-target '${b.id}'`);
-      }
+      if (!targetsOverlap(a, b)) continue;
+      const msg = `config.json: '${a.id}' overlaps write-target '${b.id}'`;
+      // Pairs involving a root were already hard errors before 0.2.9 — keep them there.
+      // A pair of non-root targets is newly compared, so it only hardens at write time.
+      if (a.isRoot || b.isRoot) errors.push(msg);
+      else newPairConflicts.push(msg);
     }
   }
 
@@ -555,7 +588,7 @@ export function validateRootDirs(
     }
   }
 
-  return { errors, warnings };
+  return { errors, warnings, newPairConflicts };
 }
 
 /**

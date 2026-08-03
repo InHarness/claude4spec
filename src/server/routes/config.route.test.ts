@@ -430,4 +430,43 @@ describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
     expect(res.status).toBe(200);
     expect((res.body as Config).entitiesDir).toBe('spec/entities');
   });
+
+  it('does NOT reject a plansDir-only save because of a pre-existing entitiesDir collision', async () => {
+    // Regression: gating the hard sweep on briefs/patches/plans meant a `{ plansDir }`
+    // save could 400 with a message naming `entitiesDir` and a root — fields the request
+    // never carried — and silently lose the edit. Those three fields only ever produce
+    // rule-3a warnings, so they must not gate the hard check.
+    fs.writeFileSync(
+      configPath(dir),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', entitiesDir: 'pages' }),
+    );
+    const res = await request(app()).patch('/config').send({ plansDir: 'spec/plans' });
+    expect(res.status).toBe(200);
+    expect((res.body as Config).plansDir).toBe('spec/plans');
+  });
+
+  it('still rejects a PATCH that moves entitiesDir onto a root, even on a config already broken elsewhere', async () => {
+    fs.writeFileSync(
+      configPath(dir),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', releasesDir: 'shared', entitiesDir: 'shared' }),
+    );
+    const res = await request(app()).patch('/config').send({ entitiesDir: 'pages' });
+    expect(res.status).toBe(400);
+  });
+
+  it('uses the running context roots (--pages override) rather than the ones on disk', async () => {
+    // Without this the route validates against config.json's 'pages' while boot uses the
+    // override, so it can bless an entitiesDir the next startup refuses to open.
+    const router = configRouter({
+      cwd: dir,
+      skillRegistry: {} as unknown as SkillRegistry,
+      effectiveRoots: [
+        { id: 'pages', name: 'Pages', dir: 'docs', builtin: true, releasable: true, sectionIndexed: true, referenceValidated: true, linkTargets: [], sidebar: 'accordion', briefTarget: true },
+      ],
+    });
+    const overridden = express().use(express.json()).use(router);
+    const res = await request(overridden).patch('/config').send({ entitiesDir: 'docs/entities' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/overlaps write-target/);
+  });
 });

@@ -16,6 +16,15 @@ export interface ConfigRouterDeps {
   cwd: string;
   skillRegistry: SkillRegistry;
   /**
+   * The roots the RUNNING context was built from — `config.roots[]` with the built-in
+   * `pages` dir replaced by the `--pages` CLI override, when one was given. Overlap
+   * validation must use these, not the raw config: under `c4s --pages docs` the config
+   * may still say 'pages', so validating against the file would bless an `entitiesDir`
+   * that the next boot then rejects, leaving the project unopenable. Optional so tests
+   * and any other caller can fall back to the on-disk roots.
+   */
+  effectiveRoots?: Root[];
+  /**
    * M31: PATCH touching a context-defining field (pagesDir/briefsDir/
    * patchesDir/entitiesDir/entities) invalidates the project context — the
    * next request rebuilds it. No restart, no banner.
@@ -273,12 +282,19 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // Still scoped to requests that touch these fields, for the same reason the C17 guard
       // above is: an already-colliding config must stay repairable, so an unrelated PATCH
       // (`{ onboardingCompleted: true }`) must not 400 on damage it did not cause.
-      const touchesWriteTargets =
+      // Fields that actually participate in the hard sweep. briefs/patches/plans are
+      // deliberately NOT here: they only ever produce rule-3a WARNINGS, so letting them
+      // gate the hard check meant a `{ plansDir }`-only save could 400 with a message
+      // naming `entitiesDir` and a root — fields the request never carried — and lose the
+      // edit. The C17 guard above stays scoped to its own three fields for the same reason.
+      const touchesHardTargets =
         'roots' in body ||
-        (['briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir'] as const).some(
-          (f) => f in body,
-        );
-      if (touchesWriteTargets) {
+        (['entitiesDir', 'releasesDir'] as const).some((f) => f in body);
+      const touchesAnyDir =
+        touchesHardTargets ||
+        (['briefsDir', 'patchesDir', 'plansDir'] as const).some((f) => f in body);
+
+      if (touchesAnyDir) {
         let roots: Root[];
         if ('roots' in body) {
           try {
@@ -288,12 +304,18 @@ export function configRouter(deps: ConfigRouterDeps): Router {
           }
           patch.roots = roots;
         } else {
-          // No roots in the payload — validate the dirs against the roots already on disk.
-          roots = currentConfig.roots;
+          // No roots in the payload — validate against the roots the running context
+          // actually uses (`--pages` override applied), falling back to the file.
+          roots = deps.effectiveRoots ?? currentConfig.roots;
         }
-        const { errors, warnings } = validateRootDirs(roots, effectiveDirs);
-        if (errors.length > 0) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: errors[0] } });
+        const { errors, warnings, newPairConflicts } = validateRootDirs(roots, effectiveDirs);
+        // Only reject when the request could actually have caused (or can repair) the
+        // violation. An already-colliding config must stay repairable field by field.
+        if (touchesHardTargets) {
+          const hard = [...errors, ...newPairConflicts];
+          if (hard.length > 0) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: hard[0] } });
+          }
         }
         // Rule 3a is a warning, not a rejection — surface it on the same channel boot uses
         // so an overlap that only degrades tidiness is still visible to whoever caused it.
