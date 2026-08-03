@@ -199,20 +199,6 @@ export interface AgentConfig {
   disallowedPaths?: string[];
 }
 
-/**
- * 0.2.8 (C23): the shape `readConfig` GUARANTEES. Every nested branch that
- * `defaults()` covers is present with a real value, so consumers read
- * `config.git.enabled` / `config.agent.claudeUsePreset` directly — never
- * `?? false` / `?? true` at the point of use. Applying those defaults is the
- * job of exactly one function ({@link normalizeConfig}); `defaults()` remains
- * the only source of the VALUES.
- *
- * `entities` is deliberately NOT in here: `undefined` carries meaning there
- * ("all registered entity types active", see plugin-host/types.ts) and is not
- * interchangeable with `[]` ("no types"). Normalizing it would destroy that
- * three-valued semantic. Same reasoning applies to any future field where the
- * absent state is not equivalent to a default.
- */
 export interface NormalizedGitCommitTargetConfig {
   mode: 'current' | 'named' | 'new';
   branch: string | null;
@@ -240,7 +226,20 @@ export interface NormalizedAgentConfig {
 }
 
 /**
- * Assignable to `Config` — every consumer typed against `Config` keeps
+ * 0.2.8 (C23): the shape `readConfig` GUARANTEES. Every nested branch that
+ * `defaults()` covers is present with a real value, so consumers read
+ * `config.git.enabled` / `config.agent.claudeUsePreset` directly — never
+ * `?? false` / `?? true` at the point of use. Applying those defaults is the
+ * job of exactly one function ({@link normalizeConfig}); `defaults()` remains
+ * the only source of the VALUES.
+ *
+ * `entities` is deliberately NOT part of the guarantee: `undefined` carries
+ * meaning there ("all registered entity types active", see
+ * plugin-host/types.ts) and is not interchangeable with `[]` ("no types").
+ * Normalizing it would destroy that three-valued semantic — as it would for any
+ * future field whose absent state is not equivalent to a default.
+ *
+ * Assignable to `Config`, so every consumer typed against `Config` keeps
  * compiling; only consumers that WANT the guarantee widen their param type to
  * `NormalizedConfig` and drop their `??`.
  */
