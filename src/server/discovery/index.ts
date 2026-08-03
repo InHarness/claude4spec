@@ -119,13 +119,32 @@ export async function findReferencesAll(
   /** `limit`/`offset` on the way in are ignored — this helper owns the paging. */
   input: FindReferencesInput,
 ): Promise<ReferenceHit[]> {
+  const { references } = await findReferencesAllPaged(core, input);
+  return references;
+}
+
+/**
+ * The same sweep, reporting whether it actually reached the end.
+ *
+ * `MAX_PAGES` is a runaway guard, not a contract — but a caller that wraps this
+ * in an envelope has to be able to tell "exhausted" from "gave up", or it ends
+ * up claiming `hasMore: false` on a truncated sweep. For a command whose whole
+ * purpose is "is anything still pointing at this before I rename or delete it",
+ * a false "that was all of them" is worse than no claim at all.
+ */
+export async function findReferencesAllPaged(
+  core: DiscoveryCore,
+  input: FindReferencesInput,
+): Promise<{ references: ReferenceHit[]; exhausted: boolean }> {
   const out: ReferenceHit[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
     const result = await core.findReferences({ ...input, limit: MAX_LIMIT, offset: out.length });
     out.push(...result.references);
-    if (!result.hasMore || result.references.length === 0) break;
+    if (!result.hasMore || result.references.length === 0) {
+      return { references: out, exhausted: true };
+    }
   }
-  return out;
+  return { references: out, exhausted: false };
 }
 
 /** Every tag, no page boundary. */

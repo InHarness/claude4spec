@@ -16,7 +16,7 @@ import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
-import { ENTITY_LIST_ORDER, resolveStamp } from '../system-stamp.js';
+import { ENTITY_LIST_ORDER, resolveStamp, resolveStampForUpdate } from '../system-stamp.js';
 import { validateDiagramSource } from './validate.js';
 import {
   BaseEntityCrudService,
@@ -147,7 +147,11 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
 
       // 0.2.4: `created_at` is set on UPDATE too — an incremental reindex of an
       // existing entity is an UPDATE, and the file's value must win.
-      const stamp = resolveStamp('diagram', opts, current);
+      // 0.2.7: which is why it is read from the FILE. The row is a projection of
+      // the file; sourcing `createdAt` from it reverses the flow, and the
+      // `persist` below writes the divergence back into the source. The row
+      // survives only as the fallback for when there is no usable file.
+      const stamp = resolveStampForUpdate('diagram', opts, this.store, slug, current);
       this.db
         .prepare(
           `UPDATE diagram
