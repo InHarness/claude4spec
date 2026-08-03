@@ -176,7 +176,8 @@ export interface AgentConfig {
   // gitignored `agent_credential` table (M05), encrypted at-rest — never in this
   // team-shared / committed `config.json`. No `anthropicApiKey` field, no `$schemaVersion` bump.
   //
-  // Brak pola = effective true (handler `POST /api/chat` resolveuje przez `?? true`).
+  // Brak pola = effective true. 0.2.8: default stosuje `normalizeConfig` przy
+  // wczytaniu (konsumenci czytaja `config.agent.claudeUsePreset` wprost).
   // Additive — bez bumpu `$schemaVersion`.
   claudeUsePreset?: boolean;
   /**
@@ -197,6 +198,58 @@ export interface AgentConfig {
   allowedPaths?: string[];
   disallowedPaths?: string[];
 }
+
+export interface NormalizedGitCommitTargetConfig {
+  mode: 'current' | 'named' | 'new';
+  branch: string | null;
+  template: string | null;
+  base: string | null;
+}
+
+export interface NormalizedGitSyncConfig {
+  enabled: boolean;
+  syncPushOnPush: boolean;
+  commitTarget: NormalizedGitCommitTargetConfig;
+  switchAfterRelease: boolean;
+}
+
+export interface NormalizedConsistencyConfig {
+  requireAcCoverage: ConsistencySeverity;
+  requireModuleAc: ConsistencySeverity;
+}
+
+export interface NormalizedAgentConfig {
+  claudeUsePreset: boolean;
+  conversationalLanguage: string | null;
+  allowedPaths: string[];
+  disallowedPaths: string[];
+}
+
+/**
+ * 0.2.8 (C23): the shape `readConfig` GUARANTEES. Every nested branch that
+ * `defaults()` covers is present with a real value, so consumers read
+ * `config.git.enabled` / `config.agent.claudeUsePreset` directly — never
+ * `?? false` / `?? true` at the point of use. Applying those defaults is the
+ * job of exactly one function ({@link normalizeConfig}); `defaults()` remains
+ * the only source of the VALUES.
+ *
+ * `entities` is deliberately NOT part of the guarantee: `undefined` carries
+ * meaning there ("all registered entity types active", see
+ * plugin-host/types.ts) and is not interchangeable with `[]` ("no types").
+ * Normalizing it would destroy that three-valued semantic — as it would for any
+ * future field whose absent state is not equivalent to a default.
+ *
+ * Assignable to `Config`, so every consumer typed against `Config` keeps
+ * compiling; only consumers that WANT the guarantee widen their param type to
+ * `NormalizedConfig` and drop their `??`.
+ */
+export type NormalizedConfig = Config & {
+  agent: NormalizedAgentConfig;
+  git: NormalizedGitSyncConfig;
+  consistency: NormalizedConsistencyConfig;
+  plugins: Record<string, Record<string, unknown>>;
+  description: string | null;
+};
 
 export interface ConfigCliArgs {
   name?: string;
@@ -239,7 +292,51 @@ export function builtinPagesRoot(dir: string = 'pages'): Root {
   };
 }
 
-export function defaults(cwd: string): Config {
+/**
+ * The single source of DEFAULT VALUES — including the nested branches
+ * (`agent`/`git`/`consistency`/`plugins`), which before 0.2.8 had no defaults
+ * anywhere and were re-invented with `??` at every point of use.
+ * {@link normalizeConfig} is the single MECHANISM that applies them; adding a
+ * new nested field means editing this function and nothing else.
+ *
+ * Not everything here is persisted: a fresh `config.json` is seeded from
+ * {@link bootstrapDefaults}, so the nested branches stay out of the file and
+ * keep tracking future default changes instead of freezing today's values.
+ */
+export function defaults(cwd: string): NormalizedConfig {
+  return {
+    ...bootstrapDefaults(cwd),
+    // 0.1.58: no elevator pitch.
+    description: null,
+    // M26/0.1.51/0.1.90: agent flags. `claudeUsePreset` true = prior behaviour.
+    agent: {
+      claudeUsePreset: true,
+      conversationalLanguage: null,
+      allowedPaths: [],
+      disallowedPaths: [],
+    },
+    // M28/0.1.118/0.1.125: git layer off unless opted in; commits land on HEAD.
+    git: {
+      enabled: false,
+      syncPushOnPush: false,
+      commitTarget: { mode: 'current', branch: null, template: null, base: null },
+      switchAfterRelease: false,
+    },
+    // Consistency gates report only when explicitly turned on.
+    consistency: { requireAcCoverage: 'off', requireModuleAc: 'off' },
+    // M33 phase 3: no plugin settings until a plugin writes some.
+    plugins: {},
+  };
+}
+
+/**
+ * The subset of {@link defaults} that a fresh bootstrap SERIALIZES into
+ * `config.json`. Deliberately the pre-0.2.8 key set: writing the nested
+ * branches would freeze their values per project, so a later change to a
+ * default would never reach existing projects. Absent keys are filled in on
+ * every read by {@link normalizeConfig}.
+ */
+export function bootstrapDefaults(cwd: string): Config {
   return {
     $schemaVersion: CURRENT_SCHEMA_VERSION,
     name: path.basename(cwd),
@@ -261,6 +358,63 @@ export function defaults(cwd: string): Config {
     // M25: null = no remote project yet ⇒ next push creates one.
     remoteProjectId: null,
   };
+}
+
+/** Plain JSON object (not an array, not null) — the only shape we recurse into. */
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
+ * 0.2.8 (C23): the ONE place that applies default values, deeply, once per
+ * config read. Rules (each one load-bearing):
+ *
+ * - key absent / `undefined` → the value from `base`;
+ * - key present with `null` → **stays `null`**. `null` carries meaning for
+ *   `writingStyle` (no style), `remoteApiUrl` (default remote) and
+ *   `commitTarget.branch`; substituting a default there would erase a
+ *   deliberate choice;
+ * - array in `loaded` → **replaces** the base array wholesale (`roots`,
+ *   `agent.allowedPaths`, `agent.disallowedPaths`) — never element-wise;
+ * - plain object in `loaded` → recursive merge (`agent`, `git`,
+ *   `git.commitTarget`, `consistency`, `plugins`).
+ *
+ * `plugins` merges one level deep (per plugin name); a plugin's own settings
+ * blob is opaque user data and is replaced, not descended into — same contract
+ * as the deep-merge in {@link writeConfig}.
+ */
+export function normalizeConfig(loaded: Partial<Config>, base: NormalizedConfig): NormalizedConfig {
+  return deepMerge(base as unknown as Record<string, unknown>, loaded as Record<string, unknown>, 0) as unknown as NormalizedConfig;
+}
+
+/**
+ * Recursion is bounded: objects are merged at the top level, at branch level
+ * (`git`, `agent`, `plugins`) and one level below it (`git.commitTarget`,
+ * `plugins[<name>]`). Deeper than that — inside a plugin's own settings blob —
+ * values replace wholesale, because that is opaque user data we must not
+ * reinterpret.
+ */
+function deepMerge(
+  base: Record<string, unknown>,
+  loaded: Record<string, unknown>,
+  depth: number,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...base };
+  for (const [key, value] of Object.entries(loaded)) {
+    if (value === undefined) continue; // absent ⇒ keep the default
+    const baseValue = out[key];
+    if (depth < 2 && isPlainObject(value) && isPlainObject(baseValue)) {
+      out[key] = deepMerge(baseValue, value, depth + 1);
+    } else if (depth < 2 && isPlainObject(value) && baseValue === undefined) {
+      // Branch with no default at all (e.g. `plugins[<name>]` on a bare base) —
+      // take it as-is; there is nothing to merge with.
+      out[key] = value;
+    } else {
+      // Scalars (incl. an explicit `null`) and arrays replace wholesale.
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function pickDefined<T extends object>(obj: T): Partial<T> {
@@ -686,7 +840,7 @@ function atomicWrite(filePath: string, data: string): void {
 }
 
 export interface LoadResult {
-  config: Config;
+  config: NormalizedConfig;
   created: boolean;
   path: string;
 }
@@ -705,7 +859,7 @@ function legacyRootsFromRaw(raw: Record<string, unknown>): Root[] | undefined {
 }
 
 /** Apply the CLI `--pages` override to the built-in `pages` root's dir (in place, returns a copy). */
-function applyPagesDirOverride(config: Config, pagesDir: string | undefined): Config {
+function applyPagesDirOverride<T extends Config>(config: T, pagesDir: string | undefined): T {
   if (pagesDir == null) return config;
   return {
     ...config,
@@ -725,10 +879,21 @@ function splitCli(cli: ConfigCliArgs): { patch: Partial<Config>; pagesDir?: stri
  * threadu byla efektywna od nastepnego POST /api/chat.
  * Throws na malformed JSON / type mismatch — ta sama walidacja co loadOrCreateConfig.
  */
-export function readConfig(cwd: string): Config {
+export function readConfig(cwd: string): NormalizedConfig {
+  const loaded = readValidatedFile(cwd);
+  if (loaded === null) return defaults(cwd);
+  return normalizeConfig(loaded, defaults(cwd));
+}
+
+/**
+ * Disk read + type validation + in-memory schema forward-compat, with NO
+ * defaults applied. `null` = no config.json. Shared by `readConfig` (which
+ * normalizes on top), `loadOrCreateConfig` and `writeConfig` (which merges a
+ * patch into the file's own keys, so persisted configs stay minimal).
+ */
+function readValidatedFile(cwd: string): Partial<Config> | null {
   const file = configPath(cwd);
-  const base = defaults(cwd);
-  if (!fs.existsSync(file)) return base;
+  if (!fs.existsSync(file)) return null;
   const text = fs.readFileSync(file, 'utf8');
   let parsed: unknown;
   try {
@@ -748,51 +913,43 @@ export function readConfig(cwd: string): Config {
     const legacy = legacyRootsFromRaw(parsed as Record<string, unknown>);
     if (legacy) loaded.roots = legacy;
   }
-  return { ...base, ...loaded };
+  return loaded;
 }
 
 export function loadOrCreateConfig(cwd: string, cli: ConfigCliArgs): LoadResult {
   const dir = path.join(cwd, '.claude4spec');
   fs.mkdirSync(dir, { recursive: true });
   const file = configPath(cwd);
-  const base = defaults(cwd);
   const { patch: cliDefined, pagesDir: cliPagesDir } = splitCli(cli);
 
-  if (!fs.existsSync(file)) {
+  const loaded = readValidatedFile(cwd);
+  if (loaded === null) {
     // Swiezy bootstrap: wymusza onboardingCompleted=false zeby AppShell pokazal
     // /onboarding po pierwszym starcie (M16). Defaults() ma true (forward compat
     // dla projektow sprzed M16); nadpisanie tylko w tym miejscu. `--pages` seeds
-    // the built-in pages root's dir.
-    const effective: Config = applyPagesDirOverride(
-      { ...base, ...cliDefined, onboardingCompleted: false },
+    // the built-in pages root's dir. Only the bootstrap key set is serialized —
+    // the nested branches come from `defaults()` on every read.
+    const seed: Config = applyPagesDirOverride(
+      { ...bootstrapDefaults(cwd), ...cliDefined, onboardingCompleted: false },
       cliPagesDir,
     );
-    atomicWrite(file, JSON.stringify(effective, null, 2) + '\n');
-    return { config: effective, created: true, path: file };
+    atomicWrite(file, JSON.stringify(seed, null, 2) + '\n');
+    return {
+      config: normalizeConfig(seed, defaults(cwd)),
+      created: true,
+      path: file,
+    };
   }
 
-  const text = fs.readFileSync(file, 'utf8');
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch (err) {
-    throw new Error(`config.json: invalid JSON — ${(err as Error).message}`);
-  }
-  const loaded = validate(parsed);
-  // Auto-bump older schemas in memory — same logic as readConfig.
-  if (loaded.$schemaVersion != null && loaded.$schemaVersion < CURRENT_SCHEMA_VERSION) {
-    loaded.$schemaVersion = CURRENT_SCHEMA_VERSION;
-  }
-  if (!loaded.roots) {
-    const legacy = legacyRootsFromRaw(parsed as Record<string, unknown>);
-    if (legacy) loaded.roots = legacy;
-  }
-  const effective: Config = applyPagesDirOverride({ ...base, ...loaded, ...cliDefined }, cliPagesDir);
+  const effective = applyPagesDirOverride(
+    normalizeConfig({ ...loaded, ...cliDefined }, defaults(cwd)),
+    cliPagesDir,
+  );
   return { config: effective, created: false, path: file };
 }
 
 export interface MigrateV3Result {
-  config: Config;
+  config: NormalizedConfig;
   /** True iff this call rewrote config.json on disk. */
   migrated: boolean;
   /** Values harvested from the pre-v3 file — destined for the workspace registry (first-wins). */
@@ -852,7 +1009,7 @@ export function migrateConfigToV3(cwd: string): MigrateV3Result {
  * Does NOT touch `briefsDir`/`patchesDir`/`entitiesDir` (they stay scalars).
  * Atomic write; no-op when already v4-shaped (`roots[]` present, no `pagesDir`).
  */
-export function migrateConfigToV4(cwd: string): { config: Config; migrated: boolean } {
+export function migrateConfigToV4(cwd: string): { config: NormalizedConfig; migrated: boolean } {
   const file = configPath(cwd);
   if (!fs.existsSync(file)) {
     return { config: readConfig(cwd), migrated: false };
@@ -895,15 +1052,19 @@ export function migrateConfigToV4(cwd: string): { config: Config; migrated: bool
  * zapisuje atomic. Uzywany przez PATCH /api/config (M01 + M16).
  * Throws na malformed input lub blad I/O.
  */
-export function writeConfig(cwd: string, partial: Partial<Config>): Config {
+export function writeConfig(cwd: string, partial: Partial<Config>): NormalizedConfig {
   const file = configPath(cwd);
   const dir = path.dirname(file);
   fs.mkdirSync(dir, { recursive: true });
-  const current = readConfig(cwd);
+  // 0.2.8: merge onto the FILE's own keys, not onto the normalized config —
+  // persisting the normalized branches would freeze today's defaults in this
+  // project forever (a later change to `defaults()` would never reach it).
+  // A missing file is seeded from the bootstrap key set, as at first boot.
+  const current: Partial<Config> = readValidatedFile(cwd) ?? bootstrapDefaults(cwd);
   // Walidacja typow przez ponowne uzycie validate() na zmergowanym obiekcie.
   // validate() zignoruje brakujace pola — dlatego najpierw merge, potem walidacja.
   const validated = validate(partial);
-  const merged: Config = { ...current, ...validated };
+  const merged: Partial<Config> = { ...current, ...validated };
   // M28: deep-merge the `git` object so toggling one flag preserves the other
   // (shallow spread would replace the whole object and drop the untouched flag).
   if (validated.git) {
@@ -930,7 +1091,9 @@ export function writeConfig(cwd: string, partial: Partial<Config>): Config {
     }
   }
   atomicWrite(file, JSON.stringify(merged, null, 2) + '\n');
-  return merged;
+  // Return the NORMALIZED view of what was just persisted — callers read
+  // `updated.git.enabled` & co. directly (no `??` at the point of use).
+  return normalizeConfig(merged, defaults(cwd));
 }
 
 /**

@@ -692,7 +692,13 @@ async function buildInner(
   // migrated, plugin host mounted, pages root ensured) but BEFORE watchers start
   // and before listen, so restore writes land without watcher double-capture.
   if (deps.clone) {
-    const importService = new ReleaseImportService(db.handle, releaseService, remoteHttpClient, cwd);
+    const importService = new ReleaseImportService(
+      db.handle,
+      releaseService,
+      remoteHttpClient,
+      cwd,
+      skillRegistry,
+    );
     try {
       const result = await importService.clone(deps.clone.slug, { nameOverride: deps.clone.nameOverride });
       console.log(

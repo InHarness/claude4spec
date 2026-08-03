@@ -285,8 +285,8 @@ export async function checkConsistency(
   const acService = acModule ? (host.getEntityService('ac') as unknown as AcConsistencyService | null) : null;
   if (acService) {
     const config = readConfig(deps.projectDir);
-    const requireAcCoverage = config.consistency?.requireAcCoverage ?? 'off';
-    const requireModuleAc = config.consistency?.requireModuleAc ?? 'off';
+    const requireAcCoverage = config.consistency.requireAcCoverage;
+    const requireModuleAc = config.consistency.requireModuleAc;
     const activeAcs = acService.listRaw({ status: 'active' });
 
     for (const ac of activeAcs) {

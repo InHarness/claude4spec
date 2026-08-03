@@ -23,7 +23,7 @@ import { create as tarCreate, extract as tarExtract } from 'tar';
 import { nanoid } from 'nanoid';
 import type { Release, SpecSnapshot, SpecSnapshotEntityRow } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
-import type { Config } from '../config.js';
+import type { Config, NormalizedConfig } from '../config.js';
 import { DomainError } from './tags.js';
 
 /**
@@ -155,7 +155,7 @@ export const C4S_VERSION = readC4sVersion();
  * a new `Config` field: a new field is dropped from the bundle until someone
  * consciously decides to keep it here. No allow-list entry → no leak.
  */
-export function sanitizeConfigForBundle(config: Config): BundleConfig {
+export function sanitizeConfigForBundle(config: NormalizedConfig): BundleConfig {
   // 0.1.96: only releasable roots enter the bundle (their pages are the only
   // ones snapshotted); non-releasable / brief / patch roots fall out here. Any
   // `linkTargets` pointing at a dropped root must also be pruned, else clone/
@@ -173,7 +173,7 @@ export function sanitizeConfigForBundle(config: Config): BundleConfig {
     writingStyle: config.writingStyle,
     onboardingCompleted: config.onboardingCompleted,
     entities: config.entities,
-    agent: { claudeUsePreset: config.agent?.claudeUsePreset },
+    agent: { claudeUsePreset: config.agent.claudeUsePreset },
   };
 }
 
@@ -221,7 +221,7 @@ export function sha256File(file: string): Promise<string> {
 export async function buildBundleArchive(
   snapshot: SpecSnapshot,
   release: Release,
-  config: Config,
+  config: NormalizedConfig,
   pageRows: BundlePageInput[],
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));

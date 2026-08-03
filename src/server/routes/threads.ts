@@ -127,7 +127,7 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
           : {};
       const architectureConfig: Record<string, unknown> = {
         ...clientArchitectureConfig,
-        claude_usePreset: readConfig(deps.cwd).agent?.claudeUsePreset ?? true,
+        claude_usePreset: readConfig(deps.cwd).agent.claudeUsePreset,
       };
       // Opcjonalny `effort` z body → `architectureConfig.claude_effort` (ten sam slownik
       // reasoning co `POST /api/chat`). Bez defaultu tutaj — rozwiazywany w `runAgent`.

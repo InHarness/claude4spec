@@ -270,3 +270,79 @@ describe('PATCH /config — git.commitTarget (0.1.125)', () => {
     expect(res.body.git.commitTarget.template).toBe('release-{release_name}');
   });
 });
+
+// 0.2.8 (C17): `plansDir` gained a control in Settings → Directories. The
+// screen sends a DIFF-ONLY payload, so the artifact-dir collision guard has to
+// fire on a PATCH that carries no `roots` — which is exactly the shape it used
+// to skip (the collision then surfaced only as a boot-time failure).
+describe('PATCH /config — plansDir is editable and collision-checked (C17, 0.2.8)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-plans-'));
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'test' }));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const router = configRouter({ cwd: dir, skillRegistry: {} as unknown as SkillRegistry });
+    return express().use(express.json()).use(router);
+  };
+
+  it('accepts and persists a plansDir change on its own', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/roadmap' });
+    expect(res.status).toBe(200);
+    expect((res.body as Config).plansDir).toBe('.claude4spec/roadmap');
+    const onDisk = JSON.parse(fs.readFileSync(configPath(dir), 'utf8')) as Config;
+    expect(onDisk.plansDir).toBe('.claude4spec/roadmap');
+  });
+
+  it('rejects plansDir equal to briefsDir even without roots in the body', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/briefs' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    expect(res.body.error.message).toMatch(/briefsDir and plansDir must differ/);
+  });
+
+  it('rejects plansDir equal to patchesDir even without roots in the body', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: '.claude4spec/patches' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/patchesDir and plansDir must differ/);
+  });
+
+  it('rejects a plansDir escaping the project root', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: '../outside' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/plansDir must not escape project root/);
+  });
+
+  // A config.json that already collides is reachable — boot only warns about it
+  // (project-context.ts). If the guard fired on every PATCH, such a project could
+  // never be repaired: even closing the onboarding wizard would 400.
+  it('does not block an unrelated PATCH on a project whose dirs already collide', async () => {
+    fs.writeFileSync(
+      configPath(dir),
+      JSON.stringify({ $schemaVersion: 4, name: 'test', briefsDir: 'same', patchesDir: 'same' }),
+    );
+    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    expect(res.status).toBe(200);
+  });
+
+  it('still blocks a dir PATCH that would create the collision, normalizing the paths first', async () => {
+    const res = await request(app()).patch('/config').send({ plansDir: './.claude4spec/briefs/' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/briefsDir and plansDir must differ/);
+  });
+
+  it('accepts a briefs/patches/plans triple moved together', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ briefsDir: 'spec/briefs', patchesDir: 'spec/patches', plansDir: 'spec/plans' });
+    expect(res.status).toBe(200);
+    expect((res.body as Config).plansDir).toBe('spec/plans');
+  });
+});
