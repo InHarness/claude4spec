@@ -367,7 +367,7 @@ export function assertBundleWritingStyleAvailable(
   if (typeof slug !== 'string' || slug.trim() === '') return;
   if (skillRegistry.isSelectable(slug)) return;
   throw new DomainError(
-    'BUNDLE_WRITING_STYLE_UNAVAILABLE',
+    'CLONE_WRITING_STYLE_UNAVAILABLE',
     `writing style "${slug}" from the bundle ${skillRegistry.unselectableReason(slug)} — clone aborted`,
   );
 }

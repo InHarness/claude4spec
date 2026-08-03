@@ -264,6 +264,54 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     expect(migrateConfigToV4(dir).migrated).toBe(false);
   });
 
+  // 0.2.8: the loader REJECTS an incomplete roots[] entry instead of defaulting
+  // it, so materializing the missing fields is the migration's job — otherwise a
+  // config written before a field existed is permanently unloadable.
+  it('migrateConfigToV4 materializes missing root fields on an already-v4 config', () => {
+    writeRaw({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [
+        { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, sidebar: 'accordion' },
+        { id: 'guides', name: 'Guides', dir: 'guides' },
+      ],
+    });
+    const { migrated, config } = migrateConfigToV4(dir);
+    expect(migrated).toBe(true);
+    const pages = config.roots.find((r) => r.id === 'pages');
+    expect(pages).toMatchObject({ releasable: true, sectionIndexed: true, referenceValidated: true, briefTarget: true, linkTargets: [] });
+    // A user root gets the full-lifecycle defaults, and is NOT marked builtin.
+    const guides = config.roots.find((r) => r.id === 'guides');
+    expect(guides).toMatchObject({ builtin: false, releasable: true, sectionIndexed: true, referenceValidated: true, sidebar: 'accordion', briefTarget: true });
+    // Values already present are preserved, and a second run is a no-op.
+    expect(migrateConfigToV4(dir).migrated).toBe(false);
+  });
+
+  it('migrateConfigToV4 carries a legacy git.syncCommitOnRelease onto git.enabled', () => {
+    writeRaw({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [builtinPagesRoot('pages')],
+      git: { syncCommitOnRelease: true, syncPushOnPush: false },
+    });
+    expect(migrateConfigToV4(dir).migrated).toBe(true);
+    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+    expect(raw.git).toEqual({ enabled: true, syncPushOnPush: false });
+    expect(readConfig(dir).git.enabled).toBe(true);
+  });
+
+  it('migrateConfigToV4 lets an explicit git.enabled win over the legacy flag', () => {
+    writeRaw({
+      $schemaVersion: 4,
+      name: 'X',
+      roots: [builtinPagesRoot('pages')],
+      git: { enabled: false, syncCommitOnRelease: true },
+    });
+    expect(migrateConfigToV4(dir).migrated).toBe(true);
+    const raw = JSON.parse(fs.readFileSync(configPath(dir), 'utf8'));
+    expect(raw.git).toEqual({ enabled: false });
+  });
+
   it('readConfig synthesizes the pages root from a legacy pagesDir (in-memory forward-compat)', () => {
     writeRaw({ $schemaVersion: 3, name: 'X', pagesDir: '.' });
     const cfg = readConfig(dir);
