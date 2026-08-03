@@ -346,3 +346,88 @@ describe('PATCH /config — plansDir is editable and collision-checked (C17, 0.2
     expect((res.body as Config).plansDir).toBe('spec/plans');
   });
 });
+
+/**
+ * D4 (0.2.9): write-target overlap is checked PAIRWISE and BIDIRECTIONALLY on the
+ * post-merge effective state, and fires on any PATCH touching `roots[]` OR a storage
+ * dir. The Settings payload is diff-only, so gating on `'roots' in body` (as before)
+ * let a dir moved onto another write target through untouched.
+ */
+describe('PATCH /config — D4 write-target overlap (0.2.9)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-cfg-d4-'));
+    const file = configPath(dir);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ $schemaVersion: 4, name: 'test' }));
+  });
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  const app = () => {
+    const router = configRouter({ cwd: dir, skillRegistry: {} as unknown as SkillRegistry });
+    return express().use(express.json()).use(router);
+  };
+
+  it('rejects entitiesDir moved onto releasesDir — neither side is a root, and no roots[] is sent', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ entitiesDir: '.claude4spec/releases' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+    // Symmetric message — no "root '<id>' dir" framing, since no root is involved.
+    expect(res.body.error.message).toMatch(
+      /config\.json: '(entitiesDir|releasesDir)' overlaps write-target '(entitiesDir|releasesDir)'/,
+    );
+  });
+
+  it('rejects entitiesDir moved onto the reserved .claude4spec/plugins target', async () => {
+    const res = await request(app())
+      .patch('/config')
+      .send({ entitiesDir: '.claude4spec/plugins' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/overlaps write-target/);
+  });
+
+  it('rejects entitiesDir moved onto an existing page root, with no roots[] in the body', async () => {
+    const res = await request(app()).patch('/config').send({ entitiesDir: 'pages' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toMatch(/overlaps write-target/);
+  });
+
+  it('warns but does NOT reject briefsDir overlapping a page root (rule 3a), without roots[]', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const res = await request(app()).patch('/config').send({ briefsDir: 'pages' });
+      expect(res.status).toBe(200);
+      expect((res.body as Config).briefsDir).toBe('pages');
+      expect(warn.mock.calls.flat().join('\n')).toMatch(/overlaps briefsDir/);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('leaves an unrelated PATCH alone even when the stored config already overlaps', async () => {
+    fs.writeFileSync(
+      configPath(dir),
+      JSON.stringify({
+        $schemaVersion: 4,
+        name: 'test',
+        entitiesDir: 'shared',
+        releasesDir: 'shared',
+      }),
+    );
+    // An already-broken project must stay repairable: only a PATCH that touches roots
+    // or a storage dir is judged, so closing the onboarding wizard still works.
+    const res = await request(app()).patch('/config').send({ onboardingCompleted: true });
+    expect(res.status).toBe(200);
+  });
+
+  it('accepts a storage-dir PATCH that overlaps nothing', async () => {
+    const res = await request(app()).patch('/config').send({ entitiesDir: 'spec/entities' });
+    expect(res.status).toBe(200);
+    expect((res.body as Config).entitiesDir).toBe('spec/entities');
+  });
+});

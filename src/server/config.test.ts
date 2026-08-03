@@ -360,9 +360,7 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     const { errors } = validateRootDirs(roots, {
       entitiesDir: '.claude4spec/entities', releasesDir: '.claude4spec/releases', briefsDir: '.claude4spec/briefs', patchesDir: '.claude4spec/patches', plansDir: '.claude4spec/plans',
     });
-    expect(errors).toContain(
-      "config.json: root 'gen' dir overlaps write-target '.claude4spec/plugins'",
-    );
+    expect(errors).toContain("config.json: 'gen' overlaps write-target '.claude4spec/plugins'");
   });
 
   it('validateRootDirs allows .claude4spec/skills as a user root (0.1.104: nothing writes there anymore)', () => {

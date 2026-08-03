@@ -266,18 +266,38 @@ export function configRouter(deps: ConfigRouterDeps): Router {
       // path-safety, unique ids, dangling linkTargets, built-in pages present)
       // via parseRootsArray; cross-field overlap via validateRootDirs against the
       // effective (merged) briefs/patches/entities dirs. Any hard violation → 400.
-      if ('roots' in body) {
+      // D4 fires on any PATCH that touches `roots[]` OR any storage dir — not just one
+      // carrying `roots`. The Settings payload is diff-only, so moving `entitiesDir` onto
+      // an existing root's dir used to arrive with no `roots` and skip the check entirely,
+      // leaving the collision to be discovered by the next boot (or by data loss).
+      // Still scoped to requests that touch these fields, for the same reason the C17 guard
+      // above is: an already-colliding config must stay repairable, so an unrelated PATCH
+      // (`{ onboardingCompleted: true }`) must not 400 on damage it did not cause.
+      const touchesWriteTargets =
+        'roots' in body ||
+        (['briefsDir', 'patchesDir', 'plansDir', 'entitiesDir', 'releasesDir'] as const).some(
+          (f) => f in body,
+        );
+      if (touchesWriteTargets) {
         let roots: Root[];
-        try {
-          roots = parseRootsArray(body.roots);
-        } catch (err) {
-          return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
+        if ('roots' in body) {
+          try {
+            roots = parseRootsArray(body.roots);
+          } catch (err) {
+            return res.status(400).json({ error: { code: 'VALIDATION', message: (err as Error).message } });
+          }
+          patch.roots = roots;
+        } else {
+          // No roots in the payload — validate the dirs against the roots already on disk.
+          roots = currentConfig.roots;
         }
-        const { errors } = validateRootDirs(roots, effectiveDirs);
+        const { errors, warnings } = validateRootDirs(roots, effectiveDirs);
         if (errors.length > 0) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: errors[0] } });
         }
-        patch.roots = roots;
+        // Rule 3a is a warning, not a rejection — surface it on the same channel boot uses
+        // so an overlap that only degrades tidiness is still visible to whoever caused it.
+        for (const w of warnings) console.warn(`[config] ${w}`);
       }
 
       if ('writingStyle' in body) {

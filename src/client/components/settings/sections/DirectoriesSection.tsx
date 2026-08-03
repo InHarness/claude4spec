@@ -112,29 +112,34 @@ function validateDraft(draft: DraftState): { errors: string[]; warnings: string[
     }
   }
 
-  const hardTargets: Array<{ id: string; dir: string }> = [
+  // Pairwise and bidirectional over every write target, matching the server's D4 sweep —
+  // roots are not the privileged left-hand side, so entitiesDir-vs-releasesDir is caught
+  // here too. Message shape mirrors the server's symmetric form.
+  const writeTargets: Array<{ id: string; dir: string }> = [
+    ...roots.map((r) => ({ id: r.id, dir: r.dir })),
     { id: 'entitiesDir', dir: draft.entitiesDir },
     { id: 'releasesDir', dir: draft.releasesDir },
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
-  for (let i = 0; i < roots.length; i++) {
-    const r = roots[i]!;
-    for (let j = i + 1; j < roots.length; j++) {
-      const other = roots[j]!;
-      if (dirsOverlap(r.dir, other.dir)) {
-        errors.push(`Root '${r.id}' dir overlaps root '${other.id}'`);
+  for (let i = 0; i < writeTargets.length; i++) {
+    for (let j = i + 1; j < writeTargets.length; j++) {
+      const a = writeTargets[i]!;
+      const b = writeTargets[j]!;
+      if (dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir)) {
+        errors.push(`'${a.id}' overlaps write-target '${b.id}'`);
       }
     }
-    for (const t of hardTargets) {
-      if (dirsOverlap(r.dir, t.dir)) {
-        errors.push(`Root '${r.id}' dir overlaps write-target '${t.id}'`);
+  }
+  const softTargets: Array<{ id: string; dir: string }> = [
+    { id: 'briefsDir', dir: draft.briefsDir },
+    { id: 'patchesDir', dir: draft.patchesDir },
+    { id: 'plansDir', dir: draft.plansDir },
+  ];
+  for (const r of roots) {
+    for (const t of softTargets) {
+      if (dirsOverlap(r.dir, t.dir) || dirsOverlap(t.dir, r.dir)) {
+        warnings.push(`Root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
       }
-    }
-    if (dirsOverlap(r.dir, draft.briefsDir)) {
-      warnings.push(`Root '${r.id}' dir overlaps briefsDir — pages may appear in both`);
-    }
-    if (dirsOverlap(r.dir, draft.patchesDir)) {
-      warnings.push(`Root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
     }
   }
 

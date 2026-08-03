@@ -120,6 +120,141 @@ describe('PlanService anchor injection', () => {
       .filter((line) => ANCHOR_RE.test(line)).length;
     expect(anchorCount).toBe(2);
   });
+
+  it('never injects an anchor that already occurs in the same plan file', async () => {
+    seedThread(h.db, 'thread-dup');
+
+    // 40 headings in one pass: every injected value is checked against the ones already
+    // composed into THIS file (existing + injected earlier in the same pass), so the
+    // minted set has to come out with no repeats.
+    const headings = Array.from({ length: 40 }, (_, i) => `## Section ${i}\n\nbody ${i}`);
+    await h.service.update({
+      threadId: 'thread-dup',
+      title: 'Anchor uniqueness plan',
+      action: 'replace',
+      content: headings.join('\n\n'),
+      changedBy: 'agent',
+    });
+
+    const saved = await soleStoredBody(h);
+    const anchors = [...saved.matchAll(new RegExp(ANCHOR_PATTERN_SOURCE, 'g'))].map((m) => m[1]!);
+    expect(anchors).toHaveLength(40);
+    expect(new Set(anchors).size).toBe(40);
+  });
+});
+
+describe('PlanService.update — insert_after_section against a duplicated anchor', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  /**
+   * A duplicate is only reachable by hand-writing or pasting one — generation cannot
+   * produce it. It does NOT block the write (soft validation, as for pages); it only
+   * makes a targeted insert ambiguous, and guessing a side would silently put the
+   * fragment in the wrong section.
+   */
+  it('saves a plan carrying a duplicated anchor, then refuses to insert against it with AMBIGUOUS_ANCHOR', async () => {
+    seedThread(h.db, 'thread-amb');
+
+    const dup = 'abcd1234';
+    await h.service.update({
+      threadId: 'thread-amb',
+      title: 'Ambiguous anchor plan',
+      action: 'replace',
+      content:
+        `<!-- anchor: ${dup} -->\n## First\n\nfirst body\n\n` +
+        `<!-- anchor: ${dup} -->\n## Second\n\nsecond body`,
+      changedBy: 'user',
+    });
+
+    // The write itself succeeded — the duplicate survived to disk unmodified.
+    const saved = await soleStoredBody(h);
+    expect(saved.split(`<!-- anchor: ${dup} -->`).length - 1).toBe(2);
+
+    await expect(
+      h.service.update({
+        threadId: 'thread-amb',
+        action: 'insert_after_section',
+        anchor: dup,
+        content: 'injected fragment',
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'AMBIGUOUS_ANCHOR' });
+  });
+
+  it('still inserts normally when the anchor occurs exactly once', async () => {
+    seedThread(h.db, 'thread-one');
+
+    await h.service.update({
+      threadId: 'thread-one',
+      title: 'Unique anchor plan',
+      action: 'replace',
+      content: '<!-- anchor: aaaa1111 -->\n## Only\n\nonly body\n\n## Tail\n\ntail body',
+      changedBy: 'user',
+    });
+
+    await h.service.update({
+      threadId: 'thread-one',
+      action: 'insert_after_section',
+      anchor: 'aaaa1111',
+      content: 'injected fragment',
+      changedBy: 'agent',
+    });
+
+    const saved = await soleStoredBody(h);
+    // Landed inside the target section — before the next heading, not at the end of file.
+    expect(saved.indexOf('injected fragment')).toBeLessThan(saved.indexOf('## Tail'));
+  });
+
+  it('reports SECTION_NOT_FOUND (not AMBIGUOUS_ANCHOR) when the anchor occurs zero times', async () => {
+    seedThread(h.db, 'thread-none');
+
+    await h.service.update({
+      threadId: 'thread-none',
+      title: 'Missing anchor plan',
+      action: 'replace',
+      content: '## Only\n\nonly body',
+      changedBy: 'user',
+    });
+
+    await expect(
+      h.service.update({
+        threadId: 'thread-none',
+        action: 'insert_after_section',
+        anchor: 'zzzz9999',
+        content: 'injected fragment',
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'SECTION_NOT_FOUND' });
+  });
+
+  it('reads a duplicated anchor deterministically as the FIRST occurrence', async () => {
+    seedThread(h.db, 'thread-read');
+
+    const dup = 'bbbb2222';
+    await h.service.update({
+      threadId: 'thread-read',
+      title: 'Duplicate read plan',
+      action: 'replace',
+      content:
+        `<!-- anchor: ${dup} -->\n## First\n\nfirst body\n\n` +
+        `<!-- anchor: ${dup} -->\n## Second\n\nsecond body`,
+      changedBy: 'user',
+    });
+
+    // Reads stay permissive where the write-path is strict: resolution is by first
+    // occurrence, never a coin flip, so a duplicate degrades rather than breaking links.
+    const hit = await h.service.getByAnchor(dup);
+    expect(hit).not.toBeNull();
+    expect(hit!.threadId).toBe('thread-read');
+  });
 });
 
 describe('PlanService.getByAnchor', () => {

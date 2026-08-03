@@ -54,11 +54,12 @@ export function checkResumeConfigLock(input: ResumeLockInput): ResumeConfigLockE
   return {
     error: {
       code: 'RESUME_CONFIG_LOCKED',
-      // 0.2.8: name the fields that actually diverged, so the UI can lock the right control
-      // instead of always pointing at model/reasoning.
-      message: `Locked for the lifetime of a session: ${violations
-        .map((v) => v.path)
-        .join(', ')}. Start a new conversation to change them.`,
+      // Deliberately STATIC and identical on both routes. The per-field detail is not this
+      // string's job — it belongs in `violations[]`, whose `path`/`reason` pairs let the UI
+      // lock exactly the control that diverged. Interpolating the field names here instead
+      // would give non-UI consumers (`c4s ask`, scripts) an unstable message to match on.
+      message:
+        'Model, reasoning and filesystem scope are locked for the lifetime of a session. Start a new conversation to use the new settings.',
       violations: violations.map((v) => ({ path: v.path, reason: v.reason })),
     },
   };

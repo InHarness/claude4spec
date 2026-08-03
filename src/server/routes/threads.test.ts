@@ -229,11 +229,14 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
         .send({ message: 'hi', model: 'sonnet-4.6' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
-      // The message names the field, so the UI can lock the right control.
+      // `violations[]` names the field, so the UI can lock the right control; `message`
+      // stays the one static string, identical here and on POST /api/chat.
       expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
         'allowedPaths',
       );
-      expect(res.body.error.message).toContain('allowedPaths');
+      expect(res.body.error.message).toBe(
+        'Model, reasoning and filesystem scope are locked for the lifetime of a session. Start a new conversation to use the new settings.',
+      );
       expect(runAgentTurnMock).not.toHaveBeenCalled();
     });
 

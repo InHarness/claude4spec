@@ -484,37 +484,50 @@ export function validateRootDirs(
 ): { errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
-  const hardTargets: Array<{ id: string; dir: string }> = [
+
+  // D4: every "smudging" write target is checked against every other one, PAIRWISE and
+  // BIDIRECTIONALLY — a page root is no longer privileged as the only left-hand side.
+  // Before this, `entitiesDir` vs `releasesDir` (and either vs `.claude4spec/plugins`)
+  // was never compared at all: two write targets could be pointed at the same directory
+  // and nothing complained until something clobbered something else at runtime.
+  const writeTargets: Array<{ id: string; dir: string }> = [
+    ...roots.map((r) => ({ id: r.id, dir: r.dir })),
     { id: 'entitiesDir', dir: opts.entitiesDir },
     { id: 'releasesDir', dir: opts.releasesDir },
     ...RESERVED_WRITE_TARGETS.map((d) => ({ id: d, dir: d })),
   ];
-  for (let i = 0; i < roots.length; i++) {
-    const r = roots[i]!;
-    // overlap vs other roots (hard)
-    for (let j = i + 1; j < roots.length; j++) {
-      const other = roots[j]!;
-      if (dirsOverlap(r.dir, other.dir)) {
-        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${other.id}'`);
+  for (let i = 0; i < writeTargets.length; i++) {
+    for (let j = i + 1; j < writeTargets.length; j++) {
+      const a = writeTargets[i]!;
+      const b = writeTargets[j]!;
+      // `dirsOverlap` is asymmetric on purpose — its third clause asks whether the PAGES
+      // WALKER starting at the first dir would actually reach the second (dot-dir segments
+      // stop it). Neither side of a pair is inherently the walker, so a hazard in either
+      // direction is a hazard; ORing both readings is what makes the check bidirectional.
+      if (dirsOverlap(a.dir, b.dir) || dirsOverlap(b.dir, a.dir)) {
+        errors.push(`config.json: '${a.id}' overlaps write-target '${b.id}'`);
       }
-    }
-    // overlap vs entitiesDir / skills / plugins (hard)
-    for (const t of hardTargets) {
-      if (dirsOverlap(r.dir, t.dir)) {
-        errors.push(`config.json: root '${r.id}' dir overlaps write-target '${t.id}'`);
-      }
-    }
-    // overlap vs briefsDir / patchesDir / plansDir (warning). '.claude/skills' overlap is allowed.
-    if (dirsOverlap(r.dir, opts.briefsDir)) {
-      warnings.push(`config.json: root '${r.id}' dir overlaps briefsDir — pages may appear in both`);
-    }
-    if (dirsOverlap(r.dir, opts.patchesDir)) {
-      warnings.push(`config.json: root '${r.id}' dir overlaps patchesDir — pages may appear in both`);
-    }
-    if (dirsOverlap(r.dir, opts.plansDir)) {
-      warnings.push(`config.json: root '${r.id}' dir overlaps plansDir — pages may appear in both`);
     }
   }
+
+  // Rule 3a: briefs/patches/plans overlapping a Page Root stays a WARNING, not a hard
+  // error — the files are readable as pages, which is untidy rather than destructive.
+  // Evaluated over all roots × all three dirs regardless of which side of the pair the
+  // caller happened to send, so a diff-only PATCH carrying just `briefsDir` still warns.
+  // '.claude/skills' overlap is allowed and intentionally absent here.
+  const softTargets: Array<{ id: string; dir: string }> = [
+    { id: 'briefsDir', dir: opts.briefsDir },
+    { id: 'patchesDir', dir: opts.patchesDir },
+    { id: 'plansDir', dir: opts.plansDir },
+  ];
+  for (const r of roots) {
+    for (const t of softTargets) {
+      if (dirsOverlap(r.dir, t.dir) || dirsOverlap(t.dir, r.dir)) {
+        warnings.push(`config.json: root '${r.id}' dir overlaps ${t.id} — pages may appear in both`);
+      }
+    }
+  }
+
   return { errors, warnings };
 }
 
