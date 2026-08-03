@@ -230,11 +230,19 @@ export async function getSections(
      * per-item error. In a batch a throw would let one de-indexed root suppress
      * every other section the caller asked for, which contradicts the rule that
      * makes this operation worth having.
+     *
+     * The remedy travels WITH the error. Both tool descriptions promise that
+     * this variant "points at get_page", and a promise kept only in the
+     * description is not kept: the caller reads the item, not the manual. The
+     * pointer is followable by construction — the root has no section index, so
+     * get_page is exactly the operation that serves it (with `range`, even).
      */
     if (!resolvable.has(anchor)) {
       items.push({
         anchor,
-        error: `section '${anchor}' is on root '${section.rootId}', which has no section index`,
+        error:
+          `section '${anchor}' is on root '${section.rootId}', which has no section index — ` +
+          `read it with get_page({ rootId: "${section.rootId}", path: "${section.pagePath}" })`,
         code: 'SECTION_NOT_FOUND',
       });
       continue;
@@ -289,10 +297,16 @@ async function fetchOne(
    * dropped. `applyItemBudget` never degrades the first item, so without this
    * one huge section would come back meta-only with no smaller subset left to
    * ask for — a dead end where the pre-batch operation gave a usable answer.
+   *
+   * The hint used to offer "the page window with get_page" as the first remedy.
+   * A section only ever exists on a section-indexed root, and that is precisely
+   * where get_page refuses `range` — so the page-window half was unfollowable
+   * on every input that could reach this line. Narrowing to a child section is
+   * the remedy that actually exists here.
    */
   const budgeted = truncateText(
     String(detail.body ?? hydrated.body),
-    `section body truncated by response budget — read the page window with get_page, or narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" })`,
+    `section body truncated by response budget — narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" }), then get_sections({ anchors })`,
   );
 
   return {

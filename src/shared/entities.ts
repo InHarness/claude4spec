@@ -734,7 +734,14 @@ export type ChatRole =
   | 'tool_use'
   | 'tool_result'
   | 'user_input_request'
-  | 'user_input_response';
+  | 'user_input_response'
+  /**
+   * C21: a runtime warning from the adapter (degraded FS sandbox, ignored
+   * execute params). Content is `{ "message": "…" }`, status always 'complete'
+   * — a point event with no streaming phase. `chat_message.role` carries no SQL
+   * CHECK, so this union IS the constraint; no migration accompanies it.
+   */
+  | 'warning';
 
 /**
  * M21 generic context discriminator. 'chat' = default (full toolset, overlay UI).

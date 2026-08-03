@@ -91,6 +91,31 @@ export class SectionIndexerService {
     tx();
   }
 
+  /**
+   * An anchor is the identity of a section — `get_sections({ anchors })`,
+   * `list_sections({ by: "anchor" })` and `<section_ref anchor="…"/>` all assume
+   * it names exactly one. The generator used to mint one blind and hand it
+   * straight to an upsert keyed on `anchor`, so a collision did not raise: it
+   * OVERWROTE the other section's row and made it unaddressable.
+   *
+   * Occupancy is checked PROJECT-WIDE, not per file, because `<section_ref/>`
+   * carries no page path — there is no scope in which a per-file anchor would
+   * resolve. 36^8 makes a collision vanishingly unlikely; the point of the probe
+   * is that "unlikely" is not the same guarantee as "checked".
+   */
+  private freshAnchor(taken: ReadonlySet<string>): string {
+    const occupied = this.db.prepare('SELECT 1 FROM section_index WHERE anchor = ?');
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const candidate = nanoid8();
+      if (taken.has(candidate)) continue;
+      if (occupied.get(candidate)) continue;
+      return candidate;
+    }
+    // Eight straight collisions in a 2.8e12 space is not bad luck, it is a
+    // broken generator. Failing loudly beats minting a duplicate.
+    throw new Error('[section-indexer] could not mint a free anchor in 8 attempts');
+  }
+
   private removeSectionIndex(anchor: string): void {
     // anchor is globally unique — deleting by anchor is root-agnostic.
     this.db.prepare('DELETE FROM section_entity_link WHERE anchor = ?').run(anchor);
@@ -122,9 +147,16 @@ export class SectionIndexerService {
     const headings = parseHeadings(lines);
     let bodyChanged = false;
 
+    // Every anchor already spoken for, so a freshly minted one cannot land on
+    // top of an existing section. Seeded with what THIS file already carries
+    // (the file may not be in the index yet, or may be mid-rewrite) and grown
+    // as we mint — two headings in one pass must not collide with each other.
+    const taken = new Set(headings.map((h) => h.anchor).filter((a): a is string => a !== null));
+
     for (const h of headings) {
       if (h.anchor === null) {
-        const newAnchor = nanoid8();
+        const newAnchor = this.freshAnchor(taken);
+        taken.add(newAnchor);
         lines.splice(h.lineIndex, 0, `<!-- anchor: ${newAnchor} -->`);
         shiftHeadingLines(headings, h.lineIndex, 1);
         h.anchor = newAnchor;
@@ -155,6 +187,21 @@ export class SectionIndexerService {
     }
 
     const tx = this.db.transaction(() => {
+      /**
+       * Deterministic rule, half two — across pages.
+       *
+       * `section_index.anchor` is UNIQUE, so a duplicate never raised here: the
+       * upsert quietly took the row from whichever page was scanned last, which
+       * made the winner a function of directory order. The WHERE makes the
+       * winner a function of the DATA instead: lowest (rootId, page_path) owns
+       * the anchor, and the same page always updates itself so an ordinary
+       * re-index (heading moved, body edited) still lands.
+       *
+       * Consequence, documented in the tool descriptions: with a live duplicate,
+       * `get_sections` serves the lowest-sorting location, every time, on every
+       * machine. `check_consistency` reports the collision so it gets fixed
+       * rather than silently tolerated.
+       */
       const upsertStmt = this.db.prepare(
         `INSERT INTO section_index
             (rootId, anchor, page_path, heading_path, heading_slug, heading_level,
@@ -172,7 +219,10 @@ export class SectionIndexerService {
             line_start = excluded.line_start,
             line_end = excluded.line_end,
             paragraph_count = excluded.paragraph_count,
-            updated_at = datetime('now')`
+            updated_at = datetime('now')
+          WHERE excluded.rootId < section_index.rootId
+             OR (excluded.rootId = section_index.rootId
+                 AND excluded.page_path <= section_index.page_path)`
       );
       for (const s of sections) {
         upsertStmt.run(
@@ -194,7 +244,23 @@ export class SectionIndexerService {
         for (const anchor of deletedAnchors) this.removeSectionIndex(anchor);
       }
 
-      const anchorsInFile = sections.map((s) => s.anchor);
+      /**
+       * The anchors this page actually OWNS after the upsert, read back rather
+       * than assumed. On a collision the row stays with the lowest-sorting
+       * location, and the loser must not go on to rewrite the winner's links —
+       * that would put the deterministic rule back at the mercy of scan order
+       * one layer down, where it is harder to see.
+       */
+      const owned = new Set(
+        (
+          this.db
+            .prepare('SELECT anchor FROM section_index WHERE rootId = ? AND page_path = ?')
+            .all(rootId, relPath) as Array<{ anchor: string }>
+        ).map((r) => r.anchor),
+      );
+      const ownedSections = sections.filter((s) => owned.has(s.anchor));
+
+      const anchorsInFile = ownedSections.map((s) => s.anchor);
       if (anchorsInFile.length) {
         // Delete this page's links by (rootId, anchor-set). anchor alone is
         // globally unique, so rootId is a belt-and-suspenders scope match.
@@ -209,7 +275,7 @@ export class SectionIndexerService {
           `INSERT OR IGNORE INTO section_entity_link (rootId, anchor, entity_type, entity_slug, relation)
                VALUES (?, ?, ?, ?, 'uses')`
         );
-        for (const s of sections) {
+        for (const s of ownedSections) {
           const xmlTags = parseXmlTagsExcludingCode(s.content);
           const seen = new Set<string>();
           for (const tag of xmlTags) {
@@ -276,6 +342,11 @@ function shiftHeadingLines(headings: ParsedHeading[], fromIndex: number, delta: 
 function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[] {
   const sections: SectionInfo[] = [];
   const stack: ParsedHeading[] = [];
+  // Hand-authored anchors are unpoliced, so the same value CAN appear twice in
+  // one file. Deterministic rule, half one: within a page the FIRST occurrence
+  // (lowest line) owns the anchor and the rest are not indexed. Never "whichever
+  // the upsert wrote last".
+  const claimed = new Set<string>();
   for (let idx = 0; idx < headings.length; idx++) {
     const h = headings[idx]!;
     if (!h.anchor) continue;
@@ -283,6 +354,10 @@ function buildSections(lines: string[], headings: ParsedHeading[]): SectionInfo[
     const headingPath = [...stack.map((x) => x.text), h.text].join('/');
     const headingSlug = slugifyHeading(h.text);
     stack.push(h);
+    // Skipped AFTER the stack is maintained: the losing heading still shapes the
+    // heading path of everything nested under it, it just does not get a row.
+    if (claimed.has(h.anchor)) continue;
+    claimed.add(h.anchor);
 
     let endLine = lines.length;
     for (let j = idx + 1; j < headings.length; j++) {

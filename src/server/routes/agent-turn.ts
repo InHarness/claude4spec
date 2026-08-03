@@ -281,6 +281,12 @@ export async function runAgentTurn(
     'transagent_completed',
     'result',
     'error',
+    // C21: the adapter's ONLY channel for "a runtime guarantee just got weaker"
+    // — a filesystem scope degraded from a hard OS sandbox to a soft one, an
+    // execute param the architecture ignores. It is forwarded over SSE, so
+    // leaving it out of the replay meant a reload or a late join silently
+    // dropped a SECURITY notice. A warning nobody sees is no warning.
+    'warning',
   ]);
   const bufferForReplay = (event: TurnEvent) => {
     if (!REPLAY_EVENT_TYPES.has(event.type)) return;
@@ -785,6 +791,24 @@ export async function runAgentTurn(
             );
             break;
           }
+          case 'warning': {
+            /**
+             * C21. This used to be a lone `console.warn` further down the
+             * switch — which is to say the ONLY channel reporting a weakened
+             * runtime guarantee (an FS scope degraded from a hard OS sandbox to
+             * a soft one, an ignored execute param) ended in a server log the
+             * user never reads. It now also becomes a transcript row.
+             *
+             * A point event, not a stream: one row, `status: 'complete'`, no
+             * streaming phase to close. Flushed first so the warning lands in
+             * the transcript where it happened rather than after whatever the
+             * assistant went on to say.
+             */
+            console.warn('[agent warning]', event.message);
+            flushMainBuf();
+            deps.chatService.addMessage(thread.id, 'warning', JSON.stringify({ message: event.message }));
+            break;
+          }
           case 'assistant_message': {
             if (!event.message.subagentTaskId && event.message.usage) {
               lastTurnUsage = event.message.usage;
@@ -907,9 +931,6 @@ export async function runAgentTurn(
             if (!event.isSubagent) {
               deps.chatService.updateCurrentTodoItems(thread.id, event.items);
             }
-            break;
-          case 'warning':
-            console.warn('[agent warning]', event.message);
             break;
         }
       }

@@ -233,15 +233,21 @@ export interface GetPageInput {
   range?: { start: number; end: number };
 }
 
+/**
+ * `truncated` + `truncationHint` are the ONLY cut signal. There is deliberately
+ * no line counter beside them: the budget that does the cutting is measured in
+ * CHARACTERS, so a line total is denominated in a unit unrelated to the reason
+ * the content ended — worse than absent, because it invites arithmetic that
+ * cannot work. Resumption goes through the document's structure
+ * (`list_sections` + `get_sections`) or through an explicit line window
+ * (`range`, on roots without a section index), never through a counter.
+ */
 export interface GetPageResult {
   rootId: string;
   path: string;
   content: string;
   truncated?: boolean;
   truncationHint?: string;
-  /** Total lines in the page — what a `range` is a window onto. */
-  total: number;
-  hasMore: boolean;
 }
 
 // ── Search ──────────────────────────────────────────────────────────────────

@@ -157,4 +157,85 @@ describe('discovery core over the real section indexer', () => {
 
     expect(result.items[0]).toMatchObject({ kind: 'section', anchor: anchorOf('Hay') });
   });
+
+  /**
+   * An anchor is an identity regime. `section_index.anchor` is UNIQUE, so a
+   * duplicate never raised — the upsert simply took whichever page was scanned
+   * last, and the loser's section became unaddressable. Two properties have to
+   * hold: the collision is REPORTED, and until it is fixed the read is
+   * deterministic rather than a function of directory order.
+   */
+  describe('duplicate anchors', () => {
+    const dup = '<!-- anchor: dupdupdu -->';
+
+    it('two headings sharing an anchor are reported by check_consistency, with every location', async () => {
+      await index(
+        'dup.md',
+        ['# Top', '', dup, '## First', '', 'one', '', dup, '## Second', '', 'two', ''].join('\n'),
+      );
+
+      const report = await core.checkConsistency({ rule: 'duplicate-anchor' });
+      const rows = report.duplicateAnchors as Array<{
+        anchor: string;
+        occurrences: Array<{ rootId: string; pagePath: string; line: number; heading: string }>;
+      }>;
+
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.anchor).toBe('dupdupdu');
+      // Both locations, or the author cannot tell which copy to re-anchor.
+      expect(rows[0]!.occurrences.map((o) => o.heading)).toEqual(['First', 'Second']);
+      expect(rows[0]!.occurrences.map((o) => o.pagePath)).toEqual(['dup.md', 'dup.md']);
+      expect(rows[0]!.occurrences[0]!.line).toBeLessThan(rows[0]!.occurrences[1]!.line);
+      // It is an error, and the summary says so before any filter.
+      expect(report.summary).toMatchObject({ errors: expect.any(Number) });
+      expect((report.summary as { errors: number }).errors).toBeGreaterThan(0);
+    });
+
+    it('within one page the FIRST occurrence owns the anchor', async () => {
+      await index(
+        'dup2.md',
+        ['# Top', '', dup, '## First', '', 'ONE BODY', '', dup, '## Second', '', 'TWO BODY', ''].join('\n'),
+      );
+
+      const item = sectionItem(await core.getSections({ anchors: ['dupdupdu'] }));
+      expect(item.heading_text).toBe('First');
+      expect(item.body).toContain('ONE BODY');
+    });
+
+    it('across pages the lowest-sorting path owns it, whichever page is indexed last', async () => {
+      const page = (heading: string, body: string) =>
+        ['# Top', '', dup, `## ${heading}`, '', body, ''].join('\n');
+
+      // Index the LATER path first, so scan order and the rule disagree.
+      await index('zzz.md', page('FromZ', 'Z BODY'));
+      await index('aaa.md', page('FromA', 'A BODY'));
+      const afterOneOrder = sectionItem(await core.getSections({ anchors: ['dupdupdu'] }));
+
+      // Re-index the loser: it must not take the row back.
+      await index('zzz.md', page('FromZ', 'Z BODY'));
+      const afterReindex = sectionItem(await core.getSections({ anchors: ['dupdupdu'] }));
+
+      expect(afterOneOrder.page_path).toBe('aaa.md');
+      expect(afterReindex.page_path).toBe('aaa.md');
+      expect(afterReindex.body).toContain('A BODY');
+    });
+
+    it('a freshly injected anchor never lands on one already in use', async () => {
+      // Occupy a value, then let the generator mint into a table that holds it.
+      await index('taken.md', ['# Top', '', dup, '## Held', '', 'held', ''].join('\n'));
+      await index('fresh.md', ['# Top', '', '## Minted', '', 'minted', ''].join('\n'));
+
+      const anchors = (
+        db.prepare('SELECT anchor, page_path FROM section_index').all() as Array<{
+          anchor: string;
+          page_path: string;
+        }>
+      ).filter((r) => r.page_path === 'fresh.md');
+
+      expect(anchors.length).toBeGreaterThan(0);
+      expect(anchors.map((a) => a.anchor)).not.toContain('dupdupdu');
+      // And the held section is still addressable — nothing overwrote it.
+      expect(sectionItem(await core.getSections({ anchors: ['dupdupdu'] })).heading_text).toBe('Held');
+    });
+  });
 });

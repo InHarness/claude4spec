@@ -19,6 +19,7 @@
 import { readConfig, type ConsistencySeverity } from '../../config.js';
 import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-tags.js';
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
+import { ANCHOR_PATTERN_SOURCE } from '../../../shared/anchor-pattern.js';
 import { invalidArgument } from '../errors.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
@@ -56,6 +57,7 @@ const RULES: Record<string, { id: number; bucket: string }> = {
   'module-without-ac': { id: 11, bucket: 'modulesWithoutAc' },
   'unknown-type': { id: 12, bucket: 'brokenReferences' },
   'invalid-tag-reference': { id: 4, bucket: 'invalidTagReferences' },
+  'duplicate-anchor': { id: 13, bucket: 'duplicateAnchors' },
 };
 
 /** Buckets whose every row is an error, regardless of configuration. */
@@ -64,6 +66,7 @@ const ERROR_BUCKETS = new Set([
   'invalidTagReferences',
   'brokenExtensionReferences',
   'brokenAcVerifies',
+  'duplicateAnchors',
 ]);
 
 /**
@@ -316,8 +319,11 @@ export async function checkConsistency(
     }
   }
 
+  const duplicateAnchors = await findDuplicateAnchors(pages, roots);
+
   const buckets: Record<string, unknown[]> = {
     brokenReferences,
+    duplicateAnchors,
     orphanedEntityTags: [],
     unreferencedEntities,
     invalidTagReferences,
@@ -337,7 +343,11 @@ export async function checkConsistency(
     entitiesWithoutAcCoverage.filter((e) => e.severity === 'warn').length +
     modulesWithoutAc.filter((m) => m.severity === 'warn').length;
   const errors =
-    brokenReferences.length + invalidTagReferences.length + brokenExtensionReferences.length + acErrors;
+    brokenReferences.length +
+    invalidTagReferences.length +
+    brokenExtensionReferences.length +
+    duplicateAnchors.length +
+    acErrors;
   const warnings = unreferencedEntities.length + acWarnings;
 
   const report: ConsistencyReport = {
@@ -357,6 +367,66 @@ export async function checkConsistency(
   }
 
   return report;
+}
+
+interface AnchorOccurrence {
+  rootId: string;
+  pagePath: string;
+  /** 1-based, within the page BODY — the same space `section_index` uses. */
+  line: number;
+  heading: string;
+}
+
+/**
+ * Rule 13 — one anchor, two headings.
+ *
+ * An anchor is an identity: `get_sections({ anchors })`,
+ * `list_sections({ by: "anchor" })` and `<section_ref anchor="…"/>` all assume it
+ * names exactly one section. A duplicate makes every reference to it ambiguous.
+ *
+ * The evidence comes from the PAGE TEXT, not from `section_index`. It cannot come
+ * from the index: `anchor` is UNIQUE there, so by the time a duplicate reaches
+ * the table one of the two occurrences has already been discarded — the index is
+ * the one place where the collision is guaranteed to be invisible.
+ *
+ * Every location is reported in ONE row, because the author's question is "which
+ * copy do I re-anchor?" and that is unanswerable from a single location.
+ */
+async function findDuplicateAnchors(
+  pages: PageSource,
+  roots: RootSet,
+): Promise<Array<{ anchor: string; occurrences: AnchorOccurrence[] }>> {
+  const anchorRe = new RegExp(ANCHOR_PATTERN_SOURCE);
+  const headingRe = /^#{1,6}\s+(.+?)\s*$/;
+  const found = new Map<string, AnchorOccurrence[]>();
+
+  for (const root of roots.sectionIndexed()) {
+    for (const page of await pages.readAll([root])) {
+      const lines = page.body.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const m = anchorRe.exec(lines[i] ?? '');
+        const anchor = m?.[1];
+        if (!anchor) continue;
+        // The heading the anchor comments, found the way the indexer finds it:
+        // the next non-blank line.
+        let heading = '';
+        for (let j = i + 1; j < lines.length; j++) {
+          const next = (lines[j] ?? '').trim();
+          if (next === '') continue;
+          heading = headingRe.exec(next)?.[1] ?? '';
+          break;
+        }
+        const list = found.get(anchor) ?? [];
+        list.push({ rootId: root.id, pagePath: page.path, line: i + 1, heading });
+        found.set(anchor, list);
+      }
+    }
+  }
+
+  return [...found.entries()]
+    .filter(([, occurrences]) => occurrences.length > 1)
+    .map(([anchor, occurrences]) => ({ anchor, occurrences }))
+    .sort((a, b) => a.anchor.localeCompare(b.anchor));
 }
 
 function countBy<T>(rows: readonly T[], key: (row: T) => string): Record<string, number> {

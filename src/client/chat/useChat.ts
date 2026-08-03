@@ -45,7 +45,11 @@ type WireEventExtended =
   // Runtime shape of SSE `error` events is looser than the library's WireEvent:
   // adapter pass-through (agent-turn.ts) yields `{ error: <object>, phase }` with
   // NO `code`, while the server catch-block yields `{ error: string, code }`.
-  | { type: 'error'; error: unknown; code?: string; phase?: string };
+  | { type: 'error'; error: unknown; code?: string; phase?: string }
+  // C21: the adapter's runtime warning — a filesystem scope degraded from a hard
+  // OS sandbox to a soft one, an execute param this architecture ignores. The
+  // library's reducer has no notion of it, so it is translated below.
+  | { type: 'warning'; message: string };
 
 /**
  * 0.1.69 Transagents: a child banka surfaced in the parent panel. Keyed by the
@@ -141,6 +145,8 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
   // i nie wolno robic teardownu trwajacej tury.
   const createdByActiveStreamRef = useRef<string | null>(null);
   const isStreamingRef = useRef(false);
+  /** C21: makes each synthetic warning block's toolUseId unique within a session. */
+  const warningSeqRef = useRef(0);
   useEffect(() => {
     isStreamingRef.current = state.isStreaming;
   }, [state.isStreaming]);
@@ -277,6 +283,28 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
       // Skip ABORTED (user pressed Stop) to avoid noise on intentional cancels.
       if (ext.type === 'error' && ext.code !== 'ABORTED') {
         toast.error(formatStreamError(ext));
+      }
+      /**
+       * C21: `warning` reaches the transcript by being translated into a
+       * synthetic `tool_use`, exactly as `user_input_request` is
+       * (USER_INPUT_TOOL_NAME). The reducer and `UIContentBlock` are the
+       * library's, so a new block variant is not ours to add — but a tool call
+       * IS a block the reducer already places in order, live, and that ordering
+       * is the whole point: a warning rendered after the turn tells you the
+       * guarantee weakened at some unspecified moment.
+       *
+       * The persisted row (role `warning`) rebuilds this same block on reload,
+       * so one renderer serves both paths.
+       */
+      if (ext.type === 'warning') {
+        warningSeqRef.current += 1;
+        handleWireEvent({
+          type: 'tool_use',
+          id: `warning-${warningSeqRef.current}`,
+          name: WARNING_TOOL_NAME,
+          input: { message: ext.message },
+        } as unknown as WireEvent);
+        return;
       }
       handleWireEvent(event);
     },
@@ -712,6 +740,8 @@ interface PersistedContent {
 }
 
 export const USER_INPUT_TOOL_NAME = '__user_input__';
+/** C21: not a real tool — the carrier for an adapter warning inside the transcript. */
+export const WARNING_TOOL_NAME = '__warning__';
 
 function parseContent(raw: string): PersistedContent {
   try {
@@ -859,6 +889,19 @@ export function rowsToChatMessages(
           toolUseId: row.toolId ?? '',
           content: row.content,
           isError: false,
+          collapsed: true,
+        };
+        currentAssistant!.blocks.push(block);
+        break;
+      }
+      case 'warning': {
+        // The same synthetic block the live branch in `onEvent` produces, so a
+        // reload renders the warning identically to the moment it arrived.
+        const block: UIBlock = {
+          type: 'toolUse',
+          toolUseId: `warning-row-${row.id}`,
+          toolName: WARNING_TOOL_NAME,
+          input: parseRaw(row.content),
           collapsed: true,
         };
         currentAssistant!.blocks.push(block);
