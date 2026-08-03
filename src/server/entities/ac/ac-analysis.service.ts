@@ -148,7 +148,14 @@ export class AcAnalysisService {
     // `analyze_ac_against_entities` from ANY turn including a read-only `ask` one, could
     // hand-edit the C4S artifact dirs. It now takes the identical scope the chat turn takes,
     // from the identical builder, resolved PER CALL so config edits hot-reload (the MCP
-    // server itself is constructed once at mount).
+    // server itself is constructed once at mount, so `roots` is fixed there — same as the
+    // chat turn's boot-time `deps.roots`; only the config half reloads).
+    //
+    // Side effect worth knowing: requesting a path scope makes the library set
+    // `settingSources: ['project','local']`, so the project's `.claude/settings.json` now
+    // loads into this audit turn too. That matches every chat turn, and the turn is still
+    // strictly more restricted than before (it used to run bypassPermissions, unscoped,
+    // with the full mutating toolset).
     const scope = resolveAgentExecutionScope({ cwd: this.deps.cwd, roots: this.deps.roots });
     const adapter = createAdapter('claude-code');
     const stream = adapter.execute({

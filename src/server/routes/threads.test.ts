@@ -255,11 +255,15 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     });
 
     it('no 409 when the same paths are merely REORDERED (set comparison, not array)', async () => {
-      writeConfig({ agent: { allowedPaths: ['a', 'b'] } });
-      // Same two paths, opposite order — the library compares by JSON.stringify, so this
-      // is exactly the case that would produce a bogus 409 without normalization.
+      // The user reordered the list in Settings: turn 1 ran with ['a','b'], the config now
+      // says ['b','a']. The snapshot holds turn 1's value in the canonical (sorted) form
+      // the writer produces. Without `normalizeResumePathScope` on the current-turn side
+      // the guard would compare ['/a','/b'] against ['/b','/a'] — the library diffs by
+      // JSON.stringify — and raise a bogus 409. Do NOT sort the snapshot literal here:
+      // that would make this test pass with the normalization removed.
+      writeConfig({ agent: { allowedPaths: ['b', 'a'] } });
       initialArchitectureConfigSnapshot = snapshotWith({
-        allowedPaths: [path.join(dir, 'b'), path.join(dir, 'a')].sort(),
+        allowedPaths: [path.join(dir, 'a'), path.join(dir, 'b')],
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)

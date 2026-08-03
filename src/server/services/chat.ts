@@ -924,10 +924,18 @@ function parseUsage(raw: string | null): UsageStats | null {
  * M05 0.1.61: defensywne parsowanie snapshotu tury-1 dla domyslnej projekcji.
  * Kazdy blad parsowania / niepoprawny ksztalt → null (jak `parseUsage`).
  */
-function parseInitialArchitectureConfig(
-  raw: string | null,
-): { model: string; architectureConfig: Record<string, unknown> } | null {
+function parseInitialArchitectureConfig(raw: string | null): {
+  model: string;
+  architectureConfig: Record<string, unknown>;
+  allowedPaths?: string[];
+  disallowedPaths?: string[];
+} | null {
   if (!raw) return null;
+  // 0.2.8 (C15): pass the FS path scope through when present. Snapshots written before
+  // 0.2.8 have neither field — omitted rather than defaulted, so a consumer can tell
+  // "no scope recorded" from "scope recorded as empty".
+  const paths = (v: unknown): string[] | undefined =>
+    Array.isArray(v) && v.every((p) => typeof p === 'string') ? (v as string[]) : undefined;
   try {
     const parsed = JSON.parse(raw);
     if (
@@ -937,9 +945,13 @@ function parseInitialArchitectureConfig(
       parsed.architectureConfig &&
       typeof parsed.architectureConfig === 'object'
     ) {
+      const allowedPaths = paths(parsed.allowedPaths);
+      const disallowedPaths = paths(parsed.disallowedPaths);
       return {
         model: parsed.model,
         architectureConfig: parsed.architectureConfig as Record<string, unknown>,
+        ...(allowedPaths ? { allowedPaths } : {}),
+        ...(disallowedPaths ? { disallowedPaths } : {}),
       };
     }
     return null;

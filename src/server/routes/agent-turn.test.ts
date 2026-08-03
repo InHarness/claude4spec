@@ -464,6 +464,21 @@ describe('runAgentTurn — resume snapshot carries the FS path scope (0.2.8 / C1
     expect(snapshot.disallowedPaths).toEqual([...ARTIFACT_ABS, '/deny/dir'].sort());
   });
 
+  it('does NOT snapshot a turn that never produced a session', async () => {
+    // The guard only engages once `lastSessionId` is set. A snapshot left behind by a turn
+    // that died before its `result` would become the reference point for a session it never
+    // created — the next turn (still session-less) is waved through and opens the session
+    // under the CURRENT config, and every turn after that compares against the stale
+    // snapshot: a thread that can never be resumed again.
+    hoisted.agent = { allowedPaths: ['/allowed/dir'], disallowedPaths: [] };
+    hoisted.events = []; // stream ends with no `result`, so no sessionId
+    const { deps, snapshots } = makeDeps();
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(snapshots).toEqual([]);
+  });
+
   it('snapshots the artifact deny-set even with no user path scope configured', async () => {
     hoisted.agent = undefined;
     hoisted.events = [{ type: 'result', sessionId: 's1' }];
