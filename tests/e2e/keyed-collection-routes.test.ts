@@ -85,10 +85,23 @@ describe.skipIf(!BASE)('keyed-collection read routes — end to end', () => {
     expect(res.body.error.hint).toMatch(/declares no keyed collection/);
   });
 
-  it('404s an unknown entity rather than reporting an empty grid', async () => {
+  it('answers the FIELD question before the entity question', async () => {
+    /**
+     * Deliberate ordering, and worth pinning because it is what makes the
+     * `ENTITY_NOT_FOUND` branch unreachable from here: whether a field is a
+     * keyed collection is a question about the DECLARATION, settled without
+     * touching a row, so it is answered first. An unknown slug on a
+     * non-keyed field therefore reports the field, not the slug.
+     *
+     * The `ENTITY_NOT_FOUND` branch is real and covered — by
+     * `discovery/ops/collections.test.ts`, against a type that does declare a
+     * keyed collection. It cannot be reached over HTTP in this environment
+     * because no type shipped in this repo declares one (see the file header).
+     */
     const res = await api(`${collections('ac', 'no-such-ac-slug', 'cells')}/overview`);
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('ENTITY_NOT_FOUND');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(res.body.error.message).toMatch(/not a keyed collection/);
   });
 
   it('404s an unknown TYPE with the active types in the hint', async () => {
