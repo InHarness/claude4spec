@@ -182,3 +182,73 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
     expect(reader.count('ac')).toBe(12);
   });
 });
+
+/**
+ * Hydration decodes by DECLARATION, not by what the value looks like.
+ *
+ * The rule it replaces was a probe: any string column starting with `[` or `{`
+ * went through `JSON.parse`. That is a guess about content, and D2 is a syntax
+ * whose blocks open with `{`. The parse succeeded, so `diagram.source` came out
+ * of the reader as an OBJECT — invisible until 0.2.9, because diagram's
+ * hand-written serializer re-stringified it on the way back out.
+ *
+ * The generated snapshot has no such per-type rescue. Without the declaration
+ * driving the decode, the parsed object is what gets written into the entity
+ * file, and the diagram source is destroyed at its own source of truth.
+ */
+describe('hydrate — decoding is driven by the declared kind', () => {
+  function diagramHost() {
+    const module = {
+      type: 'diagram',
+      data: {
+        schema: {
+          format: { kind: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
+          source: { kind: 'string', required: true },
+          params: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
+        },
+      },
+    } as unknown as ReturnType<ProjectPluginHost['getEntity']>;
+    return {
+      getEntity: () => module,
+      getAvailable: () => module,
+      listEntities: () => [module],
+      isActive: () => true,
+    } as unknown as ProjectPluginHost;
+  }
+
+  function seeded(source: string): Database.Database {
+    const d = new Database(':memory:');
+    d.exec(`
+      CREATE TABLE diagram (slug TEXT PRIMARY KEY, format TEXT, source TEXT, params TEXT);
+      CREATE TABLE tag (slug TEXT PRIMARY KEY, name TEXT);
+      CREATE TABLE entity_tag (entity_type TEXT, entity_slug TEXT, tag_slug TEXT);
+    `);
+    d.prepare('INSERT INTO diagram (slug, format, source, params) VALUES (?, ?, ?, ?)').run(
+      'flow',
+      'd2',
+      source,
+      '["a","b"]',
+    );
+    return d;
+  }
+
+  it('keeps a D2 source that opens with a brace as the string it is', () => {
+    // Valid D2, and valid JSON. The probe parsed it; the declaration does not.
+    const source = '{"a": {"shape": "circle"}}';
+    const reader = new RawEntityReader(seeded(source), diagramHost());
+    expect(reader.getEntity('diagram', 'flow')?.data.source).toBe(source);
+  });
+
+  it('still decodes a column the schema declares as a collection', () => {
+    const reader = new RawEntityReader(seeded('x -> y'), diagramHost());
+    expect(reader.getEntity('diagram', 'flow')?.data.params).toEqual(['a', 'b']);
+  });
+
+  it('falls back to the probe for a type that declares no schema', () => {
+    // A type mid-migration must not silently stop decoding its JSON columns —
+    // that failure is type-wide, where the one above is value-shaped.
+    const noSchema = { getEntity: () => ({ type: 'diagram' }) } as unknown as ProjectPluginHost;
+    const reader = new RawEntityReader(seeded('x -> y'), noSchema);
+    expect(reader.getEntity('diagram', 'flow')?.data.params).toEqual(['a', 'b']);
+  });
+});

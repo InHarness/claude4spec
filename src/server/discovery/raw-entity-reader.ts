@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
-import { columnOf, isEmbedded } from '../../shared/plugin-host/data-schema.js';
+import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/data-schema.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 export type RawEntityType =
@@ -518,11 +518,39 @@ export class RawEntityReader {
       data[key] = value;
     }
 
-    // Generic JSON column hydration: any string column whose value parses as
-    // a JSON array/object gets decoded. Replaces per-entity-type branches
-    // (dto.fields, dto.examples, database-table.columns/indexes, ui-view.params).
+    /**
+     * Decode each column by what the type DECLARED it to be.
+     *
+     * This used to be a probe: any string starting with `[` or `{` was pushed
+     * through `JSON.parse`. That is a guess about content, and it guesses wrong
+     * on content that legitimately looks like JSON — a `diagram.source` opening
+     * with `{` is a D2 block, and the probe turns it into an object. Nothing
+     * caught it because `diagram`'s hand-written serializer re-stringified it on
+     * the way out; the generated snapshot has no such per-type rescue, so the
+     * parsed object would be written into the entity FILE and the diagram source
+     * destroyed at its source of truth.
+     *
+     * The declaration answers it exactly: `object`/`record`/`collection` are the
+     * columns holding JSON, everything else is scalar and stays verbatim.
+     */
+    const byColumn = this.embeddedColumns(type);
     for (const [key, value] of Object.entries(data)) {
       if (typeof value !== 'string') continue;
+      const node = byColumn?.get(key);
+      if (node) {
+        if (node.kind === 'object' || node.kind === 'record' || node.kind === 'collection') {
+          data[key] = safeJsonContainer(value);
+        }
+        continue;
+      }
+      /**
+       * No declaration for this column: either the type has no `data.schema` at
+       * all, or the column is one the projection did not generate. Fall back to
+       * the probe — dropping it here would silently un-decode a type mid-
+       * migration, which is a worse failure than the one above because it is
+       * type-wide rather than value-shaped.
+       */
+      if (byColumn) continue;
       const trimmed = value.trimStart();
       if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) continue;
       data[key] = safeJsonContainer(value);
@@ -534,6 +562,33 @@ export class RawEntityReader {
 
     return { type, slug, data, tags, ...(system ? { system } : {}) };
   }
+
+  /**
+   * Column name → declared node, for the fields that live ON the parent row.
+   *
+   * `null` when the type declares no schema, which is what selects the legacy
+   * probe in `hydrate`. Memoized per reader: `hydrate` runs once per row of
+   * every list read, and rebuilding this map per row would put an
+   * `Object.entries` walk of the schema in the hot path of every page render.
+   */
+  private embeddedColumns(type: string): Map<string, FieldNode> | null {
+    const cached = this.embeddedColumnCache.get(type);
+    if (cached !== undefined) return cached;
+
+    const schema = this.host?.getEntity(type)?.data?.schema;
+    let map: Map<string, FieldNode> | null = null;
+    if (schema) {
+      map = new Map();
+      for (const [name, node] of Object.entries(schema)) {
+        if (!isEmbedded(node)) continue;
+        map.set(columnOf(name, node), node);
+      }
+    }
+    this.embeddedColumnCache.set(type, map);
+    return map;
+  }
+
+  private readonly embeddedColumnCache = new Map<string, Map<string, FieldNode> | null>();
 
   private hydrateSection(row: Record<string, unknown>): RawSection {
     return {

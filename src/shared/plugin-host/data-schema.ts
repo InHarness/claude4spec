@@ -151,6 +151,22 @@ export interface CollectionNode extends FieldFlags {
    * (`endpoint.linked_dtos` → `endpoint_dto`, not `endpoint_linked_dtos`).
    */
   projectionTable?: string;
+  /**
+   * Item order carries no meaning, so the SNAPSHOT sorts it — which is what
+   * makes two captures of an unchanged entity byte-identical when the rows
+   * underneath came back in a different order.
+   *
+   * OPT-IN, and the default matters more than the flag. The brief names three
+   * arrays that must sort stably (`tags[]`, `linked_dtos[]`, `verifies[]`), but
+   * a blanket "sort every collection" would also reorder
+   * `design-system.groups[].tokens[]` — a `sm`/`md`/`xl` scale whose order IS
+   * the documentation — and `dto.fields[]`, where declaration order is the DTO.
+   * Sorting those is not a normalization, it is a silent edit to authored
+   * content, and it would be invisible in review because the file still parses.
+   *
+   * See {@link sortKeyFieldsOf} for what "sorted" means.
+   */
+  unordered?: boolean;
 }
 
 /**
@@ -249,6 +265,26 @@ export function hasProjectionTable(node: FieldNode): boolean {
 /** True when the field lives on the parent row. The complement of {@link hasProjectionTable}. */
 export function isEmbedded(node: FieldNode): boolean {
   return !hasProjectionTable(node) && !node.transientInput && !node.localSurrogate;
+}
+
+/**
+ * The fields an `unordered` collection sorts its items by, most significant
+ * first.
+ *
+ * `keyFields` when declared — the tuple that already addresses one item is by
+ * construction the tuple that orders them. Otherwise the item object's fields in
+ * DECLARATION ORDER, which is the part worth stating: sorting by the item's
+ * fields in *alphabetical* order would compare `ac.verifies` on `slug` before
+ * `type` and reorder every AC file in the corpus on first rebuild. Declaration
+ * order reproduces the hand-written `` `${type}/${slug}` `` key exactly, and it
+ * gives an author a way to say what the order is without a second slot.
+ *
+ * A collection of scalars sorts by the value itself, so it needs no key.
+ */
+export function sortKeyFieldsOf(node: CollectionNode): readonly string[] {
+  if (node.keyFields?.length) return node.keyFields;
+  if (node.item.kind === 'object') return Object.keys(node.item.fields);
+  return [];
 }
 
 /** Walk every node in a schema, depth-first, reporting the dotted payload path. */
