@@ -1,7 +1,6 @@
-import type { EntityContribution, EntityRenamedEvent, MountContext } from '@c4s/plugin-runtime';
+import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
   ENDPOINT_DISPLAY_ORDER,
-  ENDPOINT_DTO_TABLE,
   ENDPOINT_PATH_PREFIX,
   ENDPOINT_TYPE,
 } from '../../identity.js';
@@ -41,25 +40,10 @@ export const endpointEntity: EntityContribution = {
   serializer: endpointSerializer,
   systemPrompt: endpointSystemPrompt,
   backend: {
-    /**
-     * A DTO rename cascades through the junction's ON UPDATE CASCADE, but the
-     * endpoint FILES still embed the old slug in `linked_dtos[]`. Re-persist the
-     * affected ones. This was a `type === 'dto'` branch in the host's
-     * ReferencesService — knowledge belonging to whoever owns the link.
-     */
-    onEntityRenamed: ({ type, newSlug }: EntityRenamedEvent, ctx: MountContext) => {
-      if (type !== 'dto') return;
-      const affected = ctx.db
-        .prepare(`SELECT DISTINCT endpoint_slug AS slug FROM ${ENDPOINT_DTO_TABLE} WHERE dto_slug = ?`)
-        .all(newSlug) as Array<{ slug: string }>;
-      for (const e of affected) {
-        try {
-          ctx.entityStore.persist(ENDPOINT_TYPE, e.slug);
-        } catch {
-          /* a file that cannot be re-persisted is skipped, as before */
-        }
-      }
-    },
+    // 2.0.0: the hand-written `onEntityRenamed` is gone. A DTO rename still
+    // cascades through the junction's ON UPDATE CASCADE and the endpoint FILES
+    // still embed the old slug — but `ref: 'dto'` on `linkedDtos[].dto` is what
+    // tells the host to collect those endpoints and re-persist them.
     service: (ctx: MountContext) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: { createSchema: endpointCreateSchema, updateSchema: endpointUpdateSchema },
     routes: {

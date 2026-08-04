@@ -24,12 +24,9 @@ import type {
 import type { SerializationContribution } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
-import type {
-  BackendModule,
-  EntityRenamedEvent,
-  MountContext,
-  PluginMountFn,
-} from './types.js';
+import type { BackendModule, MountContext, PluginMountFn } from './types.js';
+import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
+import { isRawEntityType } from '../../discovery/raw-entity-reader.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
 export class PluginManifestError extends Error {
@@ -267,9 +264,6 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
         | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
         | undefined,
       auxTables: backend.auxTables as string[] | undefined,
-      onEntityRenamed: backend.onEntityRenamed as
-        | ((ev: EntityRenamedEvent, ctx: MountContext) => void)
-        | undefined,
     };
   }
 
@@ -308,10 +302,15 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
  */
 export function synthesizeMount(module: BackendModule): BackendModule {
   const backend = module.backend;
-  if (!backend || backend.mount) return module;
+  if (backend?.mount) return module;
 
-  const { service, crud, routes, mcpServer, onEntityRenamed } = backend;
-  if (!service && !crud && !routes && !mcpServer && !onEntityRenamed) return module;
+  // Item 24: a `ref` flag anywhere in the logical schema earns a generated
+  // rename listener, INDEPENDENTLY of the backend slots — a type that declares
+  // its data and nothing else still has references to repoint, and gating this
+  // on `backend` would make "has a service" the condition for a correct rename.
+  const rewritesRefs = declaresRefs(module);
+  const { service, crud, routes, mcpServer } = backend ?? {};
+  if (!service && !crud && !routes && !mcpServer && !rewritesRefs) return module;
 
   if (crud && !service) {
     throw new PluginManifestError(`entity "${module.type}" — backend.crud requires backend.service`);
@@ -353,8 +352,39 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       const svc = instance as EntityCrudService;
       ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
     }
-    if (onEntityRenamed) {
-      ctx.registerRenameListener((ev) => onEntityRenamed(ev, ctx));
+    if (rewritesRefs) {
+      // The generated replacement for `backend.onEntityRenamed` (removed in
+      // 2.0.0): repoint what the declaration says references the renamed type,
+      // then re-persist the files whose data actually changed. A file that will
+      // not write must not abort the rename — the index is already correct, and
+      // the three hooks this replaces swallowed the same failure.
+      ctx.registerRenameListener(({ type, oldSlug, newSlug }) => {
+        const affected = rewriteRefsForRename(ctx.db, module, type, oldSlug, newSlug);
+        if (!affected.length) return;
+        if (!isRawEntityType(module.type)) {
+          // The file store still addresses a frozen set of type directories, so
+          // a type outside it gets its INDEX repointed and its files left stale.
+          // Say so rather than silently half-propagating — this is the same
+          // limit the hand-written hooks had, where it was invisible because
+          // each one named a type it knew was in the set.
+          console.warn(
+            `[plugin-host] ${module.type}: repointed ${affected.length} reference(s) after ` +
+              `${type} rename ${oldSlug} -> ${newSlug}, but its entity files are not re-persisted ` +
+              `(type is outside the file store's known directories)`,
+          );
+          return;
+        }
+        for (const slug of affected) {
+          try {
+            ctx.entityStore.persist(module.type, slug);
+          } catch (err) {
+            console.warn(
+              `[plugin-host] ${module.type}/${slug}: re-persist after ${type} rename ` +
+                `${oldSlug} -> ${newSlug} failed: ${String(err)}`,
+            );
+          }
+        }
+      });
     }
   };
 

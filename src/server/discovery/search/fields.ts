@@ -2,7 +2,7 @@
  * M39 — what `search_entities` actually looks at. Since 0.2.4: TWO layers.
  *
  * 1. **core** (default, always present, THE ONLY SOURCE OF SCOPE) — every text
- *    path derivable from the type's `backend.crud.createSchema`.
+ *    path in the type's `data.schema`.
  * 2. **agent** (explicit, per call) — the `fields` parameter, the only override.
  *
  * Both type-side layers are gone as of 0.2.4: `backend.crud.searchableFields`
@@ -13,6 +13,19 @@
  * preinstalled envelope, or external packages — the only occurrence was a test
  * fixture.
  *
+ * 2.0.0 (brief item 26) moved the DERIVATION off `backend.crud.createSchema`
+ * onto `data.schema`. Same two layers, one less indirection: the scope used to
+ * be read out of a Zod shape via `z.toJSONSchema`, which meant search covered
+ * whatever the CRUD INPUT happened to accept rather than what the type stores,
+ * and it disappears entirely once a type stops shipping a `crud` slot. Two
+ * limits the old route documented as known gaps close with the move:
+ *
+ *   - a `record<K,V>` branch is no longer skipped. It renders as `$key`/`$value`
+ *     segments, which `valuesAtPath` resolves — `design-system` keeps every
+ *     token value it holds out of search otherwise, and `dto` its examples.
+ *   - the depth cut is `MAX_PROJECTION_DEPTH`, the same constant registration
+ *     validation enforces, instead of a private 4 that happened to agree with it.
+ *
  * Whatever wins, the resolved list travels back in `searchedFields`. Without it
  * an empty result is indistinguishable from "you searched a field that isn't in
  * scope", and the agent cannot tell a real absence from its own mistake.
@@ -21,16 +34,17 @@
  * yields nothing, the fix is to the DERIVATION (see `hostDefaultFields`'s
  * identity fallback), never a restored declaration layer.
  *
- * Documented limits — recorded, not bugs:
- *   - map/record schema branches without declared `properties` are skipped
- *     silently; there are no known paths under them to enumerate.
- *   - recursion into nested schemas stops at depth 4 with no signal.
- *
- * Path notation is dotted with `[]` for arrays: `fields[].description`,
- * `columns[].name`, `verifies[].slug`.
+ * Path notation is dotted, with `[]` for collections and `$key`/`$value` for a
+ * record's two halves: `fields[].description`, `columns[].name`,
+ * `verifies[].slug`, `groups[].tokens[].value.$value`.
  */
 
-import { z, type ZodRawShape } from 'zod';
+import {
+  MAX_PROJECTION_DEPTH,
+  walkSchema,
+  type DataDeclaration,
+  type FieldNode,
+} from '../../../shared/plugin-host/data-schema.js';
 import type { BackendModule } from '../../core/plugin-host/types.js';
 
 export interface SearchableField {
@@ -61,31 +75,32 @@ export function resolveSearchFields(
 }
 
 /**
- * The core default — since 0.2.4 the ONLY source of scope: string-typed leaves
- * of the type's create schema, plus the identity paths. Derived through
- * `z.toJSONSchema`, the same route `describe_entity_type` takes, so what search
- * covers and what the schema advertises cannot drift apart.
+ * The core default — since 0.2.4 the ONLY source of scope: the text leaves of
+ * the type's `data.schema`, plus the identity paths. Derived from the same
+ * declaration the projection, the snapshot and `describe_entity_type`'s JSON
+ * Schemas come from, so what search covers and what the type advertises cannot
+ * drift apart.
  *
  * Guaranteed non-empty. A type whose schema derives no text path at all (a
- * throwing getter, a schema that will not render, a shape with only numeric
- * leaves) still gets `slug` plus whichever identity paths it declares — because
- * "this type has no searchable scope" is not a state any active type may be in,
- * and the alternative to a fallback here is a type that silently answers every
- * query with nothing.
+ * throwing getter, a declaration with only numeric leaves, no declaration) still
+ * gets `slug` plus whichever identity paths it declares — because "this type has
+ * no searchable scope" is not a state any active type may be in, and the
+ * alternative to a fallback here is a type that silently answers every query
+ * with nothing.
  */
 export function hostDefaultFields(module: BackendModule | null): SearchableField[] {
-  // Reading the slot is itself guarded: a manifest can expose `createSchema` as
-  // a getter, and a throwing one must degrade THIS list, not the caller's whole
+  // Reading the slot is itself guarded: a manifest can expose `data` as a
+  // getter, and a throwing one must degrade THIS list, not the caller's whole
   // answer. `describe_entity_type` is built to isolate a broken type into a
   // per-field placeholder, and an unguarded read here would escalate that back
   // into a whole-entry failure.
-  let shape: ZodRawShape | undefined;
+  let schema: DataDeclaration['schema'] | undefined;
   try {
-    shape = module?.backend?.crud?.createSchema;
+    schema = module?.data?.schema;
   } catch {
-    shape = undefined;
+    schema = undefined;
   }
-  const derived = shape ? textPathsOfShape(shape) : [];
+  const derived = schema ? textPathsOfSchema(schema) : [];
   const seen = new Set(derived.map((f) => f.path));
   const out = [...derived];
   for (const id of IDENTITY_PATHS) {
@@ -106,61 +121,69 @@ export function hostDefaultFields(module: BackendModule | null): SearchableField
   return out;
 }
 
-function textPathsOfShape(shape: ZodRawShape): SearchableField[] {
-  let json: unknown;
+/**
+ * Every text path a declaration holds.
+ *
+ * Emits `string` and `enum` leaves — an enum is a closed set of strings and a
+ * user searching "deprecated" means the `status` that says so. Three flags take
+ * a subtree out of scope, and they are excluded by PREFIX rather than per node,
+ * so an object marked transient cannot leak its children back in:
+ *
+ *   - `transientInput` / `localSurrogate` — not in the index, so no value could
+ *     ever match; advertising the path would make `searchedFields` lie.
+ *   - `systemManaged` — `createdAt`/`updatedAt`. A free-text query over an
+ *     ISO timestamp is noise, and every type carries two of them.
+ */
+function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[] {
+  const out: SearchableField[] = [];
+  const excluded: string[] = [];
+  const isExcluded = (path: string): boolean =>
+    excluded.some((prefix) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[`));
+
   try {
-    json = z.toJSONSchema(z.object(shape), { io: 'input', unrepresentable: 'any' });
+    walkSchema(schema, (path: string, node: FieldNode, depth: number) => {
+      if (depth > MAX_PROJECTION_DEPTH) return;
+      if (node.transientInput || node.localSurrogate || node.systemManaged) {
+        excluded.push(path);
+        return;
+      }
+      if (isExcluded(path)) return;
+      if (node.kind !== 'string' && node.kind !== 'enum') return;
+      if (!out.some((f) => f.path === path)) out.push({ path });
+    });
   } catch {
-    // A schema that will not render (a custom refinement, a BigInt default) must
+    // A declaration that will not walk (a getter that throws mid-traversal) must
     // not take the whole search down — the identity paths still work.
     return [];
   }
-  const out: SearchableField[] = [];
-  collect(json, '', out, 0);
   return out;
-}
-
-const MAX_DEPTH = 4;
-
-function collect(node: unknown, prefix: string, out: SearchableField[], depth: number): void {
-  if (depth > MAX_DEPTH || !node || typeof node !== 'object') return;
-  const schema = node as Record<string, unknown>;
-
-  for (const key of ['anyOf', 'oneOf', 'allOf'] as const) {
-    const branch = schema[key];
-    if (Array.isArray(branch)) {
-      for (const b of branch) collect(b, prefix, out, depth);
-      return;
-    }
-  }
-
-  const type = schema.type;
-  if (type === 'string' && prefix) {
-    if (!out.some((f) => f.path === prefix)) out.push({ path: prefix });
-    return;
-  }
-  if (type === 'array') {
-    collect(schema.items, `${prefix}[]`, out, depth + 1);
-    return;
-  }
-  const properties = schema.properties as Record<string, unknown> | undefined;
-  if (!properties) return;
-  for (const [key, child] of Object.entries(properties)) {
-    collect(child, prefix ? `${prefix}.${key}` : key, out, depth + 1);
-  }
 }
 
 /**
  * Every string value a path selects. Returns an empty array for a path that
  * does not exist — which is exactly what makes the "wrong field name" case
  * observable: no values, but `searchedFields` still says what was looked at.
+ *
+ * Understands the four segment forms the derivation emits: `field`, `field[]`,
+ * and the record halves `$key` / `$value`. The record forms are 2.0.0 — a
+ * `record<K,V>` used to be skipped by the derivation, so no path ever reached
+ * here needing them, and a `design-system`'s token values were unsearchable.
  */
 export function valuesAtPath(record: Record<string, unknown>, path: string): string[] {
   let current: unknown[] = [record];
   for (const segment of path.split('.')) {
+    const next: unknown[] = [];
+    if (segment === '$key' || segment === '$value') {
+      for (const node of current) {
+        if (!node || typeof node !== 'object' || Array.isArray(node)) continue;
+        const entries = node as Record<string, unknown>;
+        next.push(...(segment === '$key' ? Object.keys(entries) : Object.values(entries)));
+      }
+      current = next;
+      continue;
+    }
     const isArray = segment.endsWith('[]');
     const key = isArray ? segment.slice(0, -2) : segment;
-    const next: unknown[] = [];
     for (const node of current) {
       if (!node || typeof node !== 'object') continue;
       const value = (node as Record<string, unknown>)[key];

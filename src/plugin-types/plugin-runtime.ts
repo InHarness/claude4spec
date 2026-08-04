@@ -93,12 +93,12 @@ export interface MountContext {
   entityStore: any;
   registerMcpServer(name: string, factory: () => unknown): void;
   registerEntityService(type: string, service: unknown): void;
-  /** 0.2.2 — see `backend.onEntityRenamed`; `synthesizeMount` uses this to bind it. */
+  /** 0.2.2 — `synthesizeMount` uses this to bind the listener generated from the type's `ref` flags. */
   registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
 export type PluginMountFn = (ctx: MountContext) => void;
 
-/** 0.2.2 — an entity changed slug. See `backend.onEntityRenamed`. */
+/** 0.2.2 — an entity changed slug. See `registerRenameListener`. */
 export interface EntityRenamedEvent {
   type: string;
   oldSlug: string;
@@ -127,7 +127,7 @@ export interface EntityCrudService<T = unknown> {
   }): { items: T[]; total: number };
   // 0.2.4 — there is NO `search` slot, and no `backend.crud.searchableFields`
   // to go with it. Both were removed, not deprecated: search scope has exactly
-  // one source, the text paths of `createSchema`, and a type cannot narrow,
+  // one source, the text paths of `data.schema`, and a type cannot narrow,
   // re-weight or opt out of it. Declaring either one now fails to compile,
   // which is the intended signal — a silently-never-invoked `search()` was the
   // failure mode this removal exists to prevent.
