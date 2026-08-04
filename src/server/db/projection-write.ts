@@ -400,6 +400,43 @@ export function removeProjectionRow(
  * that matters (a key absent from the payload).
  */
 /**
+ * Warn about a SCALAR `ref` whose target does not exist.
+ *
+ * `syncProjectionTable` honours `onMissing: 'warn'` for refs carried by
+ * COLLECTION ITEMS, and nothing honoured it for a ref sitting directly on the
+ * entity row — `ui-view.designSystemSlug` is the one in this repo. The deleted
+ * `uiViewRestore` used to emit that warning by hand, so removing it made a
+ * dangling design-system reference completely silent: a rebuild or a release
+ * restore reported clean success and the user found out by opening the view.
+ *
+ * A warning, never a block. The declaration says `onDelete: 'leave-dangling'`,
+ * and there is no FK on the column precisely so the value survives its target.
+ */
+export function danglingScalarRefs(
+  db: Database,
+  module: WritableModule,
+  slug: string,
+  payload: unknown,
+): string[] {
+  const schema = module.data?.schema;
+  if (!schema || payload === null || typeof payload !== 'object') return [];
+  const input = payload as Record<string, unknown>;
+
+  const warnings: string[] = [];
+  for (const [name, node] of Object.entries(schema)) {
+    if (node.kind === 'collection' || !node.ref || node.ref === '$type') continue;
+    if (node.onMissing !== 'warn') continue;
+    const target = input[name];
+    if (typeof target !== 'string' || !target) continue;
+    if (rowExists(db, typeTablePrefix(node.ref), target)) continue;
+    warnings.push(
+      `${module.type}/${slug}: ${name} references ${node.ref} '${target}', which does not exist (dangling)`,
+    );
+  }
+  return warnings;
+}
+
+/**
  * Sync every projected collection the payload actually carries.
  *
  * Exported for the SERVICE branch of `HostEntityWriter.upsert`, which is the
@@ -497,9 +534,58 @@ function syncProjectionTable(
     ([, n]) => n.ref && n.ref !== '$type' && n.onMissing === 'warn',
   );
 
+  /**
+   * Dedup by the declared key BEFORE inserting.
+   *
+   * The junction carries `UNIQUE(binding, ...keyFields)`, and the per-type
+   * `syncEndpointDtos` this door replaced built a `Map` keyed by exactly that
+   * tuple, so a payload listing the same link twice collapsed to one row. This
+   * did a plain INSERT per item, so the second one threw `UNIQUE constraint
+   * failed` out through `restoreEntity` — and the indexer degrades a throwing
+   * restore to "skip this entity", rolling back the savepoint. Net effect of one
+   * duplicated line in a hand-edited file, or of a git merge of two branches that
+   * each added the same link: the endpoint comes back with ZERO links instead of
+   * the deduplicated set.
+   */
+  const keyOf = (row: Record<string, unknown>): string =>
+    JSON.stringify((node.keyFields ?? itemFields.map(([n]) => n)).map((k) => row[k] ?? null));
+  const seen = new Set<string>();
+
   for (const entry of items) {
     const row: Record<string, unknown> =
       item.kind === 'object' ? ((entry as Record<string, unknown>) ?? {}) : { value: entry };
+
+    const key = keyOf(row);
+    if (seen.has(key)) {
+      warnings.push(
+        `${module.type}/${slug}: ${field}[] lists ${key} more than once — kept the first`,
+      );
+      continue;
+    }
+    seen.add(key);
+
+    /**
+     * An item field's `enum` is validated HERE, because `upsertProjectionRow`'s
+     * `enumViolation` sweep only walks the parent row's own fields.
+     *
+     * The declaration types `endpoint.linkedDtos[].relation` as
+     * `['request','response','error']`, and until this check the generic door
+     * inserted whatever the payload said — so a misspelled `"resposne"` in a file
+     * landed in `endpoint_dto`, rendered on the detail page, and was written back
+     * into the file as if it were real. The per-type `linkDto` this replaced
+     * rejected it.
+     *
+     * Skipped with a warning rather than thrown, matching the dangling-ref rule
+     * directly above: one bad row in a release restore must not abort the entity.
+     */
+    const badEnum = itemFields.find(([name, n]) => enumViolation(n, row[name]) !== null);
+    if (badEnum) {
+      const [name, n] = badEnum;
+      warnings.push(
+        `${module.type}/${slug}: ${field}[].${name} — ${enumViolation(n, row[name])} — row skipped`,
+      );
+      continue;
+    }
 
     const dangling = refFields.find(([name, n]) => {
       const target = row[name];
@@ -515,13 +601,26 @@ function syncProjectionTable(
       continue;
     }
 
-    insert.run(
-      slug,
-      ...itemFields.map(([name, n]) => {
-        const raw = row[name];
-        return raw === undefined ? absentValue(n) : encode(n, raw);
-      }),
-    );
+    try {
+      insert.run(
+        slug,
+        ...itemFields.map(([name, n]) => {
+          const raw = row[name];
+          return raw === undefined ? absentValue(n) : encode(n, raw);
+        }),
+      );
+    } catch (err) {
+      /**
+       * A constraint SQLite enforces that the checks above did not anticipate —
+       * a FK on a ref without `onMissing: 'warn'`, a CHECK from `data.integrity`.
+       * Degraded to a warning for the same reason as everything else in this
+       * loop: escaping here aborts the whole entity, and the indexer turns that
+       * into a silent skip that empties the collection rather than preserving it.
+       */
+      warnings.push(
+        `${module.type}/${slug}: ${field}[] row rejected by the database — ${(err as Error).message}`,
+      );
+    }
   }
   return warnings;
 }

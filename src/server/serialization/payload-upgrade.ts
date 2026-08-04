@@ -36,6 +36,7 @@
 
 import type { FieldNode } from '../../shared/plugin-host/data-schema.js';
 import type { SnapshotData } from './types.js';
+import { stripSystemFields } from './system-fields.js';
 
 /**
  * The envelope key carrying the shape version of an entity file.
@@ -186,12 +187,32 @@ export function upgradePayload(
   const target = module.payloadVersion ?? 1;
   if (from === target) return { data, upgraded: false, warnings: [] };
   if (from > target) {
-    throw new PayloadUpgradeError(
-      module.type,
-      from,
-      target,
-      'the file was written by a newer version of this type — a downgrade is not expressible',
-    );
+    /**
+     * A payload from the FUTURE is read as-is, loudly, and the file is NOT
+     * rewritten.
+     *
+     * This threw until a review pointed out what the throw actually did: the
+     * indexer degrades an upgrade failure to "skip this entity", so one file
+     * written by a newer build made every entity of that type VANISH — from the
+     * list, from search, from every page that mentions one — behind a console
+     * warning. Two people on different builds sharing a git spec repo is a
+     * normal Tuesday, not an exotic corruption.
+     *
+     * Reading it is safe in the direction that matters: `restoreFromSchema`
+     * copies only DECLARED fields, so whatever the newer shape added is ignored
+     * rather than misread. `upgraded: false` is the load-bearing half — it stops
+     * the indexer rewriting the file, which would silently downgrade it and
+     * destroy the newer data for the teammate who wrote it.
+     */
+    return {
+      data,
+      upgraded: false,
+      warnings: [
+        `payload v${from} was written by a NEWER version of this type (this build is at ` +
+          `v${target}) — reading the fields this build understands and leaving the file ` +
+          `untouched. Upgrade to avoid losing what the newer version added.`,
+      ],
+    };
   }
 
   const chain = module.serializer?.payloadUpgrades ?? [];
@@ -225,4 +246,55 @@ export function upgradePayload(
   }
 
   return { data: payload, upgraded: true, warnings };
+}
+
+
+/**
+ * Bring a CAPTURED payload (an `entity_version` / bundle row) to the type's
+ * current shape.
+ *
+ * ONE implementation for every reader of that column, because there are four of
+ * them and a review found the fourth had been missed: `ReleaseService` grew this
+ * twice (restore and diff) and `VersionService` once, while the per-entity
+ * version-diff route in `entities-router` kept feeding raw captures to
+ * `host.diff`. The result was a diff view reporting a `summary` edit nobody made
+ * on every endpoint spanning the 1 → 2 bump, with the "schema bump" badge
+ * deliberately suppressed so nothing explained it.
+ *
+ * `ok: false` is a REPORTED failure, not a silent degrade. The caller decides —
+ * a read-side consumer (a diff) can fall back to the raw payload and still be
+ * useful, but a WRITE-side consumer must not: restoring an un-upgraded payload
+ * writes today's collections back as if they were the release's, which reports
+ * success while restoring nothing. See `ReleaseService.restoreEntity`.
+ */
+export function upgradeCapture(
+  module: UpgradableModule | null | undefined,
+  data: SnapshotData,
+  from: number,
+): { data: SnapshotData; ok: boolean; warnings: string[] } {
+  if (!module) return { data, ok: true, warnings: [] };
+  try {
+    const result = upgradePayload(module, data, from);
+    return { data: result.data, ok: true, warnings: result.warnings };
+  } catch (err) {
+    return { data, ok: false, warnings: [(err as Error).message] };
+  }
+}
+
+
+/**
+ * Everything an entity file carries that is ENVELOPE rather than content:
+ * `createdAt`/`updatedAt` and the payload marker.
+ *
+ * One definition, because two callers have to agree on it and a review found
+ * they did not. `ReleaseService.dropStampOnlyEntityChanges` — the filter that
+ * keeps the git-anchored diff from reporting the boot backfill as thousands of
+ * edits — stripped only the timestamps, so once `persist` began writing
+ * `payloadVersion` the marker read as a CONTENT change. The git-anchored path
+ * then called an entity `modified` while the SQL path (which diffs marker-free
+ * captures) called it `noop`: two diff paths for one release, disagreeing, which
+ * is the exact regression that filter exists to prevent.
+ */
+export function stripFileEnvelope(value: unknown): unknown {
+  return stripPayloadVersion(stripSystemFields(value) as SnapshotData);
 }

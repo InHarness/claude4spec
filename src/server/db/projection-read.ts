@@ -99,8 +99,26 @@ export function readProjectionCollection(
     rows = db
       .prepare(`SELECT ${columns.join(', ')} FROM ${table} WHERE ${binding} = ? ORDER BY rowid`)
       .all(slug) as Array<Record<string, unknown>>;
-  } catch {
-    return [];
+  } catch (err) {
+    /**
+     * ONLY a missing table reads as an empty collection. Everything else rethrows.
+     *
+     * This was a bare `catch { return [] }`, and a review found what that costs:
+     * `[]` here becomes `linkedDtos: []` in the snapshot, and the next
+     * `EntityStore.persist` writes that empty array into the entity FILE. So a
+     * `no such column` — an item field added to a declaration against an older
+     * projection table — silently deletes every endpoint↔DTO link from the
+     * committed source of truth, and the next rebuild reads the emptied files
+     * back into the index. Nothing logged, rebuild reports success.
+     *
+     * A missing TABLE is different in kind and is the case the tolerance was for:
+     * a type can be active with its projection unapplied (an envelope that failed
+     * to build, a database predating the type), and there is genuinely nothing to
+     * read. Anything else is a bug that must not be laundered into data loss.
+     */
+    const message = (err as Error).message ?? '';
+    if (/no such table/i.test(message)) return [];
+    throw err;
   }
 
   return rows.map((row) => {

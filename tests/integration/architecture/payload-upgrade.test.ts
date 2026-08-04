@@ -24,6 +24,7 @@ import path from 'node:path';
 import request from 'supertest';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { EntityIndexerService } from '../../../src/server/services/entity-indexer.js';
+import { HostEntityWriter } from '../../../src/server/services/entity-writer.js';
 
 function indexerFor(t: TestApp): EntityIndexerService {
   return new EntityIndexerService(
@@ -251,5 +252,151 @@ describe('a projected collection survives the rebuild that reads it', () => {
     const file = readFile(t, 'endpoint', endpoint);
     expect(file.linkedDtos).toHaveLength(3);
     expect((file.linkedDtos as Array<{ dto: string }>).map((l) => l.dto).sort()).toEqual([...dtos].sort());
+  });
+});
+
+/**
+ * What the deleted per-type `restore` hooks were doing BESIDES writing rows.
+ *
+ * The parity gate compares snapshots, so it could only ever see the payload. It
+ * is blind to validation, to warnings, and to error handling — and a review found
+ * all three had been dropped along with the hooks they lived in. Each of these
+ * exercises the real type through the real write path, because the whole failure
+ * mode is "the generic door does not do what the specific one did".
+ */
+describe('behaviour the per-type restore hooks used to provide', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('warns about a dangling scalar ref, which uiViewRestore used to report by hand', async () => {
+    // `designSystemSlug` declares `ref: 'design-system', onMissing: 'warn'`, and
+    // there is deliberately no FK — the value is meant to survive its target.
+    // `syncProjectionTable` honours `onMissing` for COLLECTION ITEMS only, so
+    // removing `uiViewRestore` made a dangling design system completely silent:
+    // a rebuild reported clean success and the user found out by opening the view.
+    const created = await request(t.app)
+      .post('/api/ui-views')
+      .send({ name: 'Profile', designSystemSlug: 'never-existed' });
+    expect(created.status).toBeLessThan(400);
+
+    const writer = new HostEntityWriter(t.host, t.tagsService, { capture: false }, {
+      db: t.db,
+      store: t.entityStore,
+      versions: null,
+    });
+    const result = writer.upsert('ui-view', created.body.slug, {
+      name: 'Profile',
+      designSystemSlug: 'never-existed',
+    }, 'user');
+
+    expect(result).not.toBeNull();
+    expect(result!.warnings?.join() ?? '').toMatch(/never-existed.*does not exist \(dangling\)/);
+  });
+
+  it('does not store an endpoint link whose relation is misspelled', async () => {
+    // `EndpointService.linkDto` rejected an unknown relation; the generic junction
+    // door inserted it verbatim, so it rendered on the detail page and was written
+    // back into the entity file as if it were real.
+    const dto = await request(t.app).post('/api/dtos').send({ name: 'UserDto', fields: [] });
+    const ep = await request(t.app)
+      .post('/api/endpoints')
+      .send({ method: 'GET', path: '/api/things', summary: 's' });
+
+    const writer = new HostEntityWriter(t.host, t.tagsService, { capture: false }, {
+      db: t.db,
+      store: t.entityStore,
+      versions: null,
+    });
+    const result = writer.upsert('endpoint', ep.body.slug, {
+      method: 'GET',
+      path: '/api/things',
+      summary: 's',
+      linkedDtos: [
+        { dto: dto.body.slug, relation: 'resposne', statusCode: 200 },
+        { dto: dto.body.slug, relation: 'response', statusCode: 200 },
+      ],
+    }, 'user');
+
+    expect(result!.warnings?.join() ?? '').toMatch(/expected one of request, response, error/);
+    const links = t.db
+      .prepare(`SELECT relation FROM endpoint_dto WHERE endpoint_slug = ?`)
+      .all(ep.body.slug) as Array<{ relation: string }>;
+    // Only the well-formed link survives; the misspelling is not in the table.
+    expect(links.map((l) => l.relation)).toEqual(['response']);
+  });
+});
+
+/**
+ * A release restore that cannot upgrade its capture must NOT report success.
+ *
+ * `upgradeCapture` degraded to the un-upgraded payload, which looked harmless and
+ * was the worst option available: `restoreFromSchema` copies only keys matching
+ * DECLARED fields, so a v1 capture's `linked_dtos` never reaches the writer,
+ * `syncProjectionTables` skips the collection, and the junction keeps TODAY's
+ * links — which `persist` then writes into the file as the restored state. The
+ * API answered `op: 'updated'` while restoring nothing.
+ */
+describe('a release restore whose capture cannot be upgraded', () => {
+  let t: TestApp;
+  let warn: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+    t.cleanup();
+  });
+
+  it('reports a noop with the reason instead of a false success', async () => {
+    const { ReleaseService } = await import('../../../src/server/services/release.js');
+    const ep = await request(t.app)
+      .post('/api/endpoints')
+      .send({ method: 'GET', path: '/api/kept', summary: 'kept' });
+    expect(ep.status).toBe(201);
+
+    /**
+     * Rewrite the real capture into a v1 payload the chain cannot honestly
+     * migrate: `method` is `required` with no derivable default, so `classifyGap`
+     * refuses rather than inventing an HTTP verb for someone's API.
+     *
+     * Going through the real capture first, then editing it, keeps the fixture
+     * honest about the table's actual shape instead of hand-writing an INSERT
+     * against columns this test would have to guess at.
+     */
+    t.db
+      .prepare(
+        `UPDATE entity_version SET data = ?, serializer_version = '1'
+          WHERE entity_type = 'endpoint' AND entity_slug = ?`,
+      )
+      .run(JSON.stringify({ slug: ep.body.slug, path: '/api/kept' }), ep.body.slug);
+    t.db
+      .prepare(
+        `INSERT INTO spec_release (id, name, description, created_by, created_at)
+         VALUES (7, 'r7', 'legacy release', 'user', datetime('now'))`,
+      )
+      .run();
+    t.db
+      .prepare(`UPDATE entity_version SET release_id = 7 WHERE entity_slug = ?`)
+      .run(ep.body.slug);
+
+    const releases = new ReleaseService(
+      t.db, t.host, t.rawReader, t.versionService, t.tagsService, process.cwd(), t.entityStore,
+    ) as unknown as {
+      restoreEntity(i: { releaseId: number; type: string; slug: string }): {
+        op: string; warnings?: string[];
+      };
+    };
+
+    const result = releases.restoreEntity({ releaseId: 7, type: 'endpoint', slug: ep.body.slug });
+    expect(result.op).toBe('noop');
+    expect(result.warnings?.join() ?? '').toMatch(/not restored/);
+    // And the live entity is untouched, rather than half-written.
+    expect(t.rawReader.getEntity('endpoint', ep.body.slug)?.data.summary).toBe('kept');
   });
 });

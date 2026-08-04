@@ -8,7 +8,8 @@ import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
-import { samePayloadVersion } from '../../serialization/payload-version.js';
+import { payloadVersionOfCapture, samePayloadVersion } from '../../serialization/payload-version.js';
+import { upgradeCapture } from '../../serialization/payload-upgrade.js';
 import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
 
 /**
@@ -101,9 +102,28 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const from = versions.getVersion(type, slug, Number(req.params.from));
       const to = versions.getVersion(type, slug, Number(req.params.to));
       if (!from || !to) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'version not found' } });
-      const diff = host.diff(type, from.data, to.data, slug);
       const fromVer = from.serializerVersion ?? null;
       const toVer = to.serializerVersion ?? null;
+      /**
+       * 0.2.9 — both captures are brought to the CURRENT payload shape first.
+       *
+       * The fourth reader of `entity_version.data`, and the one a review found
+       * had been missed: `ReleaseService` (restore and diff) and `VersionService`
+       * all upgrade their captures, this route fed raw ones straight to
+       * `host.diff`. Two captures either side of a `payloadVersion` bump describe
+       * the same entity in different spellings, so the diff reported edits nobody
+       * made — and `samePayloadVersion` below deliberately suppresses the
+       * "schema bump" badge across the vocabulary change, so nothing on screen
+       * explained where they came from.
+       *
+       * Degrades to the raw payload on failure rather than 500ing: this is a
+       * read, and a diff computed on the old shape is still more useful than an
+       * error page. The WRITE side makes the opposite call for the same reason.
+       */
+      const module = host.getEntity(type);
+      const fromData = upgradeCapture(module, from.data, payloadVersionOfCapture(fromVer)).data;
+      const toData = upgradeCapture(module, to.data, payloadVersionOfCapture(toVer)).data;
+      const diff = host.diff(type, fromData, toData, slug);
       // 0.2.9: compared as PAYLOAD VERSIONS, not as strings. The column changed
       // vocabulary (semver → integer `payloadVersion`) without migrating old
       // rows, so a raw comparison flags a bump on every diff that spans the

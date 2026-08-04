@@ -27,6 +27,7 @@ import type { TagsService } from './tags.js';
 import {
   projectionRowExists,
   removeProjectionRow,
+  danglingScalarRefs,
   syncProjectionTables,
   upsertProjectionRow,
   type ProjectionWriteDeps,
@@ -150,7 +151,22 @@ export class HostEntityWriter implements EntityWriter {
        */
       const module = this.host.getEntity(type);
       if (module?.data?.schema && this.projection) {
-        const warnings = syncProjectionTables(this.projection.db, module, slug, input);
+        /**
+         * Against the slug the SERVICE WROTE, not the one we asked for.
+         *
+         * `EndpointService.createRaw` derives its own slug from `method` + `path`
+         * and ignores the requested one. When the two disagree — a hand-renamed
+         * entity file, a slug-pattern change between releases — syncing on the
+         * requested slug writes junction rows bound to a parent row that does not
+         * exist: either the FK aborts that entity's restore, or it leaves orphan
+         * rows while the endpoint reads back with no links at all.
+         */
+        const written = (picked.entity as { slug?: unknown } | null)?.slug;
+        const target = typeof written === 'string' && written ? written : slug;
+        const warnings = [
+          ...syncProjectionTables(this.projection.db, module, target, input),
+          ...danglingScalarRefs(this.projection.db, module, target, input),
+        ];
         if (warnings.length) {
           picked.warnings = [...(picked.warnings ?? []), ...warnings];
         }
@@ -169,7 +185,12 @@ export class HostEntityWriter implements EntityWriter {
      */
     const module = this.host.getEntity(type);
     if (module?.data?.schema && this.projection) {
-      return upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
+      const result = upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
+      // The projection branch syncs its own collections inside its transaction,
+      // but scalar refs are checked here for both branches — one rule, one place.
+      const dangling = danglingScalarRefs(this.projection.db, module, slug, input);
+      if (dangling.length) result.warnings = [...(result.warnings ?? []), ...dangling];
+      return result;
     }
 
     /**

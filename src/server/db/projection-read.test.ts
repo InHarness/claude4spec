@@ -139,9 +139,31 @@ describe('readProjectionCollection', () => {
     // failed to build, a database predating the type. A snapshot that 500s on
     // that takes a whole release restore down with it.
     const ghost = { ...widget, type: 'ghost' } as WritableModule;
-    expect(
-      readProjectionCollection(db, ghost, 'links', widget.data!.schema.links as CollectionNode, 'w1'),
-    ).toEqual([]);
+    const node = { ...(widget.data!.schema.links as CollectionNode) };
+    delete (node as { projectionTable?: string }).projectionTable; // → `ghost_links`, absent
+    expect(readProjectionCollection(db, ghost, 'links', node, 'w1')).toEqual([]);
+  });
+
+  it('RETHROWS any other SQL error rather than laundering it into an empty collection', () => {
+    /**
+     * The distinction a review caught. `[]` here becomes `linkedDtos: []` in the
+     * snapshot, and the next `EntityStore.persist` writes that empty array into
+     * the entity FILE — so swallowing a `no such column` (an item field added to
+     * a declaration against an older projection table) silently deletes every
+     * link from the committed source of truth, and the next rebuild reads the
+     * emptied files back. A missing TABLE is genuinely "nothing to read"; a
+     * missing COLUMN is a bug, and must not be turned into data loss.
+     */
+    const wrongBinding = { ...widget, type: 'ghost' } as WritableModule; // → `ghost_slug`
+    expect(() =>
+      readProjectionCollection(
+        db,
+        wrongBinding,
+        'links',
+        widget.data!.schema.links as CollectionNode,
+        'w1',
+      ),
+    ).toThrow(/no such column/);
   });
 
   it('answers [] through the reader for an unknown type or an undeclared field', () => {

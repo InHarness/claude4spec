@@ -40,7 +40,7 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
-import { upgradePayload } from '../serialization/payload-upgrade.js';
+import { stripFileEnvelope, upgradeCapture } from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
@@ -997,9 +997,20 @@ export class ReleaseService {
       const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
       if (oldText === null || newText === null) return true;
       try {
-        const a = canonicalize(stripSystemFields(JSON.parse(oldText) as unknown));
-        const b = canonicalize(stripSystemFields(JSON.parse(newText) as unknown));
-        return JSON.stringify(a) !== JSON.stringify(b);
+        /**
+         * 0.2.9 — `payloadVersion` comes off with the timestamps.
+         *
+         * It is envelope, not content: the file records the shape it was written
+         * under, and a rewrite that only adds or bumps that marker changed
+         * nothing a user wrote. Stripping only the timestamps let the marker read
+         * as a content edit here while `computeDelta` (which diffs marker-free
+         * captures) called the same entity `noop` — two diff paths for one
+         * release, disagreeing, which is exactly the class of regression this
+         * filter was added to close.
+         */
+        const strip = (text: string): unknown =>
+          canonicalize(stripFileEnvelope(JSON.parse(text) as unknown));
+        return JSON.stringify(strip(oldText)) !== JSON.stringify(strip(newText));
       } catch {
         return true; // unparseable on either side — report it rather than hide it
       }
@@ -1245,11 +1256,11 @@ export class ReleaseService {
       const aData =
         aRaw === null
           ? null
-          : this.upgradeCapture(sample.type, aRaw, fromSnap.serializer_versions[sample.type] ?? null);
+          : this.upgradeCapture(sample.type, aRaw, fromSnap.serializer_versions[sample.type] ?? null).data;
       const bData =
         bRaw === null
           ? null
-          : this.upgradeCapture(sample.type, bRaw, toSnap.serializer_versions[sample.type] ?? null);
+          : this.upgradeCapture(sample.type, bRaw, toSnap.serializer_versions[sample.type] ?? null).data;
       const diff = this.host.diff(sample.type, aData, bData, sample.slug);
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
@@ -1316,23 +1327,22 @@ export class ReleaseService {
    * key, so a release cut before the bump reports every entity as `modified`
    * forever — a diff that is loud, wrong, and never settles.
    *
-   * Failure degrades to the ORIGINAL payload rather than aborting: one
-   * unmigratable entity must not take a whole release restore down with it, and
-   * the downstream write path reports its own failure honestly.
+   * `ok: false` is REPORTED, and what the caller does with it differs by side:
+   * a diff can fall back to the raw payload and still be useful, a RESTORE
+   * cannot. See `restoreEntity`.
    */
-  private upgradeCapture(type: string, data: SnapshotData, serializerVersion: string | null | undefined): SnapshotData {
-    const module = this.host.getEntity(type);
-    if (!module) return data;
-    try {
-      const result = upgradePayload(module, data, payloadVersionOfCapture(serializerVersion));
-      for (const warning of result.warnings) {
-        console.warn(`[release] ${type}: ${warning}`);
-      }
-      return result.data;
-    } catch (err) {
-      console.warn(`[release] ${type}: capture could not be upgraded — ${(err as Error).message}`);
-      return data;
-    }
+  private upgradeCapture(
+    type: string,
+    data: SnapshotData,
+    serializerVersion: string | null | undefined,
+  ): { data: SnapshotData; ok: boolean; warnings: string[] } {
+    const result = upgradeCapture(
+      this.host.getEntity(type),
+      data,
+      payloadVersionOfCapture(serializerVersion),
+    );
+    for (const warning of result.warnings) console.warn(`[release] ${type}: ${warning}`);
+    return result;
   }
 
   restoreEntity(input: RestoreEntityInput, actor: ChangedBy = 'user'): RestoreEntityResult {
@@ -1363,11 +1373,39 @@ export class ReleaseService {
       };
     }
 
-    const targetSnapshot = this.upgradeCapture(
+    const upgraded = this.upgradeCapture(
       input.type,
       safeJsonParse(targetRow.data),
       targetRow.serializer_version,
     );
+    /**
+     * A capture that cannot be upgraded is a restore that must NOT happen.
+     *
+     * Degrading to the un-upgraded payload looked harmless and was the worst
+     * option available. `restoreFromSchema` copies only keys matching DECLARED
+     * fields, so a v1 payload's `linked_dtos` never reaches the writer,
+     * `syncProjectionTables` skips the collection entirely, and `endpoint_dto`
+     * keeps TODAY's links — which `persist` then writes into the entity file as
+     * the restored state. The API answered `op: 'updated'` and the UI told the
+     * user the endpoint was restored to release X while its DTO links were
+     * silently whatever they had been.
+     *
+     * Reported as a noop with the reason attached: the user can see that this
+     * entity did not come back, which is recoverable, where a false success is
+     * not.
+     */
+    if (!upgraded.ok) {
+      return {
+        type: input.type,
+        slug: input.slug,
+        op: 'noop',
+        warnings: [
+          `not restored — the captured payload could not be brought to the current shape: ` +
+            upgraded.warnings.join('; '),
+        ],
+      };
+    }
+    const targetSnapshot = upgraded.data;
     // Compare to current state — if identical, no-op.
     const current = this.rawReader.getEntity(input.type, input.slug);
     if (current) {
@@ -1762,7 +1800,9 @@ export class ReleaseService {
             if (row.op === 'delete') continue;
             // A bundle can be older than this installation; its manifest records
             // the version each type was captured at.
-            const data = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
+            const bundled = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
+            if (!bundled.ok) continue; // same rule as restoreEntity: skip, never half-restore
+            const data = bundled.data;
             this.host.restore(type, data, restoreCtx);
             entities.push({ type, slug: row.slug, op: row.op, data });
           }

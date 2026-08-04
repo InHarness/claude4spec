@@ -26,11 +26,19 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     ...(serializerVersion !== undefined ? { serializerVersion } : {}),
   });
 
-  function app(opts: { getVersion: VersionService['getVersion']; diff: ProjectPluginHost['diff'] }) {
+  function app(opts: {
+    getVersion: VersionService['getVersion'];
+    diff: ProjectPluginHost['diff'];
+    module?: unknown;
+  }) {
     const host = {
       getAvailable: () => true,
       entityExists: () => true,
       diff: opts.diff,
+      // 0.2.9: the route resolves the module to upgrade both captures to the
+      // current payload shape before diffing. `opts.module` omitted = a host that
+      // knows no module, which upgrades nothing.
+      getEntity: () => opts.module ?? null,
     } as unknown as ProjectPluginHost;
     const versions = { getVersion: opts.getVersion } as unknown as VersionService;
     const tags = {} as unknown as TagsService;
@@ -118,5 +126,41 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+  });
+
+  /**
+   * The fourth reader of `entity_version.data`, and the one that was missed.
+   *
+   * `ReleaseService` (restore and diff) and `VersionService` all upgrade their
+   * captures; this route fed raw ones to `host.diff`. Two captures either side of
+   * a `payloadVersion` bump describe the same entity in different SPELLINGS, so
+   * the diff reported edits nobody made — and `samePayloadVersion` deliberately
+   * suppresses the "schema bump" badge across the vocabulary change, so nothing
+   * on screen explained where they came from.
+   */
+  it('upgrades BOTH captures to the current payload shape before diffing', async () => {
+    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'noop' });
+    const server = app({
+      // v1 spelled it `legacy`; v2 spells it `current`.
+      getVersion: (_t, _s, v) =>
+        v === 1 ? detail(1, { legacy: 'x' }, '1') : detail(2, { current: 'x' }, '2'),
+      diff,
+      module: {
+        type: 'endpoint',
+        payloadVersion: 2,
+        serializer: {
+          payloadUpgrades: [
+            (p: unknown) => ({ current: (p as { legacy: string }).legacy }),
+          ],
+        },
+      },
+    });
+
+    const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
+    expect(res.status).toBe(200);
+    // The v1 capture reaches `diff` already migrated, so both sides are the same
+    // shape and the entity reads as unchanged — which it is.
+    expect(diff).toHaveBeenCalledWith('endpoint', { current: 'x' }, { current: 'x' }, 'my-slug');
+    expect(res.body.op).toBe('noop');
   });
 });

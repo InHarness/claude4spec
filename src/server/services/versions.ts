@@ -12,7 +12,7 @@ import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
 import { stripSystemFields } from '../serialization/system-fields.js';
-import { upgradePayload } from '../serialization/payload-upgrade.js';
+import { upgradeCapture } from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
@@ -73,29 +73,6 @@ export class VersionService {
    * release restore uses), then captures a NEW `update` version so the
    * restore itself is an append-only, undoable action.
    */
-  /**
-   * Bring a captured payload to the type's current shape. Failure degrades to
-   * the original rather than aborting — the write path reports its own failure,
-   * and a restore that dies here leaves the user with no way forward at all.
-   */
-  private upgradeCapture(
-    host: PluginHost,
-    type: string,
-    data: SnapshotData,
-    serializerVersion: string | null | undefined,
-  ): SnapshotData {
-    const module = host.getEntity(type);
-    if (!module) return data;
-    try {
-      const result = upgradePayload(module, data, payloadVersionOfCapture(serializerVersion));
-      for (const warning of result.warnings) console.warn(`[versions] ${type}: ${warning}`);
-      return result.data;
-    } catch (err) {
-      console.warn(`[versions] ${type}: capture could not be upgraded — ${(err as Error).message}`);
-      return data;
-    }
-  }
-
   restore(type: RawEntityType, entitySlug: string, version: number, actor: ChangedBy): VersionListItem {
     if (!this.snapshotDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
     if (!this.restoreDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
@@ -153,13 +130,24 @@ export class VersionService {
      * alternative is the one path that can admit a stale shape into the index.
      * A clarification patch is filed against the brief.
      */
-    const upgraded = this.upgradeCapture(
-      host,
-      type,
+    const upgraded = upgradeCapture(
+      host.getEntity(type),
       stripSystemFields(target.data),
-      target.serializerVersion,
+      payloadVersionOfCapture(target.serializerVersion),
     );
-    host.restore(type, upgraded, ctx);
+    for (const warning of upgraded.warnings) console.warn(`[versions] ${type}: ${warning}`);
+    // A capture that cannot reach the current shape must not be written — the
+    // same rule as `ReleaseService.restoreEntity`, and for the same reason: the
+    // generated restore drops keys it does not recognise, so a degraded payload
+    // reports success while restoring the entity's collections to nothing.
+    if (!upgraded.ok) {
+      throw new DomainError(
+        'VALIDATION',
+        `version ${version} of ${type}/${entitySlug} was captured in an older payload shape ` +
+          `that cannot be upgraded: ${upgraded.warnings.join('; ')}`,
+      );
+    }
+    host.restore(type, upgraded.data, ctx);
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 
