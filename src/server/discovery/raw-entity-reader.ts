@@ -561,6 +561,18 @@ export class RawEntityReader {
       if (node) {
         if (node.kind === 'object' || node.kind === 'record' || node.kind === 'collection') {
           data[key] = safeJsonContainer(value);
+        } else if (node.kind === 'json') {
+          /**
+           * A `json` column is written by `encode`'s default branch, which is a
+           * plain `JSON.stringify` — so unlike the container kinds above, its
+           * text may be a stringified SCALAR (`"\"#2563eb\""`, `"3"`, `"null"`)
+           * as readily as an object or an array. `safeJsonContainer` only parses
+           * text that starts with `[` or `{`, so it would have left every scalar
+           * arm still quoted, and `entityStore.persist` regenerates the file from
+           * this row — one more escaping layer per write, compounding in the
+           * source of truth.
+           */
+          data[key] = safeJsonValue(value);
         }
         continue;
       }
@@ -663,5 +675,22 @@ function safeJsonContainer(raw: string): unknown {
     return [];
   } catch {
     return [];
+  }
+}
+
+/**
+ * The `json` node's counterpart: ANY JSON value, not just a container.
+ *
+ * Separate from `safeJsonContainer` because the two have opposite fallbacks. A
+ * container column that will not parse is a corrupt collection and `[]` is the
+ * safe reading; an opaque value that will not parse is most likely a value that
+ * was never JSON to begin with (a pre-`json` column, a hand-edited file), and
+ * the safe reading is the text itself — replacing it with `[]` would delete it.
+ */
+function safeJsonValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
   }
 }

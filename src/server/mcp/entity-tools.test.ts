@@ -463,7 +463,13 @@ describe('entity-tools: describe_entity_type', () => {
    * their answer.
    */
   const badSchemaModule = () =>
-    widgetModule({ type: 'bad-schema', data: undefined as unknown as BackendModule['data'] });
+    widgetModule({
+      type: 'bad-schema',
+      // No `backend.crud`, so the GENERATED branch is the one under test — a
+      // declared crud slot still wins while the six services own the write path.
+      backend: {},
+      data: undefined as unknown as BackendModule['data'],
+    });
 
   it('describe-all isolates one un-serializable type: healthy types still described, bad type carries an __error placeholder', async () => {
     const { deps } = fakeDeps([badSchemaModule()]);
@@ -506,7 +512,7 @@ describe('entity-tools: describe_entity_type', () => {
         throw new Error('boom-build');
       },
     });
-    return widgetModule({ type: 'build-throw', data: data as BackendModule['data'] });
+    return widgetModule({ type: 'build-throw', backend: {}, data: data as BackendModule['data'] });
   };
 
   it('inner guard catches a throw during schema build (not just serialization)', async () => {

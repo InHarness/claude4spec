@@ -35,6 +35,7 @@ import type { EntityStore } from '../../services/entity-store.js';
 import type { TagsService } from '../../services/tags.js';
 import type { ReferencesService } from '../../services/references.js';
 import type { ProjectPluginHost, BackendModule } from './types.js';
+import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';
 import {
   removeProjectionRow,
   renameProjectionRow,
@@ -51,8 +52,49 @@ export interface GenericCrudDeps {
   projection: ProjectionWriteDeps;
 }
 
-/** A real mutation from a user or an agent: capture a version, write the file. */
-const MUTATE = { capture: true, writeFile: true } as const;
+/**
+ * Write the ROW only — this module owns the version capture itself.
+ *
+ * `capture: false` is not "no history": it moves the capture to after the tags
+ * are assigned, which is the only order that records them (see `genericCreate`).
+ * `writeFile` is false because `upsertProjectionRow` does not act on it at all;
+ * the file is written by the explicit `store.persist` after the transaction
+ * commits, so a rolled-back write never leaves a file behind.
+ */
+const ROW_ONLY = { capture: false, writeFile: false } as const;
+
+/**
+ * Delete keeps `capture: true`, because there is nothing to interleave.
+ *
+ * `removeProjectionRow` captures the tombstone BEFORE the row goes — the
+ * entity, tags included, is still whole at that moment — so the ordering
+ * problem the create/update paths have does not arise here.
+ */
+const DELETE_OPTS = { capture: true, writeFile: false } as const;
+
+/** Capture the mutation into `entity_version`, once the entity is complete. */
+function capture(
+  deps: GenericCrudDeps,
+  type: string,
+  slug: string,
+  op: 'created' | 'updated' | 'noop',
+  actor: ChangedBy,
+): void {
+  if (op === 'noop') return;
+  const summary = op === 'created' ? 'Created' : 'Updated';
+  deps.projection.versions?.captureEntitySnapshot(type, slug, op === 'created' ? 'create' : 'update', actor, summary);
+}
+
+/**
+ * Run the row write, the tag assignment and the version capture as one unit.
+ *
+ * better-sqlite3 nests through SAVEPOINTs, so the transactions inside
+ * `upsertProjectionRow` and `renameProjectionRow` compose with this rather than
+ * conflicting with it.
+ */
+function inOneTransaction<T>(deps: GenericCrudDeps, fn: () => T): T {
+  return deps.projection.db.transaction(fn)();
+}
 
 /**
  * The random source `slugPattern`'s `nanoid(n)` step draws from.
@@ -128,10 +170,20 @@ export function genericCreate(
   delete payload.slug;
   delete payload.tags;
 
-  const result = upsertProjectionRow(deps.projection, module, slug, payload, actor, MUTATE);
-  if (tags.length) deps.tags.assignTags(type as RawEntityType, slug, tags);
+  const warnings = inOneTransaction(deps, () => {
+    const result = upsertProjectionRow(deps.projection, module, slug, payload, actor, ROW_ONLY);
+    // BEFORE the capture, not after. `captureEntitySnapshot` snapshots the
+    // entity as it stands, and tags are part of that snapshot — assigning them
+    // afterwards records every create and every update with `tags: []`, so
+    // restoring the version or diffing it in a release drops them. The six
+    // services all assign then capture, inside one transaction; so does this.
+    if (tags.length) deps.tags.assignTags(type as RawEntityType, slug, tags);
+    capture(deps, type, slug, result.op, actor);
+    return result.warnings ?? [];
+  });
+
   deps.store.persist(type, slug);
-  return result.warnings?.length ? { slug, warnings: result.warnings } : { slug };
+  return warnings.length ? { slug, warnings } : { slug };
 }
 
 /**
@@ -143,9 +195,37 @@ export function genericCreate(
  * key carrying a value replaces it. `hasOwnProperty` rather than
  * `!== undefined`, or an explicit `{description: undefined}` would read as
  * "clear" on one path and "no change" on the other.
+ *
+ * THE BASE IS `snapshotFromSchema`, NOT `RawEntity.data`, and the difference is
+ * two silent data losses rather than a style preference:
+ *
+ *   - `hydrate` keys `data` by COLUMN name (`design_system_slug`), while the
+ *     patch and `upsertProjectionRow` are both keyed by declared FIELD name
+ *     (`designSystemSlug`). Merging the two together left every field whose
+ *     column differs from its name absent from the upsert's payload — so an
+ *     unrelated PATCH wrote it back as its default or NULL, and a `required`
+ *     one made the entity unpatchable.
+ *   - a value collection with `keyFields` lives in a table of its own
+ *     (`endpoint.linkedDtos` → `endpoint_dto`), so it is not on the row and
+ *     `hydrate` never sees it. `upsertProjectionRow` reads an absent value
+ *     collection as EMPTY, so a PATCH touching only `summary` deleted every
+ *     linked DTO.
+ *
+ * `snapshotFromSchema` already answers both: it is field-keyed by construction
+ * (its own doc calls that forced rather than chosen, because it feeds the same
+ * writer) and it reads table-backed collections through `readCollection`. One
+ * description of "this entity as a payload", shared with restore.
  */
-function mergeUpdate(current: RawEntity, patch: Record<string, unknown>): Record<string, unknown> {
-  const merged = { ...current.data };
+function mergeUpdate(
+  deps: GenericCrudDeps,
+  module: BackendModule,
+  current: RawEntity,
+  patch: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged = { ...(snapshotFromSchema(module, current, deps.reader) as Record<string, unknown>) };
+  // `slug` and `tags` are the writer's own arguments, not fields of the type.
+  delete merged.slug;
+  delete merged.tags;
   for (const key of Object.keys(patch)) {
     if (key === 'slug' || key === 'tags' || key === 'newSlug') continue;
     merged[key] = patch[key];
@@ -166,30 +246,35 @@ export function genericUpdate(
   if (!current) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
 
   const patch = (input ?? {}) as Record<string, unknown>;
-  const merged = mergeUpdate(current, patch);
+  const merged = mergeUpdate(deps, module, current, patch);
+  const requested = typeof patch.newSlug === 'string' ? patch.newSlug.trim() : '';
+  const target = requested && requested !== slug ? requested : slug;
 
   /**
-   * Rename FIRST, then write the payload against the new slug.
+   * Rename and payload write in ONE transaction.
    *
-   * `renameProjectionRow` moves the row and everything keyed off it (tier C's
-   * keyed collections repoint through `ON UPDATE CASCADE`) in one transaction.
-   * Doing it the other way — write, then rename — would capture an
-   * `entity_version` against a slug that is about to stop existing.
+   * The order within it is rename-then-write, as tier C's keyed collections
+   * need (`renameProjectionRow` repoints them through `ON UPDATE CASCADE`, and
+   * capturing an `entity_version` against a slug about to stop existing would
+   * be worse). What the transaction adds is that a payload rejected AFTER the
+   * rename no longer leaves the entity moved: the first version of this
+   * answered `400 VALIDATION` while the row had already changed slug, the file
+   * still sat at the old one, and the next rebuild resurrected it as a second
+   * entity.
    */
-  const requested = typeof patch.newSlug === 'string' ? patch.newSlug.trim() : '';
-  let target = slug;
-  if (requested && requested !== slug) {
-    renameProjectionRow(deps.projection, module, slug, requested, actor, MUTATE);
-    target = requested;
-  }
+  const warnings = inOneTransaction(deps, () => {
+    if (target !== slug) renameProjectionRow(deps.projection, module, slug, target, actor, ROW_ONLY);
+    const result = upsertProjectionRow(deps.projection, module, target, merged, actor, ROW_ONLY);
+    if (Object.prototype.hasOwnProperty.call(patch, 'tags')) {
+      deps.tags.assignTags(type as RawEntityType, target, Array.isArray(patch.tags) ? (patch.tags as string[]) : []);
+    }
+    capture(deps, type, target, result.op, actor);
+    return result.warnings ?? [];
+  });
 
-  const result = upsertProjectionRow(deps.projection, module, target, merged, actor, MUTATE);
-  if (Object.prototype.hasOwnProperty.call(patch, 'tags')) {
-    deps.tags.assignTags(type as RawEntityType, target, Array.isArray(patch.tags) ? (patch.tags as string[]) : []);
-  }
   if (target !== slug) deps.store.remove(type, slug);
   deps.store.persist(type, target);
-  return result.warnings?.length ? { slug: target, warnings: result.warnings } : { slug: target };
+  return warnings.length ? { slug: target, warnings } : { slug: target };
 }
 
 /** `DELETE /api/{type}s/:slug` and `delete_entities`, for a type with no service. */
@@ -200,7 +285,7 @@ export function genericDelete(
   actor: ChangedBy,
 ): { deleted: boolean } {
   const module = requireModule(deps, type);
-  const result = removeProjectionRow(deps.projection, module, slug, actor, MUTATE);
+  const result = removeProjectionRow(deps.projection, module, slug, actor, DELETE_OPTS);
   if (result.deleted) deps.store.remove(type, slug);
   return result;
 }

@@ -27,10 +27,38 @@ const WIDGET_DATA: DataDeclaration = {
     name: { kind: 'string', required: true },
     status: { kind: 'enum', values: ['draft', 'live'], default: 'draft' },
     note: { kind: 'string', clearable: true },
+    /**
+     * A field whose COLUMN differs from its NAME. The first version of this
+     * fixture had none, and that gap hid a data loss: `hydrate` keys the row by
+     * column while the write path is keyed by field, so an unrelated PATCH
+     * blanked every camelCase field of a declaratively-authored type.
+     */
+    ownerSlug: { kind: 'string', column: 'owner_slug', clearable: true },
+    /** Same idea for `required`: this one made the entity UNPATCHABLE. */
+    kindLabel: { kind: 'string', column: 'kind_label', required: true, default: 'plain' },
+    /** An opaque value, to pin that it round-trips rather than gaining a layer of escaping per write. */
+    blob: { kind: 'json' },
     parts: {
       kind: 'collection',
       collection: 'value',
       item: { kind: 'object', fields: { label: { kind: 'string', required: true } } },
+    },
+    /**
+     * A value collection with `keyFields`, so it projects to a table of its own
+     * rather than to embedded JSON — the `endpoint.linkedDtos` shape. It is not
+     * on the parent row, so it is exactly what a naive merge cannot see.
+     */
+    links: {
+      kind: 'collection',
+      collection: 'value',
+      keyFields: ['target'],
+      item: {
+        kind: 'object',
+        fields: {
+          target: { kind: 'string', required: true },
+          rank: { kind: 'number' },
+        },
+      },
     },
     createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
     updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
@@ -104,6 +132,97 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     const cleared = await request(t.app).patch('/api/widgets/tri').send({ note: null });
     expect(cleared.status).toBe(200);
     expect(cleared.body.data.note).toBeNull();
+  });
+
+  /**
+   * The four defects a high-effort review found in the first version of the
+   * generic write door. Each is data loss, and each was invisible to the
+   * original fixture because it declared no column override, no table-backed
+   * collection and no opaque value.
+   */
+  /**
+   * These assert against the PROJECTION rather than the response body, because
+   * the projection is what the bugs destroyed — and because a generic view
+   * (a type with no computed views, which is the whole point of this fixture)
+   * spreads the row and is therefore keyed by COLUMN name, so the response is
+   * the wrong instrument for a defect that is about field-vs-column keying.
+   */
+  const row = () => t.db.prepare(`SELECT * FROM widget WHERE slug = ?`).get('owned') as Record<string, unknown>;
+
+  it('an unrelated PATCH leaves a column-renamed field alone', async () => {
+    await request(t.app).post('/api/widgets').send({ name: 'Owned', ownerSlug: 'me', kindLabel: 'special' });
+    const patched = await request(t.app).patch('/api/widgets/owned').send({ name: 'Owned Renamed' });
+    expect(patched.status).toBe(200);
+    // Was `null`: the merge base was keyed by column (`owner_slug`) and the
+    // upsert reads field names, so `ownerSlug` was absent and written as default.
+    expect(row().owner_slug).toBe('me');
+    // Was a 400 "kindLabel is required" — the same miss, on a required field,
+    // made the entity impossible to patch at all.
+    expect(row().kind_label).toBe('special');
+  });
+
+  it('an unrelated PATCH leaves a table-backed value collection alone', async () => {
+    await request(t.app)
+      .post('/api/widgets')
+      .send({ name: 'Linked', links: [{ target: 'a', rank: 1 }, { target: 'b', rank: 2 }] });
+    const links = () => t.rawReader.readCollection('widget', 'linked', 'links');
+    expect(links()).toHaveLength(2);
+
+    const patched = await request(t.app).patch('/api/widgets/linked').send({ note: 'unrelated' });
+    expect(patched.status).toBe(200);
+    // Was `[]`: the collection lives in its own table, so the merge base never
+    // carried it and the upsert read "absent" as "empty" and DELETEd every row.
+    expect(links()).toHaveLength(2);
+  });
+
+  it('a rejected payload does not leave the entity renamed', async () => {
+    await request(t.app).post('/api/widgets').send({ name: 'Stable' });
+    const res = await request(t.app)
+      .patch('/api/widgets/stable')
+      .send({ newSlug: 'moved', status: 'archived' });
+    expect(res.status).toBe(400);
+    // The rename used to commit in its own transaction BEFORE the payload
+    // write, so a 400 left the row moved, the file at the old slug, and the
+    // next rebuild resurrecting the old entity as a second one.
+    expect((await request(t.app).get('/api/widgets/stable')).status).toBe(200);
+    expect((await request(t.app).get('/api/widgets/moved')).status).toBe(404);
+  });
+
+  it('round-trips an opaque json value instead of re-escaping it', async () => {
+    await request(t.app).post('/api/widgets').send({ name: 'Blobby', blob: { a: 1, b: ['x'] } });
+    const res = await request(t.app).get('/api/widgets/blobby');
+    // Came back as the STRING '{"a":1,"b":["x"]}' — `hydrate` decoded only
+    // object/record/collection columns, and `persist` rewrites the file from the
+    // row, so every write added another layer of escaping to the source of truth.
+    expect(res.body.data.blob).toEqual({ a: 1, b: ['x'] });
+
+    // A scalar arm too — this is what `design-system`'s token values are.
+    await request(t.app).post('/api/widgets').send({ name: 'Scalar', blob: '#2563eb' });
+    expect((await request(t.app).get('/api/widgets/scalar')).body.data.blob).toBe('#2563eb');
+  });
+
+  it('records the tags on the version it captures, not an empty list', async () => {
+    const created = await request(t.app).post('/api/widgets').send({ name: 'Tagged', tags: ['keep'] });
+    expect(created.status).toBe(201);
+    const captured = t.db
+      .prepare(`SELECT data FROM entity_version WHERE entity_type = 'widget' AND entity_slug = 'tagged' ORDER BY version`)
+      .all() as Array<{ data: string }>;
+    expect(captured.length).toBeGreaterThan(0);
+    // Tags were assigned AFTER the capture, so every version recorded `tags: []`
+    // and restoring one — or diffing it in a release — dropped them.
+    expect(JSON.parse(captured[0]!.data).tags).toEqual(['keep']);
+  });
+
+  it('accepts a create that omits a required field carrying a default', async () => {
+    // The generated schema calls `kindLabel` optional because it has a default;
+    // the write path used to reject it as missing anyway, so the schema and the
+    // only door it feeds disagreed about the same declaration.
+    const res = await request(t.app).post('/api/widgets').send({ name: 'Defaulted' });
+    expect(res.status).toBe(201);
+    const stored = t.db.prepare(`SELECT kind_label FROM widget WHERE slug = ?`).get('defaulted') as {
+      kind_label: string;
+    };
+    expect(stored.kind_label).toBe('plain');
   });
 
   it('rejects null for a field that is not clearable, with 400 and not 500', async () => {

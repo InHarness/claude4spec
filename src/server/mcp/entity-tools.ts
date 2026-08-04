@@ -129,13 +129,28 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   };
 
   /**
-   * 2.0.0 (item 27) — GENERATED from `data.schema`, never read off
-   * `backend.crud`. The slot is gone: a type declares its fields once and the
-   * validator a write passes through is derived from the same declaration the
-   * projection is.
+   * 2.0.0 (item 27) — generated from `data.schema`, for a type that has stopped
+   * hand-writing its own.
+   *
+   * A DECLARED `backend.crud` still wins while it exists, and that is the same
+   * staging the generated REST router uses, for the same reason: the six
+   * built-in types still write through their own services, and those services
+   * only honour the fields their hand-written schemas named. Publishing the
+   * generated (wider) schema over a narrower service is not a cosmetic
+   * mismatch — it advertises `endpoint.linkedDtos` and an explicit `slug` to an
+   * agent, accepts both, and drops them with no error and no warning. Better to
+   * describe what the write path will actually do.
+   *
+   * Tier K deletes `backend.crud` along with the services, and every type falls
+   * through to the generated branch with nothing else to change.
    */
-  const createSchemaOf = (module: BackendModule) => z.object(buildCreateShape(module.data!));
-  const updateSchemaOf = (module: BackendModule) => z.object(buildUpdateShape(module.data!));
+  const createSchemaOf = (module: BackendModule) =>
+    module.backend?.crud ? z.object(module.backend.crud.createSchema) : z.object(buildCreateShape(module.data!));
+  const updateSchemaOf = (module: BackendModule) => {
+    const declared = module.backend?.crud;
+    if (!declared) return z.object(buildUpdateShape(module.data!));
+    return declared.updateSchema ? z.object(declared.updateSchema) : z.object(declared.createSchema).partial();
+  };
 
   /**
    * The generic write door, for a type with no service.

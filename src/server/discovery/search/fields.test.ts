@@ -51,11 +51,21 @@ describe('hostDefaultFields', () => {
     expect(out).toContain('composites.$value.note');
   });
 
-  it('gives a `json` leaf no searchable path — it is opaque by declaration', () => {
-    // The host does not know what is inside, so it cannot promise to have
-    // searched it. `searchedFields` is a promise about what WAS consulted.
+  it('gives a `json` leaf its OWN path and no children', () => {
+    /**
+     * The host cannot name a path INSIDE an opaque value, but it can still
+     * offer the value itself — `valuesAtPath` keeps only the strings it
+     * selects, so a token holding `"#2563eb"` matches and one holding
+     * `{fontSize:'16px'}` does not.
+     *
+     * Emitting nothing at all was the first cut, and it was a silent
+     * regression: `design-system` token values were reachable through the
+     * `record<string,string>` node `json` replaced, so a query that used to hit
+     * would return nothing with `searchedFields` no longer naming the path —
+     * the omission invisible as the cause.
+     */
     const out = paths(designSystemData);
-    expect(out).not.toContain('groups[].tokens[].value');
+    expect(out).toContain('groups[].tokens[].value');
     expect(out).not.toContain('groups[].tokens[].value.$value');
     // The named leaves around it stay in scope.
     expect(out).toEqual(expect.arrayContaining(['groups[].tokens[].name', 'groups[].tokens[].type']));

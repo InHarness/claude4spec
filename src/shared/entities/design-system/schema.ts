@@ -15,6 +15,11 @@ import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
  */
 const tokenValue: FieldNode = {
   kind: 'json',
+  // A token without a value is not a token. The retired hand-written
+  // `tokenSchema` had it mandatory, and `required` has to be restated here
+  // because the flag travels on the NODE — swapping `record` for `json` dropped
+  // it, which would have let `{name, type}` through with no value at all.
+  required: true,
   description:
     'Literal ("#2563eb", "16px"), an alias "{token-name}", or a composite object (typography/shadow).',
 };
@@ -40,6 +45,11 @@ export const designSystemData: DataDeclaration = {
           tokens: {
             kind: 'collection',
             collection: 'value',
+            // A group carries its token list, even when empty — the retired
+            // hand-written `groupSchema` had it mandatory. Restated because
+            // `required` travels on the node, and nothing else in the host
+            // reads it for a nested collection.
+            required: true,
             item: {
               kind: 'object',
               fields: {
@@ -71,6 +81,8 @@ export const designSystemData: DataDeclaration = {
           overrides: {
             kind: 'collection',
             collection: 'value',
+            // Same rule as `groups[].tokens` above.
+            required: true,
             item: {
               kind: 'object',
               fields: {

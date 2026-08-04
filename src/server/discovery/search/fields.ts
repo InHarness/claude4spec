@@ -192,6 +192,23 @@ function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[]
     if (node.kind === 'record') {
       visit(node.key, `${path}.$key`, depth + 1);
       visit(node.value, `${path}.$value`, depth + 1);
+      return;
+    }
+    if (node.kind === 'json') {
+      /**
+       * The node's OWN path, and no children — the host does not know what is
+       * inside, so it cannot name a path within it.
+       *
+       * Emitting it is not a formality: `valuesAtPath` keeps only the string
+       * values it selects, so a `json` holding `"#2563eb"` is matched and one
+       * holding `{fontSize: '16px'}` is not. That is the honest split, and it
+       * keeps `design-system` token values searchable — they were reachable
+       * through the `record<string,string>` node this replaced, and dropping
+       * them silently would have made a query that used to hit return nothing
+       * with `searchedFields` no longer naming the path, so the omission would
+       * not even be visible as the cause.
+       */
+      push(path);
     }
   };
 

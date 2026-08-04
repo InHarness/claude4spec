@@ -38,6 +38,38 @@ function requiredKeys(shape: ZodRawShape): string[] {
   return (json.required ?? []).slice().sort();
 }
 
+/**
+ * Every `required` list in the schema, at EVERY depth, keyed by its path.
+ *
+ * The flat `requiredKeys` above compares the top level only, and a real defect
+ * hid under exactly that: swapping `design-system`'s token value from a `record`
+ * node to a `json` one dropped its mandatory-ness, because `required` travels on
+ * the node. `{name, type}` with no `value` became a legal token and the golden
+ * was silent, since `value` is a field of a collection ITEM, not of the type.
+ */
+function requiredTree(shape: ZodRawShape): Record<string, string[]> {
+  const json = z.toJSONSchema(z.object(shape), { io: 'input' });
+  const out: Record<string, string[]> = {};
+  const walk = (node: unknown, path: string): void => {
+    if (!node || typeof node !== 'object') return;
+    const n = node as Record<string, unknown>;
+    if (Array.isArray(n.required) && n.required.length) {
+      out[path || '.'] = (n.required as string[]).slice().sort();
+    }
+    if (n.properties && typeof n.properties === 'object') {
+      for (const [k, v] of Object.entries(n.properties as Record<string, unknown>)) walk(v, `${path}.${k}`);
+    }
+    if (n.items) walk(n.items, `${path}[]`);
+    // `.optional()` and `.nullable()` wrap in anyOf/oneOf; walk through them or
+    // every optional object's inner required list is invisible.
+    for (const key of ['anyOf', 'oneOf', 'allOf']) {
+      if (Array.isArray(n[key])) for (const branch of n[key] as unknown[]) walk(branch, path);
+    }
+  };
+  walk(json, '');
+  return out;
+}
+
 /** Fields whose domain admits `null` — the tri-state's visible half. */
 function nullableKeys(shape: ZodRawShape): string[] {
   const out: string[] = [];
@@ -125,6 +157,13 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
       // with three flags (`required` / `default` / `computedDefault`) and the
       // retired zod spelled it with the presence of `.optional()`.
       expect(requiredKeys(buildCreateShape(data))).toEqual(requiredKeys(create));
+    });
+
+    it('create: the same NESTED fields are mandatory, at every depth', () => {
+      // Not a stronger restatement of the case above — a different one. The
+      // `design-system` token `value` regression lived three levels down, where
+      // a top-level comparison cannot see it.
+      expect(requiredTree(buildCreateShape(data))).toEqual(requiredTree(create));
     });
 
     it('update: nothing is mandatory — omitted means unchanged', () => {

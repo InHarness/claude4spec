@@ -210,7 +210,24 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
     const present = Object.prototype.hasOwnProperty.call(payload, name);
     const raw = present ? payload[name] : undefined;
 
-    if (node.required && (raw === null || raw === undefined)) {
+    /**
+     * `required` means "the column may not hold NULL", and a declared default
+     * satisfies that without the payload carrying anything.
+     *
+     * 0.2.9 item 27 — the check used to fire on any absent `required` field,
+     * defaults included, which put it at odds with the two descriptions on
+     * either side of it: `isNotNull` counts `default`/`computedDefault` as
+     * satisfying NOT NULL, and `valueFor`/`absentValue` on the very next line
+     * fills the value in. `diagram.source` is `required: true, default: ''`, so
+     * a create omitting it passed the generated input schema (which reads the
+     * same three flags) and was then rejected here — the schema and the only
+     * write door it feeds disagreeing about the same declaration.
+     *
+     * An EXPLICIT `null` is still a violation for a required field, since that
+     * is the caller asking for the one value the column cannot hold.
+     */
+    const fillable = node.default !== undefined || node.computedDefault !== undefined;
+    if (node.required && (raw === null || (raw === undefined && !fillable))) {
       violations.push(`${name} is required`);
       continue;
     }
