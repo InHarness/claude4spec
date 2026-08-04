@@ -64,12 +64,14 @@ export function snapshotEntity(
  * so the change lands in `entity_version` like any other — with a GENERIC
  * dispatch, per 0.2.2.
  *
- * The write door is resolved by `host.getEntityService(type)`, so the limit on
- * what can be restored is structural rather than an enumeration of seven core
- * types: any type that contributed a `backend.service` with an upsert facade has
- * one. A type WITHOUT such a service is REPORTED AS A SKIP (`op: 'noop'`) here,
- * not thrown on — that is the difference between "a deactivated type was not
- * restored" and "the whole restore died on a missing per-type method".
+ * 0.2.9 (brief item 6) removed the last enumeration here. The write door used to
+ * be `host.getEntityService(type)`, so a type that declared its data but
+ * contributed no service was REPORTED AS A SKIP — restorable in principle,
+ * silently dropped in practice. `EntityWriter.upsert` now falls through to the
+ * host's own projection write for exactly that case, so there is nothing left to
+ * pre-check: an active type is a writable type. The remaining `null` from the
+ * writer (type not active at all) is still degraded to a skip, but by the writer
+ * and one layer down, where the distinction is actually known.
  */
 export function restoreEntity(
   host: PluginHost,
@@ -81,13 +83,6 @@ export function restoreEntity(
   if (!module) throw new SnapshotNotImplementedError(type);
   const fn = module.serializer.restore;
   if (!fn) throw new SnapshotNotImplementedError(type);
-  if (!host.getEntityService(type)) {
-    return {
-      op: 'noop',
-      entity: null,
-      warnings: [`entity service for type '${type}' is not available — restore skipped`],
-    };
-  }
   /**
    * 0.2.4 — detach the envelope and put it on the WRITER, not in the payload.
    *

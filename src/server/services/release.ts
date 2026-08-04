@@ -1268,7 +1268,10 @@ export class ReleaseService {
     if (!releaseRow) throw new DomainError('NOT_FOUND', `release '${input.releaseId}' not found`);
 
     const targetRow = this.latestEntityRowForSlug(input.type, input.slug, releaseRow.id);
-    const writer = new HostEntityWriter(this.host, this.tagsService);
+    const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
+      db: this.db,
+      versions: this.versions,
+    });
     const restoreCtx: RestoreContext = {
       reader: this.rawReader,
       writer,
@@ -1649,7 +1652,10 @@ export class ReleaseService {
       // 4. Entities — UPSERT via host.restore in dependency order (DTO before
       //    Endpoint, which references DTO slugs). Each lands as an entity_version
       //    row with release_id = NULL (the normal write-API capture).
-      const writer = new HostEntityWriter(this.host, this.tagsService);
+      const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
+        db: this.db,
+        versions: this.versions,
+      });
       const restoreCtx: RestoreContext = {
         reader: this.rawReader,
         writer,

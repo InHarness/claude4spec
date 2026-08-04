@@ -55,7 +55,13 @@ export class EntityIndexerService {
   private indexCtx(): RestoreContext {
     return {
       reader: this.reader,
-      writer: new HostEntityWriter(this.host, this.tags, { capture: false }),
+      // `versions: null` alongside `capture: false` — the rebuild reconstructs
+      // the index from files it already trusts, so it captures nothing, and the
+      // projection door must have no way to capture either.
+      writer: new HostEntityWriter(this.host, this.tags, { capture: false }, {
+        db: this.db,
+        versions: null,
+      }),
       releaseId: null,
       actor: 'user',
     };

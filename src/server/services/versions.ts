@@ -78,7 +78,7 @@ export class VersionService {
 
     const { reader, host } = this.snapshotDeps;
     const { entityStore, tagsService } = this.restoreDeps;
-    const writer = new HostEntityWriter(host, tagsService);
+    const writer = new HostEntityWriter(host, tagsService, {}, { db: this.db, versions: this });
     const ctx: RestoreContext = { reader, writer, releaseId: null, actor };
 
     // A version captured as a delete tombstone has no restorable snapshot —
