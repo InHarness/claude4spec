@@ -23,6 +23,7 @@ import {
   columnOf,
   hasProjectionTable,
   isEmbedded,
+  payloadFieldsOf,
   walkSchema,
   type CollectionNode,
   type CountPredicate,
@@ -149,6 +150,32 @@ function checkAxes(
         `rather than a separate primitive. Got ${axes ? axes.length : 0}`,
     );
     return;
+  }
+
+  /**
+   * A keyed collection must carry at least one field that is NOT part of its
+   * key, and this is a refusal rather than a tolerated shape.
+   *
+   * A presence-style grid — where the existence of the key IS the datum, like a
+   * seating chart or an occupancy mask — is a reasonable thing to want and is
+   * fundamentally incompatible with sparse discipline: "an empty item is not
+   * stored" is judged on the non-key fields, so with none to judge, EVERY entry
+   * is empty and every write deletes the key it just named. There is no
+   * behaviour to fall back to.
+   *
+   * Caught here because the alternative is much worse: the generated upsert's
+   * assignment list is also empty, so `db.prepare` raises a bare
+   * `near ")": syntax error` at the first write, aborting the entity's whole
+   * transaction with a message naming no field and no type.
+   */
+  if (!payloadFieldsOf(node).length) {
+    fail(
+      type,
+      `keyed collection "${path}" declares no field outside its key ` +
+        `(${(node.keyFields ?? []).join(', ')}). Sparse discipline judges emptiness on the ` +
+        `non-key fields, so a key-only collection would treat every entry as empty and delete ` +
+        `it — declare what a cell holds, or model presence as a value collection`,
+    );
   }
 
   const keys = new Set(node.keyFields ?? []);

@@ -31,7 +31,7 @@
  * spends its correctness budget on.
  */
 
-import type { Database } from 'better-sqlite3';
+import type { Database, Statement } from 'better-sqlite3';
 import {
   axesOf,
   columnOf,
@@ -299,49 +299,32 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
   const warnings: string[] = [];
 
   /**
-   * `newSlug` renames IN PLACE, and it has to be an UPDATE of the existing row
-   * rather than an insert at the new slug (item 23).
+   * `newSlug` is REFUSED here, and belongs to `renameProjectionRow` instead.
    *
-   * Every projection table binds to the parent with `ON UPDATE CASCADE`, so an
-   * in-place `UPDATE … SET slug = ?` carries the whole collection across in the
-   * SAME statement — which is exactly what item 23 asks for and what the six
-   * hand-written services already do. Insert-then-delete would not: the new row
-   * starts with an empty collection, and the delete then cascades the old rows
-   * away, so a rename would silently empty a keyed collection of any size.
+   * An earlier revision of this tier handled it inline, and a review found what
+   * that costs. This function is a FULL-REPLACE door: every declared column is
+   * named unconditionally, so a field the payload omits is written back as its
+   * default. That is correct for the payloads it exists to serve (a restore, a
+   * rebuild — both complete), and catastrophic for a rename, which is inherently
+   * partial: `{ name, newSlug }` renamed the row and reset `nRows`/`nCols` to 0,
+   * so the grid reported itself as 0×0 while its cells sat untouched in the
+   * table, and every window came back empty.
    *
-   * This is the door a SERVICELESS type renames through. A type with a service
-   * never reaches it (`HostEntityWriter` prefers the service, which does its own
-   * rename), but a declaratively-authored type — the whole point of Host API
-   * 2.0.0, and the likeliest author of a keyed collection — had no rename door
-   * at all before this.
+   * Refused rather than ignored. A caller that passes `newSlug` believes it is
+   * renaming; silently dropping it would leave them with an un-renamed entity
+   * and no error, which is the failure this one is meant to replace.
    */
-  const requested = payload.newSlug;
-  const renameTo =
-    typeof requested === 'string' && requested.trim() && requested.trim() !== slug
-      ? requested.trim()
-      : null;
-  if (renameTo && !existing) {
-    throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
-  }
-  if (renameTo && rowExists(db, table, renameTo)) {
+  if (typeof payload.newSlug === 'string' && payload.newSlug.trim() && payload.newSlug.trim() !== slug) {
     throw new DomainError(
-      'SLUG_CONFLICT',
-      `${module.type} slug '${renameTo}' already exists`,
+      'VALIDATION',
+      `${module.type}/${slug}: this door replaces every declared field, so it cannot carry a ` +
+        `rename — a partial payload would reset the fields it does not mention. Call ` +
+        `renameProjectionRow(…) instead`,
     );
   }
-  const target = renameTo ?? slug;
-  if (renameTo) values[0] = target;
+  const target = slug;
 
   const tx = db.transaction(() => {
-    if (renameTo) {
-      db.prepare(`UPDATE ${table} SET slug = ? WHERE slug = ?`).run(renameTo, slug);
-      // `entity_tag` has no FK to the entity table, so it does not cascade —
-      // the same explicit fix-up every hand-written service makes.
-      db.prepare(
-        `UPDATE entity_tag SET entity_slug = ? WHERE entity_type = ? AND entity_slug = ?`,
-      ).run(renameTo, module.type, slug);
-    }
-
     db.prepare(
       `INSERT INTO ${table} (${columns.join(', ')})
        VALUES (${columns.map(() => '?').join(', ')})
@@ -402,6 +385,86 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
   // `HostEntityWriter` syncs projection tables against exactly this value.
   const entity = { ...payload, slug: target } as T;
   return warnings.length ? { entity, op, warnings } : { entity, op };
+}
+
+/**
+ * Move an entity to a new slug, and NOTHING else (item 23).
+ *
+ * Its own operation rather than a flag on the upsert, because the upsert is a
+ * full-replace door: a rename payload is partial by nature, and running it
+ * through a door that names every column writes the omitted ones back as their
+ * defaults. That is how an earlier revision renamed a grid and reset its
+ * dimensions to 0×0 in the same statement.
+ *
+ * The rename is an in-place `UPDATE … SET slug = ?`, which is what carries a
+ * keyed collection across: every projection table binds to the parent with
+ * `ON UPDATE CASCADE`, so the rows follow in the same statement. Insert-then-
+ * delete would not — the new row would start empty and the delete would cascade
+ * the old rows away.
+ *
+ * This is the door a SERVICELESS type renames through. A type with a service
+ * never reaches it (`HostEntityWriter` prefers the service, which does its own
+ * rename), but a declaratively-authored type — the point of Host API 2.0.0, and
+ * the likeliest author of a keyed collection — had none at all.
+ */
+export function renameProjectionRow(
+  deps: ProjectionWriteDeps,
+  module: WritableModule,
+  slug: string,
+  newSlug: string,
+  actor: ChangedBy,
+  opts: WriteOpts,
+): { renamed: boolean } {
+  if (!module.data?.schema) {
+    throw new DomainError('VALIDATION', `type '${module.type}' declares no data.schema`);
+  }
+  const { db } = deps;
+  const table = mainTableOf(module);
+  const to = newSlug.trim();
+
+  if (!to) throw new DomainError('VALIDATION', 'newSlug resolves to empty');
+  if (to === slug) return { renamed: false };
+  if (!rowExists(db, table, slug)) {
+    throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
+  }
+  if (rowExists(db, table, to)) {
+    throw new DomainError('SLUG_CONFLICT', `${module.type} slug '${to}' already exists`);
+  }
+
+  const tx = db.transaction(() => {
+    try {
+      db.prepare(`UPDATE ${table} SET slug = ? WHERE slug = ?`).run(to, slug);
+    } catch (err) {
+      /**
+       * A declared `fk` from ANOTHER type lands as a plain
+       * `FOREIGN KEY (col) REFERENCES <table>(slug)` with no `ON UPDATE
+       * CASCADE` (see `projection.ts`), so renaming a row something else
+       * references raises a bare SqliteError — which the HTTP layer reports as
+       * `500 INTERNAL: FOREIGN KEY constraint failed`. That is a refusal, not a
+       * server fault, and it has to read as one.
+       */
+      const message = (err as Error).message ?? '';
+      if (/FOREIGN KEY constraint failed/i.test(message)) {
+        throw new DomainError(
+          'SLUG_CONFLICT',
+          `${module.type} '${slug}' cannot be renamed: another entity references it through a ` +
+            `declared foreign key. Repoint or remove those references first`,
+        );
+      }
+      throw err;
+    }
+    // `entity_tag` carries no FK to the entity table, so it does not cascade —
+    // the same explicit fix-up every hand-written service makes.
+    db.prepare(
+      `UPDATE entity_tag SET entity_slug = ? WHERE entity_type = ? AND entity_slug = ?`,
+    ).run(to, module.type, slug);
+
+    stampParent(deps, module, to, opts);
+    capture(deps, module, to, actor, opts);
+  });
+  tx();
+
+  return { renamed: true };
 }
 
 /**
@@ -738,6 +801,42 @@ function isEmptyKeyedItem(node: CollectionNode, row: Record<string, unknown>): b
  * mention, a windowed write does not — and that difference is the caller's to
  * apply, not this function's.
  */
+/**
+ * The coordinate a key field carries, or `null` when it is not a usable one.
+ *
+ * A coordinate must be a positive integer, and that is enforced on the WRITE
+ * side rather than trusted, for a reason specific to this tier: `mutateAxis`
+ * shifts rows by parking them on NEGATIVE coordinates, which is only collision-
+ * free while no real row is negative. One stored `row: -1` — a client bug, a
+ * hand-edited file, a restore from elsewhere — turns every later axis insert or
+ * delete on that entity into a permanent `UNIQUE constraint failed`, and the
+ * 1-based window read can never address the offending cell to remove it.
+ *
+ * Numeric strings are accepted and NORMALIZED. A coordinate arriving as `"3"`
+ * (a CSV import, a hand edit, a JSON round trip through a lax writer) is the
+ * same cell as `3`, and returning the number here is what keeps the reconcile
+ * pass comparing like with like against the INTEGER column it reads back.
+ */
+function coordinateOf(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN;
+  return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/**
+ * The normalized key tuple of one entry, or `null` when any coordinate is
+ * unusable. Shared by the reconcile pass and the apply pass so the two cannot
+ * disagree about which stored row an entry refers to.
+ */
+function keyTupleOf(node: CollectionNode, row: Record<string, unknown>): number[] | null {
+  const out: number[] = [];
+  for (const name of node.keyFields ?? []) {
+    const coordinate = coordinateOf(row[name]);
+    if (coordinate === null) return null;
+    out.push(coordinate);
+  }
+  return out.length ? out : null;
+}
+
 function applyKeyedEntries(
   db: Database,
   module: WritableModule,
@@ -750,55 +849,125 @@ function applyKeyedEntries(
   const binding = bindingColumnOf(module);
   const fields = itemFieldEntries(node);
   const keyColumns = keyColumnsOf(node);
-  const columns = [binding, ...fields.map(([name, n]) => columnOf(name, n))];
+  const payloadColumns = fields.filter(([name]) => !(node.keyFields ?? []).includes(name));
 
-  const upsert = db.prepare(
-    `INSERT INTO ${table} (${columns.join(', ')})
-     VALUES (${columns.map(() => '?').join(', ')})
-     ON CONFLICT(${[binding, ...keyColumns].join(', ')}) DO UPDATE SET ${columns
-       .filter((c) => c !== binding && !keyColumns.includes(c))
-       .map((c) => `${c} = excluded.${c}`)
-       .join(', ')}`,
-  );
   const remove = db.prepare(
     `DELETE FROM ${table} WHERE ${binding} = ? AND ${keyColumns
       .map((c) => `${c} = ?`)
       .join(' AND ')}`,
   );
 
+  /**
+   * One prepared upsert PER SET OF CARRIED FIELDS, not one for the whole call.
+   *
+   * A windowed write is documented as a merge, and an earlier revision merged
+   * only at KEY granularity: it named every item column unconditionally and
+   * bound `absentValue` for the ones the entry omitted, so updating a cell's
+   * `value` silently nulled its `note`. Naming only the columns the entry
+   * actually carries makes the merge hold at FIELD granularity too — an omitted
+   * field keeps whatever is stored.
+   *
+   * Cached by column set because a payload is overwhelmingly homogeneous (every
+   * cell of a grid carries the same fields), so this is one prepare in practice.
+   */
+  const upserts = new Map<string, Statement<Array<string | number | null>>>();
+  const upsertFor = (carried: Array<[string, FieldNode]>) => {
+    const cols = [binding, ...keyColumns, ...carried.map(([name, n]) => columnOf(name, n))];
+    const cacheKey = cols.join(',');
+    const cached = upserts.get(cacheKey);
+    if (cached) return cached;
+    {
+      const assignments = carried.map(([name, n]) => {
+        const column = columnOf(name, n);
+        return `${column} = excluded.${column}`;
+      });
+      const statement = db.prepare<Array<string | number | null>>(
+        `INSERT INTO ${table} (${cols.join(', ')})
+         VALUES (${cols.map(() => '?').join(', ')})
+         ON CONFLICT(${[binding, ...keyColumns].join(', ')}) DO ${
+           /**
+            * `DO NOTHING` when the entry carries no payload field at all.
+            * Emitting `DO UPDATE SET ` with an empty assignment list is a raw
+            * SQL syntax error thrown by `prepare`, before a single row is
+            * looked at — which would abort the whole entity's transaction with
+            * an opaque database message.
+            */
+           assignments.length ? `UPDATE SET ${assignments.join(', ')}` : 'NOTHING'
+         }`,
+      );
+      upserts.set(cacheKey, statement);
+      return statement;
+    }
+  };
+
   const warnings: string[] = [];
+  const seen = new Set<string>();
+
   for (const row of rows) {
-    const keyValues = (node.keyFields ?? []).map((k) => row[k]);
-    if (keyValues.some((v) => v === undefined || v === null)) {
+    const key = keyTupleOf(node, row);
+    if (!key) {
       warnings.push(
-        `${module.type}/${slug}: ${field} entry is missing part of its key ` +
-          `(${(node.keyFields ?? []).join(', ')}) — skipped`,
+        `${module.type}/${slug}: ${field} entry has an unusable key ` +
+          `(${(node.keyFields ?? []).join(', ')} must each be an integer >= 1, got ` +
+          `${JSON.stringify((node.keyFields ?? []).map((k) => row[k]))}) — skipped`,
       );
       continue;
     }
 
-    if (isEmptyKeyedItem(node, row)) {
-      remove.run(slug, ...(keyValues as Array<string | number>));
-      continue;
-    }
-
-    const badEnum = fields.find(([name, n]) => enumViolation(n, row[name]) !== null);
-    if (badEnum) {
-      const [name, n] = badEnum;
+    /**
+     * FIRST ENTRY WINS, with a warning — the same rule the value path applies,
+     * and it has to be the same one. Last-wins let a duplicated line whose
+     * second copy is empty delete the content the first copy wrote: the
+     * reconcile pass keeps the key (it IS in the dump) and then the apply pass
+     * removes it, so a git merge that duplicated one row silently emptied a
+     * cell with nothing logged.
+     */
+    const dedupe = JSON.stringify(key);
+    if (seen.has(dedupe)) {
       warnings.push(
-        `${module.type}/${slug}: ${field}.${name} — ${enumViolation(n, row[name])} — entry skipped`,
+        `${module.type}/${slug}: ${field} lists ${dedupe} more than once — kept the first`,
       );
       continue;
     }
+    seen.add(dedupe);
 
+    /**
+     * Both arms are inside the try, and that is a fix rather than tidiness. The
+     * delete used to sit outside it while binding RAW payload values, so a
+     * coordinate SQLite cannot bind threw straight out of the caller's
+     * transaction — and the indexer turns a throwing restore into "skip this
+     * entity", emptying the collection. The identical value in a non-empty cell
+     * was caught and warned, so the safe and unsafe paths were inverted.
+     */
     try {
-      upsert.run(
-        slug,
-        ...fields.map(([name, n]) => {
-          const raw = row[name];
-          return raw === undefined ? absentValue(n) : encode(n, raw);
-        }),
+      if (isEmptyKeyedItem(node, row)) {
+        remove.run(slug, ...key);
+        continue;
+      }
+
+      const carried = payloadColumns.filter(([name]) =>
+        Object.prototype.hasOwnProperty.call(row, name),
       );
+
+      const badEnum = carried.find(([name, n]) => enumViolation(n, row[name]) !== null);
+      if (badEnum) {
+        const [name, n] = badEnum;
+        warnings.push(
+          `${module.type}/${slug}: ${field}.${name} — ${enumViolation(n, row[name])} — entry skipped`,
+        );
+        continue;
+      }
+
+      /**
+       * ONE spread, after the positional `slug`. better-sqlite3's `run` is typed
+       * with a leading parameter plus a rest, so neither a fully-spread array
+       * nor two consecutive spreads type-check against it.
+       */
+      const rest: Array<string | number | null> = [
+        ...key,
+        ...carried.map(([name, n]) => encode(n, row[name])),
+      ];
+      upsertFor(carried).run(slug, ...rest);
     } catch (err) {
       /**
        * Degraded to a warning for the same reason the value path degrades: an
@@ -807,7 +976,7 @@ function applyKeyedEntries(
        * than preserving the rows that were fine.
        */
       warnings.push(
-        `${module.type}/${slug}: ${field} entry ${JSON.stringify(keyValues)} rejected by the ` +
+        `${module.type}/${slug}: ${field} entry ${JSON.stringify(key)} rejected by the ` +
           `database — ${(err as Error).message}`,
       );
     }
@@ -841,20 +1010,51 @@ export function reconcileKeyedCollection(
   const binding = bindingColumnOf(module);
   const keyColumns = keyColumnsOf(node);
 
-  // Absent or non-array means the payload said "no items", which for a
-  // replace-all is an instruction to empty the collection — the caller decides
-  // whether to call at all (`hasOwnProperty`), and by the time we are here it has.
-  const items = Array.isArray(value) ? value : [];
+  /**
+   * A PRESENT but non-array value is REFUSED, not read as empty.
+   *
+   * The tier-C placeholder this replaced threw `VALIDATION` on every keyed
+   * write, and quietly widening that into `Array.isArray(value) ? value : []`
+   * lost the one guarantee it was carrying: `cells: null` in a file — a hand
+   * edit, a lax writer, a payload upgrade that dropped the branch — became "empty
+   * the collection", the reindex deleted every stored cell, and the next
+   * `persist` wrote the emptied grid back into the source of truth. A whole
+   * spreadsheet, lost by a rebuild that reported success.
+   *
+   * `undefined` never reaches here: both callers check `hasOwnProperty` first,
+   * because for a keyed collection silence means "leave it alone".
+   */
+  if (!Array.isArray(value)) {
+    throw new DomainError(
+      'VALIDATION',
+      `${module.type}/${slug}: ${field} is a keyed collection, so it must be a list of items — ` +
+        `got ${value === null ? 'null' : typeof value}. Omit the field entirely to leave the ` +
+        `collection untouched`,
+    );
+  }
+  const items = value;
   const rows: Array<Record<string, unknown>> = items.map((entry) =>
     node.item.kind === 'object'
       ? ((entry as Record<string, unknown>) ?? {})
       : { value: entry },
   );
 
+  /**
+   * Both sides of this comparison are NORMALIZED through `keyTupleOf`.
+   *
+   * `existing` comes back from SQLite as INTEGER columns while the payload may
+   * carry `"3"` (a CSV import, a hand edit, a JSON round trip through a lax
+   * writer). Comparing raw payload values against decoded column values made
+   * `"3" !== 3`, so the delete pass removed a stored cell that the dump plainly
+   * still contained — and if the re-insert was then skipped (an enum violation
+   * on a sibling field, a database rejection degraded to a warning), the cell
+   * was gone, from a rebuild that reported only a warning.
+   */
   const kept = new Set(
     rows
       .filter((row) => !isEmptyKeyedItem(node, row))
-      .map((row) => JSON.stringify((node.keyFields ?? []).map((k) => row[k] ?? null))),
+      .map((row) => JSON.stringify(keyTupleOf(node, row)))
+      .filter((key) => key !== 'null'),
   );
 
   const existing = db
@@ -867,7 +1067,7 @@ export function reconcileKeyedCollection(
       .join(' AND ')}`,
   );
   for (const row of existing) {
-    const key = JSON.stringify(keyColumns.map((c) => row[c] ?? null));
+    const key = JSON.stringify(keyColumns.map((c) => Number(row[c])));
     if (kept.has(key)) continue;
     remove.run(slug, ...(keyColumns.map((c) => row[c]) as Array<string | number>));
   }
@@ -983,6 +1183,27 @@ export function mutateAxis(
   if (!parent) throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
 
   const before = Number(parent.extent ?? 0);
+
+  /**
+   * `at` is bounded against the CURRENT extent, and the bound differs by
+   * operation: you may insert at `before + 1` (appending a position past the
+   * last one is meaningful) but you may only delete a position that exists.
+   *
+   * Without this the extent moved anyway. `delete` at position 99 of a 3-row
+   * grid matched no rows to remove and none to shift, yet still wrote
+   * `extent = 2` — so the last row's cells fell outside the reported dimensions,
+   * `overview` under-reported the grid, and a consumer windowing to the stated
+   * height silently never saw them again.
+   */
+  const max = op === 'insert' ? before + 1 : before;
+  if (at > max) {
+    throw new DomainError(
+      'VALIDATION',
+      `cannot ${op} at position ${at}: the ${axis.key} axis of ${module.type}/${slug} has ` +
+        `${before} position${before === 1 ? '' : 's'}, so the highest ${op} position is ${max}`,
+    );
+  }
+
   const after = op === 'insert' ? before + 1 : Math.max(0, before - 1);
 
   /**
