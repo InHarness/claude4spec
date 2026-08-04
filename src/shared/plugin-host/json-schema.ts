@@ -15,7 +15,7 @@
  */
 
 import type { DataDeclaration, FieldNode } from './data-schema.js';
-import { columnOf } from './data-schema.js';
+import { columnOf, isEmbedded } from './data-schema.js';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -37,9 +37,24 @@ export type ViewName =
  */
 export function nodeSchema(node: FieldNode): JsonSchema {
   const base = baseSchema(node);
-  // `clearable` is the ONLY source of a nullable union: it is the flag that says
-  // "an update may set this to null", which is exactly "null is in the domain".
-  return node.clearable ? { ...base, type: nullable(base.type) } : base;
+  // `clearable` is the ONLY declared source of a nullable union: it is the flag
+  // that says "an update may set this to null", which is exactly "null is in the
+  // domain".
+  return node.clearable ? withNull(base) : base;
+}
+
+/**
+ * Admit `null` into a schema — including into a closed `enum` list.
+ *
+ * Widening `type` alone was wrong for an enum: `{type: ['string','null'], enum:
+ * ['active','deprecated']}` accepts the null by its type and then rejects it by
+ * its enum, so the one value the declaration explicitly permits is the one value
+ * the schema cannot express.
+ */
+function withNull(schema: JsonSchema): JsonSchema {
+  const widened: JsonSchema = { ...schema, type: nullable(schema.type) };
+  if (Array.isArray(schema.enum)) widened.enum = [...schema.enum, null];
+  return widened;
 }
 
 function baseSchema(node: FieldNode): JsonSchema {
@@ -70,9 +85,21 @@ function nullable(type: unknown): unknown {
   return type;
 }
 
-/** A field a READ payload can never carry: an input that never lands, or an index-only column. */
+/**
+ * A field a READ payload can never carry.
+ *
+ * `transientInput` feeds the slug and is never persisted; `localSurrogate` is
+ * index-only. `systemManaged` is the one this file got wrong at first: the
+ * `createdAt`/`updatedAt` pair is declared like any other field, but
+ * `RawEntityReader.hydrate` lifts it OUT of `entity.data` into a separate
+ * `system` slot, and no computed view emits it either. Describing it as a
+ * property — let alone a required one — advertised a contract every single
+ * response violates. The reflection deriver this replaced skipped the same three
+ * columns by name (`id`, `created_at`, `updated_at`); the rule is the same one,
+ * now read off the declaration instead of off the table.
+ */
 function readable(node: FieldNode): boolean {
-  return !node.transientInput && !node.localSurrogate;
+  return !node.transientInput && !node.localSurrogate && !node.systemManaged;
 }
 
 /** `required` in the JSON Schema sense: the payload always carries it. */
@@ -83,14 +110,29 @@ function alwaysPresent(node: FieldNode): boolean {
 function objectSchema(
   fields: Readonly<Record<string, FieldNode>>,
   keyOf: (name: string, node: FieldNode) => string,
+  /**
+   * Generic-view mode. The payload is a projection ROW, so it carries a key for
+   * every embedded column — including the ones holding SQL NULL — and carries no
+   * key at all for a collection that projects to its own table.
+   */
+  row?: boolean,
 ): JsonSchema {
   const properties: Record<string, JsonSchema> = {};
   const required: string[] = [];
   for (const [name, node] of Object.entries(fields)) {
     if (!readable(node)) continue;
+    // A collection with its own table (`endpoint.linkedDtos` → `endpoint_dto`)
+    // is not on the row the generic payload spreads, so a closed schema must not
+    // claim it. A computed view may well resolve it, which is why this only
+    // applies in row mode.
+    if (row && !isEmbedded(node)) continue;
     const key = keyOf(name, node);
-    properties[key] = nodeSchema(node);
-    if (alwaysPresent(node)) required.push(key);
+    const present = alwaysPresent(node);
+    // In row mode an optional field is still PRESENT, holding null — the column
+    // exists and `hydrate` copies every column. So its type has to admit null,
+    // or every entity with an unset optional field fails its own schema.
+    properties[key] = row && !present ? withNull(nodeSchema(node)) : nodeSchema(node);
+    if (present) required.push(key);
   }
   return { type: 'object', properties, required };
 }
@@ -117,28 +159,44 @@ export interface ViewSchemaArgs {
  *     names are PROJECTION COLUMN names, because that is literally what the
  *     generic payload spreads (`snakeCase` unless the field declared `column`).
  *   - COMPUTED (`computed: true`) — the payload comes out of a function the host
- *     cannot introspect. Every computed view in the repo emits the declared
- *     fields plus extras (`_references`, resolved DTOs, counts), so the declared
- *     field set is an honest FLOOR and nothing more: the schema stays open and
- *     is marked `x-computed` so a consumer can tell "what the type declares" from
- *     "what you will actually get". Property names here are the DECLARED field
- *     names, which is what a computed view emits.
+ *     cannot introspect, and the real ones are SELECTIVE: `ac.inline_mention`
+ *     answers `{type, slug, label, href}` out of eight declared fields, while
+ *     `detail` adds `_references` and resolved refs that no declaration mentions.
+ *     So the schema is open, carries NO `required` list, and is marked
+ *     `x-computed`: it says what a field is named and shaped WHEN it appears,
+ *     never that it appears. Property names here are the DECLARED field names,
+ *     which is what a computed view emits.
  *
  * The naming split is a consequence of the generic payload still being column-
  * keyed; it is described here rather than papered over, because a schema that
  * lies about its key names is worse than one that explains itself.
  */
 export function viewSchema({ type, data, view, computed }: ViewSchemaArgs): JsonSchema {
-  const fields = objectSchema(data.schema, computed ? (name) => name : (name, node) => columnOf(name, node));
+  const fields = objectSchema(
+    data.schema,
+    computed ? (name) => name : (name, node) => columnOf(name, node),
+    !computed,
+  );
   const properties: Record<string, JsonSchema> = {
     type: { const: type },
     slug: { type: 'string' },
     tags: { type: 'array', items: { type: 'string' } },
     ...(fields.properties as Record<string, JsonSchema>),
   };
-  const required = ['type', 'slug', 'tags', ...(fields.required as string[])];
   if (computed) {
-    return { type: 'object', properties, required, additionalProperties: true, 'x-computed': true };
+    /**
+     * NO `required` list, deliberately.
+     *
+     * A computed view builds its payload in a function the host cannot read, and
+     * the real ones emit a SMALL selection of the declared fields —
+     * `ac.inline_mention` answers `{type, slug, label, href}` out of eight
+     * declared fields. Deriving `required` from the declaration therefore
+     * published a contract every genuine response violated. The declared fields
+     * remain as a FLOOR of what may appear, which is all the declaration can
+     * honestly say; `type` and `slug` are not required here either, for the same
+     * reason — nothing forces a computed view to emit them.
+     */
+    return { type: 'object', properties, additionalProperties: true, 'x-computed': true };
   }
   return {
     type: 'object',
@@ -148,7 +206,7 @@ export function viewSchema({ type, data, view, computed }: ViewSchemaArgs): Json
       _type: { const: type },
       _view: { const: view },
     },
-    required: [...required, '_generic', '_type', '_view'],
+    required: ['type', 'slug', 'tags', ...(fields.required as string[]), '_generic', '_type', '_view'],
     additionalProperties: false,
   };
 }
@@ -165,7 +223,7 @@ export function searchablePaths(data: DataDeclaration): string[] {
   const paths: string[] = [];
   const walk = (fields: Readonly<Record<string, FieldNode>>, prefix: string): void => {
     for (const [name, node] of Object.entries(fields)) {
-      if (!readable(node) || node.systemManaged) continue;
+      if (!readable(node)) continue;
       const path = prefix ? `${prefix}.${name}` : name;
       if (node.kind === 'string' || node.kind === 'enum') paths.push(path);
       else if (node.kind === 'object') walk(node.fields, path);

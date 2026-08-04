@@ -117,10 +117,26 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   ['singleElement', 'views.single_element'],
   ['elementListItem', 'views.element_list_item'],
   ['taggedListItem', 'views.tagged_list_item'],
+  // `detail` is spelled the same in 1.x and inside `views`, which is exactly why
+  // it has to be listed: a half-migrated manifest that moved the other four and
+  // left this one at the top level is the case that reads as "migrated" and
+  // silently loses `_references`, resolved refs and `_brokenRefs` on every
+  // detail read.
+  ['detail', 'views.detail'],
   ['schema', 'nothing — schemas are derived from data.schema'],
 ];
 
-function assertSerializationContribution(
+/**
+ * The L9 half of registration, exported because it must run for EVERY module,
+ * not only for one lowered from an `EntityContribution`.
+ *
+ * In-repo entities build a `BackendModule` by hand and never pass through
+ * `assertContribution`, so the checks below were reaching exactly the plugins
+ * least likely to need them and skipping the four types shipped in this repo.
+ * `PluginRegistryImpl.registerEntityModule` is the choke point both origins do
+ * share, and it calls this.
+ */
+export function assertSerializationContribution(
   type: string,
   serializer: Record<string, unknown>,
   payloadVersion: number,
@@ -133,10 +149,11 @@ function assertSerializationContribution(
     }
   }
   /**
-   * The manifest slot is the authority; the contribution's copy exists because
-   * the brief declares it there. Two numbers that may disagree are a bug waiting
-   * for the one reader that picks the other one, so disagreement is fatal here
-   * rather than resolved silently at each call site.
+   * The manifest slot is the AUTHORITY and the only thing any consumer reads;
+   * the contribution's copy is an optional echo, kept because the brief declares
+   * the field there. Optional rather than required on purpose — a number every
+   * author must write twice is a number that will eventually be written twice
+   * differently, and nothing outside this check would notice.
    */
   if (serializer.payloadVersion != null && serializer.payloadVersion !== payloadVersion) {
     throw new PluginManifestError(

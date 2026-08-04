@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
+import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
@@ -48,7 +49,8 @@ describe('diagram serializer', () => {
     expect(changes.tag_added).toEqual(['y']);
   });
 
-  it('declares payload version 1', () => {
-    expect(diagramSerializer.payloadVersion).toBe(1);
+  it('declares its payload version on the MANIFEST, not on the contribution', () => {
+    expect(diagramBackendModule.payloadVersion).toBe(1);
+    expect(diagramSerializer.payloadVersion).toBeUndefined();
   });
 });

@@ -120,8 +120,6 @@ function acRestore(data: unknown, ctx: RestoreContext): RestoreResult {
 }
 
 export const acSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 1,
-
   views: {
     inline_mention: (entity) => ({
       type: 'ac',

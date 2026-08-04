@@ -160,8 +160,6 @@ function dtoRestore(data: unknown, ctx: RestoreContext): RestoreResult {
 }
 
 export const dtoSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 1,
-
   views: {
     inline_mention: (entity) => ({
       type: 'dto',

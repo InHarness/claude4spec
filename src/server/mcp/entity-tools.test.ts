@@ -484,11 +484,18 @@ describe('entity-tools: describe_entity_type', () => {
 
   it('describe-all isolates a type whose describeTypes() throws: healthy types survive, bad type gets an entry-level __error', async () => {
     const { deps } = fakeDeps([widgetModule({ type: 'describe-throw' })]);
-    // The outer per-type guard must contain failures beyond schema serialization —
-    // here the core's describeTypes() itself throws for one type.
+    /**
+     * The outer per-type guard must contain failures beyond schema
+     * serialization — here the core's `describeTypes()` itself throws for one
+     * type. 0.2.9 describes the whole batch in ONE call, so a broken type takes
+     * the batch down with it (the stub below models exactly that: it throws for
+     * the all-types call as well as for the type's own). The tool must then fall
+     * back to per-type calls and isolate the damage to that one entry.
+     */
     const original = deps.discovery.describeTypes;
     deps.discovery.describeTypes = ((input: { types?: string[] }) => {
-      if (input.types?.[0] === 'describe-throw') throw new Error('boom-describe');
+      const asked = input.types ?? ['widget', 'no-crud', 'describe-throw'];
+      if (asked.includes('describe-throw')) throw new Error('boom-describe');
       return (original as (i: unknown) => unknown)(input);
     }) as typeof deps.discovery.describeTypes;
 

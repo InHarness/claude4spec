@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import type { ViewKind } from '../serialization/types.js';
+import { VIEW_KINDS, type ViewKind } from '../serialization/types.js';
 
 /**
  * `c4s-reader` — the external stdio transport over the M39 discovery core.
@@ -43,13 +43,17 @@ export interface C4sReaderDeps {
   packageVersion: string;
 }
 
-const VIEW_KINDS = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-] as const;
+/**
+ * 0.2.9: the vocabulary comes from `serialization/types.ts`, where `ViewKind`
+ * itself lives. This file used to keep its own `as const` list feeding the zod
+ * enum — the second of the two transport-local copies the core's `requireView`
+ * was meant to retire, and the one that would have kept a newly added view kind
+ * working over CLI and REST while answering INVALID_ARGUMENT over MCP.
+ *
+ * The zod enum needs a mutable tuple, so the readonly array is widened here;
+ * `ViewKind` still types the result, so a divergence cannot compile.
+ */
+const VIEW_ENUM = [...VIEW_KINDS] as [ViewKind, ...ViewKind[]];
 
 /**
  * The tool names this server exposes, in the order the brief lists the
@@ -154,7 +158,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   };
 
   const viewShape = z
-    .enum(VIEW_KINDS)
+    .enum(VIEW_ENUM)
     .optional()
     .describe('Record shape — the width of a row, independent of how many rows come back');
 

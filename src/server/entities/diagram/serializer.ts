@@ -112,8 +112,6 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 export const diagramSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 1,
-
   views: {
     inline_mention: (entity) => ({
       type: 'diagram',

@@ -222,8 +222,6 @@ function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
 }
 
 export const uiViewSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 1,
-
   views: {
     inline_mention: (entity) => ({
       type: 'ui-view',

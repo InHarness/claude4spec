@@ -203,8 +203,6 @@ function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
 }
 
 export const endpointSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 1,
-
   views: {
     inline_mention: (entity) => ({
       type: 'endpoint',

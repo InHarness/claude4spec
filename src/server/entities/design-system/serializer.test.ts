@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { designSystemSerializer, type DesignSystemSnapshot } from './serializer.js';
+import { designSystemBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
@@ -109,7 +110,10 @@ describe('design-system serializer', () => {
     });
   });
 
-  it('declares payload version 1', () => {
-    expect(designSystemSerializer.payloadVersion).toBe(1);
+  it('declares its payload version on the MANIFEST, not on the contribution', () => {
+    // 0.2.9: the contribution's copy was an optional echo of a number only the
+    // manifest is ever read for, so it is not written twice.
+    expect(designSystemBackendModule.payloadVersion).toBe(1);
+    expect(designSystemSerializer.payloadVersion).toBeUndefined();
   });
 });

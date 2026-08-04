@@ -38,6 +38,7 @@ import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
 import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
@@ -1221,10 +1222,13 @@ export class ReleaseService {
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
       const bVer = toSnap.serializer_versions[sample.type] ?? null;
+      // Compared as payload versions — a release captured before 0.2.9 records
+      // the serializer semver where one captured after records the integer, and
+      // they mean the same shape. See `serialization/payload-version.ts`.
       entityChanges.push(
         toRawDeltaEntityChange(
           diff,
-          aVer !== bVer ? { type: sample.type, from: aVer, to: bVer } : null
+          samePayloadVersion(aVer, bVer) ? null : { type: sample.type, from: aVer, to: bVer }
         )
       );
     }

@@ -298,8 +298,11 @@ export type ViewSet<T> = Partial<Record<ViewKind, ViewFn<T>>>;
 export interface SerializationContribution<T = unknown> {
   views?: ViewSet<T>;
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
-  /** Must equal the manifest's `payloadVersion`; registration rejects a mismatch. */
-  payloadVersion: number;
+  /**
+   * Optional echo of the manifest's `payloadVersion`, which is the authority.
+   * Declare it only if you want the cross-check; registration rejects a mismatch.
+   */
+  payloadVersion?: number;
   /** `payloadUpgrades[i]`: payload `i+1` → `i+2`. Enforced by the host on load and restore. */
   payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
   /** @deprecated Generated from `data.schema`; removed in the next release. */

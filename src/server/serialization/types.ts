@@ -114,11 +114,16 @@ export interface SerializationContribution<T = unknown> {
    */
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
   /**
-   * Shape version of this type's payload. Must equal the manifest's
-   * `payloadVersion` — the manifest slot is the authority and registration
-   * rejects a mismatch, so the two can never drift into disagreeing.
+   * Optional echo of the manifest's `payloadVersion`.
+   *
+   * The MANIFEST slot is the authority and the only one anything reads
+   * (`engine.getPayloadVersion`, `catalog`, `release`, `VersionService`). This
+   * one exists because the brief declares the field on the contribution; it is
+   * optional because a required duplicate is a fact every author writes twice
+   * and eventually writes twice differently. When present, registration rejects
+   * it if it disagrees with the manifest.
    */
-  payloadVersion: number;
+  payloadVersion?: number;
   /**
    * Ordered chain of payload migrations, `payloadUpgrades[i]` taking payload
    * `i+1` to `i+2`. DECLARED here in PR1; ENFORCED (on file load, rebuild and

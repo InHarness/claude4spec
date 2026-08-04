@@ -66,9 +66,52 @@ describe('viewSchema', () => {
     expect(schema.additionalProperties).toBe(false);
     expect(props._generic).toEqual({ const: true });
     expect(props._view).toEqual({ const: 'single_element' });
-    // Column names, because the generic payload spreads the projection row.
-    expect(props.design_system_slug).toEqual({ type: 'string' });
+    // Column names, because the generic payload spreads the projection row —
+    // and nullable, because the column is: `hydrate` copies every column, so an
+    // unset optional field is PRESENT holding null, not absent.
+    expect(props.design_system_slug).toEqual({ type: ['string', 'null'] });
     expect(props.designSystemSlug).toBeUndefined();
+    // A collection with its own projection table is not on that row at all, so a
+    // CLOSED schema must not claim it.
+    expect(props.params).toBeDefined();
+    expect(props.tokens).toBeDefined();
+  });
+
+  it('omits `required` for a computed view — the declaration is a floor, not a contract', () => {
+    // Real computed views are selective: ac's `inline_mention` answers four keys
+    // out of eight declared fields. A `required` list derived from the
+    // declaration published a contract every genuine response violated.
+    const schema = viewSchema({ type: 'widget', data: DATA, view: 'inline_mention', computed: true });
+    expect(schema.required).toBeUndefined();
+  });
+
+  it('never describes systemManaged timestamps — no view payload carries them', () => {
+    // `hydrate` lifts createdAt/updatedAt out of `entity.data` into a separate
+    // `system` slot, and no computed view emits them.
+    const withStamps = {
+      schema: {
+        ...DATA.schema,
+        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    } as DataDeclaration;
+    for (const computed of [true, false]) {
+      const schema = viewSchema({ type: 'widget', data: withStamps, view: 'detail', computed });
+      const props = schema.properties as Record<string, unknown>;
+      expect(props.createdAt).toBeUndefined();
+      expect(props.created_at).toBeUndefined();
+      expect((schema.required as string[] | undefined) ?? []).not.toContain('createdAt');
+    }
+  });
+
+  it('admits null into a clearable ENUM\'s value list, not only into its type', () => {
+    // Widening `type` alone left the cleared value passing the type keyword and
+    // failing the enum keyword — unsatisfiable for the one value the flag exists
+    // to permit.
+    expect(nodeSchema({ kind: 'enum', values: ['a', 'b'], clearable: true })).toEqual({
+      type: ['string', 'null'],
+      enum: ['a', 'b', null],
+    });
   });
 
   it('describes a computed view as an OPEN floor — the host cannot introspect a function', () => {
@@ -89,11 +132,15 @@ describe('viewSchema', () => {
     expect(props.id).toBeUndefined(); // localSurrogate — index-only, excluded from every projection
   });
 
-  it('requires a field with a default, not only one marked required', () => {
-    const required = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: true })
+  it('requires a field with a default, not only one marked required — in the GENERIC schema', () => {
+    // Only the generic schema carries `required` at all: it is the one the host
+    // builds itself and can therefore promise.
+    const required = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: false })
       .required as string[];
     expect(required).toContain('name'); // required
-    expect(required).toContain('status'); // default — the payload always carries it
+    expect(required).toContain('status'); // default — the column can never be NULL
+    // Present but nullable, so it is described as `['string','null']` rather than
+    // promised — see the generic-view case above.
     expect(required).not.toContain('description');
   });
 

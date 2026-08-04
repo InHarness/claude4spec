@@ -8,6 +8,7 @@ import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
+import { samePayloadVersion } from '../../serialization/payload-version.js';
 import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
 
 /**
@@ -103,8 +104,15 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const diff = host.diff(type, from.data, to.data, slug);
       const fromVer = from.serializerVersion ?? null;
       const toVer = to.serializerVersion ?? null;
+      // 0.2.9: compared as PAYLOAD VERSIONS, not as strings. The column changed
+      // vocabulary (semver → integer `payloadVersion`) without migrating old
+      // rows, so a raw comparison flags a bump on every diff that spans the
+      // upgrade. See `serialization/payload-version.ts`.
       res.json(
-        toRawDeltaEntityChange(diff, fromVer !== toVer ? { type, from: fromVer, to: toVer } : null)
+        toRawDeltaEntityChange(
+          diff,
+          samePayloadVersion(fromVer, toVer) ? null : { type, from: fromVer, to: toVer }
+        )
       );
     } catch (err) {
       next(err);
