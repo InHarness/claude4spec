@@ -1,11 +1,16 @@
 /**
- * THE hard gate of the 0.2.2 baseline cut.
+ * THE hard gate of the 0.2.2 baseline cut, carried forward to Host API 2.0.0.
  *
- * A database created fresh (000_baseline.sql + every core module's
- * `backend.migrations`) must end up with the same schema as one that replayed
- * the full historical chain 000_init..049. A divergence between those two paths
- * is a bug, not an acceptable difference — it would mean two populations of
- * installations running against schemas that only look alike.
+ * A database created fresh (000_baseline.sql + the GENERATED entity projection)
+ * must end up with the same schema as one that replayed the full historical
+ * chain 000_init..049. A divergence between those two paths is a bug, not an
+ * acceptable difference — it would mean two populations of installations running
+ * against schemas that only look alike.
+ *
+ * 2.0.0 replaced the entity half of that comparison: the six `migrations.ts`
+ * files are gone and their tables come from `applyProjection`. Two differences
+ * are DELIBERATE and are asserted below as such rather than normalized away in
+ * silence — see `EXPECTED_DELTAS`.
  *
  * The comparison is LOGICAL, never `sqlite_master.sql` text. The chain reached
  * its shape through `ALTER TABLE ... RENAME` and `ADD COLUMN`, which leaves
@@ -27,7 +32,7 @@ import { describe, expect, it } from 'vitest';
 import { runMigrations } from '../../../src/server/db/migrate.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
-import { runPluginMigrations } from '../../../src/server/core/plugin-host/plugin-migrate.js';
+import { applyProjection } from '../../../src/server/db/projection.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 
 const MIGRATIONS_DIR = path.join(import.meta.dirname, '../../../src/server/db/migrations');
@@ -100,10 +105,10 @@ function legacyDb(): Database.Database {
 }
 
 /**
- * A fresh database: baseline, then every module's own migrations — the four
- * directly-built-in types AND the builtin envelopes, since `endpoint`, `dto` and
- * the junction moved into one. Loading the envelopes is what makes this an
- * apples-to-apples comparison with the chain.
+ * A fresh database: baseline, then the GENERATED projection of every module —
+ * the four directly-built-in types AND the builtin envelopes, since `endpoint`,
+ * `dto` and the junction moved into one. Loading the envelopes is what makes
+ * this an apples-to-apples comparison with the chain.
  */
 async function baselineDb(): Promise<Database.Database> {
   const db = new Database(':memory:');
@@ -113,17 +118,79 @@ async function baselineDb(): Promise<Database.Database> {
   registerAllPlugins(registry);
   await loadBuiltinEnvelopes(registry);
   const host = registry.consolidate(null);
-  // Same two-pass order as ProjectPluginHost.mountBackend.
-  for (const m of host.listEntities()) runPluginMigrations(db, m.type, m.backend?.migrations);
+  // The same call ProjectContext makes, over the same set.
+  applyProjection(db, host.listAvailable());
   return db;
 }
 
+/**
+ * The two intentional shape changes of Host API 2.0.0, enumerated so a THIRD one
+ * cannot slip in unnoticed. Normalizing the comparison without listing them
+ * would turn this gate into a rubber stamp.
+ *
+ *  1. `slug` is `NOT NULL` on every entity table. Five of the six historically
+ *     wrote `TEXT PRIMARY KEY` alone, and in SQLite that column accepts NULL —
+ *     a long-standing compatibility quirk. The generator always spells the
+ *     constraint out, so four tables that could hold a NULL-slugged row no
+ *     longer can. Existing databases are unaffected: `CREATE TABLE IF NOT
+ *     EXISTS` never fires on them.
+ *  2. The junction's two secondary indexes are renamed to the generator's rule
+ *     (`idx_endpoint_dto_endpoint` → `idx_endpoint_dto_endpoint_slug`, likewise
+ *     for `_dto`). They cover the same columns; an index name is not a contract
+ *     surface, since nothing queries by it.
+ */
+const RENAMED_INDEXES: Record<string, string> = {
+  idx_endpoint_dto_endpoint: 'idx_endpoint_dto_endpoint_slug',
+  idx_endpoint_dto_dto: 'idx_endpoint_dto_dto_slug',
+};
+
+/**
+ * The tables the generator owns. The deltas apply to these and ONLY these —
+ * scoping matters: the host's own baseline tables are untouched by 2.0.0, and
+ * blanket-normalizing every primary key would hide a real change to one of them.
+ */
+const PROJECTED_TABLES = new Set([
+  'ac',
+  'ui_view',
+  'design_system',
+  'diagram',
+  'dto',
+  'endpoint',
+  'endpoint_dto',
+]);
+
+/** Apply the two known deltas to the LEGACY snapshot so the rest compares strictly. */
+function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string, TableShape> {
+  const out: Record<string, TableShape> = {};
+  for (const [table, shape] of Object.entries(schema)) {
+    if (!PROJECTED_TABLES.has(table)) {
+      out[table] = shape;
+      continue;
+    }
+    out[table] = {
+      ...shape,
+      columns: shape.columns.map((c) => {
+        const col = c as { pk: number; notnull: number };
+        return col.pk === 1 ? { ...col, notnull: 1 } : col;
+      }),
+      indexes: shape.indexes
+        .map((i) => {
+          const idx = i as { name: string };
+          const renamed = RENAMED_INDEXES[idx.name];
+          return renamed ? { ...idx, name: renamed } : idx;
+        })
+        .sort((a, b) => String((a as { name: string }).name).localeCompare(String((b as { name: string }).name))),
+    };
+  }
+  return out;
+}
+
 describe('000_baseline.sql', () => {
-  it('produces the same schema as the full historical chain, once modules have migrated', async () => {
+  it('produces the same schema as the full historical chain, once the projection is applied', async () => {
     const legacy = legacyDb();
     const fresh = await baselineDb();
     try {
-      expect(snapshotSchema(fresh)).toEqual(snapshotSchema(legacy));
+      expect(snapshotSchema(fresh)).toEqual(applyExpectedDeltas(snapshotSchema(legacy)));
     } finally {
       legacy.close();
       fresh.close();

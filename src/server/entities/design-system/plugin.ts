@@ -6,17 +6,18 @@ import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemsRouter } from './routes.js';
 import { DesignSystemService } from './service.js';
 import { designSystemCreateSchema, designSystemUpdateSchema } from './crud-schemas.js';
-import { designSystemMigrations } from './migrations.js';
+import { designSystemData, designSystemSlugPattern } from '../../../shared/entities/design-system/schema.js';
 
 export const designSystemBackendModule: BackendModule = {
   type: 'design-system',
-  table: 'design_system',
+  data: designSystemData,
+  slugPattern: designSystemSlugPattern,
+  payloadVersion: 1,
   label: 'Design System',
   labelPlural: 'Design Systems',
   // After ui-view (40) and ac (50) — design systems sit at the end of ELEMENTS.
   displayOrder: 60,
   pathPrefix: '/design-systems',
-  slugFrom: (data) => designSystemSlug((data as { name: string }).name),
   serializer: designSystemSerializer as EntitySerializer<unknown>,
   systemPrompt: designSystemSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
@@ -24,7 +25,6 @@ export const designSystemBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. design-system has no
   // non-CRUD tools, so there is no `mcpServer` key at all.
   backend: {
-    migrations: designSystemMigrations,
     service: (ctx) => new DesignSystemService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: designSystemCreateSchema,

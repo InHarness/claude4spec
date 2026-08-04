@@ -1,3 +1,4 @@
+import { designSystemData, designSystemSlugPattern } from '../../../shared/entities/design-system/schema.js';
 import { ChevronRight, Palette } from 'lucide-react';
 import type { DesignSystem, ResolvedTokenValue } from '../../../shared/entities.js';
 import { resolve } from '../../../shared/design-system.js';
@@ -189,20 +190,13 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
 
 const designSystemFrontendModule: FrontendModule = {
   type: 'design-system',
-  table: 'design_system',
+  data: designSystemData,
+  slugPattern: designSystemSlugPattern,
+  payloadVersion: 1,
   label: 'Design System',
   labelPlural: 'Design Systems',
   displayOrder: 60,
   pathPrefix: '/design-systems',
-  slugFrom: (data) => {
-    const name = (data as { name?: string }).name ?? '';
-    return name
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  },
   renderRow: DesignSystemRow as FrontendModule['renderRow'],
   renderChip: DesignSystemChip as FrontendModule['renderChip'],
   renderCard: DesignSystemCard as FrontendModule['renderCard'],

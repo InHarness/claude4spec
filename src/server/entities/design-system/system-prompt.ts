@@ -2,11 +2,6 @@ import type { SystemPromptContribution } from '../../../shared/plugin-host/types
 
 export const designSystemSystemPrompt: SystemPromptContribution = {
   roleNoun: 'Design Systems',
-  countStat: {
-    placeholder: 'designSystemCount',
-    sqlQuery: 'SELECT COUNT(*) AS count FROM design_system',
-    label: 'design-systems',
-  },
   // M13: CRUD moved to the generic entity-tools server (composed by the host);
   // design-system has no custom (non-CRUD) tools, so this contribution omits
   // mcpToolsLine entirely (optional field).

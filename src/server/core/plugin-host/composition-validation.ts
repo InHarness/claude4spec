@@ -26,6 +26,7 @@ import {
   type ResolvedComposition,
 } from '../../../shared/plugin-host/composition.js';
 import { PluginManifestError } from './manifest-adapter.js';
+import { validateDataDeclaration } from './data-schema-validation.js';
 import type { BackendModule } from './types.js';
 
 /** A bare SQL identifier — the shape safe to interpolate into DDL/DML. */
@@ -194,31 +195,6 @@ export function validateComposition(
   checkOwnedTable(module, resolved.mainTable, 'mainTable', peerOwned, resolved.legacy);
   checkIdentifier(module, resolved.identityColumn, 'identityColumn');
 
-  /**
-   * The descriptor is the source of truth for the consumers that were migrated
-   * in 0.2.4; `module.table` is still the source for the ones that were not
-   * (the M29 indexer, and every service's own SQL). Until that slot is deleted,
-   * the two must AGREE — a descriptor naming a different table than the one the
-   * writers use splits reads from writes: the rebuild fills one table while
-   * every read resolves the other, so the type answers empty to the agent while
-   * the UI lists rows. It also reopens the checks above, which only ever see
-   * `resolved.mainTable`: a manifest with a compliant descriptor and a hostile
-   * `table` would pass validation and still reach `DELETE FROM <hostile>`.
-   */
-  if (module.composition && resolved.mainTable !== module.table) {
-    fail(
-      module,
-      `mainTable "${resolved.mainTable}" does not match the module's \`table\` ` +
-        `"${module.table}". While \`table\` remains (deprecated in 0.2.4, removed once every ` +
-        `consumer reads the descriptor) the two are the same table and must be written the same`,
-    );
-  }
-
-  // Which derived tables were DECLARED, as opposed to merged in from the legacy
-  // `backend.auxTables` slot. Only a declared one is required to name its
-  // binding column — an auxTables entry resolves to a null binding by design,
-  // on a declared and a synthesized descriptor alike.
-  const declaredDerived = new Set((module.composition?.derivedTables ?? []).map((d) => d.table));
   const seen = new Set<string>([resolved.mainTable]);
   for (const derived of resolved.derivedTables) {
     checkOwnedTable(module, derived.table, 'derivedTables[].table', peerOwned, resolved.legacy);
@@ -226,10 +202,10 @@ export function validateComposition(
       fail(module, `table "${derived.table}" is declared twice`);
     }
     seen.add(derived.table);
+    // Always non-null since 2.0.0 — the host derives the binding from the same
+    // schema it generated the table from, so there is nothing left to omit.
     if (derived.bindingColumn !== null) {
       checkIdentifier(module, derived.bindingColumn, `derivedTables["${derived.table}"].bindingColumn`);
-    } else if (declaredDerived.has(derived.table)) {
-      fail(module, `derivedTables["${derived.table}"] must declare a bindingColumn`);
     }
   }
 
@@ -256,5 +232,24 @@ export function validateComposition(
  * exactly the same bar.
  */
 export function attachComposition(module: BackendModule, peers: Iterable<BackendModule>): BackendModule {
+  /**
+   * 2.0.0 — the logical schema is validated HERE, before the descriptor, because
+   * the descriptor is now DERIVED from the schema (`resolveComposition`). A
+   * malformed schema would otherwise be reported as a malformed descriptor,
+   * naming a table the author never wrote.
+   *
+   * Attached at the same choke point rather than in a fourth caller: all three
+   * registration paths — in-repo `registerEntityModule`, the package loader's
+   * `validateAndLower`, and the project overlay — already funnel through here,
+   * which is exactly what stops a plugin-contributed type from being held to a
+   * lower bar than a built-in one.
+   */
+  validateDataDeclaration(
+    module.type,
+    module.data,
+    module.slugPattern,
+    module.payloadVersion,
+    module.systemPrompt?.countPredicate,
+  );
   return attachResolvedComposition(module, validateComposition(module, peers));
 }

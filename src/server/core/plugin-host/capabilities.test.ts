@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, vi } from 'vitest';
 import { PluginRegistryImpl } from './registry.js';
 import type { PluginManifest } from '../../../shared/plugin-host/manifest.js';
@@ -9,22 +10,22 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@c4s/plugin-with-entity',
     version: '1.0.0',
-    hostApiVersion: '^1.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: {
       entities: [
         {
           type: 'widget',
-          table: 'widget',
+          data: FIXTURE_DATA,
+          slugPattern: FIXTURE_SLUG_PATTERN,
+          payloadVersion: 1,
           label: 'Widget',
           labelPlural: 'Widgets',
           displayOrder: 100,
-          slugFrom: (d: unknown) => String((d as { slug?: string }).slug ?? 'widget'),
           pathPrefix: '/widgets',
           serializer: {},
           systemPrompt: {
             roleNoun: 'widget',
-            countStat: { placeholder: 'widgetCount', sqlQuery: 'SELECT 0 AS count', label: 'widget' },
             mcpToolsLine: 'widget-tools: ...',
           },
         },
@@ -136,7 +137,7 @@ describe('M33 — host.listSettings / listCommands ignore config.entities', () =
     registry.registerPlugin({
       name: '@c4s/no-settings',
       version: '1.0.0',
-      hostApiVersion: '^1.0.0',
+      hostApiVersion: '^2.0.0',
       onUnregister: () => {},
       contributes: {},
     });

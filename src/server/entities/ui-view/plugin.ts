@@ -6,11 +6,13 @@ import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewsRouter } from './routes.js';
 import { UiViewService } from './service.js';
 import { uiViewCreateSchema, uiViewUpdateSchema } from './crud-schemas.js';
-import { uiViewMigrations } from './migrations.js';
+import { uiViewData, uiViewSlugPattern } from '../../../shared/entities/ui-view/schema.js';
 
 export const uiViewBackendModule: BackendModule = {
   type: 'ui-view',
-  table: 'ui_view',
+  data: uiViewData,
+  slugPattern: uiViewSlugPattern,
+  payloadVersion: 1,
   label: 'UI View',
   labelPlural: 'UI Views',
   displayOrder: 40,
@@ -22,7 +24,6 @@ export const uiViewBackendModule: BackendModule = {
    * fires only when the design-system is genuinely absent.
    */
   dependsOn: ['design-system'],
-  slugFrom: (data) => uiViewSlug((data as { name: string }).name),
   serializer: uiViewSerializer as EntitySerializer<unknown>,
   systemPrompt: uiViewSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
@@ -30,7 +31,6 @@ export const uiViewBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. No custom MCP server —
   // ui-view has no non-CRUD tools.
   backend: {
-    migrations: uiViewMigrations,
     /**
      * `ui_view.design_system_slug` is a scalar reference with no FK, so a
      * design-system rename has to be followed by hand: repoint the column, then

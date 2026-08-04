@@ -3,7 +3,7 @@
  * server-only slots (serializer, services, mcpServer, routes, systemPrompt).
  *
  * `serializer` and `systemPrompt` are required; backend slots
- * (services, mcpServer, routes, migrations) are optional and filled per
+ * (services, mcpServer, routes) are optional and filled per
  * entity in their vertical slice plugin.ts.
  */
 
@@ -50,15 +50,6 @@ import type { ExtensionReferenceType } from '../../../shared/reference-extension
  * mismatched one.
  */
 export type EntityReferenceType = Omit<ExtensionReferenceType, 'entityType'>;
-
-export type SqlMigration = {
-  /** Per-plugin sequential version. Starts at 1 (post-baseline). */
-  version: number;
-  /** Short identifier, e.g. "add_summary_column". */
-  name: string;
-  /** Idempotent SQL — must tolerate replay. */
-  up: string;
-};
 
 /**
  * 0.2.2 — write-path options a service's restore/write facade accepts.
@@ -189,7 +180,6 @@ export interface BackendModule extends EntityModuleManifest {
    * escape hatch — `mount`, when present, always wins.
    */
   backend?: {
-    migrations?: SqlMigration[];
     mount?: PluginMountFn;
     /** M13 — L2 service factory, instantiated once per `ProjectContext`. */
     service?: (ctx: MountContext) => EntityCrudService;

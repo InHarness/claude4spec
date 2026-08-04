@@ -13,6 +13,8 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { applyProjection } from '../db/projection.js';
+import type { DataDeclaration } from '../../shared/plugin-host/data-schema.js';
 import {
   createDiscoveryCore,
   findReferencesAll,
@@ -31,19 +33,36 @@ import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/
 import { z } from 'zod';
 import matter from 'gray-matter';
 
+/**
+ * 2.0.0: the fixture declares its OWN schema and gets its own generated table.
+ *
+ * It used to carry `table: 'diagram'` and borrow that type's rows — a trick the
+ * declarative contract makes both unnecessary and impossible, since a table name
+ * is derived from the type slug and can no longer be pointed elsewhere. Owning
+ * its schema is also the stronger fixture: it proves the discovery core works
+ * for a type the host has never heard of, rather than for `diagram` under
+ * another name.
+ */
+const WIDGET_DATA: DataDeclaration = {
+  schema: {
+    format: { kind: 'enum', values: ['mermaid', 'd2'], required: true, default: 'mermaid' },
+    source: { kind: 'string', required: true, default: '' },
+  },
+};
+
 function widgetModule(): BackendModule {
   return {
     type: 'widget',
-    table: 'diagram', // any real table in the test schema; only its rows matter here
+    data: WIDGET_DATA,
+    slugPattern: [{ op: 'slugify', field: 'source' }],
+    payloadVersion: 1,
     label: 'Widget',
     labelPlural: 'Widgets',
     displayOrder: 10,
     pathPrefix: '/widgets',
-    slugFrom: () => 'w',
     serializer: { type: 'widget', version: '1.0.0', singleElement: (e: unknown) => e } as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Widgets',
-      countStat: { placeholder: 'widgetCount', sqlQuery: 'SELECT 0', label: 'widgets' },
     },
     backend: { crud: { createSchema: { source: z.string(), format: z.string() } } } as BackendModule['backend'],
   };
@@ -203,6 +222,7 @@ describe('discovery core', () => {
   beforeEach(async () => {
     cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-discovery-test-'));
     db = createTestDb();
+    applyProjection(db, [widgetModule()]);
     await fs.mkdir(path.join(cwd, 'pages'), { recursive: true });
   });
 
@@ -292,7 +312,7 @@ describe('discovery core', () => {
 
   describe('search_entities reports what it actually searched', () => {
     beforeEach(() => {
-      db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+      db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
     });
 
     it('a field outside the schema yields nothing, but searchedFields reveals the scope', () => {
@@ -892,8 +912,8 @@ describe('discovery core', () => {
    * where the same call used to return everything.
    */
   it('get_entities defaults narrow for a batch and wide for a single slug', () => {
-    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('a', 'mermaid', 'graph TD;')`).run();
-    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('b', 'mermaid', 'graph TD;')`).run();
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('a', 'mermaid', 'graph TD;')`).run();
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('b', 'mermaid', 'graph TD;')`).run();
     const c = core([pagesRoot()]);
 
     expect(c.getEntities({ type: 'widget', slugs: ['a'] }).view).toBe('single_element');
@@ -934,7 +954,7 @@ describe('discovery core', () => {
   describe('get_entities answers every key it was given', () => {
     beforeEach(() => {
       // Each row is deliberately huge: three of them cannot share one budget.
-      const insert = db.prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, 'mermaid', ?)`);
+      const insert = db.prepare(`INSERT INTO widget (slug, format, source) VALUES (?, 'mermaid', ?)`);
       for (const slug of ['w1', 'w2', 'w3']) insert.run(slug, 'g'.repeat(60_000));
     });
 
@@ -1069,7 +1089,7 @@ describe('discovery core', () => {
    */
   describe('bounds do not change answers', () => {
     beforeEach(() => {
-      const insert = db.prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, 'mermaid', 'graph TD')`);
+      const insert = db.prepare(`INSERT INTO widget (slug, format, source) VALUES (?, 'mermaid', 'graph TD')`);
       for (let i = 0; i < 120; i++) insert.run(`w${String(i).padStart(3, '0')}`);
     });
 

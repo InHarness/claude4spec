@@ -56,13 +56,25 @@ export type {
 } from '../shared/plugin-host/manifest.js';
 export type { EntityModuleManifest, SystemPromptContribution };
 
-// ── L1 — per-plugin SQL migrations (server `SqlMigration`) ──
-export interface SqlMigration {
-  version: number;
-  name: string;
-  /** Idempotent SQL — must tolerate replay. */
-  up: string;
-}
+// ── L1 — the LOGICAL SCHEMA a type declares (Host API 2.0.0) ──
+// `SqlMigration` and `backend.migrations` are gone: a type declares `data.schema`
+// and the host generates the SQLite projection from it. Re-exported from the
+// shared bundle rather than re-declared, so a plugin author and the generator
+// read one definition.
+export type {
+  AccessHint,
+  CollectionNode,
+  CountPredicate,
+  DataDeclaration,
+  EnumNode,
+  FieldFlags,
+  FieldNode,
+  IntegrityConstraint,
+  ObjectNode,
+  RecordNode,
+  ScalarNode,
+} from '../shared/plugin-host/data-schema.js';
+export type { SlugPattern, SlugStep } from '../shared/plugin-host/slug-pattern.js';
 
 // ── Backend mount context ──
 // Host-provided dependencies are loosely typed: the real types (express Router,

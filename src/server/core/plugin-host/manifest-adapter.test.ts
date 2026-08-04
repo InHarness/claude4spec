@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, vi } from 'vitest';
 import { lowerEntityContribution, PluginManifestError, synthesizeMount } from './manifest-adapter.js';
 import type { EntityContribution } from '../../../shared/plugin-host/manifest.js';
@@ -6,16 +7,16 @@ import type { MountContext } from './types.js';
 function base(over: Partial<EntityContribution> = {}): EntityContribution {
   return {
     type: 'glossary',
-    table: 'glossary',
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: 'Glossary',
     labelPlural: 'Glossary',
     displayOrder: 100,
-    slugFrom: () => 'x',
     pathPrefix: '/glossary',
     serializer: {},
     systemPrompt: {
       roleNoun: 'Glossary',
-      countStat: { placeholder: 'glossaryCount', sqlQuery: 'SELECT 0 AS count', label: 'terms' },
       mcpToolsLine: 'glossary-tools: ...',
     },
     ...over,
@@ -38,15 +39,33 @@ describe('lowerEntityContribution', () => {
   });
 
   it('throws PluginManifestError on a missing required field', () => {
-    expect(() => lowerEntityContribution(base({ table: undefined as unknown as string }))).toThrow(
-      PluginManifestError,
-    );
+    for (const field of ['data', 'slugPattern', 'payloadVersion'] as const) {
+      expect(() => lowerEntityContribution(base({ [field]: undefined })), field).toThrow(
+        PluginManifestError,
+      );
+    }
   });
 
-  it('throws when slugFrom is not a function', () => {
+  /**
+   * A 1.x manifest is REJECTED, not tolerated. Its DDL, its slug function and
+   * its snapshot all describe a contract the host no longer honours, so loading
+   * it would produce a type whose table is never created and whose slugs are
+   * never generated. The semver gate catches the well-behaved case — a declared
+   * `hostApiVersion` range — and this catches the manifest that lies about its
+   * range, with the same migration line `plugins doctor` prints.
+   */
+  it.each([
+    ['slugFrom', { slugFrom: (() => 'x') as never }, /slugPattern/],
+    ['table', { table: 'thing' as never }, /data\.schema/],
+    ['composition', { composition: {} as never }, /data\.schema/],
+  ])('rejects the removed 1.x slot %s and names its successor', (_slot, extra, successor) => {
+    expect(() => lowerEntityContribution(base(extra))).toThrow(successor);
+  });
+
+  it('rejects a removed backend slot and names its successor', () => {
     expect(() =>
-      lowerEntityContribution(base({ slugFrom: 'nope' as unknown as () => string })),
-    ).toThrow(PluginManifestError);
+      lowerEntityContribution(base({ backend: { migrations: [] } as never })),
+    ).toThrow(/data\.schema/);
   });
 });
 

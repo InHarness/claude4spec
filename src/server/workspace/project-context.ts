@@ -6,6 +6,7 @@ import type { Root } from '../../shared/types.js';
 import type { PageRootRuntime } from '../routes/pages.js';
 import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
+import { applyProjection } from '../db/projection.js';
 import { PagesService } from '../services/pages.js';
 import { pagesRouter } from '../routes/pages.js';
 import { StaticHtmlService } from '../services/static-html.js';
@@ -587,6 +588,26 @@ async function buildInner(
     Object.values(artifactRegistry).map((e) => [e.rootId, e.changedEvent] as const),
   );
   const pagesFrontmatterIndexer = new PagesFrontmatterIndexer(frontmatterRoots, ws, artifactChangedEvents);
+
+  /**
+   * Host API 2.0.0 — build the entity projection BEFORE anything mounts, reads
+   * or upserts, and before `entityIndexer.indexAll()` further down.
+   *
+   * Over every AVAILABLE module, not just the active ones. The schema is a
+   * function of what is INSTALLED, not of what is enabled: a deactivated type
+   * keeps its (empty) table, which is what stops `GET /entities/counts` from
+   * 500-ing the whole sidebar over one missing table. That property used to be
+   * maintained by a two-pass migration loop in `mountBackend`; it is now one
+   * idempotent call whose input is the same declaration the rest of the host
+   * reads.
+   */
+  const projection = applyProjection(db.handle, pluginHost.listAvailable());
+  if (projection.created.length || projection.alteredColumns.length) {
+    console.log(
+      `[projection] created ${projection.created.join(', ') || '—'}` +
+        (projection.alteredColumns.length ? `; added ${projection.alteredColumns.join(', ')}` : ''),
+    );
+  }
 
   // Mount all active backend modules — each plugin constructs its own service,
   // mounts its router, registers its MCP server, and registers its entity

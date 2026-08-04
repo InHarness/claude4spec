@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 import os from 'node:os';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -28,16 +29,16 @@ import { builtinPagesRoot } from '../config.js';
 function diagramModule(): BackendModule {
   return {
     type: 'diagram',
-    table: 'diagram',
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: 'Diagram',
     labelPlural: 'Diagrams',
     displayOrder: 70,
     pathPrefix: '/diagrams',
-    slugFrom: () => 'diagram-x',
     serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Diagrams',
-      countStat: { placeholder: 'diagramCount', sqlQuery: 'SELECT 0', label: 'diagrams' },
     },
   };
 }

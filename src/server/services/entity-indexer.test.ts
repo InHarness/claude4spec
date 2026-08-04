@@ -122,12 +122,12 @@ describe('indexAll — clearing', () => {
     db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
     const host = hostWith([
       { type: 'endpoint', table: 'endpoint' },
-      { type: 'use-case', table: 'use_cases' }, // no such table
+      { type: 'use-case' }, // no such table
     ]);
 
     await expect(makeIndexer(host).indexer.indexAll()).resolves.toBeUndefined();
     expect(rowCount('endpoint')).toBe(0); // the rest of the rebuild still ran
-    expect(warn.mock.calls.flat().join(' ')).toContain('use_cases');
+    expect(warn.mock.calls.flat().join(' ')).toContain('use_case');
   });
 
   it('clears a module-declared auxiliary table', async () => {
@@ -185,7 +185,7 @@ describe('indexAll — clearing', () => {
     db.prepare(`INSERT INTO endpoint (slug) VALUES ('e1')`).run();
     const host = hostWith([
       { type: 'endpoint', table: 'endpoint' },
-      { type: 'evil', table: 'x; DROP TABLE endpoint; --' },
+      { type: 'x; DROP TABLE endpoint; --' },
     ]);
 
     await makeIndexer(host).indexer.indexAll();

@@ -104,3 +104,18 @@ export type {
   MountContext,
   PluginMountFn,
 } from '../core/plugin-host/types.js';
+// Host API 2.0.0 — the declarative slots an entity contribution must carry.
+export type {
+  AccessHint,
+  CollectionNode,
+  CountPredicate,
+  DataDeclaration,
+  EnumNode,
+  FieldFlags,
+  FieldNode,
+  IntegrityConstraint,
+  ObjectNode,
+  RecordNode,
+  ScalarNode,
+} from '../../shared/plugin-host/data-schema.js';
+export type { SlugPattern, SlugStep } from '../../shared/plugin-host/slug-pattern.js';

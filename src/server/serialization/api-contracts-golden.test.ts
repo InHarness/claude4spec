@@ -17,6 +17,7 @@
  * carrying examples, and every one of the five view projections.
  */
 
+import { compositionOf } from '../../shared/plugin-host/composition.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -95,7 +96,7 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
     if (!module) throw new Error(`fixture: type '${type}' is not registered`);
     const serializer = module.serializer as Record<string, unknown>;
     const slugs = (
-      app.db.prepare(`SELECT slug FROM ${module.table} ORDER BY slug`).all() as Array<{ slug: string }>
+      app.db.prepare(`SELECT slug FROM ${compositionOf(module).mainTable} ORDER BY slug`).all() as Array<{ slug: string }>
     ).map((r) => r.slug);
 
     out[`${type}.version`] = serializer.version;

@@ -27,7 +27,7 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     // The host consumes TagFilterBar, EntityListRow, Dialog, Popover, useToast,
     // EnumBadgePicker, GroupedRelationPicker and ActionBar — all experimental.
     // None of that is a published contract, so the major cannot have moved.
-    expect(HOST_API_VERSION).toBe('1.0.0');
+    expect(HOST_API_VERSION).toBe('2.0.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
 });
@@ -40,21 +40,38 @@ describe('M33 — Host API versioning helpers', () => {
     expect(rangeMajor('nonsense')).toBeNull();
   });
 
-  it('has an empty changelog at the 1.0.0 baseline (no major crossed yet)', () => {
-    expect(migrationsBetween(1, 2)).toHaveLength(0);
-    expect(migrationsBetween(0, 9)).toHaveLength(0);
+  it('carries the 1 → 2 crossing, and only that', () => {
+    const crossing = migrationsBetween(1, 2);
+    expect(crossing.map((m) => m.slot).sort()).toEqual([
+      'backend.migrations',
+      'routes.prefix',
+      'slugFrom',
+    ]);
+    // A span that crosses no boundary is empty, in both directions.
+    expect(migrationsBetween(1, 1)).toEqual([]);
+    expect(migrationsBetween(2, 2)).toEqual([]);
+    // A wider span still only contains the one crossing that exists.
+    expect(migrationsBetween(0, 9)).toEqual(crossing);
   });
 
-  it('builds migration info for a different-major plugin, with empty descriptors and no shim', () => {
-    const info = buildMigrationInfo('^2.0.0');
+  it('offers NO shim for a 1.x plugin — every 2.0.0 change is a removal', () => {
+    const info = buildMigrationInfo('^1.0.0');
     expect(info).not.toBeNull();
     expect(info!.targetHostApiVersion).toBe(HOST_API_VERSION);
-    expect(info!.migrations).toHaveLength(0);
+    expect(info!.migrations).toHaveLength(3);
+    expect(info!.migrations.every((m) => m.kind === 'slot-removed')).toBe(true);
+    /**
+     * The assertion that matters to a plugin author: there is no compatibility
+     * path. Shimming these would mean inferring a logical schema from
+     * hand-written DDL and a slug function — the exact inference 2.0.0 exists
+     * to stop making — so the package simply does not load until it is
+     * re-authored.
+     */
     expect(info!.shimAvailable).toBe(false);
   });
 
   it('returns null when the plugin targets the current major (no migration needed)', () => {
-    expect(buildMigrationInfo('^1.0.0')).toBeNull();
-    expect(buildMigrationInfo('^1.5.0')).toBeNull(); // same major, even if unsatisfiable
+    expect(buildMigrationInfo('^2.0.0')).toBeNull();
+    expect(buildMigrationInfo('^2.5.0')).toBeNull(); // same major, even if unsatisfiable
   });
 });

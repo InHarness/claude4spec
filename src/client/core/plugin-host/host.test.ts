@@ -1,3 +1,4 @@
+import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it } from 'vitest';
 import { clientPluginHost } from './host.js';
 import type { FrontendModule } from './types.js';
@@ -7,12 +8,13 @@ const Noop = (() => null) as unknown as FrontendModule['renderCard'];
 function baseModule(type: string): FrontendModule {
   return {
     type,
-    table: type,
+    data: FIXTURE_DATA,
+    slugPattern: FIXTURE_SLUG_PATTERN,
+    payloadVersion: 1,
     label: type,
     labelPlural: `${type}s`,
     displayOrder: 500,
     pathPrefix: `/${type}s`,
-    slugFrom: () => 'x',
     renderChip: Noop,
     renderCard: Noop,
     renderRow: Noop,

@@ -22,8 +22,16 @@ import { apiContractCommands } from './capabilities/commands.js';
  */
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-api-contracts',
-  version: '0.2.2',
-  hostApiVersion: '^1.0.0',
+  version: '0.2.9',
+  /**
+   * Host API 2.0.0 — the envelope is re-authored against the declarative
+   * contract: `data.schema` + `slugPattern` + `payloadVersion` in place of
+   * `table`, `slugFrom` and `backend.migrations`. The range moves with it, and
+   * has to: the gate `continue`s BEFORE `registerPlugin`, so a `^1.0.0` here
+   * would take both types offline rather than loading them against a contract
+   * they no longer satisfy.
+   */
+  hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     entities: [dtoEntity, endpointEntity],

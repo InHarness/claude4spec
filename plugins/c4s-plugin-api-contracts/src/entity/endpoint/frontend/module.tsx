@@ -3,6 +3,7 @@ import type { Endpoint } from '../../../types.js';
 import { MethodChip } from '../../../frontend-kit/atoms.js';
 import { useEndpoint } from './hooks.js';
 import { endpointsApi } from './api.js';
+import { endpointData, endpointSlugPattern } from '../schema.js';
 import type {
   EntityCardProps,
   EntityChipProps,
@@ -139,20 +140,16 @@ function EndpointCard({ slug, entity, onOpen }: EntityCardProps<Endpoint>) {
 
 export const endpointFrontendModule: FrontendModule = {
   type: 'endpoint',
-  table: 'endpoint',
+  // Host API 2.0.0 — the SAME declaration the backend contribution carries. The
+  // hand-inlined `slugFrom` this replaces was a third spelling of the endpoint
+  // slug rule, alongside the server's `endpointSlug` and the manifest's.
+  data: endpointData,
+  slugPattern: endpointSlugPattern,
+  payloadVersion: 1,
   label: 'Endpoint',
   labelPlural: 'Endpoints',
   displayOrder: 10,
   pathPrefix: '/endpoints',
-  slugFrom: (data) => {
-    const d = data as { method?: string; path?: string };
-    const method = (d.method ?? 'GET').toLowerCase();
-    const path = (d.path ?? '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-    return `${method}-${path}`.replace(/^-+|-+$/g, '');
-  },
   renderRow: EndpointRow as FrontendModule['renderRow'],
   renderChip: EndpointChip as FrontendModule['renderChip'],
   renderCard: EndpointCard as FrontendModule['renderCard'],

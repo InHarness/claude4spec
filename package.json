@@ -61,7 +61,7 @@
     "build:types": "tsc -p tsconfig.types.json && cp src/plugin-types/ambient.d.ts dist/plugin-types/ambient.d.ts",
     "build": "npm run build:client && npm run build:server && npm run build:types",
     "start": "node dist/bin/claude4spec.js",
-    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.types.json --noEmit",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.types.json --noEmit && npm run typecheck:envelopes",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -76,7 +76,8 @@
     "predev:default": "npm run build:envelopes",
     "pretest": "npm run build:envelopes",
     "pretest:watch": "npm run build:envelopes",
-    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test"
+    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test",
+    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",

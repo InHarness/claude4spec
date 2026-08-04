@@ -19,8 +19,9 @@ import Database from 'better-sqlite3';
 import { DomainError as FacadeDomainError } from '@c4s/plugin-runtime';
 import { describe, expect, it } from 'vitest';
 import { EndpointService } from '../../src/entity/endpoint/backend/services.js';
-import { endpointMigrations } from '../../src/entity/endpoint/backend/migrations.js';
-import { dtoMigrations } from '../../src/entity/dto/backend/migrations.js';
+import { generateProjectionDDL } from '../../../../src/server/db/projection.js';
+import { dtoData } from '../../src/entity/dto/schema.js';
+import { endpointData } from '../../src/entity/endpoint/schema.js';
 
 /**
  * The collaborators are never reached: every case here throws before the
@@ -28,7 +29,9 @@ import { dtoMigrations } from '../../src/entity/dto/backend/migrations.js';
  */
 function service(): EndpointService {
   const db = new Database(':memory:');
-  for (const m of [...dtoMigrations, ...endpointMigrations]) db.exec(m.up);
+  for (const module of [{ type: 'dto', data: dtoData }, { type: 'endpoint', data: endpointData }]) {
+    for (const statement of generateProjectionDDL(module)) db.exec(statement);
+  }
   db.prepare(`INSERT INTO endpoint (slug, method, path, summary) VALUES (?, ?, ?, ?)`).run(
     'get-users',
     'GET',
