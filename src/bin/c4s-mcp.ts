@@ -134,7 +134,6 @@ async function main(): Promise<void> {
   // server that exits gives the agent an EOF where it needed a diagnosis.
   const { server } = createC4sReaderServer({
     reader,
-    registry: engine,
     discovery:
       reader && db && projectDir
         ? createDiscoveryCore({

@@ -607,7 +607,11 @@ export class ReleaseService {
     for (const type of ENTITY_TYPES) {
       const module = this.host.getEntity(type);
       if (!module) continue;
-      serializerVersions[type] = module.serializer.version;
+      // 0.2.9 (item 13): the type's integer `payloadVersion`, stringified —
+      // same vocabulary the `entity_version.serializer_version` column now
+      // holds. `page` below stays a semver because a page is a file, not an
+      // entity type, and has no payload version to speak of.
+      serializerVersions[type] = String(module.payloadVersion);
       const rows = this.latestEntityRowsAtOrBefore(type, releaseId);
       for (const r of rows) {
         if (!r.op) continue;
@@ -1295,11 +1299,7 @@ export class ReleaseService {
     // Compare to current state — if identical, no-op.
     const current = this.rawReader.getEntity(input.type, input.slug);
     if (current) {
-      const currentSnapshot = this.host.snapshot(input.type, current, {
-        reader: this.rawReader,
-        depth: 0,
-        maxDepth: 1,
-      });
+      const currentSnapshot = this.host.snapshot(input.type, current, this.rawReader);
       const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot, input.slug);
       if (diff.op === 'noop') {
         /**

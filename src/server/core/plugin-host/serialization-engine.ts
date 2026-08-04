@@ -11,30 +11,36 @@
  * process, bound to that context's ProjectPluginHost.
  */
 
-import type { Database } from 'better-sqlite3';
 import type {
   RawEntity,
   RawEntityReader,
   RawEntityType,
   RawSection,
 } from '../../discovery/raw-entity-reader.js';
-import { fallbackEntity, fallbackSection } from '../../serialization/fallback.js';
-import { autoDerivedSchema } from '../../serialization/auto-schema.js';
+import { genericEntity, genericSection } from '../../serialization/generic.js';
+import { viewSchema } from '../../../shared/plugin-host/json-schema.js';
 import type {
-  EntitySerializer,
   JsonSchema,
-  SerializeContext,
-  SerializeFn,
+  SerializationContribution,
   SerializeResult,
+  ViewFn,
   ViewKind,
+  ViewSet,
 } from '../../serialization/types.js';
 import type { ProjectPluginHost } from './types.js';
 
-const MAX_DEPTH = 1;
+/** Every read view, in the order `describe` reports them. */
+export const VIEW_KINDS: readonly ViewKind[] = [
+  'inline_mention',
+  'single_element',
+  'element_list_item',
+  'tagged_list_item',
+  'detail',
+];
 
 export interface CatalogEntry {
   count: number;
-  version: string;
+  payloadVersion: number;
   description: string;
   roleNoun: string;
   /** M13: only the type's CUSTOM server, e.g. "endpoint-tools: link_dto, unlink_dto". Absent when the type has no custom tools. */
@@ -54,8 +60,15 @@ const ENTITY_TOOLS_MCP_LINE =
 
 export interface DescribeResult {
   type: string;
-  version: string;
-  views: string[];
+  payloadVersion: number;
+  /**
+   * 0.2.9: EVERY view kind, for every active type — a type answers all five,
+   * computing some and letting the host generate the rest. The old list held
+   * only the kinds a serializer implemented, which made a type that declared its
+   * data and computed nothing read as supporting no views at all. Which view is
+   * computed and which is generic is carried inside each schema (`x-computed`).
+   */
+  views: ViewKind[];
   schemas: Record<string, JsonSchema>;
 }
 
@@ -63,41 +76,51 @@ export class SerializationEngine {
   constructor(
     private readonly host: ProjectPluginHost,
     /** Section serializer is registered separately — section is not an entity. */
-    private readonly sectionSerializer: EntitySerializer<unknown> | null = null,
+    private readonly sectionViews: ViewSet<unknown> | null = null,
   ) {}
 
   has(type: string): boolean {
-    if (type === 'section') return this.sectionSerializer !== null;
+    if (type === 'section') return this.sectionViews !== null;
     return this.host.getAvailable(type) !== null;
   }
 
-  get(type: string): EntitySerializer<unknown> | undefined {
-    if (type === 'section') return this.sectionSerializer ?? undefined;
+  /** The views a type computes itself. `section` is a bare view set — it has no manifest. */
+  views(type: string): ViewSet<unknown> | undefined {
+    if (type === 'section') return this.sectionViews ?? undefined;
+    return this.host.getAvailable(type)?.serializer.views;
+  }
+
+  get(type: string): SerializationContribution<unknown> | undefined {
+    if (type === 'section') return undefined;
     return this.host.getAvailable(type)?.serializer;
   }
 
   listTypes(): string[] {
     const types = this.host.listAvailable().map((m) => m.type);
-    if (this.sectionSerializer) types.push('section');
+    if (this.sectionViews) types.push('section');
     return types.sort();
   }
 
-  getVersion(type: string): string | null {
-    return this.get(type)?.version ?? null;
+  /**
+   * The type's payload version, from the MANIFEST — the authority, per
+   * registration's cross-check against the contribution's copy. `null` for
+   * `section`, which is not an entity and has no payload to version.
+   */
+  getPayloadVersion(type: string): number | null {
+    return this.host.getAvailable(type)?.payloadVersion ?? null;
   }
 
   serializeEntity(
     type: string,
     view: ViewKind,
     entity: RawEntity,
-    reader: RawEntityReader,
-    depth = 0
+    reader: RawEntityReader
   ): SerializeResult {
-    return this.invoke(type, view, entity, reader, depth, () => fallbackEntity(entity, view));
+    return this.invoke(type, view, entity, reader, () => genericEntity(entity, view));
   }
 
   serializeSection(view: ViewKind, section: RawSection, reader: RawEntityReader): SerializeResult {
-    return this.invoke('section', view, section, reader, 0, () => fallbackSection(section, view));
+    return this.invoke('section', view, section, reader, () => genericSection(section, view));
   }
 
   private invoke(
@@ -105,44 +128,50 @@ export class SerializationEngine {
     view: ViewKind,
     input: unknown,
     reader: RawEntityReader,
-    depth: number,
-    buildFallback: () => Record<string, unknown>
+    buildGeneric: () => Record<string, unknown>
   ): SerializeResult {
-    const serializer = this.get(type);
-    if (!serializer) {
-      return { data: buildFallback(), fallback: true, error: 'no_serializer' };
+    if (!this.has(type)) {
+      return { data: buildGeneric(), generic: true, error: 'unknown_type' };
     }
-    const method = pickMethod(serializer, view);
-    if (!method) {
-      return { data: buildFallback(), fallback: true };
+    const fn: ViewFn<unknown> | undefined = this.views(type)?.[view];
+    if (!fn) {
+      // The RULE, not a failure: the type declared its data and left this view
+      // to the host.
+      return { data: buildGeneric(), generic: true };
     }
-    const ctx: SerializeContext = { reader, depth, maxDepth: MAX_DEPTH };
     try {
-      const data = method(input, ctx);
+      const data = fn(input, reader);
       const brokenRefs = extractBrokenRefs(data);
-      return { data, fallback: false, ...(brokenRefs ? { brokenRefs } : {}) };
+      return { data, generic: false, ...(brokenRefs ? { brokenRefs } : {}) };
     } catch (err) {
       return {
-        data: buildFallback(),
-        fallback: true,
+        data: buildGeneric(),
+        generic: true,
         error: `serializer_threw: ${(err as Error).message}`,
       };
     }
   }
 
-  getSchema(type: string, view: ViewKind, db?: Database): JsonSchema {
-    const serializer = this.get(type);
-    if (serializer?.schema) return serializer.schema(view);
-    if (db) return autoDerivedSchema(db, type, this.host);
-    return { type: 'object', _auto: true, _note: 'schema unavailable without db handle' };
+  /**
+   * The schema of one type × one view, DERIVED from the type's `data.schema`.
+   *
+   * 0.2.9 removed the other path: a hand-written `serializer.schema(view)` when
+   * the type had one, reflection over the SQLite columns (stamped `_auto`) when
+   * it did not, and a stub apologising for the missing db handle when there was
+   * none. One derivation, no db, no `_auto`.
+   */
+  getSchema(type: string, view: ViewKind): JsonSchema {
+    const m = this.host.getAvailable(type);
+    if (!m) return { type: 'object', properties: {}, required: [] };
+    return viewSchema({ type, data: m.data, view, computed: !!m.serializer.views?.[view] });
   }
 
   /**
-   * Lightweight smoke test: per active entity type, a row count, serializer
+   * Lightweight smoke test: per active entity type, a row count, the payload
    * version, a one-line description, and the type's `roleNoun` /
    * `mcpToolsLine` (all from the per-type system-prompt slot, the same source
-   * the M05 system prompt uses). Deliberately does NOT read
-   * `serializer.schema` — use {@link describe} for schemas. Iterates active
+   * the M05 system prompt uses). Deliberately does NOT derive schemas — use
+   * {@link describe} for those. Iterates active
    * plugins via `host.listEntities()` (deactivated plugins absent).
    */
   catalog(reader: RawEntityReader): CatalogResult {
@@ -153,7 +182,7 @@ export class SerializationEngine {
       if (crudSupported) anyCrudSupported = true;
       types[m.type] = {
         count: reader.count(m.type as RawEntityType),
-        version: m.serializer.version,
+        payloadVersion: m.payloadVersion,
         // All three read the per-type systemPrompt slot (chat-context.ts).
         description: m.systemPrompt.narrativeBlock ?? m.systemPrompt.roleNoun,
         roleNoun: m.systemPrompt.roleNoun,
@@ -171,43 +200,18 @@ export class SerializationEngine {
    * On-demand schema discovery for one active entity type. Returns null when
    * the type is unknown or deactivated (caller maps to INVALID_TYPE). When
    * `view` is given the response is narrowed to that single view; otherwise
-   * all of the type's supported views are returned. Schemas come from
-   * `serializer.schema(view)` or, when absent, schema reflection (`_auto`).
+   * every view is returned, because every type answers every view. Schemas are
+   * derived from `data.schema` — see {@link getSchema}.
    */
-  describe(type: string, view: ViewKind | undefined, db: Database): DescribeResult | null {
+  describe(type: string, view: ViewKind | undefined): DescribeResult | null {
     const m = this.host.listEntities().find((e) => e.type === type);
     if (!m) return null;
-    const serializer = m.serializer;
-    const views: string[] = [];
-    if (serializer.inlineMention) views.push('inline_mention');
-    if (serializer.singleElement) views.push('single_element');
-    if (serializer.elementListItem) views.push('element_list_item');
-    if (serializer.taggedListItem) views.push('tagged_list_item');
-    if (serializer.detail) views.push('detail');
-    const targetViews: ViewKind[] = view ? [view] : (views as ViewKind[]);
+    const targetViews: ViewKind[] = view ? [view] : [...VIEW_KINDS];
     const schemas: Record<string, JsonSchema> = {};
     for (const v of targetViews) {
-      schemas[v] = this.getSchema(type, v, db);
+      schemas[v] = this.getSchema(type, v);
     }
-    return { type, version: serializer.version, views, schemas };
-  }
-}
-
-function pickMethod(
-  serializer: EntitySerializer<unknown>,
-  view: ViewKind
-): SerializeFn<unknown> | undefined {
-  switch (view) {
-    case 'inline_mention':
-      return serializer.inlineMention;
-    case 'single_element':
-      return serializer.singleElement;
-    case 'element_list_item':
-      return serializer.elementListItem;
-    case 'tagged_list_item':
-      return serializer.taggedListItem;
-    case 'detail':
-      return serializer.detail;
+    return { type, payloadVersion: m.payloadVersion, views: [...VIEW_KINDS], schemas };
   }
 }
 

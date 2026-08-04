@@ -1,10 +1,9 @@
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 import type {
   EntityDiff,
-  EntitySerializer,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
+  SerializationContribution,
 } from '../../serialization/types.js';
 import type { AcKind, AcStatus, AcVerifyRef } from '../../../shared/entities.js';
 
@@ -120,38 +119,39 @@ function acRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   return { op: result.op, entity: result.entity };
 }
 
-export const acSerializer: EntitySerializer<RawEntity> = {
-  type: 'ac',
-  version: '1.0.0',
+export const acSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 1,
 
-  inlineMention: (entity) => ({
-    type: 'ac',
-    slug: entity.slug,
-    label: (entity.data.text as string) ?? entity.slug,
-    href: `/acs/${entity.slug}`,
-  }),
+  views: {
+    inline_mention: (entity) => ({
+      type: 'ac',
+      slug: entity.slug,
+      label: (entity.data.text as string) ?? entity.slug,
+      href: `/acs/${entity.slug}`,
+    }),
 
-  singleElement: (entity) => baseSingle(entity),
+    single_element: (entity) => baseSingle(entity),
 
-  elementListItem: (entity) => baseSingle(entity),
+    element_list_item: (entity) => baseSingle(entity),
 
-  taggedListItem: (entity) => baseSingle(entity),
+    tagged_list_item: (entity) => baseSingle(entity),
 
-  detail: (entity, ctx: SerializeContext) => {
-    const base = baseSingle(entity);
-    const references = ctx.reader.findSectionReferences('ac', entity.slug).map((r) => ({
-      anchor: r.anchor,
-      pagePath: r.pagePath,
-      headingText: r.headingText,
-      relation: r.relation,
-    }));
-    return {
-      ...base,
-      _references: references,
-    };
+    detail: (entity, reader) => {
+      const base = baseSingle(entity);
+      const references = reader.findSectionReferences('ac', entity.slug).map((r) => ({
+        anchor: r.anchor,
+        pagePath: r.pagePath,
+        headingText: r.headingText,
+        relation: r.relation,
+      }));
+      return {
+        ...base,
+        _references: references,
+      };
+    },
   },
 
-  // ─── M17 ───
+  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   snapshot: (entity) => buildSnapshot(entity),
   restore: acRestore,
   diff: acDiff,

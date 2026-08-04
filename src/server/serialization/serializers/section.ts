@@ -1,6 +1,6 @@
 import type { RawSection } from '../../discovery/raw-entity-reader.js';
 import type { HydratedSection } from '../../discovery/section-hydrator.js';
-import type { EntitySerializer } from '../types.js';
+import type { ViewSet } from '../types.js';
 
 /**
  * A section is explicitly NOT an entity type: it is not registered with the
@@ -36,13 +36,16 @@ const coordinates = (section: RawSection) => ({
   lineEnd: section.lineEnd,
 });
 
-const serializer: EntitySerializer<RawSection> = {
-  type: 'section',
-  version: '1.0.0',
+/**
+ * 0.2.9: a `ViewSet`, not a full `SerializationContribution`. Section has no
+ * manifest and therefore no `payloadVersion` — it is not an entity, it is never
+ * snapshotted, and inventing a version for it would be inventing the one field
+ * of the contract it cannot honestly answer.
+ */
+const views: ViewSet<RawSection> = {
+  single_element: (section) => coordinates(section),
 
-  singleElement: (section) => coordinates(section),
-
-  inlineMention: (section) => ({
+  inline_mention: (section) => ({
     type: 'section',
     anchor: section.anchor,
     label: section.headingText,
@@ -52,7 +55,7 @@ const serializer: EntitySerializer<RawSection> = {
   /**
    * Hydration (reading the page, slicing the body, parsing the edges) happens
    * in the discovery core BEFORE this is called, so the serializer stays a pure
-   * projection and `SerializeContext` needs no new slot that every installed
+   * projection and the view signature needs no new slot that every installed
    * plugin would have to compile against. A section handed here un-hydrated
    * still serializes — it simply reports an empty body and no edges, which is
    * the honest answer for "nobody read the page".
@@ -70,14 +73,14 @@ const serializer: EntitySerializer<RawSection> = {
    * Sections carry no tags and are not addressable by slug, so they never
    * appear in a manual `<element_list>` or a `<tagged_list>`. These exist so
    * that a caller which asks anyway gets the coordinates instead of the generic
-   * `_fallback` envelope.
+   * envelope.
    */
-  elementListItem: (section) => coordinates(section),
-  taggedListItem: (section) => coordinates(section),
+  element_list_item: (section) => coordinates(section),
+  tagged_list_item: (section) => coordinates(section),
 };
 
 /**
  * M31: exported instead of attached to a singleton — every SerializationEngine
  * instance (per ProjectContext, per CLI process) receives it via constructor.
  */
-export const sectionSerializer = serializer as EntitySerializer<unknown>;
+export const sectionSerializer = views as ViewSet<unknown>;

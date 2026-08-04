@@ -55,7 +55,7 @@ export interface OverviewRoot {
 
 export interface OverviewType {
   count: number;
-  version: string;
+  payloadVersion: number;
   description: string;
   roleNoun: string;
   mcpToolsLine?: string;
@@ -76,8 +76,9 @@ export interface DescribeTypesInput {
 export interface DescribedType {
   type: string;
   label: string;
-  version: string;
-  views: string[];
+  payloadVersion: number;
+  /** Every view kind — a type answers all five, computing some, generating the rest. */
+  views: ViewKind[];
   schemas: Record<string, unknown>;
   /** The paths a `search_entities` call would actually cover for this type. */
   searchableFields: string[];
@@ -311,9 +312,17 @@ export interface ListEntitiesInput {
   offset?: number;
 }
 
-/** Serializer outcome travels with every serialized record — see `serialize` in ops/entities.ts. */
+/**
+ * Serialization outcome, travelling with every serialized record — see
+ * `serialize` in ops/entities.ts.
+ *
+ * `generic` (0.2.9, was `fallback`) marks a payload the HOST built from the
+ * projection row rather than one the type computed. Optional on the wire on
+ * purpose: it is the common case now, and stamping `generic: false` onto every
+ * row of every list would pay for the rare case in every response.
+ */
 export interface SerializedMeta {
-  fallback?: boolean;
+  generic?: boolean;
   error?: string;
   brokenRefs?: string[];
 }

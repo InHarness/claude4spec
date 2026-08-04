@@ -21,7 +21,7 @@ import type {
   EntityContribution,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
-import type { EntitySerializer } from '../../serialization/types.js';
+import type { SerializationContribution } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type {
@@ -102,6 +102,67 @@ const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
   ['auxTables', "data.schema (declare the collection that owns the table)"],
 ];
 
+/**
+ * Slots a 1.x serializer carried that Host API 2.0.0 derives instead.
+ *
+ * Rejected, not ignored: a package still shipping `snapshot` believes it owns
+ * its file format, and loading it would leave the host generating a DIFFERENT
+ * snapshot than the one the plugin was written to read back. Silence there costs
+ * data; an error costs one line of migration.
+ */
+const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
+  ['type', 'the manifest already declares it'],
+  ['version', 'payloadVersion (an integer, enforced by the upgrade chain)'],
+  ['inlineMention', 'views.inline_mention'],
+  ['singleElement', 'views.single_element'],
+  ['elementListItem', 'views.element_list_item'],
+  ['taggedListItem', 'views.tagged_list_item'],
+  ['schema', 'nothing — schemas are derived from data.schema'],
+];
+
+function assertSerializationContribution(
+  type: string,
+  serializer: Record<string, unknown>,
+  payloadVersion: number,
+): void {
+  for (const [slot, successor] of REMOVED_SERIALIZER_SLOTS) {
+    if (serializer[slot] != null) {
+      throw new PluginManifestError(
+        `entity "${type}" — \`serializer.${slot}\` was removed in Host API 2.0.0; use \`${successor}\``,
+      );
+    }
+  }
+  /**
+   * The manifest slot is the authority; the contribution's copy exists because
+   * the brief declares it there. Two numbers that may disagree are a bug waiting
+   * for the one reader that picks the other one, so disagreement is fatal here
+   * rather than resolved silently at each call site.
+   */
+  if (serializer.payloadVersion != null && serializer.payloadVersion !== payloadVersion) {
+    throw new PluginManifestError(
+      `entity "${type}" — serializer.payloadVersion (${String(serializer.payloadVersion)}) ` +
+        `disagrees with the manifest's payloadVersion (${payloadVersion})`,
+    );
+  }
+  const upgrades = serializer.payloadUpgrades;
+  if (upgrades != null) {
+    if (!Array.isArray(upgrades) || upgrades.some((u) => typeof u !== 'function')) {
+      throw new PluginManifestError(`entity "${type}" — payloadUpgrades must be an array of functions`);
+    }
+    /**
+     * One step per version transition, no more and no less. A short chain is the
+     * "conflicting gap" the loader would otherwise discover one entity at a time,
+     * at boot, on somebody's real project.
+     */
+    if (upgrades.length !== payloadVersion - 1) {
+      throw new PluginManifestError(
+        `entity "${type}" — payloadUpgrades must have exactly ${payloadVersion - 1} step(s) for ` +
+          `payloadVersion ${payloadVersion}, got ${upgrades.length}`,
+      );
+    }
+  }
+}
+
 function assertContribution(c: EntityContribution): void {
   if (!c || typeof c !== 'object') {
     throw new PluginManifestError('entity contribution must be an object');
@@ -131,6 +192,7 @@ function assertContribution(c: EntityContribution): void {
   if (c.serializer == null) {
     throw new PluginManifestError(`entity "${c.type}" — serializer is required`);
   }
+  assertSerializationContribution(c.type, c.serializer as Record<string, unknown>, c.payloadVersion);
   if (c.systemPrompt == null) {
     throw new PluginManifestError(`entity "${c.type}" — systemPrompt is required`);
   }
@@ -186,7 +248,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     payloadVersion: c.payloadVersion,
     pathPrefix: c.pathPrefix,
     dependsOn: c.dependsOn,
-    serializer: c.serializer as EntitySerializer<unknown>,
+    serializer: c.serializer as SerializationContribution<unknown>,
     systemPrompt: c.systemPrompt,
     backend: backendSlot,
   };

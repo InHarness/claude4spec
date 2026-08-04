@@ -114,10 +114,6 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
 
   const deps: EntityToolsDeps = {
     host,
-    registry: {
-      serializeEntity: (_type, _view, entity) => ({ data: entity, fallback: false }),
-      describe: () => ({ type: 'widget', version: '1.0.0', views: ['detail'], schemas: {} }),
-    } as unknown as EntityToolsDeps['registry'],
     reader: {
       getEntity: (_type: string, slug: string) => service.get(slug),
       getEntities: (_type: string, slugs: string[]) => {
@@ -131,6 +127,18 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
     // responsible for — forwarding `filters` to the service — rather than
     // re-testing the core's serialization.
     discovery: {
+      // 0.2.9 (item 15): `describe_entity_type` reads L9 through the core, not
+      // through the serialization engine, so the stub answers it here.
+      describeTypes: ({ types }: { types?: string[] }) => ({
+        types: (types ?? ['widget']).map((type) => ({
+          type,
+          label: type,
+          payloadVersion: 1,
+          views: ['inline_mention', 'single_element', 'element_list_item', 'tagged_list_item', 'detail'],
+          schemas: {},
+          searchableFields: [`${type}.name`],
+        })),
+      }),
       getEntities: ({ type, slugs }: { type: string; slugs: string[] }) => ({
         type,
         view: 'detail',
@@ -474,15 +482,15 @@ describe('entity-tools: describe_entity_type', () => {
     expect(types[0]!.updateSchema).toMatchObject({ __error: expect.stringMatching(/^build-throw: boom-build/) });
   });
 
-  it('describe-all isolates a type whose registry.describe() throws: healthy types survive, bad type gets an entry-level __error', async () => {
+  it('describe-all isolates a type whose describeTypes() throws: healthy types survive, bad type gets an entry-level __error', async () => {
     const { deps } = fakeDeps([widgetModule({ type: 'describe-throw' })]);
     // The outer per-type guard must contain failures beyond schema serialization —
-    // here registry.describe() itself throws for one type.
-    const original = deps.registry.describe;
-    deps.registry.describe = ((type: string, view: unknown, db: unknown) => {
-      if (type === 'describe-throw') throw new Error('boom-describe');
-      return (original as (t: string, v: unknown, d: unknown) => unknown)(type, view, db);
-    }) as typeof deps.registry.describe;
+    // here the core's describeTypes() itself throws for one type.
+    const original = deps.discovery.describeTypes;
+    deps.discovery.describeTypes = ((input: { types?: string[] }) => {
+      if (input.types?.[0] === 'describe-throw') throw new Error('boom-describe');
+      return (original as (i: unknown) => unknown)(input);
+    }) as typeof deps.discovery.describeTypes;
 
     const result = await tool(deps, 'describe_entity_type').handler({});
     expect(result.isError).toBeUndefined(); // batch completes, no process-level throw

@@ -8,14 +8,14 @@
  * arrive as an `anchor` or as `(rootId, path, line)`.
  *
  * `overview` failing must not push an agent back to guessing, which is why it
- * touches as little as possible — only pure-data manifest slots, never
- * `serializer.schema`. Schema emission lives in `describe_types` alone, so one
- * broken serializer cannot take orientation down with it.
+ * touches as little as possible — only pure-data manifest slots, never a
+ * derived schema. Schema emission lives in `describe_types` alone, so one
+ * broken type cannot take orientation down with it.
  */
 
 import type { DiscoveryDeps, DescribeTypesInput, DescribeTypesResult, OverviewResult } from '../types.js';
-import type { ViewKind } from '../../serialization/types.js';
 import { invalidType } from '../errors.js';
+import { optionalView } from '../views.js';
 import { PageSource } from '../page-source.js';
 import { RootSet } from '../roots.js';
 import { resolveSearchFields } from '../search/fields.js';
@@ -45,7 +45,7 @@ export async function overview(deps: DiscoveryDeps, pages: PageSource, roots: Ro
   for (const [type, entry] of Object.entries(catalog.types)) {
     types[type] = {
       count: entry.count,
-      version: entry.version,
+      payloadVersion: entry.payloadVersion,
       description: entry.description,
       roleNoun: entry.roleNoun,
       ...(entry.mcpToolsLine ? { mcpToolsLine: entry.mcpToolsLine } : {}),
@@ -65,6 +65,11 @@ export function describeTypes(deps: DiscoveryDeps, input: DescribeTypesInput = {
   const activeTypes = active.map((m) => m.type);
   const wanted = input.types?.length ? input.types : activeTypes;
 
+  // The view vocabulary is checked ONCE, before any type is touched: an unknown
+  // view is a bad call, not a per-type outcome, and it must answer the same way
+  // whether the caller named one type or none.
+  const view = optionalView(input.view);
+
   const types: DescribeTypesResult['types'] = [];
   for (const type of wanted) {
     const module = deps.host.getEntity(type);
@@ -72,12 +77,12 @@ export function describeTypes(deps: DiscoveryDeps, input: DescribeTypesInput = {
     // list attached — never a silent fall-back to raw JSON, which would make a
     // deactivated type look half-alive.
     if (!module) throw invalidType(type, activeTypes);
-    const described = deps.serialization.describe(type, input.view as ViewKind | undefined, deps.db);
+    const described = deps.serialization.describe(type, view);
     if (!described) throw invalidType(type, activeTypes);
     types.push({
       type,
       label: module.label,
-      version: described.version,
+      payloadVersion: described.payloadVersion,
       views: described.views,
       schemas: described.schemas,
       // The answer to "what will search cover for this type" belongs with the

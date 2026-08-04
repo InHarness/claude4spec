@@ -1,5 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { EntitySerializer } from '../../serialization/types.js';
+import type { SerializationContribution } from '../../serialization/types.js';
 import { designSystemSlug } from '../../services/slug.js';
 import { designSystemSerializer } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
@@ -18,7 +18,7 @@ export const designSystemBackendModule: BackendModule = {
   // After ui-view (40) and ac (50) — design systems sit at the end of ELEMENTS.
   displayOrder: 60,
   pathPrefix: '/design-systems',
-  serializer: designSystemSerializer as EntitySerializer<unknown>,
+  serializer: designSystemSerializer as SerializationContribution<unknown>,
   systemPrompt: designSystemSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
   // manifest-adapter.ts#synthesizeMount): construct the service once, register

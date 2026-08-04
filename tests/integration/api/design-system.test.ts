@@ -94,17 +94,19 @@ describe('design-system REST + ui-view relation', () => {
     expect(gv.body.designSystemSlug).toBe('brand-2026');
   });
 
-  it('ui-view serializer is 1.1.0 and its snapshot carries designSystemSlug', async () => {
+  it('ui-view and design-system declare payload version 1, and the snapshot carries designSystemSlug', async () => {
     await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
       .send({ name: 'Profile', designSystemSlug: 'brand' });
 
-    expect(t.host.getEntity('ui-view')?.serializer.version).toBe('1.1.0');
-    expect(t.host.getEntity('design-system')?.serializer.version).toBe('1.0.0');
+    // 0.2.9 (item 13): an integer payload version on the MANIFEST, not a
+    // per-serializer semver. The semver was advisory and unenforced; this one
+    // is what the upgrade chain acts on.
+    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(1);
+    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(1);
 
-    const ctx = { reader: t.rawReader, depth: 0, maxDepth: 1 };
-    const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.slug), ctx) as {
+    const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.slug), t.rawReader) as {
       designSystemSlug: string | null;
     };
     expect(snap.designSystemSlug).toBe('brand');

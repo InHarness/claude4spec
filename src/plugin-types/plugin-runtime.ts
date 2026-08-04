@@ -264,11 +264,6 @@ export interface HostEntityWriter {
   delete(type: string, slug: string, actor: 'user' | 'agent'): unknown;
 }
 
-export interface SerializeContext {
-  reader: HostEntityReader;
-  depth: number;
-  maxDepth: number;
-}
 export interface RestoreContext {
   reader: HostEntityReader;
   writer: HostEntityWriter;
@@ -287,17 +282,30 @@ export interface EntityDiff {
   changes?: Record<string, unknown>;
 }
 export type SnapshotData = unknown;
-export interface EntitySerializer<T = unknown> {
-  type: string;
-  version: string;
-  inlineMention?: (entity: T, ctx: SerializeContext) => unknown;
-  singleElement?: (entity: T, ctx: SerializeContext) => unknown;
-  elementListItem?: (entity: T, ctx: SerializeContext) => unknown;
-  taggedListItem?: (entity: T, ctx: SerializeContext) => unknown;
-  detail?: (entity: T, ctx: SerializeContext) => unknown;
-  snapshot?: (entity: T, ctx: SerializeContext) => SnapshotData;
-  restore?: (data: SnapshotData, ctx: RestoreContext) => RestoreResult;
+export type ViewKind =
+  | 'inline_mention'
+  | 'single_element'
+  | 'element_list_item'
+  | 'tagged_list_item'
+  | 'detail';
+export type ViewFn<T> = (entity: T, reader: HostEntityReader) => unknown;
+export type ViewSet<T> = Partial<Record<ViewKind, ViewFn<T>>>;
+/**
+ * Host API 2.0.0 — a type contributes COMPUTED views and a semantic diff, and
+ * nothing else. Views it does not compute are served generically from its
+ * `data.schema`; schemas, snapshot and restore are derived from the same place.
+ */
+export interface SerializationContribution<T = unknown> {
+  views?: ViewSet<T>;
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
+  /** Must equal the manifest's `payloadVersion`; registration rejects a mismatch. */
+  payloadVersion: number;
+  /** `payloadUpgrades[i]`: payload `i+1` → `i+2`. Enforced by the host on load and restore. */
+  payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
+  /** @deprecated Generated from `data.schema`; removed in the next release. */
+  snapshot?: (entity: T, reader: HostEntityReader) => SnapshotData;
+  /** @deprecated See {@link SerializationContribution.snapshot}. */
+  restore?: (data: SnapshotData, ctx: RestoreContext) => RestoreResult;
 }
 
 // ── Frontend render props (L5/L8) ──

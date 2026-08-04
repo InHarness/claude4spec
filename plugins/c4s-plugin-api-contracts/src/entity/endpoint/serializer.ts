@@ -1,10 +1,10 @@
 import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
-  EntitySerializer,
+  HostEntityReader,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
+  SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
 import { findEndpointDtos, syncEndpointDtos, type JunctionCapable } from '../junction/index.js';
@@ -27,8 +27,8 @@ function href(entity: RawEntity): string {
   return `/endpoints/${entity.slug}`;
 }
 
-function baseSingle(entity: RawEntity, ctx: SerializeContext, includeDtos = true) {
-  const dtos = includeDtos ? findEndpointDtos(ctx.reader.db, entity.slug) : undefined;
+function baseSingle(entity: RawEntity, reader: HostEntityReader, includeDtos = true) {
+  const dtos = includeDtos ? findEndpointDtos(reader.db, entity.slug) : undefined;
   return {
     type: 'endpoint',
     slug: entity.slug,
@@ -66,8 +66,8 @@ export interface EndpointSnapshot {
   tags: string[];
 }
 
-function buildSnapshot(entity: RawEntity, ctx: SerializeContext): EndpointSnapshot {
-  const dtos = findEndpointDtos(ctx.reader.db, entity.slug);
+function buildSnapshot(entity: RawEntity, reader: HostEntityReader): EndpointSnapshot {
+  const dtos = findEndpointDtos(reader.db, entity.slug);
   return {
     slug: entity.slug,
     method: entity.data.method as HttpMethod,
@@ -202,67 +202,75 @@ function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   };
 }
 
-export const endpointSerializer: EntitySerializer<RawEntity> = {
-  type: 'endpoint',
-  version: '1.0.0',
+export const endpointSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 1,
 
-  inlineMention: (entity) => ({
-    type: 'endpoint',
-    slug: entity.slug,
-    label: label(entity),
-    href: href(entity),
-  }),
+  views: {
+    inline_mention: (entity) => ({
+      type: 'endpoint',
+      slug: entity.slug,
+      label: label(entity),
+      href: href(entity),
+    }),
 
-  singleElement: (entity, ctx) => baseSingle(entity, ctx, true),
+    single_element: (entity, reader) => baseSingle(entity, reader, true),
 
-  elementListItem: (entity, ctx) => {
-    const base = baseSingle(entity, ctx, true);
-    const description = base.description ? base.description.split('\n')[0] : null;
-    return { ...base, description };
-  },
+    element_list_item: (entity, reader) => {
+      const base = baseSingle(entity, reader, true);
+      const description = base.description ? base.description.split('\n')[0] : null;
+      return { ...base, description };
+    },
 
-  taggedListItem: (entity, ctx) => {
-    const base = baseSingle(entity, ctx, true);
-    const description = base.description ? base.description.split('\n')[0] : null;
-    return { ...base, description };
-  },
+    tagged_list_item: (entity, reader) => {
+      const base = baseSingle(entity, reader, true);
+      const description = base.description ? base.description.split('\n')[0] : null;
+      return { ...base, description };
+    },
 
-  detail: (entity, ctx) => {
-    const base = baseSingle(entity, ctx, true);
-    const brokenRefs: string[] = [];
-    const dtos = findEndpointDtos(ctx.reader.db, entity.slug);
-    const dtoObjects = dtos.map((link) => {
-      const dto = ctx.reader.getEntity('dto', link.dtoSlug) as RawEntity | null;
-      if (!dto) {
-        brokenRefs.push(`dto:${link.dtoSlug}`);
-        return { ...link, dto: null };
-      }
-      if (ctx.depth >= ctx.maxDepth) {
-        return { ...link, dto: { slug: dto.slug, name: dto.data.name as string, _truncated: true } };
-      }
+    /**
+     * Resolves each linked DTO ONE level deep — the nested DTO's own fields are
+     * carried, its own links are not.
+     *
+     * 0.2.9: that rule used to be expressed as `ctx.depth >= ctx.maxDepth`,
+     * against a `depth` no caller ever set to anything but `0`. The guard could
+     * therefore never fire, and the `_truncated` marker it produced was
+     * unreachable code pretending to be a depth limit. The rule is now what the
+     * code does: resolve one level, never recurse.
+     */
+    detail: (entity, reader) => {
+      const base = baseSingle(entity, reader, true);
+      const brokenRefs: string[] = [];
+      const dtos = findEndpointDtos(reader.db, entity.slug);
+      const dtoObjects = dtos.map((link) => {
+        const dto = reader.getEntity('dto', link.dtoSlug) as RawEntity | null;
+        if (!dto) {
+          brokenRefs.push(`dto:${link.dtoSlug}`);
+          return { ...link, dto: null };
+        }
+        return {
+          ...link,
+          dto: {
+            slug: dto.slug,
+            name: dto.data.name as string,
+            description: (dto.data.description as string | null) ?? null,
+            fields: dto.data.fields,
+            tags: dto.tags,
+          },
+        };
+      });
+
+      const references = reader.findSectionReferences('endpoint', entity.slug) as SectionEntityRef[];
       return {
-        ...link,
-        dto: {
-          slug: dto.slug,
-          name: dto.data.name as string,
-          description: (dto.data.description as string | null) ?? null,
-          fields: dto.data.fields,
-          tags: dto.tags,
-        },
+        ...base,
+        dtos: dtoObjects,
+        _references: formatReferences(references),
+        ...(brokenRefs.length ? { _brokenRefs: brokenRefs } : {}),
       };
-    });
-
-    const references = ctx.reader.findSectionReferences('endpoint', entity.slug) as SectionEntityRef[];
-    return {
-      ...base,
-      dtos: dtoObjects,
-      _references: formatReferences(references),
-      ...(brokenRefs.length ? { _brokenRefs: brokenRefs } : {}),
-    };
+    },
   },
 
-  // ─── M17 ───
-  snapshot: (entity, ctx) => buildSnapshot(entity, ctx),
+  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
+  snapshot: (entity, reader) => buildSnapshot(entity, reader),
   restore: endpointRestore,
   diff: endpointDiff,
 };

@@ -64,8 +64,6 @@ import {
  */
 export interface WritableModule extends ProjectableModule {
   payloadVersion?: number;
-  /** Read only for `entity_version.serializer_version`, to match every other writer. */
-  serializer?: { version?: string };
 }
 
 /**
@@ -92,7 +90,6 @@ export interface ProjectionWriteDeps {
       op: 'create' | 'update' | 'delete',
       actor: ChangedBy,
       summary: string | null,
-      serializerVersion: string,
     ): unknown;
   } | null;
 }
@@ -332,17 +329,6 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
         op === 'created' ? 'create' : 'update',
         actor,
         op === 'created' ? 'Created' : 'Updated',
-        /**
-         * The SERIALIZER's semver, not the module's `payloadVersion`.
-         *
-         * Every other writer stores `serializer.version` in this column
-         * (`'1.0.0'`, `'1.1.0'`). Writing `'1'` here made consecutive rows for
-         * the same entity disagree as soon as any other path captured one —
-         * exactly the signal downstream consumers read as a serializer
-         * migration. `payloadVersion` becomes this column's vocabulary in tier B
-         * item 13, for every writer at once, not for one of them early.
-         */
-        module.serializer?.version ?? 'unknown',
       );
     }
   });
@@ -391,7 +377,6 @@ export function removeProjectionRow(
         'delete',
         actor,
         'Deleted',
-        module.serializer?.version ?? 'unknown',
       );
     }
     db.prepare(`DELETE FROM entity_tag WHERE entity_type = ? AND entity_slug = ?`).run(

@@ -36,7 +36,7 @@ export interface ResolvedEntry {
   position: { line: number; start: number; end: number };
   data?: unknown;
   inline?: string;
-  fallback?: boolean;
+  generic?: boolean;
   error?: string;
 }
 
@@ -60,7 +60,7 @@ export function resolvePageContent(md: string, deps: ResolvePageDeps): ResolvePa
       const outcome = resolveTag(tag, deps);
       entry.data = outcome.data;
       entry.inline = outcome.inline;
-      if (outcome.fallback) entry.fallback = true;
+      if (outcome.generic) entry.generic = true;
       if (outcome.error) entry.error = outcome.error;
       replacements.push({ start: tag.start, end: tag.end, replacement: outcome.inline });
     } catch (err) {
@@ -84,7 +84,7 @@ export function resolvePageContent(md: string, deps: ResolvePageDeps): ResolvePa
 interface ResolveOutcome {
   data: unknown;
   inline: string;
-  fallback: boolean;
+  generic: boolean;
   error?: string;
 }
 
@@ -101,9 +101,9 @@ function resolveTag(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
     case 'tagged_list_mixed':
       return resolveTaggedListMixed(tag, deps);
     case 'todo':
-      return { data: null, inline: tag.raw, fallback: false };
+      return { data: null, inline: tag.raw, generic: false };
     default:
-      return { data: null, inline: tag.raw, fallback: false };
+      return { data: null, inline: tag.raw, generic: false };
   }
 }
 
@@ -119,7 +119,7 @@ function resolveSingle(
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: missing slug -->`,
-      fallback: true,
+      generic: true,
       error: 'missing_slug',
     };
   }
@@ -128,7 +128,7 @@ function resolveSingle(
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: unknown type '${typeRaw}' -->`,
-      fallback: true,
+      generic: true,
       error: 'unknown_type',
     };
   }
@@ -137,7 +137,7 @@ function resolveSingle(
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: ${type}/${slug} not found -->`,
-      fallback: true,
+      generic: true,
       error: 'entity_not_found',
     };
   }
@@ -145,7 +145,7 @@ function resolveSingle(
   return {
     data,
     inline: render(data),
-    fallback: record.fallback === true,
+    generic: record.generic === true,
     ...(record.error ? { error: record.error } : {}),
   };
 }
@@ -161,7 +161,7 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: unknown type '${typeRaw}' -->`,
-      fallback: true,
+      generic: true,
       error: 'unknown_type',
     };
   }
@@ -186,7 +186,7 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
   return {
     data,
     inline: renderElementList(items) + (missing.length ? `\n\n_missing: ${missing.join(', ')}_` : ''),
-    fallback: false,
+    generic: false,
   };
 }
 
@@ -202,7 +202,7 @@ function resolveTaggedList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
     return {
       data: null,
       inline: `${tag.raw}\n<!-- c4s resolve: unknown type '${typeRaw}' -->`,
-      fallback: true,
+      generic: true,
       error: 'unknown_type',
     };
   }
@@ -210,7 +210,7 @@ function resolveTaggedList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
   return {
     data: { items, query: { type, tags, filter } },
     inline: renderElementList(items),
-    fallback: false,
+    generic: false,
   };
 }
 
@@ -234,7 +234,7 @@ function resolveTaggedListMixed(tag: XmlTag, deps: ResolvePageDeps): ResolveOutc
   return {
     data: { ...groups, query: { tags, filter } },
     inline: renderTaggedListMixed(groups),
-    fallback: false,
+    generic: false,
   };
 }
 
@@ -259,11 +259,11 @@ function normalizeType(raw: string, deps: ResolvePageDeps): string | null {
 }
 
 function withMeta(data: unknown, meta: SerializedMeta): unknown {
-  if (!meta.fallback && !meta.error) return data;
+  if (!meta.generic && !meta.error) return data;
   if (typeof data === 'object' && data !== null) {
     return {
       ...(data as object),
-      ...(meta.fallback ? { _fallback: true } : {}),
+      ...(meta.generic ? { _generic: true } : {}),
       ...(meta.error ? { _error: meta.error } : {}),
     };
   }

@@ -40,7 +40,7 @@ describe('VersionService.restore', () => {
     // (HostEntityWriter → serializer.restore) is exercised elsewhere.
     const fakeHost = {
       restore: hostRestore,
-      getEntity: () => ({ serializer: { version: '1.1.0' } }),
+      getEntity: () => ({ payloadVersion: 1 }),
       getEntityService: () => ({ getBySlug: serviceGetBySlug, remove: serviceRemove }),
     } as unknown as PluginHost;
     const fakeEntityStore = { persist: storePersist, remove: storeRemove } as unknown as EntityStore;

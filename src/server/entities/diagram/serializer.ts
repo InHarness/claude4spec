@@ -1,12 +1,9 @@
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 import type {
   EntityDiff,
-  EntitySerializer,
-  JsonSchema,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
-  ViewKind,
+  SerializationContribution,
 } from '../../serialization/types.js';
 import type { DiagramFormat } from '../../../shared/entities.js';
 
@@ -114,73 +111,31 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'diagram', slug, op: 'modified', changes };
 }
 
-// ─── schemas ─────────────────────────────────────────────────────────────────
+export const diagramSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 1,
 
-const SINGLE_ELEMENT_SCHEMA: JsonSchema = {
-  type: 'object',
-  required: ['type', 'slug', 'format', 'source', 'tags'],
-  properties: {
-    type: { const: 'diagram' },
-    slug: { type: 'string' },
-    format: { type: 'string' },
-    source: { type: 'string' },
-    tags: { type: 'array', items: { type: 'string' } },
-  },
-};
+  views: {
+    inline_mention: (entity) => ({
+      type: 'diagram',
+      slug: entity.slug,
+      label: entity.slug,
+      href: `/diagrams/${entity.slug}`,
+    }),
 
-const LIST_ITEM_SCHEMA: JsonSchema = {
-  type: 'object',
-  required: ['type', 'slug', 'format', 'sourceLines', 'tags'],
-  properties: {
-    type: { const: 'diagram' },
-    slug: { type: 'string' },
-    format: { type: 'string' },
-    sourceLines: { type: 'number' },
-    tags: { type: 'array', items: { type: 'string' } },
-  },
-};
+    single_element: (entity) => baseSingle(entity),
+    element_list_item: (entity) => trimItem(entity),
+    tagged_list_item: (entity) => trimItem(entity),
 
-const INLINE_MENTION_SCHEMA: JsonSchema = {
-  type: 'object',
-  required: ['type', 'slug', 'label', 'href'],
-  properties: {
-    type: { const: 'diagram' },
-    slug: { type: 'string' },
-    label: { type: 'string' },
-    href: { type: 'string' },
-  },
-};
-
-export const diagramSerializer: EntitySerializer<RawEntity> = {
-  type: 'diagram',
-  version: '1.0.0',
-
-  inlineMention: (entity) => ({
-    type: 'diagram',
-    slug: entity.slug,
-    label: entity.slug,
-    href: `/diagrams/${entity.slug}`,
-  }),
-
-  singleElement: (entity) => baseSingle(entity),
-  elementListItem: (entity) => trimItem(entity),
-  taggedListItem: (entity) => trimItem(entity),
-
-  detail: (entity, ctx: SerializeContext) => {
-    const base = baseSingle(entity);
-    const references = ctx.reader.findSectionReferences('diagram', entity.slug).map((r) => ({
-      anchor: r.anchor,
-      pagePath: r.pagePath,
-      headingText: r.headingText,
-      relation: r.relation,
-    }));
-    return { ...base, _references: references };
-  },
-
-  schema: (view: ViewKind): JsonSchema => {
-    if (view === 'single_element' || view === 'detail') return SINGLE_ELEMENT_SCHEMA;
-    if (view === 'inline_mention') return INLINE_MENTION_SCHEMA;
-    return LIST_ITEM_SCHEMA;
+    detail: (entity, reader) => {
+      const base = baseSingle(entity);
+      const references = reader.findSectionReferences('diagram', entity.slug).map((r) => ({
+        anchor: r.anchor,
+        pagePath: r.pagePath,
+        headingText: r.headingText,
+        relation: r.relation,
+      }));
+      return { ...base, _references: references };
+    },
   },
 
   snapshot: (entity) => buildSnapshot(entity),

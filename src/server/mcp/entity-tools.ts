@@ -24,7 +24,6 @@ import { DomainError } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
-import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import { getEntitiesAll, type DiscoveryCore } from '../discovery/index.js';
@@ -32,7 +31,6 @@ import { resolveSearchFields } from '../discovery/search/fields.js';
 
 export interface EntityToolsDeps {
   host: ProjectPluginHost;
-  registry: SerializationEngine;
   reader: RawEntityReader;
   /**
    * M39: reads go through the discovery core. This server keeps the WRITE path
@@ -399,12 +397,18 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       }
       const described = (modules as Array<{ ok: true; module: BackendModule }>).map(({ module }) => {
         // Outer per-type guard: schema serialization is already isolated by
-        // safeToJsonSchema, but the rest of the entry (registry.describe, service
+        // safeToJsonSchema, but the rest of the entry (the describe call, service
         // lookup) can also throw for a malformed type — contain that too so one bad
         // type never aborts the whole describe-all batch.
         try {
           const crudSupported = module.backend?.crud != null;
-          const views = deps.registry.describe(module.type, undefined, deps.db);
+          /**
+           * 0.2.9 (item 15): through the discovery core, not through the
+           * serialization engine. A transport reaching into L9 directly is the
+           * thing the item forbids — the grep it names came back clean only
+           * because this call had been spelled `registry`.
+           */
+          const described = deps.discovery.describeTypes({ types: [module.type] }).types[0];
           return {
             type: module.type,
             label: module.label,
@@ -420,7 +424,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
              */
             searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
             crudSupported,
-            views: views?.views ?? [],
+            views: described?.views ?? [],
             customToolsLine: module.systemPrompt.mcpToolsLine,
           };
         } catch (err) {

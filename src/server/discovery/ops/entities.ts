@@ -14,11 +14,13 @@
  */
 
 import { applyItemBudget, MAX_SLUGS_PER_CALL } from '../budget.js';
-import { invalidArgument, invalidType, invalidView } from '../errors.js';
+import { invalidArgument, invalidType } from '../errors.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import { compareRanked, relevance } from '../ranking.js';
 import { resolveSearchFields, valuesAtPath } from '../search/fields.js';
+import type { RawEntity } from '../raw-entity-reader.js';
 import type { ViewKind } from '../../serialization/types.js';
+import { requireView } from '../views.js';
 import type {
   DiscoveryDeps,
   GetEntitiesInput,
@@ -31,24 +33,10 @@ import type {
   SearchEntitiesResult,
 } from '../types.js';
 
-const VIEW_KINDS: ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
-
 function requireActiveType(deps: DiscoveryDeps, type: string) {
   const module = deps.host.getEntity(type);
   if (!module) throw invalidType(type, deps.host.listEntities().map((m) => m.type));
   return module;
-}
-
-function requireView(view: string | undefined, fallback: ViewKind): ViewKind {
-  if (view === undefined) return fallback;
-  if (!VIEW_KINDS.includes(view as ViewKind)) throw invalidView(view, VIEW_KINDS);
-  return view as ViewKind;
 }
 
 export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): ListEntitiesResult {
@@ -87,33 +75,49 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
   // the tag↔entity relation needs no second call.
   const view = requireView(input.view, 'element_list_item');
   const page = paginate(sorted, input, DEFAULT_LIMITS.listEntities);
-  const items = page.items.map((slug) => ({ slug, ...serialize(deps, input.type, view, slug) }));
+  const items = page.items.map((slug) => ({ slug, ...serializeSlug(deps, input.type, view, slug) }));
   return { ...page, items, mode: 'items' };
 }
 
 /**
  * The ONE place the serialization registry is called from for entities.
  *
- * The serializer's own outcome flags travel with the payload rather than being
- * flattened away: a consumer that cannot tell "this is the entity" from "this
- * is a fallback because the serializer threw" will present a degraded record as
- * the real one.
+ * Takes the ENTITY, not a slug: the caller has already read the row, and reading
+ * it twice was the only reason this needed the reader.
+ *
+ * The outcome flags travel with the payload rather than being flattened away: a
+ * consumer that cannot tell "the type computed this" from "the host generated
+ * it, because the type's own view threw" will present the second as the first.
+ * `generic` is a plain boolean here — every record has an answer — while the
+ * wire shape (`SerializedMeta`) keeps it optional, so an unremarkable record is
+ * not fattened by `generic: false` on every row of a list.
  */
 function serialize(
   deps: DiscoveryDeps,
   type: string,
   view: ViewKind,
-  slug: string,
-): { data: unknown; fallback?: boolean; error?: string; brokenRefs?: string[] } {
-  const raw = deps.reader.getEntity(type, slug);
-  if (!raw) return { data: null };
-  const result = deps.serialization.serializeEntity(type, view, raw, deps.reader);
+  entity: RawEntity,
+): { data: unknown; generic: boolean; error?: string; brokenRefs?: string[] } {
+  const result = deps.serialization.serializeEntity(type, view, entity, deps.reader);
   return {
     data: result.data,
-    ...(result.fallback ? { fallback: true } : {}),
+    generic: result.generic,
     ...(result.error ? { error: result.error } : {}),
     ...(result.brokenRefs ? { brokenRefs: result.brokenRefs } : {}),
   };
+}
+
+/** `serialize` for a slug that may not resolve — the list/get/search shape. */
+function serializeSlug(
+  deps: DiscoveryDeps,
+  type: string,
+  view: ViewKind,
+  slug: string,
+): { data: unknown; generic?: boolean; error?: string; brokenRefs?: string[] } {
+  const raw = deps.reader.getEntity(type, slug);
+  if (!raw) return { data: null };
+  const { generic, ...rest } = serialize(deps, type, view, raw);
+  return { ...rest, ...(generic ? { generic: true } : {}) };
 }
 
 export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEntitiesResult {
@@ -150,7 +154,7 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   const view = requireView(input.view, slugs.length > 1 ? 'element_list_item' : 'single_element');
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
-    const { data, ...meta } = serialize(deps, input.type, view, slug);
+    const { data, ...meta } = serializeSlug(deps, input.type, view, slug);
     return { slug, entity: data, ...meta };
   });
 
@@ -216,7 +220,7 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
     items: page.items.map((hit) => ({
       slug: hit.slug,
       score: hit.score,
-      ...serialize(deps, input.type, view, hit.slug),
+      ...serializeSlug(deps, input.type, view, hit.slug),
     })),
     mode: 'hits',
     searchedFields,

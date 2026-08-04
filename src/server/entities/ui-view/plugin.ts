@@ -1,5 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { EntitySerializer } from '../../serialization/types.js';
+import type { SerializationContribution } from '../../serialization/types.js';
 import { uiViewSlug } from '../../services/slug.js';
 import { uiViewSerializer } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
@@ -24,7 +24,7 @@ export const uiViewBackendModule: BackendModule = {
    * fires only when the design-system is genuinely absent.
    */
   dependsOn: ['design-system'],
-  serializer: uiViewSerializer as EntitySerializer<unknown>,
+  serializer: uiViewSerializer as SerializationContribution<unknown>,
   systemPrompt: uiViewSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
   // manifest-adapter.ts#synthesizeMount): construct the service once, register

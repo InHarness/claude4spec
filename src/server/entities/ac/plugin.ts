@@ -1,5 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { EntitySerializer } from '../../serialization/types.js';
+import type { SerializationContribution } from '../../serialization/types.js';
 import { acSerializer } from './serializer.js';
 import { acSystemPrompt } from './system-prompt.js';
 import { acsRouter } from './routes.js';
@@ -17,7 +17,7 @@ export const acBackendModule: BackendModule = {
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
   pathPrefix: '/acs',
-  serializer: acSerializer as EntitySerializer<unknown>,
+  serializer: acSerializer as SerializationContribution<unknown>,
   systemPrompt: acSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
   // manifest-adapter.ts#synthesizeMount): construct the service once, register

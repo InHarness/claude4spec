@@ -12,11 +12,15 @@ import { CliError } from '../errors.js';
  */
 export function withMeta(record: { data?: unknown; entity?: unknown } & SerializedMeta): unknown {
   const data = 'entity' in record ? record.entity : record.data;
-  if (!record.fallback && !record.error) return data;
+  if (!record.generic && !record.error) return data;
   if (typeof data === 'object' && data !== null) {
     return {
       ...(data as object),
-      ...(record.fallback ? { _fallback: true } : {}),
+      // The generic payload already carries `_generic` inside it (see
+      // `serialization/generic.ts`); re-stating it here is what keeps the flag
+      // present when the record came back generic for the other reason — the
+      // type's own view threw and the host answered in its place.
+      ...(record.generic ? { _generic: true } : {}),
       ...(record.error ? { _error: record.error } : {}),
     };
   }

@@ -257,16 +257,15 @@ describe('upsertProjectionRow — version capture', () => {
     const db = projected();
     upsertProjectionRow(
       { db, versions: { captureEntitySnapshot } },
-      { ...widget, serializer: { version: '1.1.0' } },
+      { ...widget, payloadVersion: 2 },
       'w1', { label: 'x' }, 'user',
       { capture: true, writeFile: false },
     );
-    // The SERIALIZER's semver, not the module's `payloadVersion`. Writing '1'
-    // here made consecutive rows for the same entity disagree as soon as any
-    // other path captured one — the signal consumers read as a serializer
-    // migration. `payloadVersion` takes over this column in tier B item 13, for
-    // every writer at once.
-    expect(captureEntitySnapshot).toHaveBeenCalledWith('widget', 'w1', 'create', 'user', 'Created', '1.1.0');
+    // 0.2.9 (item 13): the door passes NO version at all. Which version a
+    // capture carries is the version service's answer, resolved once from the
+    // manifest — a writer that supplied its own was a writer free to disagree
+    // with the other seventeen call sites.
+    expect(captureEntitySnapshot).toHaveBeenCalledWith('widget', 'w1', 'create', 'user', 'Created');
   });
 
   it('rolls the row back when the capture throws', () => {

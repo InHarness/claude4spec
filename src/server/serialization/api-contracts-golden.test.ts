@@ -23,7 +23,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
 import { canonicalize } from './snapshot.js';
-import type { SerializeContext, ViewKind } from './types.js';
+import type { ViewKind, ViewSet } from './types.js';
 
 const GOLDEN_DIR = path.join(import.meta.dirname, '__goldens__');
 const VIEWS: ViewKind[] = [
@@ -33,14 +33,6 @@ const VIEWS: ViewKind[] = [
   'tagged_list_item',
   'detail',
 ];
-
-const VIEW_SLOT = {
-  inline_mention: 'inlineMention',
-  single_element: 'singleElement',
-  element_list_item: 'elementListItem',
-  tagged_list_item: 'taggedListItem',
-  detail: 'detail',
-} as const;
 
 type Upsertable = {
   upsert(slug: string, input: unknown, actor: string): unknown;
@@ -88,30 +80,31 @@ async function buildFixture() {
 }
 
 function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
-  const ctx: SerializeContext = { reader: app.rawReader, depth: 0, maxDepth: 3 };
+  const reader = app.rawReader;
   const out: Record<string, unknown> = {};
 
   for (const type of ['endpoint', 'dto']) {
     const module = app.host.getEntity(type);
     if (!module) throw new Error(`fixture: type '${type}' is not registered`);
     const serializer = module.serializer as Record<string, unknown>;
+    const views = serializer.views as ViewSet<unknown> | undefined;
     const slugs = (
       app.db.prepare(`SELECT slug FROM ${compositionOf(module).mainTable} ORDER BY slug`).all() as Array<{ slug: string }>
     ).map((r) => r.slug);
 
-    out[`${type}.version`] = serializer.version;
+    out[`${type}.payloadVersion`] = module.payloadVersion;
     for (const slug of slugs) {
       const raw = app.rawReader.getEntity(type, slug);
       if (!raw) throw new Error(`fixture: ${type} '${slug}' vanished`);
 
       out[`${type}/${slug}/snapshot`] = canonicalize(
-        (serializer.snapshot as (e: unknown, c: SerializeContext) => unknown)(raw, ctx),
+        (serializer.snapshot as (e: unknown, r: unknown) => unknown)(raw, reader),
       );
       for (const view of VIEWS) {
-        const fn = serializer[VIEW_SLOT[view]] as ((e: unknown, c: SerializeContext) => unknown) | undefined;
+        const fn = views?.[view];
         // NOT canonicalized: view projections are handed to the client as-is, so
         // their key order is part of the contract in a way the snapshot's is not.
-        out[`${type}/${slug}/${view}`] = fn ? fn(raw, ctx) : null;
+        out[`${type}/${slug}/${view}`] = fn ? fn(raw, reader) : null;
       }
     }
   }
