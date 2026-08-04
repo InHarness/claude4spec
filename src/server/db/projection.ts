@@ -75,7 +75,16 @@ function defaultClause(node: FieldNode): string | null {
   return null;
 }
 
-function isNotNull(node: FieldNode): boolean {
+/**
+ * Whether the generated column rejects NULL.
+ *
+ * Exported because the WRITE path must ask the same question with the same
+ * answer: `db/projection-write.ts` decides whether an absent-or-null payload
+ * field may be bound as SQL NULL, and any divergence here shows up as a raw
+ * `NOT NULL constraint failed` on a payload that is valid per its declaration.
+ * One predicate, two readers.
+ */
+export function isNotNull(node: FieldNode): boolean {
   return (
     node.required === true ||
     node.default !== undefined ||

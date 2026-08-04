@@ -24,7 +24,12 @@ import type { SystemStamp } from '../serialization/system-fields.js';
 import type { PluginHost, WriteOpts } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
-import { upsertProjectionRow, type ProjectionWriteDeps } from '../db/projection-write.js';
+import {
+  projectionRowExists,
+  removeProjectionRow,
+  upsertProjectionRow,
+  type ProjectionWriteDeps,
+} from '../db/projection-write.js';
 
 
 /**
@@ -168,35 +173,61 @@ export class HostEntityWriter implements EntityWriter {
   // ─── tags ─────────────────────────────────────────────────────────────────
 
   syncTags(type: RawEntityType, slug: string, tags: string[]): void {
-    // M29: slug is the sole identity — assign directly. The caller's upsert has
-    // already ensured the entity row exists.
-    if (!this.host.entityExists(type, slug)) return;
+    /**
+     * Existence is asked of the ROW, not of the service registry.
+     *
+     * `host.entityExists` answers through `getEntityService(type)?.getBySlug`, so
+     * for a serviceless type it returns `false` no matter what is in the table —
+     * and this method then returned without assigning anything. Every such entity
+     * came out of the rebuild with ZERO tags (the rebuild deletes `entity_tag`
+     * rows for the types it is about to refill), and the next `persist` wrote
+     * that empty list back into the file, destroying the tags at their source.
+     *
+     * The service answer is kept as the fast path — it is the same question — and
+     * the projection row is consulted only when there is no service to ask.
+     */
+    if (!this.entityExists(type, slug)) return;
     this.tags.assignTags(type, slug, tags);
+  }
+
+  private entityExists(type: string, slug: string): boolean {
+    if (this.host.getEntityService(type)?.getBySlug) return this.host.entityExists(type, slug);
+    const module = this.host.getEntity(type);
+    if (!module?.data?.schema || !this.projection) return false;
+    return projectionRowExists(this.projection, module, slug);
   }
 
   /**
    * 0.2.2: was a seven-arm `switch (type)` whose arms each resolved one named
-   * service class and then did the identical two calls. Now one generic path — a
-   * plugin type deletes exactly as well as a built-in one, and a type with no
-   * service reports `deleted: false` rather than falling into a silent `default:`.
+   * service class and then did the identical two calls. 0.2.9: the service is
+   * preferred but no longer required — a serviceless type deletes through the
+   * host's own projection door, for the same reason it writes through one.
    */
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {
     const service = this.host.getEntityService(type);
-    if (!service?.getBySlug || !service.remove) {
-      // Distinguish "no delete door" from "nothing to delete". Both return
-      // deleted:false, but only the first is a problem the operator must see:
-      // the pre-0.2.2 code THREW here and the caller turned that into a
-      // `delete-restore failed: …` warning in the restore report. Returning a
-      // bare false would let a restore that should have deleted an entity report
-      // a clean `noop` while the entity survives in the index and on disk.
-      console.warn(
-        `[entity-writer] cannot delete ${type}/${slug}: entity service for type ` +
-          `'${type}' is not registered or exposes no getBySlug/remove`,
-      );
-      return { deleted: false };
+    if (service?.getBySlug && service.remove) {
+      if (!service.getBySlug(slug)) return { deleted: false };
+      service.remove(slug, actor);
+      return { deleted: true };
     }
-    if (!service.getBySlug(slug)) return { deleted: false };
-    service.remove(slug, actor);
-    return { deleted: true };
+
+    /**
+     * Without this, item 6 closed the silent drop on the create/update half and
+     * left it wide open on the delete half: `ReleaseService.restoreEntity`'s
+     * delete branch reported `op: 'noop'` with no warnings while the entity
+     * survived, telling the user a restore succeeded that had not.
+     */
+    const module = this.host.getEntity(type);
+    if (module?.data?.schema && this.projection) {
+      return removeProjectionRow(this.projection, module, slug, actor, this.mutateOpts);
+    }
+
+    // Distinguish "no delete door" from "nothing to delete". Both return
+    // deleted:false, but only the first is a problem the operator must see.
+    console.warn(
+      `[entity-writer] cannot delete ${type}/${slug}: type is not active in this ` +
+        `project (no service and no declared data.schema)`,
+    );
+    return { deleted: false };
   }
 }

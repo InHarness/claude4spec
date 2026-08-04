@@ -24,7 +24,13 @@ import type { TagsService } from './tags.js';
 /** The projection `generateProjectionDDL` would emit for the `widget` fixture. */
 function makeDb(): Database.Database {
   const db = new Database(':memory:');
-  db.exec(`CREATE TABLE widget (slug TEXT NOT NULL PRIMARY KEY, label TEXT NOT NULL);`);
+  db.exec(`
+    CREATE TABLE widget (slug TEXT NOT NULL PRIMARY KEY, label TEXT NOT NULL);
+    CREATE TABLE entity_tag (
+      entity_type TEXT NOT NULL, entity_slug TEXT NOT NULL, tag_slug TEXT NOT NULL,
+      UNIQUE(entity_type, entity_slug, tag_slug)
+    );
+  `);
   return db;
 }
 
@@ -194,6 +200,55 @@ describe('HostEntityWriter.upsert — the serviceless door (0.2.9, brief item 6)
     expect(writer.upsert('widget', 'w1', { label: 'x' }, 'user')).toBeNull();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('without projection deps'));
     warn.mockRestore();
+  });
+
+  it('assigns tags for a serviceless type — existence is asked of the ROW', () => {
+    // `host.entityExists` answers through the entity-SERVICE registry, so for a
+    // serviceless type it says `false` no matter what is in the table, and
+    // `syncTags` returned without assigning. Every such entity came out of the
+    // rebuild with zero tags (the rebuild clears `entity_tag` for the types it
+    // is about to refill), and the next `persist` wrote that empty list back
+    // into the file — destroying the tags at their source.
+    const db = makeDb();
+    const assignTags = vi.fn();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      { assignTags } as unknown as TagsService,
+      {},
+      { db, versions: null },
+    );
+
+    writer.upsert('widget', 'w1', { label: 'x' }, 'user');
+    writer.syncTags('widget' as never, 'w1', ['t1', 't2']);
+    expect(assignTags).toHaveBeenCalledWith('widget', 'w1', ['t1', 't2']);
+  });
+
+  it('still declines to tag an entity that was never written', () => {
+    const assignTags = vi.fn();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      { assignTags } as unknown as TagsService,
+      {},
+      { db: makeDb(), versions: null },
+    );
+    writer.syncTags('widget' as never, 'ghost', ['t1']);
+    expect(assignTags).not.toHaveBeenCalled();
+  });
+
+  it('deletes a serviceless type through the host projection door', () => {
+    // Item 6 closed the silent drop on the create/update half; without this it
+    // stayed wide open on the delete half, so release restore reported `noop`
+    // while the entity survived.
+    const db = makeDb();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      tags,
+      {},
+      { db, versions: null },
+    );
+    writer.upsert('widget', 'w1', { label: 'x' }, 'user');
+    expect(writer.delete('widget' as never, 'w1', 'user')).toEqual({ deleted: true });
+    expect(db.prepare('SELECT COUNT(*) AS c FROM widget').get()).toEqual({ c: 0 });
   });
 
   it('rejects a payload the declaration forbids instead of writing a broken row', () => {

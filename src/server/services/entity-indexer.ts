@@ -60,6 +60,7 @@ export class EntityIndexerService {
       // projection door must have no way to capture either.
       writer: new HostEntityWriter(this.host, this.tags, { capture: false }, {
         db: this.db,
+        store: this.store,
         versions: null,
       }),
       releaseId: null,

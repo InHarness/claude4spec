@@ -1270,6 +1270,7 @@ export class ReleaseService {
     const targetRow = this.latestEntityRowForSlug(input.type, input.slug, releaseRow.id);
     const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
       db: this.db,
+      ...(this.entityStore ? { store: this.entityStore } : {}),
       versions: this.versions,
     });
     const restoreCtx: RestoreContext = {
@@ -1654,6 +1655,7 @@ export class ReleaseService {
       //    row with release_id = NULL (the normal write-API capture).
       const writer = new HostEntityWriter(this.host, this.tagsService, {}, {
         db: this.db,
+        ...(this.entityStore ? { store: this.entityStore } : {}),
         versions: this.versions,
       });
       const restoreCtx: RestoreContext = {

@@ -255,11 +255,33 @@ describe('upsertProjectionRow — version capture', () => {
   it('captures through the same door every other write path uses', () => {
     const captureEntitySnapshot = vi.fn();
     const db = projected();
-    upsertProjectionRow({ db, versions: { captureEntitySnapshot } }, widget, 'w1', { label: 'x' }, 'user', {
-      capture: true,
-      writeFile: false,
-    });
-    expect(captureEntitySnapshot).toHaveBeenCalledWith('widget', 'w1', 'create', 'user', 'Created', '1');
+    upsertProjectionRow(
+      { db, versions: { captureEntitySnapshot } },
+      { ...widget, serializer: { version: '1.1.0' } },
+      'w1', { label: 'x' }, 'user',
+      { capture: true, writeFile: false },
+    );
+    // The SERIALIZER's semver, not the module's `payloadVersion`. Writing '1'
+    // here made consecutive rows for the same entity disagree as soon as any
+    // other path captured one — the signal consumers read as a serializer
+    // migration. `payloadVersion` takes over this column in tier B item 13, for
+    // every writer at once.
+    expect(captureEntitySnapshot).toHaveBeenCalledWith('widget', 'w1', 'create', 'user', 'Created', '1.1.0');
+  });
+
+  it('rolls the row back when the capture throws', () => {
+    // Every service captures INSIDE its transaction, and `captureEntitySnapshot`
+    // rethrows precisely "so the caller's transaction rolls back and the failure
+    // surfaces". Capturing after the commit left a committed row with no version
+    // row attributing it — invisible to history and to the next release diff.
+    const db = projected();
+    const captureEntitySnapshot = vi.fn(() => { throw new Error('capture exploded'); });
+    expect(() =>
+      upsertProjectionRow({ db, versions: { captureEntitySnapshot } }, widget, 'w1', { label: 'x' }, 'user', {
+        capture: true, writeFile: false,
+      }),
+    ).toThrow(/capture exploded/);
+    expect(db.prepare('SELECT COUNT(*) AS c FROM widget').get()).toEqual({ c: 0 });
   });
 
   it('captures nothing on the rebuild path', () => {
