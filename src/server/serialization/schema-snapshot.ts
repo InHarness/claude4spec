@@ -29,6 +29,8 @@ import type { RawEntity, RawEntityReader } from '../discovery/raw-entity-reader.
 import {
   columnOf,
   hasProjectionTable,
+  isKeyed,
+  payloadFieldsOf,
   sortKeyFieldsOf,
   type CollectionNode,
   type FieldNode,
@@ -63,12 +65,60 @@ function emitted(schema: Readonly<Record<string, FieldNode>>): Array<[string, Fi
 function compareItems(keys: readonly string[], a: unknown, b: unknown): number {
   if (!keys.length) return String(a ?? '').localeCompare(String(b ?? ''));
   for (const key of keys) {
-    const av = String((a as Record<string, unknown>)?.[key] ?? '');
-    const bv = String((b as Record<string, unknown>)?.[key] ?? '');
-    const cmp = av.localeCompare(bv);
+    const araw = (a as Record<string, unknown>)?.[key];
+    const braw = (b as Record<string, unknown>)?.[key];
+    /**
+     * NUMBERS COMPARE AS NUMBERS. A keyed collection's key is a pair of
+     * coordinates, and `String(10).localeCompare(String(2))` puts cell 10 before
+     * cell 2 — so a snapshot sorted the string way is not sorted at all, and the
+     * "two equivalent states produce an identical diff" guarantee this function
+     * exists for would hold only for grids under ten rows.
+     *
+     * Confined to the both-numbers case so nothing else moves: the existing
+     * string keys (`ac.verifies`' `type`/`slug`, the endpoint junction's
+     * `relation`/`dto_slug`) keep the exact ordering they already have, including
+     * the nullable `status_code` collapsing to `''` below.
+     */
+    if (typeof araw === 'number' && typeof braw === 'number') {
+      if (araw !== braw) return araw - braw;
+      continue;
+    }
+    const cmp = String(araw ?? '').localeCompare(String(braw ?? ''));
     if (cmp !== 0) return cmp;
   }
   return 0;
+}
+
+/**
+ * A keyed collection's snapshot: COMPACTED and sorted by key (item 19, item 11).
+ *
+ * Two normalizations, both required for the snapshot to be a function of the
+ * STATE rather than of the storage:
+ *
+ *   - Empty items are dropped. The store already holds no row for one, but a
+ *     restore payload or a hand-edited file can carry them, and emitting one
+ *     would put a cell in the entity file that the next rebuild refuses to
+ *     store — a file that does not round-trip through its own index.
+ *   - Items sort by the key tuple, unconditionally, without the `unordered`
+ *     opt-in that value collections need. There is no authored order to
+ *     preserve: a keyed collection's order IS its key, so sorting it is a
+ *     normalization rather than the silent edit to authored content that
+ *     sorting `design-system.groups[].tokens[]` would be.
+ */
+function normalizeKeyed(node: CollectionNode, value: unknown): unknown {
+  if (!Array.isArray(value)) return [];
+  const keys = node.keyFields ?? [];
+  const payload = payloadFieldsOf(node);
+  return value
+    .filter((entry) => {
+      if (entry === null || typeof entry !== 'object') return false;
+      const row = entry as Record<string, unknown>;
+      return !payload.every((name) => {
+        const v = row[name];
+        return v === undefined || v === null || v === '';
+      });
+    })
+    .sort((a, b) => compareItems(keys, a, b));
 }
 
 /**
@@ -122,7 +172,8 @@ export function snapshotFromSchema(
 
   for (const [name, node] of emitted(schema)) {
     if (node.kind === 'collection' && hasProjectionTable(node)) {
-      out[name] = normalizeCollection(node, reader.readCollection(module.type, entity.slug, name));
+      const items = reader.readCollection(module.type, entity.slug, name);
+      out[name] = isKeyed(node) ? normalizeKeyed(node, items) : normalizeCollection(node, items);
       continue;
     }
     const raw = entity.data[columnOf(name, node)];

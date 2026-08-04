@@ -23,6 +23,7 @@ import {
   columnOf,
   hasProjectionTable,
   isEmbedded,
+  payloadFieldsOf,
   walkSchema,
   type CollectionNode,
   type CountPredicate,
@@ -119,6 +120,118 @@ export function assertSqlIdentifier(type: string, value: string, what: string): 
   }
 }
 
+/**
+ * A keyed collection's two axes must resolve, at registration, to real fields.
+ *
+ * Both halves of an axis are a NAME pointing somewhere else, and a name that
+ * does not resolve fails far from here and unhelpfully: an unresolvable `key`
+ * makes the window builder address a column that is not in the table, and an
+ * unresolvable `extent` makes `overview` report `undefined` dimensions for a
+ * grid that has rows. Neither is visible until someone reads the collection,
+ * which for a rarely-opened type can be much later than the boot that accepted
+ * the manifest.
+ *
+ * `extent` resolves against the TOP-LEVEL schema, never against the item: it is
+ * the parent's dimension, and reading it is the whole reason `overview` can
+ * answer without materializing a single item body.
+ */
+function checkAxes(
+  type: string,
+  schema: DataDeclaration['schema'],
+  path: string,
+  node: CollectionNode,
+): void {
+  const axes = node.axes;
+  if (!axes || axes.length !== 2) {
+    fail(
+      type,
+      `keyed collection "${path}" must declare exactly two axes — its read surface is a ` +
+        `rectangle over two coordinates, and a full row or column is a degenerate rectangle ` +
+        `rather than a separate primitive. Got ${axes ? axes.length : 0}`,
+    );
+    return;
+  }
+
+  /**
+   * A keyed collection must carry at least one field that is NOT part of its
+   * key, and this is a refusal rather than a tolerated shape.
+   *
+   * A presence-style grid — where the existence of the key IS the datum, like a
+   * seating chart or an occupancy mask — is a reasonable thing to want and is
+   * fundamentally incompatible with sparse discipline: "an empty item is not
+   * stored" is judged on the non-key fields, so with none to judge, EVERY entry
+   * is empty and every write deletes the key it just named. There is no
+   * behaviour to fall back to.
+   *
+   * Caught here because the alternative is much worse: the generated upsert's
+   * assignment list is also empty, so `db.prepare` raises a bare
+   * `near ")": syntax error` at the first write, aborting the entity's whole
+   * transaction with a message naming no field and no type.
+   */
+  if (!payloadFieldsOf(node).length) {
+    fail(
+      type,
+      `keyed collection "${path}" declares no field outside its key ` +
+        `(${(node.keyFields ?? []).join(', ')}). Sparse discipline judges emptiness on the ` +
+        `non-key fields, so a key-only collection would treat every entry as empty and delete ` +
+        `it — declare what a cell holds, or model presence as a value collection`,
+    );
+  }
+
+  const keys = new Set(node.keyFields ?? []);
+  for (const axis of axes) {
+    if (!keys.has(axis.key)) {
+      fail(
+        type,
+        `keyed collection "${path}" declares axis key "${axis.key}", which is not one of its ` +
+          `keyFields (${[...keys].join(', ') || 'none'}) — an axis addresses the item, so it has ` +
+          `to be part of the address`,
+      );
+      continue;
+    }
+    const coordinate = node.item.kind === 'object' ? node.item.fields[axis.key] : undefined;
+    if (coordinate && coordinate.kind !== 'number') {
+      fail(
+        type,
+        `keyed collection "${path}" axis key "${axis.key}" is declared as '${coordinate.kind}' — ` +
+          `a window is a numeric range over it, so it must be a number`,
+      );
+    }
+
+    const extent = schema[axis.extent];
+    if (!extent) {
+      fail(
+        type,
+        `keyed collection "${path}" declares axis extent "${axis.extent}", which is not a field ` +
+          `of ${type} — the extent is the PARENT's dimension, which is what lets overview answer ` +
+          `without materializing any item`,
+      );
+      continue;
+    }
+    if (extent.kind !== 'number') {
+      fail(
+        type,
+        `keyed collection "${path}" axis extent "${axis.extent}" is declared as ` +
+          `'${extent.kind}' — a dimension is a count, so it must be a number`,
+      );
+    }
+    if (!isEmbedded(extent)) {
+      fail(
+        type,
+        `keyed collection "${path}" axis extent "${axis.extent}" does not live on the ${type} ` +
+          `row — overview reads it from there, so it cannot be a collection or a transient input`,
+      );
+    }
+  }
+
+  if (axes[0].key === axes[1].key) {
+    fail(type, `keyed collection "${path}" names "${axes[0].key}" as both of its axes`);
+  }
+  if (axes[0].extent === axes[1].extent) {
+    fail(type, `keyed collection "${path}" names "${axes[0].extent}" as both of its extents`);
+  }
+}
+
 /** Rule 1 + rule 3 + identifier checks over every node in the tree. */
 function checkNodes(type: string, schema: DataDeclaration['schema']): void {
   walkSchema(schema, (path, node, depth) => {
@@ -154,6 +267,10 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
           }
         }
       }
+      // AFTER the keyFields checks: an axis names a keyField, so "that keyField
+      // does not exist" is the more specific and more actionable complaint, and
+      // reporting the axes first would bury it.
+      if (declared === 'keyed') checkAxes(type, schema, path, node);
     }
     if (node.kind === 'record' && node.value.kind === 'collection') {
       fail(type, `"${path}" nests a collection inside a record — not projectable`);

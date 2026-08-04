@@ -178,3 +178,93 @@ describe('restoreFromSchema', () => {
     expect(result.warnings?.join()).toMatch(/not available/);
   });
 });
+
+/**
+ * A keyed collection's snapshot (tier C, items 11 and 19).
+ *
+ * Both normalizations exist so the snapshot is a function of the STATE rather
+ * than of the storage — two equivalent grids must produce a byte-identical
+ * capture, or every release diff reports edits nobody made.
+ */
+describe('snapshotFromSchema — keyed collections', () => {
+  const gridSchema: Record<string, FieldNode> = {
+    name: { kind: 'string', required: true },
+    nRows: { kind: 'number', column: 'n_rows' },
+    nCols: { kind: 'number', column: 'n_cols' },
+    cells: {
+      kind: 'collection',
+      collection: 'keyed',
+      keyFields: ['r', 'c'],
+      axes: [
+        { key: 'r', extent: 'nRows' },
+        { key: 'c', extent: 'nCols' },
+      ],
+      item: {
+        kind: 'object',
+        fields: {
+          r: { kind: 'number', required: true },
+          c: { kind: 'number', required: true },
+          value: { kind: 'string' },
+        },
+      },
+    },
+  };
+  const grid: SnapshottableModule = { type: 'grid', data: { schema: gridSchema } };
+
+  const gridSnap = (cells: unknown[]) =>
+    snapshotFromSchema(
+      grid,
+      { type: 'grid', slug: 'g1', data: { name: 'G' }, tags: [] },
+      { readCollection: () => cells } as never,
+    ) as Record<string, unknown>;
+
+  it('sorts by the key tuple NUMERICALLY, not as strings', () => {
+    // `String(10).localeCompare(String(2))` puts row 10 before row 2, so a
+    // string sort is not a sort at all past nine rows — and the "equivalent
+    // states diff identically" guarantee would hold only for tiny grids.
+    const out = gridSnap([
+      { r: 10, c: 1, value: 'j' },
+      { r: 2, c: 1, value: 'b' },
+      { r: 1, c: 2, value: 'a2' },
+      { r: 1, c: 1, value: 'a1' },
+    ]);
+    expect(out.cells).toEqual([
+      { r: 1, c: 1, value: 'a1' },
+      { r: 1, c: 2, value: 'a2' },
+      { r: 2, c: 1, value: 'b' },
+      { r: 10, c: 1, value: 'j' },
+    ]);
+  });
+
+  it('never emits an empty item (item 19)', () => {
+    // The store holds no row for one, but a restore payload or a hand-edited
+    // file can carry it — and emitting it writes a cell into the entity file
+    // that the next rebuild refuses to store, so the file stops round-tripping
+    // through its own index.
+    const out = gridSnap([
+      { r: 1, c: 1, value: '' },
+      { r: 1, c: 2, value: null },
+      { r: 2, c: 1, value: 'b' },
+    ]);
+    expect(out.cells).toEqual([{ r: 2, c: 1, value: 'b' }]);
+  });
+
+  it('sorts without the `unordered` opt-in a value collection needs', () => {
+    // There is no authored order to protect: a keyed collection's order IS its
+    // key, so sorting is a normalization rather than a silent edit to content.
+    expect(gridSnap([{ r: 2, c: 1, value: 'b' }, { r: 1, c: 1, value: 'a' }]).cells).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 1, value: 'b' },
+    ]);
+  });
+
+  it('produces an identical capture for two equivalent states', () => {
+    const dense = gridSnap([{ r: 1, c: 1, value: 'a' }, { r: 2, c: 2, value: 'b' }]);
+    const shuffledWithEmpties = gridSnap([
+      { r: 2, c: 2, value: 'b' },
+      { r: 5, c: 5, value: '' },
+      { r: 1, c: 1, value: 'a' },
+    ]);
+    expect(JSON.stringify(shuffledWithEmpties)).toBe(JSON.stringify(dense));
+  });
+});
