@@ -10,16 +10,10 @@
  * this release.
  */
 
-import type { ViewKind } from '../serialization/types.js';
+import { VIEW_KINDS, type ViewKind } from '../serialization/types.js';
 import { invalidView } from './errors.js';
 
-export const VIEW_KINDS: readonly ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
+export { VIEW_KINDS };
 
 /** `undefined` ⇒ the caller's default; anything outside the vocabulary ⇒ INVALID_VIEW. */
 export function requireView(view: string | undefined, fallback: ViewKind): ViewKind {

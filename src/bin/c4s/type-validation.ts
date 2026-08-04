@@ -1,9 +1,8 @@
 import { isRawEntityType, type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
-import type { ViewKind } from '../../server/serialization/types.js';
-// 0.2.9: the vocabulary comes from the core, which now also guards it
-// (`requireView`). The CLI keeps the eager check — it can fail before opening a
-// project — but it no longer keeps its own copy of the list to fall out of date.
-import { VIEW_KINDS } from '../../server/discovery/views.js';
+// 0.2.9: one vocabulary, declared beside `ViewKind`. The CLI keeps its eager
+// check — it can fail before opening a project — but no longer keeps its own
+// copy of the list to fall out of date with the core's guard.
+import { VIEW_KINDS, type ViewKind } from '../../server/serialization/types.js';
 import { CliError } from './errors.js';
 
 /** Accepts both 'database-table' (canonical) and 'database_table' (spec-alias). */

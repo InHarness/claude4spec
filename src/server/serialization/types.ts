@@ -9,6 +9,22 @@ export type ViewKind =
   | 'detail';
 
 /**
+ * The vocabulary as a VALUE, declared once beside the type.
+ *
+ * Every layer that has to answer "is this a view?" — the core's guard, the CLI's
+ * eager check, the engine's describe — reads this array. Three copies of five
+ * strings is how a sixth view kind ends up recognised in one place and rejected
+ * in another.
+ */
+export const VIEW_KINDS: readonly ViewKind[] = [
+  'inline_mention',
+  'single_element',
+  'element_list_item',
+  'tagged_list_item',
+  'detail',
+];
+
+/**
  * 0.2.9 — schemas are DERIVED from `data.schema`, so the type moved to
  * `shared/plugin-host/json-schema.ts` next to the deriver. Re-exported here
  * because every consumer of a schema in this layer imports from this file.

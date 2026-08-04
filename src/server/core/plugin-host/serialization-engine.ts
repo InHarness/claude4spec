@@ -27,16 +27,8 @@ import type {
   ViewKind,
   ViewSet,
 } from '../../serialization/types.js';
+import { VIEW_KINDS } from '../../serialization/types.js';
 import type { ProjectPluginHost } from './types.js';
-
-/** Every read view, in the order `describe` reports them. */
-export const VIEW_KINDS: readonly ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
 
 export interface CatalogEntry {
   count: number;
