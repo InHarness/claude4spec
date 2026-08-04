@@ -476,6 +476,9 @@ async function buildInner(
   tagsService.setHost(pluginHost);
   const versionService = new VersionService(db.handle);
   const rawReader = new RawEntityReader(db.handle, pluginHost);
+  // 2.0.0: give the host the index too, so `entityExists` can answer for a type
+  // that declares its data and registers no service.
+  pluginHost.setRawReader(rawReader);
   // M17: wire snapshot capture deps. After this, every entity service
   // mutation captures a deterministic snapshot via host.snapshot(...).
   versionService.configureSnapshot(rawReader, pluginHost);
@@ -1137,10 +1140,9 @@ async function buildInner(
   // M29: enable tags.json persistence only AFTER the boot rebuild, so any
   // auto-created tag during indexAll does not write files mid-rebuild.
   tagsService.setEntityStore(entityStore);
-  // M29: enable slug-rename propagation into entity files. 0.2.2: the host does
-  // not know which types embed which — it fans the rename out to the modules
-  // that declared `backend.onEntityRenamed`. After indexAll, so the index is
-  // consistent before any listener reads it.
+  // M29: enable slug-rename propagation into entity files — the rename is fanned
+  // out to one listener per module, generated from that module's `ref` flags.
+  // After indexAll, so the index is consistent before any listener reads it.
   referencesService.setPluginHost(pluginHost);
 
   // 0.1.119: Migration C — backfill on-disk release files for pre-slug

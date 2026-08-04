@@ -123,6 +123,19 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
       'own. Two spellings of one path meant a type could answer on one prefix and ' +
       'be linked at another.',
   },
+  {
+    fromMajor: 1,
+    toMajor: 2,
+    slot: 'backend.onEntityRenamed',
+    kind: 'slot-removed',
+    summary:
+      'Rename propagation reads the `ref` flag on the field that holds the ' +
+      'reference. The three hooks this replaces were three spellings of one rule ' +
+      '— rewrite the slug wherever the declaration says it is stored — and each ' +
+      'had to re-derive its own table, column and JSON path by hand. A type now ' +
+      'declares `ref: \'<type>\'` (or `ref: \'$type\'` for a polymorphic ref ' +
+      'discriminated by a sibling `type` field) and the host repoints it.',
+  },
 ];
 
 /** One slot removed WITHOUT crossing a major, during stabilization. */

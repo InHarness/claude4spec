@@ -309,7 +309,20 @@ export class AcService extends BaseEntityCrudService<Ac> {
     return result;
   }
 
-  /** Resolve verifies refs against the host; non-blocking. */
+  /**
+   * Resolve verifies refs against the host; non-blocking.
+   *
+   * 2.0.0 (brief item 25): `host.entityExists` used to resolve the type's
+   * registered service and call `getBySlug`, so a type with rows in its table but
+   * no `backend.service` answered `false` and every AC verifying one was reported
+   * broken — precisely the state the declarative contract moves types into.
+   *
+   * The fix lives in `entityExists` itself (it now falls back to the projection
+   * row), NOT here. Every other consumer of that check — the section indexer's
+   * `<inline_mention/>` linking, the entity router, the reference tools — was
+   * wrong in the same way for the same types, and repairing one call site would
+   * have left the rest silently disagreeing about which entities exist.
+   */
   classifyVerifies(verifies: AcVerifyRef[]): AcBrokenVerify[] {
     const broken: AcBrokenVerify[] = [];
     for (const ref of verifies) {

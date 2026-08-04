@@ -53,8 +53,8 @@ export class ReferencesService {
 
   /**
    * 0.2.2: the project host, so a rename can be fanned out to the modules that
-   * declared `backend.onEntityRenamed`. Wired post-construction — the host is
-   * mounted after this service is built.
+   * registered a rename listener. Wired post-construction — the host is mounted
+   * after this service is built.
    *
    * This replaces the former `setEntityDeps(db, store)`: propagating a rename
    * into other entity FILES no longer needs the host's own db handle or store,
@@ -70,12 +70,14 @@ export class ReferencesService {
    * M29 (m29ren001): after an entity rename, rewrite the slug inside OTHER
    * committed entity files whose snapshots embed it.
    *
-   * 0.2.2: the host no longer knows WHICH types embed which. It used to carry
-   * three hardcoded branches — dto rename repersists endpoints, design-system
-   * rename repoints ui_view.design_system_slug, any rename repoints ac.verifies
-   * — all of them naming another module's table. Each now lives in the module
-   * that owns the reference, contributed as `backend.onEntityRenamed`, and this
-   * method just fans the event out.
+   * 0.2.2 moved three hardcoded branches — dto rename repersists endpoints,
+   * design-system rename repoints ui_view.design_system_slug, any rename
+   * repoints ac.verifies — out of this method and into a per-module hook, so the
+   * host would stop naming another module's table. 2.0.0 removes the hook too:
+   * the `ref` flag on `data.schema` says which fields hold a reference, so the
+   * host generates one listener per module (`synthesizeMount`) over a single
+   * rewrite (`db/ref-rewrite.ts`). This method still just fans the event out —
+   * what changed is who wrote the listeners, not how they are called.
    *
    * Files-only; page XML refs are handled by the caller above. Handlers are
    * expected to be idempotent; a throwing one is logged and skipped, exactly as

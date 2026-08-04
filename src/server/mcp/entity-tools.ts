@@ -321,7 +321,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s createSchema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
       type: z.string(),
       query: z.string(),
@@ -386,7 +386,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
-    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchableFields` is DERIVED from createSchema, not declared by the type — it is what a search_entities call would actually consult, and it is never empty for an active type. Omit `type` for all active types.',
+    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchableFields` is DERIVED from the type\'s declared data schema, not declared by the type — it is what a search_entities call would actually consult, and it is never empty for an active type. Omit `type` for all active types.',
     {
       type: z.string().optional(),
     },

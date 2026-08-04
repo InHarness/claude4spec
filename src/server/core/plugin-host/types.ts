@@ -146,8 +146,8 @@ export interface MountContext {
   registerEntityService(type: string, service: unknown): void;
   /**
    * 0.2.2: register a handler for "some entity was renamed". Used by
-   * `synthesizeMount` to bind a module's `backend.onEntityRenamed` to this
-   * context; a module writing `mount` by hand can call it directly.
+   * `synthesizeMount` to bind the listener generated from a module's `ref`
+   * flags; a module writing `mount` by hand can call it directly.
    */
   registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
 }
@@ -159,7 +159,7 @@ export interface MountContext {
  */
 export type PluginMountFn = (ctx: MountContext) => void;
 
-/** 0.2.2 — an entity changed slug. See `backend.onEntityRenamed`. */
+/** 0.2.2 — an entity changed slug. See `registerRenameListener`. */
 export interface EntityRenamedEvent {
   type: string;
   oldSlug: string;
@@ -196,7 +196,8 @@ export interface BackendModule extends EntityModuleManifest {
       /*
        * 0.2.4 — `searchableFields` was REMOVED (not deprecated). Search scope
        * now has exactly one source: the text paths derivable from
-       * `createSchema`, with the agent's `fields` parameter as the only
+       * `data.schema` (`createSchema` until 2.0.0), with the agent's `fields`
+       * parameter as the only
        * override. Had one of the two type-side layers survived, the same type
        * would rank differently depending on which MCP tool asked. Both had zero
        * producers across the host repo, the preinstalled envelope and external
@@ -238,21 +239,13 @@ export interface BackendModule extends EntityModuleManifest {
      * repopulate them from its own restore path.
      */
     auxTables?: string[];
-    /**
-     * 0.2.2 — the module reacts to ANOTHER entity being renamed, to repoint
-     * references that live in its own tables or files.
-     *
-     * The host knows an entity was renamed; it does not know which types care.
-     * Before this slot the host itself special-cased `type === 'dto'` (repersist
-     * endpoints whose `linked_dtos` embed the slug) and `type === 'design-system'`
-     * (repoint `ui_view.design_system_slug`) — knowledge belonging to the modules
-     * that own those columns.
-     *
-     * Called once per rename for every ACTIVE module, including the renamed
-     * entity's own. Handlers must be idempotent and non-throwing; the host logs
-     * and continues past a throw, exactly as the per-type branches did.
+    /*
+     * 2.0.0 — `onEntityRenamed` was REMOVED. The host knows an entity was
+     * renamed AND, since `data.schema`, which fields reference it: the `ref`
+     * flag is the declaration the three hooks were three spellings of. The
+     * generated listener lives in `synthesizeMount` and the rewrite in
+     * `db/ref-rewrite.ts`; nothing about the fan-out changed.
      */
-    onEntityRenamed?: (ev: EntityRenamedEvent, ctx: MountContext) => void;
   };
 
   /**
@@ -446,6 +439,14 @@ export interface ProjectPluginHost {
    */
   registerRenameListener(fn: (ev: EntityRenamedEvent) => void): void;
   listRenameListeners(): Array<(ev: EntityRenamedEvent) => void>;
+
+  /**
+   * 2.0.0 — hand the host the project's index, so `entityExists` can answer for a
+   * type that declares `data.schema` and registers no `backend.service`. Wired
+   * post-construction: `consolidate` is a pure factory that runs before the
+   * database exists.
+   */
+  setRawReader(reader: RawEntityReader): void;
 
   /**
    * Build a fresh MCP server instance from every registered factory. Called

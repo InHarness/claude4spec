@@ -24,12 +24,9 @@ import type {
 import type { SerializationContribution } from '../../serialization/types.js';
 import type { EntityCrudService } from './entity-crud-service.js';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
-import type {
-  BackendModule,
-  EntityRenamedEvent,
-  MountContext,
-  PluginMountFn,
-} from './types.js';
+import type { BackendModule, MountContext, PluginMountFn } from './types.js';
+import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
+import { isRawEntityType } from '../../discovery/raw-entity-reader.js';
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
 export class PluginManifestError extends Error {
@@ -100,6 +97,12 @@ const REMOVED_SLOTS: ReadonlyArray<[string, string]> = [
 const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
   ['migrations', 'data.schema (the projection is generated)'],
   ['auxTables', "data.schema (declare the collection that owns the table)"],
+  // Rejected rather than ignored, for the same reason as the serializer slots
+  // below: a manifest that migrated its projection and left this hook behind
+  // reads as migrated. Dropping it silently would leave that plugin's references
+  // rotting on every rename — and if the reference is not expressible as a `ref`
+  // flag, the author needs to hear that now rather than from stale data later.
+  ['onEntityRenamed', "data.schema (flag the field `ref: '<type>'`)"],
 ];
 
 /**
@@ -267,9 +270,6 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
         | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
         | undefined,
       auxTables: backend.auxTables as string[] | undefined,
-      onEntityRenamed: backend.onEntityRenamed as
-        | ((ev: EntityRenamedEvent, ctx: MountContext) => void)
-        | undefined,
     };
   }
 
@@ -308,10 +308,37 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
  */
 export function synthesizeMount(module: BackendModule): BackendModule {
   const backend = module.backend;
-  if (!backend || backend.mount) return module;
 
-  const { service, crud, routes, mcpServer, onEntityRenamed } = backend;
-  if (!service && !crud && !routes && !mcpServer && !onEntityRenamed) return module;
+  // Item 24: a `ref` flag anywhere in the logical schema earns a generated
+  // rename listener, INDEPENDENTLY of the backend slots — a type that declares
+  // its data and nothing else still has references to repoint, and gating this
+  // on `backend` would make "has a service" the condition for a correct rename.
+  const rewritesRefs = declaresRefs(module);
+
+  /**
+   * The escape hatch still wins for everything it owns — but it does not opt a
+   * type OUT of rename propagation.
+   *
+   * `mount` replaces the slots this function synthesizes; propagation is not one
+   * of them. It is derived from `data.schema`, which a hand-written `mount` does
+   * not (and cannot) override, and `data-schema.ts` promises the `ref` flag works
+   * "with no per-type code on either side". Returning early here would have made
+   * that promise false for exactly one kind of module, silently — and since
+   * `backend.onEntityRenamed` is gone, there would be no slot left to opt back
+   * in with either.
+   */
+  if (backend?.mount) {
+    if (!rewritesRefs) return module;
+    const inner = backend.mount;
+    const composed: PluginMountFn = (ctx: MountContext): void => {
+      inner(ctx);
+      registerRefRewriteListener(module, ctx);
+    };
+    return { ...module, backend: { ...backend, mount: composed } };
+  }
+
+  const { service, crud, routes, mcpServer } = backend ?? {};
+  if (!service && !crud && !routes && !mcpServer && !rewritesRefs) return module;
 
   if (crud && !service) {
     throw new PluginManifestError(`entity "${module.type}" — backend.crud requires backend.service`);
@@ -353,10 +380,31 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       const svc = instance as EntityCrudService;
       ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
     }
-    if (onEntityRenamed) {
-      ctx.registerRenameListener((ev) => onEntityRenamed(ev, ctx));
-    }
+    if (rewritesRefs) registerRefRewriteListener(module, ctx);
   };
 
   return { ...module, backend: { ...backend, mount } };
+}
+
+/**
+ * The generated replacement for `backend.onEntityRenamed` (removed in 2.0.0).
+ *
+ * Repoint whatever the declaration says references the renamed type, then
+ * re-persist the files whose data actually changed. A file that will not write
+ * must not abort the rename — the index is already correct by then, and the three
+ * hooks this replaces swallowed the same failure.
+ */
+function registerRefRewriteListener(module: BackendModule, ctx: MountContext): void {
+  ctx.registerRenameListener(({ type, oldSlug, newSlug }) => {
+    for (const slug of rewriteRefsForRename(ctx.db, module, type, oldSlug, newSlug)) {
+      try {
+        ctx.entityStore.persist(module.type, slug);
+      } catch (err) {
+        console.warn(
+          `[plugin-host] ${module.type}/${slug}: re-persist after ${type} rename ` +
+            `${oldSlug} -> ${newSlug} failed: ${String(err)}`,
+        );
+      }
+    }
+  });
 }

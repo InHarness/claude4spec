@@ -73,7 +73,7 @@ export interface EntityCrudService<T = unknown> {
   list(opts: EntityListOpts): EntityListResult<T>;
   /*
    * 0.2.4 — the optional `search` slot was REMOVED. Ranking belongs to the M39
-   * core, which derives its scope from `createSchema` and applies one order
+   * core, which derives its scope from `data.schema` and applies one order
    * relation for every type; a per-type implementation meant the same entity
    * ranked differently depending on which tool asked. This interface keeps the
    * write path and the operations that cannot be derived from the composition

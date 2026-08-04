@@ -179,13 +179,11 @@ export interface EntityContribution extends EntityModuleManifest {
      * them on an index rebuild and otherwise never interprets them.
      */
     auxTables?: string[];
-    /**
-     * 0.2.2 — react to ANOTHER entity being renamed, to repoint references held
-     * in this module's own tables or files. Typed `unknown` here for the same
-     * reason as the slots above; the server registry narrows it to
-     * `(ev: EntityRenamedEvent, ctx: MountContext) => void`.
+    /*
+     * 2.0.0 — `onEntityRenamed` was REMOVED. Declare `ref: '<type>'` on the
+     * field that holds the reference and the host repoints it; see the
+     * `HOST_API_CHANGELOG` entry.
      */
-    onEntityRenamed?: unknown;
   };
 
   /** L8 — client editor extensions + render slots (narrowed client-side). */

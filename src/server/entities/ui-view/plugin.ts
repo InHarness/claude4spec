@@ -31,28 +31,8 @@ export const uiViewBackendModule: BackendModule = {
   // it for DI + entity-tools, mount the REST router. No custom MCP server —
   // ui-view has no non-CRUD tools.
   backend: {
-    /**
-     * `ui_view.design_system_slug` is a scalar reference with no FK, so a
-     * design-system rename has to be followed by hand: repoint the column, then
-     * re-persist each affected file. Formerly a `type === 'design-system'`
-     * branch in the host's ReferencesService.
-     */
-    onEntityRenamed: ({ type, oldSlug, newSlug }, ctx) => {
-      if (type !== 'design-system') return;
-      const affected = ctx.db
-        .prepare('SELECT slug FROM ui_view WHERE design_system_slug = ?')
-        .all(oldSlug) as Array<{ slug: string }>;
-      if (affected.length === 0) return;
-      const update = ctx.db.prepare('UPDATE ui_view SET design_system_slug = ? WHERE slug = ?');
-      for (const v of affected) {
-        update.run(newSlug, v.slug);
-        try {
-          ctx.entityStore.persist('ui-view', v.slug);
-        } catch {
-          /* skip */
-        }
-      }
-    },
+    // 2.0.0: the hand-written `onEntityRenamed` that repointed
+    // `design_system_slug` is gone — `ref: 'design-system'` on the field says it.
     service: (ctx) => new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     crud: {
       createSchema: uiViewCreateSchema,

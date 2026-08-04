@@ -1,26 +1,38 @@
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
 /**
- * 0.2.2 — a rename fans out to the modules that declared `backend.onEntityRenamed`.
+ * A rename fans out to one listener per module, and since 2.0.0 the host GENERATES
+ * those listeners from the modules' `ref` flags.
  *
- * Before this, ReferencesService carried three hardcoded branches, each naming
- * another module's table: `type === 'dto'` re-persisted endpoint files,
- * `type === 'design-system'` repointed `ui_view.design_system_slug`, and any
- * rename rewrote `ac.verifies[]`. The host now knows only that a rename
- * happened.
+ * Two rounds of removing per-type knowledge got here. 0.2.2 took three hardcoded
+ * branches out of ReferencesService, each naming another module's table
+ * (`type === 'dto'` re-persisted endpoint files, `type === 'design-system'`
+ * repointed `ui_view.design_system_slug`, any rename rewrote `ac.verifies[]`),
+ * and gave each module a `backend.onEntityRenamed` hook instead. 2.0.0 removes
+ * the hook too: the three hooks were three spellings of one rule, and
+ * `data.schema` already says which fields hold a reference.
  */
 
 import { describe, expect, it, vi } from 'vitest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { applyProjection } from '../db/projection.js';
 import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
 import { synthesizeMount } from '../core/plugin-host/manifest-adapter.js';
+import type { DataDeclaration } from '../../shared/plugin-host/data-schema.js';
 import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/plugin-host/types.js';
 
-/** A module that does nothing but record the renames it is told about. */
-function listenerModule(type: string, onRenamed: (ev: EntityRenamedEvent) => void): BackendModule {
+/** `FIXTURE_DATA` plus one scalar reference to `dto` — the minimum that earns a listener. */
+const REFERENCING_DATA: DataDeclaration = {
+  schema: {
+    ...FIXTURE_DATA.schema,
+    dtoSlug: { kind: 'string', ref: 'dto', onMissing: 'warn', onDelete: 'leave-dangling' },
+  },
+};
+
+function fixture(type: string, data: DataDeclaration): BackendModule {
   return synthesizeMount({
     type,
-    data: FIXTURE_DATA,
+    data,
     slugPattern: FIXTURE_SLUG_PATTERN,
     payloadVersion: 1,
     label: type,
@@ -29,7 +41,6 @@ function listenerModule(type: string, onRenamed: (ev: EntityRenamedEvent) => voi
     pathPrefix: `/${type}s`,
     serializer: {} as BackendModule['serializer'],
     systemPrompt: { roleNoun: type },
-    backend: { onEntityRenamed: onRenamed },
   } as BackendModule);
 }
 
@@ -38,9 +49,13 @@ function mountWith(modules: BackendModule[]) {
   for (const m of modules) registry.registerEntityModule(m);
   const host = registry.consolidate(null);
   const db = createTestDb();
+  applyProjection(db, modules);
   const ctx = {
     db,
     host,
+    // The generated listener re-persists the files of whatever it changed; these
+    // fixture types have no directory in the file store, so the store is a spy.
+    entityStore: { persist: () => {} },
     registerRenameListener: (fn: (ev: EntityRenamedEvent) => void) => host.registerRenameListener(fn),
     registerMcpServer: () => {},
     registerEntityService: () => {},
@@ -50,29 +65,93 @@ function mountWith(modules: BackendModule[]) {
 }
 
 describe('rename listeners', () => {
-  it('registers a module’s onEntityRenamed through synthesizeMount', () => {
-    const seen: EntityRenamedEvent[] = [];
-    const { host, db } = mountWith([listenerModule('widget', (ev) => seen.push(ev))]);
+  it('generates a listener for a module that declares a ref, and repoints it', () => {
+    const { host, db } = mountWith([fixture('widget', REFERENCING_DATA)]);
     try {
       expect(host.listRenameListeners()).toHaveLength(1);
-      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'a', newSlug: 'b' });
-      expect(seen).toEqual([{ type: 'dto', oldSlug: 'a', newSlug: 'b' }]);
+      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+
+      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
+
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({
+        dto_slug: 'account-dto',
+      });
     } finally {
       db.close();
     }
   });
 
-  it('tells every module about every rename — filtering is the module’s job', () => {
-    const a: string[] = [];
-    const b: string[] = [];
+  it('still generates the listener for a module with its own backend.mount', () => {
+    // The escape hatch replaces the slots `synthesizeMount` synthesizes. Rename
+    // propagation is not one of them — it is derived from `data.schema`, which a
+    // hand-written `mount` does not override, and there is no `onEntityRenamed`
+    // slot left to opt back in with. Returning early here would silently make
+    // `ref` mean nothing for exactly one kind of module.
+    let ownMountRan = false;
+    const withMount = synthesizeMount({
+      type: 'widget',
+      data: REFERENCING_DATA,
+      slugPattern: FIXTURE_SLUG_PATTERN,
+      payloadVersion: 1,
+      label: 'widget',
+      labelPlural: 'widgets',
+      displayOrder: 900,
+      pathPrefix: '/widgets',
+      serializer: {} as BackendModule['serializer'],
+      systemPrompt: { roleNoun: 'widget' },
+      backend: {
+        mount: () => {
+          ownMountRan = true;
+        },
+      },
+    } as BackendModule);
+
+    const { host, db } = mountWith([withMount]);
+    try {
+      expect(ownMountRan).toBe(true);
+      expect(host.listRenameListeners()).toHaveLength(1);
+      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+
+      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
+
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({
+        dto_slug: 'account-dto',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
+  it('generates NO listener for a module that references nothing', () => {
+    // The declaration is the whole condition. A type with no `ref` has nothing to
+    // repoint, and registering a listener that can only ever no-op would put every
+    // active type on the path of every rename.
+    const { host, db } = mountWith([fixture('gadget', FIXTURE_DATA)]);
+    try {
+      expect(host.listRenameListeners()).toHaveLength(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('tells every referencing module about every rename — the ref flag does the filtering', () => {
     const { host, db } = mountWith([
-      listenerModule('widget', (ev) => a.push(ev.type)),
-      listenerModule('gadget', (ev) => b.push(ev.type)),
+      fixture('widget', REFERENCING_DATA),
+      fixture('gadget', REFERENCING_DATA),
     ]);
     try {
-      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'a', newSlug: 'b' });
-      expect(a).toEqual(['dto']);
-      expect(b).toEqual(['dto']);
+      expect(host.listRenameListeners()).toHaveLength(2);
+      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO gadget (slug, name, dto_slug) VALUES (?, ?, ?)').run('g1', 'G', 'user-dto');
+
+      // A rename of a type NEITHER module references must leave both alone —
+      // that filtering used to be an `if (type !== 'dto') return;` in each hook.
+      for (const fn of host.listRenameListeners()) fn({ type: 'ac', oldSlug: 'user-dto', newSlug: 'account-dto' });
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({ dto_slug: 'user-dto' });
+
+      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({ dto_slug: 'account-dto' });
+      expect(db.prepare('SELECT dto_slug FROM gadget WHERE slug = ?').get('g1')).toEqual({ dto_slug: 'account-dto' });
     } finally {
       db.close();
     }
