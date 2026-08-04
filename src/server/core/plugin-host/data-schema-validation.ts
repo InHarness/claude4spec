@@ -21,7 +21,11 @@
 import {
   MAX_PROJECTION_DEPTH,
   columnOf,
+  hasProjectionTable,
+  isEmbedded,
   walkSchema,
+  type CollectionNode,
+  type CountPredicate,
   type DataDeclaration,
   type FieldNode,
   type IntegrityConstraint,
@@ -73,6 +77,24 @@ const RESERVED_WORDS: ReadonlySet<string> = new Set([
 
 /** Column names the host writes on every entity row; a type may not redeclare them. */
 const HOST_RESERVED_COLUMNS: ReadonlySet<string> = new Set(['slug', 'id']);
+
+/**
+ * A CHECK expression is interpolated into generated DDL and reaches `db.exec`,
+ * which runs MULTIPLE statements. It is therefore ALLOWLISTED, exactly as
+ * `composition-validation.ts` allowlists a scope predicate, and for exactly the
+ * same reason: without it, `expr: "1); DROP TABLE plan; --"` produces
+ * `CHECK (1); DROP TABLE plan; --)` and drops a host table at boot — a table the
+ * entity rebuild cannot regenerate, since plans are not entity files.
+ *
+ * This release deleted `countStat.sqlQuery` to close precisely that surface;
+ * accepting an unscreened expression here would have reopened it wider, because
+ * a CHECK runs at CREATE time rather than on demand.
+ *
+ * Comparison, arithmetic, boolean connectives, quoted literals, parenthesised
+ * groups and bare identifiers are enough to express every constraint the closed
+ * vocabulary is for. `;` is absent from the set — one statement, always.
+ */
+const CHECK_EXPR_ALLOWED_RE = /^[A-Za-z0-9_ '"=<>!+\-*/%().,|]+$/;
 
 function fail(type: string, message: string): never {
   throw new PluginManifestError(`entity type "${type}" — data.schema: ${message}`);
@@ -138,9 +160,43 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
     }
   });
 
+  /**
+   * EVERY field that becomes a column, not just the top-level ones.
+   *
+   * The generator emits bare identifiers in two places: the parent row's
+   * columns, and the columns of each table-backed collection, which come from
+   * that collection's ITEM fields. Checking only the first set left the second
+   * unguarded — and it is the likelier of the two to trip, because an item
+   * object is a small record whose natural field names include `default`, `in`,
+   * `order` and `type`. `ui-view.params` already has three of those; it stays
+   * embedded today, so it is a rename away from a boot failure rather than one
+   * now.
+   */
+  const columns: Array<{ column: string; where: string }> = [];
   for (const [name, node] of Object.entries(schema)) {
+    if (isEmbedded(node)) columns.push({ column: columnOf(name, node), where: `field "${name}"` });
+    if (!hasProjectionTable(node)) continue;
+    const item = (node as CollectionNode).item;
+    const itemFields: Array<[string, FieldNode]> =
+      item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+    for (const [itemName, itemNode] of itemFields) {
+      columns.push({
+        column: columnOf(itemName, itemNode),
+        where: `item field "${name}[].${itemName}"`,
+      });
+    }
+  }
+
+  for (const { column, where } of columns) {
+    assertSqlIdentifier(type, column, `column for ${where}`);
+  }
+
+  // Only the PARENT row carries the host's own columns; a projection table's
+  // `<type>_slug` binding is host-generated and cannot collide with an item
+  // field, since the binding is derived from the type slug rather than declared.
+  for (const [name, node] of Object.entries(schema)) {
+    if (!isEmbedded(node)) continue;
     const column = columnOf(name, node);
-    assertSqlIdentifier(type, column, `column for field "${name}"`);
     if (HOST_RESERVED_COLUMNS.has(column)) {
       fail(
         type,
@@ -158,11 +214,43 @@ function checkIntegrity(
 ): void {
   for (const constraint of integrity) {
     switch (constraint.kind) {
-      case 'check':
-        if (typeof constraint.expr !== 'string' || constraint.expr.trim() === '') {
+      case 'check': {
+        const expr = constraint.expr;
+        if (typeof expr !== 'string' || expr.trim() === '') {
           fail(type, 'integrity CHECK must carry a non-empty expression');
         }
+        if (!CHECK_EXPR_ALLOWED_RE.test(expr) || expr.includes('--') || expr.includes('/*')) {
+          fail(
+            type,
+            `integrity CHECK expression contains characters outside the allowed set (comparison, ` +
+              `arithmetic, boolean connectives, quoted literals, parentheses): ${JSON.stringify(expr)}. ` +
+              `The expression is interpolated into generated DDL and reaches a multi-statement ` +
+              `\`db.exec\`, so it is allowlisted rather than blacklisted`,
+          );
+        }
+        /**
+         * The character allowlist bounds what the expression can EXPRESS; it
+         * does not bound how many statements it produces. `(1)) ; CREATE TABLE x (a` passes
+         * every character check while closing the CREATE early. Balanced
+         * parentheses are what make the expression a single sub-expression of
+         * the statement it is embedded in.
+         */
+        let depth = 0;
+        for (const ch of expr) {
+          if (ch === '(') depth += 1;
+          else if (ch === ')') depth -= 1;
+          if (depth < 0) break;
+        }
+        if (depth !== 0) {
+          fail(
+            type,
+            `integrity CHECK expression has unbalanced parentheses: ${JSON.stringify(expr)}. An ` +
+              `expression that closes more groups than it opens escapes the CREATE TABLE it is ` +
+              `embedded in`,
+          );
+        }
         break;
+      }
       case 'unique':
         if (!constraint.fields?.length) fail(type, 'integrity UNIQUE must name at least one field');
         for (const field of constraint.fields) {
@@ -243,12 +331,57 @@ function checkSlugPattern(type: string, schema: DataDeclaration['schema'], patte
   }
 }
 
+/**
+ * The count filter must name a field that actually BECOMES A COLUMN.
+ *
+ * `compileCountPredicate` degrades to an unfiltered count when it cannot resolve
+ * a field, which is right for a runtime read — a slightly-too-large badge beats
+ * a blank sidebar. But degrading is the wrong answer for a manifest that is
+ * simply wrong, and the degradation only covers fields absent from the schema:
+ * a field that is PRESENT but not projected (`transientInput`, `localSurrogate`,
+ * or a collection with its own table) resolves to a column name that does not
+ * exist, and the count throws `no such column` out of the agent turn.
+ *
+ * Rejecting it here is the same trade the rest of this module makes: fail one
+ * plugin at load rather than every chat turn at runtime.
+ */
+function checkCountPredicate(
+  type: string,
+  schema: DataDeclaration['schema'],
+  predicate: CountPredicate | undefined,
+): void {
+  if (!predicate) return;
+  if (typeof predicate.field !== 'string' || !predicate.field) {
+    fail(type, 'systemPrompt.countPredicate must name a field');
+  }
+  const node = schema[predicate.field];
+  if (!node) {
+    fail(type, `systemPrompt.countPredicate names "${predicate.field}", which is not in the schema`);
+  }
+  if (!isEmbedded(node)) {
+    fail(
+      type,
+      `systemPrompt.countPredicate names "${predicate.field}", which projects to no column ` +
+        `(transient, local-surrogate, or a collection with its own table) — counting cannot filter ` +
+        `on it`,
+    );
+  }
+  if (predicate.eq === undefined && !predicate.in?.length) {
+    fail(
+      type,
+      `systemPrompt.countPredicate on "${predicate.field}" declares neither \`eq\` nor a non-empty ` +
+        `\`in\` — an empty predicate is expressed by omitting the slot`,
+    );
+  }
+}
+
 /** Validate the whole `data` + `slugPattern` + `payloadVersion` triple. */
 export function validateDataDeclaration(
   type: string,
   data: DataDeclaration | undefined,
   slugPattern: SlugPattern | undefined,
   payloadVersion: number | undefined,
+  countPredicate?: CountPredicate,
 ): void {
   if (!data || typeof data !== 'object' || !data.schema || typeof data.schema !== 'object') {
     fail(type, 'the `data.schema` slot is required in Host API 2.0.0');
@@ -268,6 +401,7 @@ export function validateDataDeclaration(
   checkNodes(type, data.schema);
   if (data.integrity?.length) checkIntegrity(type, data.schema, data.integrity);
   checkSlugPattern(type, data.schema, slugPattern);
+  checkCountPredicate(type, data.schema, countPredicate);
 
   for (const hint of data.access ?? []) {
     for (const field of [...(hint.filter ?? []), ...(hint.sort ? [hint.sort] : [])]) {

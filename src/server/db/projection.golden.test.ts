@@ -12,10 +12,16 @@
  * are built — one from the old statements, one from the generator — and their
  * `PRAGMA table_info` is compared column by column, in order.
  *
- * Two intentional differences are asserted as such rather than normalized away,
- * so that neither can drift into being accidental:
- *   1. the `slug` PK gains `NOT NULL` on the five tables that lacked it;
- *   2. the junction's two indexes are renamed to the generator's rule.
+ * One intentional difference is asserted as such rather than normalized away, so
+ * it cannot drift into being accidental: the `slug` PK gains `NOT NULL` on the
+ * tables that lacked it.
+ *
+ * SCOPE: the four types this repo contributes directly. `dto` and `endpoint`
+ * live in the api-contracts envelope and are covered by the same assertions in
+ * that workspace's own suite (`test/projection-golden.test.ts`) — importing
+ * their source here would pull files that import `@c4s/plugin-runtime` into the
+ * root TS program, where the specifier resolves to the BUILT `dist/` .d.ts
+ * rather than to source, making this file's typecheck depend on build order.
  */
 
 import Database from 'better-sqlite3';
@@ -25,8 +31,6 @@ import { acData } from '../../shared/entities/ac/schema.js';
 import { uiViewData } from '../../shared/entities/ui-view/schema.js';
 import { designSystemData } from '../../shared/entities/design-system/schema.js';
 import { diagramData } from '../../shared/entities/diagram/schema.js';
-import { dtoData } from '../../../plugins/c4s-plugin-api-contracts/src/entity/dto/schema.js';
-import { endpointData } from '../../../plugins/c4s-plugin-api-contracts/src/entity/endpoint/schema.js';
 
 /** The DDL as the deleted `migrations.ts` files wrote it, byte for byte. */
 const RETIRED_DDL: Record<string, string> = {
@@ -76,37 +80,6 @@ const RETIRED_DDL: Record<string, string> = {
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
   `,
-  dto: `
-    CREATE TABLE IF NOT EXISTS dto (
-      slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      fields TEXT NOT NULL DEFAULT '[]',
-      examples TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `,
-  endpoint: `
-    CREATE TABLE IF NOT EXISTS endpoint (
-      slug TEXT PRIMARY KEY,
-      method TEXT NOT NULL,
-      path TEXT NOT NULL,
-      summary TEXT NOT NULL DEFAULT '',
-      description TEXT,
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE TABLE IF NOT EXISTS endpoint_dto (
-      endpoint_slug TEXT NOT NULL REFERENCES endpoint(slug) ON DELETE CASCADE ON UPDATE CASCADE,
-      dto_slug      TEXT NOT NULL REFERENCES dto(slug)      ON DELETE CASCADE ON UPDATE CASCADE,
-      relation TEXT NOT NULL,
-      status_code INTEGER,
-      UNIQUE(endpoint_slug, dto_slug, relation, status_code)
-    );
-    CREATE INDEX IF NOT EXISTS idx_endpoint_dto_endpoint ON endpoint_dto(endpoint_slug);
-    CREATE INDEX IF NOT EXISTS idx_endpoint_dto_dto      ON endpoint_dto(dto_slug);
-  `,
 };
 
 const MODULES: ProjectableModule[] = [
@@ -114,8 +87,6 @@ const MODULES: ProjectableModule[] = [
   { type: 'ui-view', data: uiViewData },
   { type: 'design-system', data: designSystemData },
   { type: 'diagram', data: diagramData },
-  { type: 'dto', data: dtoData },
-  { type: 'endpoint', data: endpointData },
 ];
 
 interface ColumnInfo {
@@ -140,11 +111,7 @@ function tablesOf(db: Database.Database): string[] {
 
 function retiredDb(): Database.Database {
   const db = new Database(':memory:');
-  // dto before endpoint — the junction's FK names dto(slug), and the retired
-  // chain relied on `mountBackend` migrating every module before mounting any.
-  for (const type of ['dto', 'endpoint', 'ac', 'ui-view', 'design-system', 'diagram']) {
-    db.exec(RETIRED_DDL[type] as string);
-  }
+  for (const type of Object.keys(RETIRED_DDL)) db.exec(RETIRED_DDL[type] as string);
   return db;
 }
 
@@ -190,38 +157,6 @@ describe('projection generator — equivalence with the retired hand-written DDL
     });
   }
 
-  it('endpoint_dto keeps its UNIQUE tuple', () => {
-    const uniqueOf = (db: Database.Database) =>
-      (
-        db.prepare(`PRAGMA index_list(endpoint_dto)`).all() as Array<{ name: string; unique: number }>
-      )
-        .filter((i) => i.unique === 1)
-        .flatMap((i) =>
-          (db.prepare(`PRAGMA index_info(${i.name})`).all() as Array<{ name: string }>).map(
-            (c) => c.name,
-          ),
-        );
-    expect(uniqueOf(generatedDb())).toEqual(uniqueOf(retiredDb()));
-  });
-
-  it('endpoint_dto keeps both foreign keys, with the same cascade rules', () => {
-    const fksOf = (db: Database.Database) =>
-      (
-        db.prepare(`PRAGMA foreign_key_list(endpoint_dto)`).all() as Array<{
-          data: FIXTURE_DATA,
-          slugPattern: FIXTURE_SLUG_PATTERN,
-          payloadVersion: 1,
-          from: string;
-          to: string;
-          on_update: string;
-          on_delete: string;
-        }>
-      )
-        .map((f) => `${f.from}->${f.table}.${f.to} upd:${f.on_update} del:${f.on_delete}`)
-        .sort();
-    expect(fksOf(generatedDb())).toEqual(fksOf(retiredDb()));
-  });
-
   it('indexes cover the same columns (names follow the generator rule)', () => {
     const coveredColumns = (db: Database.Database, table: string) =>
       (db.prepare(`PRAGMA index_list(${table})`).all() as Array<{ name: string; origin: string }>)
@@ -235,53 +170,57 @@ describe('projection generator — equivalence with the retired hand-written DDL
 
     // `ac`: idx_ac_status / idx_ac_kind, reproduced from `data.access` hints.
     expect(coveredColumns(generatedDb(), 'ac')).toEqual(coveredColumns(retiredDb(), 'ac'));
-
-    /**
-     * The junction's indexes cover the same two columns but are RENAMED:
-     * `idx_endpoint_dto_endpoint` → `idx_endpoint_dto_endpoint_slug`, and the
-     * same for `_dto`. The generator names an index after the columns it
-     * actually covers, and an index name is not a contract surface — nothing
-     * queries by it. On an upgraded database the two old indexes simply remain
-     * alongside the new ones, which is redundant but harmless.
-     */
-    expect(coveredColumns(generatedDb(), 'endpoint_dto')).toEqual(
-      coveredColumns(retiredDb(), 'endpoint_dto'),
-    );
   });
 });
 
-describe('projection generator — creation order does not matter', () => {
+describe('projection generator — reconciling an existing database', () => {
   /**
-   * `applyProjection` iterates modules in `displayOrder`, which has nothing to
-   * do with `dependsOn` — so the junction's `REFERENCES dto(slug)` can be
-   * emitted before `dto` exists. SQLite resolves a forward FK reference at DML
-   * time rather than at CREATE time, and the call runs with foreign keys off
-   * inside one transaction, so this holds; asserting it means a future change to
-   * either the ordering or the pragma handling cannot break it silently.
+   * `ALTER TABLE ADD COLUMN` accepts only a CONSTANT default. `DEFAULT
+   * (datetime('now'))` is fine in a CREATE and rejected by an ALTER the moment
+   * the table holds a row — and `computedDefault: 'now'` is the flag the schema
+   * contract documents for timestamps, so it is the likely case rather than the
+   * exotic one. Emitting it would have made every POPULATED project fail to open
+   * while every fresh install worked.
    */
-  it('creates a junction whose FK forward-references a table not yet created', () => {
+  it('adds a computedDefault column to a POPULATED table without a non-constant default', () => {
     const db = new Database(':memory:');
-    db.pragma('foreign_keys = ON');
-    expect(() =>
-      applyProjection(db, [
-        { type: 'endpoint', data: endpointData },
-        { type: 'dto', data: dtoData },
-      ]),
-    ).not.toThrow();
+    applyProjection(db, MODULES);
+    db.prepare(`INSERT INTO ac (slug, text) VALUES ('a', 'something holds')`).run();
 
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('d', 'D')`).run();
-    db.prepare(`INSERT INTO endpoint (slug, method, path) VALUES ('e', 'GET', '/x')`).run();
-    db.prepare(
-      `INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','d','response')`,
-    ).run();
-    expect(db.prepare('SELECT COUNT(*) AS n FROM endpoint_dto').get()).toEqual({ n: 1 });
+    const widened = {
+      type: 'ac',
+      data: {
+        ...acData,
+        schema: {
+          ...acData.schema,
+          reviewedAt: {
+            kind: 'string',
+            column: 'reviewed_at',
+            systemManaged: true,
+            computedDefault: 'now',
+          },
+        },
+      },
+    } as ProjectableModule;
 
-    // And the constraint is live afterwards — foreign keys go back ON.
-    expect(() =>
-      db
-        .prepare(`INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','ghost','response')`)
-        .run(),
-    ).toThrow();
+    let result!: ReturnType<typeof applyProjection>;
+    expect(() => {
+      result = applyProjection(db, [widened]);
+    }).not.toThrow();
+    expect(result.alteredColumns).toContain('ac.reviewed_at');
+
+    // The column arrives NULL on the existing row; `indexAll()` fills it from
+    // the file immediately afterwards, the same path a new NOT NULL field takes.
+    expect(db.prepare('SELECT reviewed_at FROM ac WHERE slug = ?').get('a')).toEqual({
+      reviewed_at: null,
+    });
+    db.close();
+  });
+
+  it('is a no-op on a database that already matches', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    expect(applyProjection(db, MODULES)).toEqual({ created: [], alteredColumns: [] });
     db.close();
   });
 });

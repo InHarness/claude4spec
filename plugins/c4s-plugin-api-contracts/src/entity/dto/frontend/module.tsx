@@ -2,6 +2,7 @@ import { Braces, ChevronRight } from 'lucide-react';
 import type { Dto } from '../../../types.js';
 import { useDto } from './hooks.js';
 import { dtosApi } from './api.js';
+import { dtoData, dtoSlugPattern } from '../schema.js';
 import type {
   EntityCardProps,
   EntityChipProps,
@@ -150,20 +151,16 @@ function DtoCard({ slug, entity, onOpen }: EntityCardProps<Dto>) {
 
 export const dtoFrontendModule: FrontendModule = {
   type: 'dto',
-  table: 'dto',
+  // Host API 2.0.0 — the SAME declaration the backend contribution carries, not
+  // a second copy. The hand-inlined `slugFrom` this replaces was a mirror of the
+  // server's `dtoSlug`, maintained by hand and free to drift from it.
+  data: dtoData,
+  slugPattern: dtoSlugPattern,
+  payloadVersion: 1,
   label: 'DTO',
   labelPlural: 'DTOs',
   displayOrder: 20,
   pathPrefix: '/dtos',
-  slugFrom: (data) => {
-    const name = (data as { name?: string }).name ?? '';
-    return name
-      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-      .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  },
   renderRow: DtoRow as FrontendModule['renderRow'],
   renderChip: DtoChip as FrontendModule['renderChip'],
   renderCard: DtoCard as FrontendModule['renderCard'],

@@ -259,7 +259,48 @@ function tableExists(db: Database, table: string): boolean {
 }
 
 /**
- * Additive reconciliation for a table that already exists.
+ * `ALTER TABLE ADD COLUMN` accepts only a CONSTANT default.
+ *
+ * `DEFAULT (datetime('now'))` is fine in a `CREATE TABLE` and rejected by an
+ * `ALTER` the moment the table holds a row — `Cannot add a column with
+ * non-constant default`. A field carrying `computedDefault: 'now'` is exactly
+ * the shape that trips it, and it is the flag the schema contract documents for
+ * timestamps, so this is the likely case rather than the exotic one.
+ *
+ * Dropping the clause is safe and is what the rebuild expects anyway: the column
+ * arrives NULL on existing rows and `indexAll()` fills it from the files
+ * immediately afterwards, which is the same path a new NOT NULL field takes.
+ * Emitting it would have made every populated project fail to open while every
+ * fresh install worked.
+ */
+function alterableDefault(node: FieldNode): string | null {
+  if (node.computedDefault !== undefined) return null;
+  return defaultClause(node);
+}
+
+function addMissingColumns(
+  db: Database,
+  table: string,
+  declared: Array<[string, FieldNode]>,
+): string[] {
+  if (!tableExists(db, table)) return [];
+  const present = existingColumns(db, table);
+  const added: string[] = [];
+  for (const [name, node] of declared) {
+    const column = columnOf(name, node);
+    if (present.has(column)) continue;
+    const def = alterableDefault(node);
+    const parts = [column, sqlType(node)];
+    if (def) parts.push(def);
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${parts.join(' ')};`);
+    added.push(`${table}.${column}`);
+  }
+  return added;
+}
+
+/**
+ * Additive reconciliation for tables that already exist — the parent row AND
+ * every projection table.
  *
  * `CREATE TABLE IF NOT EXISTS` no-ops on an existing table, so a field ADDED to
  * a schema would otherwise never reach an existing database — the type would
@@ -268,6 +309,14 @@ function tableExists(db: Database, table: string): boolean {
  * resolved by the rebuild, because those are the changes that need the files to
  * be re-read rather than the table to be edited.
  *
+ * Projection tables are reconciled too, and must be. An earlier revision covered
+ * only the parent, which left a field added to a table-backed collection
+ * unreachable on every upgraded install: the junction INSERT then throws `no
+ * column named …` inside `indexAll`'s single rebuild transaction, rolling the
+ * whole rebuild back and serving the project from a permanently stale index —
+ * with no `ALTER TABLE` path left to repair it, since the retired per-plugin
+ * migration chain was the only thing that could express one.
+ *
  * SQLite refuses `ADD COLUMN ... NOT NULL` without a default, so a new required
  * field arrives nullable on existing databases and is made whole by the rebuild
  * that immediately follows.
@@ -275,20 +324,22 @@ function tableExists(db: Database, table: string): boolean {
 function reconcileColumns(db: Database, module: ProjectableModule): string[] {
   const schema = module.data?.schema;
   if (!schema) return [];
-  const table = mainTableOf(module);
-  if (!tableExists(db, table)) return [];
-  const present = existingColumns(db, table);
   const added: string[] = [];
+
+  const embedded = Object.entries(schema).filter(([, node]) => isEmbedded(node));
+  added.push(...addMissingColumns(db, mainTableOf(module), embedded));
+
   for (const [name, node] of Object.entries(schema)) {
-    if (!isEmbedded(node)) continue;
-    const column = columnOf(name, node);
-    if (present.has(column)) continue;
-    const def = defaultClause(node);
-    const parts = [column, sqlType(node)];
-    if (def) parts.push(def);
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${parts.join(' ')};`);
-    added.push(`${table}.${column}`);
+    if (!hasProjectionTable(node)) continue;
+    const collection = node as CollectionNode;
+    const item = collection.item;
+    const itemFields: Array<[string, FieldNode]> =
+      item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+    added.push(
+      ...addMissingColumns(db, projectionTableOf(module, name, collection), itemFields),
+    );
   }
+
   return added;
 }
 

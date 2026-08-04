@@ -320,7 +320,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     const reader = this.readerFor(db);
     const counts: Record<string, number> = {};
     for (const m of this.listEntities()) {
-      counts[m.type] = reader.count(m.type, m.systemPrompt?.countPredicate);
+      counts[m.type] = reader.count(m.type);
     }
     return counts;
   }

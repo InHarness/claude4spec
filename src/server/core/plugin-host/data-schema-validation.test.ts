@@ -125,6 +125,36 @@ describe('rule 2 — the integrity vocabulary is closed', () => {
 
     expect(check(data)).toThrow(/not a domain field of this type/);
   });
+
+  /**
+   * A CHECK expression reaches a MULTI-STATEMENT `db.exec` through generated
+   * DDL. Accepting "any non-empty string" reopened, wider, the raw-SQL surface
+   * this release deleted `countStat.sqlQuery` to close: the first case below
+   * drops a host table at boot — one the entity rebuild cannot regenerate, since
+   * plans are not entity files.
+   */
+  it.each([
+    ['statement terminator', "1); DROP TABLE plan; --"],
+    ['line comment', "length(name) > 0 -- "],
+    ['block comment', 'length(name) > 0 /* x */'],
+    ['unbalanced parens', '(1)) '],
+    ['semicolon alone', 'length(name) > 0;'],
+  ])('rejects a CHECK expression carrying %s', (_label, expr) => {
+    expect(check({ ...OK, integrity: [{ kind: 'check', expr }] })).toThrow(
+      /allowed set|unbalanced parentheses/,
+    );
+  });
+
+  it('accepts the ordinary comparison and boolean expressions CHECK is for', () => {
+    for (const expr of [
+      'length(name) > 0',
+      "kind IN ('a', 'b')",
+      'a = 1 AND (b <> 2 OR c >= 3)',
+      "status != ''",
+    ]) {
+      expect(check({ ...OK, integrity: [{ kind: 'check', expr }] }), expr).not.toThrow();
+    }
+  });
 });
 
 describe('rule 3 — depth is rejected, never truncated', () => {
@@ -211,6 +241,80 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
     };
 
     expect(check(data)).not.toThrow();
+  });
+
+  /**
+   * The generator emits bare identifiers for a table-backed collection's ITEM
+   * fields too, and those are the likelier of the two sets to trip: an item
+   * object is a small record whose natural field names include `default`, `in`,
+   * `order` and `type`. `ui-view.params` already has three of them.
+   */
+  it('rejects a reserved word in a table-backed collection item field', () => {
+    const data: DataDeclaration = {
+      schema: {
+        name: { kind: 'string', required: true },
+        params: {
+          kind: 'collection',
+          collection: 'value',
+          keyFields: ['in'],
+          item: {
+            kind: 'object',
+            fields: { in: { kind: 'string', required: true } },
+          },
+        },
+      },
+    };
+
+    expect(check(data)).toThrow(/reserved SQL word/);
+  });
+
+  it('leaves an EMBEDDED collection\'s item fields alone — they never become columns', () => {
+    // No keyFields ⇒ embedded JSON, so `in` is a JSON key, not an identifier.
+    const data: DataDeclaration = {
+      schema: {
+        name: { kind: 'string', required: true },
+        params: {
+          kind: 'collection',
+          collection: 'value',
+          item: { kind: 'object', fields: { in: { kind: 'string' } } },
+        },
+      },
+    };
+
+    expect(check(data)).not.toThrow();
+  });
+});
+
+describe('systemPrompt.countPredicate', () => {
+  const withPredicate = (predicate: unknown, data: DataDeclaration = OK) => () =>
+    validateDataDeclaration('widget', data, NAME_PATTERN, 1, predicate as never);
+
+  it('accepts a predicate over a projected field', () => {
+    expect(withPredicate({ field: 'name', in: ['x'] })).not.toThrow();
+  });
+
+  it('rejects a field the schema does not declare', () => {
+    expect(withPredicate({ field: 'nope', eq: 'x' })).toThrow(/not in the schema/);
+  });
+
+  /**
+   * The case that 500s every chat turn rather than merely miscounting: the field
+   * IS in the schema, so the runtime's absent-field guard does not fire, but it
+   * projects to no column and the count throws `no such column`.
+   */
+  it('rejects a field that projects to no column', () => {
+    const data: DataDeclaration = {
+      schema: {
+        name: { kind: 'string', required: true },
+        caption: { kind: 'string', transientInput: true },
+      },
+    };
+    expect(withPredicate({ field: 'caption', eq: 'x' }, data)).toThrow(/projects to no column/);
+  });
+
+  it('rejects a predicate with neither eq nor a non-empty in', () => {
+    expect(withPredicate({ field: 'name' })).toThrow(/neither/);
+    expect(withPredicate({ field: 'name', in: [] })).toThrow(/neither/);
   });
 });
 

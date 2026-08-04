@@ -244,6 +244,12 @@ export function attachComposition(module: BackendModule, peers: Iterable<Backend
    * which is exactly what stops a plugin-contributed type from being held to a
    * lower bar than a built-in one.
    */
-  validateDataDeclaration(module.type, module.data, module.slugPattern, module.payloadVersion);
+  validateDataDeclaration(
+    module.type,
+    module.data,
+    module.slugPattern,
+    module.payloadVersion,
+    module.systemPrompt?.countPredicate,
+  );
   return attachResolvedComposition(module, validateComposition(module, peers));
 }

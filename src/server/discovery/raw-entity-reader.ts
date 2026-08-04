@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
-import { columnOf, type CountPredicate } from '../../shared/plugin-host/data-schema.js';
+import { columnOf, isEmbedded } from '../../shared/plugin-host/data-schema.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 export type RawEntityType =
@@ -363,29 +363,32 @@ export class RawEntityReader {
   }
 
   /**
-   * Cheap row count for a type, optionally filtered — used by `catalog` and by
+   * Cheap row count for a type — used by the sidebar's `/entities/counts` and by
    * the `<project>` block's per-type counts.
    *
-   * The predicate is DATA, not SQL: equality and set membership over the type's
-   * own schema fields, compiled here into a parameterised `WHERE`. That is the
-   * whole vocabulary, deliberately — joins and cross-entity conditions are out
-   * of scope, and a raw-SQL slot is excluded permanently, because a module able
-   * to hand the host arbitrary SQL to execute breaks M13's read-exclusivity
-   * invariant no matter how narrow the intended use.
+   * The filter is RESOLVED HERE from the type's own manifest, not passed in.
+   * That is the whole point: this method takes no predicate argument, so a
+   * caller cannot forget to apply one, and the two counts in the product cannot
+   * drift apart the way they did when `countStat.sqlQuery` was dropped in 0.2.4.
+   * An earlier revision of this change made the predicate a parameter and
+   * updated only one of the two callers — reintroducing the exact divergence,
+   * under a docblock claiming it was impossible.
    *
-   * Both counts in the product now read through this ONE call with the SAME
-   * predicate, which is what stops the agent's number and the sidebar's from
-   * drifting apart the way they did when `countStat.sqlQuery` was silently
-   * dropped in 0.2.4.
+   * The predicate is DATA, not SQL: equality and set membership over the type's
+   * own schema fields, compiled into a parameterised `WHERE`. That is the whole
+   * vocabulary, deliberately — joins and cross-entity conditions are out of
+   * scope, and a raw-SQL slot is excluded permanently, because a module able to
+   * hand the host arbitrary SQL to execute breaks M13's read-exclusivity
+   * invariant no matter how narrow the intended use.
    */
-  count(type: string, predicate?: CountPredicate): number {
+  count(type: string): number {
     // `resolveTable` already answers undefined for a type with no table, so an
     // absent type reads as zero rather than throwing. The caller is
     // `GET /entities/counts`, where one throw blanked every badge in the
     // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
-    const where = this.compileCountPredicate(type, predicate);
+    const where = this.compileCountPredicate(type);
     const row = this.db
       .prepare(`SELECT COUNT(*) AS c FROM ${table}${where.sql}`)
       .get(...where.params) as { c: number };
@@ -393,23 +396,25 @@ export class RawEntityReader {
   }
 
   /**
-   * Predicate → `WHERE` clause + bound parameters.
+   * The type's declared filter → `WHERE` clause + bound parameters.
    *
-   * A predicate naming a field the type does not declare is IGNORED rather than
-   * thrown on, and the count comes back unfiltered. The caller is a sidebar
-   * badge and a system-prompt line: a slightly-too-large number is a cosmetic
-   * defect, while a throw blanks the whole sidebar. Registration validation is
-   * where a bad field name gets rejected loudly; by the time a count runs, the
-   * schema has already been vetted.
+   * A predicate this cannot resolve is IGNORED rather than thrown on, and the
+   * count comes back unfiltered. The callers are a sidebar badge and a
+   * system-prompt line: a slightly-too-large number is a cosmetic defect, while
+   * a throw blanks the whole sidebar and 500s every chat turn. Registration
+   * validation (`checkCountPredicate`) is where a bad predicate is rejected
+   * loudly; by the time a count runs, the manifest has already been vetted.
+   *
+   * `isEmbedded` is re-checked here rather than trusted from registration
+   * because a hand-built module in a test never goes through it, and this method
+   * must not be the thing that throws.
    */
-  private compileCountPredicate(
-    type: string,
-    predicate: CountPredicate | undefined,
-  ): { sql: string; params: unknown[] } {
+  private compileCountPredicate(type: string): { sql: string; params: unknown[] } {
+    const module = this.host?.getEntity(type);
+    const predicate = module?.systemPrompt?.countPredicate;
     if (!predicate?.field) return { sql: '', params: [] };
-    const schema = this.host?.getEntity(type)?.data?.schema;
-    const node = schema?.[predicate.field];
-    if (!node) return { sql: '', params: [] };
+    const node = module?.data?.schema?.[predicate.field];
+    if (!node || !isEmbedded(node)) return { sql: '', params: [] };
     const column = columnOf(predicate.field, node);
     if (predicate.in?.length) {
       return {

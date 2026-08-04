@@ -15,7 +15,9 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
 let db: Database.Database;
 
-function host(modules: Array<{ type: string; table: string }>): ProjectPluginHost {
+// 2.0.0: a module no longer carries a `table` slot — `compositionOf` derives the
+// table name from the type slug, so the fixture declares the type and nothing else.
+function host(modules: Array<{ type: string }>): ProjectPluginHost {
   return {
     getEntity: (t: string) => modules.find((m) => m.type === t) ?? null,
     // M39: `listTypes()` stopped being a frozen list of the seven core types and
@@ -114,11 +116,69 @@ describe('a core type whose table was never created', () => {
     const reader = new RawEntityReader(
       db,
       host([
-        { type: 'endpoint', table: 'endpoint' },
-        { type: 'dto', table: 'dto' },
+        { type: 'endpoint' },
+        { type: 'dto' },
       ]),
     );
     const hits = reader.findByTag({ tags: ['core'], filter: 'or' });
     expect(hits.map((h) => h.slug)).toEqual(['e1']);
+  });
+});
+
+/**
+ * The property an earlier revision of this change CLAIMED but did not hold.
+ *
+ * `count()` used to take the predicate as a PARAMETER, and only one of its two
+ * callers passed it — so the agent's `<project>` block filtered while the
+ * sidebar's `/entities/counts` did not, under a docblock asserting the two could
+ * no longer diverge. Resolving the predicate inside `count()` is what makes the
+ * claim structural: there is no argument to forget.
+ */
+describe('RawEntityReader.count — the declared predicate, resolved internally', () => {
+  function hostWith(countPredicate?: { field: string; in?: string[]; eq?: string }) {
+    const module = {
+      type: 'ac',
+      data: {
+        schema: {
+          text: { kind: 'string', required: true },
+          status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
+          caption: { kind: 'string', transientInput: true },
+        },
+      },
+      systemPrompt: { roleNoun: 'ac', ...(countPredicate ? { countPredicate } : {}) },
+    } as unknown as ReturnType<ProjectPluginHost['getEntity']>;
+    return {
+      getEntity: () => module,
+      getAvailable: () => module,
+      listEntities: () => [module],
+      isActive: () => true,
+    } as unknown as ProjectPluginHost;
+  }
+
+  function seeded(): Database.Database {
+    const db = new Database(':memory:');
+    db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, text TEXT, status TEXT);`);
+    const insert = db.prepare('INSERT INTO ac (slug, text, status) VALUES (?, ?, ?)');
+    for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 'active');
+    for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 'deprecated');
+    return db;
+  }
+
+  it('applies the type\'s declared predicate without being asked', () => {
+    const reader = new RawEntityReader(seeded(), hostWith({ field: 'status', in: ['active'] }));
+    expect(reader.count('ac')).toBe(9);
+  });
+
+  it('counts everything when the type declares no predicate', () => {
+    expect(new RawEntityReader(seeded(), hostWith()).count('ac')).toBe(12);
+  });
+
+  it('degrades to an unfiltered count rather than throwing on a non-projected field', () => {
+    // `caption` is `transientInput` — in the schema, never a column. Registration
+    // rejects this shape; a hand-built module never goes through registration, and
+    // a count must not be the thing that 500s the sidebar.
+    const reader = new RawEntityReader(seeded(), hostWith({ field: 'caption', eq: 'x' }));
+    expect(() => reader.count('ac')).not.toThrow();
+    expect(reader.count('ac')).toBe(12);
   });
 });
