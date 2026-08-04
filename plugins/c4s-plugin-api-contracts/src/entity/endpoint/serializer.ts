@@ -69,24 +69,46 @@ export interface EndpointSnapshot {
 
 /** Defensive coercion of pre-M17 legacy rows (Endpoint domain object) to the
  *  EndpointSnapshot shape. Post-M17 rows already match the shape. */
+/**
+ * Normalise a snapshot of ANY vintage into the shape `endpointDiff` compares.
+ *
+ * A diff is handed two captures that may have been taken years and several
+ * payload versions apart, so this has to read every spelling the type has ever
+ * written — and after tier B PR2 that includes the CURRENT one, which is the
+ * v2 `linkedDtos: [{dto, relation, statusCode}]` the generated snapshot emits.
+ *
+ * Reading only the older spellings is not a stale branch, it is a silent bug:
+ * `linked_dtos` and `dtos` are both absent from a v2 payload, so the junction
+ * coerces to `[]` on both sides and every endpoint diff reports NO dto changes
+ * at all — linking or unlinking a DTO would show up nowhere in a release diff.
+ *
+ * The OUTPUT keeps the `dto_slug` / `status_code` spelling on purpose. It feeds
+ * `endpointDiff`'s `dto_added` / `dto_removed` / `status_code_changed` changes,
+ * which `client/lib/release-diff/entity-diff-bullets.ts` reads by those names.
+ * That is a wire contract with the client, not a payload shape, and it is not
+ * what this release renamed.
+ */
 function coerceEndpoint(raw: unknown): EndpointSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
-  // Legacy: { dtos: [{ dtoSlug, relation, statusCode }] } → linked_dtos
-  let linked_dtos = r.linked_dtos as EndpointSnapshot['linked_dtos'] | undefined;
-  if (!linked_dtos && Array.isArray(r.dtos)) {
-    linked_dtos = (r.dtos as Array<Record<string, unknown>>).map((d) => ({
-      dto_slug: String(d.dtoSlug ?? d.dto_slug ?? ''),
-      relation: String(d.relation ?? '') as EndpointSnapshot['linked_dtos'][number]['relation'],
-      status_code: (d.statusCode ?? d.status_code ?? null) as number | null,
-    }));
-  }
+  const source =
+    // v2 (current): declared field names.
+    (Array.isArray(r.linkedDtos) ? (r.linkedDtos as Array<Record<string, unknown>>) : null) ??
+    // v1: junction column names.
+    (Array.isArray(r.linked_dtos) ? (r.linked_dtos as Array<Record<string, unknown>>) : null) ??
+    // pre-M17: the view's resolved `dtos[]`.
+    (Array.isArray(r.dtos) ? (r.dtos as Array<Record<string, unknown>>) : null);
+  const linked_dtos = (source ?? []).map((d) => ({
+    dto_slug: String(d.dto ?? d.dto_slug ?? d.dtoSlug ?? ''),
+    relation: String(d.relation ?? '') as EndpointSnapshot['linked_dtos'][number]['relation'],
+    status_code: (d.statusCode ?? d.status_code ?? null) as number | null,
+  }));
   return {
     slug: String(r.slug ?? ''),
     method: String(r.method ?? '') as EndpointSnapshot['method'],
     path: String(r.path ?? ''),
     summary: (r.summary as string | null) ?? null,
     description: (r.description as string | null) ?? null,
-    linked_dtos: linked_dtos ?? [],
+    linked_dtos,
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
   };
 }
