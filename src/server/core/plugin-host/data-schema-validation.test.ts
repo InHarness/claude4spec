@@ -98,6 +98,143 @@ describe('rule 1 — a collection must declare its kind', () => {
   });
 });
 
+/**
+ * Axes (tier C). Every one of these is a name pointing at something else, and a
+ * name that does not resolve fails far from the declaration and unhelpfully —
+ * an unresolvable extent makes `overview` report `undefined` dimensions for a
+ * grid that has rows, and nobody sees it until someone opens the entity.
+ */
+describe('rule 1b — a keyed collection declares two resolvable axes', () => {
+  const keyed = (
+    overrides: Record<string, unknown> = {},
+    parent: Record<string, unknown> = {},
+  ): DataDeclaration =>
+    ({
+      schema: {
+        name: { kind: 'string', required: true },
+        nRows: { kind: 'number' },
+        nCols: { kind: 'number' },
+        ...parent,
+        cells: {
+          kind: 'collection',
+          collection: 'keyed',
+          keyFields: ['r', 'c'],
+          axes: [
+            { key: 'r', extent: 'nRows' },
+            { key: 'c', extent: 'nCols' },
+          ],
+          item: {
+            kind: 'object',
+            fields: {
+              r: { kind: 'number' },
+              c: { kind: 'number' },
+              value: { kind: 'string' },
+            },
+          },
+          ...overrides,
+        },
+      },
+    }) as unknown as DataDeclaration;
+
+  it('accepts a well-formed pair', () => {
+    expect(check(keyed())).not.toThrow();
+  });
+
+  it('rejects a keyed collection with no axes', () => {
+    expect(check(keyed({ axes: undefined }))).toThrow(/must declare exactly two axes/);
+  });
+
+  it('rejects one axis — a window is a rectangle, not a line', () => {
+    expect(check(keyed({ axes: [{ key: 'r', extent: 'nRows' }] }))).toThrow(
+      /must declare exactly two axes/,
+    );
+  });
+
+  it('rejects an axis key that is not part of the address', () => {
+    expect(
+      check(
+        keyed({
+          axes: [
+            { key: 'value', extent: 'nRows' },
+            { key: 'c', extent: 'nCols' },
+          ],
+        }),
+      ),
+    ).toThrow(/axis key "value", which is not one of its keyFields/);
+  });
+
+  it('rejects a non-numeric coordinate — a window is a numeric range over it', () => {
+    expect(
+      check(
+        keyed({
+          keyFields: ['r', 'value'],
+          axes: [
+            { key: 'r', extent: 'nRows' },
+            { key: 'value', extent: 'nCols' },
+          ],
+        }),
+      ),
+    ).toThrow(/axis key "value" is declared as 'string'/);
+  });
+
+  it('rejects an extent that is not a field of the parent', () => {
+    expect(
+      check(
+        keyed({
+          axes: [
+            { key: 'r', extent: 'height' },
+            { key: 'c', extent: 'nCols' },
+          ],
+        }),
+      ),
+    ).toThrow(/axis extent "height", which is not a field of widget/);
+  });
+
+  it('rejects a non-numeric extent — a dimension is a count', () => {
+    expect(
+      check(
+        keyed({
+          axes: [
+            { key: 'r', extent: 'name' },
+            { key: 'c', extent: 'nCols' },
+          ],
+        }),
+      ),
+    ).toThrow(/axis extent "name" is declared as 'string'/);
+  });
+
+  it('rejects an extent that does not live on the parent row', () => {
+    // `overview` reads it off that row, so a collection-valued extent has
+    // nowhere to be read from.
+    expect(
+      check(
+        keyed(
+          {
+            axes: [
+              { key: 'r', extent: 'sizes' },
+              { key: 'c', extent: 'nCols' },
+            ],
+          },
+          { sizes: { kind: 'collection', collection: 'keyed', item: { kind: 'number' } } },
+        ),
+      ),
+    ).toThrow(/does not live on the widget row|must declare keyFields/);
+  });
+
+  it('rejects one field used as both axes', () => {
+    expect(
+      check(
+        keyed({
+          axes: [
+            { key: 'r', extent: 'nRows' },
+            { key: 'r', extent: 'nCols' },
+          ],
+        }),
+      ),
+    ).toThrow(/names "r" as both of its axes/);
+  });
+});
+
 describe('rule 2 — the integrity vocabulary is closed', () => {
   it('accepts check, unique and fk', () => {
     const data: DataDeclaration = {

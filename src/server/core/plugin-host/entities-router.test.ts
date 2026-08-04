@@ -3,6 +3,7 @@ import express from 'express';
 import request from 'supertest';
 import { entitiesRouter } from './entities-router.js';
 import type { ProjectPluginHost } from './types.js';
+import type { DiscoveryCore } from '../../discovery/types.js';
 import type { VersionService } from '../../services/versions.js';
 import type { TagsService } from '../../services/tags.js';
 import type { EntityStore } from '../../services/entity-store.js';
@@ -44,7 +45,10 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     const tags = {} as unknown as TagsService;
     const store = {} as unknown as EntityStore;
     const reader = {} as unknown as RawEntityReader;
-    const router = entitiesRouter(host, tags, versions, store, reader);
+    // This suite exercises the version-diff routes; the collection routes are
+    // covered in `discovery/ops/collections.test.ts` against a real core.
+    const discovery = {} as unknown as DiscoveryCore;
+    const router = entitiesRouter(host, tags, versions, store, reader, discovery);
     return express().use(express.json()).use('/api/entities', router);
   }
 

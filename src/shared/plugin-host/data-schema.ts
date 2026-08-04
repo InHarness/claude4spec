@@ -107,6 +107,32 @@ export interface ObjectNode extends FieldFlags {
 }
 
 /**
+ * One axis of a keyed collection's coordinate pair.
+ *
+ * WHY THIS SLOT EXISTS. M39 describes a keyed collection's key as "an ordered
+ * pair of coordinates" and says `overview` reports "the parent's dimensions" —
+ * but it never says which declared field holds a given axis's length, and the
+ * spec confirms the pair is an INTERPRETATION of the key tuple rather than a
+ * declared slot. Something has to close that: `overview` must answer "how tall
+ * is this grid" without reading a single item body, so the answer has to be a
+ * field it can read off the parent row.
+ *
+ * `extent` is that field, and it is deliberately NOT derived from the maximum
+ * stored coordinate. Sparse discipline says an empty value is not stored and
+ * that `overview` cannot distinguish "key deleted" from "key never written";
+ * a max-coordinate rule would therefore shrink the grid the moment the last
+ * cell of the last row was cleared. The spec states the same conclusion from
+ * the other direction — "dimensions may exceed the elements' maximum
+ * coordinates (trailing empty rows are metadata)".
+ */
+export interface AxisSpec {
+  /** The `keyFields` entry carrying this axis's coordinate. Must be a `number` leaf. */
+  key: string;
+  /** The PARENT field holding this axis's length. Must be a `number` leaf on the entity itself. */
+  extent: string;
+}
+
+/**
  * An ordered list of items.
  *
  * `collection` is MANDATORY and BINARY. There is deliberately no default: the
@@ -145,6 +171,16 @@ export interface CollectionNode extends FieldFlags {
    * against the brief asking for this to become the written convention.
    */
   keyFields?: readonly string[];
+  /**
+   * The two coordinate axes of a `'keyed'` collection, in order.
+   *
+   * Mandatory for `'keyed'` and meaningless on `'value'`. Exactly two: M39's
+   * read surface is a RECTANGLE over two axes, and "full row" / "full column"
+   * are degenerate rectangles rather than separate primitives — a one-axis or
+   * three-axis collection has no defined window and is rejected at registration
+   * rather than given a silently different read shape.
+   */
+  axes?: readonly [AxisSpec, AxisSpec];
   /**
    * Projection table name for a collection that gets one. Defaults to
    * `${parentTable}_${snakeCase(field)}`; declared where history says otherwise
@@ -265,6 +301,46 @@ export function hasProjectionTable(node: FieldNode): boolean {
 /** True when the field lives on the parent row. The complement of {@link hasProjectionTable}. */
 export function isEmbedded(node: FieldNode): boolean {
   return !hasProjectionTable(node) && !node.transientInput && !node.localSurrogate;
+}
+
+/**
+ * True for a collection addressed by key — read in windows, reconciled per key.
+ *
+ * A predicate rather than an inline `node.collection === 'keyed'` because the
+ * two collection kinds diverge in FIVE places (write reconciliation, snapshot
+ * compaction, the read surface, restore semantics, and whether an axis
+ * operation applies), and every one of them has to ask the same question the
+ * same way. The tier-C write door exists precisely because one of them once
+ * did not.
+ */
+export function isKeyed(node: FieldNode): node is CollectionNode {
+  return node.kind === 'collection' && node.collection === 'keyed';
+}
+
+/**
+ * The two axes of a keyed collection.
+ *
+ * Empty for anything else, so a caller can iterate without first branching on
+ * the collection kind. Registration validation guarantees a keyed collection
+ * has exactly two, so a keyed node reaching a reader with none is a wiring bug
+ * rather than a data condition.
+ */
+export function axesOf(node: FieldNode): readonly AxisSpec[] {
+  return isKeyed(node) ? (node.axes ?? []) : [];
+}
+
+/**
+ * The item fields that are NOT part of the address.
+ *
+ * What "empty" is judged on under sparse discipline: a keyed item whose payload
+ * fields are all empty is a DELETION of that key, and the coordinates cannot
+ * take part in that decision because they are never empty — they are what the
+ * key is.
+ */
+export function payloadFieldsOf(node: CollectionNode): readonly string[] {
+  if (node.item.kind !== 'object') return ['value'];
+  const keys = new Set(node.keyFields ?? []);
+  return Object.keys(node.item.fields).filter((name) => !keys.has(name));
 }
 
 /**

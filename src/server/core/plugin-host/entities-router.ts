@@ -8,6 +8,7 @@ import type { EntityType } from '../../../shared/entities.js';
 import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
+import type { DiscoveryCore } from '../../discovery/types.js';
 import { payloadVersionOfCapture, samePayloadVersion } from '../../serialization/payload-version.js';
 import { upgradeCapture } from '../../serialization/payload-upgrade.js';
 import { toRawDeltaEntityChange } from '../../serialization/snapshot.js';
@@ -42,7 +43,7 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
  * Lives under core/plugin-host/ because the URL spans all plugins; per-plugin
  * routes (CRUD) stay inside their own vertical slice.
  */
-export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore, reader: RawEntityReader): Router {
+export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versions: VersionService, store: EntityStore, reader: RawEntityReader, discovery: DiscoveryCore): Router {
   const router = Router();
 
   // Aggregate per-type entity counts (cheap COUNT(*) per table). One round-trip
@@ -54,6 +55,61 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const counts: EntityCountsResponse = {};
       for (const type of reader.listTypes()) counts[type] = reader.count(type);
       res.json(counts);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * M39 L2 over HTTP (item 18) — the generic read surface for a keyed
+   * collection, per type, per collection.
+   *
+   * Host-owned and cross-cutting, which is why it lives on this router rather
+   * than under a type's own `pathPrefix`: the shape is derived entirely from
+   * `data.schema`, so a type that declares a keyed collection gets these two
+   * routes without contributing a line of routing — the same bargain the
+   * projection and the write path already make.
+   *
+   * READ-ONLY, deliberately. Writes are domain mutations that stamp the parent
+   * and capture a version (items 21–22), and they belong on the write path where
+   * every other mutation is; a REST verb that quietly did that would be a second
+   * write door with none of the guarantees.
+   *
+   * Errors come from the discovery core's catalogue rather than being re-derived
+   * here — `entityNotFound` and `invalidArgument` already carry the navigation
+   * ("known slugs", "the call that would have worked"), and re-phrasing them at
+   * the transport is how two surfaces start disagreeing about the same refusal.
+   */
+  router.get('/:type/:slug/collections/:field/overview', (req, res, next) => {
+    try {
+      res.json(
+        discovery.collectionOverview({
+          type: assertType(host, req.params.type),
+          slug: req.params.slug,
+          field: req.params.field,
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.get('/:type/:slug/collections/:field/window', (req, res, next) => {
+    try {
+      // `Number(undefined)` is NaN and `Number('')` is 0 — both fail the core's
+      // integer check, which is where the message with the corrected call lives.
+      const coord = (raw: unknown): number => Number(raw ?? NaN);
+      res.json(
+        discovery.collectionWindow({
+          type: assertType(host, req.params.type),
+          slug: req.params.slug,
+          field: req.params.field,
+          a1: coord(req.query.a1),
+          b1: coord(req.query.b1),
+          a2: coord(req.query.a2),
+          b2: coord(req.query.b2),
+        }),
+      );
     } catch (err) {
       next(err);
     }

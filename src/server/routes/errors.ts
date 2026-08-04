@@ -1,6 +1,32 @@
 import type { ErrorRequestHandler } from 'express';
 import { DomainError } from '../services/tags.js';
 import { ConflictError } from '../services/brief.js';
+import { isDiscoveryError, type DiscoveryErrorCode } from '../discovery/errors.js';
+
+/**
+ * 0.2.9 — the discovery core's catalogue, mapped onto HTTP.
+ *
+ * Needed the moment a route reads through `DiscoveryCore` (the keyed-collection
+ * window and overview are the first to do so). Without it a `DiscoveryError`
+ * falls to the bottom of this handler and is reported as `500 INTERNAL` — so
+ * "no such spreadsheet" and "the server broke" arrive as the same answer, and
+ * the `hint` the core went out of its way to attach is dropped on the floor.
+ *
+ * The hint is FORWARDED rather than folded into the message. It is the half of
+ * the error that says which call would have worked, and a client that wants to
+ * render it differently from the message has to be able to tell them apart.
+ */
+const STATUS_FOR_DISCOVERY_CODE: Record<DiscoveryErrorCode, number> = {
+  ENTITY_NOT_FOUND: 404,
+  SECTION_NOT_FOUND: 404,
+  PAGE_NOT_FOUND: 404,
+  INVALID_TYPE: 404,
+  INVALID_VIEW: 400,
+  INVALID_ARGUMENT: 400,
+  AMBIGUOUS_ENTITY: 409,
+  AMBIGUOUS_PAGE: 409,
+  INDEX_NOT_MATERIALIZED: 503,
+};
 
 const STATUS_FOR_CODE: Record<string, number> = {
   NOT_FOUND: 404,
@@ -61,6 +87,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
       currentHash: err.currentHash,
       ...(err.currentContent !== undefined ? { currentContent: err.currentContent } : {}),
     });
+  }
+  if (isDiscoveryError(err)) {
+    return res
+      .status(STATUS_FOR_DISCOVERY_CODE[err.code] ?? 400)
+      .json({ error: { code: err.code, message: err.message, hint: err.hint } });
   }
   if (err instanceof DomainError) {
     const status = STATUS_FOR_CODE[err.code] ?? 400;

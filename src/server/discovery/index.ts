@@ -16,6 +16,7 @@
  * re-import it next door.
  */
 
+import { collectionOverview, collectionWindow } from './ops/collections.js';
 import { checkConsistency } from './ops/consistency.js';
 import { getEntities, listEntities, resolveIdentity, searchEntities } from './ops/entities.js';
 import { describeTypes, overview } from './ops/meta.js';
@@ -60,6 +61,8 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     findReferences: (input) => findReferences(deps, pages, roots, input),
     checkConsistency: (input) => checkConsistency(deps, pages, roots, input),
     resolveIdentity: (input) => resolveIdentity(deps, input),
+    collectionOverview: (input) => collectionOverview(deps, input),
+    collectionWindow: (input) => collectionWindow(deps, input),
   };
 }
 
@@ -191,4 +194,5 @@ export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): Ge
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
 export type * from './types.js';
 export { MAX_ANCHORS_PER_CALL, MAX_SLUGS_PER_CALL } from './budget.js';
+export { MAX_WINDOW_CELLS } from './ops/collections.js';
 export { MAX_LIMIT } from './pagination.js';

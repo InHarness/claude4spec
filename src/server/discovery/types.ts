@@ -402,6 +402,67 @@ export interface FindReferencesResult {
   hasMore: boolean;
 }
 
+// ── Keyed collections (M39 L2) ──────────────────────────────────────────────
+
+export interface CollectionOverviewInput {
+  type: string;
+  slug: string;
+  /** The declared field naming the keyed collection. */
+  field: string;
+}
+
+export interface CollectionAxis {
+  /** The item field carrying this axis's coordinate. */
+  key: string;
+  /** The PARENT field carrying this axis's length. */
+  extent: string;
+  /** That field's current value — the dimension, never a `MAX()` over stored items. */
+  length: number;
+}
+
+export interface CollectionOverviewResult {
+  type: string;
+  slug: string;
+  field: string;
+  /** Always two, in declared order. The first is the outer axis of a window's rows. */
+  axes: CollectionAxis[];
+  /** The item's non-coordinate fields — what a cell actually carries. */
+  itemFields: readonly string[];
+  /** Flags declared on the collection node, as declared. */
+  flags: Record<string, unknown>;
+}
+
+/**
+ * A rectangle over the two axes, 1-based inclusive on both.
+ *
+ * `a*` is the first declared axis, `b*` the second. A full row is `a1 === a2`;
+ * a full column is `b1 === b2` — degenerate windows, not separate operations.
+ */
+export interface CollectionWindowInput {
+  type: string;
+  slug: string;
+  field: string;
+  a1: number;
+  b1: number;
+  a2: number;
+  b2: number;
+}
+
+export interface CollectionWindowResult {
+  type: string;
+  slug: string;
+  field: string;
+  /** The rectangle actually read, echoed so a caller can address `items` by coordinate. */
+  window: Array<{ key: string; from: number; to: number }>;
+  /**
+   * Row-major over the first axis then the second, DENSE over the whole
+   * rectangle — an unwritten coordinate materializes as the item's empty value
+   * rather than being omitted, so `items[a - a1][b - b1]` always addresses the
+   * cell the caller meant.
+   */
+  items: unknown[][];
+}
+
 export interface CheckConsistencyInput {
   severity?: 'error' | 'warning';
   rule?: string | number;
@@ -429,4 +490,11 @@ export interface DiscoveryCore {
   findReferences(input: FindReferencesInput): Promise<FindReferencesResult>;
   checkConsistency(input?: CheckConsistencyInput): Promise<ConsistencyReport>;
   resolveIdentity(input: ResolveIdentityInput): ResolveIdentityResult;
+  /**
+   * M39 L2 — the shape of a keyed collection, without materializing an item.
+   * Always call this before a window: it is where the dimensions come from.
+   */
+  collectionOverview(input: CollectionOverviewInput): CollectionOverviewResult;
+  /** M39 L2 — a rectangle of a keyed collection, 1-based inclusive on both axes. */
+  collectionWindow(input: CollectionWindowInput): CollectionWindowResult;
 }

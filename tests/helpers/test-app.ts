@@ -27,6 +27,7 @@ import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../sr
 import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
+import { createDiscoveryCore } from '../../src/server/discovery/index.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
@@ -121,7 +122,22 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   // M29: slug-rename propagation into entity files, as in production. Must come
   // after mountBackend — that is when modules contribute their rename listeners.
   referencesService.setPluginHost(host);
-  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader));
+  /**
+   * A real core, so an integration test can reach the keyed-collection routes
+   * `entitiesRouter` mounts. Only the entity-side deps are wired: those routes
+   * read the projection and the host manifest, never pages or serialization,
+   * and standing up a page source here would couple every API test to the page
+   * fixtures.
+   */
+  const discovery = createDiscoveryCore({
+    reader: rawReader,
+    db,
+    host,
+    roots: [],
+    projectDir: cwd,
+    packageVersion: '0.0.0-test',
+  } as never);
+  router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
   // exercise the generic /api/artifacts/:kind/* family alongside each kind's

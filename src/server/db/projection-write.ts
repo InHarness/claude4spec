@@ -33,9 +33,13 @@
 
 import type { Database } from 'better-sqlite3';
 import {
+  axesOf,
   columnOf,
   hasProjectionTable,
   isEmbedded,
+  isKeyed,
+  payloadFieldsOf,
+  type AxisSpec,
   type CollectionNode,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
@@ -294,7 +298,50 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
 
   const warnings: string[] = [];
 
+  /**
+   * `newSlug` renames IN PLACE, and it has to be an UPDATE of the existing row
+   * rather than an insert at the new slug (item 23).
+   *
+   * Every projection table binds to the parent with `ON UPDATE CASCADE`, so an
+   * in-place `UPDATE … SET slug = ?` carries the whole collection across in the
+   * SAME statement — which is exactly what item 23 asks for and what the six
+   * hand-written services already do. Insert-then-delete would not: the new row
+   * starts with an empty collection, and the delete then cascades the old rows
+   * away, so a rename would silently empty a keyed collection of any size.
+   *
+   * This is the door a SERVICELESS type renames through. A type with a service
+   * never reaches it (`HostEntityWriter` prefers the service, which does its own
+   * rename), but a declaratively-authored type — the whole point of Host API
+   * 2.0.0, and the likeliest author of a keyed collection — had no rename door
+   * at all before this.
+   */
+  const requested = payload.newSlug;
+  const renameTo =
+    typeof requested === 'string' && requested.trim() && requested.trim() !== slug
+      ? requested.trim()
+      : null;
+  if (renameTo && !existing) {
+    throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
+  }
+  if (renameTo && rowExists(db, table, renameTo)) {
+    throw new DomainError(
+      'SLUG_CONFLICT',
+      `${module.type} slug '${renameTo}' already exists`,
+    );
+  }
+  const target = renameTo ?? slug;
+  if (renameTo) values[0] = target;
+
   const tx = db.transaction(() => {
+    if (renameTo) {
+      db.prepare(`UPDATE ${table} SET slug = ? WHERE slug = ?`).run(renameTo, slug);
+      // `entity_tag` has no FK to the entity table, so it does not cascade —
+      // the same explicit fix-up every hand-written service makes.
+      db.prepare(
+        `UPDATE entity_tag SET entity_slug = ? WHERE entity_type = ? AND entity_slug = ?`,
+      ).run(renameTo, module.type, slug);
+    }
+
     db.prepare(
       `INSERT INTO ${table} (${columns.join(', ')})
        VALUES (${columns.map(() => '?').join(', ')})
@@ -303,8 +350,24 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
 
     for (const [name, node] of Object.entries(schema)) {
       if (!hasProjectionTable(node)) continue;
+      /**
+       * SILENCE MEANS "LEAVE IT ALONE" for a keyed collection — and means
+       * "empty" for a value one. The asymmetry is the whole distinction between
+       * the two kinds, and getting it wrong here is not a subtle bug.
+       *
+       * A value collection IS the field: writing the entity writes all of it, so
+       * an absent field is an absent collection and replacing it with `[]` is
+       * correct. A keyed collection is addressed by key and read in windows; the
+       * payload that carries it is a snapshot or a restore, and an ordinary
+       * update never mentions it. Treating that silence as "empty" means every
+       * rename, resize or title edit deletes the entire grid — which is exactly
+       * what this loop did until a rename test caught it, because the field is
+       * missing from the payload in precisely the operations that are NOT about
+       * the cells.
+       */
+      if (isKeyed(node) && !Object.prototype.hasOwnProperty.call(payload, name)) continue;
       warnings.push(
-        ...syncProjectionTable(db, module, slug, name, node as CollectionNode, payload[name]),
+        ...syncProjectionTable(db, module, target, name, node as CollectionNode, payload[name]),
       );
     }
 
@@ -325,7 +388,7 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
     if (opts.capture !== false && deps.versions) {
       deps.versions.captureEntitySnapshot(
         module.type,
-        slug,
+        target,
         op === 'created' ? 'create' : 'update',
         actor,
         op === 'created' ? 'Created' : 'Updated',
@@ -334,7 +397,10 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
   });
   tx();
 
-  const entity = { slug, ...payload } as T;
+  // `slug` LAST: the payload may still carry `newSlug`, and a caller reading
+  // `.slug` off the result must get the slug that was actually written —
+  // `HostEntityWriter` syncs projection tables against exactly this value.
+  const entity = { ...payload, slug: target } as T;
   return warnings.length ? { entity, op, warnings } : { entity, op };
 }
 
@@ -487,12 +553,7 @@ function syncProjectionTable(
   value: unknown,
 ): string[] {
   if (node.collection === 'keyed') {
-    throw new DomainError(
-      'VALIDATION',
-      `${module.type}.${field} is a keyed collection — generic writes for keyed ` +
-        `collections are not implemented (tier C); it reconciles per key rather ` +
-        `than replacing wholesale, so it must not fall through to a value write`,
-    );
+    return reconcileKeyedCollection(db, module, slug, field, node, value);
   }
 
   const table = projectionTableOf(module, field, node);
@@ -623,6 +684,421 @@ function syncProjectionTable(
     }
   }
   return warnings;
+}
+
+// ─── keyed collections (tier C, items 17–23) ─────────────────────────────────
+
+/**
+ * The item's named fields, or the single synthetic `value` column of a scalar
+ * item — the same rule `projection-read.ts#itemFieldsOf` reads back with.
+ */
+function itemFieldEntries(node: CollectionNode): Array<[string, FieldNode]> {
+  return node.item.kind === 'object'
+    ? Object.entries(node.item.fields)
+    : [['value', node.item]];
+}
+
+/** The columns forming a keyed item's address, in declared axis order. */
+function keyColumnsOf(node: CollectionNode): string[] {
+  return (node.keyFields ?? []).map((key) =>
+    node.item.kind === 'object' && node.item.fields[key]
+      ? columnOf(key, node.item.fields[key] as FieldNode)
+      : key,
+  );
+}
+
+/**
+ * SPARSE DISCIPLINE, in one predicate (item 19).
+ *
+ * "An empty value is not stored; writing an empty value deletes the key; a
+ * rebuild skips empties; a snapshot never emits them." All four sentences are
+ * the same rule, so they get one implementation — and the coordinates are
+ * deliberately excluded from the judgement, because a coordinate is never empty:
+ * it is what the key IS. Judging emptiness on the whole item would make cell
+ * (3,4) permanently unstorable-as-empty while cell (0,0) vanished, which is not
+ * a rule anyone declared.
+ *
+ * `0` and `false` are NOT empty. Only absence, `null` and the empty string are —
+ * a spreadsheet cell holding `0` is a cell holding a number, and deleting it
+ * because it looks falsy would lose authored content on every rebuild.
+ */
+function isEmptyKeyedItem(node: CollectionNode, row: Record<string, unknown>): boolean {
+  return payloadFieldsOf(node).every((name) => {
+    const value = row[name];
+    return value === undefined || value === null || value === '';
+  });
+}
+
+/**
+ * Upsert the non-empty entries and delete the empty ones, in the caller's
+ * transaction.
+ *
+ * The shared core of both keyed write doors. What differs between them is the
+ * SCOPE of the operation — a reconcile also removes keys the dump did not
+ * mention, a windowed write does not — and that difference is the caller's to
+ * apply, not this function's.
+ */
+function applyKeyedEntries(
+  db: Database,
+  module: WritableModule,
+  slug: string,
+  field: string,
+  node: CollectionNode,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): string[] {
+  const table = projectionTableOf(module, field, node);
+  const binding = bindingColumnOf(module);
+  const fields = itemFieldEntries(node);
+  const keyColumns = keyColumnsOf(node);
+  const columns = [binding, ...fields.map(([name, n]) => columnOf(name, n))];
+
+  const upsert = db.prepare(
+    `INSERT INTO ${table} (${columns.join(', ')})
+     VALUES (${columns.map(() => '?').join(', ')})
+     ON CONFLICT(${[binding, ...keyColumns].join(', ')}) DO UPDATE SET ${columns
+       .filter((c) => c !== binding && !keyColumns.includes(c))
+       .map((c) => `${c} = excluded.${c}`)
+       .join(', ')}`,
+  );
+  const remove = db.prepare(
+    `DELETE FROM ${table} WHERE ${binding} = ? AND ${keyColumns
+      .map((c) => `${c} = ?`)
+      .join(' AND ')}`,
+  );
+
+  const warnings: string[] = [];
+  for (const row of rows) {
+    const keyValues = (node.keyFields ?? []).map((k) => row[k]);
+    if (keyValues.some((v) => v === undefined || v === null)) {
+      warnings.push(
+        `${module.type}/${slug}: ${field} entry is missing part of its key ` +
+          `(${(node.keyFields ?? []).join(', ')}) — skipped`,
+      );
+      continue;
+    }
+
+    if (isEmptyKeyedItem(node, row)) {
+      remove.run(slug, ...(keyValues as Array<string | number>));
+      continue;
+    }
+
+    const badEnum = fields.find(([name, n]) => enumViolation(n, row[name]) !== null);
+    if (badEnum) {
+      const [name, n] = badEnum;
+      warnings.push(
+        `${module.type}/${slug}: ${field}.${name} — ${enumViolation(n, row[name])} — entry skipped`,
+      );
+      continue;
+    }
+
+    try {
+      upsert.run(
+        slug,
+        ...fields.map(([name, n]) => {
+          const raw = row[name];
+          return raw === undefined ? absentValue(n) : encode(n, raw);
+        }),
+      );
+    } catch (err) {
+      /**
+       * Degraded to a warning for the same reason the value path degrades: an
+       * escape here aborts the whole entity, and the indexer turns a throwing
+       * restore into "skip this entity" — which empties the collection rather
+       * than preserving the rows that were fine.
+       */
+      warnings.push(
+        `${module.type}/${slug}: ${field} entry ${JSON.stringify(keyValues)} rejected by the ` +
+          `database — ${(err as Error).message}`,
+      );
+    }
+  }
+  return warnings;
+}
+
+/**
+ * REPLACE-ALL reconciliation — the dump is the whole collection (item 10).
+ *
+ * The restore/rebuild door. Keys absent from the dump are removed in the SAME
+ * atomic operation that upserts the ones present, which is what makes a restore
+ * land the collection the snapshot describes rather than the union of it and
+ * whatever was there before.
+ *
+ * Deliberately NOT a `DELETE` followed by re-INSERT of everything, though that
+ * would produce the same final rows. Deleting first opens a window inside the
+ * transaction where the collection is empty, and the projection table's rows are
+ * exactly what a `CHECK` from `data.integrity` and the parent's FK cascade see;
+ * reconciling by difference never presents a state the declaration forbids.
+ */
+export function reconcileKeyedCollection(
+  db: Database,
+  module: WritableModule,
+  slug: string,
+  field: string,
+  node: CollectionNode,
+  value: unknown,
+): string[] {
+  const table = projectionTableOf(module, field, node);
+  const binding = bindingColumnOf(module);
+  const keyColumns = keyColumnsOf(node);
+
+  // Absent or non-array means the payload said "no items", which for a
+  // replace-all is an instruction to empty the collection — the caller decides
+  // whether to call at all (`hasOwnProperty`), and by the time we are here it has.
+  const items = Array.isArray(value) ? value : [];
+  const rows: Array<Record<string, unknown>> = items.map((entry) =>
+    node.item.kind === 'object'
+      ? ((entry as Record<string, unknown>) ?? {})
+      : { value: entry },
+  );
+
+  const kept = new Set(
+    rows
+      .filter((row) => !isEmptyKeyedItem(node, row))
+      .map((row) => JSON.stringify((node.keyFields ?? []).map((k) => row[k] ?? null))),
+  );
+
+  const existing = db
+    .prepare(`SELECT ${keyColumns.join(', ')} FROM ${table} WHERE ${binding} = ?`)
+    .all(slug) as Array<Record<string, unknown>>;
+
+  const remove = db.prepare(
+    `DELETE FROM ${table} WHERE ${binding} = ? AND ${keyColumns
+      .map((c) => `${c} = ?`)
+      .join(' AND ')}`,
+  );
+  for (const row of existing) {
+    const key = JSON.stringify(keyColumns.map((c) => row[c] ?? null));
+    if (kept.has(key)) continue;
+    remove.run(slug, ...(keyColumns.map((c) => row[c]) as Array<string | number>));
+  }
+
+  return applyKeyedEntries(db, module, slug, field, node, rows);
+}
+
+/** One entry of a windowed keyed write: the item payload, coordinates included. */
+export type KeyedEntry = Record<string, unknown>;
+
+/**
+ * The POINT and RANGE write door — a full domain mutation (items 21, 22).
+ *
+ * MERGE, not replace: only the keys named are touched, which is what lets two
+ * writes to disjoint keys not collide. That is the whole difference from
+ * `reconcileKeyedCollection` above, and it is why they are two functions rather
+ * than one with a flag — the failure mode of picking the wrong one is silent
+ * data loss, and a boolean argument at the call site is not a good place for
+ * that decision to be visible.
+ *
+ * Two guarantees the brief names explicitly, both of which fall out of doing the
+ * whole thing in ONE transaction with the capture at its close:
+ *   - the PARENT's `updatedAt` is stamped, because a cell write is a mutation of
+ *     the entity, not of some side table (item 21);
+ *   - exactly ONE `entity_version` row per call, whether it carried one key or a
+ *     hundred. The trigger is the operation closing — never a time window and
+ *     never a change count, both of which were rejected as non-deterministic
+ *     (item 22).
+ */
+export function writeKeyedWindow(
+  deps: ProjectionWriteDeps,
+  module: WritableModule,
+  slug: string,
+  field: string,
+  entries: readonly KeyedEntry[],
+  actor: ChangedBy,
+  opts: WriteOpts,
+): { warnings: string[] } {
+  const { db } = deps;
+  const node = requireKeyed(module, field);
+  const table = mainTableOf(module);
+
+  if (!rowExists(db, table, slug)) {
+    throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
+  }
+
+  const rows: Array<Record<string, unknown>> = entries.map((entry) =>
+    node.item.kind === 'object' ? entry : { value: entry },
+  );
+
+  const warnings: string[] = [];
+  const tx = db.transaction(() => {
+    warnings.push(...applyKeyedEntries(db, module, slug, field, node, rows));
+    stampParent(deps, module, slug, opts);
+    capture(deps, module, slug, actor, opts);
+  });
+  tx();
+
+  return { warnings };
+}
+
+/**
+ * Insert or remove one position on an axis, shifting everything past it
+ * (item 20).
+ *
+ * Its own operation rather than a side effect of writing the extent field, and
+ * the difference is not cosmetic: writing `nRows = 4` on a 5-row grid says
+ * nothing about WHICH row went, so inferring a delete from it would have to pick
+ * one — silently dropping the last row's cells on what the caller thought was a
+ * metadata edit. An axis operation names the position, so the shift is derivable
+ * and the cells that go are the ones the caller asked to remove.
+ *
+ * "Keys are not a stable identity" is the consequence, and it is why M39 forbids
+ * a consumer from caching keys across this call: every coordinate past `at`
+ * changes, so a key read before the operation addresses a different item after.
+ *
+ * One `entity_version` entry, same rule as `writeKeyedWindow`.
+ */
+export function mutateAxis(
+  deps: ProjectionWriteDeps,
+  module: WritableModule,
+  slug: string,
+  field: string,
+  axisKey: string,
+  op: 'insert' | 'delete',
+  at: number,
+  actor: ChangedBy,
+  opts: WriteOpts,
+): { extent: number } {
+  const { db } = deps;
+  const node = requireKeyed(module, field);
+  const axis = axesOf(node).find((a) => a.key === axisKey);
+  if (!axis) {
+    throw new DomainError(
+      'VALIDATION',
+      `${module.type}.${field} has no axis '${axisKey}' — declared axes are ` +
+        `${axesOf(node).map((a) => a.key).join(', ') || 'none'}`,
+    );
+  }
+  if (!Number.isInteger(at) || at < 1) {
+    throw new DomainError('VALIDATION', `axis position must be an integer >= 1, got ${at}`);
+  }
+
+  const table = mainTableOf(module);
+  const collectionTable = projectionTableOf(module, field, node);
+  const binding = bindingColumnOf(module);
+  const axisColumn = keyColumnAt(node, axis);
+  const extentColumn = extentColumnOf(module, axis);
+
+  const parent = db.prepare(`SELECT ${extentColumn} AS extent FROM ${table} WHERE slug = ?`).get(slug) as
+    | { extent: number | null }
+    | undefined;
+  if (!parent) throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
+
+  const before = Number(parent.extent ?? 0);
+  const after = op === 'insert' ? before + 1 : Math.max(0, before - 1);
+
+  /**
+   * Shift THROUGH negative coordinates, in two statements, never in one.
+   *
+   * `UNIQUE(binding, ...keyColumns)` is checked per row as SQLite applies an
+   * UPDATE, so a bare `SET r = r + 1 WHERE r >= at` collides the moment it moves
+   * row 3 onto an occupied row 4 — on any grid dense enough to have two adjacent
+   * occupied positions, which is most of them. `ORDER BY … DESC` is the textbook
+   * answer and is NOT available: this SQLite is built without
+   * `SQLITE_ENABLE_UPDATE_DELETE_LIMIT`, so it rejects `ORDER BY without LIMIT
+   * on UPDATE`.
+   *
+   * Parking the moved rows on negative coordinates sidesteps the ordering
+   * question entirely: no positive coordinate can collide with a negative one,
+   * so the first statement never conflicts, and the second brings them back into
+   * a range the first statement has already vacated.
+   */
+  const shift = (delta: number, predicate: string, param: number): void => {
+    db.prepare(
+      `UPDATE ${collectionTable} SET ${axisColumn} = -(${axisColumn} + ${delta}) ` +
+        `WHERE ${binding} = ? AND ${axisColumn} ${predicate} ?`,
+    ).run(slug, param);
+    db.prepare(
+      `UPDATE ${collectionTable} SET ${axisColumn} = -${axisColumn} ` +
+        `WHERE ${binding} = ? AND ${axisColumn} < 0`,
+    ).run(slug);
+  };
+
+  const tx = db.transaction(() => {
+    if (op === 'delete') {
+      // The removed position's items go FIRST. Shifting them into `at - 1`
+      // instead would overwrite whatever already lives there.
+      db.prepare(
+        `DELETE FROM ${collectionTable} WHERE ${binding} = ? AND ${axisColumn} = ?`,
+      ).run(slug, at);
+      shift(-1, '>', at);
+    } else {
+      shift(+1, '>=', at);
+    }
+
+    db.prepare(`UPDATE ${table} SET ${extentColumn} = ? WHERE slug = ?`).run(after, slug);
+    stampParent(deps, module, slug, opts);
+    capture(deps, module, slug, actor, opts);
+  });
+  tx();
+
+  return { extent: after };
+}
+
+/** The declared keyed collection behind a field name, or a loud error. */
+function requireKeyed(module: WritableModule, field: string): CollectionNode {
+  const node = module.data?.schema?.[field];
+  if (!node || node.kind !== 'collection' || node.collection !== 'keyed') {
+    throw new DomainError(
+      'VALIDATION',
+      `${module.type}.${field} is not a keyed collection`,
+    );
+  }
+  return node;
+}
+
+/** The projection column carrying an axis's coordinate. */
+function keyColumnAt(node: CollectionNode, axis: AxisSpec): string {
+  return node.item.kind === 'object' && node.item.fields[axis.key]
+    ? columnOf(axis.key, node.item.fields[axis.key] as FieldNode)
+    : axis.key;
+}
+
+/** The parent column carrying an axis's length. */
+function extentColumnOf(module: WritableModule, axis: AxisSpec): string {
+  const node = module.data?.schema?.[axis.extent];
+  return node ? columnOf(axis.extent, node) : axis.extent;
+}
+
+/**
+ * Stamp the parent's `updatedAt` for a mutation that did not go through
+ * `upsertProjectionRow`.
+ *
+ * A keyed write changes the entity, so the entity's timestamp has to move —
+ * otherwise `file → index → file` writes a file whose `updatedAt` predates its
+ * own content, and every consumer that sorts by recency (the sidebar, the
+ * release diff) reports the entity as untouched.
+ *
+ * Only `updatedAt`: `createdAt` is settled by whatever created the row, and
+ * re-deriving it here would let a cell write rewrite the entity's birth date.
+ */
+function stampParent(
+  deps: ProjectionWriteDeps,
+  module: WritableModule,
+  slug: string,
+  opts: WriteOpts,
+): void {
+  const schema = module.data?.schema ?? {};
+  const entry = Object.entries(schema).find(
+    ([name, node]) => name === 'updatedAt' && isEmbedded(node) && node.systemManaged,
+  );
+  if (!entry) return;
+  const column = columnOf(entry[0], entry[1]);
+  const stamp = resolveStamp(module.type, opts, null);
+  deps.db.prepare(`UPDATE ${mainTableOf(module)} SET ${column} = ? WHERE slug = ?`).run(
+    stamp.updatedAt,
+    slug,
+  );
+}
+
+/** One capture per operation — see `writeKeyedWindow`'s note on item 22. */
+function capture(
+  deps: ProjectionWriteDeps,
+  module: WritableModule,
+  slug: string,
+  actor: ChangedBy,
+  opts: WriteOpts,
+): void {
+  if (opts.capture === false || !deps.versions) return;
+  deps.versions.captureEntitySnapshot(module.type, slug, 'update', actor, 'Updated');
 }
 
 /**
