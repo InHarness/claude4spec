@@ -81,6 +81,47 @@ describe('rename listeners', () => {
     }
   });
 
+  it('still generates the listener for a module with its own backend.mount', () => {
+    // The escape hatch replaces the slots `synthesizeMount` synthesizes. Rename
+    // propagation is not one of them — it is derived from `data.schema`, which a
+    // hand-written `mount` does not override, and there is no `onEntityRenamed`
+    // slot left to opt back in with. Returning early here would silently make
+    // `ref` mean nothing for exactly one kind of module.
+    let ownMountRan = false;
+    const withMount = synthesizeMount({
+      type: 'widget',
+      data: REFERENCING_DATA,
+      slugPattern: FIXTURE_SLUG_PATTERN,
+      payloadVersion: 1,
+      label: 'widget',
+      labelPlural: 'widgets',
+      displayOrder: 900,
+      pathPrefix: '/widgets',
+      serializer: {} as BackendModule['serializer'],
+      systemPrompt: { roleNoun: 'widget' },
+      backend: {
+        mount: () => {
+          ownMountRan = true;
+        },
+      },
+    } as BackendModule);
+
+    const { host, db } = mountWith([withMount]);
+    try {
+      expect(ownMountRan).toBe(true);
+      expect(host.listRenameListeners()).toHaveLength(1);
+      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+
+      for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
+
+      expect(db.prepare('SELECT dto_slug FROM widget WHERE slug = ?').get('w1')).toEqual({
+        dto_slug: 'account-dto',
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it('generates NO listener for a module that references nothing', () => {
     // The declaration is the whole condition. A type with no `ref` has nothing to
     // repoint, and registering a listener that can only ever no-op would put every

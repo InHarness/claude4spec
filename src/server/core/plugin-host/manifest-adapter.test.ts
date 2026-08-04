@@ -62,10 +62,16 @@ describe('lowerEntityContribution', () => {
     expect(() => lowerEntityContribution(base(extra))).toThrow(successor);
   });
 
-  it('rejects a removed backend slot and names its successor', () => {
-    expect(() =>
-      lowerEntityContribution(base({ backend: { migrations: [] } as never })),
-    ).toThrow(/data\.schema/);
+  it.each([
+    ['migrations', { migrations: [] }, /data\.schema/],
+    ['auxTables', { auxTables: ['thing_tag'] }, /data\.schema/],
+    // 2.0.0 (tier D): a manifest that migrated its projection and left the rename
+    // hook behind READS as migrated. Dropping the slot silently would leave that
+    // plugin's references rotting on every rename, and if the reference is not
+    // expressible as a `ref` flag the author has to hear it now.
+    ['onEntityRenamed', { onEntityRenamed: () => {} }, /ref: '<type>'/],
+  ])('rejects the removed backend slot %s and names its successor', (_slot, extra, successor) => {
+    expect(() => lowerEntityContribution(base({ backend: extra as never }))).toThrow(successor);
   });
 });
 

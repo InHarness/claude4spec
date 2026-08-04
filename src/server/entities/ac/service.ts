@@ -17,7 +17,6 @@ import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
-import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import type { MutateOpts } from '../mutate-opts.js';
 import { ENTITY_LIST_ORDER, resolveStamp, resolveStampForUpdate } from '../system-stamp.js';
@@ -313,22 +312,19 @@ export class AcService extends BaseEntityCrudService<Ac> {
   /**
    * Resolve verifies refs against the host; non-blocking.
    *
-   * 2.0.0 (brief item 25): existence is a question about the INDEX, answered by
-   * `RawEntityReader.getEntity`. It used to go through
-   * `host.entityExists`, which resolves the type's registered service and calls
-   * `getBySlug` — so a type with rows in its table but no `backend.service`
-   * answered `false`, and every AC verifying one would have been reported broken.
-   * That is precisely the state the declarative contract moves types into, so the
-   * check had to stop depending on a service existing.
+   * 2.0.0 (brief item 25): `host.entityExists` used to resolve the type's
+   * registered service and call `getBySlug`, so a type with rows in its table but
+   * no `backend.service` answered `false` and every AC verifying one was reported
+   * broken — precisely the state the declarative contract moves types into.
    *
-   * The first two branches stay on the host: the reader is table-based and
-   * cannot tell "type nobody contributes" from "type contributed but inactive"
-   * — both look like an absent table, and collapsing them would turn a disabled
-   * plugin into a corpus full of unknown-type refs.
+   * The fix lives in `entityExists` itself (it now falls back to the projection
+   * row), NOT here. Every other consumer of that check — the section indexer's
+   * `<inline_mention/>` linking, the entity router, the reference tools — was
+   * wrong in the same way for the same types, and repairing one call site would
+   * have left the rest silently disagreeing about which entities exist.
    */
   classifyVerifies(verifies: AcVerifyRef[]): AcBrokenVerify[] {
     const broken: AcBrokenVerify[] = [];
-    const reader = new RawEntityReader(this.db, this.host);
     for (const ref of verifies) {
       const available = this.host.getAvailable(ref.type);
       if (!available) {
@@ -339,7 +335,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
         broken.push({ ...ref, reason: 'inactive' });
         continue;
       }
-      if (!reader.getEntity(ref.type, ref.slug)) {
+      if (!this.host.entityExists(ref.type, ref.slug)) {
         broken.push({ ...ref, reason: 'missing' });
       }
     }

@@ -36,6 +36,17 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   private mcpServerFactories = new Map<string, () => McpServerFactory>();
   private entityServices = new Map<string, unknown>();
   private renameListeners: Array<(ev: EntityRenamedEvent) => void> = [];
+  /**
+   * 2.0.0 — the index, for the questions a registered service used to be the only
+   * way to ask. Wired post-construction (`consolidate` is a pure factory that
+   * runs before the database exists) and optional: a host built by the CLI engine
+   * or a test never gets one, and every consumer degrades to the service lookup
+   * it used before.
+   */
+  private rawReader: RawEntityReader | null = null;
+  setRawReader(reader: RawEntityReader): void {
+    this.rawReader = reader;
+  }
   // Project-local modules of THIS context, keyed by type. Empty when
   // `overlay === undefined` (parity with the base-only case).
   private readonly overlayModules = new Map<string, BackendModule>();
@@ -246,12 +257,22 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
   }
 
   entityExists(type: string, slug: string): boolean {
-    // M29: slug is the sole identity. Existence is a slug lookup via the
-    // registered entity service (every active type exposes getBySlug).
+    // M29: slug is the sole identity. Prefer the registered entity service —
+    // it may resolve an entity the raw row cannot express — and fall back to the
+    // generated projection.
+    //
+    // 2.0.0: the fallback is the point. "Every active type exposes getBySlug"
+    // stopped being true the moment a type could declare `data.schema` and ship
+    // no `backend.service`, and this method answered `false` for those — so a
+    // page's `<inline_mention/>` was never linked into `section_entity`, the
+    // reference tools returned NOT_FOUND, and an AC verifying such an entity was
+    // reported broken. All from one existence check, for an entity sitting in its
+    // table the whole time.
     const service = this.entityServices.get(type) as
       | { getBySlug?: (slug: string) => unknown }
       | undefined;
-    return service?.getBySlug ? service.getBySlug(slug) != null : false;
+    if (service?.getBySlug) return service.getBySlug(slug) != null;
+    return this.rawReader?.getEntity(type, slug) != null;
   }
 
   registerEntityService(type: string, service: unknown): void {

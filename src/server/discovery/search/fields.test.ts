@@ -65,8 +65,10 @@ describe('hostDefaultFields', () => {
   });
 
   it('guarantees a non-empty scope for a type with no declaration at all', () => {
-    expect(paths(undefined)).toEqual(['slug']);
-    expect(paths({ schema: { count: { kind: 'number' } } })).toEqual(['slug']);
+    // `slug` and `tags[]` are the two paths every entity has whatever it declares
+    // — the identity column and the cross-cutting tag layer.
+    expect(paths(undefined)).toEqual(['slug', 'tags[]']);
+    expect(paths({ schema: { count: { kind: 'number' } } })).toEqual(['slug', 'tags[]']);
   });
 
   it('boosts an identity path the type actually declares, and invents none', () => {
@@ -84,7 +86,7 @@ describe('hostDefaultFields', () => {
         throw new Error('manifest getter exploded');
       },
     } as unknown as BackendModule;
-    expect(hostDefaultFields(broken).map((f) => f.path)).toEqual(['slug']);
+    expect(hostDefaultFields(broken).map((f) => f.path)).toEqual(['slug', 'tags[]']);
   });
 });
 

@@ -52,6 +52,34 @@ const route: ProjectableModule = {
   },
 };
 
+/**
+ * The shapes that carry a `ref` on a node with NO FIELD NAME of its own — a
+ * collection item and a record value — plus one nested two levels down. Each is
+ * admitted by `declaresRefs`, so each has to be rewritable, or a rename reports
+ * success having changed nothing.
+ */
+const roster: ProjectableModule = {
+  type: 'roster',
+  data: {
+    schema: {
+      name: { kind: 'string', required: true },
+      // Embedded JSON: `["user-dto", "order-dto"]`.
+      members: {
+        kind: 'collection',
+        collection: 'value',
+        item: { kind: 'string', ref: 'shape', onDelete: 'leave-dangling' },
+      },
+      // Embedded JSON: `{"primary": "user-dto"}` — the ref is the record VALUE.
+      byRole: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string', ref: 'shape' } },
+      // Embedded JSON, ref nested two levels below the field.
+      meta: {
+        kind: 'object',
+        fields: { owner: { kind: 'object', fields: { shape: { kind: 'string', ref: 'shape' } } } },
+      },
+    },
+  },
+};
+
 /** The referenced types, so the generated FKs have something to point at. */
 const theme: ProjectableModule = { type: 'theme', data: { schema: { name: { kind: 'string', required: true } } } };
 const shape: ProjectableModule = { type: 'shape', data: { schema: { name: { kind: 'string', required: true } } } };
@@ -168,6 +196,36 @@ describe('rewriteRefsForRename', () => {
     }
   });
 
+  it('rewrites a ref carried by a collection ITEM, which has no field name', () => {
+    // `declaresRefs` admits this shape, so the listener runs — and a walker that
+    // only looks at an object's named fields finds nothing to change and reports
+    // success. The reference then rots permanently.
+    const db = projectDb([shape, roster]);
+    try {
+      db.prepare("INSERT INTO shape (slug, name) VALUES ('user', 'User')").run();
+      db.prepare('INSERT INTO roster (slug, name, members, by_role, meta) VALUES (?, ?, ?, ?, ?)').run(
+        'r1',
+        'R1',
+        JSON.stringify(['user', 'other']),
+        JSON.stringify({ primary: 'user' }),
+        JSON.stringify({ owner: { shape: 'user' } }),
+      );
+
+      expect(rewriteRefsForRename(db, roster, 'shape', 'user', 'account')).toEqual(['r1']);
+
+      const row = db.prepare('SELECT members, by_role, meta FROM roster WHERE slug = ?').get('r1') as {
+        members: string;
+        by_role: string;
+        meta: string;
+      };
+      expect(JSON.parse(row.members)).toEqual(['account', 'other']);
+      expect(JSON.parse(row.by_role)).toEqual({ primary: 'account' });
+      expect(JSON.parse(row.meta)).toEqual({ owner: { shape: 'account' } });
+    } finally {
+      db.close();
+    }
+  });
+
   it('is a no-op when the slug did not actually change', () => {
     const db = projectDb([theme, viewer]);
     try {
@@ -184,6 +242,7 @@ describe('declaresRefs', () => {
     expect(declaresRefs(viewer)).toBe(true); // scalar, top level
     expect(declaresRefs(route)).toBe(true); // inside a collection item
     expect(declaresRefs(ac)).toBe(true); // `$type`, inside a collection item
+    expect(declaresRefs(roster)).toBe(true); // on a collection item / record value
     expect(declaresRefs(theme)).toBe(false);
     expect(declaresRefs({ type: 'schemaless' })).toBe(false);
   });

@@ -41,7 +41,8 @@
 
 import {
   MAX_PROJECTION_DEPTH,
-  walkSchema,
+  columnOf,
+  hasProjectionTable,
   type DataDeclaration,
   type FieldNode,
 } from '../../../shared/plugin-host/data-schema.js';
@@ -110,47 +111,95 @@ export function hostDefaultFields(module: BackendModule | null): SearchableField
     // advertise a field that cannot ever match.
     out[out.findIndex((f) => f.path === id.path)] = id;
   }
-  // 0.2.4 — the non-empty guarantee, and it is `slug` ALONE. Every entity has a
-  // slug (it is the identity column), so this is the one path that can be added
-  // unconditionally without breaking the rule stated just above: a field in
-  // `searchedFields` must be one that can actually match. Padding a schema-less
-  // type with a guessed `name` would reintroduce exactly the ambiguity
-  // `searchedFields` exists to remove — an empty result on a field the type
-  // never had, which an agent reads as "not in the specification".
+  // 0.2.4 — the non-empty guarantee, and it is `slug` ALONE among the IDENTITY
+  // paths. Every entity has a slug (it is the identity column), so this is the
+  // one identity path that can be added unconditionally without breaking the
+  // rule stated just above: a field in `searchedFields` must be one that can
+  // actually match. Padding a schema-less type with a guessed `name` would
+  // reintroduce exactly the ambiguity `searchedFields` exists to remove — an
+  // empty result on a field the type never had, which an agent reads as "not in
+  // the specification".
   if (!seen.has('slug')) out.unshift({ path: 'slug', weight: 3 });
+  /**
+   * 2.0.0 — `tags[]` is added by the HOST, for every type, unconditionally.
+   *
+   * Tags are a cross-cutting layer (M18, `entity_tag`): no `data.schema` declares
+   * them, and every entity can carry them. That is why moving the derivation off
+   * `createSchema` silently dropped them — each core `createSchema` listed
+   * `tags: z.array(z.string())` by hand, so the old route picked them up as an
+   * ordinary schema field, and the new one has no field to find. `searchEntities`
+   * still builds its record as `{ ...data, slug, tags }`, so without this line
+   * that key is simply dead and an AC tagged `billing` stops answering a
+   * `billing` query.
+   */
+  if (!seen.has('tags[]')) out.push({ path: 'tags[]' });
   return out;
 }
 
 /**
- * Every text path a declaration holds.
+ * Every text path a declaration holds THAT A SEARCH CAN ACTUALLY REACH.
  *
  * Emits `string` and `enum` leaves — an enum is a closed set of strings and a
- * user searching "deprecated" means the `status` that says so. Three flags take
- * a subtree out of scope, and they are excluded by PREFIX rather than per node,
- * so an object marked transient cannot leak its children back in:
+ * user searching "deprecated" means the `status` that says so.
  *
- *   - `transientInput` / `localSurrogate` — not in the index, so no value could
- *     ever match; advertising the path would make `searchedFields` lie.
- *   - `systemManaged` — `createdAt`/`updatedAt`. A free-text query over an
- *     ISO timestamp is noise, and every type carries two of them.
+ * Everything else here is about the one rule this module cannot break: a path in
+ * `searchedFields` must be a path that can match. The record a search resolves
+ * against is `{ ...RawEntity.data, slug, tags }`, and `RawEntity.data` is the
+ * entity ROW — so what is reachable is decided by the projection, not by the
+ * declaration alone:
+ *
+ *   - **The first segment is the COLUMN name**, because `hydrate` copies the row
+ *     verbatim. `ui-view` declares `designSystemSlug` and stores
+ *     `design_system_slug`; emitting the payload name advertises a path that
+ *     resolves to nothing. Segments BELOW the first stay payload names — they
+ *     address JSON content, which the snapshot writes under declared names.
+ *   - **A collection with its own projection table is skipped entirely.** Its
+ *     rows live in another table and never reach `data`; `endpoint.linkedDtos`
+ *     would otherwise advertise `linkedDtos[].dto` on a record where that key is
+ *     permanently `undefined`.
+ *   - **`transientInput` / `localSurrogate`** are not in the index at all.
+ *   - **`systemManaged`** is `createdAt`/`updatedAt`: every type has two, and a
+ *     free-text query over an ISO timestamp is noise.
+ *
+ * The last three are excluded by PREFIX, so an object marked transient cannot
+ * leak its children back in.
  */
 function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[] {
   const out: SearchableField[] = [];
-  const excluded: string[] = [];
-  const isExcluded = (path: string): boolean =>
-    excluded.some((prefix) => path === prefix || path.startsWith(`${prefix}.`) || path.startsWith(`${prefix}[`));
+  const push = (path: string): void => {
+    if (!out.some((f) => f.path === path)) out.push({ path });
+  };
+
+  const visit = (node: FieldNode, path: string, depth: number): void => {
+    if (depth > MAX_PROJECTION_DEPTH) return;
+    if (node.transientInput || node.localSurrogate || node.systemManaged) return;
+    if (node.kind === 'string' || node.kind === 'enum') {
+      push(path);
+      return;
+    }
+    if (node.kind === 'object') {
+      for (const [name, child] of Object.entries(node.fields)) visit(child, `${path}.${name}`, depth + 1);
+      return;
+    }
+    if (node.kind === 'collection') {
+      // Its rows are in a table of their own; `data` never carries them.
+      if (hasProjectionTable(node)) return;
+      // The item is the collection's own level, not one below it — the same rule
+      // `walkSchema` applies, so a schema that projects cannot fail to search.
+      visit(node.item, `${path}[]`, depth);
+      return;
+    }
+    if (node.kind === 'record') {
+      visit(node.key, `${path}.$key`, depth + 1);
+      visit(node.value, `${path}.$value`, depth + 1);
+    }
+  };
 
   try {
-    walkSchema(schema, (path: string, node: FieldNode, depth: number) => {
-      if (depth > MAX_PROJECTION_DEPTH) return;
-      if (node.transientInput || node.localSurrogate || node.systemManaged) {
-        excluded.push(path);
-        return;
-      }
-      if (isExcluded(path)) return;
-      if (node.kind !== 'string' && node.kind !== 'enum') return;
-      if (!out.some((f) => f.path === path)) out.push({ path });
-    });
+    for (const [name, node] of Object.entries(schema)) {
+      // Top level only: the row's column name is what `hydrate` produced.
+      visit(node, columnOf(name, node), 0);
+    }
   } catch {
     // A declaration that will not walk (a getter that throws mid-traversal) must
     // not take the whole search down — the identity paths still work.

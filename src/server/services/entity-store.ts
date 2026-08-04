@@ -68,7 +68,22 @@ export class EntityStore {
 
   // ─── paths ────────────────────────────────────────────────────────────────
 
-  relPathFor(type: RawEntityType, slug: string): string {
+  /**
+   * 2.0.0 — the OUTBOUND path accepts any type, not just the frozen seven.
+   *
+   * The layout is `<type>/<slug>.json` and nothing about writing one needs the
+   * type to be known in advance; the old `RawEntityType` parameter was a
+   * type-level list, not a physical constraint, and it made
+   * declaration-driven mechanisms (rename propagation) stop at exactly the
+   * plugin-contributed types they exist to serve.
+   *
+   * `parseRelPath` below deliberately still gates: the INBOUND direction has to
+   * decide whether an arbitrary path under the entities root is an entity file
+   * at all, and that is a question about the active type set rather than about
+   * path shape. Widening it is its own change, and it affects every write path,
+   * not this one.
+   */
+  relPathFor(type: string, slug: string): string {
     return `${type}/${slug}.json`;
   }
 
@@ -104,12 +119,12 @@ export class EntityStore {
 
   // ─── entity JSON ──────────────────────────────────────────────────────────
 
-  exists(type: RawEntityType, slug: string): boolean {
+  exists(type: string, slug: string): boolean {
     return fs.existsSync(this.absFor(this.relPathFor(type, slug)));
   }
 
   /** Parse `<type>/<slug>.json`. Throws on ENOENT or invalid JSON (caller decides). */
-  read(type: RawEntityType, slug: string): SnapshotData {
+  read(type: string, slug: string): SnapshotData {
     return this.readRel(this.relPathFor(type, slug));
   }
 
@@ -119,7 +134,7 @@ export class EntityStore {
   }
 
   /** Write a snapshot to `<type>/<slug>.json` (atomic + suppress). */
-  write(type: RawEntityType, slug: string, data: SnapshotData): void {
+  write(type: string, slug: string, data: SnapshotData): void {
     if (!KEBAB_RE.test(slug)) {
       throw new DomainError('VALIDATION', `slug '${slug}' is not kebab-case`);
     }
@@ -137,7 +152,7 @@ export class EntityStore {
   }
 
   /** Remove `<type>/<slug>.json` (atomic suppress; ignore if already gone). */
-  remove(type: RawEntityType, slug: string): void {
+  remove(type: string, slug: string): void {
     const relPath = this.relPathFor(type, slug);
     this.watcher.suppress(relPath);
     try {
@@ -202,7 +217,7 @@ export class EntityStore {
    * file always equals what a rebuild would produce. Called by services after a
    * committed mutation, and by the boot DB→text export.
    */
-  persist(type: RawEntityType, slug: string): void {
+  persist(type: string, slug: string): void {
     const entity = this.reader.getEntity(type, slug);
     if (!entity) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found for persist`);
     const snap = this.host.snapshot(type, entity, this.reader);

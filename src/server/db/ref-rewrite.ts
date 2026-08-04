@@ -64,20 +64,41 @@ function refMatches(node: FieldNode, renamedType: string, siblingType: unknown):
 }
 
 /**
- * Rewrite a parsed JSON value in place along its declared shape.
+ * Rewrite a parsed JSON value along its declared shape.
  *
- * Returns true when anything changed, so the caller can skip the write for a row
- * that only matched the `LIKE` prefilter. Shape-driven rather than path-driven:
- * an object recursing into its own fields is the only place a `$type` sibling is
- * in scope, and threading it through dotted paths would mean re-resolving the
- * parent on every leaf.
+ * Returns `changed` so the caller can skip the write for a row that only matched
+ * the `LIKE` prefilter. Shape-driven rather than path-driven: an object is the
+ * only place a `$type` sibling is in scope, and threading it through dotted paths
+ * would mean re-resolving the parent on every leaf.
+ *
+ * The ref test happens on the node ITSELF, before any recursion, so it is reached
+ * wherever a `ref` can be declared and not only on an object's named fields — a
+ * collection of bare slugs (`item: {kind:'string', ref:'dto'}`) and a record whose
+ * VALUES are slugs both carry the flag on a node that has no field name at all.
+ * `subtreeHasRef` admits those, so anything it admits has to be rewritable here or
+ * the rename reports success having changed nothing.
+ *
+ * `siblingType` flows DOWN from the nearest enclosing object, because that is
+ * where a `$type` discriminator lives: in `{type, slugs: [...]}` the collection's
+ * items are discriminated by their grandparent's `type`.
  */
-function rewriteValue(node: FieldNode, value: unknown, rename: Rename): { value: unknown; changed: boolean } {
+function rewriteValue(
+  node: FieldNode,
+  value: unknown,
+  rename: Rename,
+  siblingType?: unknown,
+): { value: unknown; changed: boolean } {
+  if (refMatches(node, rename.renamedType, siblingType)) {
+    if (value === rename.oldSlug) return { value: rename.newSlug, changed: true };
+    // A ref node is a scalar; there is nothing below it to recurse into.
+    return { value, changed: false };
+  }
+
   if (node.kind === 'collection') {
     if (!Array.isArray(value)) return { value, changed: false };
     let changed = false;
     const items = value.map((item) => {
-      const result = rewriteValue(node.item, item, rename);
+      const result = rewriteValue(node.item, item, rename, siblingType);
       if (result.changed) changed = true;
       return result.value;
     });
@@ -88,9 +109,18 @@ function rewriteValue(node: FieldNode, value: unknown, rename: Rename): { value:
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { value, changed: false };
     let changed = false;
     const out: Record<string, unknown> = {};
+    // A ref on the KEY renames the property itself: the map is keyed BY the slug,
+    // so leaving the key while rewriting the value would strand the entry under a
+    // name that no longer resolves.
+    const keyIsRef = refMatches(node.key, rename.renamedType, siblingType);
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      const result = rewriteValue(node.value, entry, rename);
+      const result = rewriteValue(node.value, entry, rename, siblingType);
       if (result.changed) changed = true;
+      if (keyIsRef && key === rename.oldSlug) {
+        out[rename.newSlug] = result.value;
+        changed = true;
+        continue;
+      }
       out[key] = result.value;
     }
     return { value: changed ? out : value, changed };
@@ -99,18 +129,13 @@ function rewriteValue(node: FieldNode, value: unknown, rename: Rename): { value:
   if (node.kind === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { value, changed: false };
     const record = value as Record<string, unknown>;
-    const siblingType = record[TYPE_DISCRIMINATOR];
+    // This object's own `type` field, if any, discriminates every `$type` ref
+    // below it — including ones nested further down than its direct fields.
+    const nested = TYPE_DISCRIMINATOR in record ? record[TYPE_DISCRIMINATOR] : siblingType;
     let changed = false;
     const out: Record<string, unknown> = { ...record };
     for (const [name, child] of Object.entries(node.fields)) {
-      if (refMatches(child, rename.renamedType, siblingType)) {
-        if (record[name] === rename.oldSlug) {
-          out[name] = rename.newSlug;
-          changed = true;
-        }
-        continue;
-      }
-      const result = rewriteValue(child, record[name], rename);
+      const result = rewriteValue(child, record[name], rename, nested);
       if (result.changed) {
         out[name] = result.value;
         changed = true;
@@ -120,6 +145,47 @@ function rewriteValue(node: FieldNode, value: unknown, rename: Rename): { value:
   }
 
   return { value, changed: false };
+}
+
+/**
+ * Rewrite every embedded-JSON value in one column, returning the ids that changed.
+ *
+ * Shared by the two places a `ref` can sit inside JSON: a column on the entity row
+ * and a column on a projection-table row. `LIKE` is a prefilter, not the match —
+ * it over-selects rows whose JSON merely contains the slug as a substring, and
+ * `rewriteValue` decides.
+ */
+function rewriteJsonColumn(
+  db: Database,
+  table: string,
+  idColumn: string,
+  column: string,
+  node: FieldNode,
+  rename: Rename,
+): string[] {
+  const candidates = db
+    .prepare(`SELECT rowid AS rid, ${idColumn} AS id, ${column} AS payload FROM ${table} WHERE ${column} LIKE ?`)
+    .all(`%${rename.oldSlug}%`) as Array<{ rid: number; id: string; payload: string | null }>;
+  if (!candidates.length) return [];
+
+  const update = db.prepare(`UPDATE ${table} SET ${column} = ? WHERE rowid = ?`);
+  const changed: string[] = [];
+  for (const row of candidates) {
+    if (!row.payload) continue;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.payload);
+    } catch {
+      // A column holding non-JSON is an indexing bug, not this operation's to
+      // report — skipping it leaves the row exactly as it was found.
+      continue;
+    }
+    const result = rewriteValue(node, parsed, rename);
+    if (!result.changed) continue;
+    update.run(JSON.stringify(result.value), row.rid);
+    changed.push(row.id);
+  }
+  return changed;
 }
 
 /** True when any node in this subtree satisfies `pred` — the cheap prefilter before touching SQL. */
@@ -176,11 +242,31 @@ export function rewriteRefsForRename(
     // never gets one.
     if (hasProjectionTable(node)) {
       const collection = node as CollectionNode;
-      if (collection.item.kind !== 'object') continue;
       const table = projectionTableOf(module, name, collection);
       const binding = bindingColumnOf(module);
+
+      // A table-backed collection ALWAYS has an object item: `hasProjectionTable`
+      // is true only for `keyed` or for a declared `keyFields`, and registration
+      // validation rejects both unless the item is an object whose fields the keys
+      // name. A collection of bare slugs therefore stays embedded JSON and is
+      // handled by branch (3) — there is no such thing as a scalar projection row
+      // to rewrite here.
+      if (collection.item.kind !== 'object') continue;
+
       for (const [itemField, itemNode] of Object.entries(collection.item.fields)) {
-        if (!itemNode.ref) continue;
+        const column = columnOf(itemField, itemNode);
+
+        // An item field that is itself a container is a JSON column ON the
+        // projection row, so a ref nested below it needs the same walk the entity
+        // row's JSON columns get — not the `continue` that used to drop it.
+        if (!itemNode.ref) {
+          if (!subtreeHasRef(itemNode, targets(renamedType))) continue;
+          for (const parent of rewriteJsonColumn(db, table, binding, column, itemNode, rename)) {
+            affected.add(parent);
+          }
+          continue;
+        }
+
         // A polymorphic ref in a projection table narrows by its sibling COLUMN.
         const discriminator = collection.item.fields[TYPE_DISCRIMINATOR];
         let scope = '';
@@ -192,7 +278,6 @@ export function rewriteRefsForRename(
         } else if (itemNode.ref !== renamedType) {
           continue;
         }
-        const column = columnOf(itemField, itemNode);
         for (const row of db
           .prepare(`SELECT DISTINCT ${binding} AS parent FROM ${table} WHERE ${column} IN (?, ?)${scope}`)
           .all(oldSlug, newSlug, ...scopeParams) as Array<{ parent: string }>) {
@@ -232,28 +317,9 @@ export function rewriteRefsForRename(
       continue;
     }
 
-    // (3) The ref is nested inside an embedded-JSON column. `LIKE` is a
-    // prefilter, not the match: it over-selects rows whose JSON merely contains
-    // the slug as a substring, and `rewriteValue` decides.
-    const candidates = db
-      .prepare(`SELECT slug, ${column} AS payload FROM ${mainTable} WHERE ${column} LIKE ?`)
-      .all(`%${oldSlug}%`) as Array<{ slug: string; payload: string | null }>;
-    if (!candidates.length) continue;
-    const update = db.prepare(`UPDATE ${mainTable} SET ${column} = ? WHERE slug = ?`);
-    for (const row of candidates) {
-      if (!row.payload) continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(row.payload);
-      } catch {
-        // A column holding non-JSON is an indexing bug, not this operation's to
-        // report — skipping it leaves the row exactly as it was found.
-        continue;
-      }
-      const result = rewriteValue(node, parsed, rename);
-      if (!result.changed) continue;
-      update.run(JSON.stringify(result.value), row.slug);
-      affected.add(row.slug);
+    // (3) The ref is nested inside an embedded-JSON column on the entity row.
+    for (const slug of rewriteJsonColumn(db, mainTable, 'slug', column, node, rename)) {
+      affected.add(slug);
     }
   }
 

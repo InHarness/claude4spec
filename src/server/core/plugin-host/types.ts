@@ -441,6 +441,14 @@ export interface ProjectPluginHost {
   listRenameListeners(): Array<(ev: EntityRenamedEvent) => void>;
 
   /**
+   * 2.0.0 — hand the host the project's index, so `entityExists` can answer for a
+   * type that declares `data.schema` and registers no `backend.service`. Wired
+   * post-construction: `consolidate` is a pure factory that runs before the
+   * database exists.
+   */
+  setRawReader(reader: RawEntityReader): void;
+
+  /**
    * Build a fresh MCP server instance from every registered factory. Called
    * once per agent turn by the chat handler to wire the adapter. Each call
    * produces brand-new instances, so concurrent turns never collide on a
