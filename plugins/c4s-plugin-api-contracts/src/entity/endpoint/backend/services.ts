@@ -131,7 +131,7 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       if (input.tags?.length) this.tags.assignTags('endpoint', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('endpoint', slug, 'create', actor, 'Created', '1.0.0');
+        this.versions.captureEntitySnapshot('endpoint', slug, 'create', actor, 'Created');
       }
       return created;
     });
@@ -240,7 +240,7 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('endpoint', nextSlug, 'update', actor, summary, '1.0.0');
+        this.versions.captureEntitySnapshot('endpoint', nextSlug, 'update', actor, summary);
       }
       return updated;
     });
@@ -282,7 +282,7 @@ export class EndpointService extends BaseEntityCrudService<Endpoint> {
       // M17: capture snapshot BEFORE delete so the tombstone preserves
       // last-known data (used by restore-from-tombstone in M17 Phase 6).
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('endpoint', slug, 'delete', actor, 'Deleted', '1.0.0');
+        this.versions.captureEntitySnapshot('endpoint', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'endpoint' AND entity_slug = ?`)

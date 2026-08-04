@@ -120,7 +120,7 @@ export class DtoService extends BaseEntityCrudService<Dto> {
       if (input.tags?.length) this.tags.assignTags('dto', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('dto', slug, 'create', actor, 'Created', '1.1.0');
+        this.versions.captureEntitySnapshot('dto', slug, 'create', actor, 'Created');
       }
       return created;
     });
@@ -228,7 +228,7 @@ export class DtoService extends BaseEntityCrudService<Dto> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('dto', nextSlug, 'update', actor, summary, '1.1.0');
+        this.versions.captureEntitySnapshot('dto', nextSlug, 'update', actor, summary);
       }
       return { dto: updated, previousSlug: slug };
     });
@@ -270,7 +270,7 @@ export class DtoService extends BaseEntityCrudService<Dto> {
 
       // M17: capture snapshot BEFORE delete (tombstone with last-known data).
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('dto', slug, 'delete', actor, 'Deleted', '1.1.0');
+        this.versions.captureEntitySnapshot('dto', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'dto' AND entity_slug = ?`)
