@@ -8,6 +8,7 @@ import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.j
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
+import { generatedCrudRouter } from '../../src/server/core/plugin-host/generated-crud-router.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
 import { artifactsRouter } from '../../src/server/routes/artifacts.js';
 import { PlanService } from '../../src/server/services/plan.js';
@@ -28,6 +29,8 @@ import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { createDiscoveryCore } from '../../src/server/discovery/index.js';
+import { SerializationEngine } from '../../src/server/core/plugin-host/serialization-engine.js';
+import { sectionSerializer } from '../../src/server/serialization/serializers/section.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
@@ -124,20 +127,50 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   referencesService.setPluginHost(host);
   /**
    * A real core, so an integration test can reach the keyed-collection routes
-   * `entitiesRouter` mounts. Only the entity-side deps are wired: those routes
-   * read the projection and the host manifest, never pages or serialization,
-   * and standing up a page source here would couple every API test to the page
-   * fixtures.
+   * `entitiesRouter` mounts and the generated CRUD routes below. Pages are
+   * still absent — standing up a page source here would couple every API test
+   * to the page fixtures — but SERIALIZATION is wired as of 0.2.9 item 31: the
+   * generated routes answer with L9 views, so a core without an engine makes
+   * every one of them a 500.
    */
+  const serializationEngine = new SerializationEngine(host, sectionSerializer);
   const discovery = createDiscoveryCore({
     reader: rawReader,
     db,
     host,
+    serialization: serializationEngine,
     roots: [],
     projectDir: cwd,
     packageVersion: '0.0.0-test',
   } as never);
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+
+  /**
+   * Host API 2.0.0 (item 31) — mirrors `project-context.ts`, INCLUDING the
+   * order: after `mountBackend` above, so a type whose own `backend.routes`
+   * still serves a CRUD verb keeps serving it and the generated router only
+   * answers what is left. A test app that mounted these first would prove the
+   * opposite of what production does.
+   */
+  for (const module of host.listEntities()) {
+    if (!module.data?.schema) continue;
+    router.use(
+      module.pathPrefix,
+      generatedCrudRouter(
+        {
+          host,
+          reader: rawReader,
+          tags: tagsService,
+          store: entityStore,
+          references: referencesService,
+          projection: { db, store: entityStore, versions: versionService },
+          discovery,
+          ws,
+        },
+        module,
+      ),
+    );
+  }
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
   // exercise the generic /api/artifacts/:kind/* family alongside each kind's

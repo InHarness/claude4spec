@@ -3,8 +3,8 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 /** Host API 2.0.0 — what `endpoint` IS. */
 export const endpointData: DataDeclaration = {
   schema: {
-    method: { kind: 'string', required: true },
-    path: { kind: 'string', required: true },
+    method: { kind: 'string', required: true, description: 'HTTP method: GET, POST, PUT, PATCH, DELETE' },
+    path: { kind: 'string', required: true, description: 'URL path, e.g. /api/users/:id' },
     summary: { kind: 'string', required: true, default: '' },
     description: { kind: 'string', clearable: true },
     createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
@@ -30,6 +30,8 @@ export const endpointData: DataDeclaration = {
       // Link order is not content, and the rows come back in insertion order —
       // so without this, relinking a DTO reorders the endpoint's file.
       unordered: true,
+      description:
+        'DTOs linked to this endpoint. Full replace, not a diff — `link_dto`/`unlink_dto` are sugar over this collection.',
       projectionTable: 'endpoint_dto',
       keyFields: ['dto', 'relation', 'statusCode'],
       item: {

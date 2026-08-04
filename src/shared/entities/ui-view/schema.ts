@@ -10,8 +10,12 @@ import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
  */
 export const uiViewData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true },
-    url: { kind: 'string', clearable: true },
+    name: { kind: 'string', required: true, description: 'Display name (e.g. "User Profile Screen")' },
+    url: {
+      kind: 'string',
+      clearable: true,
+      description: 'Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.',
+    },
     description: { kind: 'string', clearable: true },
     params: {
       kind: 'collection',
@@ -19,9 +23,14 @@ export const uiViewData: DataDeclaration = {
       item: {
         kind: 'object',
         fields: {
-          name: { kind: 'string', required: true },
-          in: { kind: 'enum', values: ['path', 'query', 'hash'], required: true },
-          type: { kind: 'string' },
+          name: { kind: 'string', required: true, description: 'Parameter name (no `:` prefix)' },
+          in: {
+            kind: 'enum',
+            values: ['path', 'query', 'hash'],
+            required: true,
+            description: 'Where the param lives',
+          },
+          type: { kind: 'string', description: 'Suggested value type (string|int|uuid|enum|...)' },
           required: { kind: 'boolean' },
           default: { kind: 'string' },
           description: { kind: 'string' },
@@ -44,6 +53,8 @@ export const uiViewData: DataDeclaration = {
       clearable: true,
       onMissing: 'warn',
       onDelete: 'leave-dangling',
+      description:
+        'Slug of a design-system this view uses (no FK; dangling allowed). Null = detach. Omit = unchanged.',
     },
   },
 };

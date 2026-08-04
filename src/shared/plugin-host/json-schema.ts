@@ -77,6 +77,12 @@ function baseSchema(node: FieldNode): JsonSchema {
         propertyNames: nodeSchema(node.key),
         additionalProperties: nodeSchema(node.value),
       };
+    case 'json':
+      // Deliberately `{}` and not `{type: [...every type...]}`: an opaque value
+      // is one the declaration says nothing about, and enumerating the JSON
+      // types would be saying something. `withNull` on a `{}` is also a no-op,
+      // which is correct — null is already in the domain.
+      return {};
   }
 }
 

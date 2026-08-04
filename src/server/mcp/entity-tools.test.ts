@@ -139,6 +139,21 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
           searchableFields: [`${type}.name`],
         })),
       }),
+      /**
+       * 2.0.0 (item 28): `list_entities` for a type with no service falls
+       * through to the core. Projects the same fake store, so the two branches
+       * are asserted against one set of entities.
+       */
+      listEntities: ({ mode }: { mode?: 'items' | 'count' }) => {
+        const items = service.list().items as Widget[];
+        if (mode === 'count') return { mode: 'count', total: items.length };
+        return {
+          mode: 'items',
+          items: items.map((w) => ({ slug: w.slug, data: w })),
+          total: items.length,
+          hasMore: false,
+        };
+      },
       getEntities: ({ type, slugs }: { type: string; slugs: string[] }) => ({
         type,
         view: 'detail',
@@ -199,11 +214,21 @@ describe('entity-tools: type validation', () => {
     expect(parse(result)).toMatchObject({ error: { code: 'INACTIVE_TYPE' } });
   });
 
-  it('CRUD_NOT_SUPPORTED for an active type with no backend.crud', async () => {
+  /**
+   * 2.0.0 (item 28) — the inverse of the retired `CRUD_NOT_SUPPORTED` case.
+   *
+   * `no-crud` is active, declares `data.schema`, and has neither a
+   * `backend.crud` slot nor a registered service — the exact shape of every
+   * declaratively-authored plugin. It used to be refused by every tool that
+   * went through `resolveType`, INCLUDING the read ones: a type could be
+   * indexed, searched and diffed, and then answer `CRUD_NOT_SUPPORTED` to
+   * `list_entities`. The core answers it now.
+   */
+  it('an active type with no backend.crud and no service is still listable', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'list_entities').handler({ type: 'no-crud' });
-    expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'CRUD_NOT_SUPPORTED' } });
+    expect(result.isError).toBeUndefined();
+    expect(parse(result)).toMatchObject({ type: 'no-crud', mode: 'items' });
   });
 });
 
@@ -419,14 +444,26 @@ describe('entity-tools: describe_entity_type', () => {
     const result = await tool(deps, 'describe_entity_type').handler({});
     const { types } = parse(result) as { types: Array<{ type: string; crudSupported: boolean }> };
     expect(types.map((t) => t.type).sort()).toEqual(['no-crud', 'widget']);
-    expect(types.find((t) => t.type === 'no-crud')?.crudSupported).toBe(false);
+    // 2.0.0 (item 28): `true` for every active type, `no-crud` included — the
+    // schemas come from `data.schema`, which it has, not from a slot it lacks.
+    expect(types.find((t) => t.type === 'no-crud')?.crudSupported).toBe(true);
   });
 
-  // A module whose createSchema contains a type z.toJSONSchema() cannot represent
-  // (BigInt) — a stand-in for the real-world foreign/undefined schema node that used to
-  // crash the whole handler with `Cannot read properties of undefined (reading 'def')`.
+  /**
+   * A module whose GENERATED schema cannot be built — a stand-in for the
+   * real-world malformed type that used to crash the whole handler with
+   * `Cannot read properties of undefined (reading 'def')`.
+   *
+   * 2.0.0: the failure mode moved with the source. It used to be a `z.bigint()`
+   * planted in a hand-written `backend.crud.createSchema`, which
+   * `z.toJSONSchema()` cannot represent; the slot is gone and `data.schema` is
+   * a closed vocabulary with no such member, so the reachable malformation is a
+   * type registered WITHOUT the declaration the generator reads. Different
+   * cause, same guard, same contract: one bad type must not cost the others
+   * their answer.
+   */
   const badSchemaModule = () =>
-    widgetModule({ type: 'bad-schema', backend: { crud: { createSchema: { amount: z.bigint() } } } });
+    widgetModule({ type: 'bad-schema', data: undefined as unknown as BackendModule['data'] });
 
   it('describe-all isolates one un-serializable type: healthy types still described, bad type carries an __error placeholder', async () => {
     const { deps } = fakeDeps([badSchemaModule()]);
@@ -457,18 +494,19 @@ describe('entity-tools: describe_entity_type', () => {
     expect(types[0]!.updateSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
   });
 
-  // A module whose createSchema throws during the zod-object BUILD (property access),
+  // A module whose schema throws during the zod-object BUILD (property access),
   // not at serialization time — exercises the inner guard's "wraps both the build and
-  // the toJSONSchema call" claim, a path the BigInt (serialize-time) cases don't reach.
+  // the toJSONSchema call" claim. 2.0.0: the throwing getter moved from the retired
+  // `backend.crud.createSchema` onto `data.schema`, the input the generator reads.
   const buildThrowModule = () => {
-    const crud: Record<string, unknown> = {};
-    Object.defineProperty(crud, 'createSchema', {
+    const data: Record<string, unknown> = {};
+    Object.defineProperty(data, 'schema', {
       enumerable: true,
       get() {
         throw new Error('boom-build');
       },
     });
-    return widgetModule({ type: 'build-throw', backend: { crud } as BackendModule['backend'] });
+    return widgetModule({ type: 'build-throw', data: data as BackendModule['data'] });
   };
 
   it('inner guard catches a throw during schema build (not just serialization)', async () => {

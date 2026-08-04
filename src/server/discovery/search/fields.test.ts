@@ -27,10 +27,38 @@ const paths = (data: DataDeclaration | undefined): string[] =>
 
 describe('hostDefaultFields', () => {
   it('reaches into a record through $key and $value — the branch that used to be skipped', () => {
+    /**
+     * On a FIXTURE, not on `design-system`, since 0.2.9 item 27.
+     *
+     * Its token value was declared `record<string,string>` and is now `json`:
+     * the record declared only the composite arm and rejected `"#2563eb"` once
+     * the declaration started validating writes. No shipped type declares a
+     * record any more, so the rule needs a schema of its own to be pinned
+     * against — otherwise this passes for want of a subject.
+     */
+    const out = paths({
+      schema: {
+        labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+        composites: {
+          kind: 'record',
+          key: { kind: 'string' },
+          value: { kind: 'object', fields: { note: { kind: 'string' } } },
+        },
+      },
+    });
+    expect(out).toContain('labels.$key');
+    expect(out).toContain('labels.$value');
+    expect(out).toContain('composites.$value.note');
+  });
+
+  it('gives a `json` leaf no searchable path — it is opaque by declaration', () => {
+    // The host does not know what is inside, so it cannot promise to have
+    // searched it. `searchedFields` is a promise about what WAS consulted.
     const out = paths(designSystemData);
-    expect(out).toContain('groups[].tokens[].value.$key');
-    expect(out).toContain('groups[].tokens[].value.$value');
-    expect(out).toContain('modes[].overrides[].value.$value');
+    expect(out).not.toContain('groups[].tokens[].value');
+    expect(out).not.toContain('groups[].tokens[].value.$value');
+    // The named leaves around it stay in scope.
+    expect(out).toEqual(expect.arrayContaining(['groups[].tokens[].name', 'groups[].tokens[].type']));
   });
 
   it('covers enum leaves, because a closed set of strings is still text', () => {

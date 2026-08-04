@@ -13,6 +13,7 @@ import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
 import { entitiesRouter } from '../core/plugin-host/entities-router.js';
+import { generatedCrudRouter } from '../core/plugin-host/generated-crud-router.js';
 import { referencesRouter } from '../routes/references.js';
 import { TagsService, DomainError } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
@@ -677,6 +678,10 @@ async function buildInner(
       db: db.handle,
       ws,
       referencesService,
+      // 2.0.0 (item 28): the generic write door for a type with no service.
+      tagsService,
+      entityStore,
+      versionService,
     }),
   );
 
@@ -838,6 +843,34 @@ async function buildInner(
   router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
+
+  /**
+   * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its
+   * data, generated from that declaration.
+   *
+   * Mounted HERE and not in `synthesizeMount` for one reason: it reads through
+   * the M39 core, and `rawReader`/`discovery` do not exist yet at
+   * `mountBackend` time. That ordering also gives the staging this tier needs —
+   * `mountBackend` above already registered each type's own `backend.routes`
+   * under the same prefix, and Express matches in registration order, so a
+   * domain router still serving a CRUD verb keeps serving it. Tier K deletes
+   * those six routers and every built-in type lands on this one with no further
+   * change.
+   */
+  const genericCrudDeps = {
+    host: pluginHost,
+    reader: rawReader,
+    tags: tagsService,
+    store: entityStore,
+    references: referencesService,
+    projection: { db: db.handle, store: entityStore, versions: versionService },
+    discovery,
+    ws,
+  };
+  for (const module of pluginHost.listEntities()) {
+    if (!module.data?.schema) continue;
+    router.use(module.pathPrefix, generatedCrudRouter(genericCrudDeps, module));
+  }
   router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId }));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
   // workspace project except this one, build a PeerProject whose `path` is the

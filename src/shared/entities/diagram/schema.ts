@@ -12,8 +12,19 @@ export const diagramData: DataDeclaration = {
      * schemas already enumerated the two values; this is the same rule finally
      * stated once.
      */
-    format: { kind: 'enum', values: ['mermaid', 'd2'], required: true, default: 'mermaid' },
-    source: { kind: 'string', required: true, default: '' },
+    format: {
+      kind: 'enum',
+      values: ['mermaid', 'd2'],
+      required: true,
+      default: 'mermaid',
+      description: "Diagram language (default 'mermaid').",
+    },
+    source: {
+      kind: 'string',
+      required: true,
+      default: '',
+      description: 'DSL body (mermaid). May be empty (placeholder).',
+    },
     createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
     updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     /**
@@ -21,7 +32,11 @@ export const diagramData: DataDeclaration = {
      * `diagramCreateSchema` documented in prose ("Transient — seeds the slug
      * only; NOT persisted on the entity"). No column, no snapshot entry.
      */
-    caption: { kind: 'string', transientInput: true },
+    caption: {
+      kind: 'string',
+      transientInput: true,
+      description: 'Transient — seeds the slug only (slugify(caption)); NOT persisted on the entity.',
+    },
     /**
      * The second fallback's source: the first identifier appearing in `source`
      * (a mermaid node id, a d2 shape name). Derived by the write path from
@@ -29,7 +44,20 @@ export const diagramData: DataDeclaration = {
      * caller and never persisted — which is exactly what `transientInput` means.
      * Declared here because a pattern may only read fields the schema names.
      */
-    firstSourceIdentifier: { kind: 'string', transientInput: true },
+    firstSourceIdentifier: {
+      kind: 'string',
+      transientInput: true,
+      /**
+       * The description is load-bearing here rather than decorative: item 27
+       * puts every `transientInput` field on the create schema (that is how
+       * `caption` reaches the slug), and this one is host-derived. There is no
+       * flag for "transient AND host-derived", so the shape admits a field a
+       * caller should not send — say so where the caller reads it. Raised in
+       * the same `missing` patch as the `description` slot itself.
+       */
+      description:
+        'Derived by the write path from `source` before the slug pattern runs. Ignored if supplied.',
+    },
   },
 };
 
