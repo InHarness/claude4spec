@@ -75,25 +75,6 @@ export interface UiViewSnapshot {
   tags: string[];
 }
 
-function buildSnapshot(entity: RawEntity): UiViewSnapshot {
-  return {
-    slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    description: (entity.data.description as string | null) ?? null,
-    params: readParams(entity).map((p) => ({
-      name: p.name,
-      in: p.in as UiViewParamLocation,
-      ...(p.type !== undefined ? { type: p.type } : {}),
-      ...(p.required !== undefined ? { required: p.required } : {}),
-      ...(p.default !== undefined ? { default: p.default } : {}),
-      ...(p.description !== undefined ? { description: p.description } : {}),
-    })),
-    designSystemSlug: readDesignSystemSlug(entity),
-    tags: [...entity.tags].sort(),
-  };
-}
-
 function coerceUiView(raw: unknown): UiViewSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
@@ -184,43 +165,6 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'ui-view', slug, op: 'modified', changes };
 }
 
-function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = coerceUiView(data);
-  const result = ctx.writer.upsert('ui-view',
-    snap.slug,
-    {
-      name: snap.name,
-      url: snap.url,
-      description: snap.description ?? undefined,
-      params: snap.params,
-      // v0.1.59: the value is kept verbatim even if the DS is gone (dangling → warn, never null).
-      designSystemSlug: snap.designSystemSlug,
-      slug: snap.slug,
-    },
-    ctx.actor
-  );
-  if (!result) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'ui-view' is not available — restore skipped`] };
-  }
-  ctx.writer.syncTags('ui-view', snap.slug, snap.tags);
-  const warnings = [...(result.warnings ?? [])];
-  // Dangling design-system reference: warn but keep the field (consistent with
-  // "warnings, not errors"). design-system is indexed before ui-view, so a
-  // present DS resolves here; absence means the file is gone / type inactive.
-  if (snap.designSystemSlug && !ctx.reader.getEntity('design-system', snap.designSystemSlug)) {
-    warnings.push(
-      `ui-view '${snap.slug}': designSystemSlug '${snap.designSystemSlug}' does not resolve (dangling)`
-    );
-  }
-  return {
-    op: result.op,
-    entity: result.entity,
-    ...(warnings.length ? { warnings } : {}),
-  };
-}
-
 export const uiViewSerializer: SerializationContribution<RawEntity> = {
   views: {
     inline_mention: (entity) => ({
@@ -253,8 +197,6 @@ export const uiViewSerializer: SerializationContribution<RawEntity> = {
   },
 
   // ─── M17 — generated from `data.schema` in the next commit of this tier ───
-  snapshot: (entity) => buildSnapshot(entity),
-  restore: uiViewRestore,
   diff: uiViewDiff,
 };
 

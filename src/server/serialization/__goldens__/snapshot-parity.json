@@ -1,0 +1,179 @@
+{
+  "ac.payloadVersion": 1,
+  "ac/ac-the-list-is-ordered": {
+    "description": "sorted by name",
+    "kind": "requirement",
+    "slug": "ac-the-list-is-ordered",
+    "status": "active",
+    "tags": [],
+    "text": "the list is ordered",
+    "verifies": [
+      {
+        "slug": "error-dto",
+        "type": "dto"
+      },
+      {
+        "slug": "user-dto",
+        "type": "dto"
+      },
+      {
+        "slug": "get-api-users",
+        "type": "endpoint"
+      }
+    ]
+  },
+  "ac/ac-the-list-is-ordered/_stamped": true,
+  "design-system.payloadVersion": 2,
+  "design-system/smoke-ds": {
+    "description": null,
+    "groups": [
+      {
+        "name": "Core",
+        "tier": "primitive",
+        "tokens": [
+          {
+            "name": "sm",
+            "type": "dimension",
+            "value": "4px"
+          },
+          {
+            "name": "md",
+            "type": "dimension",
+            "value": "8px"
+          },
+          {
+            "name": "xl",
+            "type": "dimension",
+            "value": "16px"
+          }
+        ]
+      }
+    ],
+    "modes": [],
+    "name": "Smoke DS",
+    "slug": "smoke-ds",
+    "tags": []
+  },
+  "design-system/smoke-ds/_stamped": true,
+  "diagram.payloadVersion": 1,
+  "diagram/flow": {
+    "format": "mermaid",
+    "slug": "flow",
+    "source": "graph TD; A-->B;",
+    "tags": []
+  },
+  "diagram/flow/_stamped": true,
+  "dto.payloadVersion": 1,
+  "dto/error-dto": {
+    "description": null,
+    "examples": [],
+    "fields": [
+      {
+        "name": "message",
+        "type": "string"
+      }
+    ],
+    "name": "ErrorDto",
+    "slug": "error-dto",
+    "tags": []
+  },
+  "dto/error-dto/_stamped": true,
+  "dto/user-dto": {
+    "description": "A user",
+    "examples": [
+      {
+        "name": "minimal",
+        "value": {
+          "email": null,
+          "id": "1"
+        }
+      }
+    ],
+    "fields": [
+      {
+        "name": "id",
+        "required": true,
+        "type": "string"
+      },
+      {
+        "description": "contact",
+        "name": "email",
+        "required": false,
+        "type": "string"
+      }
+    ],
+    "name": "UserDto",
+    "slug": "user-dto",
+    "tags": []
+  },
+  "dto/user-dto/_stamped": true,
+  "dto/zamowienie-dto": {
+    "description": "Zamówienie — pozycja",
+    "examples": [],
+    "fields": [
+      {
+        "name": "nr",
+        "type": "number"
+      }
+    ],
+    "name": "ZamówienieDto",
+    "slug": "zamowienie-dto",
+    "tags": []
+  },
+  "dto/zamowienie-dto/_stamped": true,
+  "endpoint.payloadVersion": 2,
+  "endpoint/get-api-users": {
+    "description": null,
+    "linkedDtos": [
+      {
+        "dto": "error-dto",
+        "relation": "response",
+        "statusCode": 404
+      },
+      {
+        "dto": "user-dto",
+        "relation": "response",
+        "statusCode": 200
+      },
+      {
+        "dto": "zamowienie-dto",
+        "relation": "request",
+        "statusCode": null
+      }
+    ],
+    "method": "GET",
+    "path": "/api/users",
+    "slug": "get-api-users",
+    "summary": "List users",
+    "tags": [
+      "alpha"
+    ]
+  },
+  "endpoint/get-api-users/_stamped": true,
+  "endpoint/post-api-ping": {
+    "description": null,
+    "linkedDtos": [],
+    "method": "POST",
+    "path": "/api/ping",
+    "slug": "post-api-ping",
+    "summary": "",
+    "tags": []
+  },
+  "endpoint/post-api-ping/_stamped": true,
+  "ui-view.payloadVersion": 1,
+  "ui-view/users": {
+    "description": null,
+    "designSystemSlug": null,
+    "name": "Users",
+    "params": [
+      {
+        "in": "path",
+        "name": "id"
+      }
+    ],
+    "slug": "users",
+    "tags": [],
+    "url": "/users/:id"
+  },
+  "ui-view/users/_stamped": true
+}

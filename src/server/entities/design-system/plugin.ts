@@ -12,7 +12,12 @@ export const designSystemBackendModule: BackendModule = {
   type: 'design-system',
   data: designSystemData,
   slugPattern: designSystemSlugPattern,
-  payloadVersion: 1,
+  /**
+   * 2 since 0.2.9: v1 files carry a `description: null` on every token that the
+   * hand-written snapshot synthesised and its restore stripped again. See
+   * `./upgrades.ts`.
+   */
+  payloadVersion: 2,
   label: 'Design System',
   labelPlural: 'Design Systems',
   // After ui-view (40) and ac (50) — design systems sit at the end of ELEMENTS.

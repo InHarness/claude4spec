@@ -27,6 +27,8 @@ import type { TagsService } from './tags.js';
 import {
   projectionRowExists,
   removeProjectionRow,
+  danglingScalarRefs,
+  syncProjectionTables,
   upsertProjectionRow,
   type ProjectionWriteDeps,
 } from '../db/projection-write.js';
@@ -134,7 +136,42 @@ export class HostEntityWriter implements EntityWriter {
     const service = this.host.getEntityService(type);
     if (service?.upsert) {
       const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
-      return pickEntity<T>(result, type);
+      const picked = pickEntity<T>(result, type);
+      /**
+       * 0.2.9 tier B PR2 — the service wrote its ROW; the host writes the
+       * collections that live in tables of their own.
+       *
+       * A service predates the declaration and only knows the columns it was
+       * written against. `EndpointService.upsert` writes `endpoint`, not
+       * `endpoint_dto`; the junction used to be synced by the per-type `restore`
+       * slot, immediately after this call, and that slot no longer exists. The
+       * responsibility has to land somewhere the DECLARATION drives, or the
+       * first boot rebuild empties the junction and the following `persist`
+       * writes the emptied collection back into the entity file.
+       */
+      const module = this.host.getEntity(type);
+      if (module?.data?.schema && this.projection) {
+        /**
+         * Against the slug the SERVICE WROTE, not the one we asked for.
+         *
+         * `EndpointService.createRaw` derives its own slug from `method` + `path`
+         * and ignores the requested one. When the two disagree — a hand-renamed
+         * entity file, a slug-pattern change between releases — syncing on the
+         * requested slug writes junction rows bound to a parent row that does not
+         * exist: either the FK aborts that entity's restore, or it leaves orphan
+         * rows while the endpoint reads back with no links at all.
+         */
+        const written = (picked.entity as { slug?: unknown } | null)?.slug;
+        const target = typeof written === 'string' && written ? written : slug;
+        const warnings = [
+          ...syncProjectionTables(this.projection.db, module, target, input),
+          ...danglingScalarRefs(this.projection.db, module, target, input),
+        ];
+        if (warnings.length) {
+          picked.warnings = [...(picked.warnings ?? []), ...warnings];
+        }
+      }
+      return picked;
     }
 
     /**
@@ -148,7 +185,12 @@ export class HostEntityWriter implements EntityWriter {
      */
     const module = this.host.getEntity(type);
     if (module?.data?.schema && this.projection) {
-      return upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
+      const result = upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
+      // The projection branch syncs its own collections inside its transaction,
+      // but scalar refs are checked here for both branches — one rule, one place.
+      const dangling = danglingScalarRefs(this.projection.db, module, slug, input);
+      if (dangling.length) result.warnings = [...(result.warnings ?? []), ...dangling];
+      return result;
     }
 
     /**

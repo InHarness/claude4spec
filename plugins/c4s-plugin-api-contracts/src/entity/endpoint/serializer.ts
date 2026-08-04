@@ -9,6 +9,7 @@ import type {
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
 import { findEndpointDtos, syncEndpointDtos, type JunctionCapable } from '../junction/index.js';
 import { ENDPOINT_TYPE } from '../../identity.js';
+import { endpointPayloadV1ToV2 } from './upgrades.js';
 
 interface EndpointDtoRef {
   dtoSlug: string;
@@ -66,47 +67,48 @@ export interface EndpointSnapshot {
   tags: string[];
 }
 
-function buildSnapshot(entity: RawEntity, reader: HostEntityReader): EndpointSnapshot {
-  const dtos = findEndpointDtos(reader.db, entity.slug);
-  return {
-    slug: entity.slug,
-    method: entity.data.method as HttpMethod,
-    path: entity.data.path as string,
-    summary: ((entity.data.summary as string) ?? '') || null,
-    description: (entity.data.description as string | null) ?? null,
-    linked_dtos: dtos
-      .map((d) => ({
-        dto_slug: d.dtoSlug,
-        relation: d.relation as EndpointDtoRelation,
-        status_code: d.statusCode,
-      }))
-      .sort((a, b) => `${a.relation}:${a.dto_slug}:${a.status_code ?? ''}`.localeCompare(
-        `${b.relation}:${b.dto_slug}:${b.status_code ?? ''}`
-      )),
-    tags: [...entity.tags].sort(),
-  };
-}
-
 /** Defensive coercion of pre-M17 legacy rows (Endpoint domain object) to the
  *  EndpointSnapshot shape. Post-M17 rows already match the shape. */
+/**
+ * Normalise a snapshot of ANY vintage into the shape `endpointDiff` compares.
+ *
+ * A diff is handed two captures that may have been taken years and several
+ * payload versions apart, so this has to read every spelling the type has ever
+ * written — and after tier B PR2 that includes the CURRENT one, which is the
+ * v2 `linkedDtos: [{dto, relation, statusCode}]` the generated snapshot emits.
+ *
+ * Reading only the older spellings is not a stale branch, it is a silent bug:
+ * `linked_dtos` and `dtos` are both absent from a v2 payload, so the junction
+ * coerces to `[]` on both sides and every endpoint diff reports NO dto changes
+ * at all — linking or unlinking a DTO would show up nowhere in a release diff.
+ *
+ * The OUTPUT keeps the `dto_slug` / `status_code` spelling on purpose. It feeds
+ * `endpointDiff`'s `dto_added` / `dto_removed` / `status_code_changed` changes,
+ * which `client/lib/release-diff/entity-diff-bullets.ts` reads by those names.
+ * That is a wire contract with the client, not a payload shape, and it is not
+ * what this release renamed.
+ */
 function coerceEndpoint(raw: unknown): EndpointSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
-  // Legacy: { dtos: [{ dtoSlug, relation, statusCode }] } → linked_dtos
-  let linked_dtos = r.linked_dtos as EndpointSnapshot['linked_dtos'] | undefined;
-  if (!linked_dtos && Array.isArray(r.dtos)) {
-    linked_dtos = (r.dtos as Array<Record<string, unknown>>).map((d) => ({
-      dto_slug: String(d.dtoSlug ?? d.dto_slug ?? ''),
-      relation: String(d.relation ?? '') as EndpointSnapshot['linked_dtos'][number]['relation'],
-      status_code: (d.statusCode ?? d.status_code ?? null) as number | null,
-    }));
-  }
+  const source =
+    // v2 (current): declared field names.
+    (Array.isArray(r.linkedDtos) ? (r.linkedDtos as Array<Record<string, unknown>>) : null) ??
+    // v1: junction column names.
+    (Array.isArray(r.linked_dtos) ? (r.linked_dtos as Array<Record<string, unknown>>) : null) ??
+    // pre-M17: the view's resolved `dtos[]`.
+    (Array.isArray(r.dtos) ? (r.dtos as Array<Record<string, unknown>>) : null);
+  const linked_dtos = (source ?? []).map((d) => ({
+    dto_slug: String(d.dto ?? d.dto_slug ?? d.dtoSlug ?? ''),
+    relation: String(d.relation ?? '') as EndpointSnapshot['linked_dtos'][number]['relation'],
+    status_code: (d.statusCode ?? d.status_code ?? null) as number | null,
+  }));
   return {
     slug: String(r.slug ?? ''),
     method: String(r.method ?? '') as EndpointSnapshot['method'],
     path: String(r.path ?? ''),
     summary: (r.summary as string | null) ?? null,
     description: (r.description as string | null) ?? null,
-    linked_dtos: linked_dtos ?? [],
+    linked_dtos,
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
   };
 }
@@ -160,46 +162,6 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
   if (Object.keys(changes).length === 0) return { type: 'endpoint', slug, op: 'noop' };
   return { type: 'endpoint', slug, op: 'modified', changes };
-}
-
-function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = data as EndpointSnapshot;
-  const upsertResult = ctx.writer.upsert('endpoint',
-    snap.slug,
-    {
-      method: snap.method,
-      path: snap.path,
-      summary: snap.summary ?? '',
-      description: snap.description ?? undefined,
-    },
-    ctx.actor
-  );
-  if (!upsertResult) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'endpoint' is not available — restore skipped`] };
-  }
-  // Sync tags + junction (idempotent)
-  ctx.writer.syncTags('endpoint', snap.slug, snap.tags);
-  // 0.2.2: the join is this package's, not the host's. The host's EntityWriter
-  // no longer has a `syncEndpointDtos` — it does not know the pair exists.
-  const junctionResult = syncEndpointDtos(
-    (ctx.reader.host?.getEntityService?.(ENDPOINT_TYPE) as JunctionCapable | null) ?? null,
-    snap.slug,
-    snap.linked_dtos.map((l) => ({
-      dtoSlug: l.dto_slug,
-      relation: l.relation,
-      statusCode: l.status_code,
-    }))
-  );
-
-  const warnings = junctionResult.warnings.length ? junctionResult.warnings : undefined;
-  const upserted = upsertResult as { op: RestoreResult['op']; entity: unknown };
-  return {
-    op: upserted.op,
-    entity: upserted.entity,
-    ...(warnings ? { warnings } : {}),
-  };
 }
 
 export const endpointSerializer: SerializationContribution<RawEntity> = {
@@ -267,10 +229,15 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
     },
   },
 
-  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
-  snapshot: (entity, reader) => buildSnapshot(entity, reader),
-  restore: endpointRestore,
   diff: endpointDiff,
+
+  /**
+   * v1 files spell the junction in column names and coerce an empty `summary`
+   * to null; both are what the generated snapshot stopped doing. The chain's
+   * LENGTH is checked against `payloadVersion` at registration, so this array
+   * and the `2` in `index.ts` cannot drift apart.
+   */
+  payloadUpgrades: [endpointPayloadV1ToV2],
 };
 
 function formatReferences(refs: SectionEntityRef[]) {

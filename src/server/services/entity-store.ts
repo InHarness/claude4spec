@@ -23,6 +23,7 @@ import {
 } from '../discovery/raw-entity-reader.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { canonicalize } from '../serialization/snapshot.js';
+import { attachPayloadVersion } from '../serialization/payload-upgrade.js';
 import { DomainError } from './tags.js';
 import type { EntitiesWatcher } from '../fs/entities-watcher.js';
 
@@ -205,7 +206,17 @@ export class EntityStore {
     const entity = this.reader.getEntity(type, slug);
     if (!entity) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found for persist`);
     const snap = this.host.snapshot(type, entity, this.reader);
-    this.write(type, slug, snap);
+    /**
+     * 0.2.9 — the file records the payload shape it was written under.
+     *
+     * Stamped HERE and not in `write`, and the difference is load-bearing:
+     * `persist` is the only path that DERIVED the payload from the live row
+     * through the current generator, so it is the only one entitled to claim the
+     * current version. `entity-timestamp-backfill` rewrites a file whose payload
+     * it never regenerated — if `write` stamped, that file would be labelled
+     * current-shape and its upgrade skipped forever.
+     */
+    this.write(type, slug, attachPayloadVersion(snap, this.host.getEntity(type)?.payloadVersion));
   }
 
   /** Read the full tag registry from the index and write tags.json. */

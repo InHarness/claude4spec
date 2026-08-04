@@ -19,6 +19,10 @@ export const designSystemData: DataDeclaration = {
     groups: {
       kind: 'collection',
       collection: 'value',
+      // A group's identity is its name, so reordering groups is a noop — but an
+      // unsorted snapshot would still churn the file. `tokens` below is
+      // deliberately NOT unordered: a sm/md/xl scale's order is documentation.
+      unordered: true,
       item: {
         kind: 'object',
         fields: {
@@ -43,6 +47,8 @@ export const designSystemData: DataDeclaration = {
     modes: {
       kind: 'collection',
       collection: 'value',
+      // Same rule as `groups`; `overrides` stays authored.
+      unordered: true,
       item: {
         kind: 'object',
         fields: {

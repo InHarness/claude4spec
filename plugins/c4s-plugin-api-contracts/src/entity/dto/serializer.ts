@@ -31,26 +31,6 @@ export interface DtoSnapshot {
   tags: string[];
 }
 
-function buildSnapshot(entity: RawEntity): DtoSnapshot {
-  return {
-    slug: entity.slug,
-    name: entity.data.name as string,
-    description: (entity.data.description as string | null) ?? null,
-    fields: ((entity.data.fields as DtoField[] | undefined) ?? []).map((f) => ({
-      name: f.name,
-      type: f.type,
-      required: f.required,
-      ...(f.description !== undefined ? { description: f.description } : {}),
-    })),
-    examples: ((entity.data.examples as DtoExample[] | undefined) ?? []).map((e) => ({
-      name: e.name,
-      ...(e.summary !== undefined ? { summary: e.summary } : {}),
-      value: e.value,
-    })),
-    tags: [...entity.tags].sort(),
-  };
-}
-
 function coerceDto(raw: unknown): DtoSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
@@ -136,29 +116,6 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'dto', slug, op: 'modified', changes };
 }
 
-function dtoRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = data as DtoSnapshot;
-  const result = ctx.writer.upsert('dto',
-    snap.slug,
-    {
-      name: snap.name,
-      description: snap.description ?? undefined,
-      fields: snap.fields,
-      examples: snap.examples,
-      slug: snap.slug,
-    },
-    ctx.actor
-  );
-  if (!result) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'dto' is not available — restore skipped`] };
-  }
-  ctx.writer.syncTags('dto', snap.slug, snap.tags);
-  const upserted = result as { op: RestoreResult['op']; entity: unknown };
-  return { op: upserted.op, entity: upserted.entity };
-}
-
 export const dtoSerializer: SerializationContribution<RawEntity> = {
   views: {
     inline_mention: (entity) => ({
@@ -198,7 +155,5 @@ export const dtoSerializer: SerializationContribution<RawEntity> = {
   },
 
   // ─── M17 — generated from `data.schema` in the next commit of this tier ───
-  snapshot: (entity) => buildSnapshot(entity),
-  restore: dtoRestore,
   diff: dtoDiff,
 };

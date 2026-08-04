@@ -116,6 +116,14 @@ describe('VersionService.restore', () => {
 });
 
 describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', () => {
+  /**
+   * `snapshotThrows` no longer rigs a `serializer.snapshot` — there is no such
+   * slot as of 0.2.9, and a module declaring no `data.schema` cannot register at
+   * all. It now makes the HOST's snapshot throw, which is the layer
+   * `captureEntitySnapshot` actually calls and therefore the layer whose failure
+   * this test is about. How a snapshot comes to fail is the generator's business;
+   * that a failure is logged and rethrown with no row left behind is this one's.
+   */
   function setupHost(type: string, opts: { snapshotThrows?: boolean } = {}) {
     const db = new Database(':memory:');
     runMigrations(db);
@@ -128,7 +136,15 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
     host.mountBackend({ db } as unknown as MountContext);
     const reader = new RawEntityReader(db, host);
     const versions = new VersionService(db);
-    versions.configureSnapshot(reader, host);
+    if (opts.snapshotThrows) {
+      const broken = Object.create(host) as typeof host;
+      broken.snapshot = () => {
+        throw new Error('boom: no snapshot support');
+      };
+      versions.configureSnapshot(reader, broken);
+    } else {
+      versions.configureSnapshot(reader, host);
+    }
     return { db, versions };
   }
 

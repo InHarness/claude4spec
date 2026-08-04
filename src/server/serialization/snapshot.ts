@@ -19,8 +19,9 @@ import type {
   RestoreResult,
   SnapshotData,
 } from './types.js';
-import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import type { RawEntity, RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SnapshotNotImplementedError } from './types.js';
+import { restoreFromSchema, snapshotFromSchema } from './schema-snapshot.js';
 import type { RawDeltaEntityChange } from '../../shared/entities.js';
 import {
   attachSystemFields,
@@ -46,6 +47,14 @@ function stampOf(entity: unknown): SystemStamp | null {
   return readSystemFields(system);
 }
 
+/**
+ * 0.2.9 tier B PR2 — GENERATED from `data.schema`, for every type.
+ *
+ * The per-type `snapshot` slot is gone. `SnapshotNotImplementedError` survives
+ * and means something narrower now: not "this type never wrote a snapshot
+ * function" but "this type is not active, or declares no data" — which for a
+ * declarative host is the same sentence as "there is nothing to snapshot".
+ */
 export function snapshotEntity(
   host: PluginHost,
   type: string,
@@ -53,10 +62,11 @@ export function snapshotEntity(
   reader: RawEntityReader
 ): SnapshotData {
   const module = host.getEntity(type);
-  if (!module) throw new SnapshotNotImplementedError(type);
-  const fn = module.serializer.snapshot;
-  if (!fn) throw new SnapshotNotImplementedError(type);
-  return attachSystemFields(fn(entity, reader), stampOf(entity));
+  if (!module?.data?.schema) throw new SnapshotNotImplementedError(type);
+  return attachSystemFields(
+    snapshotFromSchema(module, entity as RawEntity, reader),
+    stampOf(entity),
+  );
 }
 
 /**
@@ -80,21 +90,25 @@ export function restoreEntity(
   ctx: RestoreContext
 ): RestoreResult {
   const module = host.getEntity(type);
-  if (!module) throw new SnapshotNotImplementedError(type);
-  const fn = module.serializer.restore;
-  if (!fn) throw new SnapshotNotImplementedError(type);
+  if (!module?.data?.schema) throw new SnapshotNotImplementedError(type);
   /**
    * 0.2.4 — detach the envelope and put it on the WRITER, not in the payload.
    *
-   * The per-type `restore` slot therefore sees exactly the snapshot shape it saw
-   * before 0.2.4 (it would reject the extra keys, or worse, pass them through to
-   * a column that does not exist), while the service it drives writes the file's
-   * timestamps into its audit columns verbatim.
+   * The generated restore therefore sees only declared fields, and the service
+   * it drives writes the file's timestamps into its audit columns verbatim. The
+   * stamp riding on the writer rather than in the payload is also what keeps a
+   * payload upgrade from stamping `updatedAt`: the upgrade rewrites the data,
+   * the envelope it travelled with is unchanged, and the writer still writes the
+   * file's original value.
    */
   const stamp = readSystemFields(data);
-  if (!stamp) return fn(data, ctx);
+  if (!stamp) return restoreFromSchema(module, data, ctx);
   const stamped = ctx.writer.withStamp?.(stamp);
-  return fn(stripSystemFields(data), stamped ? { ...ctx, writer: stamped } : ctx);
+  return restoreFromSchema(
+    module,
+    stripSystemFields(data),
+    stamped ? { ...ctx, writer: stamped } : ctx,
+  );
 }
 
 /**

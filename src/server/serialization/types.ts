@@ -78,9 +78,17 @@ export interface RestoreResult<T = unknown> {
   warnings?: string[];
 }
 
+/**
+ * 0.2.9 — the same error, a narrower meaning.
+ *
+ * It used to mean "this type wrote no snapshot function". Snapshot is generated
+ * now, so the only way one can be missing is a type that is not active or
+ * declares no data — which for a declarative host is the same sentence as
+ * "there is nothing to snapshot".
+ */
 export class SnapshotNotImplementedError extends Error {
   constructor(type: string) {
-    super(`type '${type}' has no snapshot slot — cannot participate in M17 release`);
+    super(`type '${type}' is not active or declares no data.schema — cannot participate in M17 release`);
     this.name = 'SnapshotNotImplementedError';
   }
 }
@@ -126,20 +134,24 @@ export interface SerializationContribution<T = unknown> {
   payloadVersion?: number;
   /**
    * Ordered chain of payload migrations, `payloadUpgrades[i]` taking payload
-   * `i+1` to `i+2`. DECLARED here in PR1; ENFORCED (on file load, rebuild and
-   * release restore) by PR2 of this tier.
+   * `i+1` to `i+2`.
+   *
+   * ENFORCED as of 0.2.9 tier B PR2 — see `./payload-upgrade.ts` for what runs
+   * it and `../services/entity-indexer.ts` for where. Registration checks the
+   * chain's LENGTH against `payloadVersion`, so a bump without a step (or a step
+   * without a bump) is a registration error rather than a corpus that silently
+   * fails to migrate.
    */
   payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
 
-  // ─── M17 Spec Snapshots ──────────────────────────────────────────────────
-  /**
-   * @deprecated Tier B PR2 deletes both slots: snapshot and restore are
-   * generated from `data.schema`. They survive PR1 only so that M17 releases
-   * keep working across the two commits.
-   */
-  snapshot?: (entity: T, reader: RawEntityReader) => SnapshotData;
-  /** @deprecated See {@link SerializationContribution.snapshot}. */
-  restore?: (data: SnapshotData, ctx: RestoreContext) => RestoreResult;
+  // The `snapshot` and `restore` slots are GONE as of 0.2.9 tier B PR2. Both are
+  // generated from `data.schema` (`./schema-snapshot.ts`) — the last of the six
+  // separate descriptions a type used to hand-write about one field set. Leaving
+  // them as optional overrides was considered and rejected: an override is a
+  // place for the two descriptions to drift, and drift is precisely what was
+  // found when they were compared (endpoint's snapshot spelled its junction in
+  // column names and contradicted its own `default: ''` on `summary`).
+  // A stale 1.x slot is rejected at registration, not ignored.
 }
 
 export interface SerializeResult {

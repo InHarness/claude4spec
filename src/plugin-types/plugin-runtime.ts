@@ -305,10 +305,10 @@ export interface SerializationContribution<T = unknown> {
   payloadVersion?: number;
   /** `payloadUpgrades[i]`: payload `i+1` → `i+2`. Enforced by the host on load and restore. */
   payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
-  /** @deprecated Generated from `data.schema`; removed in the next release. */
-  snapshot?: (entity: T, reader: HostEntityReader) => SnapshotData;
-  /** @deprecated See {@link SerializationContribution.snapshot}. */
-  restore?: (data: SnapshotData, ctx: RestoreContext) => RestoreResult;
+  // `snapshot` and `restore` are GONE — both are generated from `data.schema`.
+  // A manifest that still declares either is rejected at registration rather
+  // than having the slot ignored, because an ignored snapshot slot means the
+  // host writes files in a shape the plugin's own code disagrees with.
 }
 
 // ── Frontend render props (L5/L8) ──

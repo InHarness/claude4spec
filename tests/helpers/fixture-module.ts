@@ -3,8 +3,6 @@ import type { DataDeclaration } from '../../src/shared/plugin-host/data-schema.j
 import type { SlugPattern } from '../../src/shared/plugin-host/slug-pattern.js';
 
 export interface FixtureModuleOpts {
-  /** Makes `serializer.snapshot` throw — for testing capture error handling. */
-  snapshotThrows?: boolean;
   /**
    * Registers a `getBySlug`-capable entity service at mount time, so
    * `host.entityExists()` (and thus `entitiesRouter`'s `assertExists`)
@@ -49,14 +47,7 @@ export function fixtureModule(type: string, opts: FixtureModuleOpts = {}): Backe
     labelPlural: `${type}s`,
     displayOrder: 999,
     pathPrefix: `/${type}s`,
-    serializer: {
-      payloadVersion: 1,
-      snapshot: (entity: unknown) => {
-        if (opts.snapshotThrows) throw new Error('boom: no snapshot support');
-        const e = entity as { slug: string; data: Record<string, unknown> };
-        return { slug: e.slug, ...e.data };
-      },
-    } as BackendModule['serializer'],
+    serializer: { payloadVersion: 1 } as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: type,
       mcpToolsLine: `${type}-tools: ...`,

@@ -104,7 +104,9 @@ describe('design-system REST + ui-view relation', () => {
     // per-serializer semver. The semver was advisory and unenforced; this one
     // is what the upgrade chain acts on.
     expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(1);
-    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(1);
+    // design-system is at 2 as of tier B PR2: v1 files carry a `description:
+    // null` on every token that only ever existed in the file.
+    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(2);
 
     const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.slug), t.rawReader) as {
       designSystemSlug: string | null;

@@ -1,22 +1,22 @@
 {
-  "endpoint.payloadVersion": 1,
+  "endpoint.payloadVersion": 2,
   "endpoint/get-users/snapshot": {
     "description": null,
-    "linked_dtos": [
+    "linkedDtos": [
       {
-        "dto_slug": "order-dto",
+        "dto": "error-dto",
+        "relation": "response",
+        "statusCode": 404
+      },
+      {
+        "dto": "order-dto",
         "relation": "request",
-        "status_code": null
+        "statusCode": null
       },
       {
-        "dto_slug": "error-dto",
+        "dto": "user-dto",
         "relation": "response",
-        "status_code": 404
-      },
-      {
-        "dto_slug": "user-dto",
-        "relation": "response",
-        "status_code": 200
+        "statusCode": 200
       }
     ],
     "method": "GET",
@@ -193,11 +193,11 @@
   },
   "endpoint/post-ping/snapshot": {
     "description": null,
-    "linked_dtos": [],
+    "linkedDtos": [],
     "method": "POST",
     "path": "/ping",
     "slug": "post-ping",
-    "summary": null,
+    "summary": "",
     "tags": []
   },
   "endpoint/post-ping/inline_mention": {

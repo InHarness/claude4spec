@@ -19,7 +19,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { applyProjection } from './projection.js';
-import { upsertProjectionRow, type WritableModule } from './projection-write.js';
+import { syncProjectionTables, upsertProjectionRow, type WritableModule } from './projection-write.js';
 import { DomainError } from '../services/tags.js';
 
 const WRITE_OPTS = { capture: false, writeFile: false };
@@ -205,6 +205,12 @@ describe('upsertProjectionRow — the declaration is enforced, not advisory', ()
     expect(() =>
       upsertProjectionRow({ db, versions: null }, keyed, 'w1', { label: 'x', cells: [] }, 'user', WRITE_OPTS),
     ).toThrow(/keyed collection/);
+
+    // And through the SERVICE door too — the loop `HostEntityWriter` calls
+    // after a service has written its own row. Two doors into the same rule is
+    // exactly how one of them ends up quietly giving a keyed collection the
+    // value treatment.
+    expect(() => syncProjectionTables(db, keyed, 'w1', { cells: [] })).toThrow(/keyed collection/);
   });
 });
 
@@ -290,5 +296,87 @@ describe('upsertProjectionRow — version capture', () => {
     const db = projected();
     upsertProjectionRow({ db, versions: { captureEntitySnapshot } }, widget, 'w1', { label: 'x' }, 'user', WRITE_OPTS);
     expect(captureEntitySnapshot).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * What the generic junction door has to keep doing that the per-type
+ * `syncEndpointDtos` used to.
+ *
+ * Deleting the per-type restore hooks moved junction writing here, and a review
+ * found the move had carried the ROWS across but not the behaviour around them:
+ * the dedup, the enum validation, and the tolerance for a constraint the checks
+ * did not anticipate. Each omission turns a bad row into a lost collection,
+ * because the indexer degrades a throwing restore into a silent skip.
+ */
+describe('the generic junction door keeps the per-type guarantees', () => {
+  const linky: WritableModule = {
+    type: 'widget',
+    payloadVersion: 1,
+    data: {
+      schema: {
+        label: { kind: 'string', required: true },
+        links: {
+          kind: 'collection',
+          collection: 'value',
+          projectionTable: 'widget_link',
+          keyFields: ['target', 'relation'],
+          item: {
+            kind: 'object',
+            fields: {
+              target: { kind: 'string', column: 'target_slug', required: true },
+              relation: { kind: 'enum', values: ['request', 'response'], required: true },
+              statusCode: { kind: 'number', column: 'status_code' },
+            },
+          },
+        },
+        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    },
+  };
+
+  const rows = (db: Database.Database) =>
+    db.prepare(`SELECT target_slug, relation, status_code FROM widget_link WHERE widget_slug = 'w1'`).all();
+
+  /** The junction binds to a real parent row, so one has to exist. */
+  function seeded(): Database.Database {
+    const db = projected(linky);
+    upsertProjectionRow({ db, versions: null }, linky, 'w1', { label: 'w' }, 'user', WRITE_OPTS);
+    return db;
+  }
+
+  it('collapses a duplicate rather than dying on the UNIQUE constraint', () => {
+    // The removed `syncEndpointDtos` keyed a Map by exactly this tuple, so a
+    // payload naming the same link twice collapsed. A plain INSERT per item threw
+    // instead — and a throw here aborts the entity, so one duplicated line in a
+    // hand-edited file (or a git merge of two branches that each added the link)
+    // left the endpoint with ZERO links instead of the deduplicated set.
+    const db = seeded();
+    const warnings = syncProjectionTables(db, linky, 'w1', {
+      links: [
+        { target: 'a', relation: 'response', statusCode: 200 },
+        { target: 'a', relation: 'response', statusCode: 200 },
+      ],
+    });
+    expect(rows(db)).toHaveLength(1);
+    expect(warnings.join()).toMatch(/more than once/);
+  });
+
+  it('rejects an item whose enum value is not declared, instead of storing it', () => {
+    // `upsertProjectionRow`'s enum sweep only walks the PARENT row's fields, so
+    // until this check a misspelled `relation` landed in the table verbatim,
+    // rendered on the detail page, and was written back into the file as real.
+    const db = seeded();
+    const warnings = syncProjectionTables(db, linky, 'w1', {
+      links: [
+        { target: 'a', relation: 'resposne' },
+        { target: 'b', relation: 'response' },
+      ],
+    });
+    expect(rows(db)).toEqual([{ target_slug: 'b', relation: 'response', status_code: null }]);
+    expect(warnings.join()).toMatch(/expected one of request, response/);
+    // The GOOD row still landed — one bad item must not cost the collection.
+    expect(rows(db)).toHaveLength(1);
   });
 });

@@ -27,6 +27,9 @@ export const endpointData: DataDeclaration = {
     linkedDtos: {
       kind: 'collection',
       collection: 'value',
+      // Link order is not content, and the rows come back in insertion order —
+      // so without this, relinking a DTO reorders the endpoint's file.
+      unordered: true,
       projectionTable: 'endpoint_dto',
       keyFields: ['dto', 'relation', 'statusCode'],
       item: {

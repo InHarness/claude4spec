@@ -124,6 +124,14 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   // detail read.
   ['detail', 'views.detail'],
   ['schema', 'nothing — schemas are derived from data.schema'],
+  // Removed in tier B PR2. A manifest that still carries either one is not
+  // merely out of date: its snapshot would be IGNORED while the host generated a
+  // different payload from the declaration, so the type would keep compiling,
+  // keep registering, and quietly write files in a shape its own code disagrees
+  // with. Rejecting the slot is the only version of this that a plugin author
+  // finds out about.
+  ['snapshot', 'nothing — snapshot is generated from data.schema'],
+  ['restore', 'nothing — restore is generated from data.schema'],
 ];
 
 /**
@@ -162,21 +170,31 @@ export function assertSerializationContribution(
     );
   }
   const upgrades = serializer.payloadUpgrades;
-  if (upgrades != null) {
-    if (!Array.isArray(upgrades) || upgrades.some((u) => typeof u !== 'function')) {
-      throw new PluginManifestError(`entity "${type}" — payloadUpgrades must be an array of functions`);
-    }
-    /**
-     * One step per version transition, no more and no less. A short chain is the
-     * "conflicting gap" the loader would otherwise discover one entity at a time,
-     * at boot, on somebody's real project.
-     */
-    if (upgrades.length !== payloadVersion - 1) {
-      throw new PluginManifestError(
-        `entity "${type}" — payloadUpgrades must have exactly ${payloadVersion - 1} step(s) for ` +
-          `payloadVersion ${payloadVersion}, got ${upgrades.length}`,
-      );
-    }
+  if (upgrades != null && (!Array.isArray(upgrades) || upgrades.some((u) => typeof u !== 'function'))) {
+    throw new PluginManifestError(`entity "${type}" — payloadUpgrades must be an array of functions`);
+  }
+  /**
+   * One step per version transition, no more and no less — and checked whether
+   * or not the slot is present.
+   *
+   * It used to be gated on `upgrades != null`, which made the ABSENT chain the
+   * one shape that slipped through: a type bumping to `payloadVersion: 2` with
+   * no `payloadUpgrades` at all registered cleanly. What followed was silent and
+   * unrecoverable. `upgradePayload` warns about the missing step, `continue`s,
+   * and still reports `upgraded: true`, so the indexer rewrites every file of
+   * that type STAMPED v2 while its content is still v1. Ship the real migration
+   * a release later and the marker now says the work is done: the chain
+   * short-circuits and the v1 payloads are stranded for good.
+   *
+   * Absent is therefore just a chain of length zero, and only legal at version 1.
+   */
+  const declared = Array.isArray(upgrades) ? upgrades.length : 0;
+  if (declared !== payloadVersion - 1) {
+    throw new PluginManifestError(
+      `entity "${type}" — payloadUpgrades must have exactly ${payloadVersion - 1} step(s) for ` +
+        `payloadVersion ${payloadVersion}, got ${declared}` +
+        (upgrades == null ? ' (the slot is absent — a bump needs a migration)' : ''),
+    );
   }
 }
 
