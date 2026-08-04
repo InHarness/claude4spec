@@ -50,8 +50,7 @@ export function fixtureModule(type: string, opts: FixtureModuleOpts = {}): Backe
     displayOrder: 999,
     pathPrefix: `/${type}s`,
     serializer: {
-      type,
-      version: '1.0.0',
+      payloadVersion: 1,
       snapshot: (entity: unknown) => {
         if (opts.snapshotThrows) throw new Error('boom: no snapshot support');
         const e = entity as { slug: string; data: Record<string, unknown> };

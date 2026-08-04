@@ -35,3 +35,32 @@ describe('GET /api/entities/:type/:slug/versions — generic for a plugin-contri
     expect(res.status).toBe(404);
   });
 });
+
+/**
+ * 0.2.9 (item 13) — what a REAL create records, through a real per-type service.
+ *
+ * The unit tests all called `captureEntitySnapshot` themselves, so making the
+ * version argument optional and resolving it inside `VersionService` looked
+ * complete while every one of the eighteen service call sites kept passing its
+ * own semver literal. An AC created through the route still recorded `'1.0.0'`;
+ * the only thing that noticed was a live smoke test. This asserts the column
+ * from the far end of the write path, where the drift was actually visible.
+ */
+describe('entity_version.serializer_version — written by a per-type service (0.2.9 item 13)', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('records the type\'s integer payloadVersion, not a serializer semver', async () => {
+    const created = await request(t.app).post('/api/acs').send({ text: 'version capture' });
+    expect(created.status).toBe(201);
+
+    const row = t.db
+      .prepare(`SELECT serializer_version FROM entity_version WHERE entity_type = 'ac' AND entity_slug = ?`)
+      .get(created.body.slug) as { serializer_version: string };
+    expect(row.serializer_version).toBe('1');
+  });
+});

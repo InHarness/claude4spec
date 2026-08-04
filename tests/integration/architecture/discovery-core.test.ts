@@ -80,6 +80,35 @@ describe('M39 — Discovery Core', () => {
     expect(hits(outside, /\.serialize(Entity|Section)\(|\.serializer\.schema/)).toEqual([]);
   });
 
+  /**
+   * 0.2.9 (tier B, item 15) — the acceptance criterion, as a test.
+   *
+   * The item states it as a grep: `serializerRegistry|registerSerializer` must
+   * return nothing outside git history. That has been true since the singleton
+   * became a per-context engine, which is exactly why it needs a guard — a
+   * criterion nobody can fail is a criterion nobody maintains. The second half
+   * is the one that had teeth when this was written: `entity-tools` reached the
+   * engine directly through a dep it called `registry`, so the grep passed while
+   * a transport was doing precisely what the item forbids.
+   */
+  it('no global serializer registry exists, and no transport reaches the engine', () => {
+    expect(hits(sourceFiles(SRC).filter(isProduction), /serializerRegistry|registerSerializer/)).toEqual([]);
+
+    /**
+     * A transport may CONSTRUCT the engine — the CLI and the stdio server both
+     * build one and hand it to the core, which is how the core gets it at all —
+     * but it may not CALL one. So the rule is about invocation, not about the
+     * type name appearing in a wiring file.
+     */
+    const TRANSPORTS = ['bin', 'server/mcp', 'server/routes', 'server/core/plugin-host/entities-router.ts'];
+    const transportFiles = sourceFiles(SRC).filter(
+      (f) => isProduction(f) && TRANSPORTS.some((t) => f.startsWith(path.join(SRC, t))),
+    );
+    expect(
+      hits(transportFiles, /\.(describe|getSchema|getPayloadVersion|catalog|views)\(\s*['"`]?\w*['"`]?\s*[,)]/),
+    ).toEqual([]);
+  });
+
   it('the core never writes', () => {
     // Read-only from a HARD boundary, not by policy: an external agent finds no
     // write tool because there is no path to one, and a `readonly: true` handle

@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { designSystemSerializer, type DesignSystemSnapshot } from './serializer.js';
+import { designSystemBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
-const ctx = { reader: {} as never, depth: 0, maxDepth: 1 };
+const reader = {} as never;
 
 function rawEntity(data: Record<string, unknown>, tags: string[] = []): RawEntity {
   return { type: 'design-system', slug: String(data.slug ?? 'ds'), data, tags };
@@ -26,8 +27,8 @@ describe('design-system serializer', () => {
       ],
     };
     const e = rawEntity(data, ['zeta', 'alpha']);
-    const first = designSystemSerializer.snapshot!(e, ctx) as DesignSystemSnapshot;
-    const second = designSystemSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), ctx) as DesignSystemSnapshot;
+    const first = designSystemSerializer.snapshot!(e, reader) as DesignSystemSnapshot;
+    const second = designSystemSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), reader) as DesignSystemSnapshot;
 
     const firstJson = JSON.stringify(canonicalize(first));
     expect(JSON.stringify(canonicalize(second))).toBe(firstJson);
@@ -56,7 +57,7 @@ describe('design-system serializer', () => {
       ],
       modes: [],
     });
-    const single = designSystemSerializer.singleElement!(e, ctx) as {
+    const single = designSystemSerializer.views!.single_element!(e, reader) as {
       groups: Array<{ tokens: Array<{ name: string; resolvedValue: unknown }> }>;
     };
     const action = single.groups.flatMap((g) => g.tokens).find((t) => t.name === 'action')!;
@@ -109,7 +110,10 @@ describe('design-system serializer', () => {
     });
   });
 
-  it('serializer version is 1.0.0', () => {
-    expect(designSystemSerializer.version).toBe('1.0.0');
+  it('declares its payload version on the MANIFEST, not on the contribution', () => {
+    // 0.2.9: the contribution's copy was an optional echo of a number only the
+    // manifest is ever read for, so it is not written twice.
+    expect(designSystemBackendModule.payloadVersion).toBe(1);
+    expect(designSystemSerializer.payloadVersion).toBeUndefined();
   });
 });

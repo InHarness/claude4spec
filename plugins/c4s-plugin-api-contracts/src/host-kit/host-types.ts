@@ -43,7 +43,6 @@ export interface VersionServiceLike {
     op: 'create' | 'update' | 'delete',
     actor: ChangedBy,
     summary: string | null,
-    serializerVersion: string,
   ): unknown;
 }
 

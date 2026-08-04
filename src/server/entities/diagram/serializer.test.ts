@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
+import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
-const ctx = { reader: {} as never, depth: 0, maxDepth: 1 };
+const reader = {} as never;
 
 function rawEntity(data: Record<string, unknown>, tags: string[] = []): RawEntity {
   return { type: 'diagram', slug: String(data.slug ?? 'd'), data, tags };
@@ -16,8 +17,8 @@ describe('diagram serializer', () => {
       format: 'mermaid',
       source: 'flowchart TD\n  A-->B',
     };
-    const first = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), ctx) as DiagramSnapshot;
-    const second = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), ctx) as DiagramSnapshot;
+    const first = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), reader) as DiagramSnapshot;
+    const second = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), reader) as DiagramSnapshot;
 
     const firstJson = JSON.stringify(canonicalize(first));
     expect(JSON.stringify(canonicalize(second))).toBe(firstJson);
@@ -31,7 +32,7 @@ describe('diagram serializer', () => {
   });
 
   it('defaults format to mermaid and tolerates an empty (placeholder) source', () => {
-    const snap = diagramSerializer.snapshot!(rawEntity({ slug: 'empty' }), ctx) as DiagramSnapshot;
+    const snap = diagramSerializer.snapshot!(rawEntity({ slug: 'empty' }), reader) as DiagramSnapshot;
     expect(snap.format).toBe('mermaid');
     expect(snap.source).toBe('');
   });
@@ -48,7 +49,8 @@ describe('diagram serializer', () => {
     expect(changes.tag_added).toEqual(['y']);
   });
 
-  it('serializer version is 1.0.0', () => {
-    expect(diagramSerializer.version).toBe('1.0.0');
+  it('declares its payload version on the MANIFEST, not on the contribution', () => {
+    expect(diagramBackendModule.payloadVersion).toBe(1);
+    expect(diagramSerializer.payloadVersion).toBeUndefined();
   });
 });

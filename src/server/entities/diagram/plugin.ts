@@ -1,5 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { EntitySerializer } from '../../serialization/types.js';
+import type { SerializationContribution } from '../../serialization/types.js';
 import { diagramSerializer } from './serializer.js';
 import { diagramSystemPrompt } from './system-prompt.js';
 import { diagramsRouter } from './routes.js';
@@ -18,7 +18,7 @@ export const diagramBackendModule: BackendModule = {
   // After design-system (60) — diagrams sit at the end of ELEMENTS.
   displayOrder: 70,
   pathPrefix: '/diagrams',
-  serializer: diagramSerializer as EntitySerializer<unknown>,
+  serializer: diagramSerializer as SerializationContribution<unknown>,
   systemPrompt: diagramSystemPrompt,
   // M13: declarative backend — the host synthesizes an equivalent `mount` (see
   // manifest-adapter.ts#synthesizeMount): construct the service once, register

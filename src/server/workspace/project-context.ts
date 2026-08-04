@@ -669,7 +669,6 @@ async function buildInner(
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
-      registry: serializationEngine,
       reader: rawReader,
       discovery,
       db: db.handle,

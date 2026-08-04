@@ -38,7 +38,6 @@ interface AcRow {
   updated_at: string;
 }
 
-const SERIALIZER_VERSION = '1.0.0';
 
 export interface AcCreateResult {
   ac: Ac;
@@ -147,7 +146,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
       if (input.tags?.length) this.tags.assignTags('ac', slug, input.tags);
       const ac = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ac', slug, 'create', actor, 'Created', SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('ac', slug, 'create', actor, 'Created');
       }
       return ac;
     });
@@ -252,7 +251,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ac', nextSlug, 'update', actor, summary, SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('ac', nextSlug, 'update', actor, summary);
       }
       return { ac: updated, previousSlug: slug };
     });
@@ -297,7 +296,7 @@ export class AcService extends BaseEntityCrudService<Ac> {
 
       // M17: capture tombstone BEFORE delete.
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ac', slug, 'delete', actor, 'Deleted', SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('ac', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ac' AND entity_slug = ?`)

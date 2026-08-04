@@ -1,10 +1,9 @@
 import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
-  EntitySerializer,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
+  SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { DtoExample, DtoField } from '../../types.js';
 import { findDtoEndpoints } from '../junction/index.js';
@@ -160,46 +159,45 @@ function dtoRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   return { op: upserted.op, entity: upserted.entity };
 }
 
-export const dtoSerializer: EntitySerializer<RawEntity> = {
-  type: 'dto',
-  version: '1.1.0',
+export const dtoSerializer: SerializationContribution<RawEntity> = {
+  views: {
+    inline_mention: (entity) => ({
+      type: 'dto',
+      slug: entity.slug,
+      label: (entity.data.name as string) ?? entity.slug,
+      href: `/dtos/${entity.slug}`,
+    }),
 
-  inlineMention: (entity) => ({
-    type: 'dto',
-    slug: entity.slug,
-    label: (entity.data.name as string) ?? entity.slug,
-    href: `/dtos/${entity.slug}`,
-  }),
+    single_element: (entity) => baseSingle(entity),
 
-  singleElement: (entity) => baseSingle(entity),
+    element_list_item: (entity) => baseSingle(entity),
 
-  elementListItem: (entity) => baseSingle(entity),
+    tagged_list_item: (entity) => baseSingle(entity),
 
-  taggedListItem: (entity) => baseSingle(entity),
-
-  detail: (entity, ctx: SerializeContext) => {
-    const base = baseSingle(entity);
-    const endpoints = findDtoEndpoints(ctx.reader.db, entity.slug).map((e) => ({
-      endpointSlug: e.endpointSlug,
-      method: e.method,
-      path: e.path,
-      relation: e.relation,
-      statusCode: e.statusCode,
-    }));
-    const references = (ctx.reader.findSectionReferences('dto', entity.slug) as SectionEntityRef[]).map((r) => ({
-      anchor: r.anchor,
-      pagePath: r.pagePath,
-      headingText: r.headingText,
-      relation: r.relation,
-    }));
-    return {
-      ...base,
-      endpoints,
-      _references: references,
-    };
+    detail: (entity, reader) => {
+      const base = baseSingle(entity);
+      const endpoints = findDtoEndpoints(reader.db, entity.slug).map((e) => ({
+        endpointSlug: e.endpointSlug,
+        method: e.method,
+        path: e.path,
+        relation: e.relation,
+        statusCode: e.statusCode,
+      }));
+      const references = (reader.findSectionReferences('dto', entity.slug) as SectionEntityRef[]).map((r) => ({
+        anchor: r.anchor,
+        pagePath: r.pagePath,
+        headingText: r.headingText,
+        relation: r.relation,
+      }));
+      return {
+        ...base,
+        endpoints,
+        _references: references,
+      };
+    },
   },
 
-  // ─── M17 ───
+  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   snapshot: (entity) => buildSnapshot(entity),
   restore: dtoRestore,
   diff: dtoDiff,

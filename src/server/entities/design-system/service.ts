@@ -39,7 +39,6 @@ interface DesignSystemRow {
   updated_at: string;
 }
 
-const SERIALIZER_VERSION = '1.0.0';
 
 /** WHERE clause shared by `listRaw` (paginated) and `count` (unpaginated) — same filters, no duplicated SQL. */
 function buildFilter(query: Pick<DesignSystemListQuery, 'search' | 'tags' | 'tagFilter'>): {
@@ -132,14 +131,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       if (input.tags?.length) this.tags.assignTags('design-system', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot(
-          'design-system',
-          slug,
-          'create',
-          actor,
-          'Created',
-          SERIALIZER_VERSION
-        );
+        this.versions.captureEntitySnapshot('design-system', slug, 'create', actor, 'Created');
       }
       return { designSystem: created, warnings: lintTokens(groups, modes) };
     });
@@ -244,14 +236,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot(
-          'design-system',
-          nextSlug,
-          'update',
-          actor,
-          summary,
-          SERIALIZER_VERSION
-        );
+        this.versions.captureEntitySnapshot('design-system', nextSlug, 'update', actor, summary);
       }
       return {
         designSystem: updated,
@@ -311,14 +296,7 @@ export class DesignSystemService extends BaseEntityCrudService<DesignSystem> {
       const danglingUiViews = this.danglingUiViewsFor(slug);
 
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot(
-          'design-system',
-          slug,
-          'delete',
-          actor,
-          'Deleted',
-          SERIALIZER_VERSION
-        );
+        this.versions.captureEntitySnapshot('design-system', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'design-system' AND entity_slug = ?`)

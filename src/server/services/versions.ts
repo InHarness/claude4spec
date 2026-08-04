@@ -119,15 +119,7 @@ export class VersionService {
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 
-    const serializerVersion = host.getEntity(type)?.serializer.version ?? null;
-    return this.captureEntitySnapshot(
-      type,
-      entitySlug,
-      'update',
-      actor,
-      `Restored to version ${version}`,
-      serializerVersion ?? 'unknown',
-    );
+    return this.captureEntitySnapshot(type, entitySlug, 'update', actor, `Restored to version ${version}`);
   }
 
   /**
@@ -143,11 +135,20 @@ export class VersionService {
     op: VersionOp,
     actor: ChangedBy,
     summary: string | null,
-    serializerVersion: string
+    /**
+     * 0.2.9 (item 13) — resolved from the MANIFEST when omitted, and omitted by
+     * every caller. It used to be a required argument, which meant eighteen call
+     * sites each passing a hand-written semver literal for their own type: six
+     * copies of a fact the host already knew, free to drift from each other and
+     * from the serializer they claimed to describe. The column now records the
+     * type's integer `payloadVersion` — the version the upgrade chain acts on.
+     */
+    serializerVersion?: string
   ): VersionListItem {
+    const captured = serializerVersion ?? this.payloadVersionOf(type);
     if (!this.snapshotDeps) {
       // Fallback: deps not yet wired. Store legacy domain object via createVersion.
-      return this.createVersion(type, entitySlug, null, actor, summary, op, serializerVersion);
+      return this.createVersion(type, entitySlug, null, actor, summary, op, captured);
     }
     // A type that doesn't resolve to any table at all (misconfigured/inactive
     // plugin, or a reader wired without a host) is a hard failure — must not
@@ -167,20 +168,30 @@ export class VersionService {
       // restorable data. This path is only hit if a caller calls capture
       // post-delete (anti-pattern but defensive).
       const last = this.getLatestVersionForEntity(type, entitySlug);
-      return this.createVersion(type, entitySlug, last?.data ?? null, actor, summary, op, serializerVersion);
+      return this.createVersion(type, entitySlug, last?.data ?? null, actor, summary, op, captured);
     }
-    const ctx = { reader: this.snapshotDeps.reader, depth: 0, maxDepth: 1 };
+
     // M17: a capture failure must never be silently dropped — log it here
     // (the single real capture call site) and rethrow so the caller's
     // transaction rolls back and the failure surfaces to the client.
     let snapshot;
     try {
-      snapshot = this.snapshotDeps.host.snapshot(type, rawEntity, ctx);
+      snapshot = this.snapshotDeps.host.snapshot(type, rawEntity, this.snapshotDeps.reader);
     } catch (err) {
       console.error(`[entity_version] snapshot capture failed for ${type}/${entitySlug} (op=${op}):`, err);
       throw err;
     }
-    return this.createVersion(type, entitySlug, snapshot, actor, summary, op, serializerVersion);
+    return this.createVersion(type, entitySlug, snapshot, actor, summary, op, captured);
+  }
+
+  /**
+   * The type's payload version as the version log records it — a decimal string
+   * in a TEXT column that used to hold semver. That asymmetry is deliberate: a
+   * row stamped `'1.1.0'` is, by its very shape, a capture from before 0.2.9,
+   * which is exactly what a payload upgrade needs to know about it.
+   */
+  private payloadVersionOf(type: string): string {
+    return String(this.snapshotDeps?.host.getEntity(type)?.payloadVersion ?? 1);
   }
 
   /**

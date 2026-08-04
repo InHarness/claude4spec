@@ -128,7 +128,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
       if (input.tags?.length) this.tags.assignTags('ui-view', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', slug, 'create', actor, 'Created', '1.1.0');
+        this.versions.captureEntitySnapshot('ui-view', slug, 'create', actor, 'Created');
       }
       const warnings = computeWarnings(url, params);
       return { uiView: created, warnings };
@@ -243,7 +243,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', nextSlug, 'update', actor, summary, '1.1.0');
+        this.versions.captureEntitySnapshot('ui-view', nextSlug, 'update', actor, summary);
       }
       const warnings = computeWarnings(updated.url, updated.params);
       return { uiView: updated, previousSlug: slug, warnings };
@@ -298,7 +298,7 @@ export class UiViewService extends BaseEntityCrudService<UiView> {
 
       // M17: capture snapshot BEFORE delete.
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('ui-view', slug, 'delete', actor, 'Deleted', '1.1.0');
+        this.versions.captureEntitySnapshot('ui-view', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'ui-view' AND entity_slug = ?`)

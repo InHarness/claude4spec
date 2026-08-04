@@ -8,15 +8,42 @@ export type ViewKind =
   | 'tagged_list_item'
   | 'detail';
 
-export type JsonSchema = Record<string, unknown>;
+/**
+ * The vocabulary as a VALUE, declared once beside the type.
+ *
+ * Every layer that has to answer "is this a view?" — the core's guard, the CLI's
+ * eager check, the engine's describe — reads this array. Three copies of five
+ * strings is how a sixth view kind ends up recognised in one place and rejected
+ * in another.
+ */
+export const VIEW_KINDS: readonly ViewKind[] = [
+  'inline_mention',
+  'single_element',
+  'element_list_item',
+  'tagged_list_item',
+  'detail',
+];
 
-export interface SerializeContext {
-  reader: RawEntityReader;
-  depth: number;
-  maxDepth: number;
-}
+/**
+ * 0.2.9 — schemas are DERIVED from `data.schema`, so the type moved to
+ * `shared/plugin-host/json-schema.ts` next to the deriver. Re-exported here
+ * because every consumer of a schema in this layer imports from this file.
+ */
+export type { JsonSchema } from '../../shared/plugin-host/json-schema.js';
 
-export type SerializeFn<T> = (entity: T, ctx: SerializeContext) => unknown;
+/**
+ * A computed view: the entity wrapper in, an arbitrary payload out.
+ *
+ * 0.2.9 dropped the `SerializeContext` wrapper (`{reader, depth, maxDepth}`) for
+ * a bare reader. `depth` was `0` at every call site in the repo, so the single
+ * guard that read it never fired once; a parameter no caller ever varies is not
+ * a depth limit, it is a comment. Where a view genuinely has a depth rule (dto's
+ * `detail` resolves nested DTOs one level), the rule is now written into the view.
+ */
+export type ViewFn<T> = (entity: T, reader: RawEntityReader) => unknown;
+
+/** The views a type computes itself. Every kind it omits is served generically. */
+export type ViewSet<T> = Partial<Record<ViewKind, ViewFn<T>>>;
 
 // ─── Snapshot view (M17) — types ────────────────────────────────────────────
 
@@ -58,35 +85,72 @@ export class SnapshotNotImplementedError extends Error {
   }
 }
 
-// ─── Serializer interface ───────────────────────────────────────────────────
+// ─── Serialization contribution (L9) ────────────────────────────────────────
 
-export interface EntitySerializer<T = unknown> {
-  type: string;
-  version: string;
-  inlineMention?: SerializeFn<T>;
-  singleElement?: SerializeFn<T>;
-  elementListItem?: SerializeFn<T>;
-  taggedListItem?: SerializeFn<T>;
-  detail?: SerializeFn<T>;
-  schema?: (view: ViewKind) => JsonSchema;
+/**
+ * What a type contributes to serialization in Host API 2.0.0 — and it is
+ * deliberately little.
+ *
+ * Gone from 1.x, all of it derivable from `data.schema`: `type` (the manifest
+ * already says it), `version: string` (an advisory semver the registry never
+ * enforced — replaced by the manifest's integer `payloadVersion`), the five flat
+ * view callbacks (now one map, so "which views does this type compute?" is a
+ * property of the data instead of a five-case switch), `schema?(view)` (derived
+ * — see `shared/plugin-host/json-schema.ts`) and, in PR2 of this tier,
+ * `snapshot`/`restore`.
+ *
+ * What is left is what the host genuinely cannot derive: payload shapes that are
+ * COMPUTED (resolved refs, back-references, counts) and a SEMANTIC diff.
+ */
+export interface SerializationContribution<T = unknown> {
+  /** Views this type computes. Absent kinds are served generically by the host. */
+  views?: ViewSet<T>;
+  /**
+   * Optional semantic diff. Falls back to default deep-diff when omitted.
+   *
+   * The brief's snippet writes this as `(a, b) => EntityDiff`; `EntityDiff`
+   * carries `slug` and every implementation builds it from the third argument,
+   * so the parameter is kept and a clarification patch is filed instead.
+   */
+  diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
+  /**
+   * Optional echo of the manifest's `payloadVersion`.
+   *
+   * The MANIFEST slot is the authority and the only one anything reads
+   * (`engine.getPayloadVersion`, `catalog`, `release`, `VersionService`). This
+   * one exists because the brief declares the field on the contribution; it is
+   * optional because a required duplicate is a fact every author writes twice
+   * and eventually writes twice differently. When present, registration rejects
+   * it if it disagrees with the manifest.
+   */
+  payloadVersion?: number;
+  /**
+   * Ordered chain of payload migrations, `payloadUpgrades[i]` taking payload
+   * `i+1` to `i+2`. DECLARED here in PR1; ENFORCED (on file load, rebuild and
+   * release restore) by PR2 of this tier.
+   */
+  payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
 
   // ─── M17 Spec Snapshots ──────────────────────────────────────────────────
-  /** Deterministic, byte-identical snapshot. Pure function of state — no clock, no random. */
-  snapshot?: (entity: T, ctx: SerializeContext) => SnapshotData;
   /**
-   * Inverse of snapshot — UPSERT through normal write-API; idempotent.
-   * Result entity is the domain type (Endpoint/Dto/...), not the read-view T,
-   * so restore is intentionally typed `RestoreResult<unknown>` — consumers
-   * downcast on per-type basis.
+   * @deprecated Tier B PR2 deletes both slots: snapshot and restore are
+   * generated from `data.schema`. They survive PR1 only so that M17 releases
+   * keep working across the two commits.
    */
+  snapshot?: (entity: T, reader: RawEntityReader) => SnapshotData;
+  /** @deprecated See {@link SerializationContribution.snapshot}. */
   restore?: (data: SnapshotData, ctx: RestoreContext) => RestoreResult;
-  /** Optional semantic diff. Falls back to default deep-diff when omitted. */
-  diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
 }
 
 export interface SerializeResult {
   data: unknown;
-  fallback: boolean;
+  /**
+   * True when the host built this payload from the projection row rather than
+   * the type computing it. 0.2.9 renamed it from `fallback`: a type that
+   * declares its data and computes nothing is FULLY served, not degraded, so
+   * "generic" is the rule and "fallback" was the wrong word for the common case.
+   */
+  generic: boolean;
   error?: string;
   brokenRefs?: string[];
 }

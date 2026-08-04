@@ -16,7 +16,7 @@ import type { PagesService } from './pages.js';
 // enough. `host.diff` delegates to the real `defaultDeepDiff` so entity `op`
 // values match production semantics instead of being hand-rolled per test.
 const fakeHost = {
-  getEntity: (type: string) => (type === 'endpoint' ? { serializer: { version: 'v1' } } : null),
+  getEntity: (type: string) => (type === 'endpoint' ? { payloadVersion: 1 } : null),
   diff: (type: string, a: unknown, b: unknown, slug: string) => defaultDeepDiff(type, slug, a, b),
 } as unknown as PluginHost;
 

@@ -204,7 +204,7 @@ export class EntityStore {
   persist(type: RawEntityType, slug: string): void {
     const entity = this.reader.getEntity(type, slug);
     if (!entity) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found for persist`);
-    const snap = this.host.snapshot(type, entity, { reader: this.reader, depth: 0, maxDepth: 1 });
+    const snap = this.host.snapshot(type, entity, this.reader);
     this.write(type, slug, snap);
   }
 

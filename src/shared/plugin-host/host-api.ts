@@ -102,6 +102,20 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
   {
     fromMajor: 1,
     toMajor: 2,
+    slot: 'serializer.{version,inlineMention,singleElement,elementListItem,taggedListItem,schema}',
+    kind: 'slot-removed',
+    summary:
+      'The serializer became a `SerializationContribution`: computed `views` (one ' +
+      'map, not five slots), an optional semantic `diff`, an integer ' +
+      '`payloadVersion` and an ordered `payloadUpgrades` chain. The advisory ' +
+      'semver is gone — the registry never enforced it — and JSON Schemas are ' +
+      'derived from `data.schema` instead of being hand-written per view or ' +
+      'reflected off the SQLite columns and flagged `_auto`. Views a type does ' +
+      'not compute are served generically, marked `_generic` (was `_fallback`).',
+  },
+  {
+    fromMajor: 1,
+    toMajor: 2,
     slot: 'routes.prefix',
     kind: 'slot-removed',
     summary:

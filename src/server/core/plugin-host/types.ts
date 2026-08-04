@@ -29,12 +29,12 @@ import type {
 } from '../../../shared/plugin-host/manifest.js';
 import type {
   EntityDiff,
-  EntitySerializer,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
+  SerializationContribution,
   SnapshotData,
 } from '../../serialization/types.js';
+import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { ReferencesService } from '../../services/references.js';
@@ -167,8 +167,8 @@ export interface EntityRenamedEvent {
 }
 
 export interface BackendModule extends EntityModuleManifest {
-  /** L9 — JSON serialization for external consumers (CLI, MCP, ...). */
-  serializer: EntitySerializer<unknown>;
+  /** L9 — computed views + semantic diff; everything else is derived. */
+  serializer: SerializationContribution<unknown>;
 
   /** M05 — system prompt contribution composed by buildSystemPrompt. */
   systemPrompt: SystemPromptContribution;
@@ -504,7 +504,7 @@ export interface ProjectPluginHost {
 
   // ─── M17 snapshot helpers ────────────────────────────────────────────────
   /** Plugin-owned snapshot. Throws SnapshotNotImplementedError if slot absent. */
-  snapshot(type: string, entity: unknown, ctx: SerializeContext): SnapshotData;
+  snapshot(type: string, entity: unknown, reader: RawEntityReader): SnapshotData;
   /** Plugin-owned restore (UPSERT through normal write-API). */
   restore(type: string, data: SnapshotData, ctx: RestoreContext): RestoreResult;
   /** Plugin-owned diff with default deep-diff fallback. */

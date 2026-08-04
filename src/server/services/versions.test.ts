@@ -40,7 +40,7 @@ describe('VersionService.restore', () => {
     // (HostEntityWriter → serializer.restore) is exercised elsewhere.
     const fakeHost = {
       restore: hostRestore,
-      getEntity: () => ({ serializer: { version: '1.1.0' } }),
+      getEntity: () => ({ payloadVersion: 1 }),
       getEntityService: () => ({ getBySlug: serviceGetBySlug, remove: serviceRemove }),
     } as unknown as PluginHost;
     const fakeEntityStore = { persist: storePersist, remove: storeRemove } as unknown as EntityStore;
@@ -146,6 +146,25 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
       .get() as { entity_type: string; entity_slug: string; data: string };
     expect(row.entity_type).toBe('widget');
     expect(JSON.parse(row.data)).toMatchObject({ slug: 'my-widget', name: 'Hello' });
+  });
+
+  /**
+   * 0.2.9 (item 13). The regression this defends actually happened: the argument
+   * was made optional and `VersionService` learned to resolve it, but the
+   * eighteen per-type call sites kept passing their own semver — so a real AC
+   * create still recorded `'1.0.0'`, and every unit test passed, because none of
+   * them asserted what a SERVICE writes into the column.
+   */
+  it('records the manifest payloadVersion when the caller passes no version', () => {
+    const { db, versions } = setupHost('widget');
+    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+
+    versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created');
+
+    const row = db
+      .prepare(`SELECT serializer_version FROM entity_version WHERE entity_slug = 'my-widget'`)
+      .get() as { serializer_version: string };
+    expect(row.serializer_version).toBe('1');
   });
 
   it('lists a captured plugin-type version through the same generic path GET /versions uses', () => {

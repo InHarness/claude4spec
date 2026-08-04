@@ -33,7 +33,6 @@ interface DiagramRow {
   updated_at: string;
 }
 
-const SERIALIZER_VERSION = '1.0.0';
 
 function readFormat(value: unknown): DiagramFormat {
   return value === 'd2' ? 'd2' : 'mermaid';
@@ -90,7 +89,7 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
       if (input.tags?.length) this.tags.assignTags('diagram', slug, input.tags);
       const created = this.getBySlugInternal(slug);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('diagram', slug, 'create', actor, 'Created', SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('diagram', slug, 'create', actor, 'Created');
       }
       return created;
     });
@@ -172,7 +171,7 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
       const updated = this.getBySlugInternal(nextSlug);
       const summary = nextSlug !== slug ? `Renamed from '${slug}' to '${nextSlug}'` : 'Updated';
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('diagram', nextSlug, 'update', actor, summary, SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('diagram', nextSlug, 'update', actor, summary);
       }
       return { diagram: updated, previousSlug: slug };
     });
@@ -218,7 +217,7 @@ export class DiagramService extends BaseEntityCrudService<Diagram> {
         | undefined;
       if (!row) throw new DomainError('NOT_FOUND', `diagram '${slug}' not found`);
       if (opts.capture !== false) {
-        this.versions.captureEntitySnapshot('diagram', slug, 'delete', actor, 'Deleted', SERIALIZER_VERSION);
+        this.versions.captureEntitySnapshot('diagram', slug, 'delete', actor, 'Deleted');
       }
       this.db
         .prepare(`DELETE FROM entity_tag WHERE entity_type = 'diagram' AND entity_slug = ?`)

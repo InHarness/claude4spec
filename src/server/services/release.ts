@@ -38,6 +38,7 @@ import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
+import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
 import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
@@ -607,7 +608,11 @@ export class ReleaseService {
     for (const type of ENTITY_TYPES) {
       const module = this.host.getEntity(type);
       if (!module) continue;
-      serializerVersions[type] = module.serializer.version;
+      // 0.2.9 (item 13): the type's integer `payloadVersion`, stringified —
+      // same vocabulary the `entity_version.serializer_version` column now
+      // holds. `page` below stays a semver because a page is a file, not an
+      // entity type, and has no payload version to speak of.
+      serializerVersions[type] = String(module.payloadVersion);
       const rows = this.latestEntityRowsAtOrBefore(type, releaseId);
       for (const r of rows) {
         if (!r.op) continue;
@@ -1217,10 +1222,13 @@ export class ReleaseService {
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
       const bVer = toSnap.serializer_versions[sample.type] ?? null;
+      // Compared as payload versions — a release captured before 0.2.9 records
+      // the serializer semver where one captured after records the integer, and
+      // they mean the same shape. See `serialization/payload-version.ts`.
       entityChanges.push(
         toRawDeltaEntityChange(
           diff,
-          aVer !== bVer ? { type: sample.type, from: aVer, to: bVer } : null
+          samePayloadVersion(aVer, bVer) ? null : { type: sample.type, from: aVer, to: bVer }
         )
       );
     }
@@ -1295,11 +1303,7 @@ export class ReleaseService {
     // Compare to current state — if identical, no-op.
     const current = this.rawReader.getEntity(input.type, input.slug);
     if (current) {
-      const currentSnapshot = this.host.snapshot(input.type, current, {
-        reader: this.rawReader,
-        depth: 0,
-        maxDepth: 1,
-      });
+      const currentSnapshot = this.host.snapshot(input.type, current, this.rawReader);
       const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot, input.slug);
       if (diff.op === 'noop') {
         /**

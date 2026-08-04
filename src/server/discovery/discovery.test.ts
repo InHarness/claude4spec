@@ -60,7 +60,7 @@ function widgetModule(): BackendModule {
     labelPlural: 'Widgets',
     displayOrder: 10,
     pathPrefix: '/widgets',
-    serializer: { type: 'widget', version: '1.0.0', singleElement: (e: unknown) => e } as BackendModule['serializer'],
+    serializer: { payloadVersion: 1, views: { single_element: (e: unknown) => e } } as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Widgets',
     },
@@ -349,6 +349,43 @@ describe('discovery core', () => {
     expect(() => c.describeTypes({ types: ['ghost'] })).toThrowError(
       expect.objectContaining({ code: 'INVALID_TYPE', hint: expect.stringContaining('widget') }),
     );
+  });
+
+  it('describe_types rejects an unknown view in the CORE, before any type is touched', () => {
+    // 0.2.9 (item 9/14): the guard used to live in the MCP zod enum and in the
+    // CLI's own list — two transport-local copies and no rule for anyone else,
+    // so a bad view reached the serializer and came back as a shrug.
+    const c = core([pagesRoot()], [widgetModule()]);
+    expect(() => c.describeTypes({ view: 'summary' as never })).toThrowError(
+      expect.objectContaining({ code: 'INVALID_VIEW', hint: expect.stringContaining('single_element') }),
+    );
+  });
+
+  it('describe_types answers every view, computed or generic', () => {
+    // "Generic is the rule": a type that computes ONE view still answers all
+    // five, and must not read as supporting only the one — which is what the old
+    // presence-check chain reported. The fixture computes `single_element` only.
+    const c = core([pagesRoot()], [widgetModule()]);
+    const described = c.describeTypes({ types: ['widget'] }).types[0]!;
+    expect(described.views).toEqual([
+      'inline_mention',
+      'single_element',
+      'element_list_item',
+      'tagged_list_item',
+      'detail',
+    ]);
+    expect(described.payloadVersion).toBe(1);
+    // Derived from `data.schema` — no `_auto`, no db reflection, and closed,
+    // because the host builds this payload itself.
+    const generic = described.schemas.inline_mention as Record<string, unknown>;
+    expect(generic._auto).toBeUndefined();
+    expect(generic.additionalProperties).toBe(false);
+    expect((generic.properties as Record<string, unknown>)._view).toEqual({ const: 'inline_mention' });
+    // The computed one is a FLOOR, not a contract — the host cannot introspect
+    // the function that builds it, so the schema stays open and says so.
+    const computed = described.schemas.single_element as Record<string, unknown>;
+    expect(computed.additionalProperties).toBe(true);
+    expect(computed['x-computed']).toBe(true);
   });
 
   describe('get_sections returns bodies and their edges', () => {

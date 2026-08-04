@@ -45,6 +45,9 @@ describe('M33 — Host API versioning helpers', () => {
     expect(crossing.map((m) => m.slot).sort()).toEqual([
       'backend.migrations',
       'routes.prefix',
+      // 0.2.9 (tier B): the serializer's five flat view callbacks, its advisory
+      // semver and its hand-written schema — all derived now, all removed.
+      'serializer.{version,inlineMention,singleElement,elementListItem,taggedListItem,schema}',
       'slugFrom',
     ]);
     // A span that crosses no boundary is empty, in both directions.
@@ -58,7 +61,7 @@ describe('M33 — Host API versioning helpers', () => {
     const info = buildMigrationInfo('^1.0.0');
     expect(info).not.toBeNull();
     expect(info!.targetHostApiVersion).toBe(HOST_API_VERSION);
-    expect(info!.migrations).toHaveLength(3);
+    expect(info!.migrations).toHaveLength(4);
     expect(info!.migrations.every((m) => m.kind === 'slot-removed')).toBe(true);
     /**
      * The assertion that matters to a plugin author: there is no compatibility

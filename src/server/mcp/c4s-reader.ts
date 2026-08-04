@@ -2,9 +2,8 @@ import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
-import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import type { ViewKind } from '../serialization/types.js';
+import { VIEW_KINDS, type ViewKind } from '../serialization/types.js';
 
 /**
  * `c4s-reader` — the external stdio transport over the M39 discovery core.
@@ -33,12 +32,6 @@ import type { ViewKind } from '../serialization/types.js';
 export interface C4sReaderDeps {
   reader: RawEntityReader | null;
   /**
-   * Held only so a caller can construct this server the same way it constructs
-   * the core. Serialization is reached exclusively THROUGH the core (M39's
-   * registry rule), so nothing in this file touches it.
-   */
-  registry: SerializationEngine;
-  /**
    * M39: the discovery core, already bound to a resolved project. Null on a
    * degraded start (no project) — the tools then answer `PROJECT_NOT_FOUND`
    * rather than the process exiting, because an stdio server that dies hands
@@ -50,13 +43,17 @@ export interface C4sReaderDeps {
   packageVersion: string;
 }
 
-const VIEW_KINDS = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-] as const;
+/**
+ * 0.2.9: the vocabulary comes from `serialization/types.ts`, where `ViewKind`
+ * itself lives. This file used to keep its own `as const` list feeding the zod
+ * enum — the second of the two transport-local copies the core's `requireView`
+ * was meant to retire, and the one that would have kept a newly added view kind
+ * working over CLI and REST while answering INVALID_ARGUMENT over MCP.
+ *
+ * The zod enum needs a mutable tuple, so the readonly array is widened here;
+ * `ViewKind` still types the result, so a divergence cannot compile.
+ */
+const VIEW_ENUM = [...VIEW_KINDS] as [ViewKind, ...ViewKind[]];
 
 /**
  * The tool names this server exposes, in the order the brief lists the
@@ -161,7 +158,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   };
 
   const viewShape = z
-    .enum(VIEW_KINDS)
+    .enum(VIEW_ENUM)
     .optional()
     .describe('Record shape — the width of a row, independent of how many rows come back');
 
@@ -188,14 +185,14 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
 
   const overview = op(
     'overview',
-    'ENTRY POINT. One call that says what this specification contains: page roots with their properties (sectionIndexed / referenceValidated / pageCount), the active entity types with a row count and serializer version each, the tag count, and the claude4spec version. Root properties are part of the payload because they decide how a hit is addressed — a section-indexed root answers with an `anchor`, a plain one with (rootId, path, line). Cheap: no schemas, no views; call describe_types for those.',
+    'ENTRY POINT. One call that says what this specification contains: page roots with their properties (sectionIndexed / referenceValidated / pageCount), the active entity types with a row count and payload version each, the tag count, and the claude4spec version. Root properties are part of the payload because they decide how a hit is addressed — a section-indexed root answers with an `anchor`, a plain one with (rootId, path, line). Cheap: no schemas, no views; call describe_types for those.',
     {},
     (discovery) => discovery.overview(),
   );
 
   const describeTypes = op(
     'describe_types',
-    'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas come from the type\'s serializer, or are derived by index reflection and flagged "_auto". A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback.',
+    'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas are DERIVED from the type\'s declared data schema — every type answers every view, so a view a type does not compute is described as the generic projection rather than being absent. A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback; an unknown view answers INVALID_VIEW.',
     {
       types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
       // An enum, not a free string: an unrecognized view used to be forwarded to

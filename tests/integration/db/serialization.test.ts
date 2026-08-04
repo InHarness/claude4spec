@@ -33,9 +33,8 @@ describe('entity snapshot serialization', () => {
 
     const raw = t.rawReader.getEntity('endpoint', slug);
     expect(raw).not.toBeNull();
-    const ctx = { reader: t.rawReader, depth: 0, maxDepth: 1 };
-    const first = t.host.snapshot('endpoint', raw, ctx);
-    const second = t.host.snapshot('endpoint', t.rawReader.getEntity('endpoint', slug), ctx);
+    const first = t.host.snapshot('endpoint', raw, t.rawReader);
+    const second = t.host.snapshot('endpoint', t.rawReader.getEntity('endpoint', slug), t.rawReader);
 
     // byte-identical canonical JSON (git-diff determinism)
     const firstJson = JSON.stringify(canonicalize(first));

@@ -24,7 +24,6 @@ import { DomainError } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
-import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import { getEntitiesAll, type DiscoveryCore } from '../discovery/index.js';
@@ -32,7 +31,6 @@ import { resolveSearchFields } from '../discovery/search/fields.js';
 
 export interface EntityToolsDeps {
   host: ProjectPluginHost;
-  registry: SerializationEngine;
   reader: RawEntityReader;
   /**
    * M39: reads go through the discovery core. This server keeps the WRITE path
@@ -397,14 +395,45 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       for (const m of modules) {
         if (!m.ok) return m.response;
       }
+      /**
+       * ONE core call for the whole batch.
+       *
+       * It used to run per type inside the map below, deriving five JSON Schemas
+       * per type and discarding all of them to read `views` — which is now the
+       * same five kinds for everyone, so the field carried no information at all.
+       * The distinction that DOES matter moved into the schemas: `x-computed`
+       * marks a view the type builds itself, as opposed to one the host projects
+       * from the row. That is what `computedViews` reports.
+       */
+      type Described = { type: string; views?: string[]; schemas?: Record<string, unknown> };
+      const describedByType = new Map<string, Described>();
+      let batched = true;
+      try {
+        for (const d of deps.discovery.describeTypes({}).types as Described[]) describedByType.set(d.type, d);
+      } catch {
+        /**
+         * One bad type must not cost every other type its answer. The batch is
+         * the fast path; when it throws we fall back to per-type calls inside
+         * the per-type guard below, where a single failure degrades to that
+         * type's own `__error` placeholder and the healthy types are unaffected.
+         */
+        batched = false;
+      }
       const described = (modules as Array<{ ok: true; module: BackendModule }>).map(({ module }) => {
         // Outer per-type guard: schema serialization is already isolated by
-        // safeToJsonSchema, but the rest of the entry (registry.describe, service
+        // safeToJsonSchema, but the rest of the entry (the describe call, service
         // lookup) can also throw for a malformed type — contain that too so one bad
         // type never aborts the whole describe-all batch.
         try {
           const crudSupported = module.backend?.crud != null;
-          const views = deps.registry.describe(module.type, undefined, deps.db);
+          // 0.2.9 (item 15): through the discovery core, not the serialization
+          // engine — a transport reaching into L9 directly is what the item
+          // forbids, and the grep it names came back clean only because this
+          // call had been spelled `registry`.
+          const described = batched
+            ? describedByType.get(module.type)
+            : (deps.discovery.describeTypes({ types: [module.type] }).types[0] as Described | undefined);
+          const schemas = (described?.schemas ?? {}) as Record<string, { 'x-computed'?: boolean }>;
           return {
             type: module.type,
             label: module.label,
@@ -420,7 +449,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
              */
             searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
             crudSupported,
-            views: views?.views ?? [],
+            views: described?.views ?? [],
+            /**
+             * The subset the TYPE builds itself. Asking for a view a type does
+             * not compute is not an error — the host projects the row — but it
+             * returns nothing the cheaper list view would not, which is exactly
+             * what a caller deciding whether `detail` is worth fetching needs to
+             * know.
+             */
+            computedViews: Object.entries(schemas)
+              .filter(([, schema]) => schema?.['x-computed'] === true)
+              .map(([view]) => view),
             customToolsLine: module.systemPrompt.mcpToolsLine,
           };
         } catch (err) {

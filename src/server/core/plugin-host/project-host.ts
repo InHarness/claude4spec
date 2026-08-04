@@ -25,7 +25,6 @@ import type {
   EntityDiff,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
   SnapshotData,
 } from '../../serialization/types.js';
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
@@ -282,8 +281,8 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   // ─── M17 snapshot helpers ────────────────────────────────────────────────
 
-  snapshot(type: string, entity: unknown, ctx: SerializeContext): SnapshotData {
-    return snapshotEntity(this, type, entity, ctx);
+  snapshot(type: string, entity: unknown, reader: RawEntityReader): SnapshotData {
+    return snapshotEntity(this, type, entity, reader);
   }
 
   restore(type: string, data: SnapshotData, ctx: RestoreContext): RestoreResult {

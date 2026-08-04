@@ -1,12 +1,9 @@
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 import type {
   EntityDiff,
-  EntitySerializer,
-  JsonSchema,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
-  ViewKind,
+  SerializationContribution,
 } from '../../serialization/types.js';
 import type { UiViewParam, UiViewParamLocation } from '../../../shared/entities.js';
 
@@ -64,35 +61,6 @@ function trimItem(entity: RawEntity) {
     tags: entity.tags,
   };
 }
-
-const PARAM_OBJECT_SCHEMA: JsonSchema = {
-  type: 'object',
-  required: ['name', 'in'],
-  properties: {
-    name: { type: 'string' },
-    in: { type: 'string', enum: ['path', 'query', 'hash'] },
-    type: { type: 'string' },
-    required: { type: 'boolean' },
-    default: { type: 'string' },
-    description: { type: 'string' },
-  },
-  additionalProperties: false,
-};
-
-const SINGLE_ELEMENT_SCHEMA: JsonSchema = {
-  type: 'object',
-  required: ['type', 'slug', 'name', 'params', 'tags'],
-  properties: {
-    type: { const: 'ui-view' },
-    slug: { type: 'string' },
-    name: { type: 'string' },
-    url: { type: ['string', 'null'] },
-    description: { type: ['string', 'null'] },
-    params: { type: 'array', items: PARAM_OBJECT_SCHEMA },
-    designSystemSlug: { type: ['string', 'null'] },
-    tags: { type: 'array', items: { type: 'string' } },
-  },
-};
 
 // ─── M17 Snapshot shape (entities/ui-view.md `uvsn0sho`) ────────────────────
 
@@ -253,71 +221,38 @@ function uiViewRestore(data: unknown, ctx: RestoreContext): RestoreResult {
   };
 }
 
-export const uiViewSerializer: EntitySerializer<RawEntity> = {
-  type: 'ui-view',
-  // v0.1.59: bumped 1.0.0 → 1.1.0 (additive — designSystemSlug). Forward-compat:
-  // future linked_components[] (ui-component entity) will be 1.2.0 (1.1.0 taken).
-  version: '1.1.0',
+export const uiViewSerializer: SerializationContribution<RawEntity> = {
+  views: {
+    inline_mention: (entity) => ({
+      type: 'ui-view',
+      slug: entity.slug,
+      label: (entity.data.name as string) ?? entity.slug,
+      url: (entity.data.url as string | null) ?? null,
+      href: `/ui-views/${entity.slug}`,
+    }),
 
-  inlineMention: (entity) => ({
-    type: 'ui-view',
-    slug: entity.slug,
-    label: (entity.data.name as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    href: `/ui-views/${entity.slug}`,
-  }),
+    single_element: (entity) => baseSingle(entity),
 
-  singleElement: (entity) => baseSingle(entity),
+    element_list_item: (entity) => trimItem(entity),
 
-  elementListItem: (entity) => trimItem(entity),
+    tagged_list_item: (entity) => trimItem(entity),
 
-  taggedListItem: (entity) => trimItem(entity),
-
-  detail: (entity, ctx: SerializeContext) => {
-    const base = baseSingle(entity);
-    const references = ctx.reader.findSectionReferences('ui-view', entity.slug).map((r) => ({
-      anchor: r.anchor,
-      pagePath: r.pagePath,
-      headingText: r.headingText,
-      relation: r.relation,
-    }));
-    return {
-      ...base,
-      _references: references,
-    };
-  },
-
-  schema: (view: ViewKind): JsonSchema => {
-    if (view === 'single_element' || view === 'detail') return SINGLE_ELEMENT_SCHEMA;
-    if (view === 'inline_mention') {
+    detail: (entity, reader) => {
+      const base = baseSingle(entity);
+      const references = reader.findSectionReferences('ui-view', entity.slug).map((r) => ({
+        anchor: r.anchor,
+        pagePath: r.pagePath,
+        headingText: r.headingText,
+        relation: r.relation,
+      }));
       return {
-        type: 'object',
-        required: ['type', 'slug', 'label', 'href'],
-        properties: {
-          type: { const: 'ui-view' },
-          slug: { type: 'string' },
-          label: { type: 'string' },
-          url: { type: ['string', 'null'] },
-          href: { type: 'string' },
-        },
+        ...base,
+        _references: references,
       };
-    }
-    return {
-      type: 'object',
-      required: ['type', 'slug', 'name', 'paramCount', 'tags'],
-      properties: {
-        type: { const: 'ui-view' },
-        slug: { type: 'string' },
-        name: { type: 'string' },
-        url: { type: ['string', 'null'] },
-        description: { type: ['string', 'null'] },
-        paramCount: { type: 'number' },
-        tags: { type: 'array', items: { type: 'string' } },
-      },
-    };
+    },
   },
 
-  // ─── M17 ───
+  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   snapshot: (entity) => buildSnapshot(entity),
   restore: uiViewRestore,
   diff: uiViewDiff,

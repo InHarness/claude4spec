@@ -17,9 +17,9 @@ import type {
   EntityDiff,
   RestoreContext,
   RestoreResult,
-  SerializeContext,
   SnapshotData,
 } from './types.js';
+import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SnapshotNotImplementedError } from './types.js';
 import type { RawDeltaEntityChange } from '../../shared/entities.js';
 import {
@@ -50,13 +50,13 @@ export function snapshotEntity(
   host: PluginHost,
   type: string,
   entity: unknown,
-  ctx: SerializeContext
+  reader: RawEntityReader
 ): SnapshotData {
   const module = host.getEntity(type);
   if (!module) throw new SnapshotNotImplementedError(type);
   const fn = module.serializer.snapshot;
   if (!fn) throw new SnapshotNotImplementedError(type);
-  return attachSystemFields(fn(entity, ctx), stampOf(entity));
+  return attachSystemFields(fn(entity, reader), stampOf(entity));
 }
 
 /**

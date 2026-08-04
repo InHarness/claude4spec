@@ -1,14 +1,9 @@
 import { isRawEntityType, type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
-import type { ViewKind } from '../../server/serialization/types.js';
+// 0.2.9: one vocabulary, declared beside `ViewKind`. The CLI keeps its eager
+// check — it can fail before opening a project — but no longer keeps its own
+// copy of the list to fall out of date with the core's guard.
+import { VIEW_KINDS, type ViewKind } from '../../server/serialization/types.js';
 import { CliError } from './errors.js';
-
-const VIEW_KINDS: readonly ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
 
 /** Accepts both 'database-table' (canonical) and 'database_table' (spec-alias). */
 export function normalizeEntityType(raw: string): RawEntityType {
