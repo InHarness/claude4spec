@@ -1,22 +1,44 @@
 /**
- * 0.2.2 (brief items 7/8) — `EntityWriter` collapses seven per-type methods into
- * ONE generic `upsert(type, …)` dispatched by `host.getEntityService(type)` and
- * driven by shape.
+ * 0.2.2 (brief items 7/8) collapsed seven per-type methods into ONE generic
+ * `upsert(type, …)` dispatched by `host.getEntityService(type)` and driven by
+ * shape. 0.2.9 (brief item 6) finishes the job: the service dispatch becomes a
+ * PREFERENCE rather than the contract, and a type that declares `data.schema`
+ * but ships no service is written by the host itself.
  *
- * Two behaviours here are the actual point of the change, not incidental:
- *   - a type the host has NEVER heard of gets a write door as long as it
- *     registered a service (before, only the hardcoded seven could be restored);
- *   - a type with NO service is a reported SKIP, not a throw.
+ * What these tests pin, in order of how much they matter:
+ *   - a serviceless type is WRITTEN, not skipped — 0.2.2's "active but
+ *     unwritable" state is gone;
+ *   - a type WITH a service still goes through it, because a service knows
+ *     things the declaration does not;
+ *   - the one surviving `null` means "type not active here", and nothing else;
+ *   - a type the host has never heard of gets the same door as a built-in.
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { HostEntityWriter } from './entity-writer.js';
 import { DomainError } from './tags.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { TagsService } from './tags.js';
 
+/** The projection `generateProjectionDDL` would emit for the `widget` fixture. */
+function makeDb(): Database.Database {
+  const db = new Database(':memory:');
+  db.exec(`
+    CREATE TABLE widget (slug TEXT NOT NULL PRIMARY KEY, label TEXT NOT NULL);
+    CREATE TABLE entity_tag (
+      entity_type TEXT NOT NULL, entity_slug TEXT NOT NULL, tag_slug TEXT NOT NULL,
+      UNIQUE(entity_type, entity_slug, tag_slug)
+    );
+  `);
+  return db;
+}
+
 function hostWith(services: Record<string, unknown>): PluginHost {
   return {
+    // No modules by default: these cases are about SERVICE resolution, so the
+    // serviceless door must stay out of the way. `hostWithModules` below opts in.
+    getEntity: () => null,
     getEntityService: (type: string) => (services[type] ?? null) as never,
     requireService: (type: string) => {
       const s = services[type];
@@ -106,22 +128,139 @@ describe('HostEntityWriter.upsert — generic dispatch', () => {
   });
 });
 
-describe('HostEntityWriter — deprecated per-type shims', () => {
-  it('delegates to the generic path', () => {
-    // `upsertEndpoint`/`upsertDto` are gone as of Tier B — their only callers
-    // were those two types' restore slots, which moved into the envelope and go
-    // through the generic `upsert`. The five surviving shims behave the same.
-    const upsert = vi.fn(() => ({ entity: { slug: 't1' }, op: 'created' as const }));
-    const writer = new HostEntityWriter(hostWith({ 'database-table': { upsert } }), tags);
-    expect(writer.upsertDatabaseTable('t1', {} as never, 'user').op).toBe('created');
-    expect(upsert).toHaveBeenCalledOnce();
+describe('HostEntityWriter.upsert — the serviceless door (0.2.9, brief item 6)', () => {
+  const widgetModule = {
+    type: 'widget',
+    payloadVersion: 1,
+    data: { schema: { label: { kind: 'string' as const, required: true } } },
+  };
+
+  function hostWithModules(
+    services: Record<string, unknown>,
+    modules: Record<string, unknown>,
+  ): PluginHost {
+    const base = hostWith(services) as unknown as Record<string, unknown>;
+    return { ...base, getEntity: (type: string) => modules[type] ?? null } as unknown as PluginHost;
+  }
+
+  it('writes a type that declares data but contributes NO service', () => {
+    // The state this removes: 0.2.2 made "active but unwritable" reachable. Such
+    // a type could be read, indexed, searched and diffed, then silently dropped
+    // by restore — the one operation that puts data back.
+    const db = makeDb();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      tags,
+      {},
+      { db, versions: null },
+    );
+
+    const result = writer.upsert('widget', 'w1', { label: 'hello' }, 'user');
+    expect(result?.op).toBe('created');
+    expect(db.prepare('SELECT label FROM widget WHERE slug = ?').get('w1')).toEqual({
+      label: 'hello',
+    });
   });
 
-  it('still THROWS on a missing service, unlike the generic path', () => {
-    // Their callers are pre-0.2.2 restore slots with no null branch: handing them
-    // null would read as "written" and lose the entity silently.
-    const writer = new HostEntityWriter(hostWith({}), tags);
-    expect(() => writer.upsertDatabaseTable('t', {} as never, 'user')).toThrow(DomainError);
+  it('PREFERS the service when the type has one — the door is a fallback, not an override', () => {
+    // Not merely an ordering preference: a service owns domain validation and
+    // derived fields the declaration does not describe, so bypassing it where it
+    // exists would write a row the type itself would never have written.
+    const db = makeDb();
+    const upsert = vi.fn(() => ({ entity: { slug: 'w1' }, op: 'updated' as const }));
+    const writer = new HostEntityWriter(
+      hostWithModules({ widget: { upsert } }, { widget: widgetModule }),
+      tags,
+      {},
+      { db, versions: null },
+    );
+
+    expect(writer.upsert('widget', 'w1', { label: 'x' }, 'user')?.op).toBe('updated');
+    expect(upsert).toHaveBeenCalledOnce();
+    expect(db.prepare('SELECT COUNT(*) AS c FROM widget').get()).toEqual({ c: 0 });
+  });
+
+  it('still reports a SKIP for a type that is not active at all', () => {
+    // The one surviving null case. "Deactivated, or carried by a bundle this
+    // installation never had" must degrade to "not restored", never to "the
+    // whole restore died".
+    const writer = new HostEntityWriter(hostWithModules({}, {}), tags, {}, {
+      db: makeDb(),
+      versions: null,
+    });
+    expect(writer.upsert('ghost', 'g', {}, 'user')).toBeNull();
+  });
+
+  it('WARNS rather than silently skipping when the writer has no projection deps', () => {
+    // An active, schema-declaring type reaching the null branch is a wiring bug,
+    // not a data condition — and it would otherwise read exactly like a
+    // deactivated type.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const writer = new HostEntityWriter(hostWithModules({}, { widget: widgetModule }), tags);
+    expect(writer.upsert('widget', 'w1', { label: 'x' }, 'user')).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('without projection deps'));
+    warn.mockRestore();
+  });
+
+  it('assigns tags for a serviceless type — existence is asked of the ROW', () => {
+    // `host.entityExists` answers through the entity-SERVICE registry, so for a
+    // serviceless type it says `false` no matter what is in the table, and
+    // `syncTags` returned without assigning. Every such entity came out of the
+    // rebuild with zero tags (the rebuild clears `entity_tag` for the types it
+    // is about to refill), and the next `persist` wrote that empty list back
+    // into the file — destroying the tags at their source.
+    const db = makeDb();
+    const assignTags = vi.fn();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      { assignTags } as unknown as TagsService,
+      {},
+      { db, versions: null },
+    );
+
+    writer.upsert('widget', 'w1', { label: 'x' }, 'user');
+    writer.syncTags('widget' as never, 'w1', ['t1', 't2']);
+    expect(assignTags).toHaveBeenCalledWith('widget', 'w1', ['t1', 't2']);
+  });
+
+  it('still declines to tag an entity that was never written', () => {
+    const assignTags = vi.fn();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      { assignTags } as unknown as TagsService,
+      {},
+      { db: makeDb(), versions: null },
+    );
+    writer.syncTags('widget' as never, 'ghost', ['t1']);
+    expect(assignTags).not.toHaveBeenCalled();
+  });
+
+  it('deletes a serviceless type through the host projection door', () => {
+    // Item 6 closed the silent drop on the create/update half; without this it
+    // stayed wide open on the delete half, so release restore reported `noop`
+    // while the entity survived.
+    const db = makeDb();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      tags,
+      {},
+      { db, versions: null },
+    );
+    writer.upsert('widget', 'w1', { label: 'x' }, 'user');
+    expect(writer.delete('widget' as never, 'w1', 'user')).toEqual({ deleted: true });
+    expect(db.prepare('SELECT COUNT(*) AS c FROM widget').get()).toEqual({ c: 0 });
+  });
+
+  it('rejects a payload the declaration forbids instead of writing a broken row', () => {
+    const db = makeDb();
+    const writer = new HostEntityWriter(
+      hostWithModules({}, { widget: widgetModule }),
+      tags,
+      {},
+      { db, versions: null },
+    );
+    expect(() => writer.upsert('widget', 'w1', {}, 'user')).toThrow(DomainError);
+    expect(db.prepare('SELECT COUNT(*) AS c FROM widget').get()).toEqual({ c: 0 });
   });
 });
 

@@ -18,31 +18,18 @@
  * plugin-contributed type the same write door as a built-in one.
  */
 
-import type {
-  Ac,
-  AcCreateInput,
-  ChangedBy,
-  DatabaseTable,
-  DatabaseTableCreateInput,
-  DesignSystem,
-  DesignSystemCreateInput,
-  Diagram,
-  DiagramCreateInput,
-  Dto,
-  DtoCreateInput,
-  Endpoint,
-  EndpointCreateInput,
-  EndpointDtoLink,
-  EndpointDtoRelation,
-  UiView,
-  UiViewCreateInput,
-} from '../../shared/entities.js';
+import type { ChangedBy } from '../../shared/entities.js';
 import type { EntityWriter, UpsertResult } from '../serialization/writer.js';
 import type { SystemStamp } from '../serialization/system-fields.js';
 import type { PluginHost, WriteOpts } from '../core/plugin-host/types.js';
 import type { RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { TagsService } from './tags.js';
-import { DomainError } from './tags.js';
+import {
+  projectionRowExists,
+  removeProjectionRow,
+  upsertProjectionRow,
+  type ProjectionWriteDeps,
+} from '../db/projection-write.js';
 
 
 /**
@@ -108,6 +95,12 @@ export class HostEntityWriter implements EntityWriter {
     private host: PluginHost,
     private tags: TagsService,
     private readonly opts: { capture?: boolean; stamp?: SystemStamp } = {},
+    /**
+     * 0.2.9 — what the host needs to write a serviceless type's projection
+     * itself. Optional so a hand-built test writer need not supply it; every
+     * production construction site does.
+     */
+    private readonly projection: ProjectionWriteDeps | null = null,
   ) {
     this.mutateOpts = {
       capture: opts.capture ?? true,
@@ -127,7 +120,7 @@ export class HostEntityWriter implements EntityWriter {
    * into the next one.
    */
   withStamp(stamp: SystemStamp): HostEntityWriter {
-    return new HostEntityWriter(this.host, this.tags, { ...this.opts, stamp });
+    return new HostEntityWriter(this.host, this.tags, { ...this.opts, stamp }, this.projection);
   }
 
   // ─── the one generic write door ───────────────────────────────────────────
@@ -139,82 +132,102 @@ export class HostEntityWriter implements EntityWriter {
     actor: ChangedBy,
   ): UpsertResult<T> | null {
     const service = this.host.getEntityService(type);
-    // Structural, not enumerated: no service — an inactive type, or one that
-    // contributed no `backend.service` slot — means no write door. The caller
-    // reports a skip; this is NOT an error.
-    if (!service?.upsert) return null;
-    const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
-    return pickEntity<T>(result, type);
-  }
-
-  // ─── deprecated per-type shims (see the interface for why they survive) ────
-
-  upsertDatabaseTable(slug: string, input: DatabaseTableCreateInput, actor: ChangedBy): UpsertResult<DatabaseTable> {
-    return this.upsertOrThrow<DatabaseTable>('database-table', slug, input, actor);
-  }
-  upsertUiView(slug: string, input: UiViewCreateInput, actor: ChangedBy): UpsertResult<UiView> {
-    return this.upsertOrThrow<UiView>('ui-view', slug, input, actor);
-  }
-  upsertAc(slug: string, input: AcCreateInput, actor: ChangedBy): UpsertResult<Ac> {
-    return this.upsertOrThrow<Ac>('ac', slug, input, actor);
-  }
-  upsertDesignSystem(slug: string, input: DesignSystemCreateInput, actor: ChangedBy): UpsertResult<DesignSystem> {
-    return this.upsertOrThrow<DesignSystem>('design-system', slug, input, actor);
-  }
-  upsertDiagram(slug: string, input: DiagramCreateInput, actor: ChangedBy): UpsertResult<Diagram> {
-    return this.upsertOrThrow<Diagram>('diagram', slug, input, actor);
-  }
-
-  /**
-   * The per-type shims keep the OLD contract of throwing on a missing service:
-   * their callers are pre-0.2.2 restore slots that have no `null` branch, so
-   * handing them `null` would read as "written" and lose the entity silently.
-   */
-  private upsertOrThrow<T>(
-    type: string,
-    slug: string,
-    input: unknown,
-    actor: ChangedBy,
-  ): UpsertResult<T> {
-    const result = this.upsert<T>(type, slug, input, actor);
-    if (!result) {
-      throw new DomainError('VALIDATION', `entity service for type '${type}' not registered`);
+    if (service?.upsert) {
+      const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
+      return pickEntity<T>(result, type);
     }
-    return result;
+
+    /**
+     * 0.2.9 (brief item 6) — no service is no longer the end of the road.
+     *
+     * A type that declares `data.schema` has a generated projection, and the
+     * host can write it directly. Preferring the service when present is not a
+     * fallback ordering but a correctness one: a service owns domain validation
+     * and derived fields the declaration does not describe, so bypassing it
+     * where it exists would write a row the type would not have written.
+     */
+    const module = this.host.getEntity(type);
+    if (module?.data?.schema && this.projection) {
+      return upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
+    }
+
+    /**
+     * The only remaining `null`: the type is not active in this project at all
+     * (deactivated, or carried by a bundle this installation never had). The
+     * caller reports a skip; this is NOT an error.
+     *
+     * A module that IS active and declares a schema but reached here means the
+     * writer was built without projection deps — a wiring bug, not a data
+     * condition, so it is worth saying out loud rather than degrading to a skip
+     * that reads identically to a deactivated type.
+     */
+    if (module?.data?.schema && !this.projection) {
+      console.warn(
+        `[entity-writer] ${type}/${slug}: type declares data.schema but this writer ` +
+          `was constructed without projection deps — falling back to a skip`,
+      );
+    }
+    return null;
   }
 
   // ─── tags ─────────────────────────────────────────────────────────────────
 
   syncTags(type: RawEntityType, slug: string, tags: string[]): void {
-    // M29: slug is the sole identity — assign directly. The caller's upsert has
-    // already ensured the entity row exists.
-    if (!this.host.entityExists(type, slug)) return;
+    /**
+     * Existence is asked of the ROW, not of the service registry.
+     *
+     * `host.entityExists` answers through `getEntityService(type)?.getBySlug`, so
+     * for a serviceless type it returns `false` no matter what is in the table —
+     * and this method then returned without assigning anything. Every such entity
+     * came out of the rebuild with ZERO tags (the rebuild deletes `entity_tag`
+     * rows for the types it is about to refill), and the next `persist` wrote
+     * that empty list back into the file, destroying the tags at their source.
+     *
+     * The service answer is kept as the fast path — it is the same question — and
+     * the projection row is consulted only when there is no service to ask.
+     */
+    if (!this.entityExists(type, slug)) return;
     this.tags.assignTags(type, slug, tags);
+  }
+
+  private entityExists(type: string, slug: string): boolean {
+    if (this.host.getEntityService(type)?.getBySlug) return this.host.entityExists(type, slug);
+    const module = this.host.getEntity(type);
+    if (!module?.data?.schema || !this.projection) return false;
+    return projectionRowExists(this.projection, module, slug);
   }
 
   /**
    * 0.2.2: was a seven-arm `switch (type)` whose arms each resolved one named
-   * service class and then did the identical two calls. Now one generic path — a
-   * plugin type deletes exactly as well as a built-in one, and a type with no
-   * service reports `deleted: false` rather than falling into a silent `default:`.
+   * service class and then did the identical two calls. 0.2.9: the service is
+   * preferred but no longer required — a serviceless type deletes through the
+   * host's own projection door, for the same reason it writes through one.
    */
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {
     const service = this.host.getEntityService(type);
-    if (!service?.getBySlug || !service.remove) {
-      // Distinguish "no delete door" from "nothing to delete". Both return
-      // deleted:false, but only the first is a problem the operator must see:
-      // the pre-0.2.2 code THREW here and the caller turned that into a
-      // `delete-restore failed: …` warning in the restore report. Returning a
-      // bare false would let a restore that should have deleted an entity report
-      // a clean `noop` while the entity survives in the index and on disk.
-      console.warn(
-        `[entity-writer] cannot delete ${type}/${slug}: entity service for type ` +
-          `'${type}' is not registered or exposes no getBySlug/remove`,
-      );
-      return { deleted: false };
+    if (service?.getBySlug && service.remove) {
+      if (!service.getBySlug(slug)) return { deleted: false };
+      service.remove(slug, actor);
+      return { deleted: true };
     }
-    if (!service.getBySlug(slug)) return { deleted: false };
-    service.remove(slug, actor);
-    return { deleted: true };
+
+    /**
+     * Without this, item 6 closed the silent drop on the create/update half and
+     * left it wide open on the delete half: `ReleaseService.restoreEntity`'s
+     * delete branch reported `op: 'noop'` with no warnings while the entity
+     * survived, telling the user a restore succeeded that had not.
+     */
+    const module = this.host.getEntity(type);
+    if (module?.data?.schema && this.projection) {
+      return removeProjectionRow(this.projection, module, slug, actor, this.mutateOpts);
+    }
+
+    // Distinguish "no delete door" from "nothing to delete". Both return
+    // deleted:false, but only the first is a problem the operator must see.
+    console.warn(
+      `[entity-writer] cannot delete ${type}/${slug}: type is not active in this ` +
+        `project (no service and no declared data.schema)`,
+    );
+    return { deleted: false };
   }
 }

@@ -525,7 +525,7 @@ export class RawEntityReader {
       if (typeof value !== 'string') continue;
       const trimmed = value.trimStart();
       if (!trimmed.startsWith('[') && !trimmed.startsWith('{')) continue;
-      data[key] = safeJsonArray(value);
+      data[key] = safeJsonContainer(value);
     }
 
     const createdAt = toIsoMs(row.created_at);
@@ -564,10 +564,27 @@ export class RawEntityReader {
   }
 }
 
-function safeJsonArray(raw: string): unknown[] {
+/**
+ * Decode a JSON container column back to the value that was written.
+ *
+ * 0.2.9: this used to be `safeJsonArray`, returning `[]` for anything that was
+ * not an array — including a well-formed JSON OBJECT. That was invisible while
+ * every JSON column in the six built-in types held an array, and became data
+ * loss the moment the generated write path (`db/projection-write.ts`) started
+ * storing `object` and `record` fields, which the logical schema has always
+ * allowed: the column round-tripped as `[]`, and the next `EntityStore.persist`
+ * wrote that `[]` back into the entity file, destroying the field at its source.
+ *
+ * Arrays and objects are both returned as parsed. A malformed value still
+ * degrades to `[]` rather than throwing — an unreadable column must not take
+ * down a list query, and the rebuild reports the file through its own warning.
+ */
+function safeJsonContainer(raw: string): unknown {
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed)) return parsed;
+    if (parsed !== null && typeof parsed === 'object') return parsed;
+    return [];
   } catch {
     return [];
   }
