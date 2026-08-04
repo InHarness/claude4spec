@@ -221,3 +221,39 @@ describe('0.2.4 — the file owns the timestamps', () => {
     expect(hitsIn(serializers, /\bcreatedAt\b|\bupdatedAt\b/)).toEqual([]);
   });
 });
+
+/**
+ * Where the payload-upgrade chain may be run from.
+ *
+ * The one-time-rewrite guarantee is not enforced by bookkeeping — it holds
+ * because every call site handles a WHOLE entity payload and rewrites the file
+ * once afterwards. A partial read that ran the chain (tier C's keyed-collection
+ * windows are the obvious future candidate) would either re-run migrations per
+ * window or rewrite a file from a fragment. Neither fails loudly.
+ *
+ * So the invariant is stated as a scope rule instead: the runner is reachable
+ * only from the entrances that own a whole payload. Adding a fifth is a
+ * deliberate act that edits this list.
+ */
+describe('payload upgrades run only at the whole-entity entrances', () => {
+  const ALLOWED = [
+    // The chain and its own tests.
+    'serialization/payload-upgrade.ts',
+    // M29 — load and full rebuild from disk.
+    'services/entity-indexer.ts',
+    // M17 — release snapshots, bundle import, and the diff that compares them.
+    'services/release.ts',
+    // Per-entity version restore. See the clarification patch filed against the brief.
+    'services/versions.ts',
+  ];
+
+  it('nothing outside the declared entrances calls upgradePayload', () => {
+    const offenders = hostSourceFiles()
+      .filter((f) => !/\.test\.tsx?$/.test(f))
+      .filter((f) => !ALLOWED.some((allowed) => f.endsWith(allowed)))
+      .filter((f) => codeLines(f).some((l) => /\bupgradePayload\s*\(/.test(l.text)))
+      .map((f) => path.relative(SRC, f));
+
+    expect(offenders, `upgradePayload called outside the declared entrances`).toEqual([]);
+  });
+});

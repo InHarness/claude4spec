@@ -19,7 +19,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { applyProjection } from './projection.js';
-import { upsertProjectionRow, type WritableModule } from './projection-write.js';
+import { syncProjectionTables, upsertProjectionRow, type WritableModule } from './projection-write.js';
 import { DomainError } from '../services/tags.js';
 
 const WRITE_OPTS = { capture: false, writeFile: false };
@@ -205,6 +205,12 @@ describe('upsertProjectionRow — the declaration is enforced, not advisory', ()
     expect(() =>
       upsertProjectionRow({ db, versions: null }, keyed, 'w1', { label: 'x', cells: [] }, 'user', WRITE_OPTS),
     ).toThrow(/keyed collection/);
+
+    // And through the SERVICE door too — the loop `HostEntityWriter` calls
+    // after a service has written its own row. Two doors into the same rule is
+    // exactly how one of them ends up quietly giving a keyed collection the
+    // value treatment.
+    expect(() => syncProjectionTables(db, keyed, 'w1', { cells: [] })).toThrow(/keyed collection/);
   });
 });
 

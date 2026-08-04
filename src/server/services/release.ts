@@ -40,6 +40,9 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
+import { upgradePayload } from '../serialization/payload-upgrade.js';
+import { payloadVersionOfCapture } from '../serialization/payload-version.js';
+import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
 import { readConfig, builtinPagesRoot } from '../config.js';
 import { slugify } from '../../shared/slug.js';
@@ -1216,8 +1219,19 @@ export class ReleaseService {
       const a = aMap.get(key);
       const b = bMap.get(key);
       const sample = (a ?? b)!;
-      const aData = a && a.op !== 'delete' ? a.data : null;
-      const bData = b && b.op !== 'delete' ? b.data : null;
+      const aRaw = a && a.op !== 'delete' ? a.data : null;
+      const bRaw = b && b.op !== 'delete' ? b.data : null;
+      // Both sides brought to the CURRENT shape first. Two captures either side
+      // of a `payloadVersion` bump describe the same entity in different
+      // spellings; diffing them raw reports every renamed key as a change.
+      const aData =
+        aRaw === null
+          ? null
+          : this.upgradeCapture(sample.type, aRaw, fromSnap.serializer_versions[sample.type] ?? null);
+      const bData =
+        bRaw === null
+          ? null
+          : this.upgradeCapture(sample.type, bRaw, toSnap.serializer_versions[sample.type] ?? null);
       const diff = this.host.diff(sample.type, aData, bData, sample.slug);
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
@@ -1271,6 +1285,38 @@ export class ReleaseService {
    * new entity_version row with `release_id = NULL`. Idempotent (decyzja 11):
    * re-running restore on already-matching state yields op='noop'.
    */
+  /**
+   * Bring a CAPTURED payload to the type's current shape before anything reads it.
+   *
+   * A capture is a payload like any other, written under whatever version the
+   * type was at when the snapshot was taken — so restoring a release cut before
+   * a `payloadVersion` bump has to run the same chain a stale file does. The
+   * brief names M17 as a consumer alongside M29 for exactly this reason.
+   *
+   * It matters as much for the DIFF as for the restore. Without it, an
+   * old-shape capture compared against a current entity differs in every renamed
+   * key, so a release cut before the bump reports every entity as `modified`
+   * forever — a diff that is loud, wrong, and never settles.
+   *
+   * Failure degrades to the ORIGINAL payload rather than aborting: one
+   * unmigratable entity must not take a whole release restore down with it, and
+   * the downstream write path reports its own failure honestly.
+   */
+  private upgradeCapture(type: string, data: SnapshotData, serializerVersion: string | null | undefined): SnapshotData {
+    const module = this.host.getEntity(type);
+    if (!module) return data;
+    try {
+      const result = upgradePayload(module, data, payloadVersionOfCapture(serializerVersion));
+      for (const warning of result.warnings) {
+        console.warn(`[release] ${type}: ${warning}`);
+      }
+      return result.data;
+    } catch (err) {
+      console.warn(`[release] ${type}: capture could not be upgraded — ${(err as Error).message}`);
+      return data;
+    }
+  }
+
   restoreEntity(input: RestoreEntityInput, actor: ChangedBy = 'user'): RestoreEntityResult {
     const releaseRow = this.findReleaseRow(input.releaseId);
     if (!releaseRow) throw new DomainError('NOT_FOUND', `release '${input.releaseId}' not found`);
@@ -1299,7 +1345,11 @@ export class ReleaseService {
       };
     }
 
-    const targetSnapshot = safeJsonParse(targetRow.data);
+    const targetSnapshot = this.upgradeCapture(
+      input.type,
+      safeJsonParse(targetRow.data),
+      targetRow.serializer_version,
+    );
     // Compare to current state — if identical, no-op.
     const current = this.rawReader.getEntity(input.type, input.slug);
     if (current) {
@@ -1692,8 +1742,11 @@ export class ReleaseService {
           if (!rows) continue;
           for (const row of rows) {
             if (row.op === 'delete') continue;
-            this.host.restore(type, row.data, restoreCtx);
-            entities.push({ type, slug: row.slug, op: row.op, data: row.data });
+            // A bundle can be older than this installation; its manifest records
+            // the version each type was captured at.
+            const data = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
+            this.host.restore(type, data, restoreCtx);
+            entities.push({ type, slug: row.slug, op: row.op, data });
           }
         }
       }

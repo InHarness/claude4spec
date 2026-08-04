@@ -12,6 +12,9 @@ import type { EntityStore } from './entity-store.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { RestoreContext } from '../serialization/types.js';
 import { stripSystemFields } from '../serialization/system-fields.js';
+import { upgradePayload } from '../serialization/payload-upgrade.js';
+import { payloadVersionOfCapture } from '../serialization/payload-version.js';
+import type { SnapshotData } from '../serialization/types.js';
 import type { RawEntityReader, RawEntityType } from '../discovery/raw-entity-reader.js';
 
 export type VersionOp = 'create' | 'update' | 'delete';
@@ -70,6 +73,29 @@ export class VersionService {
    * release restore uses), then captures a NEW `update` version so the
    * restore itself is an append-only, undoable action.
    */
+  /**
+   * Bring a captured payload to the type's current shape. Failure degrades to
+   * the original rather than aborting — the write path reports its own failure,
+   * and a restore that dies here leaves the user with no way forward at all.
+   */
+  private upgradeCapture(
+    host: PluginHost,
+    type: string,
+    data: SnapshotData,
+    serializerVersion: string | null | undefined,
+  ): SnapshotData {
+    const module = host.getEntity(type);
+    if (!module) return data;
+    try {
+      const result = upgradePayload(module, data, payloadVersionOfCapture(serializerVersion));
+      for (const warning of result.warnings) console.warn(`[versions] ${type}: ${warning}`);
+      return result.data;
+    } catch (err) {
+      console.warn(`[versions] ${type}: capture could not be upgraded — ${(err as Error).message}`);
+      return data;
+    }
+  }
+
   restore(type: RawEntityType, entitySlug: string, version: number, actor: ChangedBy): VersionListItem {
     if (!this.snapshotDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
     if (!this.restoreDeps) throw new DomainError('VALIDATION', 'version restore unavailable before boot completes');
@@ -115,7 +141,25 @@ export class VersionService {
      * writer, the service mints `updatedAt = now` and preserves `created_at`
      * from the existing row, which is exactly the user-mutation rule.
      */
-    host.restore(type, stripSystemFields(target.data), ctx);
+    /**
+     * 0.2.9 — upgrade the capture first.
+     *
+     * The specification names M29 (disk load) and M17 (release snapshots) as the
+     * chain's consumers and does not mention per-entity version restore, so this
+     * is a deliberate reading rather than a quoted rule: a row captured before a
+     * `payloadVersion` bump holds an old-shape payload, and handing it to a
+     * field-keyed write path would drop every renamed key. A payload already at
+     * the current version short-circuits, so applying it costs nothing, and the
+     * alternative is the one path that can admit a stale shape into the index.
+     * A clarification patch is filed against the brief.
+     */
+    const upgraded = this.upgradeCapture(
+      host,
+      type,
+      stripSystemFields(target.data),
+      target.serializerVersion,
+    );
+    host.restore(type, upgraded, ctx);
     // M29: persist the restored entity's file (host.restore used writeFile:false).
     entityStore.persist(type, entitySlug);
 
