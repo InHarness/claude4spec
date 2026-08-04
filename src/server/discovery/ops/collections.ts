@@ -88,6 +88,21 @@ function requireKeyedCollection(
         : `${type} declares no keyed collection — read it with get_entities instead.`,
     );
   }
+  /**
+   * Registration guarantees two axes, so reaching here without them is a wiring
+   * bug rather than a data condition — but it must still surface as an error
+   * with a name on it. Without this the window builder indexes `bounds[0]!` on
+   * an empty array and dies with a `TypeError` the transport reports as a bare
+   * 500, which says nothing about which type is misdeclared.
+   */
+  if (axesOf(node).length !== 2) {
+    throw invalidArgument(
+      `${type}.${field} is a keyed collection but declares ${axesOf(node).length} axes, not 2 — ` +
+        `it cannot be read as a window`,
+      `this is a declaration bug in the type, not in the call; the plugin must declare exactly two axes.`,
+    );
+  }
+
   return { module: module as ProjectableModule, node };
 }
 
