@@ -1,0 +1,15 @@
+# TypeScript/JS sources are always text.
+#
+# `design-system/serializer.ts` carried a literal NUL byte (a delimiter written as
+# a raw byte rather than an escape) until 0.2.9, and git therefore classified the
+# whole file as binary: its diffs rendered as `Bin <n> -> <m> bytes` with no
+# reviewable content, and grep skipped it silently. The byte is gone, but the
+# next one should not be able to cost a reviewer a diff.
+*.ts  text
+*.tsx text
+*.js  text
+*.jsx text
+*.mjs text
+*.cjs text
+*.json text
+*.md  text
