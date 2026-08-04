@@ -25,6 +25,9 @@ export const acData: DataDeclaration = {
     verifies: {
       kind: 'collection',
       collection: 'value',
+      // Assignment order is not content — two ACs verifying the same set must
+      // snapshot identically regardless of the order they were linked in.
+      unordered: true,
       item: {
         kind: 'object',
         fields: {

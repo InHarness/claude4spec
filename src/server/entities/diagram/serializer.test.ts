@@ -2,9 +2,17 @@ import { describe, expect, it } from 'vitest';
 import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
 import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
+import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 
-const reader = {} as never;
+/**
+ * 0.2.9 — the snapshot is GENERATED, so these assert the generator's output for
+ * diagram's declaration rather than a function diagram ships. What is being
+ * checked is unchanged and is diagram-specific: a source kept verbatim, a
+ * transient `caption` that never reaches the file, the enum's default.
+ */
+const reader = { readCollection: () => [] } as never;
+const snapshot = (e: RawEntity) => snapshotFromSchema(diagramBackendModule, e, reader);
 
 function rawEntity(data: Record<string, unknown>, tags: string[] = []): RawEntity {
   return { type: 'diagram', slug: String(data.slug ?? 'd'), data, tags };
@@ -17,8 +25,8 @@ describe('diagram serializer', () => {
       format: 'mermaid',
       source: 'flowchart TD\n  A-->B',
     };
-    const first = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), reader) as DiagramSnapshot;
-    const second = diagramSerializer.snapshot!(rawEntity(data, ['zeta', 'alpha']), reader) as DiagramSnapshot;
+    const first = snapshot(rawEntity(data, ['zeta', 'alpha'])) as DiagramSnapshot;
+    const second = snapshot(rawEntity(data, ['zeta', 'alpha'])) as DiagramSnapshot;
 
     const firstJson = JSON.stringify(canonicalize(first));
     expect(JSON.stringify(canonicalize(second))).toBe(firstJson);
@@ -31,8 +39,11 @@ describe('diagram serializer', () => {
     expect(first.tags).toEqual(['alpha', 'zeta']);
   });
 
-  it('defaults format to mermaid and tolerates an empty (placeholder) source', () => {
-    const snap = diagramSerializer.snapshot!(rawEntity({ slug: 'empty' }), reader) as DiagramSnapshot;
+  it('fills an absent format and an absent source from their declared defaults', () => {
+    // Both values come from the DECLARATION now (`format` defaults to
+    // 'mermaid', `source` to ''), where they used to come from coercions
+    // written into the snapshot function. Same answers, one source of truth.
+    const snap = snapshot(rawEntity({ slug: 'empty' })) as DiagramSnapshot;
     expect(snap.format).toBe('mermaid');
     expect(snap.source).toBe('');
   });

@@ -23,7 +23,7 @@
     ]
   },
   "ac/ac-the-list-is-ordered/_stamped": true,
-  "design-system.payloadVersion": 1,
+  "design-system.payloadVersion": 2,
   "design-system/smoke-ds": {
     "description": null,
     "groups": [
@@ -32,19 +32,16 @@
         "tier": "primitive",
         "tokens": [
           {
-            "description": null,
             "name": "sm",
             "type": "dimension",
             "value": "4px"
           },
           {
-            "description": null,
             "name": "md",
             "type": "dimension",
             "value": "8px"
           },
           {
-            "description": null,
             "name": "xl",
             "type": "dimension",
             "value": "16px"
@@ -124,24 +121,24 @@
     "tags": []
   },
   "dto/zamowienie-dto/_stamped": true,
-  "endpoint.payloadVersion": 1,
+  "endpoint.payloadVersion": 2,
   "endpoint/get-api-users": {
     "description": null,
-    "linked_dtos": [
+    "linkedDtos": [
       {
-        "dto_slug": "zamowienie-dto",
+        "dto": "error-dto",
+        "relation": "response",
+        "statusCode": 404
+      },
+      {
+        "dto": "user-dto",
+        "relation": "response",
+        "statusCode": 200
+      },
+      {
+        "dto": "zamowienie-dto",
         "relation": "request",
-        "status_code": null
-      },
-      {
-        "dto_slug": "error-dto",
-        "relation": "response",
-        "status_code": 404
-      },
-      {
-        "dto_slug": "user-dto",
-        "relation": "response",
-        "status_code": 200
+        "statusCode": null
       }
     ],
     "method": "GET",
@@ -155,11 +152,11 @@
   "endpoint/get-api-users/_stamped": true,
   "endpoint/post-api-ping": {
     "description": null,
-    "linked_dtos": [],
+    "linkedDtos": [],
     "method": "POST",
     "path": "/api/ping",
     "slug": "post-api-ping",
-    "summary": null,
+    "summary": "",
     "tags": []
   },
   "endpoint/post-api-ping/_stamped": true,

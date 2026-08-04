@@ -124,6 +124,14 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   // detail read.
   ['detail', 'views.detail'],
   ['schema', 'nothing — schemas are derived from data.schema'],
+  // Removed in tier B PR2. A manifest that still carries either one is not
+  // merely out of date: its snapshot would be IGNORED while the host generated a
+  // different payload from the declaration, so the type would keep compiling,
+  // keep registering, and quietly write files in a shape its own code disagrees
+  // with. Rejecting the slot is the only version of this that a plugin author
+  // finds out about.
+  ['snapshot', 'nothing — snapshot is generated from data.schema'],
+  ['restore', 'nothing — restore is generated from data.schema'],
 ];
 
 /**

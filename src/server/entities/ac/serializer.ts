@@ -32,22 +32,6 @@ export interface AcSnapshot {
   tags: string[];
 }
 
-function buildSnapshot(entity: RawEntity): AcSnapshot {
-  const verifies = ((entity.data.verifies as AcVerifyRef[] | undefined) ?? [])
-    .filter((v) => v && typeof v.type === 'string' && typeof v.slug === 'string')
-    .map((v) => ({ type: v.type, slug: v.slug }))
-    .sort((a, b) => `${a.type}/${a.slug}`.localeCompare(`${b.type}/${b.slug}`));
-  return {
-    slug: entity.slug,
-    text: (entity.data.text as string) ?? '',
-    kind: ((entity.data.kind as AcKind) ?? 'requirement') as AcKind,
-    status: ((entity.data.status as AcStatus) ?? 'active') as AcStatus,
-    verifies,
-    description: (entity.data.description as string | null) ?? null,
-    tags: [...entity.tags].sort(),
-  };
-}
-
 function coerceAc(raw: unknown): AcSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   const verifies = Array.isArray(r.verifies)
@@ -96,29 +80,6 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'ac', slug, op: 'modified', changes };
 }
 
-function acRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = data as AcSnapshot;
-  const result = ctx.writer.upsert('ac',
-    snap.slug,
-    {
-      text: snap.text,
-      kind: snap.kind,
-      status: snap.status,
-      verifies: snap.verifies,
-      description: snap.description,
-      slug: snap.slug,
-    },
-    ctx.actor,
-  );
-  if (!result) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'ac' is not available — restore skipped`] };
-  }
-  ctx.writer.syncTags('ac', snap.slug, snap.tags);
-  return { op: result.op, entity: result.entity };
-}
-
 export const acSerializer: SerializationContribution<RawEntity> = {
   views: {
     inline_mention: (entity) => ({
@@ -149,8 +110,5 @@ export const acSerializer: SerializationContribution<RawEntity> = {
     },
   },
 
-  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
-  snapshot: (entity) => buildSnapshot(entity),
-  restore: acRestore,
   diff: acDiff,
 };

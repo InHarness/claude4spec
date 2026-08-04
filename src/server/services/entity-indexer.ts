@@ -35,6 +35,11 @@ import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { HostEntityWriter } from './entity-writer.js';
 import { projectStamp, safeTable } from './system-stamp-projection.js';
 import { readSystemFields } from '../serialization/system-fields.js';
+import {
+  readPayloadVersion,
+  stripPayloadVersion,
+  upgradePayload,
+} from '../serialization/payload-upgrade.js';
 
 export class EntityIndexerService {
   private debounceMs = 300;
@@ -341,6 +346,40 @@ export class EntityIndexerService {
       console.warn(`[entity-indexer] skip ${type}/${slug}: ${(err as Error).message}`);
       return false;
     }
+
+    /**
+     * 0.2.9 — bring an older payload to the current shape BEFORE it reaches the
+     * write path (brief item 12).
+     *
+     * Here and not inside `restore` because an upgrade must not look like a
+     * mutation. This is a pure transform on data; everything downstream is the
+     * write path that already suppresses both things a mutation would do — the
+     * indexer's writer runs with `capture: false` and `versions: null`, so no
+     * `entity_version` row, and `restoreEntity` puts the FILE's stamp on the
+     * writer, so `updatedAt` keeps the value the file carried. Bumping a type's
+     * `payloadVersion` therefore rewrites file shapes without rewriting anyone's
+     * audit history.
+     */
+    let upgraded = false;
+    try {
+      const module = this.host.getEntity(type);
+      if (module) {
+        const result = upgradePayload(module, snap, readPayloadVersion(snap));
+        snap = stripPayloadVersion(result.data);
+        upgraded = result.upgraded;
+        for (const warning of result.warnings) {
+          console.warn(`[entity-indexer] ${type}/${slug}: ${warning}`);
+        }
+      } else {
+        snap = stripPayloadVersion(snap);
+      }
+    } catch (err) {
+      // A payload the chain cannot honestly produce is SKIPPED, not guessed at.
+      // One such entity must not abort the rebuild of its siblings.
+      console.warn(`[entity-indexer] skip ${type}/${slug}: ${(err as Error).message}`);
+      return false;
+    }
+
     try {
       // 0.2.2: `restore` no longer throws when a type has no registered entity
       // service — it returns `{op:'noop'}` so one unwritable type cannot abort a
@@ -371,6 +410,26 @@ export class EntityIndexerService {
     // this stamp on the writer, so a surviving mismatch is the service ignoring
     // it, which is exactly what the warning claims.
     if (stamp) projectStamp(this.db, this.host, type, slug, stamp, { expectServiceWrote: true });
+
+    /**
+     * Rewrite the file ONCE, after the upgraded payload has actually landed.
+     *
+     * Idempotence needs no bookkeeping: `persist` stamps the current
+     * `payloadVersion`, so the next read short-circuits in `upgradePayload` and
+     * this branch is never reached again for this file. Deliberately after the
+     * stamp projection above, so the regenerated file carries the timestamps the
+     * old one did rather than the ones a mid-restore row briefly held.
+     */
+    if (upgraded) {
+      try {
+        this.store.persist(type, slug);
+      } catch (err) {
+        // The index is correct either way; the file is merely still in the old
+        // shape and will be upgraded again next boot. Not worth failing an index.
+        console.warn(`[entity-indexer] ${type}/${slug}: upgraded payload but could not rewrite the file: ${(err as Error).message}`);
+      }
+    }
+
     if (broadcast) this.ws.broadcast({ kind: 'entity:indexed', type, slug, op: 'upsert' });
     return true;
   }

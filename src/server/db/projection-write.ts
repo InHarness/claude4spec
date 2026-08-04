@@ -399,6 +399,48 @@ export function removeProjectionRow(
  * quietly given the value treatment, because the two differ in exactly the case
  * that matters (a key absent from the payload).
  */
+/**
+ * Sync every projected collection the payload actually carries.
+ *
+ * Exported for the SERVICE branch of `HostEntityWriter.upsert`, which is the
+ * hole tier B PR2 opened. A service like `EndpointService.upsert` writes only
+ * its own row; the per-type `restore` slot used to call `syncEndpointDtos`
+ * afterwards, and that slot is what this tier deletes. Without this, a boot
+ * rebuild writes the endpoint row, leaves `endpoint_dto` empty, and the next
+ * `persist` writes the emptied `linkedDtos` back into the entity file — data
+ * loss at the source of truth, from a rebuild that reports success.
+ *
+ * `hasOwnProperty`, not truthiness: a payload that says nothing about a
+ * collection must leave it alone, while one that says `[]` must clear it. A
+ * partial update (`PATCH` with two fields) is the first case; a restore is the
+ * second, and conflating them either loses links or refuses to remove them.
+ *
+ * NOT called on the projection branch — `upsertProjectionRow` already syncs
+ * inside its own transaction, and doing it twice would open a window where the
+ * junction is empty.
+ */
+export function syncProjectionTables(
+  db: Database,
+  module: WritableModule,
+  slug: string,
+  payload: unknown,
+): string[] {
+  const schema = module.data?.schema;
+  if (!schema || payload === null || typeof payload !== 'object') return [];
+  const input = payload as Record<string, unknown>;
+
+  const warnings: string[] = [];
+  const tx = db.transaction(() => {
+    for (const [name, node] of Object.entries(schema)) {
+      if (!hasProjectionTable(node)) continue;
+      if (!Object.prototype.hasOwnProperty.call(input, name)) continue;
+      warnings.push(...syncProjectionTable(db, module, slug, name, node as CollectionNode, input[name]));
+    }
+  });
+  tx();
+  return warnings;
+}
+
 function syncProjectionTable(
   db: Database,
   module: WritableModule,

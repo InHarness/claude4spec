@@ -27,6 +27,7 @@ import type { TagsService } from './tags.js';
 import {
   projectionRowExists,
   removeProjectionRow,
+  syncProjectionTables,
   upsertProjectionRow,
   type ProjectionWriteDeps,
 } from '../db/projection-write.js';
@@ -134,7 +135,27 @@ export class HostEntityWriter implements EntityWriter {
     const service = this.host.getEntityService(type);
     if (service?.upsert) {
       const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
-      return pickEntity<T>(result, type);
+      const picked = pickEntity<T>(result, type);
+      /**
+       * 0.2.9 tier B PR2 — the service wrote its ROW; the host writes the
+       * collections that live in tables of their own.
+       *
+       * A service predates the declaration and only knows the columns it was
+       * written against. `EndpointService.upsert` writes `endpoint`, not
+       * `endpoint_dto`; the junction used to be synced by the per-type `restore`
+       * slot, immediately after this call, and that slot no longer exists. The
+       * responsibility has to land somewhere the DECLARATION drives, or the
+       * first boot rebuild empties the junction and the following `persist`
+       * writes the emptied collection back into the entity file.
+       */
+      const module = this.host.getEntity(type);
+      if (module?.data?.schema && this.projection) {
+        const warnings = syncProjectionTables(this.projection.db, module, slug, input);
+        if (warnings.length) {
+          picked.warnings = [...(picked.warnings ?? []), ...warnings];
+        }
+      }
+      return picked;
     }
 
     /**

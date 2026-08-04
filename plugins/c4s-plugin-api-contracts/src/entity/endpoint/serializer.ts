@@ -9,6 +9,7 @@ import type {
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
 import { findEndpointDtos, syncEndpointDtos, type JunctionCapable } from '../junction/index.js';
 import { ENDPOINT_TYPE } from '../../identity.js';
+import { endpointPayloadV1ToV2 } from './upgrades.js';
 
 interface EndpointDtoRef {
   dtoSlug: string;
@@ -64,27 +65,6 @@ export interface EndpointSnapshot {
     status_code: number | null;
   }>;
   tags: string[];
-}
-
-function buildSnapshot(entity: RawEntity, reader: HostEntityReader): EndpointSnapshot {
-  const dtos = findEndpointDtos(reader.db, entity.slug);
-  return {
-    slug: entity.slug,
-    method: entity.data.method as HttpMethod,
-    path: entity.data.path as string,
-    summary: ((entity.data.summary as string) ?? '') || null,
-    description: (entity.data.description as string | null) ?? null,
-    linked_dtos: dtos
-      .map((d) => ({
-        dto_slug: d.dtoSlug,
-        relation: d.relation as EndpointDtoRelation,
-        status_code: d.statusCode,
-      }))
-      .sort((a, b) => `${a.relation}:${a.dto_slug}:${a.status_code ?? ''}`.localeCompare(
-        `${b.relation}:${b.dto_slug}:${b.status_code ?? ''}`
-      )),
-    tags: [...entity.tags].sort(),
-  };
 }
 
 /** Defensive coercion of pre-M17 legacy rows (Endpoint domain object) to the
@@ -162,46 +142,6 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'endpoint', slug, op: 'modified', changes };
 }
 
-function endpointRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = data as EndpointSnapshot;
-  const upsertResult = ctx.writer.upsert('endpoint',
-    snap.slug,
-    {
-      method: snap.method,
-      path: snap.path,
-      summary: snap.summary ?? '',
-      description: snap.description ?? undefined,
-    },
-    ctx.actor
-  );
-  if (!upsertResult) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'endpoint' is not available — restore skipped`] };
-  }
-  // Sync tags + junction (idempotent)
-  ctx.writer.syncTags('endpoint', snap.slug, snap.tags);
-  // 0.2.2: the join is this package's, not the host's. The host's EntityWriter
-  // no longer has a `syncEndpointDtos` — it does not know the pair exists.
-  const junctionResult = syncEndpointDtos(
-    (ctx.reader.host?.getEntityService?.(ENDPOINT_TYPE) as JunctionCapable | null) ?? null,
-    snap.slug,
-    snap.linked_dtos.map((l) => ({
-      dtoSlug: l.dto_slug,
-      relation: l.relation,
-      statusCode: l.status_code,
-    }))
-  );
-
-  const warnings = junctionResult.warnings.length ? junctionResult.warnings : undefined;
-  const upserted = upsertResult as { op: RestoreResult['op']; entity: unknown };
-  return {
-    op: upserted.op,
-    entity: upserted.entity,
-    ...(warnings ? { warnings } : {}),
-  };
-}
-
 export const endpointSerializer: SerializationContribution<RawEntity> = {
   views: {
     inline_mention: (entity) => ({
@@ -267,10 +207,15 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
     },
   },
 
-  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
-  snapshot: (entity, reader) => buildSnapshot(entity, reader),
-  restore: endpointRestore,
   diff: endpointDiff,
+
+  /**
+   * v1 files spell the junction in column names and coerce an empty `summary`
+   * to null; both are what the generated snapshot stopped doing. The chain's
+   * LENGTH is checked against `payloadVersion` at registration, so this array
+   * and the `2` in `index.ts` cannot drift apart.
+   */
+  payloadUpgrades: [endpointPayloadV1ToV2],
 };
 
 function formatReferences(refs: SectionEntityRef[]) {

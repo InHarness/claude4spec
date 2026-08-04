@@ -52,15 +52,6 @@ function trimItem(entity: RawEntity) {
 
 // ─── snapshot / restore / diff ──────────────────────────────────────────────
 
-function buildSnapshot(entity: RawEntity): DiagramSnapshot {
-  return {
-    slug: entity.slug,
-    format: readFormat(entity.data.format),
-    source: readSource(entity.data.source),
-    tags: [...entity.tags].sort(),
-  };
-}
-
 function coerce(raw: unknown): DiagramSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
@@ -68,26 +59,6 @@ function coerce(raw: unknown): DiagramSnapshot {
     format: readFormat(r.format),
     source: readSource(r.source),
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
-  };
-}
-
-function diagramRestore(data: unknown, ctx: RestoreContext): RestoreResult {
-  const snap = coerce(data);
-  const result = ctx.writer.upsert('diagram',
-    snap.slug,
-    { slug: snap.slug, format: snap.format, source: snap.source },
-    ctx.actor
-  );
-  if (!result) {
-    // 0.2.2: no registered service for this type in this project — report the
-    // skip, do not throw. A deactivated type must not abort a whole restore.
-    return { op: 'noop', entity: null, warnings: [`entity service for type 'diagram' is not available — restore skipped`] };
-  }
-  ctx.writer.syncTags('diagram', snap.slug, snap.tags);
-  return {
-    op: result.op,
-    entity: result.entity,
-    ...(result.warnings && result.warnings.length ? { warnings: result.warnings } : {}),
   };
 }
 
@@ -136,7 +107,5 @@ export const diagramSerializer: SerializationContribution<RawEntity> = {
     },
   },
 
-  snapshot: (entity) => buildSnapshot(entity),
-  restore: diagramRestore,
   diff: diagramDiff,
 };

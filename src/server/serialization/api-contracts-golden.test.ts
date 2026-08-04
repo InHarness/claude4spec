@@ -97,9 +97,16 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
       const raw = app.rawReader.getEntity(type, slug);
       if (!raw) throw new Error(`fixture: ${type} '${slug}' vanished`);
 
-      out[`${type}/${slug}/snapshot`] = canonicalize(
-        (serializer.snapshot as (e: unknown, r: unknown) => unknown)(raw, reader),
-      );
+      /**
+       * 0.2.9 — through `host.snapshot`, because there is no per-type slot left
+       * to call. The envelope it attaches is wall-clock, so it is stripped
+       * rather than golden'd; its presence is covered by `snapshot-parity`.
+       */
+      const { createdAt: _c, updatedAt: _u, ...snap } = app.host.snapshot(type, raw, reader) as Record<
+        string,
+        unknown
+      >;
+      out[`${type}/${slug}/snapshot`] = canonicalize(snap);
       for (const view of VIEWS) {
         const fn = views?.[view];
         // NOT canonicalized: view projections are handed to the client as-is, so

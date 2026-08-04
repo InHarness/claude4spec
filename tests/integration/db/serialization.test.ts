@@ -62,9 +62,12 @@ describe('entity snapshot serialization', () => {
     expect(stamped.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/);
 
     // arrays sorted stably despite reversed insertion order
-    const snap = first as { tags: string[]; linked_dtos: Array<{ dtoSlug?: string; dto_slug?: string }> };
+    // 0.2.9: `linkedDtos`, the DECLARED field name. v1 spelled it `linked_dtos`
+    // with `dto_slug` items — junction COLUMN names leaking into the file, which
+    // is what the endpoint payload v1 → v2 upgrade exists to correct.
+    const snap = first as { tags: string[]; linkedDtos: Array<{ dto: string }> };
     expect(snap.tags).toEqual([...snap.tags].sort());
-    const dtoSlugs = snap.linked_dtos.map((d) => d.dtoSlug ?? d.dto_slug);
+    const dtoSlugs = snap.linkedDtos.map((d) => d.dto);
     expect(dtoSlugs).toEqual([...dtoSlugs].sort());
   });
 });

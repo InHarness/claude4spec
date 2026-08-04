@@ -20,7 +20,13 @@ export const endpointEntity: EntityContribution = {
   type: ENDPOINT_TYPE,
   data: endpointData,
   slugPattern: endpointSlugPattern,
-  payloadVersion: 1,
+  /**
+   * 2 since 0.2.9: the generated snapshot spells the junction in DECLARED
+   * field names (`linkedDtos`/`dto`/`statusCode`) where the hand-written one
+   * spelled it in column names, and stops coercing an empty `summary` to null.
+   * See `./upgrades.ts`.
+   */
+  payloadVersion: 2,
   label: 'Endpoint',
   labelPlural: 'Endpoints',
   displayOrder: ENDPOINT_DISPLAY_ORDER,

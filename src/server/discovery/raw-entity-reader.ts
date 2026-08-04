@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/data-schema.js';
+import { readProjectionCollection } from '../db/projection-read.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 export type RawEntityType =
@@ -336,6 +337,26 @@ export class RawEntityReader {
   listTypes(): string[] {
     if (!this.host) return [...ALL_ENTITY_TYPES];
     return this.host.listEntities().map((m) => m.type);
+  }
+
+  /**
+   * The items of a collection that projects to its own table.
+   *
+   * The one read a generated snapshot cannot get from the entity's row, since
+   * such a collection is deliberately NOT a column on it. Lives here rather than
+   * being called directly so that raw `db` access stays inside the reader: the
+   * generated snapshot must work for a type the host has never seen, and handing
+   * it a database handle to do so would reopen exactly the surface Host API
+   * 2.0.0 closed.
+   *
+   * Answers `[]` for an unknown type or an undeclared field — same rule as
+   * `listSlugs`, and for the same reason.
+   */
+  readCollection(type: string, slug: string, field: string): unknown[] {
+    const module = this.host?.getEntity(type);
+    const node = module?.data?.schema?.[field];
+    if (!module || !node || node.kind !== 'collection') return [];
+    return readProjectionCollection(this.db, module, field, node, slug);
   }
 
   /**
