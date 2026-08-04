@@ -62,6 +62,24 @@ import {
   type BundleRoot,
 } from './release-bundle.js';
 
+/**
+ * The types a release SNAPSHOT covers — and it is a hardcoded five, which
+ * `design-system` and `diagram` are not among.
+ *
+ * That is drift, not a decision: `restoreSpec` iterates every active module, and
+ * the brief's §4 says every active type with a `data.schema` is restorable. A
+ * release therefore restores types its own snapshot never captured, so a design
+ * system or a diagram is invisible in every release diff and unrecoverable from
+ * every release.
+ *
+ * NOT widened here. Doing so changes what M17 releases contain, which is a
+ * behaviour change to a different tier's surface and would move the release-diff
+ * fixtures with it. Flagged in a patch against the brief instead.
+ *
+ * It does not affect the payload chain: a type absent from `serializerVersions`
+ * reads as version 1 through `payloadVersionOfCapture(null)`, which is the right
+ * default for a capture with no recorded version.
+ */
 const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
 
 /** Shared by `classifyGitDiffFiles`/`diffPageCandidates` — `diffRefs`/`diffRefToWorkingTree` already flatten renames (R) into a D(old)+A(new) pair. */
