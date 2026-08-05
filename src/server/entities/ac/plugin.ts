@@ -11,6 +11,11 @@ export const acBackendModule: BackendModule = {
   data: acData,
   slugPattern: acSlugPattern,
   payloadVersion: 1,
+  // Slug is slugified prose (ac: `text`, diagram: `caption`), so two entities
+  // that start alike are two entities — suffix rather than refuse. See
+  // `slugConflict` on the manifest; every identity-derived type takes the default.
+  slugConflict: 'suffix',
+
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,

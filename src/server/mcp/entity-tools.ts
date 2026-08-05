@@ -192,6 +192,9 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       view: 'element_list_item',
       ...(tags?.length ? { tags, filter: tagFilter } : {}),
       ...(filters ? { filters } : {}),
+      // The transports inherit a type's declared default (`ac` → active only);
+      // page rendering does not. See `ListEntitiesInput.applyDefaultPredicate`.
+      applyDefaultPredicate: true,
       limit,
       offset,
     });
@@ -459,7 +462,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        * the host cannot see could only ever keep that promise by echoing a
        * second declaration back. One derivation, one ranking, one answer.
        */
-      const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset, ...(filters ? { filters } : {}) });
+      const page = deps.discovery.searchEntities({
+        type,
+        query,
+        fields,
+        mode,
+        limit,
+        offset,
+        applyDefaultPredicate: true,
+        ...(filters ? { filters } : {}),
+      });
       if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
       return ok({
         type,

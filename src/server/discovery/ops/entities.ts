@@ -69,7 +69,9 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
    * intersection rather than by a combined query so the reader's order survives
    * it — the whole point of the `sorted` note above.
    */
-  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {});
+  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {}, {
+    applyDefaultPredicate: input.applyDefaultPredicate ?? false,
+  });
   const sorted = matching ? slugs.filter((s) => matching.has(s)) : slugs;
 
   // "How many entities carry tag X" without walking them: the count mode exists
@@ -214,11 +216,37 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
    * the two questions must narrow the same way. Applied BEFORE scoring, so
    * `total` counts matching hits rather than all hits.
    */
-  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {});
+  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {}, {
+    applyDefaultPredicate: input.applyDefaultPredicate ?? false,
+  });
+
+  /**
+   * The TAG filter, ANDed with the ranking for the same reason.
+   *
+   * Search and tag-filter are different core operations — one ranks, one
+   * enumerates — but "the ACs tagged `auth`, matching `checkout`" is one
+   * question a user asks by leaving a tag chip selected and then typing. Every
+   * entity list page sends `tags` and `search` in the SAME request, so a search
+   * path that ignored `tags` made the selected chip stop applying the moment
+   * you typed, while still rendering as selected. The retired per-type SQL
+   * ANDed them; what it got wrong was folding the ranking into that one WHERE,
+   * not the AND itself.
+   */
+  const tagged =
+    input.tags === undefined
+      ? null
+      : new Set(
+          input.tags.length === 0
+            ? []
+            : deps.reader
+                .findByTag({ type: input.type, tags: input.tags, filter: input.filter ?? 'and' })
+                .map((e) => e.slug),
+        );
 
   const scored: Array<{ slug: string; score: number; key: string }> = [];
   for (const slug of deps.reader.listSlugs(input.type)) {
     if (matching && !matching.has(slug)) continue;
+    if (tagged && !tagged.has(slug)) continue;
     const raw = deps.reader.getEntity(input.type, slug);
     if (!raw) continue;
     const record = { ...raw.data, slug: raw.slug, tags: raw.tags };

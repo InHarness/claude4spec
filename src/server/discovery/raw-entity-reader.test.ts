@@ -181,6 +181,67 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
     expect(() => reader.count('ac')).not.toThrow();
     expect(reader.count('ac')).toBe(12);
   });
+
+  /**
+   * `slugsMatching` — the same declaration, now driving `list`/`search` too.
+   *
+   * Each of these is a defect the tier-K review found in the first cut, kept as
+   * a test because every one of them fails SILENTLY or as a 500 rather than as
+   * a wrong-looking list.
+   */
+  describe('slugsMatching', () => {
+    const predicate = { field: 'status', in: ['active'] };
+
+    it('leaves the default OFF unless the caller opts in', () => {
+      // Page rendering (`<tagged_list type="ac"/>`) resolves through this and has
+      // always shown deprecated ACs; there is no attribute an author could write
+      // to ask for them back, and a release snapshot would lose the rows too.
+      const reader = new RawEntityReader(seeded(), hostWith(predicate));
+      expect(reader.slugsMatching('ac')).toBeNull();
+      expect(reader.slugsMatching('ac', {}, { applyDefaultPredicate: true })?.size).toBe(9);
+    });
+
+    it("treats `'all'` on the predicate field as LIFTING it, not as a value", () => {
+      // `{ status: 'all' }` is the spelling the retired `AcListQuery` used and
+      // the one `ac/plugin.tsx` still sends. Compiled literally it is
+      // `status IN ('all')` — nothing matches, and an agent asking for every AC
+      // is told the project has none.
+      const reader = new RawEntityReader(seeded(), hostWith(predicate));
+      const all = reader.slugsMatching('ac', { status: 'all' }, { applyDefaultPredicate: true });
+      expect(all).toBeNull();
+      expect(reader.slugsMatching('ac', { status: ['all'] }, { applyDefaultPredicate: true })).toBeNull();
+    });
+
+    it('ignores a key inherited from Object.prototype instead of building bad SQL', () => {
+      // `?valueOf=1` — `filters` arrives from a query string or a tool call, and
+      // an unguarded `schema[field]` resolves to the inherited function, passes
+      // every guard, and compiles to `WHERE value_of IN (?)`.
+      const reader = new RawEntityReader(seeded(), hostWith());
+      expect(() => reader.slugsMatching('ac', { valueOf: '1' })).not.toThrow();
+      expect(reader.slugsMatching('ac', { valueOf: '1', constructor: 'x' })).toBeNull();
+    });
+
+    it('binds a boolean as 0/1, which is the only thing SQLite accepts', () => {
+      const db = new Database(':memory:');
+      db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, text TEXT, status TEXT, pinned INTEGER);`);
+      db.prepare('INSERT INTO ac VALUES (?,?,?,?)').run('a', 't', 'active', 1);
+      db.prepare('INSERT INTO ac VALUES (?,?,?,?)').run('b', 't', 'active', 0);
+      const module = {
+        type: 'ac',
+        data: { schema: { text: { kind: 'string' }, pinned: { kind: 'boolean' } } },
+        systemPrompt: { roleNoun: 'ac' },
+      } as unknown as ReturnType<ProjectPluginHost['getEntity']>;
+      const reader = new RawEntityReader(db, {
+        getEntity: () => module,
+        getAvailable: () => module,
+        listEntities: () => [module],
+        isActive: () => true,
+      } as unknown as ProjectPluginHost);
+
+      expect([...(reader.slugsMatching('ac', { pinned: true }) ?? [])]).toEqual(['a']);
+      expect([...(reader.slugsMatching('ac', { pinned: false }) ?? [])]).toEqual(['b']);
+    });
+  });
 });
 
 /**

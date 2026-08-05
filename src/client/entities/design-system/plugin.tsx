@@ -14,12 +14,29 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { DesignSystemDetail } from './detail-panel.js';
+import type { DesignSystemListItem } from './api.js';
 
-function tokenCountOf(ds: DesignSystem): number {
-  return ds.groups.reduce((acc, g) => acc + g.tokens.length, 0);
+/**
+ * `renderRow` is fed from four places, and after tier K they no longer agree on
+ * how much of a design system they carry.
+ *
+ * `ElementListView`, `TaggedListView`/`TaggedListMixedView` and `listByTags` all
+ * hand it an `element_list_item`/`tagged_list_item` row, which is `trimItem` —
+ * `groupCount` and `tokenCount`, no `groups[]`. The agent tool renderer can hand
+ * it a wider payload. Reading `groups.length` unconditionally is what made a page
+ * containing `<tagged_list type="design-system"/>` throw on render once the
+ * retired router stopped returning whole rows.
+ */
+function countsOf(entity: DesignSystem | DesignSystemListItem): { groups: number; tokens: number } {
+  if ('groupCount' in entity && typeof entity.groupCount === 'number') {
+    return { groups: entity.groupCount, tokens: entity.tokenCount ?? 0 };
+  }
+  const groups = (entity as DesignSystem).groups ?? [];
+  return { groups: groups.length, tokens: groups.reduce((acc, g) => acc + g.tokens.length, 0) };
 }
 
-function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem>) {
+function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem | DesignSystemListItem>) {
+  const counts = countsOf(entity);
   return (
     <button
       onClick={onOpen}
@@ -47,7 +64,7 @@ function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem
         className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
         style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
       >
-        {entity.groups.length} groups / {tokenCountOf(entity)} tokens
+        {counts.groups} groups / {counts.tokens} tokens
       </span>
     </button>
   );
@@ -111,6 +128,7 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
     );
   }
   const resolved = resolve(entity.groups, entity.modes);
+  const counts = countsOf(entity);
   return (
     <button
       onClick={onOpen}
@@ -128,7 +146,7 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
           className="font-mono text-[11px] px-1.5 py-0.5 rounded"
           style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
         >
-          {entity.groups.length} groups / {tokenCountOf(entity)} tokens
+          {counts.groups} groups / {counts.tokens} tokens
         </span>
         <span className="flex-1" />
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)' }} />

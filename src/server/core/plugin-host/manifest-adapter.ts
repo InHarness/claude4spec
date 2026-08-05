@@ -279,6 +279,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     displayOrder: c.displayOrder,
     data: c.data,
     slugPattern: c.slugPattern,
+    ...(c.slugConflict ? { slugConflict: c.slugConflict } : {}),
     payloadVersion: c.payloadVersion,
     pathPrefix: c.pathPrefix,
     dependsOn: c.dependsOn,

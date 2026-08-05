@@ -88,30 +88,20 @@ function coerceFilterValue(node: FieldNode, raw: string): string | number | bool
  * who asked. Unknown keys are ignored rather than rejected, which is the
  * contract `list_entities` has always advertised.
  *
- * `?field=all` is the ONE sentinel, and only on the enum field carrying the
- * type's `defaultPredicate`: it expands to every declared value, which is how a
- * caller says "lift the default" rather than "add a filter". `ac/plugin.tsx`
- * asks for it by name — the tag flyout must show deprecated ACs — and without
- * the sentinel that view would silently narrow to the active ones. A type whose
- * enum genuinely contains `'all'` keeps the literal meaning.
+ * `?field=all` — the "lift the default" sentinel — is NOT handled here. It is
+ * `slugsMatching`'s, so `?status=all` and `filters: { status: 'all' }` mean the
+ * same thing; implementing it in this router made it mean "everything" over
+ * HTTP and "nothing" over MCP, which is the worse of the two ways to disagree.
  */
 function queryFilters(module: BackendModule, q: Record<string, unknown>): Record<string, unknown> {
   const schema = module.data!.schema;
-  const predicateField = module.systemPrompt?.defaultPredicate?.field;
   const filters: Record<string, unknown> = {};
   for (const [key, raw] of Object.entries(q)) {
     if (RESERVED_QUERY_KEYS.has(key) || typeof raw !== 'string' || raw === '') continue;
-    const node = schema[key];
-    if (!node || !isEmbedded(node) || node.kind === 'json') continue;
-    if (
-      raw === 'all' &&
-      key === predicateField &&
-      node.kind === 'enum' &&
-      !node.values.includes('all')
-    ) {
-      filters[key] = [...node.values];
-      continue;
-    }
+    // Own properties only — `?valueOf=1` must not resolve to `Object.prototype`.
+    if (!Object.hasOwn(schema, key)) continue;
+    const node = schema[key]!;
+    if (!isEmbedded(node) || node.kind === 'json') continue;
     const values = raw
       .split(',')
       .filter(Boolean)
@@ -132,7 +122,20 @@ function queryFilters(module: BackendModule, q: Record<string, unknown>): Record
  * rather than in the views keeps one rule for all five views and all six types.
  */
 function withSystem(deps: GeneratedCrudDeps, type: string, slug: string, view: unknown): unknown {
-  const system = deps.reader.getEntity(type, slug)?.system;
+  return attachStamp(view, deps.reader.getEntity(type, slug)?.system);
+}
+
+/** The list form: one batched stamp read for the page, not one read per row. */
+function withSystemAll(
+  deps: GeneratedCrudDeps,
+  type: string,
+  items: ReadonlyArray<{ slug: string; data: unknown }>,
+): unknown[] {
+  const stamps = deps.reader.systemStamps(type, items.map((i) => i.slug));
+  return items.map((i) => attachStamp(i.data, stamps.get(i.slug)));
+}
+
+function attachStamp(view: unknown, system: { createdAt: string; updatedAt: string } | undefined): unknown {
   return system && view && typeof view === 'object' ? { ...(view as object), ...system } : view;
 }
 
@@ -169,52 +172,66 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
     try {
       const q = req.query;
       const search = typeof q.search === 'string' ? q.search : '';
-      const limit = positiveInt(q.limit);
+      /**
+       * The page size a LIST PAGE gets when it asks for no page at all.
+       *
+       * The M39 core defaults to 50, which is right for an agent reading over
+       * stdio and wrong here: every retired service defaulted to 200, and not
+       * one client list page reads `total`/`hasMore` or renders a load-more
+       * control, so the core's default silently hid the 51st entity of every
+       * type — including from the active-AC count that gates Analyze
+       * consistency. Stated here rather than changed in the core, because the
+       * core's default is correct for the transport it was chosen for.
+       */
+      const limit = positiveInt(q.limit) ?? 200;
       const offset = positiveInt(q.offset);
       const filters = queryFilters(module, q as Record<string, unknown>);
+      const tags = tagList(q.tags);
+      const tagFilter: 'and' | 'or' | undefined =
+        q.tagFilter === 'and' || q.tagFilter === 'or' ? q.tagFilter : undefined;
 
       /**
-       * Search and tag-filter are DIFFERENT core operations, not two filters of
-       * one query: `search_entities` ranks, `list_entities` enumerates in the
-       * reader's order. The retired per-type SQL ANDed them into one `WHERE`,
-       * which silently dropped the ranking whenever both were present.
+       * Search and list are DIFFERENT core operations — one ranks, one
+       * enumerates in the reader's order — but every narrowing the caller
+       * asked for applies to both.
        *
-       * The FIELD filter does travel down both branches, though — the AC list
-       * page drives its status/kind dropdowns and its search box from one query,
-       * so narrowing that stopped applying the moment you typed would read as
-       * the dropdown breaking.
+       * The retired per-type SQL ANDed the tag sub-select and the LIKE into one
+       * WHERE, which dropped the ranking whenever both were present; keeping
+       * the operations apart fixes that. What it must not do is drop the
+       * narrowing itself: the list pages send `tags`, `search` and the field
+       * dropdowns in ONE request, so a search path that ignored `tags` made a
+       * visibly-selected tag chip stop applying the moment you typed.
        */
+      const narrowing = {
+        filters,
+        applyDefaultPredicate: true,
+        ...(tags ? { tags } : {}),
+        ...(tagFilter ? { filter: tagFilter } : {}),
+      };
+
       if (search) {
         const hits = deps.discovery.searchEntities({
           type,
           query: search,
           view: 'element_list_item',
-          filters,
-          ...(limit !== undefined ? { limit } : {}),
+          limit,
+          ...narrowing,
           ...(offset !== undefined ? { offset } : {}),
         });
         if (hits.mode !== 'hits') throw new DomainError('INTERNAL', 'search returned a count');
-        res.json({
-          data: hits.items.map((h) => withSystem(deps, type, h.slug, h.data)),
-          total: hits.total,
-        });
+        res.json({ data: withSystemAll(deps, type, hits.items), total: hits.total });
         return;
       }
 
       const page = deps.discovery.listEntities({
         type,
         view: 'element_list_item',
-        filters,
-        ...(tagList(q.tags) ? { tags: tagList(q.tags)! } : {}),
-        ...(q.tagFilter === 'and' || q.tagFilter === 'or' ? { filter: q.tagFilter } : {}),
-        ...(limit !== undefined ? { limit } : {}),
+        limit,
+        ...narrowing,
         ...(offset !== undefined ? { offset } : {}),
       });
       if (page.mode !== 'items') throw new DomainError('INTERNAL', 'list returned a count');
-      res.json({
-        data: page.items.map((i) => withSystem(deps, type, i.slug, i.data)),
-        total: page.total,
-      });
+      res.json({ data: withSystemAll(deps, type, page.items), total: page.total });
     } catch (err) {
       next(err);
     }

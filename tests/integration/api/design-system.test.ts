@@ -138,18 +138,21 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   /**
-   * The one BEHAVIOUR change tier K makes here that is not in the brief.
+   * Still 409 — and it took a declaration to keep it that way.
    *
-   * `DesignSystemService.createRaw` threw 409 on a duplicate name; the host's
-   * generic create mints a free slug instead, which is what `ac` and `diagram`
-   * always did. One write door means one slug policy, and the alternative —
-   * keeping a per-type conflict rule — is exactly the per-type fork this tier
-   * removes. Filed as a `clarification` patch, since the brief chooses neither.
+   * `design-system` derives its slug from `name`, an IDENTITY, so a second
+   * "Brand" is the same design system entered twice rather than a new one.
+   * Tier E's generic create suffixed every collision (from `ac`'s comment, where
+   * the slug is slugified prose and suffixing IS right), which would have turned
+   * this into a silent `brand-2` that the author edits while every
+   * `<single_element slug="brand"/>` keeps resolving to the stale original.
+   * `slugConflict` on the manifest is where the two answers now live; this type
+   * takes the default.
    */
-  it('mints a free slug for a duplicate name rather than conflicting', async () => {
+  it('refuses a duplicate name rather than minting a second design system', async () => {
     await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
     const dup = await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
-    expect(dup.status).toBe(201);
-    expect(dup.body.data.slug).toBe('brand-2');
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('SLUG_CONFLICT');
   });
 });

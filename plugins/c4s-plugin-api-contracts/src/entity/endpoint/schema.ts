@@ -3,7 +3,25 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 /** Host API 2.0.0 — what `endpoint` IS. */
 export const endpointData: DataDeclaration = {
   schema: {
-    method: { kind: 'string', required: true, description: 'HTTP method: GET, POST, PUT, PATCH, DELETE' },
+    /**
+     * An ENUM, not a string — the allowlist `EndpointService.requireMethod`
+     * enforced, restated as data now that the generated router is the only door.
+     *
+     * Typed as a plain string, `{ method: 'get' }` and `{ method: 'FETCH' }`
+     * were both accepted and stored verbatim, so a list would show `get
+     * /api/users` beside `GET /api/orders` and code generated from the spec
+     * would carry a verb that does not exist. The retired service also
+     * upper-cased its input; that half is deliberately NOT restored — a
+     * declaration describes what is valid, it does not silently rewrite the
+     * caller's payload, and `POST /api/endpoints { method: 'get' }` now gets a
+     * 400 naming the five values instead of a quietly different entity.
+     */
+    method: {
+      kind: 'enum',
+      values: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+      required: true,
+      description: 'HTTP method',
+    },
     path: { kind: 'string', required: true, description: 'URL path, e.g. /api/users/:id' },
     summary: { kind: 'string', required: true, default: '' },
     description: { kind: 'string', clearable: true },

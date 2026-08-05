@@ -120,18 +120,29 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
 
 /**
  * The slug for a new entity: the caller's if it supplied one, otherwise the
- * pattern's, in both cases suffixed until it is free.
+ * pattern's — then either suffixed until free or refused, per the type's
+ * declared `slugConflict`.
  *
- * The suffix is applied to an EXPLICIT slug too — that is what the retired
- * `crud-schemas.ts` files documented ("collisions get a -2/-3 suffix") and what
- * every `allocateSlug` did. A create that collides is therefore never an error
- * here; `SLUG_CONFLICT` is reserved for a RENAME, where the caller named a
- * target and silently landing somewhere else would be worse than failing.
+ * An EXPLICIT slug always refuses. That half was never in dispute: `ac` is the
+ * type tier E generalized from, and even `ac` threw `SLUG_CONFLICT` when the
+ * caller named the slug. Landing somewhere other than where you were told to is
+ * worse than failing, and it is the same rule a RENAME follows.
+ *
+ * A DERIVED slug follows the declaration, defaulting to refusing. Tier E
+ * suffixed unconditionally, which made a re-`POST` of `GET /api/users` create
+ * `get-api-users-2` — two entities for one route, drifting apart, with every
+ * reference still pointing at the first. See `slugConflict` on the manifest for
+ * why the two answers both exist.
  */
 function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Record<string, unknown>): string {
   const explicit = typeof payload.slug === 'string' ? payload.slug.trim() : '';
   const base = explicit || evaluateSlugPattern(module.slugPattern, payload, (n) => slugNanoid(n));
   if (!base) throw new DomainError('VALIDATION', `${module.type}: slug resolves to empty`);
+  if (!deps.reader.getEntity(module.type, base)) return base;
+
+  if (explicit || (module.slugConflict ?? 'reject') === 'reject') {
+    throw new DomainError('SLUG_CONFLICT', `${module.type} slug '${base}' already exists`);
+  }
   let candidate = base;
   let n = 1;
   while (deps.reader.getEntity(module.type, candidate)) {

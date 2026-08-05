@@ -86,11 +86,28 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(res.body.data.status).toBe('draft');
   });
 
-  it('an explicit slug wins, and a collision takes the -2 suffix rather than failing', async () => {
+  /**
+   * An explicit slug wins, and a collision on one REFUSES.
+   *
+   * Tier E suffixed here as well, on the strength of `ac`'s comment — but even
+   * `ac` threw `SLUG_CONFLICT` when the caller named the slug, and landing
+   * somewhere other than where you were told to is worse than failing. A DERIVED
+   * collision follows the type's declared `slugConflict`, which defaults to the
+   * same refusal (`widget` declares nothing); `ac` and `diagram` opt into the
+   * suffix because their slugs are slugified prose.
+   */
+  it('an explicit slug wins, and a collision on one is refused rather than renamed', async () => {
     expect((await request(t.app).post('/api/widgets').send({ name: 'A', slug: 'pinned' })).body.data.slug).toBe('pinned');
     const second = await request(t.app).post('/api/widgets').send({ name: 'B', slug: 'pinned' });
-    expect(second.status).toBe(201);
-    expect(second.body.data.slug).toBe('pinned-2');
+    expect(second.status).toBe(409);
+    expect(second.body.error.code).toBe('SLUG_CONFLICT');
+  });
+
+  it('refuses a DERIVED collision too, for a type that declares no slugConflict', async () => {
+    expect((await request(t.app).post('/api/widgets').send({ name: 'Order Form' })).status).toBe(201);
+    const dup = await request(t.app).post('/api/widgets').send({ name: 'Order Form' });
+    expect(dup.status).toBe(409);
+    expect(dup.body.error.code).toBe('SLUG_CONFLICT');
   });
 
   it('GET / answers the L4 envelope, not the retired per-type key', async () => {
@@ -287,6 +304,43 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   /**
+   * Every narrowing the caller asked for survives the search branch.
+   *
+   * Search and list are different core operations, and keeping them apart is
+   * what stopped the retired per-type SQL from dropping the ranking. What that
+   * must NOT cost is the narrowing itself: the list pages send `tags`, `search`
+   * and the field dropdowns in ONE request, so a search path that quietly
+   * ignored `tags` made a visibly-selected tag chip stop applying the moment you
+   * typed — the filter is still on screen, the rows no longer obey it.
+   */
+  it('ANDs the tag filter with the ranking, instead of dropping it once search is present', async () => {
+    await request(t.app).post('/api/widgets').send({ name: 'Beta Keeper', tags: ['keep'] });
+    await request(t.app).post('/api/widgets').send({ name: 'Beta Stranger' });
+
+    const both = await request(t.app).get('/api/widgets?search=Beta&tags=keep');
+    expect(both.status).toBe(200);
+    const slugs = both.body.data.map((d: { slug: string }) => d.slug);
+    expect(slugs).toEqual(['beta-keeper']);
+    expect(both.body.total).toBe(1);
+  });
+
+  /**
+   * The page size a list page gets when it asks for none.
+   *
+   * The M39 core defaults to 50 — right for an agent over stdio, wrong for a
+   * page with no pagination control, where it silently hid the 51st entity of
+   * every type. Every retired service defaulted to 200.
+   */
+  it('defaults to a page big enough for a list page with no pagination UI', async () => {
+    for (let i = 0; i < 60; i += 1) {
+      await request(t.app).post('/api/widgets').send({ name: `W ${i}` });
+    }
+    const res = await request(t.app).get('/api/widgets');
+    expect(res.body.data).toHaveLength(60);
+    expect(res.body.total).toBe(60);
+  });
+
+  /**
    * The un-staging, asserted rather than assumed — the other half of the test
    * tier E wrote here.
    *
@@ -303,5 +357,47 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(res.body).toHaveProperty('data');
     expect(res.body).toHaveProperty('total');
     expect(res.body).not.toHaveProperty('uiViews');
+  });
+
+  /**
+   * `ac`'s declared `defaultPredicate`, over REST — what `AcService.list`'s
+   * hand-written `status` default used to do, and the escape hatch that goes
+   * with it.
+   *
+   * `?status=all` is not a value: it LIFTS the default. The sentinel is
+   * implemented in `slugsMatching`, not here, so `filters: { status: 'all' }`
+   * over MCP means the same thing — implementing it in the router made it mean
+   * "everything" over HTTP and "nothing" over MCP.
+   */
+  it('applies ac\'s declared default, and lets ?status=all lift it', async () => {
+    const active = await request(t.app).post('/api/acs').send({ text: 'still true' });
+    expect(active.status).toBe(201);
+    const gone = await request(t.app).post('/api/acs').send({ text: 'no longer true' });
+    await request(t.app).patch(`/api/acs/${gone.body.data.slug}`).send({ status: 'deprecated' });
+
+    const def = await request(t.app).get('/api/acs');
+    expect(def.body.data.map((a: { slug: string }) => a.slug)).toEqual([active.body.data.slug]);
+
+    const all = await request(t.app).get('/api/acs?status=all');
+    expect(all.body.data).toHaveLength(2);
+
+    const deprecated = await request(t.app).get('/api/acs?status=deprecated');
+    expect(deprecated.body.data.map((a: { slug: string }) => a.slug)).toEqual([gone.body.data.slug]);
+  });
+
+  /**
+   * Item 58's allowlist, restated as an enum rather than lost with the service.
+   *
+   * `EndpointService.requireMethod` rejected anything outside the five verbs;
+   * declared as a plain `string`, `{ method: 'get' }` and `{ method: 'FETCH' }`
+   * were both stored verbatim, and code generated from the spec would carry a
+   * verb that does not exist.
+   */
+  it('rejects an HTTP method the declaration does not name', async () => {
+    expect((await request(t.app).post('/api/endpoints').send({ method: 'FETCH', path: '/x' })).status).toBe(400);
+    // Lower case is a rejection too, not a silent upper-casing: a declaration
+    // says what is valid, it does not rewrite the caller's payload.
+    expect((await request(t.app).post('/api/endpoints').send({ method: 'get', path: '/x' })).status).toBe(400);
+    expect((await request(t.app).post('/api/endpoints').send({ method: 'GET', path: '/x' })).status).toBe(201);
   });
 });

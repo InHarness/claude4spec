@@ -281,6 +281,11 @@ export interface SearchEntitiesInput {
   offset?: number;
   /** Same declarative field filter as `ListEntitiesInput.filters`, ANDed with the ranking. */
   filters?: Record<string, unknown>;
+  /** Tag filter, ANDed with the ranking — same semantics as on `ListEntitiesInput`. */
+  tags?: string[];
+  filter?: 'and' | 'or';
+  /** See `ListEntitiesInput.applyDefaultPredicate`. */
+  applyDefaultPredicate?: boolean;
 }
 
 export type SearchEntitiesResult =
@@ -316,6 +321,18 @@ export interface ListEntitiesInput {
    * per-type service.
    */
   filters?: Record<string, unknown>;
+  /**
+   * Apply the type's declared `defaultPredicate` for fields this call does not
+   * name. OFF by default, and that asymmetry is deliberate.
+   *
+   * A TRANSPORT asking "list the ACs" inherits the default `AcService.list`
+   * used to apply (`status: 'active'`). PAGE RENDERING asking the same core the
+   * same question must not: `<tagged_list type="ac" tags="x"/>` has always shown
+   * deprecated ACs, a page author has no attribute to ask for them back, and a
+   * release snapshot taken with the default on would silently lose rows. Making
+   * it opt-in is what keeps "who is asking" visible at the call site.
+   */
+  applyDefaultPredicate?: boolean;
   view?: ViewKind;
   mode?: 'items' | 'count';
   limit?: number;
