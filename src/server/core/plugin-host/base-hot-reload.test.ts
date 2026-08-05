@@ -14,7 +14,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadWorkspacePlugins, reloadPlugin } from './loader.js';
-import { PluginWatcher } from './plugin-watcher.js';
+import { FileWatchRuntime } from '../../fs/watcher.js';
+import { PLUGINS_BASE_SOURCE } from '../../fs/sources.js';
 import { PluginRegistryImpl } from './registry.js';
 
 const NAME = '@c4s-fixture/esm-only-plugin';
@@ -49,7 +50,7 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
   let pkgDir: string;
   let distDir: string;
   let entry: string;
-  let watcher: PluginWatcher | null = null;
+  let watcher: FileWatchRuntime | null = null;
 
   beforeEach(() => {
     pkgDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-esm-only-'));
@@ -102,15 +103,14 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
     await loadWorkspacePlugins(registry, [NAME], importer);
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
 
-    // Replicate the `server/index.ts:336-360` base-watcher callback: on a change
-    // under the watched dist dir, reload the package and record a `plugin:reloaded`
-    // broadcast. `reloadPlugin` uses the REAL dynamic import + content-hash
+    // Replicate `server/index.ts`'s base reload subscription: a `reload`-phase
+    // reaction on the process-scope `plugins:base` mount reloads the package and
+    // records a `plugin:reloaded` broadcast. `reloadPlugin` uses the REAL dynamic import + content-hash
     // cache-bust; `resolveEntry` points at the fixture's `import` entry — exactly
     // what `resolveBaseEntry` yields for an installed ESM-only package.
     const broadcasts: Array<{ kind: string; name: string; version: string; tier: string }> = [];
     let chain: Promise<void> = Promise.resolve();
-    watcher = new PluginWatcher([distDir], (changed) => {
-      if (!changed.some((p) => p === distDir || p.startsWith(distDir + path.sep))) return;
+    const onChange = (): void => {
       chain = chain
         .then(async () => {
           const rec = await reloadPlugin(registry, NAME, { resolveEntry: () => entry });
@@ -122,8 +122,14 @@ describe('M33 — base hot-reload of an ESM-only package', () => {
           });
         })
         .catch(() => {});
-    });
-    watcher.start();
+    };
+    watcher = new FileWatchRuntime();
+    watcher.mountSource({ source: PLUGINS_BASE_SOURCE, dir: distDir, scope: 'process' });
+    watcher.subscribe(
+      PLUGINS_BASE_SOURCE,
+      { onChange, onUnlink: onChange },
+      { id: 'm33-base-reload', phase: 'reload', scope: 'process' },
+    );
     await new Promise((r) => setTimeout(r, 150)); // let chokidar settle
 
     // Rebuild the package's dist with a bumped version.

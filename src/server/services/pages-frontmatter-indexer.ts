@@ -12,6 +12,8 @@
  * M36: the artifact-specific WS broadcast (briefs:changed/patches:changed) is
  * driven by a caller-supplied rootId → event map (`artifactRegistry`-derived),
  * not a hardcoded per-kind if/else — see `broadcastRootChange`.
+ * 0.2.10 (M40): fed by one `projection` subscription per mounted source instead
+ * of by every root's own watcher.
  */
 
 import matter from 'gray-matter';
@@ -19,6 +21,8 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import { requireRootId } from '../fs/sources.js';
 
 export interface FrontmatterRecord {
   rootId: string;
@@ -29,9 +33,15 @@ export interface FrontmatterFindOptions {
   rootId?: string;
 }
 
-export class PagesFrontmatterIndexer {
-  private debounceMs = 200;
-  private pending = new Map<string, NodeJS.Timeout>();
+/**
+ * M02 frontmatter projection.
+ *
+ * 0.2.10 (M40): registered as `{ id: 'm02-frontmatter-indexer', phase: 'projection' }`
+ * on every `pages:<rootId>` source AND on all three `artifacts:*` sources — the
+ * build hook iterates them explicitly, because M40 has no wildcards. Its own
+ * 200 ms debounce is gone; the mount owns it.
+ */
+export class PagesFrontmatterIndexer implements WatchSubscriber {
   /** Composite key `${rootId}:${path}` so the same path can exist in multiple
    * roots without collision. */
   private byKey = new Map<string, FrontmatterRecord>();
@@ -64,26 +74,16 @@ export class PagesFrontmatterIndexer {
     return `${rootId}:${relPath}`;
   }
 
-  schedulePage(rootId: string, relPath: string): void {
-    const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(k);
-      this.indexPage(rootId, relPath).catch((err) => {
-        console.error(`[pages-frontmatter-indexer] failed to index ${rootId}:${relPath}:`, err);
-      });
-    }, this.debounceMs);
-    this.pending.set(k, timer);
+  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
+    await this.indexPage(requireRootId(source), relPath);
+  }
+
+  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
+    this.handleUnlink(requireRootId(source), relPath);
   }
 
   handleUnlink(rootId: string, relPath: string): void {
     const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) {
-      clearTimeout(prev);
-      this.pending.delete(k);
-    }
     if (this.byKey.delete(k)) {
       this.ws.broadcast({ kind: 'pages:frontmatter-changed', path: relPath, rootId });
       this.broadcastRootChange(rootId, relPath);

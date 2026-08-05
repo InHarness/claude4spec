@@ -15,7 +15,7 @@ import type { PluginHost } from '../core/plugin-host/types.js';
 import type { EntityStore, TagSnapshot } from './entity-store.js';
 import type { TagsService } from './tags.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
-import type { EntitiesWatcher } from '../fs/entities-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 
 let db: Database.Database;
@@ -53,7 +53,7 @@ function makeIndexer(host: PluginHost, store: Partial<EntityStore> = {}) {
   const indexer = new EntityIndexerService(
     db,
     fullStore,
-    {} as EntitiesWatcher,
+    { suppress: () => {} } as SelfWriteSuppressor,
     ws,
     host,
     { assignTags: vi.fn(), listAll: () => [] } as unknown as TagsService,

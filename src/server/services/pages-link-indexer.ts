@@ -9,6 +9,8 @@ import type {
   UnresolvedMention,
 } from '../../shared/page-links.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
+import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import { requireRootId } from '../fs/sources.js';
 
 const AT_RE = /(?<![\w])@([a-zA-Z0-9_][a-zA-Z0-9_\-/.]*[a-zA-Z0-9_\-/])(?:#([a-f0-9]{8}))?/g;
 const LINK_RE = /\[([^\]\n]*)\]\(([^)\s]+)\)/g;
@@ -27,10 +29,19 @@ interface ParseResult {
   unresolvedCandidates: UnresolvedMention[];
 }
 
-export class PagesLinkIndexerService {
-  private debounceMs = 300;
-  private pending = new Map<string, NodeJS.Timeout>();
-
+/**
+ * M14 link indexer.
+ *
+ * 0.2.10 (M40): registered as `{ id: 'm14-link-indexer', phase: 'projection',
+ * after: ['m06-section-indexer'] }` on every `pages:<rootId>` source. The `after`
+ * declaration is CONDITIONAL on the owner's gate — on a root without
+ * `sectionIndexed`, M02 never registers M06, so there is no predecessor and this
+ * indexer runs on its own. Anchors are then unresolved on that root, which is a
+ * signal to the author rather than silence.
+ *
+ * Its own pending-timer map is gone: debounce belongs to the mount.
+ */
+export class PagesLinkIndexerService implements WatchSubscriber {
   // 0.1.96: all maps keyed by composite `${rootId}:${path}`. Resolution is
   // scoped to the source root only (default linkTargets: [] ⇒ today's behaviour);
   // cross-root `@`-autocomplete scope is applied client-side by the editor.
@@ -58,26 +69,16 @@ export class PagesLinkIndexerService {
     );
   }
 
-  schedulePage(rootId: string, relPath: string): void {
-    const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(k);
-      this.indexPage(rootId, relPath).catch((err) => {
-        console.error(`[pages-link-indexer] failed to index ${k}:`, err);
-      });
-    }, this.debounceMs);
-    this.pending.set(k, timer);
+  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
+    await this.indexPage(requireRootId(source), relPath);
+  }
+
+  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
+    this.handleUnlink(requireRootId(source), relPath);
   }
 
   handleUnlink(rootId: string, relPath: string): void {
     const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) {
-      clearTimeout(prev);
-      this.pending.delete(k);
-    }
     const hadMeta = this.byPath.delete(k);
     this.clearSourceLinks(k);
     this.unresolved.delete(k);

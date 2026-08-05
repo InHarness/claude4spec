@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseFileStore } from './release-store.js';
 import { ReleaseIndexerService } from './release-indexer.js';
-import { ReleasesWatcher } from '../fs/releases-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 
 interface SpecReleaseRow {
   id: number;
@@ -27,7 +27,7 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-release-idx-'));
     db = new Database(':memory:');
     runMigrations(db);
-    const watcher = new ReleasesWatcher(path.join(dir, 'releases'));
+    const watcher = { suppress: () => {} } as SelfWriteSuppressor;
     store = new ReleaseFileStore(dir, 'releases', watcher);
     store.ensureRoot();
     indexer = new ReleaseIndexerService(db, store, watcher);
@@ -241,7 +241,7 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
     expect(all[0]!.slug).toBe('v1');
   });
 
-  it('schedulePage skips an incremental upsert reserved-named "current"', async () => {
+  it('an incremental upsert skips a file reserved-named "current"', async () => {
     store.write('current', {
       name: 'current',
       slug: 'current',
@@ -250,13 +250,13 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
       createdBy: 'user',
       roots: ['pages'],
     });
-    indexer.schedulePage('current.json');
+    indexer.onChange('context:test', 'releases', 'current.json');
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     expect(rows()).toHaveLength(0);
   });
 
-  it('schedulePage debounces and upserts a single new file incrementally', async () => {
+  it('an incremental upsert adds a single new file without a full rebuild', async () => {
     store.write('v1', {
       name: 'v1',
       slug: 'v1',
@@ -265,7 +265,7 @@ describe('ReleaseIndexerService — upsert-by-slug id stability', () => {
       createdBy: 'user',
       roots: ['pages'],
     });
-    indexer.schedulePage('v1.json');
+    indexer.onChange('context:test', 'releases', 'v1.json');
     await new Promise((resolve) => setTimeout(resolve, 350));
 
     const all = rows();

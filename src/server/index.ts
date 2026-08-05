@@ -4,6 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 import { WsGateway } from './ws/gateway.js';
+import { FileWatchRuntime } from './fs/watcher.js';
+import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
@@ -21,7 +23,6 @@ import {
   reloadPlugin,
   resolveBaseEntry,
 } from './core/plugin-host/loader.js';
-import { PluginWatcher } from './core/plugin-host/plugin-watcher.js';
 import { resolvePluginPackages } from './workspace/registry.js';
 import { pluginsRouter } from './routes/plugins.js';
 import { buildImportMap } from './core/plugin-host/runtime-shims.js';
@@ -269,6 +270,30 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   const httpServer = createHttpServer(app);
   const gateway = new WsGateway(httpServer);
 
+  // M40: ONE file-watch runtime per PROCESS, not per ProjectContext. It has to
+  // outlive context rebuilds for two reasons a context-owned watcher could never
+  // solve: `plugins:base` observes a pool shared by every project (there is no
+  // context it could belong to), and `plugins:overlay` observes a source whose
+  // event DESTROYS its own container (reloading the pool rebuilds the
+  // ProjectContext). A dispatched handler finishes inside this process-wide
+  // instance even if the rebuild drops its subscription meanwhile.
+  //
+  // M40 owns the WS transport but never the event catalog: it routes by the
+  // mount's scope, and each owner constructs the event it declares.
+  const watchRuntime = new FileWatchRuntime({
+    broadcaster: {
+      broadcast: (scope, event) => {
+        if (scope === 'process') {
+          for (const id of cache.liveProjectIds()) gateway.broadcast(id, event);
+          return;
+        }
+        // Scope is `context:<projectId>#<instance>` — the instance suffix keeps
+        // two live contexts for one project apart; the ROOM is still the project.
+        gateway.broadcast(scope.slice('context:'.length).split('#')[0]!, event);
+      },
+    },
+  });
+
   // M27 clone runs only on the FIRST build of the CLI-started project —
   // consumed here so a later cache rebuild never re-clones.
   let clonePending = opts.clone
@@ -295,6 +320,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
       projectId: project.id,
       cwd: project.cwd,
       gateway,
+      watchRuntime,
       mode,
       remoteApiUrl: isInitial ? opts.remoteApiUrl : undefined,
       pagesDirOverride: isInitial ? opts.pagesDir : undefined,
@@ -320,13 +346,34 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     const entry = resolveBaseEntry(pkg);
     if (entry) baseDirByPkg.set(pkg, path.dirname(entry));
   }
-  // Serialize reload runs so overlapping watcher flushes never interleave
+  // Serialize reload runs so overlapping flushes never interleave
   // unregister/register on the shared registry.
   let baseReloadChain: Promise<void> = Promise.resolve();
-  const basePluginWatcher = new PluginWatcher([...baseDirByPkg.values()], (changedPaths) => {
-    const affected = [...baseDirByPkg.entries()]
-      .filter(([, dir]) => changedPaths.some((p) => p === dir || p.startsWith(dir + path.sep)))
-      .map(([pkg]) => pkg);
+  // M33: the base pool is the one `scope: 'process'` mount in the system — it
+  // survives every ProjectContext rebuild, because it belongs to no project.
+  for (const dir of new Set(baseDirByPkg.values())) {
+    watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process' });
+  }
+  // The runtime debounces PER FILE, but a plugin rebuild rewrites a whole dist/
+  // at once — without a burst-level coalesce that is one reloadPlugin() and one
+  // cache.invalidateAll() per file (~30 full context rebuilds for one `npm run
+  // build`, and 30 `plugin:reloaded` events at the client). The watcher this
+  // replaced coalesced a burst into a single reload; keep that invariant here.
+  const BURST_MS = 300;
+  const burstTimers = new Map<string, NodeJS.Timeout>();
+  const scheduleBaseChange = (dir: string): void => {
+    const prev = burstTimers.get(dir);
+    if (prev) clearTimeout(prev);
+    burstTimers.set(
+      dir,
+      setTimeout(() => {
+        burstTimers.delete(dir);
+        onBaseChange(dir);
+      }, BURST_MS),
+    );
+  };
+  const onBaseChange = (dir: string): void => {
+    const affected = [...baseDirByPkg.entries()].filter(([, d]) => d === dir).map(([pkg]) => pkg);
     if (affected.length === 0) return;
     baseReloadChain = baseReloadChain
       .then(async () => {
@@ -347,8 +394,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
         }
       })
       .catch((err) => console.warn('[plugin-loader] base reload failed:', err));
-  });
-  basePluginWatcher.start();
+  };
+  for (const dir of new Set(baseDirByPkg.values())) {
+    watchRuntime.subscribe(
+      `${PLUGINS_BASE_SOURCE}:${dir}`,
+      { onChange: () => scheduleBaseChange(dir), onUnlink: () => scheduleBaseChange(dir) },
+      { id: 'm33-base-reload', phase: 'reload', scope: 'process' },
+    );
+  }
 
   // Per-project activation — POST /api/workspace/projects runs the SAME full
   // bootstrap as a CLI start (M01/M12/M22 hooks + registration + db migration).
@@ -398,7 +451,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
     port,
     writingStyle: initialCtx?.writingStyle ?? null,
     shutdown: async () => {
-      await basePluginWatcher.close();
+      await watchRuntime.close();
       await cache.disposeAll();
       await gateway.close();
       await closeAssets();

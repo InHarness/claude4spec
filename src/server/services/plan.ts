@@ -46,7 +46,7 @@ import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import { slugify } from './slug.js';
 import type { PagesService } from './pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -64,7 +64,7 @@ const PLAN_HEADING_RE = /^(#{2,4})\s+(.+?)\s*$/;
 
 export interface PlanServiceDeps {
   plansPages: PagesService;
-  plansWatcher: PagesWatcher;
+  plansWatcher: SelfWriteMarker;
   plansSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;
@@ -560,7 +560,19 @@ function mintPlanAnchor(taken: Set<string>): string {
   throw new Error('[plan] could not mint a free anchor in 8 attempts');
 }
 
-function injectAnchors(content: string): string {
+/**
+ * M06 anchor injection for plans — ONE implementation, TWO triggers.
+ *
+ * `update_plan(action: insert_after_section)` must see anchors immediately after
+ * the preceding write, with no debounce window, so `PlanService.update` calls
+ * this synchronously. For writes that bypass `PlanService` entirely (an agent or
+ * user editing a plan file on disk) the same function runs as the
+ * `m06-plan-anchor-injection` write-back on the `artifacts:plan` source.
+ *
+ * Scope is unchanged either way: plans stay `sectionIndexed: false` and never
+ * enter `section_index`, so plan anchors are unique within their file only.
+ */
+export function injectAnchors(content: string): string {
   const lines = content.split('\n');
   // Seed with every anchor already composed into this plan, so a value injected in this
   // pass can collide neither with an existing one nor with an earlier injection of the

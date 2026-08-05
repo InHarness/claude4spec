@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { SectionIndexEntry } from '../../shared/entities.js';
 import { parseXmlTagsExcludingCode, serializeXmlTag } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 
 interface SectionRow {
   id: number;
@@ -31,7 +31,7 @@ export interface SectionsListQuery {
  * captures we suppress when rewriting section_ref anchors. */
 export interface SectionsRootWriteDeps {
   pages: PagesService;
-  watcher: PagesWatcher;
+  watcher: SelfWriteMarker;
 }
 
 /**

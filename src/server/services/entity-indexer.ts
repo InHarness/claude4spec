@@ -24,7 +24,7 @@
 
 import type Database from 'better-sqlite3';
 import type { EntityStore } from './entity-store.js';
-import type { EntitiesWatcher } from '../fs/entities-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { TagsService } from './tags.js';
@@ -40,15 +40,14 @@ import {
   stripPayloadVersion,
   upgradePayload,
 } from '../serialization/payload-upgrade.js';
+import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 
-export class EntityIndexerService {
-  private debounceMs = 300;
-  private pending = new Map<string, NodeJS.Timeout>();
+export class EntityIndexerService implements WatchSubscriber {
 
   constructor(
     private db: Database.Database,
     private store: EntityStore,
-    private watcher: EntitiesWatcher,
+    private watcher: SelfWriteSuppressor,
     private ws: WsEmitter,
     private host: PluginHost,
     private tags: TagsService,
@@ -264,26 +263,16 @@ export class EntityIndexerService {
 
   // ─── incremental (file-watch) ─────────────────────────────────────────────
 
-  schedulePage(relPath: string): void {
-    const prev = this.pending.get(relPath);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(relPath);
-      try {
-        this.indexFromWatch(relPath);
-      } catch (err) {
-        console.error(`[entity-indexer] failed to index ${relPath}:`, err);
-      }
-    }, this.debounceMs);
-    this.pending.set(relPath, timer);
+  /** M40 subscriber contract. Debounce lives in the mount, not here. */
+  onChange(_scope: WatchScope, _source: string, relPath: string): void {
+    this.indexFromWatch(relPath);
+  }
+
+  onUnlink(_scope: WatchScope, _source: string, relPath: string): Promise<void> {
+    return this.handleUnlink(relPath);
   }
 
   async handleUnlink(relPath: string): Promise<void> {
-    const prev = this.pending.get(relPath);
-    if (prev) {
-      clearTimeout(prev);
-      this.pending.delete(relPath);
-    }
     if (this.store.isTagsFile(relPath)) {
       // A true tags.json unlink is degenerate; do NOT mass-delete tags (would
       // cascade entity_tag). Keep the current tag index; warn.

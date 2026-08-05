@@ -27,7 +27,7 @@ import { BRIEF_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import { hashContent } from './artifact-content.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { FileVersionService } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -40,7 +40,7 @@ const GENERATOR_VERSION = 'brief-author@0.1';
 
 export interface BriefServiceDeps {
   briefsPages: PagesService;
-  briefsWatcher: PagesWatcher;
+  briefsWatcher: SelfWriteMarker;
   briefsSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;

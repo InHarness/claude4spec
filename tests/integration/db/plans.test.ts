@@ -4,10 +4,11 @@ import path from 'node:path';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import type Database from 'better-sqlite3';
 import { createTestDb } from '../../helpers/test-db.js';
-import { PlanService } from '../../../src/server/services/plan.js';
+import { PlanService, injectAnchors } from '../../../src/server/services/plan.js';
 import { ChatService } from '../../../src/server/services/chat.js';
 import { PagesService } from '../../../src/server/services/pages.js';
-import { PagesWatcher } from '../../../src/server/fs/watcher.js';
+import { FileWatchRuntime, type WatchSubscriber } from '../../../src/server/fs/watcher.js';
+import { artifactSource, boundWriter } from '../../../src/server/fs/sources.js';
 import { FileSerializer } from '../../../src/server/services/file-serializer.js';
 import { FileVersionService } from '../../../src/server/services/file-version.js';
 import { PagesFrontmatterIndexer } from '../../../src/server/services/pages-frontmatter-indexer.js';
@@ -28,6 +29,7 @@ interface Harness {
   db: Database.Database;
   service: PlanService;
   plansPages: PagesService;
+  watch: ReturnType<FileWatchRuntime['scoped']>;
 }
 
 /** `ws` overrides only the PlanService-level dep — the watcher/indexer stay on
@@ -37,7 +39,10 @@ async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
   const db = createTestDb();
   const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
   await plansPages.ensureRoot();
-  const plansWatcher = new PagesWatcher(plansPages.root, noopWs, PLAN_ROOT_MARKER);
+  const watchRuntime = new FileWatchRuntime({ fsEvents: false });
+  watchRuntime.mountSource({ source: artifactSource('plan'), dir: plansPages.root, scope: 'context:test' });
+  const watch = watchRuntime.scoped('context:test');
+  const plansWatcher = boundWriter(watch, artifactSource('plan'));
   const plansSerializer = new FileSerializer(plansPages);
   const pageVersions = new FileVersionService(db, plansSerializer);
   const frontmatterIndexer = new PagesFrontmatterIndexer(
@@ -54,7 +59,30 @@ async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
     frontmatterIndexer,
     ws,
   });
-  return { cwd, db, service, plansPages };
+  return { cwd, db, service, plansPages, watch };
+}
+
+/** Reads one named plan file's raw content. */
+async function readPlanFile(h: Harness, rel: string): Promise<string> {
+  return fs.readFile(path.join(h.plansPages.root, rel), 'utf-8');
+}
+
+/**
+ * The `m06-plan-anchor-injection` write-back, built exactly as
+ * `buildProjectContext` builds it — same `injectAnchors`, same `suppress()`
+ * before the write.
+ */
+function planAnchorWriteBack(h: Harness): WatchSubscriber {
+  return {
+    onChange: async (_scope, source, relPath) => {
+      const page = await h.plansPages.read(relPath);
+      const injected = injectAnchors(page.body);
+      if (injected === page.body) return;
+      h.watch.suppress(source, relPath);
+      await h.plansPages.write(relPath, { frontmatter: page.frontmatter, body: injected });
+    },
+    onUnlink: () => {},
+  };
 }
 
 async function teardown(h: Harness): Promise<void> {
@@ -449,5 +477,55 @@ describe('PlanService.updateContent — broadcasts plans:changed (regression)', 
     } finally {
       await teardown(h);
     }
+  });
+});
+
+describe('M40 — plan anchor injection has one implementation and two triggers', () => {
+  let h: Harness;
+
+  beforeEach(async () => {
+    h = await setup();
+  });
+  afterEach(async () => {
+    await teardown(h);
+  });
+
+  it('[ac:ac-update-plan-action-insert-after-sectio] insert_after_section sees anchors immediately after the preceding save, with no debounce wait', async () => {
+    seedThread(h.db, 't-sync');
+    // First save mints the anchors. `PlanService.update` injects synchronously —
+    // NOT as a write-back — precisely so the next call can target them at once.
+    await h.service.update({
+      threadId: 't-sync',
+      title: 'Sync plan',
+      action: 'replace',
+      content: '## Alpha\n\ntext\n\n## Beta\n\nmore\n',
+      changedBy: 'agent',
+    });
+    const afterFirst = await soleStoredBody(h);
+    const anchor = afterFirst.match(new RegExp(ANCHOR_PATTERN_SOURCE))?.[1];
+    expect(anchor).toBeTruthy();
+
+    // No timer advanced, no sleep: the very next call resolves that anchor.
+    await h.service.update({
+      threadId: 't-sync',
+      action: 'insert_after_section',
+      anchor,
+      content: 'inserted body\n',
+      changedBy: 'agent',
+    });
+    expect(await soleStoredBody(h)).toContain('inserted body');
+  });
+
+  it('[ac:ac-zewnetrzny-zapis-pliku-planu-poza-plan] a plan written straight to disk gets its anchors from the M06 write-back on artifacts:plan', async () => {
+    // Bypass PlanService entirely — this is an agent or a user editing plansDir.
+    const rel = 'external-plan.md';
+    await h.plansPages.write(rel, { frontmatter: { type: 'plan' }, body: '## Written outside\n\nbody\n' });
+    expect(await readPlanFile(h, rel)).not.toMatch(new RegExp(ANCHOR_PATTERN_SOURCE));
+
+    // The same `injectAnchors` implementation, reached as a write-back instead.
+    const injection = planAnchorWriteBack(h);
+    await injection.onChange('context:test', artifactSource('plan'), rel, 'external');
+
+    expect(await readPlanFile(h, rel)).toMatch(new RegExp(ANCHOR_PATTERN_SOURCE));
   });
 });

@@ -33,7 +33,7 @@ import type { FileVersionService } from './file-version.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { TagsService } from './tags.js';
 import type { PagesService } from './pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import { DomainError } from './tags.js';
 import { HostEntityWriter } from './entity-writer.js';
 import type { RestoreContext, RestoreResult } from '../serialization/types.js';
@@ -255,7 +255,12 @@ export class ReleaseService {
     private rawReader: RawEntityReader,
     private tagsService: TagsService,
     private pagesService: PagesService,
-    private watcher: PagesWatcher | null = null,
+    /**
+     * M40: resolve the write handle for a root. Restore deliberately writes with
+     * `markOrigin`, NOT `suppress` — capture must see the write and record the
+     * new version. That is the clearest proof the two are different mechanisms.
+     */
+    private writerFor: (rootId: string) => SelfWriteMarker | null = () => null,
     private cwd: string = process.cwd(),
     /**
      * 0.1.96: ids of the releasable roots (config.roots filtered by `releasable`).
@@ -1507,9 +1512,14 @@ export class ReleaseService {
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
       if (await this.pagesService.exists(input.path)) {
-        this.watcher?.suppress(input.path);
+        // Same as the pages route: mark, remove, flush. A suppress here would
+        // linger and swallow an immediate re-create; `capture` synthesizes the
+        // tombstone from the last recorded version.
+        const deleteWriter = this.writerFor('pages');
+        deleteWriter?.markOrigin(input.path, 'user');
         await this.pagesService.remove(input.path);
-        await this.pageVersions.recordVersion(input.path, 'delete', 'user');
+        if (deleteWriter) await deleteWriter.flush(input.path, 'unlink');
+        else await this.pageVersions.recordVersion(input.path, 'delete', 'user');
         return { path: input.path, op: 'deleted' };
       }
       return { path: input.path, op: 'noop' };
@@ -1531,7 +1541,13 @@ export class ReleaseService {
       return { path: input.path, op: 'noop' };
     }
 
-    this.watcher?.suppress(input.path);
+    // Restore must land byte-for-byte, so it SUPPRESSES rather than marking origin:
+    // a marked write would run the M06 anchor write-back, which rewrites the file
+    // through `pages.write` — re-serializing frontmatter and injecting anchors the
+    // restored version never had. Because the reaction chain is suppressed, this is
+    // one of the few places that must author its own `file_version` row.
+    const restoreWriter = this.writerFor('pages');
+    restoreWriter?.suppress(input.path);
     // Write raw content directly — bypass frontmatter splitting so byte-for-byte fidelity is preserved.
     const fsP = await import('node:fs/promises');
     const pathMod = await import('node:path');
@@ -1752,10 +1768,20 @@ export class ReleaseService {
           assertSafeBundlePath(rel);
           const content = nodeFs.readFileSync(nodePath.join(srcDir, rel), 'utf8');
           const abs = nodePath.join(destRoot, rel);
-          if (this.watcher && this.watcher.rootId === root.id) this.watcher.suppress(rel);
+          // A bundle can carry a root the destination project does not have
+          // configured yet — the clone case, where config.json is itself being
+          // restored FROM the bundle. There is no mount and no writer for it, so
+          // `capture` cannot author the row and this must.
+          const rootWriter = this.writerFor(root.id);
           nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
-          nodeFs.writeFileSync(abs, content, 'utf8');
-          await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
+          if (rootWriter) {
+            rootWriter.markOrigin(rel, 'user');
+            nodeFs.writeFileSync(abs, content, 'utf8');
+            await rootWriter.flush(rel);
+          } else {
+            nodeFs.writeFileSync(abs, content, 'utf8');
+            await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
+          }
           pages.push({ path: rel, op: 'create', data: { path: rel, content } });
         }
       }

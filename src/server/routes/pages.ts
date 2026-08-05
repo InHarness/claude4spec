@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { PagesService } from '../services/pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
 
@@ -11,7 +11,7 @@ import type { Root } from '../../shared/types.js';
 export interface PageRootRuntime {
   root: Root;
   pages: PagesService;
-  watcher: PagesWatcher | null;
+  writer: SelfWriteMarker | null;
 }
 
 /**
@@ -87,15 +87,12 @@ export function pagesRouter(
       if (await rt.pages.exists(relPath)) {
         return res.status(409).json({ error: { code: 'PAGE_EXISTS', message: `page '${relPath}' already exists` } });
       }
-      rt.watcher?.suppress(relPath);
+      // M40: label the write, then drive its reactions to completion. `capture`
+      // (M17) is the sole author of `file_version`, so the version row must
+      // exist before we respond — that is what `flush` guarantees.
+      rt.writer?.markOrigin(relPath, 'user');
       const result = await rt.pages.write(relPath, { body: body.content ?? '' });
-      if (pageVersions) {
-        try {
-          await pageVersions.recordVersion(relPath, 'create', 'user', undefined, undefined, rt.root.id);
-        } catch (err) {
-          console.warn(`[file-version] create capture failed for ${relPath}:`, (err as Error).message);
-        }
-      }
+      await rt.writer?.flush(relPath);
       const writtenAbs = path.join(rt.pages.root, relPath);
       const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
       const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
@@ -161,15 +158,9 @@ export function pagesRouter(
         }
       }
 
-      rt.watcher?.suppress(relPath);
+      rt.writer?.markOrigin(relPath, 'user');
       const result = await rt.pages.write(relPath, { body: body.body, frontmatter: body.frontmatter });
-      if (pageVersions) {
-        try {
-          await pageVersions.recordVersion(relPath, existed ? 'update' : 'create', 'user', undefined, undefined, rt.root.id);
-        } catch (err) {
-          console.warn(`[file-version] capture failed for ${relPath}:`, (err as Error).message);
-        }
-      }
+      await rt.writer?.flush(relPath);
       const writtenAbs = path.join(rt.pages.root, relPath);
       const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
       const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
@@ -193,15 +184,14 @@ export function pagesRouter(
           /* ignore */
         }
       }
-      rt.watcher?.suppress(relPath);
+      // Deletes go through the same markOrigin + flush path as every other server
+      // write. They must NOT suppress: a suppress token issued here has no event
+      // of its own to be consumed by if the file is re-created immediately, and
+      // would then swallow that re-create (no version row at all). `capture`
+      // authors the tombstone, synthesizing the content from the last version.
+      rt.writer?.markOrigin(relPath, 'user');
       await rt.pages.remove(relPath);
-      if (pageVersions) {
-        try {
-          await pageVersions.recordVersion(relPath, 'delete', 'user', lastContent, undefined, rt.root.id);
-        } catch (err) {
-          console.warn(`[file-version] delete capture failed for ${relPath}:`, (err as Error).message);
-        }
-      }
+      await rt.writer?.flush(relPath, 'unlink');
       res.json({ ok: true });
     } catch (err) {
       next(err);

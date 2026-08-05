@@ -22,7 +22,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { SectionIndexerService } from '../services/section-indexer.js';
 import { PagesService } from '../services/pages.js';
-import { PagesWatcher } from '../fs/watcher.js';
 import { createDiscoveryCore } from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
@@ -31,6 +30,7 @@ import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore, GetSectionsResult, SectionResultItem } from './types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
+import type { WatchSubscriber } from '../fs/watcher.js';
 
 const host = {
   listEntities: () => [],
@@ -80,20 +80,25 @@ describe('discovery core over the real section indexer', () => {
     await fs.rm(cwd, { recursive: true, force: true });
   });
 
+  let injection: WatchSubscriber;
+
   async function index(relPath: string, content: string): Promise<void> {
     await pages.write(relPath, { body: content });
     // ONE long-lived indexer per test, as in production. A fresh instance per
     // call would discard the service's own state and quietly make the
     // cross-page anchor cases pass for the wrong reason.
-    const watcher = { suppress: () => {} } as unknown as PagesWatcher;
     indexer ??= new SectionIndexerService(
       db,
-      new Map([['pages', { pages, watcher }]]),
+      new Map([['pages', { pages }]]),
       { broadcast: () => {} } as never,
       host,
     );
-    // The indexer injects any missing `<!-- anchor: … -->` and rewrites the file.
+    injection ??= indexer.anchorInjectionSubscriber(() => {});
+    // 0.2.10: the projection MINTS anchors and hands them to the write-back
+    // phase; production runs that phase right after. Driving both here keeps the
+    // file on disk in the same state the old single-pass indexer left it in.
     await indexer.indexPage('pages', relPath);
+    await injection.onChange('context:test', 'pages:pages', relPath, 'external');
   }
 
   function anchorOf(heading: string): string {
