@@ -108,7 +108,7 @@ export type {
 export type {
   AccessHint,
   CollectionNode,
-  CountPredicate,
+  DefaultPredicate,
   DataDeclaration,
   EnumNode,
   FieldFlags,

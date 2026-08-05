@@ -5,7 +5,6 @@ import { acSystemPrompt } from './system-prompt.js';
 import { acsRouter } from './routes.js';
 import { AcService } from './service.js';
 import { createAcToolsServer } from './mcp-server.js';
-import { acCreateSchema, acUpdateSchema } from './crud-schemas.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
 export const acBackendModule: BackendModule = {
@@ -28,10 +27,6 @@ export const acBackendModule: BackendModule = {
     // is gone. `ref: '$type'` on that field says the same thing declaratively,
     // and `db/ref-rewrite.ts` acts on it for every type at once.
     service: (ctx) => new AcService(ctx.db, ctx.tagsService, ctx.versionService, ctx.host, ctx.entityStore),
-    crud: {
-      createSchema: acCreateSchema,
-      updateSchema: acUpdateSchema,
-    },
     routes: {
       router: (service, ctx) => acsRouter(service as AcService, ctx.referencesService),
     },

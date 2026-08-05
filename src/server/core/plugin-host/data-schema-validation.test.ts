@@ -422,7 +422,7 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
   });
 });
 
-describe('systemPrompt.countPredicate', () => {
+describe('systemPrompt.defaultPredicate', () => {
   const withPredicate = (predicate: unknown, data: DataDeclaration = OK) => () =>
     validateDataDeclaration('widget', data, NAME_PATTERN, 1, predicate as never);
 

@@ -9,7 +9,6 @@ import { endpointSystemPrompt } from './system-prompt.js';
 import { endpointsRouter } from './backend/routes.js';
 import { EndpointService } from './backend/services.js';
 import { createEndpointToolsServer } from './backend/mcp.js';
-import { endpointCreateSchema, endpointUpdateSchema } from './backend/crud-schemas.js';
 import { endpointData, endpointSlugPattern } from './schema.js';
 
 /**
@@ -45,7 +44,6 @@ export const endpointEntity: EntityContribution = {
     // still embed the old slug — but `ref: 'dto'` on `linkedDtos[].dto` is what
     // tells the host to collect those endpoints and re-persist them.
     service: (ctx: MountContext) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: { createSchema: endpointCreateSchema, updateSchema: endpointUpdateSchema },
     routes: {
       router: (service: unknown, ctx: MountContext) => endpointsRouter(service as EndpointService, ctx.referencesService),
     },

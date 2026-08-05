@@ -95,25 +95,24 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
    *
    * 2.0.0 (item 28) — `CRUD_NOT_SUPPORTED` is GONE. Every active type has CRUD
    * by construction: it declares `data.schema`, so the host can generate its
-   * input schemas and write its projection. The service is now OPTIONAL, and
-   * `null` means "write through the host's generic door", not "refuse".
+   * input schemas and write its projection.
    *
    * The code was not only obsolete, it was wrong on the read side: `get_entities`
    * resolves through this same function, so a type with no `backend.crud` — the
    * shape every declaratively-authored plugin has — could not be READ either.
+   *
+   * Tier K: the resolved `service` is gone too. Every type writes through the
+   * generic door now; there is nothing left to dispatch to.
    */
   const resolveType = (
     type: string,
-  ):
-    | { ok: true; module: BackendModule; service: EntityCrudService | null }
-    | { ok: false; response: FailResponse } => {
+  ): { ok: true; module: BackendModule } | { ok: false; response: FailResponse } => {
     const available = deps.host.getAvailable(type);
     if (!available) return { ok: false, response: fail('INVALID_TYPE', `unknown entity type '${type}'`) };
     if (!deps.host.isActive(type)) {
       return { ok: false, response: fail('INACTIVE_TYPE', `entity type '${type}' is not active in this project`) };
     }
-    const module = deps.host.getEntity(type)!;
-    return { ok: true, module, service: deps.host.getEntityService(type) as EntityCrudService | null };
+    return { ok: true, module: deps.host.getEntity(type)! };
   };
 
   /** Light resolution for describe_entity_type: any active type, CRUD or not. */
@@ -129,37 +128,26 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   };
 
   /**
-   * 2.0.0 (item 27) — generated from `data.schema`, for a type that has stopped
-   * hand-writing its own.
+   * 2.0.0 (item 27) — generated from `data.schema`, the one source there is.
    *
-   * A DECLARED `backend.crud` still wins while it exists, and that is the same
-   * staging the generated REST router uses, for the same reason: the six
-   * built-in types still write through their own services, and those services
-   * only honour the fields their hand-written schemas named. Publishing the
-   * generated (wider) schema over a narrower service is not a cosmetic
-   * mismatch — it advertises `endpoint.linkedDtos` and an explicit `slug` to an
-   * agent, accepts both, and drops them with no error and no warning. Better to
-   * describe what the write path will actually do.
-   *
-   * Tier K deletes `backend.crud` along with the services, and every type falls
-   * through to the generated branch with nothing else to change.
+   * Tier E staged this behind a declared `backend.crud`, because the six
+   * built-ins still wrote through services that only honoured the fields their
+   * hand-written schemas named, and publishing the wider generated schema over a
+   * narrower service advertises `endpoint.linkedDtos` and an explicit `slug` to
+   * an agent, accepts both, and drops them with no error. Tier K deleted the
+   * services and the slot; what is described is now what the write path does.
    */
-  const createSchemaOf = (module: BackendModule) =>
-    module.backend?.crud ? z.object(module.backend.crud.createSchema) : z.object(buildCreateShape(module.data!));
-  const updateSchemaOf = (module: BackendModule) => {
-    const declared = module.backend?.crud;
-    if (!declared) return z.object(buildUpdateShape(module.data!));
-    return declared.updateSchema ? z.object(declared.updateSchema) : z.object(declared.createSchema).partial();
-  };
+  const createSchemaOf = (module: BackendModule) => z.object(buildCreateShape(module.data!));
+  const updateSchemaOf = (module: BackendModule) => z.object(buildUpdateShape(module.data!));
 
   /**
-   * The generic write door, for a type with no service.
+   * The generic write door — the only one.
    *
-   * `null` when this server was constructed without the tag/file/version deps —
+   * Throws when this server was constructed without the tag/file/version deps —
    * only the hand-built test rigs do that. Reported as a DomainError rather
-   * than silently degrading, because "the type has no service AND the host was
-   * not given what it needs to stand in" is a wiring bug and must not read like
-   * a validation failure of the caller's payload.
+   * than silently degrading, because "the host was not given what it needs to
+   * write" is a wiring bug and must not read like a validation failure of the
+   * caller's payload.
    */
   const genericDeps = (): GenericCrudDeps => {
     if (!deps.tagsService || !deps.entityStore) {
@@ -190,18 +178,20 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     }
   };
 
-  /** `EntityCrudService.list` for a type that has none — the M39 core's enumeration. */
+  /** The M39 core's enumeration — the only one, since tier K. */
   const coreList = (
     type: string,
     tags: string[] | undefined,
     tagFilter: 'and' | 'or',
     limit: number,
     offset: number,
+    filters?: Record<string, unknown>,
   ): { items: Array<{ slug: string }>; total: number } => {
     const page = deps.discovery.listEntities({
       type,
       view: 'element_list_item',
       ...(tags?.length ? { tags, filter: tagFilter } : {}),
+      ...(filters ? { filters } : {}),
       limit,
       offset,
     });
@@ -225,7 +215,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const schema = createSchemaOf(resolved.module);
       const items = args.items as Array<Record<string, unknown>>;
 
@@ -237,9 +226,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           continue;
         }
         try {
-          const created = service
-            ? await service.create(parsed.data)
-            : genericCreate(genericDeps(), type, parsed.data, 'agent');
+          const created = genericCreate(genericDeps(), type, parsed.data, 'agent');
           broadcastChanged(type, created.slug);
           results.push(created.warnings?.length ? created : { slug: created.slug });
         } catch (err) {
@@ -290,7 +277,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const schema = updateSchemaOf(resolved.module);
       const updates = args.updates as Array<{ slug: string; data: Record<string, unknown>; newSlug?: string }>;
 
@@ -303,9 +289,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         }
         try {
           const data = u.newSlug !== undefined ? { ...parsed.data, newSlug: u.newSlug } : parsed.data;
-          const updated = service
-            ? await service.update(u.slug, data)
-            : genericUpdate(genericDeps(), type, u.slug, data, 'agent');
+          const updated = genericUpdate(genericDeps(), type, u.slug, data, 'agent');
           if (updated.slug !== u.slug) {
             await deps.referencesService.propagateSlugChange(type as EntityType, u.slug, updated.slug);
           }
@@ -331,7 +315,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const slugs = (args.slugs as string[]).map(String);
 
       const results: ItemResult<{ deleted: true; brokenReferences: Array<{ pagePath: string; count: number }> }>[] = [];
@@ -340,8 +323,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           const hits = await deps.referencesService.findReferences(type as EntityType, slug);
           const counts = new Map<string, number>();
           for (const h of hits) counts.set(h.pagePath, (counts.get(h.pagePath) ?? 0) + 1);
-          if (service) service.delete(slug);
-          else genericDelete(genericDeps(), type, slug, 'agent');
+          /**
+           * An absent slug is an ERROR for this item, not a silent success.
+           *
+           * The retired services threw `NOT_FOUND` from `.delete()`; the generic
+           * door reports `{ deleted: false }` instead, which the batch envelope
+           * would otherwise have relabelled `{ deleted: true }` — telling an
+           * agent it removed something that was never there.
+           */
+          const removed = genericDelete(genericDeps(), type, slug, 'agent');
+          if (!removed.deleted) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
           broadcastChanged(type, slug);
           results.push({
             deleted: true,
@@ -373,7 +364,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` is a type-specific escape hatch (e.g. ac: { status: "all", kind: "edge-case" }) — see describe_entity_type for what a type accepts; unrecognized keys are ignored by types that don\'t support them.',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: no filter is applied unless you pass one — `ac` in particular lists deprecated ACs alongside active ones unless you ask for { status: "active" }.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
@@ -387,7 +378,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const offset = (args.offset as number | undefined) ?? 0;
       const opts = {
         tags: args.tags as string[] | undefined,
@@ -397,18 +387,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         offset,
       };
       /**
-       * `count` still asks the service, not the core: the service owns `filters`
-       * and therefore owns what "matching" means for this type. Asking the core
-       * instead would count a different set whenever a filter is in play.
+       * 2.0.0 tier K — one enumeration, the core's, filters included.
        *
-       * 2.0.0 — with no service there are no type-specific `filters` either, so
-       * the core answers both halves. It is the same enumeration the service's
-       * `list` wraps (`listSlugs` / `findByTag`, the reader's order), which is
-       * why the two agree on everything but the escape hatch.
+       * `filters` used to be a per-type escape hatch implemented by whichever
+       * service felt like it, which meant `count` had to ask the service too or
+       * the two halves would count different sets. It is derived from
+       * `data.schema` now (`RawEntityReader.slugsMatching`), so both halves are
+       * the same query and every type supports it — including the ones that
+       * never shipped a service to implement it with.
        */
-      const page = service
-        ? service.list(opts)
-        : coreList(type, opts.tags, opts.tagFilter, opts.limit, offset);
+      const page = coreList(type, opts.tags, opts.tagFilter, opts.limit, offset, opts.filters);
       if (args.mode === 'count') return ok({ type, mode: 'count', total: page.total });
       const slugs = page.items.map((item) => (item as { slug: string }).slug);
       return ok({

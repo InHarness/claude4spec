@@ -297,14 +297,24 @@ export interface DataDeclaration {
 }
 
 /**
- * A declarative count filter over the type's OWN fields.
+ * A declarative filter over the type's OWN fields — the type's DEFAULT view of
+ * itself.
  *
  * Replaces `SystemPromptContribution.countStat.sqlQuery`, the last place a
  * module handed the host raw SQL to execute. Equality and set membership only:
  * cross-entity predicates are out of scope by design, and a raw-SQL slot is
  * excluded permanently because it would break M13's read-exclusivity invariant.
+ *
+ * 2.0.0 tier K — was `CountPredicate`, and count was its only consumer. It now
+ * has two: `RawEntityReader.count()` and the implicit filter every list read
+ * starts from (`slugsMatching`), which a caller overrides per field by naming
+ * that field in `filters`. The rename is the point — `ac` declares
+ * `{ field: 'status', in: ['active'] }` because a deprecated AC is not part of
+ * the working set, and that was true of the LIST long before it was true of the
+ * badge. Keeping the count-only name is what let the two disagree: the sidebar
+ * said 12 while the list showed 17.
  */
-export interface CountPredicate {
+export interface DefaultPredicate {
   field: string;
   eq?: string | number | boolean;
   in?: readonly (string | number | boolean)[];

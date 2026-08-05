@@ -409,7 +409,7 @@ export class RawEntityReader {
     // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
-    const where = this.compileCountPredicate(type);
+    const where = this.compileDefaultPredicate(type);
     const row = this.db
       .prepare(`SELECT COUNT(*) AS c FROM ${table}${where.sql}`)
       .get(...where.params) as { c: number };
@@ -423,16 +423,16 @@ export class RawEntityReader {
    * count comes back unfiltered. The callers are a sidebar badge and a
    * system-prompt line: a slightly-too-large number is a cosmetic defect, while
    * a throw blanks the whole sidebar and 500s every chat turn. Registration
-   * validation (`checkCountPredicate`) is where a bad predicate is rejected
+   * validation (`checkDefaultPredicate`) is where a bad predicate is rejected
    * loudly; by the time a count runs, the manifest has already been vetted.
    *
    * `isEmbedded` is re-checked here rather than trusted from registration
    * because a hand-built module in a test never goes through it, and this method
    * must not be the thing that throws.
    */
-  private compileCountPredicate(type: string): { sql: string; params: unknown[] } {
+  private compileDefaultPredicate(type: string): { sql: string; params: unknown[] } {
     const module = this.host?.getEntity(type);
-    const predicate = module?.systemPrompt?.countPredicate;
+    const predicate = module?.systemPrompt?.defaultPredicate;
     if (!predicate?.field) return { sql: '', params: [] };
     const node = module?.data?.schema?.[predicate.field];
     if (!node || !isEmbedded(node)) return { sql: '', params: [] };
@@ -447,6 +447,78 @@ export class RawEntityReader {
       return { sql: ` WHERE ${column} = ?`, params: [predicate.eq] };
     }
     return { sql: '', params: [] };
+  }
+
+  /**
+   * The slugs of `type` matching a declarative field filter, or `null` when the
+   * filter selects nothing the type declares.
+   *
+   * 2.0.0 tier K — the replacement for `list_entities`' type-specific `filters`
+   * escape hatch. It used to be implemented by whichever service felt like it
+   * (in practice one: `AcService`, for `status`/`kind`); tier K deletes the
+   * services, and the choice was between deriving the filter from the
+   * declaration and dropping the capability. Dropping it silently is what
+   * `search_entities` refuses `filters` outright to avoid — "returning
+   * unfiltered rows under a parameter that promises filtering is how an agent
+   * acts on deprecated ACs it explicitly excluded" — and that argument does not
+   * get weaker on the tool where the parameter actually worked.
+   *
+   * Same vocabulary as `defaultPredicate`, and for the same reason: equality and
+   * set membership over the type's OWN embedded scalar fields, compiled into a
+   * parameterised `WHERE`. No joins, no cross-entity conditions, no raw-SQL
+   * slot — a module able to hand the host SQL to execute breaks M13's
+   * read-exclusivity invariant however narrow the intended use.
+   *
+   * A key naming no declared, projected field is IGNORED, which is the contract
+   * `list_entities` has always advertised ("unrecognized keys are ignored by
+   * types that don't support them"). Every declared scalar field IS supported
+   * now, so "unrecognized" no longer varies by type.
+   */
+  slugsMatching(type: string, filters: Record<string, unknown> = {}): Set<string> | null {
+    const table = this.resolveTable(type);
+    const module = this.host?.getEntity(type);
+    const schema = module?.data?.schema;
+    if (!table || !schema) return null;
+
+    /**
+     * The type's `defaultPredicate` is where a list read STARTS, and an explicit
+     * filter on the same field replaces it — per field, not wholesale, so naming
+     * one field does not silently drop the constraint on another.
+     *
+     * `ac` declares `{ field: 'status', in: ['active'] }`, which is why
+     * `list_entities({ type: 'ac' })` still hides deprecated ACs after the
+     * service that used to default it was deleted. `{ status: 'all' }` is no
+     * longer the escape: name the values you want, or pass
+     * `['active','deprecated']`.
+     */
+    const predicate = module?.systemPrompt?.defaultPredicate;
+    const effective: Record<string, unknown> = {};
+    if (predicate?.field && !(predicate.field in filters)) {
+      if (predicate.in?.length) effective[predicate.field] = [...predicate.in];
+      else if (predicate.eq !== undefined) effective[predicate.field] = predicate.eq;
+    }
+    Object.assign(effective, filters);
+
+    const where: string[] = [];
+    const params: unknown[] = [];
+    for (const [field, value] of Object.entries(effective)) {
+      if (value === undefined) continue;
+      const node = schema[field];
+      if (!node || !isEmbedded(node)) continue;
+      const column = columnOf(field, node);
+      const values = (Array.isArray(value) ? value : [value]).filter(isFilterScalar);
+      // An array that held nothing usable is not "match everything" — the caller
+      // named a field and offered no value it could match, so it matches nothing.
+      if (!values.length) return new Set();
+      where.push(`${column} IN (${values.map(() => '?').join(', ')})`);
+      params.push(...values);
+    }
+    if (!where.length) return null;
+
+    const rows = this.db
+      .prepare(`SELECT slug FROM ${table} WHERE ${where.join(' AND ')}`)
+      .all(...params) as Array<{ slug: string }>;
+    return new Set(rows.map((r) => r.slug));
   }
 
   listTags(): RawTag[] {
@@ -693,4 +765,13 @@ function safeJsonValue(raw: string): unknown {
   } catch {
     return raw;
   }
+}
+
+/**
+ * A value a declarative filter can bind. Anything else — an object, an array of
+ * arrays, `null` — is dropped rather than bound, because SQLite would compare it
+ * by its stringification and quietly match nothing.
+ */
+function isFilterScalar(v: unknown): v is string | number | boolean {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
 }

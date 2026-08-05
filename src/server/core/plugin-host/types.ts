@@ -174,38 +174,33 @@ export interface BackendModule extends EntityModuleManifest {
   systemPrompt: SystemPromptContribution;
 
   /**
-   * L1–L4 backend slots. Either declare `service`/`crud`/`routes`/`mcpServer`
+   * L1–L4 backend slots. Either declare `service`/`routes`/`mcpServer`
    * (the host synthesizes an equivalent `mount`, see
    * `manifest-adapter.ts#synthesizeMount`) or write `mount` directly as an
    * escape hatch — `mount`, when present, always wins.
    */
   backend?: {
     mount?: PluginMountFn;
-    /** M13 — L2 service factory, instantiated once per `ProjectContext`. */
-    service?: (ctx: MountContext) => EntityCrudService;
     /**
-     * M13 — declarative contribution to the generic `entity-tools` server.
-     * Requires `service` (enforced by `synthesizeMount`). Kept on the module
-     * post-lowering (not consumed away) — `entity-tools` reads it directly for
-     * schema validation and `describe_entity_type`.
+     * L2 DOMAIN-HELPER factory, instantiated once per `ProjectContext` and
+     * registered under `getEntityService(type)`.
+     *
+     * 2.0.0 tier K: this stopped being a CRUD service. The six that were one are
+     * deleted; what a type may still contribute here is domain logic the host
+     * cannot derive from `data.schema` — `ac`'s LLM analysis service,
+     * `design-system`'s `resolve(groups, modes, activeMode?)`. Hence `unknown`:
+     * the host neither knows nor needs the shape, and typing it as
+     * `EntityCrudService` invited exactly the by-shape `?.upsert` probing that
+     * kept the deleted write fork alive.
+     *
+     * 2.0.0 tier K — `crud` was REMOVED. Its `createSchema`/`updateSchema` are
+     * generated from `data.schema` (item 27, `crud-schema-gen.ts`); a second
+     * hand-written description of the same fields could only ever drift from the
+     * table, the payload and the write door, which is what it did.
      */
-    crud?: {
-      createSchema: ZodRawShape;
-      updateSchema?: ZodRawShape;
-      descriptions?: { entity?: string };
-      /*
-       * 0.2.4 — `searchableFields` was REMOVED (not deprecated). Search scope
-       * now has exactly one source: the text paths derivable from
-       * `data.schema` (`createSchema` until 2.0.0), with the agent's `fields`
-       * parameter as the only
-       * override. Had one of the two type-side layers survived, the same type
-       * would rank differently depending on which MCP tool asked. Both had zero
-       * producers across the host repo, the preinstalled envelope and external
-       * packages — the sole occurrence was a test fixture.
-       */
-    };
+    service?: (ctx: MountContext) => unknown;
     /**
-     * A factory receiving the same service instance as `crud`/`mcpServer`.
+     * A factory receiving the same service instance as `mcpServer`.
      * ALWAYS a factory (never a bare `Router`) — express's `Router` type is
      * itself callable (`(req, res, next) => void`), so a `Router | (fn)`
      * union can't be discriminated at runtime by `typeof x === 'function'`
@@ -253,7 +248,7 @@ export interface BackendModule extends EntityModuleManifest {
    * `referenceType`, forwarded by `registerEntityModule` to
    * `M19.registerExtensionReferenceType` with `entityType` auto-injected.
    * Additive/optional — folds into the `1.0.0` host API baseline, same as the
-   * `backend.{service,crud,routes,mcpServer}` declarative slots above.
+   * `backend.{service,routes,mcpServer}` declarative slots above.
    */
   frontend?: {
     referenceType?: EntityReferenceType;

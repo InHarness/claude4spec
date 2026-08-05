@@ -1,12 +1,22 @@
 /**
  * Item 27's proof: the GENERATED CRUD schemas against the hand-written ones
- * they replace, field for field, for all six shipped types.
+ * they replace, field for field.
  *
- * Same instrument as tier A's `projection.golden.test.ts`. The retired schemas
- * are still in the tree (tier K deletes them), so this can compare the two
- * descriptions directly rather than freezing a snapshot of one — which is the
- * whole point: a snapshot would only say the generator is stable, and what
- * needs saying is that it agrees with six files of hand-maintained zod.
+ * Same instrument as tier A's `projection.golden.test.ts`. Tier E could import
+ * the retired schemas because they were still in the tree; **tier K deleted
+ * them**, so they are FROZEN below instead — copied verbatim from the six
+ * `crud-schemas.ts` files at the commit that removed them
+ * (`src/server/entities/{ac,diagram,ui-view,design-system}/crud-schemas.ts`).
+ *
+ * Freezing them rather than dropping the comparison is the whole point of the
+ * file. What needs saying is not that the generator is stable — a snapshot of
+ * its own output says that and nothing more — but that it agrees with the
+ * hand-maintained zod that used to be the contract. That claim outlives the
+ * files; it just has to carry its own copy of the other side.
+ *
+ * The frozen half is deliberately NOT to be "fixed" when a declaration changes.
+ * A delta against it is either enumerated in `CASES` with a reason, or it is a
+ * regression against the shipped 0.2.8 surface.
  *
  * Every difference is ENUMERATED below and asserted. A delta that is not in
  * that table fails the test — that is the only way a golden earns its keep.
@@ -21,14 +31,130 @@ import { acData } from '../../../shared/entities/ac/schema.js';
 import { diagramData } from '../../../shared/entities/diagram/schema.js';
 import { uiViewData } from '../../../shared/entities/ui-view/schema.js';
 import { designSystemData } from '../../../shared/entities/design-system/schema.js';
-import { acCreateSchema, acUpdateSchema } from '../../entities/ac/crud-schemas.js';
-import { diagramCreateSchema, diagramUpdateSchema } from '../../entities/diagram/crud-schemas.js';
-import { uiViewCreateSchema, uiViewUpdateSchema } from '../../entities/ui-view/crud-schemas.js';
-import {
-  designSystemCreateSchema,
-  designSystemUpdateSchema,
-} from '../../entities/design-system/crud-schemas.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
+
+// ─── FROZEN: the retired hand-written shapes, verbatim ──────────────────────
+
+const acCreateSchema: ZodRawShape = {
+  text: z.string().describe('Observable behavior the AC asserts. One sentence is best.'),
+  kind: z.enum(['requirement', 'edge-case']).optional().describe('requirement (default) | edge-case'),
+  status: z.enum(['active', 'deprecated']).optional(),
+  verifies: z
+    .array(z.object({ type: z.string(), slug: z.string() }))
+    .optional()
+    .describe('Entities this AC verifies. Reported broken if entity does not exist; not blocking.'),
+  description: z.string().optional(),
+  slug: z.string().optional().describe('Optional explicit slug; otherwise auto-generated.'),
+  tags: z
+    .array(z.string())
+    .optional()
+    .describe('Tag slugs. Convention: m07 for module M07, entity-dto for DTO entity, etc.'),
+};
+
+const acUpdateSchema: ZodRawShape = {
+  text: z.string().optional(),
+  kind: z.enum(['requirement', 'edge-case']).optional(),
+  status: z.enum(['active', 'deprecated']).optional(),
+  verifies: z.array(z.object({ type: z.string(), slug: z.string() })).optional(),
+  description: z.string().nullable().optional(),
+  tags: z.array(z.string()).optional(),
+};
+
+const diagramCreateSchema: ZodRawShape = {
+  source: z.string().optional().describe('DSL body (mermaid). May be empty (placeholder).'),
+  format: z.enum(['mermaid', 'd2']).optional().describe("Diagram language (default 'mermaid')."),
+  caption: z
+    .string()
+    .optional()
+    .describe('Transient — seeds the slug only (slugify(caption)); NOT persisted on the entity.'),
+  slug: z.string().optional().describe('Explicit slug; collisions get a -2/-3 suffix.'),
+  tags: z.array(z.string()).optional().describe('Tag slugs; non-existent tags are auto-created.'),
+};
+
+const diagramUpdateSchema: ZodRawShape = {
+  source: z.string().optional(),
+  format: z.enum(['mermaid', 'd2']).optional(),
+  tags: z.array(z.string()).optional(),
+};
+
+const paramSchema = z.object({
+  name: z.string().describe('Parameter name (no `:` prefix)'),
+  in: z.enum(['path', 'query', 'hash']).describe('Where the param lives'),
+  type: z.string().optional().describe('Suggested value type (string|int|uuid|enum|...)'),
+  required: z.boolean().optional(),
+  default: z.string().optional(),
+  description: z.string().optional(),
+});
+
+const uiViewCreateSchema: ZodRawShape = {
+  name: z.string().describe('Display name (e.g. "User Profile Screen")'),
+  url: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.'),
+  description: z.string().optional(),
+  params: z.array(paramSchema).optional(),
+  designSystemSlug: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Slug of a design-system this view uses (no FK; dangling allowed). Null = none.'),
+  slug: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+};
+
+const uiViewUpdateSchema: ZodRawShape = {
+  name: z.string().optional(),
+  url: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+  params: z.array(paramSchema).optional(),
+  designSystemSlug: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('Set/clear the design-system reference. Null = detach. Omit = unchanged.'),
+};
+
+const tokenValueSchema = z.union([z.string(), z.record(z.string(), z.string())]);
+
+const tokenSchema = z.object({
+  name: z.string().describe('Token name, unique within the design system'),
+  type: z
+    .string()
+    .describe('TokenType (color|dimension|fontSize|...|typography|shadow). Best-effort, not hard-validated.'),
+  value: tokenValueSchema.describe(
+    'Literal ("#2563eb", "16px"), an alias "{token-name}", or a composite object (typography/shadow).',
+  ),
+  description: z.string().optional(),
+});
+
+const groupSchema = z.object({
+  name: z.string(),
+  tier: z.enum(['primitive', 'semantic']),
+  tokens: z.array(tokenSchema),
+});
+
+const modeSchema = z.object({
+  name: z.string(),
+  overrides: z.array(z.object({ token: z.string(), value: tokenValueSchema })),
+});
+
+const designSystemCreateSchema: ZodRawShape = {
+  name: z.string().describe('Display name (e.g. "Brand 2026")'),
+  description: z.string().optional(),
+  groups: z.array(groupSchema).optional().describe('Token groups (default []).'),
+  modes: z.array(modeSchema).optional().describe('Theme modes — token override sets (default []).'),
+  slug: z.string().optional(),
+  tags: z.array(z.string()).optional().describe('Tag slugs; non-existent tags are auto-created.'),
+};
+
+const designSystemUpdateSchema: ZodRawShape = {
+  name: z.string().optional(),
+  description: z.string().nullable().optional(),
+  groups: z.array(groupSchema).optional(),
+  modes: z.array(modeSchema).optional(),
+};
 
 const keys = (shape: ZodRawShape): string[] => Object.keys(shape).sort();
 

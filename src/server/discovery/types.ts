@@ -306,6 +306,14 @@ export interface ListEntitiesInput {
   type: string;
   tags?: string[];
   filter?: 'and' | 'or';
+  /**
+   * 2.0.0 tier K — declarative field filter, `{ field: value | value[] }`,
+   * ANDed with the tag filter. Equality / set membership over the type's own
+   * declared scalar fields; see `RawEntityReader.slugsMatching` for the
+   * vocabulary and why it is derived from the declaration rather than left to a
+   * per-type service.
+   */
+  filters?: Record<string, unknown>;
   view?: ViewKind;
   mode?: 'items' | 'count';
   limit?: number;

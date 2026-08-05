@@ -108,11 +108,18 @@ describe('synthesizeMount', () => {
     expect(synthesizeMount(mod)).toBe(mod);
   });
 
-  it('throws PluginManifestError when crud is declared without service', () => {
+  it('drops a pre-2.0.0 `crud` slot instead of honouring it', () => {
+    /**
+     * `backend.crud` was REMOVED in 2.0.0 tier K — the input schemas are
+     * generated from `data.schema`. A manifest still declaring one must not
+     * resurrect it: `lowerEntityContribution` narrows the slots it knows, and an
+     * unknown one is not carried onto the module where `entity-tools` might read
+     * it back and validate against a description of a shape nothing writes.
+     */
     const mod = lowerEntityContribution(
-      base({ backend: { crud: { createSchema: {} } } }),
+      base({ backend: { crud: { createSchema: {} } } } as never),
     );
-    expect(() => synthesizeMount(mod)).toThrow(PluginManifestError);
+    expect((mod.backend as Record<string, unknown> | undefined)?.crud).toBeUndefined();
   });
 
   it('throws PluginManifestError when mcpServer is declared without service', () => {

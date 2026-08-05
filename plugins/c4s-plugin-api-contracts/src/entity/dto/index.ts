@@ -4,7 +4,6 @@ import { dtoSerializer } from './serializer.js';
 import { dtoSystemPrompt } from './system-prompt.js';
 import { dtosRouter } from './backend/routes.js';
 import { DtoService } from './backend/services.js';
-import { dtoCreateSchema, dtoUpdateSchema } from './backend/crud-schemas.js';
 import { dtoData, dtoSlugPattern } from './schema.js';
 
 /**
@@ -26,7 +25,6 @@ export const dtoEntity: EntityContribution = {
   systemPrompt: dtoSystemPrompt,
   backend: {
     service: (ctx: MountContext) => new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: { createSchema: dtoCreateSchema, updateSchema: dtoUpdateSchema },
     routes: { router: (service: unknown, ctx: MountContext) => dtosRouter(service as DtoService, ctx.referencesService) },
   },
 } as EntityContribution;

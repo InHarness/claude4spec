@@ -178,13 +178,14 @@ describe('overlay-loader', () => {
     expect(typeof mod?.backend?.mount).toBe('function');
   });
 
-  // Same bug class: crud declared without service must be REJECTED at load
+  // Same bug class: mcpServer declared without service must be REJECTED at load
   // time (PLUGIN_INVALID_MANIFEST), not silently registered with no mount.
-  it('rejects an overlay entity declaring crud without service', async () => {
+  // (Was `crud` without service until 2.0.0 tier K removed the `crud` slot.)
+  it('rejects an overlay entity declaring mcpServer without service', async () => {
     const url = makePkg('invalid-pkg');
     const invalidEntity: EntityContribution = {
       ...entity('widget'),
-      backend: { crud: { createSchema: {} } }, // no `service`
+      backend: { mcpServer: () => ({}) as never }, // no `service`
     };
     const res = await loadProjectOverlay(
       cwd,

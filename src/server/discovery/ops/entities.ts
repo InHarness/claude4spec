@@ -64,7 +64,13 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
    * discrepancy the unified order removes. Paging still works because the
    * reader's order is total: `slug` breaks ties.
    */
-  const sorted = slugs;
+  /**
+   * The declarative field filter, ANDed with the tag filter. Applied by
+   * intersection rather than by a combined query so the reader's order survives
+   * it — the whole point of the `sorted` note above.
+   */
+  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {});
+  const sorted = matching ? slugs.filter((s) => matching.has(s)) : slugs;
 
   // "How many entities carry tag X" without walking them: the count mode exists
   // so measurement never costs a full traversal.

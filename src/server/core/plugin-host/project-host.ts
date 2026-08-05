@@ -332,7 +332,7 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   computeEntityCounts(db: Database): Record<string, number> {
     // 2.0.0: the host counts, and a type that wants a subset declares
-    // `systemPrompt.countPredicate` — data the host evaluates, never SQL it
+    // `systemPrompt.defaultPredicate` — data the host evaluates, never SQL it
     // executes. 0.2.4 closed the raw-SQL surface but had no replacement, so
     // `ac` lost its `status='active'` filter along the way; this restores it
     // through the ONE call both the sidebar and the `<project>` block make, so

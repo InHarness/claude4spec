@@ -5,7 +5,6 @@ import { designSystemSerializer } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemsRouter } from './routes.js';
 import { DesignSystemService } from './service.js';
-import { designSystemCreateSchema, designSystemUpdateSchema } from './crud-schemas.js';
 import { designSystemData, designSystemSlugPattern } from '../../../shared/entities/design-system/schema.js';
 
 export const designSystemBackendModule: BackendModule = {
@@ -31,10 +30,6 @@ export const designSystemBackendModule: BackendModule = {
   // non-CRUD tools, so there is no `mcpServer` key at all.
   backend: {
     service: (ctx) => new DesignSystemService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: {
-      createSchema: designSystemCreateSchema,
-      updateSchema: designSystemUpdateSchema,
-    },
     routes: {
       router: (service, ctx) =>
         designSystemsRouter(service as DesignSystemService, ctx.referencesService, ctx.ws),

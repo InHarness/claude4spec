@@ -5,7 +5,7 @@
  * manifest is purely an authoring envelope, reconciled here.
  *
  * M13: backend mounting is now declarative by default. `lowerEntityContribution`
- * narrows the authoring `backend.{service,crud,routes,mcpServer}` slots (typed
+ * narrows the authoring `backend.{service,routes,mcpServer}` slots (typed
  * `unknown` in the shared/dep-free `EntityContribution`) into their typed
  * `BackendModule` counterparts; `synthesizeMount` (below) is the single choke
  * point — called uniformly by `PluginRegistryImpl.registerEntityModule` for
@@ -262,7 +262,6 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     backendSlot = {
       mount,
       service: backend.service as ((ctx: MountContext) => EntityCrudService) | undefined,
-      crud: backend.crud as NonNullable<BackendModule['backend']>['crud'],
       routes: backend.routes as
         | { router: (service: EntityCrudService, ctx: MountContext) => Router }
         | undefined,
@@ -291,7 +290,7 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
 
 /**
  * M13 — the single lowering choke point: turn a module's declarative backend
- * slots (`service`/`crud`/`routes`/`mcpServer`) into an equivalent imperative
+ * slots (`service`/`routes`/`mcpServer`) into an equivalent imperative
  * `mount`, iff no explicit `mount` was already supplied (the escape hatch
  * always wins, unchanged). Called by `PluginRegistryImpl.registerEntityModule`
  * for every module — both in-repo entities (hand-built `BackendModule`, no
@@ -299,9 +298,9 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
  * through `lowerEntityContribution` first).
  *
  * Idempotent / side-effect-free at registration time: it only builds a new
- * `mount` closure, never calls it. Throws `PluginManifestError` if `crud` or
- * `mcpServer` is declared without `service` (both factories receive the
- * service instance as their first argument) or if `routes.router` is present
+ * `mount` closure, never calls it. Throws `PluginManifestError` if `mcpServer`
+ * is declared without `service` (its factory receives the service instance as
+ * its first argument) or if `routes.router` is present
  * but not a function (the pre-M13 bare-Router sugar) — all three would
  * otherwise fail confusingly at first mount, deep inside a project's request
  * path.
@@ -337,12 +336,9 @@ export function synthesizeMount(module: BackendModule): BackendModule {
     return { ...module, backend: { ...backend, mount: composed } };
   }
 
-  const { service, crud, routes, mcpServer } = backend ?? {};
-  if (!service && !crud && !routes && !mcpServer && !rewritesRefs) return module;
+  const { service, routes, mcpServer } = backend ?? {};
+  if (!service && !routes && !mcpServer && !rewritesRefs) return module;
 
-  if (crud && !service) {
-    throw new PluginManifestError(`entity "${module.type}" — backend.crud requires backend.service`);
-  }
   if (mcpServer && !service) {
     throw new PluginManifestError(`entity "${module.type}" — backend.mcpServer requires backend.service`);
   }
@@ -360,7 +356,11 @@ export function synthesizeMount(module: BackendModule): BackendModule {
   }
 
   const mount: PluginMountFn = (ctx: MountContext): void => {
-    let instance: EntityCrudService | undefined;
+    // 2.0.0 tier K: whatever the slot builds is a DOMAIN HELPER, opaque to the
+    // host. It is handed straight back to the two factories that asked for it —
+    // the type's own `routes`/`mcpServer` — which are the only code that knows
+    // what it is.
+    let instance: unknown;
     if (service) {
       instance = service(ctx);
       ctx.registerEntityService(module.type, instance);

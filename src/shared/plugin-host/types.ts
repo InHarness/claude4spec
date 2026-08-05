@@ -8,7 +8,7 @@
  * pulling better-sqlite3/express into the client bundle.
  */
 
-import type { CountPredicate, DataDeclaration } from './data-schema.js';
+import type { DefaultPredicate, DataDeclaration } from './data-schema.js';
 import type { SlugPattern } from './slug-pattern.js';
 
 export interface EntityModuleManifest {
@@ -124,7 +124,7 @@ export interface SystemPromptContribution {
    * Absent or empty means count everything. The label still comes from
    * `labelPlural`.
    */
-  countPredicate?: CountPredicate;
+  defaultPredicate?: DefaultPredicate;
 
   /**
    * MCP tools listing line for this type's CUSTOM server, e.g.

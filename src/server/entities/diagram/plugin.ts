@@ -5,7 +5,6 @@ import { diagramSystemPrompt } from './system-prompt.js';
 import { diagramsRouter } from './routes.js';
 import { DiagramService } from './service.js';
 import { createDiagramToolsServer } from './mcp-server.js';
-import { diagramCreateSchema, diagramUpdateSchema } from './crud-schemas.js';
 import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';
 
 export const diagramBackendModule: BackendModule = {
@@ -26,10 +25,6 @@ export const diagramBackendModule: BackendModule = {
   // server for diagram's pre-flight validation tool.
   backend: {
     service: (ctx) => new DiagramService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: {
-      createSchema: diagramCreateSchema,
-      updateSchema: diagramUpdateSchema,
-    },
     routes: {
       router: (service, ctx) => diagramsRouter(service as DiagramService, ctx.referencesService, ctx.ws),
     },

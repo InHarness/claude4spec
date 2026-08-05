@@ -135,7 +135,7 @@ describe('a core type whose table was never created', () => {
  * claim structural: there is no argument to forget.
  */
 describe('RawEntityReader.count — the declared predicate, resolved internally', () => {
-  function hostWith(countPredicate?: { field: string; in?: string[]; eq?: string }) {
+  function hostWith(defaultPredicate?: { field: string; in?: string[]; eq?: string }) {
     const module = {
       type: 'ac',
       data: {
@@ -145,7 +145,7 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
           caption: { kind: 'string', transientInput: true },
         },
       },
-      systemPrompt: { roleNoun: 'ac', ...(countPredicate ? { countPredicate } : {}) },
+      systemPrompt: { roleNoun: 'ac', ...(defaultPredicate ? { defaultPredicate } : {}) },
     } as unknown as ReturnType<ProjectPluginHost['getEntity']>;
     return {
       getEntity: () => module,

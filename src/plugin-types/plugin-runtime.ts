@@ -64,7 +64,7 @@ export type { EntityModuleManifest, SystemPromptContribution };
 export type {
   AccessHint,
   CollectionNode,
-  CountPredicate,
+  DefaultPredicate,
   DataDeclaration,
   EnumNode,
   FieldFlags,
