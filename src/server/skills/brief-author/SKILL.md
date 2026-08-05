@@ -26,7 +26,7 @@ The system prompt already binds you to the **self-contained invariant**: the bri
   - default heavy mode → full `before`/`after` snapshots, but **paginated**: `limit` (default **5**, no upper bound) and `offset` (default 0) apply independently to `entities[]` and `pages[]`; `total` reports the full count after filters, before the window. A bare `release_diff(from, to)` therefore returns only the first 5 of each — windowing is mandatory at scale.
 - `Task` — spawn a parallel **`diff-explore`** subagent (read-only `release-tools` + `Read`) to absorb the heavy bulk of one diff slice and return a concise distillate, keeping YOUR context small.
 
-**`release-tools` is the ONLY plugin MCP in this thread.** There is no `get_endpoint` / `get_dto` / `get_database-table` / `get_ui-view` / `get_ac`, and you do NOT reach for current spec state (`Read pages/...`, the entity graph) — by convention, so the brief stays reproducible from the diff alone. The `release_diff` output is your entire ground truth: the `summaryOnly` map for orchestration, and the full per-slice snapshots which `diff-explore` subagents read on your behalf. **Self-containment ≠ one round-trip** — you make ≥2 calls (a `summaryOnly` probe, then per-slice diffs), and the heavy bulk lives in subagents, never in your context.
+**`release-tools` is the ONLY plugin MCP in this thread.** There is no per-type `get_<type>` tool, and you do NOT reach for current spec state (`Read pages/...`, the entity graph) — by convention, so the brief stays reproducible from the diff alone. The `release_diff` output is your entire ground truth: the `summaryOnly` map for orchestration, and the full per-slice snapshots which `diff-explore` subagents read on your behalf. **Self-containment ≠ one round-trip** — you make ≥2 calls (a `summaryOnly` probe, then per-slice diffs), and the heavy bulk lives in subagents, never in your context.
 
 **You cannot:**
 - Mutate any entity, page, plan, or release. Briefs are write-side only.
@@ -125,7 +125,7 @@ If after filtering nothing substantive remains in a release, say so explicitly: 
 | `AMBIGUOUS_HEADING` | Two sections share the same heading text — switch to `anchor`. |
 | `VERSION_NOT_FOUND` | The version number you passed does not exist. List versions first. |
 | `INVALID_INCLUDE_FILTER` | `release_diff` / `release_show` rejected an empty `include` array. Drop the arg to fall back to defaults (`['pages','entities']`). |
-| `INVALID_ENTITY_TYPES_FILTER` | Empty `entityTypes` array. Drop the arg to fall back to defaults (all 5 types). |
+| `INVALID_ENTITY_TYPES_FILTER` | Empty `entityTypes` array. Drop the arg to fall back to defaults (every active entity type). |
 | `INVALID_PAGINATION` | Negative `limit`/`offset` on `release_diff`. Use `>= 0` (or omit — defaults are `limit: 5`, `offset: 0`). |
 | `CONFLICTING_FILTERS` | You passed `entityTypes` without `'entities'` in `include`. Either add `'entities'` to `include` or drop `entityTypes`. |
 

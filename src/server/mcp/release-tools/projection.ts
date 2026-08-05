@@ -32,13 +32,21 @@ type RawEntityOp = RawDeltaEntityChange['op'];
 type RawPageOp = RawDeltaPageChange['op'];
 type MCPOp = 'create' | 'update' | 'delete';
 
-const ENTITY_TYPES: ReadonlySet<EntityTypeFilter> = new Set([
-  'endpoint',
-  'dto',
-  'database-table',
-  'ui-view',
-  'ac',
-]);
+/*
+ * 0.2.11: the `ENTITY_TYPES` whitelist that stood here is GONE.
+ *
+ * It was a second hardcoded five, one layer above `ReleaseService`, and it
+ * dropped every other type from `release_diff` AFTER the snapshot had captured
+ * it — so the brief-authoring agent, the main consumer of these tools, could not
+ * see a design system, a diagram or any plugin type no matter what the release
+ * contained. It also disagreed with `projectSnapshotEntities` below, which never
+ * applied it: `release_get` and `release_diff` answered differently about the
+ * same type.
+ *
+ * Nothing replaces it. `raw.entities` only ever contains types the (now
+ * registry-derived) snapshot covered, so the membership test was redundant as
+ * well as wrong; the caller's optional `entityTypes` filter is the real one.
+ */
 
 export function projectReleaseDiff(
   raw: RawDelta,
@@ -90,7 +98,6 @@ function projectEntities(
 
   for (const e of rawEntities) {
     if (e.op === 'noop') continue;
-    if (!ENTITY_TYPES.has(e.type as EntityTypeFilter)) continue;
     if (entityTypes && !entityTypes.includes(e.type as EntityTypeFilter)) continue;
 
     const op = mapEntityOp(e.op);
