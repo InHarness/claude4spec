@@ -116,6 +116,21 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
   {
     fromMajor: 1,
     toMajor: 2,
+    slot: 'serializer.{snapshot,restore}',
+    kind: 'slot-removed',
+    summary:
+      'The host GENERATES both from `data.schema`, over its own `RawEntity` ' +
+      'wrapper (`{ type, slug, data, tags }`) — domain fields live under `.data`, ' +
+      'not flat. Which restore a collection gets follows from its declaration ' +
+      'rather than from hand-written code: `collection: \'value\'` is replaced ' +
+      'wholesale, `collection: \'keyed\'` is reconciled replace-all. A ' +
+      'hand-written pair could disagree with the projection it wrote into; a ' +
+      'generated one cannot. Payload shape changes now travel as an ordered ' +
+      '`payloadUpgrades` chain instead of being absorbed silently by `restore`.',
+  },
+  {
+    fromMajor: 1,
+    toMajor: 2,
     slot: 'routes.prefix',
     kind: 'slot-removed',
     summary:

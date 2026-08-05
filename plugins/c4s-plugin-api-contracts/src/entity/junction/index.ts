@@ -7,17 +7,41 @@
  * push the join back onto the host, which is exactly the arrangement 0.2.2
  * removes.
  *
- * Before this release the same SQL lived in three host files:
+ * Before 0.2.2 the same SQL lived in three host files:
  * `RawEntityReader.findEndpointDtos` / `.findDtoEndpoints` (read, for the
- * serializers) and `EntityWriter.syncEndpointDtos` (restore). All three are
- * gone from the host; the queries here are copied verbatim, `ORDER BY` included
- * — the view projections are not re-sorted downstream, so their row order is
- * part of the L9 output.
+ * serializers) and `EntityWriter.syncEndpointDtos` (restore). All three moved
+ * here, queries copied verbatim.
+ *
+ * 2.0.0 — TWO of those three are now gone again, in opposite ways.
+ *
+ * `syncEndpointDtos` is deleted: it drove the join through the endpoint SERVICE,
+ * and tier K deleted every entity service, so it could no longer run at all. The
+ * restore path it served is the host's generated `restore` over the declared
+ * `linkedDtos` collection.
+ *
+ * The FORWARD read is now `readEndpointDtos`, which goes through
+ * `reader.readCollection` — see its docstring. What remains on raw SQL is
+ * `findDtoEndpoints`, the REVERSE direction, and it remains for a reason worth
+ * stating: §1 of the 2.0.0 brief says the projection is not a contract surface
+ * and no read may bypass the host, but the host exposes no reverse-`ref` lookup.
+ * It knows the graph — `ref: 'dto'` on `linkedDtos[].dto` is what drives rename
+ * propagation and restore ordering — it just does not offer it to a view. Until
+ * it does, `dto.detail` cannot answer "which endpoints use me" any other way.
+ * Filed as a spec patch rather than papered over here.
  */
 
 import type { Database } from 'better-sqlite3';
-import { ENDPOINT_DTO_TABLE } from '../../identity.js';
-import type { EndpointDtoRelation } from '../../types.js';
+import { ENDPOINT_DTO_TABLE, ENDPOINT_TYPE } from '../../identity.js';
+
+/**
+ * The slice of the L9 view reader this join needs. Structural on purpose: it is
+ * satisfied by `HostEntityReader` without this package importing it, which keeps
+ * the junction usable from a test with a hand-built reader.
+ */
+export interface JunctionReader {
+  readCollection(type: string, slug: string, field: string): unknown[];
+  getEntity(type: string, slug: string): unknown;
+}
 
 /** The link shape as an endpoint sees it. */
 export interface JunctionDtoLink {
@@ -36,32 +60,12 @@ export interface JunctionEndpointLink {
   statusCode: number | null;
 }
 
-/** Links hanging off one endpoint, denormalised with the DTO's name. */
-export function findEndpointDtos(db: Database, endpointSlug: string): JunctionDtoLink[] {
-  const rows = db
-    .prepare(
-      `SELECT d.slug AS dto_slug, d.name AS dto_name,
-              ed.relation AS relation, ed.status_code AS status_code
-         FROM ${ENDPOINT_DTO_TABLE} ed
-         JOIN dto d ON d.slug = ed.dto_slug
-        WHERE ed.endpoint_slug = ?
-        ORDER BY ed.relation, ed.status_code, d.name`,
-    )
-    .all(endpointSlug) as Array<{
-    dto_slug: string;
-    dto_name: string;
-    relation: string;
-    status_code: number | null;
-  }>;
-  return rows.map((r) => ({
-    dtoSlug: r.dto_slug,
-    dtoName: r.dto_name,
-    relation: r.relation,
-    statusCode: r.status_code,
-  }));
-}
-
-/** The reverse: endpoints linked to one DTO. */
+/**
+ * The reverse: endpoints linked to one DTO.
+ *
+ * The last raw-SQL read in this package, and the only one with no generic
+ * equivalent — see the file header.
+ */
 export function findDtoEndpoints(db: Database, dtoSlug: string): JunctionEndpointLink[] {
   const rows = db
     .prepare(
@@ -88,80 +92,56 @@ export function findDtoEndpoints(db: Database, dtoSlug: string): JunctionEndpoin
   }));
 }
 
-/** The subset of the endpoint service this join drives. Named by shape. */
-export interface JunctionCapable {
-  getBySlug(slug: string): { dtos: JunctionDtoLink[] } | null;
-  linkDto(
-    endpointSlug: string,
-    dtoSlug: string,
-    relation: EndpointDtoRelation,
-    statusCode: number | null,
-    opts: { writeFile: boolean },
-  ): unknown;
-  unlinkDto(
-    endpointSlug: string,
-    dtoSlug: string,
-    relation: EndpointDtoRelation,
-    statusCode: number | null,
-    opts: { writeFile: boolean },
-  ): unknown;
-}
-
 /**
- * Bring one endpoint's links to exactly `target` — the restore path.
+ * The FORWARD read — one endpoint's links — through the host, not the table.
  *
- * Extras are unlinked BEFORE anything is linked: the junction's UNIQUE covers
- * (endpoint, dto, relation, status_code), so an insert-first order can collide
- * with a row that is about to be removed.
+ * `linkedDtos` is a declared collection with `keyFields`, so it projects to its
+ * own table and `RawEntityReader.readCollection` reads it back keyed by the
+ * FIELD names the type declared (`dto`/`relation`/`statusCode`), not by the
+ * columns SQLite happens to hold. That is the whole reason to prefer it over the
+ * `SELECT` this replaced: the projection stops being a surface this package has
+ * to keep agreeing with.
  *
- * Every write passes `writeFile: false`. The caller owns the file; re-persisting
- * here would rewrite it once per link and loop the watcher.
+ * `dtoName` is the one thing the collection cannot answer — it lives on the DTO,
+ * not on the link — so it is resolved per link through `reader.getEntity`, which
+ * is the generic single-row read. That is a lookup per link rather than one
+ * JOIN; a view renders a handful of links, and correctness of the contract beats
+ * a query count at that size.
+ *
+ * ORDER is reproduced deliberately, not inherited. The retired SQL ended
+ * `ORDER BY ed.relation, ed.status_code, d.name`, row order is part of the L9
+ * output, and `readCollection` answers in projection-row order — so the sort has
+ * to be re-stated here or rendered bytes move. SQLite sorts NULL FIRST ascending,
+ * which is why a null `statusCode` is compared as -Infinity rather than coerced
+ * to 0 (a real status code) or to the end.
  */
-export function syncEndpointDtos(
-  service: JunctionCapable | null,
-  endpointSlug: string,
-  target: Array<{ dtoSlug: string; relation: EndpointDtoRelation; statusCode: number | null }>,
-): { linked: number; unlinked: number; warnings: string[] } {
-  if (!service?.getBySlug) {
-    return { linked: 0, unlinked: 0, warnings: [`entity service for type 'endpoint' not registered`] };
-  }
-  const ep = service.getBySlug(endpointSlug);
-  if (!ep) return { linked: 0, unlinked: 0, warnings: [`endpoint '${endpointSlug}' not found`] };
+export function readEndpointDtos(reader: JunctionReader, endpointSlug: string): JunctionDtoLink[] {
+  const links = reader.readCollection(ENDPOINT_TYPE, endpointSlug, 'linkedDtos') as Array<{
+    dto?: unknown;
+    relation?: unknown;
+    statusCode?: unknown;
+  }>;
 
-  const keyOf = (l: { dtoSlug: string; relation: string; statusCode: number | null }) =>
-    `${l.relation}|${l.dtoSlug}|${l.statusCode ?? 'null'}`;
-  const currentSet = new Map(ep.dtos.map((l) => [keyOf(l), l]));
-  const targetSet = new Map(target.map((l) => [keyOf(l), l]));
-
-  let linked = 0;
-  let unlinked = 0;
-  const warnings: string[] = [];
-
-  for (const [k, current] of currentSet) {
-    if (targetSet.has(k)) continue;
-    try {
-      service.unlinkDto(
-        endpointSlug,
-        current.dtoSlug,
-        current.relation as EndpointDtoRelation,
-        current.statusCode,
-        { writeFile: false },
-      );
-      unlinked += 1;
-    } catch (err) {
-      warnings.push(`unlink '${k}' failed: ${(err as Error).message}`);
-    }
-  }
-  for (const [k, want] of targetSet) {
-    if (currentSet.has(k)) continue;
-    try {
-      service.linkDto(endpointSlug, want.dtoSlug, want.relation, want.statusCode, {
-        writeFile: false,
-      });
-      linked += 1;
-    } catch (err) {
-      warnings.push(`link '${k}' failed: ${(err as Error).message}`);
-    }
-  }
-  return { linked, unlinked, warnings };
+  return links
+    .map((link) => {
+      const dtoSlug = typeof link.dto === 'string' ? link.dto : '';
+      const dto = reader.getEntity('dto', dtoSlug) as { data?: { name?: unknown } } | null;
+      const name = dto?.data?.name;
+      return {
+        dtoSlug,
+        // Defensive only: a ref inside a PROJECTED collection is FK-enforced
+        // (unlike an embedded one, which degrades to `onMissing: 'warn'`), so a
+        // link whose DTO is missing cannot exist in the table. That is also what
+        // makes this read equivalent to the INNER JOIN it replaced.
+        dtoName: typeof name === 'string' ? name : dtoSlug,
+        relation: typeof link.relation === 'string' ? link.relation : '',
+        statusCode: typeof link.statusCode === 'number' ? link.statusCode : null,
+      };
+    })
+    .sort(
+      (a, b) =>
+        a.relation.localeCompare(b.relation) ||
+        (a.statusCode ?? -Infinity) - (b.statusCode ?? -Infinity) ||
+        a.dtoName.localeCompare(b.dtoName),
+    );
 }

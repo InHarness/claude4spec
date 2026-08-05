@@ -254,8 +254,31 @@ export declare const z: typeof import('zod').z;
  * the host's own registry, neither of which belongs in this contract.
  */
 export interface HostEntityReader {
-  /** The project database. Touch what your module declared; nothing else. */
+  /**
+   * The project database. Touch what your module declared; nothing else.
+   *
+   * 2.0.0 — a LEGACY escape hatch, and the last one. `MountContext.db` was
+   * removed outright (item 8); this survives only because one read has no
+   * generic equivalent yet: the REVERSE direction of a `ref` (which entities
+   * point AT me), which `dto.detail` needs and the host does not expose. Every
+   * other use has moved to `readCollection`/`getEntity` below. Do not add a
+   * fourth caller — if you need one, the host is missing a primitive, and that
+   * is the thing to fix.
+   */
   db: any;
+  /**
+   * Items of a collection the type declared with `keyFields` — i.e. one that
+   * projects to its own table instead of being embedded JSON on the row.
+   *
+   * Keyed by the FIELD names the declaration uses, never by the column names
+   * the projection holds, so a `column:` remapping is invisible here. Answers
+   * `[]` for an unknown type or an undeclared field.
+   *
+   * Note the boundary: a collection WITHOUT `keyFields` is embedded and is read
+   * straight off `entity.data.<field>`. Calling this for one of those silently
+   * answers `[]`, because there is no table to read.
+   */
+  readCollection(type: string, slug: string, field: string): unknown[];
   /** The project plugin host, when one was wired. */
   host?: {
     getEntity(type: string): unknown;
