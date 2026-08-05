@@ -19,6 +19,7 @@ import { useTags } from '../../hooks/useTags.js';
 import { useReferences } from '../../hooks/useReferences.js';
 import { confirmDestructive, toast } from '../../ui/events.js';
 import { tagSlug } from '../../../shared/slug.js';
+import { computeWarnings } from '../../../shared/entities/ui-view/lint.js';
 import type {
   EntityType,
   UiView,
@@ -124,7 +125,11 @@ export function UiViewDetail({
           tags: current.tags,
         },
       });
-      setWarnings(updated.warnings ?? []);
+      // Item 59 — linted HERE, not by the server. The generated `/api/ui-views`
+      // router returns no `warnings[]`, and it should not: this is advice about
+      // what you just typed, so computing it where it is displayed also stops
+      // an unchanged view from acquiring warnings merely by being re-saved.
+      setWarnings(computeWarnings(updated.url, updated.params));
       if (updated.slug !== v.slug) onRenamed(updated.slug);
       return updated;
     },

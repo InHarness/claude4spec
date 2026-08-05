@@ -60,7 +60,6 @@ export function DesignSystemsList({
         onCreate={handleCreate}
       >
         {sorted.map((ds) => {
-          const tokenCount = ds.groups.reduce((acc, g) => acc + g.tokens.length, 0);
           return (
             <EntityListRow
               key={ds.slug}
@@ -70,7 +69,7 @@ export function DesignSystemsList({
               tagLookup={tagLookup}
               trailing={
                 <CountBadge>
-                  {ds.groups.length} groups / {tokenCount} tokens
+                  {ds.groupCount} groups / {ds.tokenCount} tokens
                 </CountBadge>
               }
             >

@@ -71,3 +71,17 @@ export async function handle<T>(res: Response): Promise<T> {
   }
   return res.json() as Promise<T>;
 }
+
+/**
+ * The L4 REST envelope, unwrapped — one entity. See the host's `api-core`: as of
+ * Host API 2.0.0 tier K every `/api/{type}s` route is generated and answers
+ * `{ data }` / `{ data, total }` instead of a per-type key.
+ */
+export async function unwrap<T>(res: Response): Promise<T> {
+  return (await handle<{ data: T }>(res)).data;
+}
+
+/** The same envelope, list form. `total` is dropped — no caller reads it yet. */
+export async function unwrapList<T>(res: Response): Promise<T[]> {
+  return (await handle<{ data: T[]; total: number }>(res)).data;
+}

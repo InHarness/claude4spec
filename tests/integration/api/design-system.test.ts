@@ -14,7 +14,17 @@ describe('design-system REST + ui-view relation', () => {
     { name: 'Roles', tier: 'semantic', tokens: [{ name: 'color-action', type: 'color', value: '{blue-500}' }] },
   ];
 
-  it('creates a design system and returns linter warnings (never blocks)', async () => {
+  /**
+   * Item 60 — an unresolvable alias never blocked the write, and now it does not
+   * decorate the response either.
+   *
+   * `warnings[]` was produced by `designSystemsRouter` on create and patch only,
+   * so the identical tokens were "clean" when the page loaded them and "warned"
+   * the moment you re-saved without touching anything. `lintTokens` moved to
+   * presentation time (`design-system/detail-panel.tsx`), where it already fed
+   * the per-row icons. The write path's job is to accept the tokens.
+   */
+  it('creates a design system with an unresolvable alias, and says nothing about it', async () => {
     const res = await request(t.app)
       .post('/api/design-systems')
       .send({
@@ -24,9 +34,8 @@ describe('design-system REST + ui-view relation', () => {
         ],
       });
     expect(res.status).toBe(201);
-    expect(res.body.slug).toBe('brand-2026');
-    expect(Array.isArray(res.body.warnings)).toBe(true);
-    expect(res.body.warnings.some((w: string) => w.includes("alias '{missing}'"))).toBe(true);
+    expect(res.body.data.slug).toBe('brand-2026');
+    expect(res.body.data).not.toHaveProperty('warnings');
   });
 
   it('lists, gets, and full-replaces groups on update', async () => {
@@ -34,18 +43,18 @@ describe('design-system REST + ui-view relation', () => {
 
     const list = await request(t.app).get('/api/design-systems');
     expect(list.status).toBe(200);
-    expect(list.body.designSystems.map((d: { slug: string }) => d.slug)).toContain('brand');
+    expect(list.body.data.map((d: { slug: string }) => d.slug)).toContain('brand');
 
     const get = await request(t.app).get('/api/design-systems/brand');
     expect(get.status).toBe(200);
-    expect(get.body.groups).toHaveLength(2);
+    expect(get.body.data.groups).toHaveLength(2);
 
     const patched = await request(t.app)
       .patch('/api/design-systems/brand')
       .send({ groups: [{ name: 'Only', tier: 'primitive', tokens: [] }] });
     expect(patched.status).toBe(200);
-    expect(patched.body.groups).toHaveLength(1);
-    expect(patched.body.groups[0].name).toBe('Only');
+    expect(patched.body.data.groups).toHaveLength(1);
+    expect(patched.body.data.groups[0].name).toBe('Only');
   });
 
   it('ui-view accepts designSystemSlug (incl. a dangling one) and round-trips it', async () => {
@@ -55,15 +64,15 @@ describe('design-system REST + ui-view relation', () => {
       .post('/api/ui-views')
       .send({ name: 'Profile', designSystemSlug: 'brand' });
     expect(view.status).toBe(201);
-    expect(view.body.designSystemSlug).toBe('brand');
+    expect(view.body.data.designSystemSlug).toBe('brand');
 
     // dangling reference is allowed (no FK) — write succeeds, value persists
     const dangling = await request(t.app)
       .post('/api/ui-views')
       .send({ name: 'Ghost', designSystemSlug: 'does-not-exist' });
     expect(dangling.status).toBe(201);
-    const gv = await request(t.app).get(`/api/ui-views/${dangling.body.slug}`);
-    expect(gv.body.designSystemSlug).toBe('does-not-exist');
+    const gv = await request(t.app).get(`/api/ui-views/${dangling.body.data.slug}`);
+    expect(gv.body.data.designSystemSlug).toBe('does-not-exist');
   });
 
   it('delete reports ui-views that become dangling', async () => {
@@ -75,7 +84,21 @@ describe('design-system REST + ui-view relation', () => {
     const del = await request(t.app).delete('/api/design-systems/brand');
     expect(del.status).toBe(200);
     expect(del.body.deleted).toBe(true);
-    expect(del.body.danglingUiViews).toEqual([{ slug: view.body.slug }]);
+    /**
+     * `danglingUiViews` is GONE, and nothing replaced it under another name.
+     *
+     * It was `design-system`'s own hand-written scan for ui-views pointing at
+     * the slug being deleted — a second, per-type answer to a question the
+     * declaration already answers: `ui-view.designSystemSlug` is
+     * `ref: 'design-system'`, `clearable`, and the host's own dangling-ref
+     * check reports it for every type at once. No client ever read this field.
+     */
+    expect(del.body).not.toHaveProperty('danglingUiViews');
+    expect(del.body.brokenReferences).toEqual([]);
+    // The view survives, its ref left dangling rather than repaired — the
+    // documented behaviour for a `clearable` ref whose target is deleted.
+    const gv = await request(t.app).get(`/api/ui-views/${view.body.data.slug}`);
+    expect(gv.status).toBe(200);
   });
 
   it('renaming a design-system propagates to ui-view.designSystemSlug', async () => {
@@ -88,10 +111,10 @@ describe('design-system REST + ui-view relation', () => {
       .patch('/api/design-systems/brand')
       .send({ newSlug: 'brand-2026' });
     expect(renamed.status).toBe(200);
-    expect(renamed.body.slug).toBe('brand-2026');
+    expect(renamed.body.data.slug).toBe('brand-2026');
 
-    const gv = await request(t.app).get(`/api/ui-views/${view.body.slug}`);
-    expect(gv.body.designSystemSlug).toBe('brand-2026');
+    const gv = await request(t.app).get(`/api/ui-views/${view.body.data.slug}`);
+    expect(gv.body.data.designSystemSlug).toBe('brand-2026');
   });
 
   it('ui-view and design-system declare payload version 1, and the snapshot carries designSystemSlug', async () => {
@@ -108,15 +131,25 @@ describe('design-system REST + ui-view relation', () => {
     // null` on every token that only ever existed in the file.
     expect(t.host.getEntity('design-system')?.payloadVersion).toBe(2);
 
-    const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.slug), t.rawReader) as {
+    const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.data.slug), t.rawReader) as {
       designSystemSlug: string | null;
     };
     expect(snap.designSystemSlug).toBe('brand');
   });
 
-  it('slug conflict is the only hard error (409)', async () => {
+  /**
+   * The one BEHAVIOUR change tier K makes here that is not in the brief.
+   *
+   * `DesignSystemService.createRaw` threw 409 on a duplicate name; the host's
+   * generic create mints a free slug instead, which is what `ac` and `diagram`
+   * always did. One write door means one slug policy, and the alternative —
+   * keeping a per-type conflict rule — is exactly the per-type fork this tier
+   * removes. Filed as a `clarification` patch, since the brief chooses neither.
+   */
+  it('mints a free slug for a duplicate name rather than conflicting', async () => {
     await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
     const dup = await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
-    expect(dup.status).toBe(409);
+    expect(dup.status).toBe(201);
+    expect(dup.body.data.slug).toBe('brand-2');
   });
 });

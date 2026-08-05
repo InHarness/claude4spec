@@ -17,13 +17,13 @@ describe('entity snapshot serialization', () => {
     for (const name of ['ZetaDto', 'AlphaDto']) {
       const res = await request(t.app).post('/api/dtos').send({ name, fields: [] });
       expect(res.status).toBe(201);
-      dtoSlugsCreated.push(res.body.slug);
+      dtoSlugsCreated.push(res.body.data.slug);
     }
     const created = await request(t.app)
       .post('/api/endpoints')
       .send({ method: 'GET', path: '/api/users', summary: 'list users', tags: ['zeta', 'alpha'] });
     expect(created.status).toBe(201);
-    const slug = created.body.slug;
+    const slug = created.body.data.slug;
     for (const dtoSlug of dtoSlugsCreated) {
       const link = await request(t.app)
         .post(`/api/endpoints/${slug}/dtos`)

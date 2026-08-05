@@ -364,7 +364,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: no filter is applied unless you pass one — `ac` in particular lists deprecated ACs alongside active ones unless you ask for { status: "active" }.',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: a type may declare a DEFAULT filter that applies when you name no value for that field — `ac` lists only active ACs unless you ask for { status: ["active", "deprecated"] }.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
@@ -412,7 +412,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. `filters` narrows the ranking by the type\'s own declared scalar fields, exactly as in list_entities — and, exactly as there, a type with a declared default applies it unless you name that field (`ac` ranks only active ACs unless you ask for { status: ["active","deprecated"] }). Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
       type: z.string(),
       query: z.string(),
@@ -420,6 +420,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       mode: z.enum(['hits', 'count']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
+      filters: z.record(z.string(), z.unknown()).optional(),
     },
     async (args) => {
       const type = String(args.type);
@@ -428,21 +429,18 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
       const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
-
       /**
-       * `filters` is REFUSED rather than ignored. It was advertised here as "the
-       * same escape hatch as list_entities", but no type has ever honoured it on
-       * this path: the core takes no filters, and the one service with a custom
-       * `search` drops the argument. Silently returning unfiltered rows under a
-       * parameter that promises filtering is how an agent acts on deprecated ACs
-       * it explicitly excluded.
+       * 2.0.0 tier K — `filters` is ACCEPTED here, where tier E refused it.
+       *
+       * The refusal was right for its premise: nothing could apply them on this
+       * path, and returning unfiltered rows under a parameter that promises
+       * filtering is how an agent acts on deprecated ACs it explicitly excluded.
+       * `slugsMatching` is that missing implementation, and it is generic — so
+       * the honest fix is to apply them rather than to keep declining. It also
+       * closes the asymmetry the refusal created: "the active ACs" now means the
+       * same set whether you list them, count them or search them.
        */
-      if (args.filters !== undefined) {
-        return fail(
-          'INVALID_ARGUMENT',
-          'search_entities does not support `filters` — no entity type applies them on the search path',
-          );
-      }
+      const filters = args.filters as Record<string, unknown> | undefined;
 
       /**
        * ANY active type, CRUD or not. Searching is not writing: gating it behind
@@ -461,7 +459,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        * the host cannot see could only ever keep that promise by echoing a
        * second declaration back. One derivation, one ranking, one answer.
        */
-      const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset });
+      const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset, ...(filters ? { filters } : {}) });
       if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
       return ok({
         type,

@@ -287,17 +287,21 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   /**
-   * The staging this tier depends on, asserted rather than assumed.
+   * The un-staging, asserted rather than assumed — the other half of the test
+   * tier E wrote here.
    *
-   * `ui-view` still ships a `backend.routes` router, mounted first, so it keeps
-   * answering with its own `{ uiViews: [...] }` shape. When tier K deletes that
-   * router this test flips to the generated envelope — and it should be edited
-   * then, not silently satisfied by both.
+   * Tier E pinned `/api/ui-views` answering `{ uiViews: [...] }`, because
+   * `ui-view` still shipped a `backend.routes` router mounted ahead of the
+   * generated one. Tier K deleted that router, so a BUILT-IN type now lands on
+   * the same generated envelope a serviceless plugin type does. The assertion
+   * was deliberately two-sided so this could not be satisfied silently in both
+   * states: it had to be edited, and here it is.
    */
-  it('does not shadow a type whose own router is still mounted', async () => {
+  it('serves a BUILT-IN type from the generated router, its own having been deleted', async () => {
     const res = await request(t.app).get('/api/ui-views');
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('uiViews');
-    expect(res.body).not.toHaveProperty('data');
+    expect(res.body).toHaveProperty('data');
+    expect(res.body).toHaveProperty('total');
+    expect(res.body).not.toHaveProperty('uiViews');
   });
 });

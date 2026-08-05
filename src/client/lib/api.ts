@@ -42,10 +42,9 @@ export { ApiError, handle };
 // src/client/entities/{type}/api.ts (M13 plugin-slice rule).
 // `database-table` API client moved to the preinstalled plugin
 // `c4s-plugin-simple-database-tables` (its frontend owns the HTTP surface).
-export { uiViewsApi, type UiViewWithWarnings } from '../entities/ui-view/api.js';
+export { uiViewsApi } from '../entities/ui-view/api.js';
 export {
   designSystemsApi,
-  type DesignSystemWithWarnings,
 } from '../entities/design-system/api.js';
 
 // 0.1.96 multiroot: every page primitive is keyed by `(rootId, path)`. The

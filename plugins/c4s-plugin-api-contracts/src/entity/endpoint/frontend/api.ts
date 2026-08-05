@@ -5,7 +5,7 @@ import type {
   EndpointListQuery,
   EndpointUpdateInput,
 } from '../../../types.js';
-import { handle, apiFetch } from '../../../frontend-kit/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-core.js';
 
 export const endpointsApi = {
   async list(query: EndpointListQuery = {}): Promise<Endpoint[]> {
@@ -16,16 +16,15 @@ export const endpointsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ endpoints: Endpoint[] }>(await apiFetch(`/api/endpoints${q}`));
-    return data.endpoints;
+    return unwrapList<Endpoint>(await apiFetch(`/api/endpoints${q}`));
   },
 
   async get(slug: string): Promise<Endpoint> {
-    return handle<Endpoint>(await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`));
+    return unwrap<Endpoint>(await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`));
   },
 
   async create(input: EndpointCreateInput): Promise<Endpoint> {
-    return handle<Endpoint>(
+    return unwrap<Endpoint>(
       await apiFetch('/api/endpoints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -35,7 +34,7 @@ export const endpointsApi = {
   },
 
   async update(slug: string, input: EndpointUpdateInput): Promise<Endpoint> {
-    return handle<Endpoint>(
+    return unwrap<Endpoint>(
       await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -56,6 +55,9 @@ export const endpointsApi = {
     relation: EndpointDtoRelation,
     statusCode: number | null = null
   ): Promise<Endpoint> {
+    // NOT `unwrap` — the two relation routes are `endpoint`'s own domain router,
+    // not the generated one, and still answer with the bare endpoint. K3 moves
+    // them onto the generic collection write and the envelope with them.
     return handle<Endpoint>(
       await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}/dtos`, {
         method: 'POST',

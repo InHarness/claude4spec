@@ -63,7 +63,7 @@ export function UiViewsList({
             onClick={() => onSelect(v.slug)}
             tags={v.tags}
             tagLookup={tagLookup}
-            trailing={<CountBadge>{v.params.length}p</CountBadge>}
+            trailing={<CountBadge>{v.paramCount}p</CountBadge>}
           >
             <div className="flex items-center gap-2">
               <span className="text-[13.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>

@@ -4,7 +4,7 @@ import type {
   DtoListQuery,
   DtoUpdateInput,
 } from '../../../types.js';
-import { handle, apiFetch } from '../../../frontend-kit/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-core.js';
 
 export const dtosApi = {
   async list(query: DtoListQuery = {}): Promise<Dto[]> {
@@ -15,16 +15,15 @@ export const dtosApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ dtos: Dto[] }>(await apiFetch(`/api/dtos${q}`));
-    return data.dtos;
+    return unwrapList<Dto>(await apiFetch(`/api/dtos${q}`));
   },
 
   async get(slug: string): Promise<Dto> {
-    return handle<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}`));
+    return unwrap<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}`));
   },
 
   async create(input: DtoCreateInput): Promise<Dto> {
-    return handle<Dto>(
+    return unwrap<Dto>(
       await apiFetch('/api/dtos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -34,7 +33,7 @@ export const dtosApi = {
   },
 
   async update(slug: string, input: DtoUpdateInput): Promise<Dto> {
-    return handle<Dto>(
+    return unwrap<Dto>(
       await apiFetch(`/api/dtos/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

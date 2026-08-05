@@ -50,7 +50,7 @@ describe('entity list order is unified', () => {
     for (const text of ['zebra criterion', 'middle criterion', 'alpha criterion']) {
       const res = await request(t.app).post('/api/acs').send({ text });
       expect(res.status).toBe(201);
-      slugs.push(res.body.slug);
+      slugs.push(res.body.data.slug);
       // Distinct millisecond, so the assertion tests `created_at` rather than
       // silently falling through to the `slug` tiebreaker.
       await new Promise((r) => setTimeout(r, 2));
@@ -62,7 +62,7 @@ describe('entity list order is unified', () => {
     const created = await seedAcs();
     const res = await request(t.app).get('/api/acs');
     expect(res.status).toBe(200);
-    const slugs = (res.body.acs as Array<{ slug: string }>).map((a) => a.slug);
+    const slugs = (res.body.data as Array<{ slug: string }>).map((a) => a.slug);
     expect(slugs).toEqual(created);
     // Would have been the old `name`/alphabetical answer — pinned so a revert shows up.
     expect(slugs).not.toEqual([...created].sort());
@@ -71,7 +71,7 @@ describe('entity list order is unified', () => {
   it('[ac:ac-odczyt-generyczny-encji-lista-wiersz-p] the discovery core agrees with REST, with no re-sort of its own', async () => {
     const created = await seedAcs();
     const rest = await request(t.app).get('/api/acs');
-    const restSlugs = (rest.body.acs as Array<{ slug: string }>).map((a) => a.slug);
+    const restSlugs = (rest.body.data as Array<{ slug: string }>).map((a) => a.slug);
 
     const result = discoveryFor(t).listEntities({ type: 'ac', view: 'element_list_item' });
     const coreSlugs = (result as { items: Array<{ slug: string }> }).items.map((i) => i.slug);

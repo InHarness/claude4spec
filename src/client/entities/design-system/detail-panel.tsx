@@ -126,10 +126,14 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
           tags: current.tags,
         },
       });
-      setWarnings(updated.warnings ?? []);
-      if (updated.warnings?.length) {
-        toast.warning(`${updated.warnings.length} linter warning(s)`);
-      }
+      // Item 60 — the same `lintTokens` the live per-row icons already use,
+      // now also the source of the post-save summary. The server stopped
+      // returning `warnings[]` with tier K's generated router, and having one
+      // linter feed both readings removes the state where the icons and the
+      // toast disagreed about the same tokens.
+      const saved = lintTokens(updated.groups, updated.modes);
+      setWarnings(saved);
+      if (saved.length) toast.warning(`${saved.length} linter warning(s)`);
       if (updated.slug !== entity.slug) onRenamed(updated.slug);
       return updated;
     },

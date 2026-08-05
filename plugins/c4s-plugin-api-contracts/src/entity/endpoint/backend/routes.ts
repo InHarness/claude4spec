@@ -1,66 +1,28 @@
+/**
+ * `endpoint`'s DOMAIN router — what is left after the host generated the rest.
+ *
+ * 2.0.0 tier K (item 58): list / create / get / patch / delete are gone; the
+ * generated `/api/endpoints` router serves them from `endpoint`'s declaration,
+ * as it does for every other type. These two routes stay because they are not
+ * CRUD in disguise — they are a domain verb over the `linkedDtos` collection
+ * ("this endpoint answers 404 with THAT DTO"), addressed by the relation rather
+ * than by an index, so a client can add or drop one link without reading and
+ * rewriting the whole array.
+ *
+ * They still answer with the whole updated endpoint, unwrapped — the shape
+ * `endpointsApi.linkDto`/`unlinkDto` already expects — rather than the generated
+ * router's `{ data }` envelope. That is deliberate for now: K3 re-expresses both
+ * as generic collection writes when `EndpointService` is deleted, and moving the
+ * envelope in the same commit as the service would put two unrelated reasons for
+ * the client to change into one diff.
+ */
+
 import { Router } from 'express';
 import type { EndpointService } from './services.js';
-import type { ReferencesServiceLike as ReferencesService } from '../../../host-kit/host-types.js';
 import { errorHandler } from '../../../host-kit/errors.js';
-import type {
-  EndpointCreateInput,
-  EndpointListQuery,
-  EndpointUpdateInput,
-} from '../../../types.js';
 
-export function endpointsRouter(endpoints: EndpointService, references: ReferencesService): Router {
+export function endpointsRouter(endpoints: EndpointService): Router {
   const router = Router();
-
-  router.get('/', (req, res, next) => {
-    try {
-      const q = req.query;
-      const tags = typeof q.tags === 'string' ? q.tags.split(',').filter(Boolean) : undefined;
-      const filter = q.tagFilter === 'and' || q.tagFilter === 'or' ? q.tagFilter : undefined;
-      const query: EndpointListQuery = {
-        tags,
-        tagFilter: filter,
-        search: typeof q.search === 'string' ? q.search : undefined,
-        limit: q.limit ? Number(q.limit) : undefined,
-        offset: q.offset ? Number(q.offset) : undefined,
-      };
-      res.json({ endpoints: endpoints.listRaw(query) });
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.post('/', (req, res, next) => {
-    try {
-      const body = req.body as EndpointCreateInput;
-      res.status(201).json(endpoints.createRaw(body, 'user'));
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.get('/:slug', (req, res, next) => {
-    try {
-      const ep = endpoints.getBySlug(req.params.slug);
-      if (!ep) return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'endpoint not found' } });
-      res.json(ep);
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.patch('/:slug', async (req, res, next) => {
-    try {
-      const body = req.body as EndpointUpdateInput;
-      const previousSlug = req.params.slug;
-      const updated = endpoints.updateRaw(previousSlug, body, 'user');
-      if (updated.slug !== previousSlug) {
-        await references.propagateSlugChange('endpoint', previousSlug, updated.slug);
-      }
-      res.json(updated);
-    } catch (err) {
-      next(err);
-    }
-  });
 
   router.post('/:slug/dtos', (req, res, next) => {
     try {
@@ -98,24 +60,6 @@ export function endpointsRouter(endpoints: EndpointService, references: Referenc
         statusCode
       );
       res.json(updated);
-    } catch (err) {
-      next(err);
-    }
-  });
-
-  router.delete('/:slug', async (req, res, next) => {
-    try {
-      const slug = req.params.slug;
-      const broken = (await references.findReferences('endpoint', slug)) as Array<{ pagePath: string; tagType: string; line: number }>;
-      const result = endpoints.remove(slug, 'user');
-      result.brokenReferences = broken.map((b) => ({
-        pagePath: b.pagePath,
-        tagType: b.tagType,
-        line: b.line,
-        slug,
-        type: 'endpoint' as const,
-      }));
-      res.json(result);
     } catch (err) {
       next(err);
     }

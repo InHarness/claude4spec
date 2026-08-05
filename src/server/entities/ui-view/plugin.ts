@@ -3,7 +3,6 @@ import type { SerializationContribution } from '../../serialization/types.js';
 import { uiViewSlug } from '../../services/slug.js';
 import { uiViewSerializer } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
-import { uiViewsRouter } from './routes.js';
 import { UiViewService } from './service.js';
 import { uiViewData, uiViewSlugPattern } from '../../../shared/entities/ui-view/schema.js';
 
@@ -33,9 +32,6 @@ export const uiViewBackendModule: BackendModule = {
     // 2.0.0: the hand-written `onEntityRenamed` that repointed
     // `design_system_slug` is gone — `ref: 'design-system'` on the field says it.
     service: (ctx) => new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    routes: {
-      router: (service, ctx) => uiViewsRouter(service as UiViewService, ctx.referencesService, ctx.ws),
-    },
   },
 };
 

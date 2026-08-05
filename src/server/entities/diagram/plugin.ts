@@ -2,7 +2,6 @@ import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types
 import type { SerializationContribution } from '../../serialization/types.js';
 import { diagramSerializer } from './serializer.js';
 import { diagramSystemPrompt } from './system-prompt.js';
-import { diagramsRouter } from './routes.js';
 import { DiagramService } from './service.js';
 import { createDiagramToolsServer } from './mcp-server.js';
 import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';
@@ -25,9 +24,6 @@ export const diagramBackendModule: BackendModule = {
   // server for diagram's pre-flight validation tool.
   backend: {
     service: (ctx) => new DiagramService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    routes: {
-      router: (service, ctx) => diagramsRouter(service as DiagramService, ctx.referencesService, ctx.ws),
-    },
     mcpServer: () => createDiagramToolsServer(),
   },
   // v0.1.129 (M19 Slot B) — <diagram/> as the 7th XML reference type, via the

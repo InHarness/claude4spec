@@ -174,7 +174,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
        * that answered `mode: "hits"` regardless would let a handler ignore the
        * parameter and still pass.
        */
-      searchEntities: ({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
+      searchEntities: vi.fn(({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
         const hits = rows().filter((w) => w.name.includes(query));
         const searchedFields = [`${type}.name`];
         if (mode === 'count') return { mode: 'count', total: hits.length, searchedFields };
@@ -185,7 +185,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
           hasMore: false,
           searchedFields,
         };
-      },
+      }),
     } as unknown as EntityToolsDeps['discovery'],
     ws: { broadcast: vi.fn() },
     referencesService: {
@@ -313,21 +313,27 @@ describe('entity-tools: filters (list_entities/search_entities)', () => {
   });
 
   /**
-   * `filters` used to be forwarded to `service.search(query, opts)` — and
-   * dropped there: the one service with a custom `search` took only
-   * `{limit, offset}`, and the core search path takes no filters at all.
-   * Forwarding an argument nobody reads is indistinguishable, from the caller's
-   * side, from applying it — so this one is refused rather than accepted.
+   * The inverse of what tier E shipped, and deliberately so.
+   *
+   * Tier E REFUSED `filters` here, because forwarding an argument nobody reads
+   * is indistinguishable, from the caller's side, from applying it — the one
+   * service with a custom `search` took only `{limit, offset}` and the core
+   * search path took no filters at all. `slugsMatching` is the implementation
+   * that was missing, so the refusal's premise is gone and the asymmetry it
+   * left behind is the thing worth closing: "the active ACs" must mean the same
+   * set whether you list them, count them, or search them.
    */
-  it('search_entities REFUSES `filters` rather than accepting one nobody applies', async () => {
+  it('forwards `filters` to the core on the SEARCH path too', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({
       type: 'widget',
       query: 'a',
       filters: { name: 'a' },
     });
-    expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
+    expect(result.isError).toBeFalsy();
+    expect(deps.discovery.searchEntities).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { name: 'a' } }),
+    );
   });
 });
 

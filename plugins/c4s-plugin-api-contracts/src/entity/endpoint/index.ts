@@ -45,7 +45,7 @@ export const endpointEntity: EntityContribution = {
     // tells the host to collect those endpoints and re-persist them.
     service: (ctx: MountContext) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     routes: {
-      router: (service: unknown, ctx: MountContext) => endpointsRouter(service as EndpointService, ctx.referencesService),
+      router: (service: unknown) => endpointsRouter(service as EndpointService),
     },
     mcpServer: (service: unknown, ctx: MountContext) =>
       createEndpointToolsServer({ endpointService: service as EndpointService, ws: ctx.ws }),

@@ -1,4 +1,5 @@
-import type { RawEntity } from '../../discovery/raw-entity-reader.js';
+import type { RawEntity, RawEntityReader } from '../../discovery/raw-entity-reader.js';
+import { classifyVerifies } from './classify-verifies.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -18,6 +19,11 @@ function baseSingle(entity: RawEntity) {
     description: (entity.data.description as string | null) ?? null,
     tags: entity.tags,
   };
+}
+
+function withBrokenVerifies(entity: RawEntity, reader: RawEntityReader) {
+  const base = baseSingle(entity);
+  return { ...base, brokenVerifies: classifyVerifies(reader.host, base.verifies) };
 }
 
 // ─── M17 Snapshot shape ─────────────────────────────────────────────────────
@@ -89,14 +95,23 @@ export const acSerializer: SerializationContribution<RawEntity> = {
       href: `/acs/${entity.slug}`,
     }),
 
-    single_element: (entity) => baseSingle(entity),
+    /**
+     * `brokenVerifies` rides the SINGLE views, not the list ones.
+     *
+     * It used to be bolted onto three `acsRouter` handlers, which is why only
+     * REST ever saw it; tier K deleted that router, so it moved to where the
+     * entity is described and every transport gets the same answer. It stays
+     * off `element_list_item` deliberately — classifying costs one host lookup
+     * per ref, and the list row does not render it.
+     */
+    single_element: (entity, reader) => withBrokenVerifies(entity, reader),
 
     element_list_item: (entity) => baseSingle(entity),
 
     tagged_list_item: (entity) => baseSingle(entity),
 
     detail: (entity, reader) => {
-      const base = baseSingle(entity);
+      const base = withBrokenVerifies(entity, reader);
       const references = reader.findSectionReferences('ac', entity.slug).map((r) => ({
         anchor: r.anchor,
         pagePath: r.pagePath,

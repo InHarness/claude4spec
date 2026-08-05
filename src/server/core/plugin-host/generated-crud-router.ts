@@ -38,6 +38,7 @@ import { DomainError } from '../../services/tags.js';
 import { errorHandler } from '../../routes/errors.js';
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { genericCreate, genericDelete, genericUpdate, propagateRename, type GenericCrudDeps } from './generic-crud.js';
+import { isEmbedded, type FieldNode } from '../../../shared/plugin-host/data-schema.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { BackendModule } from './types.js';
@@ -58,6 +59,67 @@ function positiveInt(raw: unknown): number | undefined {
   if (typeof raw !== 'string' || !raw) return undefined;
   const n = Number(raw);
   return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
+/** Query keys this router owns; everything else is a candidate field filter. */
+const RESERVED_QUERY_KEYS = new Set(['search', 'tags', 'tagFilter', 'limit', 'offset', 'view']);
+
+/** `'3'` → `3`, `'true'` → `true` — a query string carries no types of its own. */
+function coerceFilterValue(node: FieldNode, raw: string): string | number | boolean | undefined {
+  if (node.kind === 'number') {
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : undefined;
+  }
+  if (node.kind === 'boolean') {
+    if (raw === 'true') return true;
+    if (raw === 'false') return false;
+    return undefined;
+  }
+  return raw;
+}
+
+/**
+ * `?field=value` → `filters`, derived from the declaration (item 56–61's
+ * replacement for the hand-parsed `?status=` / `?kind=` of the retired routers).
+ *
+ * Every declared EMBEDDED scalar is filterable, comma-separated values meaning
+ * `IN` — the same rule `RawEntityReader.slugsMatching` applies to the MCP
+ * transport, so one type does not answer two different questions depending on
+ * who asked. Unknown keys are ignored rather than rejected, which is the
+ * contract `list_entities` has always advertised.
+ *
+ * `?field=all` is the ONE sentinel, and only on the enum field carrying the
+ * type's `defaultPredicate`: it expands to every declared value, which is how a
+ * caller says "lift the default" rather than "add a filter". `ac/plugin.tsx`
+ * asks for it by name — the tag flyout must show deprecated ACs — and without
+ * the sentinel that view would silently narrow to the active ones. A type whose
+ * enum genuinely contains `'all'` keeps the literal meaning.
+ */
+function queryFilters(module: BackendModule, q: Record<string, unknown>): Record<string, unknown> {
+  const schema = module.data!.schema;
+  const predicateField = module.systemPrompt?.defaultPredicate?.field;
+  const filters: Record<string, unknown> = {};
+  for (const [key, raw] of Object.entries(q)) {
+    if (RESERVED_QUERY_KEYS.has(key) || typeof raw !== 'string' || raw === '') continue;
+    const node = schema[key];
+    if (!node || !isEmbedded(node) || node.kind === 'json') continue;
+    if (
+      raw === 'all' &&
+      key === predicateField &&
+      node.kind === 'enum' &&
+      !node.values.includes('all')
+    ) {
+      filters[key] = [...node.values];
+      continue;
+    }
+    const values = raw
+      .split(',')
+      .filter(Boolean)
+      .map((v) => coerceFilterValue(node, v))
+      .filter((v) => v !== undefined);
+    if (values.length) filters[key] = values;
+  }
+  return filters;
 }
 
 /**
@@ -109,18 +171,25 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       const search = typeof q.search === 'string' ? q.search : '';
       const limit = positiveInt(q.limit);
       const offset = positiveInt(q.offset);
+      const filters = queryFilters(module, q as Record<string, unknown>);
 
       /**
        * Search and tag-filter are DIFFERENT core operations, not two filters of
        * one query: `search_entities` ranks, `list_entities` enumerates in the
        * reader's order. The retired per-type SQL ANDed them into one `WHERE`,
        * which silently dropped the ranking whenever both were present.
+       *
+       * The FIELD filter does travel down both branches, though — the AC list
+       * page drives its status/kind dropdowns and its search box from one query,
+       * so narrowing that stopped applying the moment you typed would read as
+       * the dropdown breaking.
        */
       if (search) {
         const hits = deps.discovery.searchEntities({
           type,
           query: search,
           view: 'element_list_item',
+          filters,
           ...(limit !== undefined ? { limit } : {}),
           ...(offset !== undefined ? { offset } : {}),
         });
@@ -135,6 +204,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       const page = deps.discovery.listEntities({
         type,
         view: 'element_list_item',
+        filters,
         ...(tagList(q.tags) ? { tags: tagList(q.tags)! } : {}),
         ...(q.tagFilter === 'and' || q.tagFilter === 'or' ? { filter: q.tagFilter } : {}),
         ...(limit !== undefined ? { limit } : {}),

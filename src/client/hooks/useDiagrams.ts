@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { diagramsApi, type DiagramWithWarnings } from '../entities/diagram/api.js';
+import { diagramsApi } from '../entities/diagram/api.js';
 import type {
   Diagram,
   DiagramCreateInput,
@@ -32,7 +32,7 @@ export function useCreateDiagram() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: DiagramCreateInput) => diagramsApi.create(input),
-    onSuccess: (d: DiagramWithWarnings) => {
+    onSuccess: (d: Diagram) => {
       qc.invalidateQueries({ queryKey: keys.all });
       qc.setQueryData(keys.detail(d.slug), d);
       qc.invalidateQueries({ queryKey: ['tags'] });
@@ -45,7 +45,7 @@ export function useUpdateDiagram() {
   return useMutation({
     mutationFn: ({ slug, input }: { slug: string; input: DiagramUpdateInput }) =>
       diagramsApi.update(slug, input),
-    onSuccess: (d: DiagramWithWarnings, { slug }) => {
+    onSuccess: (d: Diagram, { slug }) => {
       qc.invalidateQueries({ queryKey: keys.all });
       if (slug !== d.slug) qc.removeQueries({ queryKey: keys.detail(slug) });
       qc.setQueryData(keys.detail(d.slug), d);

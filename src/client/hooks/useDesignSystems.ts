@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { designSystemsApi, type DesignSystemWithWarnings } from '../lib/api.js';
+import { designSystemsApi } from '../lib/api.js';
 import type {
   DesignSystem,
   DesignSystemCreateInput,
@@ -32,7 +32,7 @@ export function useCreateDesignSystem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: DesignSystemCreateInput) => designSystemsApi.create(input),
-    onSuccess: (ds: DesignSystemWithWarnings) => {
+    onSuccess: (ds: DesignSystem) => {
       qc.invalidateQueries({ queryKey: keys.all });
       qc.setQueryData(keys.detail(ds.slug), ds);
       qc.invalidateQueries({ queryKey: ['tags'] });
@@ -45,7 +45,7 @@ export function useUpdateDesignSystem() {
   return useMutation({
     mutationFn: ({ slug, input }: { slug: string; input: DesignSystemUpdateInput }) =>
       designSystemsApi.update(slug, input),
-    onSuccess: (ds: DesignSystemWithWarnings, { slug }) => {
+    onSuccess: (ds: DesignSystem, { slug }) => {
       qc.invalidateQueries({ queryKey: keys.all });
       if (slug !== ds.slug) qc.removeQueries({ queryKey: keys.detail(slug) });
       qc.setQueryData(keys.detail(ds.slug), ds);

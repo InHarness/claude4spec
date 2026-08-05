@@ -4,7 +4,7 @@ import type {
   AcListQuery,
   AcUpdateInput,
 } from '../../../shared/entities.js';
-import { handle, apiFetch } from '../../lib/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../lib/api-core.js';
 
 export const acsApi = {
   async list(query: AcListQuery = {}): Promise<Ac[]> {
@@ -17,16 +17,15 @@ export const acsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ acs: Ac[] }>(await apiFetch(`/api/acs${q}`));
-    return data.acs;
+    return unwrapList<Ac>(await apiFetch(`/api/acs${q}`));
   },
 
   async get(slug: string): Promise<Ac> {
-    return handle<Ac>(await apiFetch(`/api/acs/${encodeURIComponent(slug)}`));
+    return unwrap<Ac>(await apiFetch(`/api/acs/${encodeURIComponent(slug)}`));
   },
 
   async create(input: AcCreateInput): Promise<Ac> {
-    return handle<Ac>(
+    return unwrap<Ac>(
       await apiFetch('/api/acs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -36,7 +35,7 @@ export const acsApi = {
   },
 
   async update(slug: string, input: AcUpdateInput): Promise<Ac> {
-    return handle<Ac>(
+    return unwrap<Ac>(
       await apiFetch(`/api/acs/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

@@ -204,8 +204,21 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
   const fields = resolveSearchFields(module, input.fields);
   const searchedFields = fields.map((f) => f.path);
 
+  /**
+   * The same declarative filter `list_entities` applies, ANDed with the ranking.
+   *
+   * Tier E left search unfiltered because nothing could filter it generically;
+   * tier K's `slugsMatching` can, and leaving it out would have made a type's
+   * `defaultPredicate` hold for "list the ACs" but not for "search the ACs" —
+   * the AC list page combines a search box with its status/kind dropdowns, so
+   * the two questions must narrow the same way. Applied BEFORE scoring, so
+   * `total` counts matching hits rather than all hits.
+   */
+  const matching = deps.reader.slugsMatching(input.type, input.filters ?? {});
+
   const scored: Array<{ slug: string; score: number; key: string }> = [];
   for (const slug of deps.reader.listSlugs(input.type)) {
+    if (matching && !matching.has(slug)) continue;
     const raw = deps.reader.getEntity(input.type, slug);
     if (!raw) continue;
     const record = { ...raw.data, slug: raw.slug, tags: raw.tags };

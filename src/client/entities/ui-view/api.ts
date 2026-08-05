@@ -4,14 +4,26 @@ import type {
   UiViewListQuery,
   UiViewUpdateInput,
 } from '../../../shared/entities.js';
-import { handle, apiFetch } from '../../lib/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../lib/api-core.js';
 
-export interface UiViewWithWarnings extends UiView {
-  warnings?: string[];
-}
+/**
+ * What `GET /api/ui-views` actually answers with — the L9 `element_list_item`
+ * view, which is NARROWER than `UiView`.
+ *
+ * The retired `uiViewsRouter` selected whole rows, so the list and the detail
+ * happened to be the same shape and the client typed both as `UiView`. The
+ * generated router serves the declared list view instead, and that view carries
+ * `paramCount` rather than the `params[]` array — cheaper for a list, and the
+ * list page only ever rendered the count. Typing it honestly is what makes the
+ * difference a compile error instead of an `undefined.length` at runtime.
+ */
+export type UiViewListItem = Pick<
+  UiView,
+  'slug' | 'name' | 'url' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
+> & { type: 'ui-view'; paramCount: number };
 
 export const uiViewsApi = {
-  async list(query: UiViewListQuery = {}): Promise<UiView[]> {
+  async list(query: UiViewListQuery = {}): Promise<UiViewListItem[]> {
     const params = new URLSearchParams();
     if (query.search) params.set('search', query.search);
     if (query.tags?.length) params.set('tags', query.tags.join(','));
@@ -19,16 +31,15 @@ export const uiViewsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ uiViews: UiView[] }>(await apiFetch(`/api/ui-views${q}`));
-    return data.uiViews;
+    return unwrapList<UiViewListItem>(await apiFetch(`/api/ui-views${q}`));
   },
 
   async get(slug: string): Promise<UiView> {
-    return handle<UiView>(await apiFetch(`/api/ui-views/${encodeURIComponent(slug)}`));
+    return unwrap<UiView>(await apiFetch(`/api/ui-views/${encodeURIComponent(slug)}`));
   },
 
-  async create(input: UiViewCreateInput): Promise<UiViewWithWarnings> {
-    return handle<UiViewWithWarnings>(
+  async create(input: UiViewCreateInput): Promise<UiView> {
+    return unwrap<UiView>(
       await apiFetch('/api/ui-views', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -37,8 +48,8 @@ export const uiViewsApi = {
     );
   },
 
-  async update(slug: string, input: UiViewUpdateInput): Promise<UiViewWithWarnings> {
-    return handle<UiViewWithWarnings>(
+  async update(slug: string, input: UiViewUpdateInput): Promise<UiView> {
+    return unwrap<UiView>(
       await apiFetch(`/api/ui-views/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

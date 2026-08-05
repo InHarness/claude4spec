@@ -10,6 +10,7 @@ import type {
   UiViewParamLocation,
   UiViewUpdateInput,
 } from '../../../shared/entities.js';
+import { computeWarnings } from '../../../shared/entities/ui-view/lint.js';
 import { uiViewSlug } from '../../services/slug.js';
 import { DomainError } from '../../services/tags.js';
 import type { TagsService } from '../../services/tags.js';
@@ -411,57 +412,3 @@ function parseParams(raw: string): UiViewParam[] {
   }
 }
 
-const PATH_PARAM_RE = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
-
-export function computeWarnings(
-  url: string | null,
-  params: UiViewParam[]
-): string[] {
-  const warnings: string[] = [];
-
-  for (let i = 0; i < params.length; i++) {
-    const p = params[i]!;
-    if (!p.name) {
-      warnings.push(`params[${i}]: missing 'name'`);
-    }
-    if (!(VALID_LOCATIONS as readonly string[]).includes(p.in as string)) {
-      warnings.push(`params[${i}] '${p.name ?? '?'}': invalid 'in' value '${p.in}' (expected path|query|hash)`);
-    }
-  }
-
-  const seen = new Set<string>();
-  for (const p of params) {
-    const key = `${p.in}::${p.name}`;
-    if (seen.has(key)) {
-      warnings.push(`Duplicate param (name='${p.name}', in='${p.in}')`);
-    }
-    seen.add(key);
-  }
-
-  const urlPathParams = new Set<string>();
-  if (url) {
-    const matches = url.matchAll(PATH_PARAM_RE);
-    for (const m of matches) urlPathParams.add(m[1]!);
-  }
-
-  const declaredPathParams = new Set(
-    params.filter((p) => p.in === 'path' && p.name).map((p) => p.name)
-  );
-
-  for (const name of urlPathParams) {
-    if (!declaredPathParams.has(name)) {
-      warnings.push(`path param ":${name}" in URL not declared in params[]`);
-    }
-  }
-  for (const name of declaredPathParams) {
-    if (url && !urlPathParams.has(name)) {
-      warnings.push(`path param '${name}' declared but not present in URL`);
-    }
-  }
-
-  if (url === null && declaredPathParams.size > 0) {
-    warnings.push(`path params declared but URL is null (modal/drawer should not have path params)`);
-  }
-
-  return warnings;
-}

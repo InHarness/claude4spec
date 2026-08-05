@@ -279,6 +279,8 @@ export interface SearchEntitiesInput {
   mode?: 'hits' | 'count';
   limit?: number;
   offset?: number;
+  /** Same declarative field filter as `ListEntitiesInput.filters`, ANDed with the ranking. */
+  filters?: Record<string, unknown>;
 }
 
 export type SearchEntitiesResult =
