@@ -106,7 +106,7 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     for (const [type, [prefix, payload]] of Object.entries(payloads(stamp))) {
       const res = await post(`/api/projects/${projectId}${prefix}`, payload);
       if (res.status === 200 || res.status === 201) {
-        created[type as (typeof ALL_TYPES)[number]] = { prefix, slug: res.body.slug };
+        created[type as (typeof ALL_TYPES)[number]] = { prefix, slug: res.body.data.slug };
       }
     }
 
@@ -128,7 +128,7 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     expect(entity, `create ${type} failed`).toBeDefined();
     const res = await api(`/api/projects/${projectId}${entity!.prefix}/${entity!.slug}`);
     expect(res.status).toBe(200);
-    expect(res.body.slug).toBe(entity!.slug);
+    expect(res.body.data.slug).toBe(entity!.slug);
   });
 
   it('a diagram does not persist its transient slug input', async () => {
@@ -136,7 +136,7 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     // a column. A generator that projected it would round-trip it here.
     const entity = created.diagram!;
     const res = await api(`/api/projects/${projectId}/diagrams/${entity.slug}`);
-    expect(res.body.caption).toBeUndefined();
+    expect(res.body.data.caption).toBeUndefined();
   });
 
   it('links a DTO to an endpoint through the endpoint_dto projection', async () => {
@@ -149,8 +149,10 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     // Readable from BOTH ends — the junction is the only table generated from a
     // value collection rather than as a column, so a one-directional read would
     // hide half of it.
-    const dto = await api(`/api/projects/${projectId}/dtos/${created.dto!.slug}`);
-    expect(dto.body.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
+    // `?view=detail`: `endpoints` is a reverse join, and the generated GET
+    // answers `single_element` unless asked. See generated-crud-router.
+    const dto = await api(`/api/projects/${projectId}/dtos/${created.dto!.slug}?view=detail`);
+    expect(dto.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
       created.endpoint!.slug,
     );
   });

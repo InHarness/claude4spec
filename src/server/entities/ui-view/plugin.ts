@@ -1,11 +1,8 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
 import { uiViewSlug } from '../../services/slug.js';
-import { uiViewSerializer } from './serializer.js';
+import { uiViewSerializer } from './views.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
-import { uiViewsRouter } from './routes.js';
-import { UiViewService } from './service.js';
-import { uiViewCreateSchema, uiViewUpdateSchema } from './crud-schemas.js';
 import { uiViewData, uiViewSlugPattern } from '../../../shared/entities/ui-view/schema.js';
 
 export const uiViewBackendModule: BackendModule = {
@@ -26,22 +23,15 @@ export const uiViewBackendModule: BackendModule = {
   dependsOn: ['design-system'],
   serializer: uiViewSerializer as SerializationContribution<unknown>,
   systemPrompt: uiViewSystemPrompt,
-  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
-  // manifest-adapter.ts#synthesizeMount): construct the service once, register
-  // it for DI + entity-tools, mount the REST router. No custom MCP server —
-  // ui-view has no non-CRUD tools.
-  backend: {
-    // 2.0.0: the hand-written `onEntityRenamed` that repointed
-    // `design_system_slug` is gone — `ref: 'design-system'` on the field says it.
-    service: (ctx) => new UiViewService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: {
-      createSchema: uiViewCreateSchema,
-      updateSchema: uiViewUpdateSchema,
-    },
-    routes: {
-      router: (service, ctx) => uiViewsRouter(service as UiViewService, ctx.referencesService, ctx.ws),
-    },
-  },
+  /**
+   * 2.0.0 tier K (item 59) — NO `backend` block at all.
+   *
+   * The service was CRUD and nothing else; the one piece of judgement it held,
+   * the `url` ↔ `params` linter, moved to `shared/entities/ui-view/lint.ts` in
+   * K2 and now runs where its output is read (the detail panel) rather than
+   * only on write. Repointing `designSystemSlug` after a rename is
+   * `ref: 'design-system'` on the field.
+   */
 };
 
 /** M31: self-registration side effect replaced by an explicit hook — called once per process by registerAllPlugins(registry). */

@@ -20,7 +20,6 @@ import type { ChangedBy } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
 import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
-import type { EntityCrudService } from './entity-crud-service.js';
 import type {
   PluginCommandContribution,
   PluginManifest,
@@ -69,30 +68,53 @@ export interface WriteOpts {
 }
 
 /**
- * 0.2.2 — surface (B) of an entity service: the rich restore/write-path facade.
- * Consumed STRUCTURALLY (by shape, never by class) through
- * `host.getEntityService(type)` / `requireService(type)`, which is what lets a
- * type contributed by any plugin have a restore door without the host importing
- * — or even naming — its service class.
+ * What `getEntityService(type)` hands back — 2.0.0 tier K: `unknown`.
+ *
+ * It used to be `Partial<EntityCrudService> & Partial<UpsertCapable>`: two
+ * disjoint surfaces (the agent-facing CRUD one and the rich restore/write
+ * facade) that callers narrowed by probing for the method they wanted. Both are
+ * gone. CRUD is generated from `data.schema`, and the restore/write path goes
+ * through `upsertProjectionRow` for every type — so the `?.upsert` probing that
+ * type invited is exactly what tier K removed, and leaving the shape behind
+ * would invite writing it again.
+ *
+ * What a type may still register here is a DOMAIN HELPER the host cannot derive
+ * and does not understand (`ac`'s LLM audit is the only in-repo example, and it
+ * is reached by its own MCP server, not through this lookup). `unknown` says
+ * that: whoever registered it is the only code that knows what it is.
  */
-export interface UpsertCapable<T = unknown> {
-  upsert(slug: string, input: unknown, actor: ChangedBy, opts?: WriteOpts): UpsertResult<T>;
-  getBySlug(slug: string): T | null;
-  remove(slug: string, actor: ChangedBy): void;
-}
+export type EntityServiceLike = unknown;
 
 /**
- * 0.2.2 — what `getEntityService(type)` hands back.
+ * 2.0.0 (A.8) — the write door handed to a plugin's `mount`, bound to this
+ * project's deps.
  *
- * One service INSTANCE exposes two disjoint surfaces, and a given type may
- * implement either or both, hence `Partial` on each half:
- *   (A) `EntityCrudService` — the thin agent-facing create/get/update/delete/list
- *       consumed only by the generic `entity-tools` MCP server.
- *   (B) `UpsertCapable`     — the rich restore/write-path facade used by
- *       `EntityWriter`, the release layer, `c4s-reader` and the indexer.
- * Callers narrow by probing the method they need, never by casting to a class.
+ * A FACADE, not the host's `GenericCrudDeps` bag: a plugin cannot import
+ * `genericCreate`/`genericUpdate` (they are host internals, and the published
+ * `MountContext` types every host handle as `any` precisely so the contract
+ * carries no host imports), so handing over the deps object would give it
+ * something it has no way to call. These three methods are the whole of what a
+ * declarative type's write path is, and they are the SAME ones `/api/{type}s`
+ * goes through — including validation, slug rules, `entity_version` capture and
+ * the entity-file write.
+ *
+ * `type` is a parameter rather than bound because a plugin legitimately writes
+ * types other than its own (`endpoint` reads `dto` to validate a link).
+ *
+ * ASYNC, and not merely as a convenience: `update` propagates a rename to every
+ * referencing entity and page, which is I/O. A synchronous facade could only
+ * have skipped that step — which is exactly what the first version did.
  */
-export type EntityServiceLike = Partial<EntityCrudService> & Partial<UpsertCapable>;
+export interface CrudFacade {
+  create(type: string, input: unknown, actor: ChangedBy): Promise<{ slug: string; warnings?: string[] }>;
+  update(
+    type: string,
+    slug: string,
+    input: unknown,
+    actor: ChangedBy,
+  ): Promise<{ slug: string; warnings?: string[] }>;
+  delete(type: string, slug: string, actor: ChangedBy): Promise<{ deleted: boolean }>;
+}
 
 export interface RouteRegistration {
   /** Mount prefix, e.g. "/api/endpoints". */
@@ -113,7 +135,19 @@ export interface MountContext {
    * router under `/api/projects/:id`, so prefixes are `/api`-less.
    */
   app: Router;
-  db: Database;
+  /**
+   * 2.0.0 (A.8) — `db: Database` was REMOVED, and these two replace it.
+   *
+   * The raw handle was here because every type built a CRUD service around it;
+   * tier K deletes those, and what the survivors actually need is narrower. A
+   * `Database` is arbitrary SQL — a plugin could write a projection row the host
+   * never validated, in a shape the declaration does not describe, which is the
+   * whole class of thing 2.0.0 removes. `reader` is read-only by construction,
+   * and `crud` is the SAME write door the generated router uses, so a plugin's
+   * own route and `/api/{type}s` cannot disagree about what a write means.
+   */
+  reader: RawEntityReader;
+  crud: CrudFacade;
   /** M31: the project host being mounted — plugins needing host lookups (e.g. ac) use this, never a singleton. */
   host: ProjectPluginHost;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
@@ -174,38 +208,33 @@ export interface BackendModule extends EntityModuleManifest {
   systemPrompt: SystemPromptContribution;
 
   /**
-   * L1–L4 backend slots. Either declare `service`/`crud`/`routes`/`mcpServer`
+   * L1–L4 backend slots. Either declare `service`/`routes`/`mcpServer`
    * (the host synthesizes an equivalent `mount`, see
    * `manifest-adapter.ts#synthesizeMount`) or write `mount` directly as an
    * escape hatch — `mount`, when present, always wins.
    */
   backend?: {
     mount?: PluginMountFn;
-    /** M13 — L2 service factory, instantiated once per `ProjectContext`. */
-    service?: (ctx: MountContext) => EntityCrudService;
     /**
-     * M13 — declarative contribution to the generic `entity-tools` server.
-     * Requires `service` (enforced by `synthesizeMount`). Kept on the module
-     * post-lowering (not consumed away) — `entity-tools` reads it directly for
-     * schema validation and `describe_entity_type`.
+     * L2 DOMAIN-HELPER factory, instantiated once per `ProjectContext` and
+     * registered under `getEntityService(type)`.
+     *
+     * 2.0.0 tier K: this stopped being a CRUD service. The six that were one are
+     * deleted; what a type may still contribute here is domain logic the host
+     * cannot derive from `data.schema` — `ac`'s LLM analysis service,
+     * `design-system`'s `resolve(groups, modes, activeMode?)`. Hence `unknown`:
+     * the host neither knows nor needs the shape, and typing it as
+     * `EntityCrudService` invited exactly the by-shape `?.upsert` probing that
+     * kept the deleted write fork alive.
+     *
+     * 2.0.0 tier K — `crud` was REMOVED. Its `createSchema`/`updateSchema` are
+     * generated from `data.schema` (item 27, `crud-schema-gen.ts`); a second
+     * hand-written description of the same fields could only ever drift from the
+     * table, the payload and the write door, which is what it did.
      */
-    crud?: {
-      createSchema: ZodRawShape;
-      updateSchema?: ZodRawShape;
-      descriptions?: { entity?: string };
-      /*
-       * 0.2.4 — `searchableFields` was REMOVED (not deprecated). Search scope
-       * now has exactly one source: the text paths derivable from
-       * `data.schema` (`createSchema` until 2.0.0), with the agent's `fields`
-       * parameter as the only
-       * override. Had one of the two type-side layers survived, the same type
-       * would rank differently depending on which MCP tool asked. Both had zero
-       * producers across the host repo, the preinstalled envelope and external
-       * packages — the sole occurrence was a test fixture.
-       */
-    };
+    service?: (ctx: MountContext) => unknown;
     /**
-     * A factory receiving the same service instance as `crud`/`mcpServer`.
+     * A factory receiving the same service instance as `mcpServer`.
      * ALWAYS a factory (never a bare `Router`) — express's `Router` type is
      * itself callable (`(req, res, next) => void`), so a `Router | (fn)`
      * union can't be discriminated at runtime by `typeof x === 'function'`
@@ -213,7 +242,7 @@ export interface BackendModule extends EntityModuleManifest {
      * ignores the arguments: `router: (_service, _ctx) => myRouter`.
      */
     routes?: {
-      router: (service: EntityCrudService, ctx: MountContext) => Router;
+      router: (service: unknown, ctx: MountContext) => Router;
     };
     /**
      * Custom `${type}-tools` server for this type's non-CRUD tools. 0.1.133:
@@ -224,7 +253,7 @@ export interface BackendModule extends EntityModuleManifest {
      * (`registerMcpServer`), so `buildMcpServers()` rebuilds a fresh, connectable
      * server each turn behind the facade.
      */
-    mcpServer?: (service: EntityCrudService, ctx: MountContext) => McpServerFactory;
+    mcpServer?: (service: unknown, ctx: MountContext) => McpServerFactory;
     /**
      * 0.2.2 — AUXILIARY tables this module owns beyond `table` itself: junctions
      * and side indexes whose rows are derived from the entity files and so must
@@ -253,7 +282,7 @@ export interface BackendModule extends EntityModuleManifest {
    * `referenceType`, forwarded by `registerEntityModule` to
    * `M19.registerExtensionReferenceType` with `entityType` auto-injected.
    * Additive/optional — folds into the `1.0.0` host API baseline, same as the
-   * `backend.{service,crud,routes,mcpServer}` declarative slots above.
+   * `backend.{service,routes,mcpServer}` declarative slots above.
    */
   frontend?: {
     referenceType?: EntityReferenceType;

@@ -70,6 +70,7 @@
     "fields": [
       {
         "name": "message",
+        "required": true,
         "type": "string"
       }
     ],
@@ -113,6 +114,7 @@
     "fields": [
       {
         "name": "nr",
+        "required": false,
         "type": "number"
       }
     ],

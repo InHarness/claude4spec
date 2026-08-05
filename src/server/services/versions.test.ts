@@ -17,31 +17,39 @@ describe('VersionService.restore', () => {
   let hostRestore: ReturnType<typeof vi.fn>;
   let storePersist: ReturnType<typeof vi.fn>;
   let storeRemove: ReturnType<typeof vi.fn>;
-  let serviceRemove: ReturnType<typeof vi.fn>;
-  let serviceGetBySlug: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     db = new Database(':memory:');
     runMigrations(db);
+    /**
+     * 2.0.0: entity tables are PROJECTIONS, not migrations — `runMigrations` no
+     * longer creates one. The delete branch under test writes through the
+     * projection door, so the fake `dto` type needs the table its fake
+     * declaration describes.
+     */
+    db.exec(`CREATE TABLE dto (slug TEXT NOT NULL PRIMARY KEY, name TEXT)`);
     versions = new VersionService(db);
 
     hostRestore = vi.fn(() => ({ op: 'updated' as const, entity: null }));
     storePersist = vi.fn();
     storeRemove = vi.fn();
-    serviceGetBySlug = vi.fn(() => ({ slug: 'my-dto' }));
-    // Mirrors DtoService.remove(): captures its own 'delete' version before
-    // deleting the row (see src/server/entities/dto/services.ts:236-256).
-    serviceRemove = vi.fn((slug: string, actor: 'user' | 'agent') => {
-      versions.captureEntitySnapshot('dto', slug, 'delete', actor, 'Deleted', '1.1.0');
-    });
-
     // Fakes: VersionService.restore() only calls host.restore/getEntity and
     // entityStore.persist directly — the delegated plugin restore machinery
     // (HostEntityWriter → serializer.restore) is exercised elsewhere.
     const fakeHost = {
       restore: hostRestore,
-      getEntity: () => ({ payloadVersion: 1 }),
-      getEntityService: () => ({ getBySlug: serviceGetBySlug, remove: serviceRemove }),
+      /**
+       * 2.0.0 tier K — the delete branch goes through `HostEntityWriter.delete`,
+       * which is now the PROJECTION door: it needs the module's `data.schema`,
+       * not a registered service. The `dto` table exists because `runMigrations`
+       * created it, so a declared `name` column is enough to make the delete real.
+       */
+      getEntity: () => ({
+        type: 'dto',
+        payloadVersion: 1,
+        data: { schema: { name: { kind: 'string' } } },
+      }),
+      getEntityService: () => null,
     } as unknown as PluginHost;
     const fakeEntityStore = { persist: storePersist, remove: storeRemove } as unknown as EntityStore;
     const fakeTagsService = {} as TagsService;
@@ -84,15 +92,18 @@ describe('VersionService.restore', () => {
   });
 
   it('restoring to a delete-tombstone version deletes instead of crashing on null data', () => {
+    // A real row, because the delete now goes through the projection: with no
+    // row there is nothing to delete and nothing to capture, and the test would
+    // pass for the wrong reason.
+    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
     versions.createVersion('dto', 'my-dto', { name: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
     versions.createVersion('dto', 'my-dto', null, 'user', 'Deleted', 'delete', '1.1.0');
 
     const result = versions.restore('dto', 'my-dto', 2, 'user');
 
     // Never hands null data to a serializer's restore() — routes through the
-    // entity's own delete path instead (mirroring release.ts's delete branch).
+    // generic delete path instead (mirroring release.ts's delete branch).
     expect(hostRestore).not.toHaveBeenCalled();
-    expect(serviceRemove).toHaveBeenCalledWith('my-dto', 'user');
     expect(storeRemove).toHaveBeenCalledWith('dto', 'my-dto');
     expect(storePersist).not.toHaveBeenCalled();
     expect(result.op).toBe('delete');
@@ -102,6 +113,7 @@ describe('VersionService.restore', () => {
     // Pre-M17 rows have no `op` column value at all — VersionDetail.op comes
     // back undefined (toDetail omits it when falsy), so the guard must not
     // rely on `op === 'delete'` alone; `data === null` must also trigger it.
+    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
     db.prepare(
       `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, op)
        VALUES ('dto', 'my-dto', 1, 'null', 'user', NULL)`,
@@ -110,7 +122,6 @@ describe('VersionService.restore', () => {
     const result = versions.restore('dto', 'my-dto', 1, 'user');
 
     expect(hostRestore).not.toHaveBeenCalled();
-    expect(serviceRemove).toHaveBeenCalledWith('my-dto', 'user');
     expect(result.op).toBe('delete');
   });
 });

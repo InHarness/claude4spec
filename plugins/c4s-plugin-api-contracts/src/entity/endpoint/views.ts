@@ -7,7 +7,7 @@ import type {
   SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
-import { findEndpointDtos, syncEndpointDtos, type JunctionCapable } from '../junction/index.js';
+import { readEndpointDtos } from '../junction/index.js';
 import { ENDPOINT_TYPE } from '../../identity.js';
 import { endpointPayloadV1ToV2 } from './upgrades.js';
 
@@ -29,7 +29,7 @@ function href(entity: RawEntity): string {
 }
 
 function baseSingle(entity: RawEntity, reader: HostEntityReader, includeDtos = true) {
-  const dtos = includeDtos ? findEndpointDtos(reader.db, entity.slug) : undefined;
+  const dtos = includeDtos ? readEndpointDtos(reader, entity.slug) : undefined;
   return {
     type: 'endpoint',
     slug: entity.slug,
@@ -200,7 +200,7 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
     detail: (entity, reader) => {
       const base = baseSingle(entity, reader, true);
       const brokenRefs: string[] = [];
-      const dtos = findEndpointDtos(reader.db, entity.slug);
+      const dtos = readEndpointDtos(reader, entity.slug);
       const dtoObjects = dtos.map((link) => {
         const dto = reader.getEntity('dto', link.dtoSlug) as RawEntity | null;
         if (!dto) {

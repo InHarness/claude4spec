@@ -8,6 +8,15 @@ import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.j
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
+import { generatedCrudRouter } from '../../src/server/core/plugin-host/generated-crud-router.js';
+import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/manifest-adapter.js';
+import {
+  genericCreate,
+  genericDelete,
+  genericUpdate,
+  propagateRename,
+} from '../../src/server/core/plugin-host/generic-crud.js';
+import type { CrudFacade } from '../../src/server/core/plugin-host/types.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
 import { artifactsRouter } from '../../src/server/routes/artifacts.js';
 import { PlanService } from '../../src/server/services/plan.js';
@@ -28,6 +37,8 @@ import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { createDiscoveryCore } from '../../src/server/discovery/index.js';
+import { SerializationEngine } from '../../src/server/core/plugin-host/serialization-engine.js';
+import { sectionSerializer } from '../../src/server/serialization/serializers/section.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
@@ -44,6 +55,8 @@ export interface TestApp {
   /** 0.2.4: exposed so a test can build a real EntityIndexerService for round-trip checks. */
   tagsService: TagsService;
   entitiesWatcher: EntitiesWatcher;
+  /** A.8: the write door a plugin's `mount` is handed, so a test can drive it. */
+  crud: CrudFacade;
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
   plansPages: PagesService;
@@ -104,10 +117,49 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    */
   applyProjection(db, host.listAvailable());
 
+  /**
+   * 2.0.0 (A.8) — the same two handles `buildProjectContext` puts on the mount
+   * context, built here for the same reason: `ctx.db` is gone, and a plugin's
+   * own router writes through the host's declarative door.
+   */
+  const crudDeps = {
+    host,
+    reader: rawReader,
+    tags: tagsService,
+    store: entityStore,
+    references: referencesService,
+    projection: { db, store: entityStore, versions: versionService },
+  };
+  /**
+   * Mirrors `buildProjectContext` exactly, INCLUDING `propagateRename` and the
+   * broadcast. A helper that bound the three verbs bare would make every test
+   * pass against a facade production does not have — which is how the missing
+   * rename fan-out survived its first review.
+   */
+  const crudFacade: CrudFacade = {
+    create: async (type, input, actor) => {
+      const result = genericCreate(crudDeps, type, input, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    update: async (type, slug, input, actor) => {
+      const result = genericUpdate(crudDeps, type, slug, input, actor);
+      await propagateRename(crudDeps, type, slug, result.slug);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    delete: async (type, slug, actor) => {
+      const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+  };
+
   const router = Router();
   host.mountBackend({
     app: router,
-    db,
+    reader: rawReader,
+    crud: crudFacade,
     host,
     cwd,
     ws,
@@ -122,22 +174,43 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   // M29: slug-rename propagation into entity files, as in production. Must come
   // after mountBackend — that is when modules contribute their rename listeners.
   referencesService.setPluginHost(host);
+  // 2.0.0 (A.8): rename listeners are registered over every module here, not
+  // from inside each type's mount. Mirrors `buildProjectContext`.
+  registerRefRewriteListeners(host, db, entityStore);
   /**
    * A real core, so an integration test can reach the keyed-collection routes
-   * `entitiesRouter` mounts. Only the entity-side deps are wired: those routes
-   * read the projection and the host manifest, never pages or serialization,
-   * and standing up a page source here would couple every API test to the page
-   * fixtures.
+   * `entitiesRouter` mounts and the generated CRUD routes below. Pages are
+   * still absent — standing up a page source here would couple every API test
+   * to the page fixtures — but SERIALIZATION is wired as of 0.2.9 item 31: the
+   * generated routes answer with L9 views, so a core without an engine makes
+   * every one of them a 500.
    */
+  const serializationEngine = new SerializationEngine(host, sectionSerializer);
   const discovery = createDiscoveryCore({
     reader: rawReader,
     db,
     host,
+    serialization: serializationEngine,
     roots: [],
     projectDir: cwd,
     packageVersion: '0.0.0-test',
   } as never);
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+
+  /**
+   * Host API 2.0.0 (item 31) — mirrors `project-context.ts`, INCLUDING the
+   * order: after `mountBackend` above, so a type whose own `backend.routes`
+   * still serves a CRUD verb keeps serving it and the generated router only
+   * answers what is left. A test app that mounted these first would prove the
+   * opposite of what production does.
+   */
+  for (const module of host.listEntities()) {
+    if (!module.data?.schema) continue;
+    router.use(
+      module.pathPrefix,
+      generatedCrudRouter({ ...crudDeps, discovery, ws }, module),
+    );
+  }
 
   // M36 artifact mounts (briefs/patches/plans) — minimal wiring so tests can
   // exercise the generic /api/artifacts/:kind/* family alongside each kind's
@@ -209,6 +282,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     entityStore,
     tagsService,
     entitiesWatcher,
+    crud: crudFacade,
     cwd,
     plansPages,
     plansSerializer,

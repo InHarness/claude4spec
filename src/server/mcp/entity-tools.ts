@@ -28,6 +28,16 @@ import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import { getEntitiesAll, type DiscoveryCore } from '../discovery/index.js';
 import { resolveSearchFields } from '../discovery/search/fields.js';
+import { buildCreateShape, buildUpdateShape } from '../core/plugin-host/crud-schema-gen.js';
+import {
+  genericCreate,
+  genericDelete,
+  genericUpdate,
+  type GenericCrudDeps,
+} from '../core/plugin-host/generic-crud.js';
+import type { TagsService } from '../services/tags.js';
+import type { EntityStore } from '../services/entity-store.js';
+import type { VersionService } from '../services/versions.js';
 
 export interface EntityToolsDeps {
   host: ProjectPluginHost;
@@ -42,6 +52,15 @@ export interface EntityToolsDeps {
   db: Database.Database;
   ws: WsEmitter;
   referencesService: ReferencesService;
+  /**
+   * 2.0.0 (item 28) — what the host needs to write a SERVICELESS type: tags and
+   * the file store are the two things a per-type service used to own alongside
+   * its row. Optional so the existing hand-built test rigs keep compiling; a
+   * serviceless type reaching a write without them is reported, not guessed at.
+   */
+  tagsService?: TagsService;
+  entityStore?: EntityStore;
+  versionService?: VersionService;
 }
 
 type FailResponse = { content: [{ type: 'text'; text: string }]; isError: true };
@@ -71,23 +90,29 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     return { error: err instanceof Error ? err.message : String(err), code: 'INTERNAL' };
   };
 
-  /** Full type resolution for CRUD tools (create/get/update/delete/list/search). */
+  /**
+   * Full type resolution for CRUD tools (create/get/update/delete/list/search).
+   *
+   * 2.0.0 (item 28) — `CRUD_NOT_SUPPORTED` is GONE. Every active type has CRUD
+   * by construction: it declares `data.schema`, so the host can generate its
+   * input schemas and write its projection.
+   *
+   * The code was not only obsolete, it was wrong on the read side: `get_entities`
+   * resolves through this same function, so a type with no `backend.crud` — the
+   * shape every declaratively-authored plugin has — could not be READ either.
+   *
+   * Tier K: the resolved `service` is gone too. Every type writes through the
+   * generic door now; there is nothing left to dispatch to.
+   */
   const resolveType = (
     type: string,
-  ):
-    | { ok: true; module: BackendModule; service: EntityCrudService }
-    | { ok: false; response: FailResponse } => {
+  ): { ok: true; module: BackendModule } | { ok: false; response: FailResponse } => {
     const available = deps.host.getAvailable(type);
     if (!available) return { ok: false, response: fail('INVALID_TYPE', `unknown entity type '${type}'`) };
     if (!deps.host.isActive(type)) {
       return { ok: false, response: fail('INACTIVE_TYPE', `entity type '${type}' is not active in this project`) };
     }
-    const module = deps.host.getEntity(type)!;
-    const service = deps.host.getEntityService(type) as EntityCrudService | null;
-    if (!module.backend?.crud || !service) {
-      return { ok: false, response: fail('CRUD_NOT_SUPPORTED', `entity type '${type}' does not support CRUD via entity-tools`) };
-    }
-    return { ok: true, module, service };
+    return { ok: true, module: deps.host.getEntity(type)! };
   };
 
   /** Light resolution for describe_entity_type: any active type, CRUD or not. */
@@ -102,10 +127,45 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     return { ok: true, module: deps.host.getEntity(type)! };
   };
 
-  const createSchemaOf = (module: BackendModule) => z.object(module.backend!.crud!.createSchema);
-  const updateSchemaOf = (module: BackendModule) => {
-    const raw = module.backend!.crud!.updateSchema;
-    return raw ? z.object(raw) : createSchemaOf(module).partial();
+  /**
+   * 2.0.0 (item 27) — generated from `data.schema`, the one source there is.
+   *
+   * Tier E staged this behind a declared `backend.crud`, because the six
+   * built-ins still wrote through services that only honoured the fields their
+   * hand-written schemas named, and publishing the wider generated schema over a
+   * narrower service advertises `endpoint.linkedDtos` and an explicit `slug` to
+   * an agent, accepts both, and drops them with no error. Tier K deleted the
+   * services and the slot; what is described is now what the write path does.
+   */
+  const createSchemaOf = (module: BackendModule) =>
+    z.object(buildCreateShape(module.data!, module.slugPattern));
+  const updateSchemaOf = (module: BackendModule) =>
+    z.object(buildUpdateShape(module.data!, module.slugPattern));
+
+  /**
+   * The generic write door — the only one.
+   *
+   * Throws when this server was constructed without the tag/file/version deps —
+   * only the hand-built test rigs do that. Reported as a DomainError rather
+   * than silently degrading, because "the host was not given what it needs to
+   * write" is a wiring bug and must not read like a validation failure of the
+   * caller's payload.
+   */
+  const genericDeps = (): GenericCrudDeps => {
+    if (!deps.tagsService || !deps.entityStore) {
+      throw new DomainError(
+        'INTERNAL',
+        'entity-tools was constructed without tagsService/entityStore — a serviceless type has no write door here',
+      );
+    }
+    return {
+      host: deps.host,
+      reader: deps.reader,
+      tags: deps.tagsService,
+      store: deps.entityStore,
+      references: deps.referencesService,
+      projection: { db: deps.db, store: deps.entityStore, versions: deps.versionService ?? null },
+    };
   };
   const errMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
   // Per-type guard: a schema that can't be serialized (e.g. a foreign/undefined zod
@@ -118,6 +178,30 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     } catch (err) {
       return { __error: `${type}: ${errMessage(err)}` };
     }
+  };
+
+  /** The M39 core's enumeration — the only one, since tier K. */
+  const coreList = (
+    type: string,
+    tags: string[] | undefined,
+    tagFilter: 'and' | 'or',
+    limit: number,
+    offset: number,
+    filters?: Record<string, unknown>,
+  ): { items: Array<{ slug: string }>; total: number } => {
+    const page = deps.discovery.listEntities({
+      type,
+      view: 'element_list_item',
+      ...(tags?.length ? { tags, filter: tagFilter } : {}),
+      ...(filters ? { filters } : {}),
+      // The transports inherit a type's declared default (`ac` → active only);
+      // page rendering does not. See `ListEntitiesInput.applyDefaultPredicate`.
+      applyDefaultPredicate: true,
+      limit,
+      offset,
+    });
+    if (page.mode !== 'items') return { items: [], total: page.total };
+    return { items: page.items.map((i) => ({ slug: i.slug })), total: page.total };
   };
 
   const broadcastChanged = (type: string, slug: string): void => {
@@ -136,7 +220,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const schema = createSchemaOf(resolved.module);
       const items = args.items as Array<Record<string, unknown>>;
 
@@ -148,7 +231,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           continue;
         }
         try {
-          const created = await service.create(parsed.data);
+          const created = genericCreate(genericDeps(), type, parsed.data, 'agent');
           broadcastChanged(type, created.slug);
           results.push(created.warnings?.length ? created : { slug: created.slug });
         } catch (err) {
@@ -199,7 +282,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const schema = updateSchemaOf(resolved.module);
       const updates = args.updates as Array<{ slug: string; data: Record<string, unknown>; newSlug?: string }>;
 
@@ -212,7 +294,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         }
         try {
           const data = u.newSlug !== undefined ? { ...parsed.data, newSlug: u.newSlug } : parsed.data;
-          const updated = await service.update(u.slug, data);
+          const updated = genericUpdate(genericDeps(), type, u.slug, data, 'agent');
           if (updated.slug !== u.slug) {
             await deps.referencesService.propagateSlugChange(type as EntityType, u.slug, updated.slug);
           }
@@ -238,7 +320,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const slugs = (args.slugs as string[]).map(String);
 
       const results: ItemResult<{ deleted: true; brokenReferences: Array<{ pagePath: string; count: number }> }>[] = [];
@@ -247,7 +328,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           const hits = await deps.referencesService.findReferences(type as EntityType, slug);
           const counts = new Map<string, number>();
           for (const h of hits) counts.set(h.pagePath, (counts.get(h.pagePath) ?? 0) + 1);
-          service.delete(slug);
+          /**
+           * An absent slug is an ERROR for this item, not a silent success.
+           *
+           * The retired services threw `NOT_FOUND` from `.delete()`; the generic
+           * door reports `{ deleted: false }` instead, which the batch envelope
+           * would otherwise have relabelled `{ deleted: true }` — telling an
+           * agent it removed something that was never there.
+           */
+          const removed = genericDelete(genericDeps(), type, slug, 'agent');
+          if (!removed.deleted) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
           broadcastChanged(type, slug);
           results.push({
             deleted: true,
@@ -279,7 +369,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` is a type-specific escape hatch (e.g. ac: { status: "all", kind: "edge-case" }) — see describe_entity_type for what a type accepts; unrecognized keys are ignored by types that don\'t support them.',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: a type may declare a DEFAULT filter that applies when you name no value for that field — `ac` lists only active ACs unless you ask for { status: ["active", "deprecated"] }.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
@@ -293,7 +383,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
-      const { service } = resolved;
       const offset = (args.offset as number | undefined) ?? 0;
       const opts = {
         tags: args.tags as string[] | undefined,
@@ -302,11 +391,18 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         limit: (args.limit as number | undefined) ?? 50,
         offset,
       };
-      // `count` still asks the service, not the core: the service owns `filters`
-      // and therefore owns what "matching" means for this type. Asking the core
-      // instead would count a different set whenever a filter is in play.
-      if (args.mode === 'count') return ok({ type, mode: 'count', total: service.list(opts).total });
-      const page = service.list(opts);
+      /**
+       * 2.0.0 tier K — one enumeration, the core's, filters included.
+       *
+       * `filters` used to be a per-type escape hatch implemented by whichever
+       * service felt like it, which meant `count` had to ask the service too or
+       * the two halves would count different sets. It is derived from
+       * `data.schema` now (`RawEntityReader.slugsMatching`), so both halves are
+       * the same query and every type supports it — including the ones that
+       * never shipped a service to implement it with.
+       */
+      const page = coreList(type, opts.tags, opts.tagFilter, opts.limit, offset, opts.filters);
+      if (args.mode === 'count') return ok({ type, mode: 'count', total: page.total });
       const slugs = page.items.map((item) => (item as { slug: string }).slug);
       return ok({
         type,
@@ -321,7 +417,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── search_entities ──────────────────────────────────────────────────────
   const searchEntities = mcpTool(
     'search_entities',
-    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. This tool has NO `filters` parameter: use list_entities for type-specific filtering. Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
+    'Plain text search within exactly ONE entity type — `type` is required. A cross-type search federated its rankings badly and let one call return hundreds of rows; to find an entity across types by name or slug, use resolve_identity. EVERY active type is searchable: the scope is `fields` if you pass it, else every text path derived from the type\'s declared data schema — that derivation is the ONLY source of scope, with no per-type declaration or per-type ranking behind it, so the same type ranks identically on every surface. The response always carries `searchedFields` — the paths actually consulted, so an empty result is distinguishable from a field that was never in scope. `filters` narrows the ranking by the type\'s own declared scalar fields, exactly as in list_entities — and, exactly as there, a type with a declared default applies it unless you name that field (`ac` ranks only active ACs unless you ask for { status: ["active","deprecated"] }). Returns { type, items, total, hasMore, searchedFields } — or { total, searchedFields } with mode: "count".',
     {
       type: z.string(),
       query: z.string(),
@@ -329,6 +425,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       mode: z.enum(['hits', 'count']).optional(),
       limit: z.number().optional(),
       offset: z.number().optional(),
+      filters: z.record(z.string(), z.unknown()).optional(),
     },
     async (args) => {
       const type = String(args.type);
@@ -337,21 +434,18 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       const limit = (args.limit as number | undefined) ?? 50;
       const offset = (args.offset as number | undefined) ?? 0;
       const mode = (args.mode as 'hits' | 'count' | undefined) ?? 'hits';
-
       /**
-       * `filters` is REFUSED rather than ignored. It was advertised here as "the
-       * same escape hatch as list_entities", but no type has ever honoured it on
-       * this path: the core takes no filters, and the one service with a custom
-       * `search` drops the argument. Silently returning unfiltered rows under a
-       * parameter that promises filtering is how an agent acts on deprecated ACs
-       * it explicitly excluded.
+       * 2.0.0 tier K — `filters` is ACCEPTED here, where tier E refused it.
+       *
+       * The refusal was right for its premise: nothing could apply them on this
+       * path, and returning unfiltered rows under a parameter that promises
+       * filtering is how an agent acts on deprecated ACs it explicitly excluded.
+       * `slugsMatching` is that missing implementation, and it is generic — so
+       * the honest fix is to apply them rather than to keep declining. It also
+       * closes the asymmetry the refusal created: "the active ACs" now means the
+       * same set whether you list them, count them or search them.
        */
-      if (args.filters !== undefined) {
-        return fail(
-          'INVALID_ARGUMENT',
-          'search_entities does not support `filters` — no entity type applies them on the search path',
-          );
-      }
+      const filters = args.filters as Record<string, unknown> | undefined;
 
       /**
        * ANY active type, CRUD or not. Searching is not writing: gating it behind
@@ -370,7 +464,16 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        * the host cannot see could only ever keep that promise by echoing a
        * second declaration back. One derivation, one ranking, one answer.
        */
-      const page = deps.discovery.searchEntities({ type, query, fields, mode, limit, offset });
+      const page = deps.discovery.searchEntities({
+        type,
+        query,
+        fields,
+        mode,
+        limit,
+        offset,
+        applyDefaultPredicate: true,
+        ...(filters ? { filters } : {}),
+      });
       if (page.mode === 'count') return ok({ type, mode: 'count', total: page.total, searchedFields: page.searchedFields });
       return ok({
         type,
@@ -425,7 +528,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
         // lookup) can also throw for a malformed type — contain that too so one bad
         // type never aborts the whole describe-all batch.
         try {
-          const crudSupported = module.backend?.crud != null;
+          /**
+           * 2.0.0 (item 28) — `true` for every active type, without exception.
+           *
+           * It used to report whether the type had shipped a `backend.crud`
+           * slot, which made CRUD a thing a type opted into; `database-table`
+           * was the standing counterexample the brief names. The schemas are
+           * generated from `data.schema` now, so an active type HAS crud by
+           * construction — the field survives only so an older client reading
+           * it does not have to change.
+           */
+          const crudSupported = true;
           // 0.2.9 (item 15): through the discovery core, not the serialization
           // engine — a transport reaching into L9 directly is what the item
           // forbids, and the grep it names came back clean only because this
@@ -437,8 +550,8 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           return {
             type: module.type,
             label: module.label,
-            createSchema: crudSupported ? safeToJsonSchema(module.type, () => createSchemaOf(module)) : undefined,
-            updateSchema: crudSupported ? safeToJsonSchema(module.type, () => updateSchemaOf(module)) : undefined,
+            createSchema: safeToJsonSchema(module.type, () => createSchemaOf(module)),
+            updateSchema: safeToJsonSchema(module.type, () => updateSchemaOf(module)),
             /**
              * 0.2.4 — `searchSupported` was REMOVED from this output. With a
              * non-empty scope mandatory for every active type it was always

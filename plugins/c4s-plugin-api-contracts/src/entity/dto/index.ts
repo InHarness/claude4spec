@@ -1,17 +1,19 @@
-import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
+import type { EntityContribution } from '@c4s/plugin-runtime';
 import { DTO_DISPLAY_ORDER, DTO_PATH_PREFIX, DTO_TYPE } from '../../identity.js';
-import { dtoSerializer } from './serializer.js';
+import { dtoSerializer } from './views.js';
 import { dtoSystemPrompt } from './system-prompt.js';
-import { dtosRouter } from './backend/routes.js';
-import { DtoService } from './backend/services.js';
-import { dtoCreateSchema, dtoUpdateSchema } from './backend/crud-schemas.js';
 import { dtoData, dtoSlugPattern } from './schema.js';
 
 /**
- * The `dto` contribution. Declarative backend throughout — the host synthesizes
- * the equivalent `mount`: build the service once, register it for DI and
- * `entity-tools`, mount the REST router. No custom MCP server; `dto` has no
- * non-CRUD tools of its own (the relation tools belong to `endpoint`).
+ * The `dto` contribution — 2.0.0 tier K (item 57): NO `backend` block at all,
+ * and no `backend/` directory left to hold one.
+ *
+ * The generated `/api/dtos` router serves every CRUD verb from `data` below; the
+ * relation tools belong to `endpoint`. The one thing `DtoService` did that was
+ * not CRUD was throw `EXAMPLE_NAME_CONFLICT` on two same-named examples inside a
+ * DTO — a uniqueness rule invented on the write path, enforced nowhere else, and
+ * capable of blocking a save the UI let the author compose. The examples block
+ * stays; refusing the write does not.
  */
 export const dtoEntity: EntityContribution = {
   type: DTO_TYPE,
@@ -24,9 +26,4 @@ export const dtoEntity: EntityContribution = {
   pathPrefix: DTO_PATH_PREFIX,
   serializer: dtoSerializer,
   systemPrompt: dtoSystemPrompt,
-  backend: {
-    service: (ctx: MountContext) => new DtoService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: { createSchema: dtoCreateSchema, updateSchema: dtoUpdateSchema },
-    routes: { router: (service: unknown, ctx: MountContext) => dtosRouter(service as DtoService, ctx.referencesService) },
-  },
 } as EntityContribution;

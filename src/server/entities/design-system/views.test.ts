@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { designSystemSerializer, type DesignSystemSnapshot } from './serializer.js';
+import { designSystemSerializer, type DesignSystemSnapshot } from './views.js';
 import { designSystemBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';

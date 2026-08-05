@@ -105,8 +105,9 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     // Pick a seeded endpoint that actually has a linked DTO, so the assertion
     // below is about the junction rather than about an empty section.
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
-    const { endpoints } = (await res.json()) as {
-      endpoints: Array<{ slug: string; dtos: Array<{ dtoName: string }> }>;
+    // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
+    const { data: endpoints } = (await res.json()) as {
+      data: Array<{ slug: string; dtos: Array<{ dtoName: string }> }>;
     };
     const linked = endpoints.find((e) => e.dtos.length > 0);
     if (!linked) {
@@ -139,7 +140,8 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     const { consoleErrors, badResponses } = watch(page);
 
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
-    const { endpoints } = (await res.json()) as { endpoints: Array<{ slug: string }> };
+    // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
+    const { data: endpoints } = (await res.json()) as { data: Array<{ slug: string }> };
     const slug = endpoints[0]?.slug;
     if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
 
@@ -179,7 +181,8 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     const { consoleErrors, badResponses } = watch(page);
 
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
-    const { endpoints } = (await res.json()) as { endpoints: Array<{ slug: string }> };
+    // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
+    const { data: endpoints } = (await res.json()) as { data: Array<{ slug: string }> };
     const slug = endpoints[0]?.slug;
     if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
 

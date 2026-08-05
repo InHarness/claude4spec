@@ -4,11 +4,8 @@ import type {
   DiagramListQuery,
   DiagramUpdateInput,
 } from '../../../shared/entities.js';
-import { handle, apiFetch } from '../../lib/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../lib/api-core.js';
 
-export interface DiagramWithWarnings extends Diagram {
-  warnings?: string[];
-}
 
 export const diagramsApi = {
   async list(query: DiagramListQuery = {}): Promise<Diagram[]> {
@@ -19,16 +16,15 @@ export const diagramsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ diagrams: Diagram[] }>(await apiFetch(`/api/diagrams${q}`));
-    return data.diagrams;
+    return unwrapList<Diagram>(await apiFetch(`/api/diagrams${q}`));
   },
 
   async get(slug: string): Promise<Diagram> {
-    return handle<Diagram>(await apiFetch(`/api/diagrams/${encodeURIComponent(slug)}`));
+    return unwrap<Diagram>(await apiFetch(`/api/diagrams/${encodeURIComponent(slug)}`));
   },
 
-  async create(input: DiagramCreateInput): Promise<DiagramWithWarnings> {
-    return handle<DiagramWithWarnings>(
+  async create(input: DiagramCreateInput): Promise<Diagram> {
+    return unwrap<Diagram>(
       await apiFetch('/api/diagrams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -37,8 +33,8 @@ export const diagramsApi = {
     );
   },
 
-  async update(slug: string, input: DiagramUpdateInput): Promise<DiagramWithWarnings> {
-    return handle<DiagramWithWarnings>(
+  async update(slug: string, input: DiagramUpdateInput): Promise<Diagram> {
+    return unwrap<Diagram>(
       await apiFetch(`/api/diagrams/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },

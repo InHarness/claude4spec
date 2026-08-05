@@ -13,11 +13,13 @@ import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixtu
  */
 
 import { describe, expect, it, vi } from 'vitest';
+import request from 'supertest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { applyProjection } from '../db/projection.js';
 import { PluginRegistryImpl } from '../core/plugin-host/registry.js';
-import { synthesizeMount } from '../core/plugin-host/manifest-adapter.js';
+import { registerRefRewriteListeners, synthesizeMount } from '../core/plugin-host/manifest-adapter.js';
+import type { EntityStore } from './entity-store.js';
 import type { DataDeclaration } from '../../shared/plugin-host/data-schema.js';
 import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/plugin-host/types.js';
 
@@ -50,17 +52,23 @@ function mountWith(modules: BackendModule[]) {
   const host = registry.consolidate(null);
   const db = createTestDb();
   applyProjection(db, modules);
+  // The generated listener re-persists the files of whatever it changed; these
+  // fixture types have no directory in the file store, so the store is a spy.
+  const entityStore = { persist: () => {} } as unknown as EntityStore;
   const ctx = {
-    db,
     host,
-    // The generated listener re-persists the files of whatever it changed; these
-    // fixture types have no directory in the file store, so the store is a spy.
-    entityStore: { persist: () => {} },
+    entityStore,
     registerRenameListener: (fn: (ev: EntityRenamedEvent) => void) => host.registerRenameListener(fn),
     registerMcpServer: () => {},
     registerEntityService: () => {},
   } as unknown as MountContext;
   for (const m of modules) m.backend?.mount?.(ctx);
+  /**
+   * 2.0.0 (A.8) — the rename listeners are registered HERE, once over every
+   * module, not from inside each type's synthesized `mount`. Mirrors what
+   * `ProjectContext` does immediately after `mountBackend`.
+   */
+  registerRefRewriteListeners(host, db, entityStore);
   return { host, db };
 }
 
@@ -85,8 +93,13 @@ describe('rename listeners', () => {
     // The escape hatch replaces the slots `synthesizeMount` synthesizes. Rename
     // propagation is not one of them — it is derived from `data.schema`, which a
     // hand-written `mount` does not override, and there is no `onEntityRenamed`
-    // slot left to opt back in with. Returning early here would silently make
-    // `ref` mean nothing for exactly one kind of module.
+    // slot left to opt back in with.
+    //
+    // 2.0.0 (A.8): this used to be true only because `synthesizeMount` COMPOSED
+    // a closure around the hand-written mount to bolt the listener on. Now that
+    // registration is a separate pass over every module, a `mount` module gets
+    // it by the same path as everything else — and this test proves the escape
+    // hatch still runs alongside it rather than instead of it.
     let ownMountRan = false;
     const withMount = synthesizeMount({
       type: 'widget',
@@ -165,17 +178,18 @@ describe('ReferencesService fan-out', () => {
     // junction. Asserted on the effect, not on the branch that used to exist.
     const app = await createTestApp();
     try {
-      const dto = app.host.requireService('dto') as {
-        upsert(slug: string, input: unknown, actor: string): { entity: { slug: string } };
-      };
-      dto.upsert('user-dto', { name: 'UserDto', fields: [] }, 'user');
-
-      const endpoint = app.host.requireService('endpoint') as {
-        upsert(slug: string, input: unknown, actor: string): { entity: { slug: string } };
-        linkDto(endpointSlug: string, dtoSlug: string, relation: string, statusCode?: number | null): void;
-      };
-      endpoint.upsert('get-users', { method: 'GET', path: '/users', summary: 'list' }, 'user');
-      endpoint.linkDto('get-users', 'user-dto', 'response', 200);
+      // 2.0.0 tier K: written through the REST surface rather than through
+      // `requireService`, which no longer hands back a write door for either
+      // type. Same production path a client takes.
+      await request(app.app).post('/api/dtos').send({ name: 'UserDto', fields: [] }).expect(201);
+      await request(app.app)
+        .post('/api/endpoints')
+        .send({ method: 'GET', path: '/users', summary: 'list' })
+        .expect(201);
+      await request(app.app)
+        .post('/api/endpoints/get-users/dtos')
+        .send({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 })
+        .expect(201);
 
       // Production order: the row rename lands first (the junction follows it
       // through ON UPDATE CASCADE), and only then is the change propagated into

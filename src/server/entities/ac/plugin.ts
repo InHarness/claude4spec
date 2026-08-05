@@ -1,11 +1,8 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
-import { acSerializer } from './serializer.js';
+import { acSerializer } from './views.js';
 import { acSystemPrompt } from './system-prompt.js';
-import { acsRouter } from './routes.js';
-import { AcService } from './service.js';
 import { createAcToolsServer } from './mcp-server.js';
-import { acCreateSchema, acUpdateSchema } from './crud-schemas.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
 export const acBackendModule: BackendModule = {
@@ -13,32 +10,31 @@ export const acBackendModule: BackendModule = {
   data: acData,
   slugPattern: acSlugPattern,
   payloadVersion: 1,
+  // Slug is slugified prose (ac: `text`, diagram: `caption`), so two entities
+  // that start alike are two entities — suffix rather than refuse. See
+  // `slugConflict` on the manifest; every identity-derived type takes the default.
+  slugConflict: 'suffix',
+
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
   pathPrefix: '/acs',
   serializer: acSerializer as SerializationContribution<unknown>,
   systemPrompt: acSystemPrompt,
-  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
-  // manifest-adapter.ts#synthesizeMount): construct the service once, register
-  // it for DI + entity-tools, mount the REST router, mount the custom MCP
-  // server for ac's semantic-audit tool.
+  /**
+   * 2.0.0 tier K (item 61) — `mcpServer` only, and no `service` behind it.
+   *
+   * `AcService` is deleted. Of everything it held, exactly two things were not
+   * CRUD: `classifyVerifies`, lifted to `./classify-verifies.ts` in K2 and now
+   * feeding the `single_element`/`detail` views, and the `status = 'active'`
+   * default, which is `systemPrompt.defaultPredicate` and applies to every
+   * transport at once. The semantic audit below is a READER, so it takes the
+   * reader; `ref: '$type'` on `verifies[].slug` repoints it after a rename.
+   */
   backend: {
-    // 2.0.0: the hand-written `onEntityRenamed` that rewrote `verifies[].slug`
-    // is gone. `ref: '$type'` on that field says the same thing declaratively,
-    // and `db/ref-rewrite.ts` acts on it for every type at once.
-    service: (ctx) => new AcService(ctx.db, ctx.tagsService, ctx.versionService, ctx.host, ctx.entityStore),
-    crud: {
-      createSchema: acCreateSchema,
-      updateSchema: acUpdateSchema,
-    },
-    routes: {
-      router: (service, ctx) => acsRouter(service as AcService, ctx.referencesService),
-    },
-    mcpServer: (service, ctx) =>
+    mcpServer: (_service, ctx) =>
       createAcToolsServer({
-        acService: service as AcService,
-        db: ctx.db,
+        reader: ctx.reader,
         cwd: ctx.cwd,
         roots: ctx.roots,
         host: ctx.host,

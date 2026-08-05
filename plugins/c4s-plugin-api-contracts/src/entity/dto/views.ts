@@ -116,6 +116,21 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'dto', slug, op: 'modified', changes };
 }
 
+/**
+ * 2.0.0 tier K (item 57) — `dto` computes TWO views, not five.
+ *
+ * `single_element`, `element_list_item` and `tagged_list_item` were the same
+ * `baseSingle` call three times, and `baseSingle` was itself a hand-written
+ * re-listing of the columns: `name`, `description`, `fields`, `examples`, plus
+ * `type`/`slug`/`tags`. Every one of those is in `data.schema`, so the host's
+ * `genericEntity` produces the identical object — and unlike this function, it
+ * cannot fall behind a schema change.
+ *
+ * `inline_mention` stays because `label`/`href` are not fields (they are a
+ * rendering decision), and `detail` stays because it JOINS — the endpoints that
+ * reference this DTO, and the page sections that mention it, neither of which
+ * lives in `dto`'s own row.
+ */
 export const dtoSerializer: SerializationContribution<RawEntity> = {
   views: {
     inline_mention: (entity) => ({
@@ -124,12 +139,6 @@ export const dtoSerializer: SerializationContribution<RawEntity> = {
       label: (entity.data.name as string) ?? entity.slug,
       href: `/dtos/${entity.slug}`,
     }),
-
-    single_element: (entity) => baseSingle(entity),
-
-    element_list_item: (entity) => baseSingle(entity),
-
-    tagged_list_item: (entity) => baseSingle(entity),
 
     detail: (entity, reader) => {
       const base = baseSingle(entity);

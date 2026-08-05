@@ -26,7 +26,7 @@ import {
   payloadFieldsOf,
   walkSchema,
   type CollectionNode,
-  type CountPredicate,
+  type DefaultPredicate,
   type DataDeclaration,
   type FieldNode,
   type IntegrityConstraint,
@@ -451,7 +451,7 @@ function checkSlugPattern(type: string, schema: DataDeclaration['schema'], patte
 /**
  * The count filter must name a field that actually BECOMES A COLUMN.
  *
- * `compileCountPredicate` degrades to an unfiltered count when it cannot resolve
+ * `compileDefaultPredicate` degrades to an unfiltered count when it cannot resolve
  * a field, which is right for a runtime read — a slightly-too-large badge beats
  * a blank sidebar. But degrading is the wrong answer for a manifest that is
  * simply wrong, and the degradation only covers fields absent from the schema:
@@ -462,23 +462,23 @@ function checkSlugPattern(type: string, schema: DataDeclaration['schema'], patte
  * Rejecting it here is the same trade the rest of this module makes: fail one
  * plugin at load rather than every chat turn at runtime.
  */
-function checkCountPredicate(
+function checkDefaultPredicate(
   type: string,
   schema: DataDeclaration['schema'],
-  predicate: CountPredicate | undefined,
+  predicate: DefaultPredicate | undefined,
 ): void {
   if (!predicate) return;
   if (typeof predicate.field !== 'string' || !predicate.field) {
-    fail(type, 'systemPrompt.countPredicate must name a field');
+    fail(type, 'systemPrompt.defaultPredicate must name a field');
   }
   const node = schema[predicate.field];
   if (!node) {
-    fail(type, `systemPrompt.countPredicate names "${predicate.field}", which is not in the schema`);
+    fail(type, `systemPrompt.defaultPredicate names "${predicate.field}", which is not in the schema`);
   }
   if (!isEmbedded(node)) {
     fail(
       type,
-      `systemPrompt.countPredicate names "${predicate.field}", which projects to no column ` +
+      `systemPrompt.defaultPredicate names "${predicate.field}", which projects to no column ` +
         `(transient, local-surrogate, or a collection with its own table) — counting cannot filter ` +
         `on it`,
     );
@@ -486,7 +486,7 @@ function checkCountPredicate(
   if (predicate.eq === undefined && !predicate.in?.length) {
     fail(
       type,
-      `systemPrompt.countPredicate on "${predicate.field}" declares neither \`eq\` nor a non-empty ` +
+      `systemPrompt.defaultPredicate on "${predicate.field}" declares neither \`eq\` nor a non-empty ` +
         `\`in\` — an empty predicate is expressed by omitting the slot`,
     );
   }
@@ -498,7 +498,7 @@ export function validateDataDeclaration(
   data: DataDeclaration | undefined,
   slugPattern: SlugPattern | undefined,
   payloadVersion: number | undefined,
-  countPredicate?: CountPredicate,
+  defaultPredicate?: DefaultPredicate,
 ): void {
   if (!data || typeof data !== 'object' || !data.schema || typeof data.schema !== 'object') {
     fail(type, 'the `data.schema` slot is required in Host API 2.0.0');
@@ -518,7 +518,7 @@ export function validateDataDeclaration(
   checkNodes(type, data.schema);
   if (data.integrity?.length) checkIntegrity(type, data.schema, data.integrity);
   checkSlugPattern(type, data.schema, slugPattern);
-  checkCountPredicate(type, data.schema, countPredicate);
+  checkDefaultPredicate(type, data.schema, defaultPredicate);
 
   for (const hint of data.access ?? []) {
     for (const field of [...(hint.filter ?? []), ...(hint.sort ? [hint.sort] : [])]) {

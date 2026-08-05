@@ -146,7 +146,6 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
       .focus()
       .insertContent({ type: 'diagram', attrs: { slug: diagram.slug, caption: result.caption } })
       .run();
-    if (diagram.warnings?.length) toast.error(diagram.warnings[0]!);
   } catch (err) {
     toast.error((err as Error).message);
   }

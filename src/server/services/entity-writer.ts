@@ -1,21 +1,23 @@
 /**
  * Concrete EntityWriter implementation for M17 restore (Phase 6).
  *
- * Constructed per-restore-request by ReleaseService — looks up entity services +
- * tag/junction services from the plugin host. Each write goes through the normal
- * service API so the mutation is captured into `entity_version` with
- * `release_id = NULL` (append-only — decyzja 7).
+ * Constructed per-restore-request by ReleaseService. Each write is captured into
+ * `entity_version` with `release_id = NULL` (append-only — decyzja 7).
  *
  * Idempotent UPSERT semantics (decyzja 11): no `--force` flag, no destructive
  * operations on history. The append-only safety net makes accidental overwrites
  * cofalne by another restore.
  *
- * 0.2.2: this file no longer imports a single entity service CLASS. Every write
- * resolves through `host.getEntityService(type)` and is driven by shape against
- * the `UpsertCapable` facade. That is what the Single Abstraction Rule test
- * `grep -rn "import .*Service.*from '.*(entities|plugins)/" src/` (→ 0 outside
- * `entities/` and `plugins/*(/src/`) enforces, and it is what gives a
- * plugin-contributed type the same write door as a built-in one.
+ * 0.2.2 collapsed seven per-type methods into one generic `upsert(type, …)` that
+ * still dispatched to `host.getEntityService(type)`. **0.2.9 tier K (brief item
+ * 6) removes that dispatch entirely**: there are no per-type CRUD services left
+ * to dispatch to. Every write lands in the projection the host generated from
+ * that type's `data.schema`, which is now the only write mechanism there is.
+ *
+ * `getEntityService` still exists, but what it returns after tier K is a DOMAIN
+ * HELPER (`ac`'s analysis service, `design-system`'s `resolve`) — never a write
+ * door. Probing it here for an `upsert` method would re-open the very fork this
+ * tier closed, and would do it by shape, on objects that make no such promise.
  */
 
 import type { ChangedBy } from '../../shared/entities.js';
@@ -28,59 +30,9 @@ import {
   projectionRowExists,
   removeProjectionRow,
   danglingScalarRefs,
-  syncProjectionTables,
   upsertProjectionRow,
   type ProjectionWriteDeps,
 } from '../db/projection-write.js';
-
-
-/**
- * The raw shape a concrete service's `upsert` returns.
- *
- * Historically each service named its payload after its own type (`.dto`,
- * `.uiView`, `.dbTable`, …) rather than a uniform `.entity`, so a generic caller
- * could not read the result without knowing the type. 0.2.2 adds an `entity`
- * alias to every in-repo service; `pickEntity` below keeps the door open for a
- * service that predates the alias — notably the externally-installed
- * `database-table`, which returns `.dbTable`.
- */
-type RawUpsertReturn = {
-  op: 'created' | 'updated';
-  warnings?: string[];
-  entity?: unknown;
-} & Record<string, unknown>;
-
-/**
- * Normalize a service's upsert return to `UpsertResult`.
- *
- * Prefer the canonical `entity` alias. Otherwise fall back to the single
- * remaining property once the envelope keys (`op`, `warnings`) are removed — a
- * STRUCTURAL rule, not an allowlist of per-type key names, so it also holds for a
- * plugin type the host has never heard of. When that is ambiguous (zero or
- * several candidates) surface the whole object rather than silently picking one.
- */
-function pickEntity<T>(result: RawUpsertReturn, type: string): UpsertResult<T> {
-  const { op, warnings } = result;
-  if (result.entity !== undefined) {
-    const e = result.entity as T;
-    return warnings ? { entity: e, op, warnings } : { entity: e, op };
-  }
-  const candidates = Object.keys(result).filter((k) => k !== 'op' && k !== 'warnings');
-  if (candidates.length === 1) {
-    const e = result[candidates[0]!] as T;
-    return warnings ? { entity: e, op, warnings } : { entity: e, op };
-  }
-  // Ambiguous: several payload keys and no `entity` alias to disambiguate. Return
-  // the whole object rather than guessing which key is the entity — but SAY SO.
-  // Handing back a wrapper silently is no better than an arbitrary wrong pick:
-  // downstream serializers read fields off `.entity` to sync junctions and write
-  // files, and they would operate on the wrapper without any signal.
-  const extra = `entity service for type '${type}' returned an upsert result with ${
-    candidates.length === 0 ? 'no' : `ambiguous (${candidates.join(', ')})`
-  } payload key and no 'entity' alias — returning the whole result; add an 'entity' alias to its upsert()`;
-  console.warn(`[entity-writer] ${extra}`);
-  return { entity: result as T, op, warnings: [...(warnings ?? []), extra] };
-}
 
 export class HostEntityWriter implements EntityWriter {
   /**
@@ -133,55 +85,13 @@ export class HostEntityWriter implements EntityWriter {
     input: unknown,
     actor: ChangedBy,
   ): UpsertResult<T> | null {
-    const service = this.host.getEntityService(type);
-    if (service?.upsert) {
-      const result = service.upsert(slug, input, actor, this.mutateOpts) as RawUpsertReturn;
-      const picked = pickEntity<T>(result, type);
-      /**
-       * 0.2.9 tier B PR2 — the service wrote its ROW; the host writes the
-       * collections that live in tables of their own.
-       *
-       * A service predates the declaration and only knows the columns it was
-       * written against. `EndpointService.upsert` writes `endpoint`, not
-       * `endpoint_dto`; the junction used to be synced by the per-type `restore`
-       * slot, immediately after this call, and that slot no longer exists. The
-       * responsibility has to land somewhere the DECLARATION drives, or the
-       * first boot rebuild empties the junction and the following `persist`
-       * writes the emptied collection back into the entity file.
-       */
-      const module = this.host.getEntity(type);
-      if (module?.data?.schema && this.projection) {
-        /**
-         * Against the slug the SERVICE WROTE, not the one we asked for.
-         *
-         * `EndpointService.createRaw` derives its own slug from `method` + `path`
-         * and ignores the requested one. When the two disagree — a hand-renamed
-         * entity file, a slug-pattern change between releases — syncing on the
-         * requested slug writes junction rows bound to a parent row that does not
-         * exist: either the FK aborts that entity's restore, or it leaves orphan
-         * rows while the endpoint reads back with no links at all.
-         */
-        const written = (picked.entity as { slug?: unknown } | null)?.slug;
-        const target = typeof written === 'string' && written ? written : slug;
-        const warnings = [
-          ...syncProjectionTables(this.projection.db, module, target, input),
-          ...danglingScalarRefs(this.projection.db, module, target, input),
-        ];
-        if (warnings.length) {
-          picked.warnings = [...(picked.warnings ?? []), ...warnings];
-        }
-      }
-      return picked;
-    }
-
     /**
-     * 0.2.9 (brief item 6) — no service is no longer the end of the road.
-     *
-     * A type that declares `data.schema` has a generated projection, and the
-     * host can write it directly. Preferring the service when present is not a
-     * fallback ordering but a correctness one: a service owns domain validation
-     * and derived fields the declaration does not describe, so bypassing it
-     * where it exists would write a row the type would not have written.
+     * 0.2.9 (brief item 6) — a type that declares `data.schema` has a generated
+     * projection, and the host writes it. There is no second branch: tier K
+     * deleted the six services the previous one preferred, and the collections
+     * living in tables of their own (`endpoint_dto`) are synced by
+     * `upsertProjectionRow` inside its own transaction rather than patched up
+     * afterwards.
      */
     const module = this.host.getEntity(type);
     if (module?.data?.schema && this.projection) {
@@ -225,15 +135,14 @@ export class HostEntityWriter implements EntityWriter {
      * rows for the types it is about to refill), and the next `persist` wrote
      * that empty list back into the file, destroying the tags at their source.
      *
-     * The service answer is kept as the fast path — it is the same question — and
-     * the projection row is consulted only when there is no service to ask.
+     * Tier K: the service fast path is gone with the services. The projection row
+     * is now the only thing there is to ask, and it was always the correct one.
      */
     if (!this.entityExists(type, slug)) return;
     this.tags.assignTags(type, slug, tags);
   }
 
   private entityExists(type: string, slug: string): boolean {
-    if (this.host.getEntityService(type)?.getBySlug) return this.host.entityExists(type, slug);
     const module = this.host.getEntity(type);
     if (!module?.data?.schema || !this.projection) return false;
     return projectionRowExists(this.projection, module, slug);
@@ -241,24 +150,11 @@ export class HostEntityWriter implements EntityWriter {
 
   /**
    * 0.2.2: was a seven-arm `switch (type)` whose arms each resolved one named
-   * service class and then did the identical two calls. 0.2.9: the service is
-   * preferred but no longer required — a serviceless type deletes through the
-   * host's own projection door, for the same reason it writes through one.
+   * service class and then did the identical two calls. 0.2.9 tier K: every type
+   * deletes through the host's own projection door, for the same reason it
+   * writes through one.
    */
   delete(type: RawEntityType, slug: string, actor: ChangedBy): { deleted: boolean } {
-    const service = this.host.getEntityService(type);
-    if (service?.getBySlug && service.remove) {
-      if (!service.getBySlug(slug)) return { deleted: false };
-      service.remove(slug, actor);
-      return { deleted: true };
-    }
-
-    /**
-     * Without this, item 6 closed the silent drop on the create/update half and
-     * left it wide open on the delete half: `ReleaseService.restoreEntity`'s
-     * delete branch reported `op: 'noop'` with no warnings while the entity
-     * survived, telling the user a restore succeeded that had not.
-     */
     const module = this.host.getEntity(type);
     if (module?.data?.schema && this.projection) {
       return removeProjectionRow(this.projection, module, slug, actor, this.mutateOpts);

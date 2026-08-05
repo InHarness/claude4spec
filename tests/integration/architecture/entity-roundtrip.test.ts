@@ -222,7 +222,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
   it('[ac:ac-round-trip-release-u-zachowuje-pola-syst] a stamp-only restore is reported noop, yet the file becomes identical', async () => {
     const created = await request(t.app).post('/api/acs').send({ text: 'the rule holds' });
     expect(created.status).toBe(201);
-    const slug = created.body.slug as string;
+    const slug = created.body.data.slug as string;
 
     const releases = releaseServiceFor(t);
     const releaseId = Number(
@@ -268,7 +268,7 @@ describe('release restore projects the stamp even when the diff is a noop', () =
   it('a version restore mints a new updatedAt rather than replaying the old one', async () => {
     const created = await request(t.app).post('/api/acs').send({ text: 'first text' });
     expect(created.status).toBe(201);
-    const slug = created.body.slug as string;
+    const slug = created.body.data.slug as string;
     const originalStamp = t.rawReader.getEntity('ac', slug)!.system!;
 
     await new Promise((r) => setTimeout(r, 5));

@@ -20,9 +20,11 @@
 import { compositionOf } from '../../shared/plugin-host/composition.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import request from 'supertest';
 import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
 import { canonicalize } from './snapshot.js';
+import { genericEntity } from './generic.js';
 import type { ViewKind, ViewSet } from './types.js';
 
 const GOLDEN_DIR = path.join(import.meta.dirname, '__goldens__');
@@ -34,47 +36,64 @@ const VIEWS: ViewKind[] = [
   'detail',
 ];
 
-type Upsertable = {
-  upsert(slug: string, input: unknown, actor: string): unknown;
-  linkDto?(endpointSlug: string, dtoSlug: string, relation: string, statusCode?: number | null): void;
-};
-
+/**
+ * 2.0.0 tier K — built through REST, not through `requireService`.
+ *
+ * Neither type registers a service any more; the generated `/api/{type}s`
+ * routes are the write door, and driving the fixture through them is also
+ * closer to what produced these goldens in the first place. Slugs are passed
+ * EXPLICITLY: the golden compares by slug, and two of these names do not
+ * slugify to the name the golden knows (`ZamówienieDto` → `order-dto`).
+ */
 async function buildFixture() {
   const app = await createTestApp();
-  const dto = app.host.requireService('dto') as Upsertable;
-  const endpoint = app.host.requireService('endpoint') as Upsertable;
+  const post = async (path: string, body: unknown) => {
+    const res = await request(app.app).post(path).send(body);
+    if (res.status !== 201) {
+      throw new Error(`fixture: POST ${path} → ${res.status} ${JSON.stringify(res.body)}`);
+    }
+  };
 
-  dto.upsert(
-    'user-dto',
-    {
-      name: 'UserDto',
-      description: 'A user',
-      fields: [
-        { name: 'id', type: 'string', required: true },
-        { name: 'email', type: 'string', required: false, description: 'contact' },
-      ],
-      examples: [{ name: 'minimal', value: { id: '1', email: null } }],
-    },
-    'user',
-  );
+  await post('/api/dtos', {
+    slug: 'user-dto',
+    name: 'UserDto',
+    description: 'A user',
+    fields: [
+      { name: 'id', type: 'string', required: true },
+      { name: 'email', type: 'string', required: false, description: 'contact' },
+    ],
+    examples: [{ name: 'minimal', value: { id: '1', email: null } }],
+  });
   // Unicode + diacritics in the CONTENT (slugs are ASCII kebab by contract) —
   // any re-encoding on the way through the move shows up here.
-  dto.upsert(
-    'order-dto',
-    { name: 'ZamówienieDto', description: 'Zamówienie — pozycja', fields: [{ name: 'nr', type: 'number' }] },
-    'user',
-  );
-  dto.upsert('error-dto', { name: 'ErrorDto', fields: [{ name: 'message', type: 'string' }] }, 'user');
+  await post('/api/dtos', {
+    slug: 'order-dto',
+    name: 'ZamówienieDto',
+    description: 'Zamówienie — pozycja',
+    // `required` is now MANDATORY on the REST path — the retired router validated
+    // nothing, so these two fixtures could omit it. See the declaration.
+    fields: [{ name: 'nr', type: 'number', required: false }],
+  });
+  await post('/api/dtos', {
+    slug: 'error-dto',
+    name: 'ErrorDto',
+    fields: [{ name: 'message', type: 'string', required: false }],
+  });
 
-  endpoint.upsert('get-users', { method: 'GET', path: '/users', summary: 'List users' }, 'user');
-  endpoint.linkDto?.('get-users', 'user-dto', 'response', 200);
-  endpoint.linkDto?.('get-users', 'error-dto', 'response', 404);
+  await post('/api/endpoints', {
+    slug: 'get-users',
+    method: 'GET',
+    path: '/users',
+    summary: 'List users',
+  });
+  await post('/api/endpoints/get-users/dtos', { dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
+  await post('/api/endpoints/get-users/dtos', { dtoSlug: 'error-dto', relation: 'response', statusCode: 404 });
   // relation with a NULL status_code — the column is nullable and the sort key
   // includes it, so a coercion to 0 or '' would reorder the snapshot.
-  endpoint.linkDto?.('get-users', 'order-dto', 'request', null);
+  await post('/api/endpoints/get-users/dtos', { dtoSlug: 'order-dto', relation: 'request', statusCode: null });
 
   // No links at all: `linked_dtos: []` must not collapse to undefined.
-  endpoint.upsert('post-ping', { method: 'POST', path: '/ping', summary: '' }, 'user');
+  await post('/api/endpoints', { slug: 'post-ping', method: 'POST', path: '/ping', summary: '' });
 
   return app;
 }
@@ -109,9 +128,29 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
       out[`${type}/${slug}/snapshot`] = canonicalize(snap);
       for (const view of VIEWS) {
         const fn = views?.[view];
-        // NOT canonicalized: view projections are handed to the client as-is, so
-        // their key order is part of the contract in a way the snapshot's is not.
-        out[`${type}/${slug}/${view}`] = fn ? fn(raw, reader) : null;
+        /**
+         * 2.0.0 tier K — falls back to `genericEntity` instead of recording
+         * `null`.
+         *
+         * The golden's job is "what does a client receive for this view", and
+         * that answer does not become empty when a type stops COMPUTING the
+         * view — the host shapes the row instead, and the client is served
+         * either way. Recording `null` would have quietly turned item 57's view
+         * collapse (five computed views down to two) into 175 deleted lines of
+         * coverage for shapes that are still very much on the wire.
+         *
+         * The SCHEMA is passed, as `SerializationEngine` does. Without it
+         * `genericEntity` short-circuits its column→field re-keying, so the
+         * golden recorded a snake_case shape the engine never emits — and a
+         * regression in `byFieldName` (the very bug the tier-L fixture exists to
+         * catch) would have left every golden green.
+         *
+         * NOT canonicalized: view projections are handed to the client as-is, so
+         * their key order is part of the contract in a way the snapshot's is not.
+         */
+        out[`${type}/${slug}/${view}`] = fn
+          ? fn(raw, reader)
+          : genericEntity(raw, view, module.data?.schema);
       }
     }
   }

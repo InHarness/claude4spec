@@ -8,7 +8,7 @@
  * pulling better-sqlite3/express into the client bundle.
  */
 
-import type { CountPredicate, DataDeclaration } from './data-schema.js';
+import type { DefaultPredicate, DataDeclaration } from './data-schema.js';
 import type { SlugPattern } from './slug-pattern.js';
 
 export interface EntityModuleManifest {
@@ -29,6 +29,27 @@ export interface EntityModuleManifest {
    * function. Replaces `slugFrom`. See `./slug-pattern.ts`.
    */
   slugPattern: SlugPattern;
+
+  /**
+   * What a CREATE does when the derived slug is taken. Defaults to `'reject'`.
+   *
+   * The two answers are both correct, for different KINDS of slug source, and
+   * the six built-ins were split on it exactly that way: `ac` (slugified from
+   * free-form `text`) and `diagram` (from an optional `caption`) suffixed —
+   * `-2`, `-3` — because two acceptance criteria that happen to start the same
+   * way are two different criteria. The other four derive their slug from an
+   * IDENTITY (`dto`/`ui-view`/`design-system` from `name`, `endpoint` from
+   * method + path) and threw `SLUG_CONFLICT`, because a second `GET /api/users`
+   * is not a second endpoint, it is the same one documented twice.
+   *
+   * Tier E generalized the suffix to everything, on the strength of `ac`'s
+   * comment. That silently turned "you already have this" into a duplicate the
+   * author will edit while every `<single_element slug="…"/>` keeps resolving to
+   * the stale original. `'reject'` is the default because it is what five of the
+   * six did and because the failure is loud rather than silent; a type whose
+   * slug is prose says so.
+   */
+  slugConflict?: 'reject' | 'suffix';
 
   /**
    * Host API 2.0.0 — version of the PAYLOAD shape, a positive integer.
@@ -124,7 +145,7 @@ export interface SystemPromptContribution {
    * Absent or empty means count everything. The label still comes from
    * `labelPlural`.
    */
-  countPredicate?: CountPredicate;
+  defaultPredicate?: DefaultPredicate;
 
   /**
    * MCP tools listing line for this type's CUSTOM server, e.g.

@@ -1,9 +1,13 @@
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixture-module.js';
-import { describe, expect, it, vi } from 'vitest';
-import { z } from 'zod';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import Database from 'better-sqlite3';
 import { buildEntityTools, type EntityToolsDeps } from './entity-tools.js';
-import { DomainError } from '../services/tags.js';
-import type { EntityCrudService } from '../core/plugin-host/entity-crud-service.js';
+import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { applyProjection } from '../db/projection.js';
+import { RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { TagsService } from '../services/tags.js';
+import { VersionService } from '../services/versions.js';
+import type { EntityStore } from '../services/entity-store.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 
 interface Widget {
@@ -25,59 +29,40 @@ function widgetModule(overrides: Partial<BackendModule> = {}): BackendModule {
     systemPrompt: {
       roleNoun: 'Widgets',
     },
-    backend: {
-      crud: { createSchema: { name: z.string() } },
-    },
+    backend: {},
     ...overrides,
   };
 }
 
-function fakeWidgetService(): EntityCrudService<Widget> {
-  const store = new Map<string, Widget>([['widget-existing', { slug: 'widget-existing', name: 'existing' }]]);
-  return {
-    create(data) {
-      const { name } = data as { name: string };
-      if (name === 'dup') throw new DomainError('SLUG_CONFLICT', `slug already exists`);
-      const slug = `widget-${name}`;
-      store.set(slug, { slug, name });
-      return { slug };
-    },
-    get(slug) {
-      return store.get(slug) ?? null;
-    },
-    update(slug, data) {
-      const current = store.get(slug);
-      if (!current) throw new DomainError('NOT_FOUND', `widget '${slug}' not found`);
-      const { newSlug, ...rest } = data as { newSlug?: string; name?: string };
-      const nextSlug = newSlug ?? slug;
-      const updated = { ...current, ...rest, slug: nextSlug };
-      if (nextSlug !== slug) store.delete(slug);
-      store.set(nextSlug, updated);
-      return { slug: nextSlug };
-    },
-    delete(slug) {
-      if (!store.has(slug)) throw new DomainError('NOT_FOUND', `widget '${slug}' not found`);
-      store.delete(slug);
-    },
-    list: vi.fn(() => {
-      const items = Array.from(store.values());
-      return { items, total: items.length };
-    }),
-    search: vi.fn((query: string) => {
-      const items = Array.from(store.values()).filter((w) => w.name.includes(query));
-      return { items, total: items.length };
-    }),
-  };
-}
-
 /**
- * Builds fake deps with `widget` (active, CRUD), `no-crud` (active, no backend.crud),
- * `inactive` (registered but inactive). `extraActive` modules are registered AND made
- * active — used by the describe-isolation tests to inject a type whose schema can't be
- * serialized, without disturbing tests that assert the exact active-type set.
+ * Real deps for the write half, fake ones for the read half.
+ *
+ * 2.0.0 tier K deleted the per-type CRUD services, so `create_entities` /
+ * `update_entities` / `delete_entities` go through the host's generic door,
+ * which writes an actual projection. A fake service can no longer stand in for
+ * it — and should not: what these tests are about is the BATCH envelope
+ * (partial success, input order, rename propagation) over the write path that
+ * really runs.
+ *
+ * `discovery` stays a stub. It is the read side, it is the M39 core's
+ * responsibility, and it has its own suite.
+ *
+ * Types: `widget` (active), `no-crud` (active, no `backend` at all),
+ * `inactive` (registered but inactive). `extraActive` modules are registered
+ * AND made active — used by the describe-isolation tests to inject a type whose
+ * schema can't be serialized, without disturbing tests that assert the exact
+ * active-type set.
  */
-function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; service: EntityCrudService<Widget> } {
-  const service = fakeWidgetService();
+const openDbs: Database.Database[] = [];
+afterEach(() => {
+  for (const db of openDbs.splice(0)) db.close();
+});
+
+function fakeDeps(extraActive: BackendModule[] = []): {
+  deps: EntityToolsDeps;
+  db: Database.Database;
+  rows: () => Widget[];
+} {
   const modules = new Map<string, BackendModule>([
     ['widget', widgetModule()],
     ['no-crud', widgetModule({ type: 'no-crud', backend: {} })],
@@ -105,27 +90,54 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
     computeEntityCounts: () => ({}),
     entityExists: () => false,
     registerEntityService: () => {},
-    getEntityService: (type) => (type === 'widget' ? service : null),
+    getEntityService: () => null,
     snapshot: () => ({}) as never,
     restore: () => ({}) as never,
     diff: () => ({}) as never,
     clearMcpFactories: () => {},
   };
 
+  const db = createTestDb();
+  openDbs.push(db);
+  /**
+   * Projected one module at a time, tolerating a throw.
+   *
+   * Two of the describe_entity_type fixtures declare a `data.schema` GETTER that
+   * throws — that is their whole point — and a single `applyProjection` over the
+   * batch would take the fixture down with them before a single test ran.
+   */
+  for (const module of host.listEntities()) {
+    try {
+      applyProjection(db, [module]);
+    } catch {
+      /* a deliberately-malformed fixture type simply gets no table */
+    }
+  }
+  /**
+   * One row, seeded directly, for the READ tests. The write tests create their
+   * own through the tool — this is only here so `list`/`search` have something
+   * to answer with, which is what the retired fake service's constructor did.
+   */
+  db.prepare(`INSERT INTO widget (slug, name) VALUES ('widget-existing', 'existing')`).run();
+  const reader = new RawEntityReader(db, host);
+  const tagsService = new TagsService(db, host);
+  const versionService = new VersionService(db);
+  // The file store is not what these tests are about; a no-op stub keeps the
+  // write path off the filesystem without changing what it writes to the db.
+  const entityStore = { persist: vi.fn(), remove: vi.fn() } as unknown as EntityStore;
+
+  // Seeded through the same door the tools use, so the fixture cannot drift
+  // from what a create actually produces.
+  const rows = (): Widget[] =>
+    db.prepare(`SELECT slug, name FROM widget ORDER BY slug`).all() as Widget[];
+
   const deps: EntityToolsDeps = {
     host,
-    reader: {
-      getEntity: (_type: string, slug: string) => service.get(slug),
-      getEntities: (_type: string, slugs: string[]) => {
-        const items = slugs.map((slug) => service.get(slug)).filter((e): e is Widget => e != null);
-        const missing = slugs.filter((slug) => service.get(slug) == null);
-        return { items, missing };
-      },
-    } as unknown as EntityToolsDeps['reader'],
-    // M39: the read path goes through the discovery core. The stub projects the
-    // same fake service, so these tests keep asserting what this server is
-    // responsible for — forwarding `filters` to the service — rather than
-    // re-testing the core's serialization.
+    reader,
+    db,
+    tagsService,
+    entityStore,
+    versionService,
     discovery: {
       // 0.2.9 (item 15): `describe_entity_type` reads L9 through the core, not
       // through the serialization engine, so the stub answers it here.
@@ -139,31 +151,42 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
           searchableFields: [`${type}.name`],
         })),
       }),
+      listEntities: vi.fn(({ mode }: { mode?: 'items' | 'count' }) => {
+        const items = rows();
+        if (mode === 'count') return { mode: 'count', total: items.length };
+        return {
+          mode: 'items',
+          items: items.map((w) => ({ slug: w.slug, data: w })),
+          total: items.length,
+          hasMore: false,
+        };
+      }),
       getEntities: ({ type, slugs }: { type: string; slugs: string[] }) => ({
         type,
         view: 'detail',
-        results: slugs.map((slug) => ({ slug, entity: service.get(slug) ?? null })),
+        results: slugs.map((slug) => ({
+          slug,
+          entity: rows().find((w) => w.slug === slug) ?? null,
+        })),
       }),
       /**
-       * Projects the same fake store, and honours `mode` — the real core does.
-       * A stub that answered `mode: "hits"` regardless would let a handler
-       * ignore the parameter and still pass, which is the bug these tests are
-       * here to catch now that search routes through the core by default.
+       * Projects the same rows, and honours `mode` — the real core does. A stub
+       * that answered `mode: "hits"` regardless would let a handler ignore the
+       * parameter and still pass.
        */
-      searchEntities: ({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
-        const hits = service.list().items.filter((w) => (w as Widget).name.includes(query));
+      searchEntities: vi.fn(({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
+        const hits = rows().filter((w) => w.name.includes(query));
         const searchedFields = [`${type}.name`];
         if (mode === 'count') return { mode: 'count', total: hits.length, searchedFields };
         return {
           mode: 'hits',
-          items: hits.map((w) => ({ slug: (w as Widget).slug, score: 1, data: w })),
+          items: hits.map((w) => ({ slug: w.slug, score: 1, data: w })),
           total: hits.length,
           hasMore: false,
           searchedFields,
         };
-      },
+      }),
     } as unknown as EntityToolsDeps['discovery'],
-    db: {} as EntityToolsDeps['db'],
     ws: { broadcast: vi.fn() },
     referencesService: {
       findReferences: vi.fn().mockResolvedValue([]),
@@ -171,7 +194,12 @@ function fakeDeps(extraActive: BackendModule[] = []): { deps: EntityToolsDeps; s
     } as unknown as EntityToolsDeps['referencesService'],
   };
 
-  return { deps, service };
+  return { deps, db, rows };
+}
+
+/** Create through the tool under test, so a seed cannot drift from a real create. */
+async function seed(deps: EntityToolsDeps, ...names: string[]): Promise<void> {
+  await tool(deps, 'create_entities').handler({ type: 'widget', items: names.map((name) => ({ name })) });
 }
 
 function tool(deps: EntityToolsDeps, name: string) {
@@ -199,35 +227,50 @@ describe('entity-tools: type validation', () => {
     expect(parse(result)).toMatchObject({ error: { code: 'INACTIVE_TYPE' } });
   });
 
-  it('CRUD_NOT_SUPPORTED for an active type with no backend.crud', async () => {
+  /**
+   * 2.0.0 (item 28) — the inverse of the retired `CRUD_NOT_SUPPORTED` case.
+   *
+   * `no-crud` is active, declares `data.schema`, and has neither a
+   * `backend.crud` slot nor a registered service — the exact shape of every
+   * declaratively-authored plugin. It used to be refused by every tool that
+   * went through `resolveType`, INCLUDING the read ones: a type could be
+   * indexed, searched and diffed, and then answer `CRUD_NOT_SUPPORTED` to
+   * `list_entities`. The core answers it now.
+   */
+  it('an active type with no backend.crud and no service is still listable', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'list_entities').handler({ type: 'no-crud' });
-    expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'CRUD_NOT_SUPPORTED' } });
+    expect(result.isError).toBeUndefined();
+    expect(parse(result)).toMatchObject({ type: 'no-crud', mode: 'items' });
   });
 });
 
 describe('entity-tools: batch partial-success', () => {
-  it('create_entities: one SLUG_CONFLICT does not roll back the others, envelope preserves input order', async () => {
-    const { deps } = fakeDeps();
+  it('create_entities: one rejected item does not roll back the others, envelope preserves input order', async () => {
+    // The middle item omits the required `name`, so the generated create schema
+    // rejects it before the write door is reached.
+    const { deps, rows } = fakeDeps();
     const result = await tool(deps, 'create_entities').handler({
       type: 'widget',
-      items: [{ name: 'a' }, { name: 'dup' }, { name: 'b' }],
+      items: [{ name: 'a' }, {}, { name: 'b' }],
     });
     expect(result.isError).toBeUndefined();
     const { results } = parse(result) as { results: Array<Record<string, unknown>> };
     expect(results).toHaveLength(3);
-    expect(results[0]).toEqual({ slug: 'widget-a' });
-    expect(results[1]).toMatchObject({ code: 'SLUG_CONFLICT' });
-    expect(results[2]).toEqual({ slug: 'widget-b' });
+    expect(results[0]).toEqual({ slug: 'a' });
+    expect(results[1]).toMatchObject({ code: 'VALIDATION_ERROR' });
+    expect(results[2]).toEqual({ slug: 'b' });
+    // Non-transactional in the direction that matters: the two good ones landed
+    // (alongside the row the fixture seeds for the read tests).
+    expect(rows().map((w) => w.slug)).toEqual(['a', 'b', 'widget-existing']);
   });
 
   it('delete_entities: one NOT_FOUND does not block the others', async () => {
-    const { deps, service } = fakeDeps();
-    service.create({ name: 'c' }); // -> widget-c
+    const { deps } = fakeDeps();
+    await seed(deps, 'c');
     const result = await tool(deps, 'delete_entities').handler({
       type: 'widget',
-      slugs: ['widget-c', 'widget-ghost'],
+      slugs: ['c', 'widget-ghost'],
     });
     const { results } = parse(result) as { results: Array<Record<string, unknown>> };
     expect(results[0]).toMatchObject({ deleted: true });
@@ -237,13 +280,14 @@ describe('entity-tools: batch partial-success', () => {
 
 describe('entity-tools: update_entities rename', () => {
   it('newSlug renames; result.slug is the NEW slug; propagateSlugChange is called', async () => {
-    const { deps } = fakeDeps();
+    const { deps, rows } = fakeDeps();
     const result = await tool(deps, 'update_entities').handler({
       type: 'widget',
       updates: [{ slug: 'widget-existing', data: { name: 'renamed' }, newSlug: 'widget-renamed' }],
     });
     const { results } = parse(result) as { results: Array<Record<string, unknown>> };
     expect(results[0]).toEqual({ slug: 'widget-renamed' });
+    expect(rows().map((w) => w.slug)).toEqual(['widget-renamed']);
     expect(deps.referencesService.propagateSlugChange).toHaveBeenCalledWith(
       'widget',
       'widget-existing',
@@ -252,32 +296,44 @@ describe('entity-tools: update_entities rename', () => {
   });
 });
 
-describe('entity-tools: filters escape hatch (list_entities/search_entities)', () => {
-  it('list_entities forwards `filters` through to service.list(opts) untouched', async () => {
-    const { deps, service } = fakeDeps();
-    await tool(deps, 'list_entities').handler({ type: 'widget', filters: { status: 'all', kind: 'edge-case' } });
-    expect(service.list).toHaveBeenCalledWith(
-      expect.objectContaining({ filters: { status: 'all', kind: 'edge-case' } }),
+describe('entity-tools: filters (list_entities/search_entities)', () => {
+  /**
+   * 2.0.0 tier K — `filters` stopped being a per-type escape hatch implemented
+   * by whichever service felt like it (in practice one, `AcService`) and became
+   * a declarative filter the CORE evaluates against `data.schema`. What this
+   * pins is that the tool hands it on rather than dropping it: the compilation
+   * itself is `RawEntityReader.slugsMatching`'s own test.
+   */
+  it('forwards `filters` to the core, which is the only thing that can apply them', async () => {
+    const { deps } = fakeDeps();
+    await tool(deps, 'list_entities').handler({ type: 'widget', filters: { name: 'a' } });
+    expect(deps.discovery.listEntities).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { name: 'a' } }),
     );
   });
 
   /**
-   * `filters` used to be forwarded to `service.search(query, opts)` — and
-   * dropped there: the one service with a custom `search` takes only
-   * `{limit, offset}`, and the core path takes no filters at all. Forwarding an
-   * argument nobody reads is indistinguishable, from the caller's side, from
-   * applying it.
+   * The inverse of what tier E shipped, and deliberately so.
+   *
+   * Tier E REFUSED `filters` here, because forwarding an argument nobody reads
+   * is indistinguishable, from the caller's side, from applying it — the one
+   * service with a custom `search` took only `{limit, offset}` and the core
+   * search path took no filters at all. `slugsMatching` is the implementation
+   * that was missing, so the refusal's premise is gone and the asymmetry it
+   * left behind is the thing worth closing: "the active ACs" must mean the same
+   * set whether you list them, count them, or search them.
    */
-  it('search_entities REFUSES `filters` rather than accepting one nobody applies', async () => {
-    const { deps, service } = fakeDeps();
+  it('forwards `filters` to the core on the SEARCH path too', async () => {
+    const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({
       type: 'widget',
       query: 'a',
-      filters: { status: 'all' },
+      filters: { name: 'a' },
     });
-    expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_ARGUMENT' } });
-    expect(service.search).not.toHaveBeenCalled();
+    expect(result.isError).toBeFalsy();
+    expect(deps.discovery.searchEntities).toHaveBeenCalledWith(
+      expect.objectContaining({ filters: { name: 'a' } }),
+    );
   });
 });
 
@@ -321,13 +377,12 @@ describe('entity-tools: search_entities requires one type', () => {
    * the exact failure `searchedFields` exists to make impossible.
    */
   it('an explicit `fields` bypasses the type\'s custom ranking and goes to the core', async () => {
-    const { deps, service } = fakeDeps();
+    const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({
       type: 'widget',
       query: 'existing',
       fields: ['name'],
     });
-    expect(service.search).not.toHaveBeenCalled();
     expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
   });
 
@@ -335,14 +390,12 @@ describe('entity-tools: search_entities requires one type', () => {
    * 0.2.4 removed the per-type escape hatch. `searchedFields` is a promise about
    * what was CONSULTED, and a service ranking over columns the host cannot see
    * could only keep that promise by echoing a second declaration back. One
-   * derivation, one ranking, one answer — so a service that still ships a
-   * `search` method is simply never reached.
+   * derivation, one ranking, one answer. Tier K removed the per-type services
+   * outright, so there is no longer even a `search` method to not-reach.
    */
-  it('never delegates to a service `search`, even when the type has one', async () => {
-    const { deps, service } = fakeDeps();
+  it('answers from the core, whose searchedFields is exactly what it searched', async () => {
+    const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
-    expect(service.search).not.toHaveBeenCalled();
-    // Answered by the core, whose searchedFields is exactly what it searched.
     expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
   });
 
@@ -419,14 +472,32 @@ describe('entity-tools: describe_entity_type', () => {
     const result = await tool(deps, 'describe_entity_type').handler({});
     const { types } = parse(result) as { types: Array<{ type: string; crudSupported: boolean }> };
     expect(types.map((t) => t.type).sort()).toEqual(['no-crud', 'widget']);
-    expect(types.find((t) => t.type === 'no-crud')?.crudSupported).toBe(false);
+    // 2.0.0 (item 28): `true` for every active type, `no-crud` included — the
+    // schemas come from `data.schema`, which it has, not from a slot it lacks.
+    expect(types.find((t) => t.type === 'no-crud')?.crudSupported).toBe(true);
   });
 
-  // A module whose createSchema contains a type z.toJSONSchema() cannot represent
-  // (BigInt) — a stand-in for the real-world foreign/undefined schema node that used to
-  // crash the whole handler with `Cannot read properties of undefined (reading 'def')`.
+  /**
+   * A module whose GENERATED schema cannot be built — a stand-in for the
+   * real-world malformed type that used to crash the whole handler with
+   * `Cannot read properties of undefined (reading 'def')`.
+   *
+   * 2.0.0: the failure mode moved with the source. It used to be a `z.bigint()`
+   * planted in a hand-written `backend.crud.createSchema`, which
+   * `z.toJSONSchema()` cannot represent; the slot is gone and `data.schema` is
+   * a closed vocabulary with no such member, so the reachable malformation is a
+   * type registered WITHOUT the declaration the generator reads. Different
+   * cause, same guard, same contract: one bad type must not cost the others
+   * their answer.
+   */
   const badSchemaModule = () =>
-    widgetModule({ type: 'bad-schema', backend: { crud: { createSchema: { amount: z.bigint() } } } });
+    widgetModule({
+      type: 'bad-schema',
+      // No `backend.crud`, so the GENERATED branch is the one under test — a
+      // declared crud slot still wins while the six services own the write path.
+      backend: {},
+      data: undefined as unknown as BackendModule['data'],
+    });
 
   it('describe-all isolates one un-serializable type: healthy types still described, bad type carries an __error placeholder', async () => {
     const { deps } = fakeDeps([badSchemaModule()]);
@@ -457,18 +528,19 @@ describe('entity-tools: describe_entity_type', () => {
     expect(types[0]!.updateSchema).toMatchObject({ __error: expect.stringMatching(/^bad-schema: /) });
   });
 
-  // A module whose createSchema throws during the zod-object BUILD (property access),
+  // A module whose schema throws during the zod-object BUILD (property access),
   // not at serialization time — exercises the inner guard's "wraps both the build and
-  // the toJSONSchema call" claim, a path the BigInt (serialize-time) cases don't reach.
+  // the toJSONSchema call" claim. 2.0.0: the throwing getter moved from the retired
+  // `backend.crud.createSchema` onto `data.schema`, the input the generator reads.
   const buildThrowModule = () => {
-    const crud: Record<string, unknown> = {};
-    Object.defineProperty(crud, 'createSchema', {
+    const data: Record<string, unknown> = {};
+    Object.defineProperty(data, 'schema', {
       enumerable: true,
       get() {
         throw new Error('boom-build');
       },
     });
-    return widgetModule({ type: 'build-throw', backend: { crud } as BackendModule['backend'] });
+    return widgetModule({ type: 'build-throw', backend: {}, data: data as BackendModule['data'] });
   };
 
   it('inner guard catches a throw during schema build (not just serialization)', async () => {

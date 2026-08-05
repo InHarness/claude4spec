@@ -13,6 +13,15 @@ import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
 import { entitiesRouter } from '../core/plugin-host/entities-router.js';
+import { generatedCrudRouter } from '../core/plugin-host/generated-crud-router.js';
+import { registerRefRewriteListeners } from '../core/plugin-host/manifest-adapter.js';
+import {
+  genericCreate,
+  genericDelete,
+  genericUpdate,
+  propagateRename,
+} from '../core/plugin-host/generic-crud.js';
+import type { CrudFacade } from '../core/plugin-host/types.js';
 import { referencesRouter } from '../routes/references.js';
 import { TagsService, DomainError } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
@@ -612,13 +621,67 @@ async function buildInner(
     );
   }
 
-  // Mount all active backend modules — each plugin constructs its own service,
-  // mounts its router, registers its MCP server, and registers its entity
-  // service via the supplied MountContext. Inactive plugins are skipped
+  /**
+   * 2.0.0 (A.8) — the declarative write door, built BEFORE `mountBackend` so a
+   * plugin's own route can use the same one `/api/{type}s` does.
+   *
+   * Every ingredient already exists by here; only `discovery` (constructed
+   * further down for the generated router's READ path) does not, and the write
+   * functions never touch it. The generated-router deps below extend this object
+   * rather than rebuild it, so the two cannot drift apart.
+   */
+  const crudDeps = {
+    host: pluginHost,
+    reader: rawReader,
+    tags: tagsService,
+    store: entityStore,
+    references: referencesService,
+    projection: { db: db.handle, store: entityStore, versions: versionService },
+  };
+
+  /**
+   * The three write verbs, bound to `crudDeps` — and doing everything the
+   * generated router does around them, which is the whole claim `CrudFacade`
+   * makes ("the SAME write door `/api/{type}s` goes through").
+   *
+   * The first cut was three bare `generic*` calls, and that claim was false in
+   * two ways. `propagateRename` was missing, so a plugin renaming an entity
+   * through the facade moved the row and the file while leaving every
+   * `<inline_mention/>` and every `ref`-flagged field pointing at the old slug —
+   * the exact fan-out `PATCH /api/{type}s/:slug` performs. And the
+   * `entity:changed` broadcast was missing, so no open client saw the write.
+   *
+   * Async because `propagateRename` is: a plugin awaiting a write it has to
+   * await is the correct contract, and fire-and-forget here would reintroduce
+   * the same silence one layer down.
+   */
+  const crudFacade: CrudFacade = {
+    create: async (type, input, actor) => {
+      const result = genericCreate(crudDeps, type, input, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    update: async (type, slug, input, actor) => {
+      const result = genericUpdate(crudDeps, type, slug, input, actor);
+      await propagateRename(crudDeps, type, slug, result.slug);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    delete: async (type, slug, actor) => {
+      const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+  };
+
+  // Mount all active backend modules — each plugin constructs its own domain
+  // helper, mounts its router, registers its MCP server, and registers that
+  // helper via the supplied MountContext. Inactive plugins are skipped
   // (config.entities).
   pluginHost.mountBackend({
     app: router,
-    db: db.handle,
+    reader: rawReader,
+    crud: crudFacade,
     host: pluginHost,
     cwd,
     roots: effectiveRoots,
@@ -631,6 +694,16 @@ async function buildInner(
     registerEntityService: (type, service) => pluginHost.registerEntityService(type, service),
     registerRenameListener: (fn) => pluginHost.registerRenameListener(fn),
   });
+
+  /**
+   * 2.0.0 (A.8) — rename propagation, registered from the declaration rather
+   * than from each type's synthesized `mount`. One listener per module whose
+   * schema carries a `ref` flag, over every registered module — including ones
+   * that write `mount` by hand, which previously needed a composed closure to
+   * get the same behaviour. Runs after `mountBackend` so a module's own listener
+   * (if it registered one) still sees the event first.
+   */
+  registerRefRewriteListeners(pluginHost, db.handle, entityStore);
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
   // Registered as a factory: a fresh instance is built per agent turn so
@@ -677,6 +750,10 @@ async function buildInner(
       db: db.handle,
       ws,
       referencesService,
+      // 2.0.0 (item 28): the generic write door for a type with no service.
+      tagsService,
+      entityStore,
+      versionService,
     }),
   );
 
@@ -838,6 +915,24 @@ async function buildInner(
   router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
+
+  /**
+   * Host API 2.0.0 (item 31) — `/api/{type}s` for every type that declares its
+   * data, generated from that declaration.
+   *
+   * Mounted HERE and not in `synthesizeMount` for one reason: it reads through
+   * the M39 core, and `rawReader`/`discovery` do not exist yet at
+   * `mountBackend` time.
+   *
+   * Tier K deleted the six per-type routers, so every built-in type lands here.
+   * The two `endpoint` relation routes that remain are mounted ahead of this one
+   * (registration order) and are not CRUD verbs, so they do not shadow anything.
+   */
+  const genericCrudDeps = { ...crudDeps, discovery, ws };
+  for (const module of pluginHost.listEntities()) {
+    if (!module.data?.schema) continue;
+    router.use(module.pathPrefix, generatedCrudRouter(genericCrudDeps, module));
+  }
   router.use('/external-skills', externalSkillsRouter({ registry, workspace, projectId }));
   // 0.1.58: peer-discovery for the `<workspace_projects>` prompt block. For each
   // workspace project except this one, build a PeerProject whose `path` is the

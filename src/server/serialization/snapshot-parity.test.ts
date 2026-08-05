@@ -51,7 +51,9 @@ async function seed(t: TestApp): Promise<void> {
   const post = async (url: string, body: unknown) => {
     const res = await request(t.app).post(url).send(body);
     expect(res.status, `${url}: ${JSON.stringify(res.body)}`).toBeLessThan(400);
-    return res.body as { slug: string };
+    // 2.0.0 tier K — the generated router answers `{ data }`; `endpoint`'s two
+    // surviving relation routes are its own and still answer bare.
+    return ((res.body as { data?: unknown }).data ?? res.body) as { slug: string };
   };
 
   const userDto = await post('/api/dtos', {
@@ -68,11 +70,11 @@ async function seed(t: TestApp): Promise<void> {
   const orderDto = await post('/api/dtos', {
     name: 'ZamówienieDto',
     description: 'Zamówienie — pozycja',
-    fields: [{ name: 'nr', type: 'number' }],
+    fields: [{ name: 'nr', type: 'number', required: false }],
   });
   const errorDto = await post('/api/dtos', {
     name: 'ErrorDto',
-    fields: [{ name: 'message', type: 'string' }],
+    fields: [{ name: 'message', type: 'string', required: true }],
   });
 
   const endpoint = await post('/api/endpoints', {
@@ -106,7 +108,7 @@ async function seed(t: TestApp): Promise<void> {
       ],
     });
   expect(verified.status, JSON.stringify(verified.body)).toBe(200);
-  expect(verified.body.verifies, 'fixture: verifies did not land').toHaveLength(3);
+  expect(verified.body.data.verifies, 'fixture: verifies did not land').toHaveLength(3);
 
   await post('/api/ui-views', {
     name: 'Users',

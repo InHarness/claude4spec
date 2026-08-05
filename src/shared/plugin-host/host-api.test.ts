@@ -47,6 +47,19 @@ describe('M33 — Host API versioning helpers', () => {
       // 0.2.9 (tier D): the per-module rename hook, replaced by the `ref` flag.
       'backend.onEntityRenamed',
       'routes.prefix',
+      /**
+       * 0.2.9 (tier B): the hand-written snapshot/restore pair, now generated
+       * from `data.schema`.
+       *
+       * Listed SEPARATELY from the view/semver/schema entry below, though both
+       * name `serializer.*` and both landed in tier B. Item 53 calls for a
+       * descriptor per removed slot, and these are the two halves a 1.x author
+       * would look up independently: one is "how do I still render", the other
+       * "how do I still persist". Collapsing them would have left `snapshot`
+       * and `restore` — which the brief's own `plugins doctor` sample prints —
+       * matching nothing a reader could grep for.
+       */
+      'serializer.{snapshot,restore}',
       // 0.2.9 (tier B): the serializer's five flat view callbacks, its advisory
       // semver and its hand-written schema — all derived now, all removed.
       'serializer.{version,inlineMention,singleElement,elementListItem,taggedListItem,schema}',
@@ -63,7 +76,7 @@ describe('M33 — Host API versioning helpers', () => {
     const info = buildMigrationInfo('^1.0.0');
     expect(info).not.toBeNull();
     expect(info!.targetHostApiVersion).toBe(HOST_API_VERSION);
-    expect(info!.migrations).toHaveLength(5);
+    expect(info!.migrations).toHaveLength(6);
     expect(info!.migrations.every((m) => m.kind === 'slot-removed')).toBe(true);
     /**
      * The assertion that matters to a plugin author: there is no compatibility

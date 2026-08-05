@@ -87,6 +87,19 @@ export interface FieldFlags {
    * where a type's payload name and its historical column name diverge.
    */
   column?: string;
+  /**
+   * Prose for a human or an agent reading this field. The one member of this
+   * interface the host does not ACT on — it is carried, never interpreted.
+   *
+   * It is here because item 27 makes `data.schema` the sole source of the CRUD
+   * input schemas, and the six hand-written `crud-schemas.ts` files it replaces
+   * carried a `.describe()` on most of their fields — text `describe_entity_type`
+   * publishes straight to the agent. Generating from a declaration with nowhere
+   * to put that text would have deleted every one of those sentences silently,
+   * which is a worse contract than the drift the generation exists to close.
+   * A `missing` patch is filed against the brief asking for the slot.
+   */
+  description?: string;
 }
 
 /** A leaf holding a single scalar. */
@@ -218,7 +231,33 @@ export interface RecordNode extends FieldFlags {
   value: FieldNode;
 }
 
-export type FieldNode = ScalarNode | EnumNode | ObjectNode | CollectionNode | RecordNode;
+/**
+ * An opaque JSON value: the host stores it, round-trips it and never looks
+ * inside. No key schema, no value schema, no searchable leaves.
+ *
+ * The escape hatch the closed vocabulary was missing, and two SHIPPED
+ * declarations already needed it before item 27 made the omission visible:
+ *
+ *   - `design-system` token values are `"#2563eb"` OR `{fontSize, lineHeight}`.
+ *     Declared as `record<string,string>`, which drops the literal arm — the
+ *     common one.
+ *   - `dto.examples[].value` is a payload exemplar, "as-is", soft-validated
+ *     against `fields[]`. Declared as `record<string,string>`, which admits
+ *     neither a number nor a nested object.
+ *
+ * Both were harmless while the declaration only DESCRIBED (tier B's read
+ * schemas) and became rejections the moment it started VALIDATING (item 27's
+ * CRUD input schemas): a design system could no longer be created with a colour
+ * in it. A union node would say the same thing more precisely, but every other
+ * consumer — the DDL, the write path, rename propagation — treats both arms
+ * identically (embedded JSON text), so the distinction would be one no host
+ * layer could act on. Filed against the brief as a `missing` patch.
+ */
+export interface JsonNode extends FieldFlags {
+  kind: 'json';
+}
+
+export type FieldNode = ScalarNode | EnumNode | ObjectNode | CollectionNode | RecordNode | JsonNode;
 
 /**
  * A query shape the type expects to run — NOT an index.
@@ -258,14 +297,24 @@ export interface DataDeclaration {
 }
 
 /**
- * A declarative count filter over the type's OWN fields.
+ * A declarative filter over the type's OWN fields — the type's DEFAULT view of
+ * itself.
  *
  * Replaces `SystemPromptContribution.countStat.sqlQuery`, the last place a
  * module handed the host raw SQL to execute. Equality and set membership only:
  * cross-entity predicates are out of scope by design, and a raw-SQL slot is
  * excluded permanently because it would break M13's read-exclusivity invariant.
+ *
+ * 2.0.0 tier K — was `CountPredicate`, and count was its only consumer. It now
+ * has two: `RawEntityReader.count()` and the implicit filter every list read
+ * starts from (`slugsMatching`), which a caller overrides per field by naming
+ * that field in `filters`. The rename is the point — `ac` declares
+ * `{ field: 'status', in: ['active'] }` because a deprecated AC is not part of
+ * the working set, and that was true of the LIST long before it was true of the
+ * badge. Keeping the count-only name is what let the two disagree: the sidebar
+ * said 12 while the list showed 17.
  */
-export interface CountPredicate {
+export interface DefaultPredicate {
   field: string;
   eq?: string | number | boolean;
   in?: readonly (string | number | boolean)[];

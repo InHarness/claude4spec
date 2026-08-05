@@ -55,9 +55,11 @@ export function fixtureModule(type: string, opts: FixtureModuleOpts = {}): Backe
     backend: {
       ...(opts.withEntityService
         ? {
+            // A.8: `ctx.db` is gone — the reader is what a mount gets to read
+            // with, and it is all this stub ever needed.
             mount(ctx: MountContext) {
               ctx.registerEntityService(type, {
-                getBySlug: (slug: string) => ctx.db.prepare(`SELECT * FROM ${type} WHERE slug = ?`).get(slug) ?? null,
+                getBySlug: (slug: string) => ctx.reader.getEntity(type, slug),
               });
             },
           }

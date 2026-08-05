@@ -4,12 +4,11 @@ import {
   ENDPOINT_PATH_PREFIX,
   ENDPOINT_TYPE,
 } from '../../identity.js';
-import { endpointSerializer } from './serializer.js';
+import { endpointSerializer } from './views.js';
 import { endpointSystemPrompt } from './system-prompt.js';
 import { endpointsRouter } from './backend/routes.js';
-import { EndpointService } from './backend/services.js';
 import { createEndpointToolsServer } from './backend/mcp.js';
-import { endpointCreateSchema, endpointUpdateSchema } from './backend/crud-schemas.js';
+import type { DtoLink, LinkDtoDeps } from './backend/link-dto.js';
 import { endpointData, endpointSlugPattern } from './schema.js';
 
 /**
@@ -39,17 +38,43 @@ export const endpointEntity: EntityContribution = {
   dependsOn: ['dto'],
   serializer: endpointSerializer,
   systemPrompt: endpointSystemPrompt,
+  /**
+   * 2.0.0 tier K (item 58) — no `service`. `EndpointService` is deleted; CRUD
+   * comes from `data` above, and the two relation verbs are collection writes
+   * (`./backend/link-dto.ts`) shared by the router and the MCP tools.
+   *
+   * The hand-written `onEntityRenamed` went in 2.0.0: a DTO rename cascades
+   * through the junction's ON UPDATE CASCADE, and `ref: 'dto'` on
+   * `linkedDtos[].dto` is what tells the host to re-persist the endpoint FILES
+   * that still embed the old slug.
+   */
   backend: {
-    // 2.0.0: the hand-written `onEntityRenamed` is gone. A DTO rename still
-    // cascades through the junction's ON UPDATE CASCADE and the endpoint FILES
-    // still embed the old slug — but `ref: 'dto'` on `linkedDtos[].dto` is what
-    // tells the host to collect those endpoints and re-persist them.
-    service: (ctx: MountContext) => new EndpointService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-    crud: { createSchema: endpointCreateSchema, updateSchema: endpointUpdateSchema },
-    routes: {
-      router: (service: unknown, ctx: MountContext) => endpointsRouter(service as EndpointService, ctx.referencesService),
-    },
-    mcpServer: (service: unknown, ctx: MountContext) =>
-      createEndpointToolsServer({ endpointService: service as EndpointService, ws: ctx.ws }),
+    routes: { router: (_service: unknown, ctx: MountContext) => endpointsRouter(linkDeps(ctx, 'user')) },
+    mcpServer: (_service: unknown, ctx: MountContext) =>
+      createEndpointToolsServer({ links: linkDeps(ctx, 'agent'), ws: ctx.ws }),
   },
 } as EntityContribution;
+
+/**
+ * Bind the collection-write helpers to this project's host handles.
+ *
+ * `update` hands the WHOLE `linkedDtos` array to the host's update verb, which
+ * is what `collection: 'value'` means — the host diffs the junction rows, keeps
+ * the FK, captures the version and re-persists the file. None of that is this
+ * plugin's business any more.
+ *
+ * `actor` is a PARAMETER because the two doors are two different actors. The
+ * REST routes are the human editing the detail panel; the MCP tools are the
+ * agent. Both went through one `linkDeps(ctx)` hardcoding `'user'`, so every
+ * agent-issued `link_dto` landed in `entity_version` attributed to the author —
+ * which is the one thing version history exists to tell apart, and the retired
+ * service never even captured.
+ */
+function linkDeps(ctx: MountContext, actor: 'user' | 'agent'): LinkDtoDeps {
+  return {
+    reader: ctx.reader,
+    update: async (slug: string, linkedDtos: DtoLink[]) => {
+      await ctx.crud.update(ENDPOINT_TYPE, slug, { linkedDtos }, actor);
+    },
+  };
+}

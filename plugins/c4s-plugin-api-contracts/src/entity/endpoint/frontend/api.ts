@@ -5,7 +5,7 @@ import type {
   EndpointListQuery,
   EndpointUpdateInput,
 } from '../../../types.js';
-import { handle, apiFetch } from '../../../frontend-kit/api-core.js';
+import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-core.js';
 
 export const endpointsApi = {
   async list(query: EndpointListQuery = {}): Promise<Endpoint[]> {
@@ -16,16 +16,15 @@ export const endpointsApi = {
     if (query.limit) params.set('limit', String(query.limit));
     if (query.offset) params.set('offset', String(query.offset));
     const q = params.toString() ? `?${params.toString()}` : '';
-    const data = await handle<{ endpoints: Endpoint[] }>(await apiFetch(`/api/endpoints${q}`));
-    return data.endpoints;
+    return unwrapList<Endpoint>(await apiFetch(`/api/endpoints${q}`));
   },
 
   async get(slug: string): Promise<Endpoint> {
-    return handle<Endpoint>(await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`));
+    return unwrap<Endpoint>(await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`));
   },
 
   async create(input: EndpointCreateInput): Promise<Endpoint> {
-    return handle<Endpoint>(
+    return unwrap<Endpoint>(
       await apiFetch('/api/endpoints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -35,7 +34,7 @@ export const endpointsApi = {
   },
 
   async update(slug: string, input: EndpointUpdateInput): Promise<Endpoint> {
-    return handle<Endpoint>(
+    return unwrap<Endpoint>(
       await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -55,8 +54,14 @@ export const endpointsApi = {
     dtoSlug: string,
     relation: EndpointDtoRelation,
     statusCode: number | null = null
-  ): Promise<Endpoint> {
-    return handle<Endpoint>(
+  ): Promise<{ linked: true }> {
+    // NOT `unwrap`, and no longer the endpoint either. 2.0.0 tier K: these two
+    // are `endpoint`'s own domain verbs over the `linkedDtos` collection, and
+    // they answer an acknowledgement. Returning the whole updated endpoint made
+    // the domain router a second spelling of "an endpoint, serialized" that had
+    // to keep agreeing with `GET /api/endpoints/:slug` by hand; the caller now
+    // invalidates and refetches through that one canonical read.
+    return handle<{ linked: true }>(
       await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}/dtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -70,12 +75,12 @@ export const endpointsApi = {
     dtoSlug: string,
     relation: EndpointDtoRelation,
     statusCode: number | null = null
-  ): Promise<Endpoint> {
+  ): Promise<{ unlinked: true }> {
     const url = new URL(
       `/api/endpoints/${encodeURIComponent(slug)}/dtos/${encodeURIComponent(dtoSlug)}/${relation}`,
       window.location.origin
     );
     if (statusCode !== null) url.searchParams.set('statusCode', String(statusCode));
-    return handle<Endpoint>(await apiFetch(url.pathname + url.search, { method: 'DELETE' }));
+    return handle<{ unlinked: true }>(await apiFetch(url.pathname + url.search, { method: 'DELETE' }));
   },
 };

@@ -108,7 +108,9 @@ export class SerializationEngine {
     entity: RawEntity,
     reader: RawEntityReader
   ): SerializeResult {
-    return this.invoke(type, view, entity, reader, () => genericEntity(entity, view));
+    return this.invoke(type, view, entity, reader, () =>
+      genericEntity(entity, view, this.host.getAvailable(type)?.data?.schema),
+    );
   }
 
   serializeSection(view: ViewKind, section: RawSection, reader: RawEntityReader): SerializeResult {
@@ -170,8 +172,13 @@ export class SerializationEngine {
     const types: Record<string, CatalogEntry> = {};
     let anyCrudSupported = false;
     for (const m of this.host.listEntities()) {
-      const crudSupported = m.backend?.crud != null;
-      if (crudSupported) anyCrudSupported = true;
+      /**
+       * 2.0.0 (item 28) — every active type has CRUD by construction. It used to
+       * mean "shipped a `backend.crud`"; that slot is gone, and the schemas are
+       * generated from `data.schema`, which every active type declares.
+       */
+      const crudSupported = true;
+      anyCrudSupported = true;
       types[m.type] = {
         count: reader.count(m.type as RawEntityType),
         payloadVersion: m.payloadVersion,

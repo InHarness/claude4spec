@@ -77,6 +77,12 @@ function baseSchema(node: FieldNode): JsonSchema {
         propertyNames: nodeSchema(node.key),
         additionalProperties: nodeSchema(node.value),
       };
+    case 'json':
+      // Deliberately `{}` and not `{type: [...every type...]}`: an opaque value
+      // is one the declaration says nothing about, and enumerating the JSON
+      // types would be saying something. `withNull` on a `{}` is also a no-op,
+      // which is correct — null is already in the domain.
+      return {};
   }
 }
 
@@ -225,7 +231,10 @@ export function searchablePaths(data: DataDeclaration): string[] {
     for (const [name, node] of Object.entries(fields)) {
       if (!readable(node)) continue;
       const path = prefix ? `${prefix}.${name}` : name;
-      if (node.kind === 'string' || node.kind === 'enum') paths.push(path);
+      // `json` carries its own path and no children — same rule, and the same
+      // reason, as `discovery/search/fields.ts`: an opaque value may hold a
+      // string, and the host cannot name a path inside one.
+      if (node.kind === 'string' || node.kind === 'enum' || node.kind === 'json') paths.push(path);
       else if (node.kind === 'object') walk(node.fields, path);
       else if (node.kind === 'collection' && node.item.kind === 'object') walk(node.item.fields, `${path}[]`);
       else if (node.kind === 'collection' && node.item.kind === 'string') paths.push(`${path}[]`);

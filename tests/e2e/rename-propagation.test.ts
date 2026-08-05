@@ -81,16 +81,16 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
     const view = await post(p('/ui-views'), {
       name: `Rename View ${stamp}`,
       url: '/rename/:id',
-      designSystemSlug: ds.body.slug,
+      designSystemSlug: ds.body.data.slug,
     });
     expect(view.status).toBeLessThan(400);
 
-    const renamed = `${ds.body.slug}-renamed`;
-    expect((await patch(p(`/design-systems/${ds.body.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
+    const renamed = `${ds.body.data.slug}-renamed`;
+    expect((await patch(p(`/design-systems/${ds.body.data.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
 
-    const after = await api(p(`/ui-views/${view.body.slug}`));
+    const after = await api(p(`/ui-views/${view.body.data.slug}`));
     expect(after.status).toBe(200);
-    expect(after.body.designSystemSlug).toBe(renamed);
+    expect(after.body.data.designSystemSlug).toBe(renamed);
   });
 
   it('[ac:ac-rename-sluga-encji-propaguje-sie-do-wszy] a dto rename keeps the endpoint’s link resolvable', async () => {
@@ -103,21 +103,21 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
       path: `/rename/${stamp}`,
       summary: 'rename smoke',
     });
-    expect((await post(p(`/endpoints/${endpoint.body.slug}/dtos`), {
-      dtoSlug: dto.body.slug,
+    expect((await post(p(`/endpoints/${endpoint.body.data.slug}/dtos`), {
+      dtoSlug: dto.body.data.slug,
       relation: 'response',
       statusCode: 200,
     })).status).toBeLessThan(400);
 
-    const renamed = `${dto.body.slug}-renamed`;
-    expect((await patch(p(`/dtos/${dto.body.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
+    const renamed = `${dto.body.data.slug}-renamed`;
+    expect((await patch(p(`/dtos/${dto.body.data.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
 
     // Read from the DTO side: it is the end the junction does NOT bind, so a
     // link that survived only as a stale endpoint_slug would not show up here.
-    const after = await api(p(`/dtos/${renamed}`));
+    const after = await api(p(`/dtos/${renamed}?view=detail`));
     expect(after.status).toBe(200);
-    expect(after.body.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
-      endpoint.body.slug,
+    expect(after.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
+      endpoint.body.data.slug,
     );
   });
 
@@ -129,20 +129,20 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
     });
     const ac = await post(p('/acs'), {
       text: `Rename verify smoke ${stamp}`,
-      verifies: [{ type: 'endpoint', slug: endpoint.body.slug }],
+      verifies: [{ type: 'endpoint', slug: endpoint.body.data.slug }],
     });
     expect(ac.status).toBeLessThan(400);
 
-    const renamed = `${endpoint.body.slug}-renamed`;
-    expect((await patch(p(`/endpoints/${endpoint.body.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
+    const renamed = `${endpoint.body.data.slug}-renamed`;
+    expect((await patch(p(`/endpoints/${endpoint.body.data.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
 
-    const after = await api(p(`/acs/${ac.body.slug}`));
+    const after = await api(p(`/acs/${ac.body.data.slug}`));
     expect(after.status).toBe(200);
-    expect(after.body.verifies).toEqual([{ type: 'endpoint', slug: renamed }]);
+    expect(after.body.data.verifies).toEqual([{ type: 'endpoint', slug: renamed }]);
     // And the reference is not merely rewritten but RESOLVABLE — `brokenVerifies`
     // is what item 25's existence check feeds, so a rewrite that pointed at
     // nothing would still pass the equality above.
-    expect(after.body.brokenVerifies ?? []).toEqual([]);
+    expect(after.body.data.brokenVerifies ?? []).toEqual([]);
   });
 
   it('produced no console errors and no responses >= 400', async () => {

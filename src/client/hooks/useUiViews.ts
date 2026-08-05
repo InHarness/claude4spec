@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { uiViewsApi, type UiViewWithWarnings } from '../lib/api.js';
+import { uiViewsApi } from '../lib/api.js';
 import type {
   UiView,
   UiViewCreateInput,
@@ -32,7 +32,7 @@ export function useCreateUiView() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: UiViewCreateInput) => uiViewsApi.create(input),
-    onSuccess: (uiView: UiViewWithWarnings) => {
+    onSuccess: (uiView: UiView) => {
       qc.invalidateQueries({ queryKey: keys.all });
       qc.setQueryData(keys.detail(uiView.slug), uiView);
       qc.invalidateQueries({ queryKey: ['tags'] });
@@ -45,7 +45,7 @@ export function useUpdateUiView() {
   return useMutation({
     mutationFn: ({ slug, input }: { slug: string; input: UiViewUpdateInput }) =>
       uiViewsApi.update(slug, input),
-    onSuccess: (uiView: UiViewWithWarnings, { slug }) => {
+    onSuccess: (uiView: UiView, { slug }) => {
       qc.invalidateQueries({ queryKey: keys.all });
       if (slug !== uiView.slug) qc.removeQueries({ queryKey: keys.detail(slug) });
       qc.setQueryData(keys.detail(uiView.slug), uiView);

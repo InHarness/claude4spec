@@ -11,8 +11,17 @@ import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
  */
 export const acData: DataDeclaration = {
   schema: {
-    text: { kind: 'string', required: true },
-    kind: { kind: 'enum', values: ['requirement', 'edge-case'], default: 'requirement' },
+    text: {
+      kind: 'string',
+      required: true,
+      description: 'Observable behavior the AC asserts. One sentence is best.',
+    },
+    kind: {
+      kind: 'enum',
+      values: ['requirement', 'edge-case'],
+      default: 'requirement',
+      description: 'requirement (default) | edge-case',
+    },
     status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
     /**
      * A value collection WITHOUT `keyFields`, so it stays embedded JSON — the
@@ -28,6 +37,7 @@ export const acData: DataDeclaration = {
       // Assignment order is not content — two ACs verifying the same set must
       // snapshot identically regardless of the order they were linked in.
       unordered: true,
+      description: 'Entities this AC verifies. Reported broken if entity does not exist; not blocking.',
       item: {
         kind: 'object',
         fields: {

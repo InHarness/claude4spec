@@ -3,7 +3,7 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 /** Host API 2.0.0 — what `dto` IS. */
 export const dtoData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true },
+    name: { kind: 'string', required: true, description: 'DTO name (PascalCase, e.g. UserResponse)' },
     description: { kind: 'string', clearable: true },
     fields: {
       kind: 'collection',
@@ -28,6 +28,7 @@ export const dtoData: DataDeclaration = {
     examples: {
       kind: 'collection',
       collection: 'value',
+      description: 'Named payload exemplars. Soft-validated. name unique within DTO.',
       item: {
         kind: 'object',
         fields: {
@@ -37,9 +38,23 @@ export const dtoData: DataDeclaration = {
            * path does not, which retires the hard `EXAMPLE_NAME_CONFLICT`
            * rejection.
            */
-          name: { kind: 'string', required: true },
+          name: {
+            kind: 'string',
+            required: true,
+            description: 'Identifier unique within DTO (e.g. "minimal", "full", "edge-case")',
+          },
           summary: { kind: 'string' },
-          value: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+          /**
+           * 0.2.9 (item 27) — was `record<string, string>`, which admitted
+           * neither a number nor a nested object. An exemplar is a payload
+           * "as-is": the retired hand-written schema said `z.unknown()`, and
+           * `json` is that same statement made declaratively. Soft-validated
+           * against `fields[]` at presentation time, never on the write path.
+           */
+          value: {
+            kind: 'json',
+            description: 'Payload as-is. Soft-validated against fields[] (warning only).',
+          },
         },
       },
     },

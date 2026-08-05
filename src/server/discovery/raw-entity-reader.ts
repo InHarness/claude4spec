@@ -186,6 +186,7 @@ export class RawEntityReader {
 
   /** Memoized `ORDER BY` clause per table — the `PRAGMA` runs once per table. */
   private readonly orderClauses = new Map<string, string>();
+  private readonly columnNames = new Map<string, string[]>();
 
   /**
    * 0.2.4 — THE default list order: `created_at ASC, slug ASC`, for every type,
@@ -211,15 +212,27 @@ export class RawEntityReader {
   private orderClause(table: string): string {
     const cached = this.orderClauses.get(table);
     if (cached) return cached;
-    let clause = 'slug';
-    try {
-      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: unknown }>;
-      if (columns.some((c) => c.name === 'created_at')) clause = 'created_at, slug';
-    } catch {
-      /* unreadable pragma — `slug` is always safe */
-    }
+    const clause = this.tableColumns(table).includes('created_at') ? 'created_at, slug' : 'slug';
     this.orderClauses.set(table, clause);
     return clause;
+  }
+
+  /**
+   * A table's column names, memoized. Empty when the pragma is unreadable —
+   * every caller treats "column absent" as a degradation, never as an error.
+   */
+  private tableColumns(table: string): string[] {
+    const cached = this.columnNames.get(table);
+    if (cached) return cached;
+    let names: string[] = [];
+    try {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name?: unknown }>;
+      names = columns.map((c) => String(c.name ?? ''));
+    } catch {
+      /* unreadable pragma — an empty column list degrades every caller safely */
+    }
+    this.columnNames.set(table, names);
+    return names;
   }
 
   /**
@@ -409,7 +422,7 @@ export class RawEntityReader {
     // sidebar, not just the one type's.
     const table = this.resolveTable(type);
     if (!table) return 0;
-    const where = this.compileCountPredicate(type);
+    const where = this.compileDefaultPredicate(type);
     const row = this.db
       .prepare(`SELECT COUNT(*) AS c FROM ${table}${where.sql}`)
       .get(...where.params) as { c: number };
@@ -423,16 +436,16 @@ export class RawEntityReader {
    * count comes back unfiltered. The callers are a sidebar badge and a
    * system-prompt line: a slightly-too-large number is a cosmetic defect, while
    * a throw blanks the whole sidebar and 500s every chat turn. Registration
-   * validation (`checkCountPredicate`) is where a bad predicate is rejected
+   * validation (`checkDefaultPredicate`) is where a bad predicate is rejected
    * loudly; by the time a count runs, the manifest has already been vetted.
    *
    * `isEmbedded` is re-checked here rather than trusted from registration
    * because a hand-built module in a test never goes through it, and this method
    * must not be the thing that throws.
    */
-  private compileCountPredicate(type: string): { sql: string; params: unknown[] } {
+  private compileDefaultPredicate(type: string): { sql: string; params: unknown[] } {
     const module = this.host?.getEntity(type);
-    const predicate = module?.systemPrompt?.countPredicate;
+    const predicate = module?.systemPrompt?.defaultPredicate;
     if (!predicate?.field) return { sql: '', params: [] };
     const node = module?.data?.schema?.[predicate.field];
     if (!node || !isEmbedded(node)) return { sql: '', params: [] };
@@ -447,6 +460,150 @@ export class RawEntityReader {
       return { sql: ` WHERE ${column} = ?`, params: [predicate.eq] };
     }
     return { sql: '', params: [] };
+  }
+
+  /**
+   * The slugs of `type` matching a declarative field filter, or `null` when the
+   * filter selects nothing the type declares.
+   *
+   * 2.0.0 tier K — the replacement for `list_entities`' type-specific `filters`
+   * escape hatch. It used to be implemented by whichever service felt like it
+   * (in practice one: `AcService`, for `status`/`kind`); tier K deletes the
+   * services, and the choice was between deriving the filter from the
+   * declaration and dropping the capability. Dropping it silently is what
+   * `search_entities` refuses `filters` outright to avoid — "returning
+   * unfiltered rows under a parameter that promises filtering is how an agent
+   * acts on deprecated ACs it explicitly excluded" — and that argument does not
+   * get weaker on the tool where the parameter actually worked.
+   *
+   * Same vocabulary as `defaultPredicate`, and for the same reason: equality and
+   * set membership over the type's OWN embedded scalar fields, compiled into a
+   * parameterised `WHERE`. No joins, no cross-entity conditions, no raw-SQL
+   * slot — a module able to hand the host SQL to execute breaks M13's
+   * read-exclusivity invariant however narrow the intended use.
+   *
+   * A key naming no declared, projected field is IGNORED, which is the contract
+   * `list_entities` has always advertised ("unrecognized keys are ignored by
+   * types that don't support them"). Every declared scalar field IS supported
+   * now, so "unrecognized" no longer varies by type.
+   */
+  slugsMatching(
+    type: string,
+    filters: Record<string, unknown> = {},
+    opts: { applyDefaultPredicate?: boolean } = {},
+  ): Set<string> | null {
+    const table = this.resolveTable(type);
+    const module = this.host?.getEntity(type);
+    const schema = module?.data?.schema;
+    if (!table || !schema) return null;
+
+    /**
+     * The type's `defaultPredicate` is where a TRANSPORT list read starts, and
+     * an explicit filter on the same field replaces it — per field, not
+     * wholesale, so naming one field does not silently drop the constraint on
+     * another.
+     *
+     * OPT-IN, and that is the whole point of the flag. `ac` declares
+     * `{ field: 'status', in: ['active'] }` because `AcService.list` defaulted
+     * `status` for the REST route and the MCP tool. It never defaulted anything
+     * for PAGE RENDERING: `<tagged_list type="ac" tags="x"/>` resolves through
+     * this same core, and it has always shown deprecated ACs — there is no
+     * attribute a page author could write to ask for them back, and a release
+     * snapshot of that page would silently lose rows. Applying the default to
+     * every caller made "who is asking" invisible, so the caller says.
+     */
+    const predicate = opts.applyDefaultPredicate ? module?.systemPrompt?.defaultPredicate : undefined;
+    const effective: Record<string, unknown> = {};
+    if (predicate?.field && !Object.hasOwn(filters, predicate.field)) {
+      if (predicate.in?.length) effective[predicate.field] = [...predicate.in];
+      else if (predicate.eq !== undefined) effective[predicate.field] = predicate.eq;
+    }
+    Object.assign(effective, filters);
+
+    const where: string[] = [];
+    const params: unknown[] = [];
+    for (const [field, value] of Object.entries(effective)) {
+      if (value === undefined) continue;
+      // `Object.hasOwn`, not a truthiness check on the lookup: `filters` arrives
+      // from a query string or a tool call, so `?valueOf=1` would otherwise
+      // resolve to `Object.prototype.valueOf`, pass every guard below, and
+      // compile to `WHERE value_of IN (?)` — a hard SQLite error where the
+      // documented contract is that an unrecognized key is ignored.
+      if (!Object.hasOwn(schema, field)) continue;
+      const node = schema[field]!;
+      if (!isEmbedded(node)) continue;
+      /**
+       * `'all'` on the field carrying the default predicate LIFTS it.
+       *
+       * The sentinel lives here rather than in the REST router so both
+       * transports mean the same thing by it. `list_entities({ filters: {
+       * status: 'all' } })` — the spelling the retired `AcListQuery` used and
+       * the one `ac/plugin.tsx` still sends — compiled to `status IN ('all')`
+       * and matched nothing, so an agent asking for every AC was told the
+       * project has none. An enum that genuinely contains `'all'` keeps the
+       * literal reading.
+       */
+      if (
+        field === predicateFieldOf(module) &&
+        node.kind === 'enum' &&
+        !node.values.includes('all') &&
+        (Array.isArray(value) ? value.length === 1 && value[0] === 'all' : value === 'all')
+      ) {
+        continue;
+      }
+      const column = columnOf(field, node);
+      const values = (Array.isArray(value) ? value : [value])
+        .filter(isFilterScalar)
+        // SQLite has no boolean type and better-sqlite3 refuses a JS boolean
+        // bind outright; the projection stores 0/1 (see `projection-write.ts`).
+        // Without this a declared boolean field turns every filtered request
+        // into a 500 rather than a filtered list.
+        .map((v) => (typeof v === 'boolean' ? (v ? 1 : 0) : v));
+      // An array that held nothing usable is not "match everything" — the caller
+      // named a field and offered no value it could match, so it matches nothing.
+      if (!values.length) return new Set();
+      where.push(`${column} IN (${values.map(() => '?').join(', ')})`);
+      params.push(...values);
+    }
+    if (!where.length) return null;
+
+    const rows = this.db
+      .prepare(`SELECT slug FROM ${table} WHERE ${where.join(' AND ')}`)
+      .all(...params) as Array<{ slug: string }>;
+    return new Set(rows.map((r) => r.slug));
+  }
+
+  /**
+   * `createdAt`/`updatedAt` for a page of slugs, in ONE query.
+   *
+   * The audit columns are `systemManaged`, so no view emits them and the REST
+   * transport re-attaches them itself. Doing that per row meant a second full
+   * `getEntity` — SELECT * plus its `entity_tag` read, plus junction reads for
+   * `endpoint` — for every row the list had already hydrated, doubling the SQL
+   * of every list request to recover two strings.
+   *
+   * Returns an empty map for a type whose table has no audit columns, which is
+   * the same "absent" `hydrate` reports.
+   */
+  systemStamps(type: string, slugs: readonly string[]): Map<string, SystemStamp> {
+    const out = new Map<string, SystemStamp>();
+    const table = this.resolveTable(type);
+    if (!table || !slugs.length) return out;
+    const columns = this.tableColumns(table);
+    if (!columns.includes('created_at') || !columns.includes('updated_at')) return out;
+
+    const rows = this.db
+      .prepare(
+        `SELECT slug, created_at, updated_at FROM ${table}
+         WHERE slug IN (${slugs.map(() => '?').join(', ')})`,
+      )
+      .all(...slugs) as Array<{ slug: string; created_at: string; updated_at: string }>;
+    for (const row of rows) {
+      const createdAt = toIsoMs(row.created_at);
+      const updatedAt = toIsoMs(row.updated_at);
+      if (createdAt && updatedAt) out.set(row.slug, { createdAt, updatedAt });
+    }
+    return out;
   }
 
   listTags(): RawTag[] {
@@ -561,6 +718,18 @@ export class RawEntityReader {
       if (node) {
         if (node.kind === 'object' || node.kind === 'record' || node.kind === 'collection') {
           data[key] = safeJsonContainer(value);
+        } else if (node.kind === 'json') {
+          /**
+           * A `json` column is written by `encode`'s default branch, which is a
+           * plain `JSON.stringify` — so unlike the container kinds above, its
+           * text may be a stringified SCALAR (`"\"#2563eb\""`, `"3"`, `"null"`)
+           * as readily as an object or an array. `safeJsonContainer` only parses
+           * text that starts with `[` or `{`, so it would have left every scalar
+           * arm still quoted, and `entityStore.persist` regenerates the file from
+           * this row — one more escaping layer per write, compounding in the
+           * source of truth.
+           */
+          data[key] = safeJsonValue(value);
         }
         continue;
       }
@@ -664,4 +833,37 @@ function safeJsonContainer(raw: string): unknown {
   } catch {
     return [];
   }
+}
+
+/**
+ * The `json` node's counterpart: ANY JSON value, not just a container.
+ *
+ * Separate from `safeJsonContainer` because the two have opposite fallbacks. A
+ * container column that will not parse is a corrupt collection and `[]` is the
+ * safe reading; an opaque value that will not parse is most likely a value that
+ * was never JSON to begin with (a pre-`json` column, a hand-edited file), and
+ * the safe reading is the text itself — replacing it with `[]` would delete it.
+ */
+function safeJsonValue(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+/**
+ * A value a declarative filter can bind. Anything else — an object, an array of
+ * arrays, `null` — is dropped rather than bound, because SQLite would compare it
+ * by its stringification and quietly match nothing.
+ */
+function isFilterScalar(v: unknown): v is string | number | boolean {
+  return typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+}
+
+/** The field a type's `defaultPredicate` constrains, if it declares one. */
+function predicateFieldOf(module: { systemPrompt?: { defaultPredicate?: { field?: string } } } | null | undefined):
+  | string
+  | undefined {
+  return module?.systemPrompt?.defaultPredicate?.field;
 }

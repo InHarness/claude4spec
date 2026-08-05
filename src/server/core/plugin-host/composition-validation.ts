@@ -249,7 +249,7 @@ export function attachComposition(module: BackendModule, peers: Iterable<Backend
     module.data,
     module.slugPattern,
     module.payloadVersion,
-    module.systemPrompt?.countPredicate,
+    module.systemPrompt?.defaultPredicate,
   );
   return attachResolvedComposition(module, validateComposition(module, peers));
 }

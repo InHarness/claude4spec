@@ -181,7 +181,7 @@ describe('payload upgrades on the disk-load path', () => {
       .post('/api/endpoints')
       .send({ method: 'POST', path: '/api/fresh', summary: 'fresh' });
     expect(created.status).toBe(201);
-    const slug = created.body.slug as string;
+    const slug = created.body.data.slug as string;
 
     expect(readFile(t, 'endpoint', slug).payloadVersion).toBe(2);
     const before = fs.readFileSync(fileOf(t, 'endpoint', slug), 'utf-8');
@@ -219,7 +219,7 @@ describe('a projected collection survives the rebuild that reads it', () => {
     const post = async (url: string, body: unknown) => {
       const res = await request(t.app).post(url).send(body);
       expect(res.status, `${url}: ${JSON.stringify(res.body)}`).toBeLessThan(400);
-      return res.body as { slug: string };
+      return (res.body as { data: { slug: string } }).data;
     };
     const dtos = [
       (await post('/api/dtos', { name: 'AlphaDto', fields: [] })).slug,
@@ -288,7 +288,7 @@ describe('behaviour the per-type restore hooks used to provide', () => {
       store: t.entityStore,
       versions: null,
     });
-    const result = writer.upsert('ui-view', created.body.slug, {
+    const result = writer.upsert('ui-view', created.body.data.slug, {
       name: 'Profile',
       designSystemSlug: 'never-existed',
     }, 'user');
@@ -311,20 +311,20 @@ describe('behaviour the per-type restore hooks used to provide', () => {
       store: t.entityStore,
       versions: null,
     });
-    const result = writer.upsert('endpoint', ep.body.slug, {
+    const result = writer.upsert('endpoint', ep.body.data.slug, {
       method: 'GET',
       path: '/api/things',
       summary: 's',
       linkedDtos: [
-        { dto: dto.body.slug, relation: 'resposne', statusCode: 200 },
-        { dto: dto.body.slug, relation: 'response', statusCode: 200 },
+        { dto: dto.body.data.slug, relation: 'resposne', statusCode: 200 },
+        { dto: dto.body.data.slug, relation: 'response', statusCode: 200 },
       ],
     }, 'user');
 
     expect(result!.warnings?.join() ?? '').toMatch(/expected one of request, response, error/);
     const links = t.db
       .prepare(`SELECT relation FROM endpoint_dto WHERE endpoint_slug = ?`)
-      .all(ep.body.slug) as Array<{ relation: string }>;
+      .all(ep.body.data.slug) as Array<{ relation: string }>;
     // Only the well-formed link survives; the misspelling is not in the table.
     expect(links.map((l) => l.relation)).toEqual(['response']);
   });
@@ -374,7 +374,7 @@ describe('a release restore whose capture cannot be upgraded', () => {
         `UPDATE entity_version SET data = ?, serializer_version = '1'
           WHERE entity_type = 'endpoint' AND entity_slug = ?`,
       )
-      .run(JSON.stringify({ slug: ep.body.slug, path: '/api/kept' }), ep.body.slug);
+      .run(JSON.stringify({ slug: ep.body.data.slug, path: '/api/kept' }), ep.body.data.slug);
     t.db
       .prepare(
         `INSERT INTO spec_release (id, name, description, created_by, created_at)
@@ -383,7 +383,7 @@ describe('a release restore whose capture cannot be upgraded', () => {
       .run();
     t.db
       .prepare(`UPDATE entity_version SET release_id = 7 WHERE entity_slug = ?`)
-      .run(ep.body.slug);
+      .run(ep.body.data.slug);
 
     const releases = new ReleaseService(
       t.db, t.host, t.rawReader, t.versionService, t.tagsService, process.cwd(), t.entityStore,
@@ -393,10 +393,10 @@ describe('a release restore whose capture cannot be upgraded', () => {
       };
     };
 
-    const result = releases.restoreEntity({ releaseId: 7, type: 'endpoint', slug: ep.body.slug });
+    const result = releases.restoreEntity({ releaseId: 7, type: 'endpoint', slug: ep.body.data.slug });
     expect(result.op).toBe('noop');
     expect(result.warnings?.join() ?? '').toMatch(/not restored/);
     // And the live entity is untouched, rather than half-written.
-    expect(t.rawReader.getEntity('endpoint', ep.body.slug)?.data.summary).toBe('kept');
+    expect(t.rawReader.getEntity('endpoint', ep.body.data.slug)?.data.summary).toBe('kept');
   });
 });

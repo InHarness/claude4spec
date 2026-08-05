@@ -21,16 +21,11 @@ import { parseXmlTagsExcludingCode, taggedListVia } from '../../../shared/xml-ta
 import { getExtensionReferenceType } from '../../../shared/reference-extensions.js';
 import { parseHeadings } from '../../services/section-indexer.js';
 import { invalidArgument } from '../errors.js';
+import { classifyVerifies } from '../../entities/ac/classify-verifies.js';
+import { readActiveAcs } from '../../entities/ac/read-acs.js';
 import type { PageSource } from '../page-source.js';
 import type { RootSet } from '../roots.js';
 import type { CheckConsistencyInput, ConsistencyReport, DiscoveryDeps } from '../types.js';
-
-interface AcConsistencyService {
-  listRaw(opts: { status?: string }): Array<{ slug: string; verifies: Array<{ type: string; slug: string }>; tags: string[] }>;
-  classifyVerifies(
-    verifies: Array<{ type: string; slug: string }>,
-  ): Array<{ type: string; slug: string; reason: 'missing' | 'inactive' | 'unknown' }>;
-}
 
 interface BrokenReferenceRow {
   rootId: string;
@@ -277,20 +272,28 @@ export async function checkConsistency(
   const entitiesWithoutAcCoverage: Array<{ type: string; slug: string; severity: ConsistencySeverity }> = [];
   const modulesWithoutAc: Array<{ module: string; severity: ConsistencySeverity }> = [];
 
-  // Rules 9-11 are AC rules by definition, so this is the one place the core
-  // resolves that type by name. It resolves the MODULE, not just the service,
-  // so the "AC does not need AC coverage of itself" exemption below can compare
-  // module identity instead of re-hardcoding the literal a second time.
+  /**
+   * Rules 9-11 are AC rules by definition, so this is the one place the core
+   * resolves that type by name. It resolves the MODULE — which is also the
+   * activity check, since `getEntity` returns null for an inactive type — so the
+   * "AC does not need AC coverage of itself" exemption below can compare module
+   * identity instead of re-hardcoding the literal a second time.
+   *
+   * 2.0.0 tier K: this used to reach `getEntityService('ac')` and cast it to a
+   * two-method interface declared right here. Both methods outlived the service:
+   * `listRaw({status:'active'})` is `readActiveAcs(reader)` (which takes the
+   * `active` default from `ac`'s own `defaultPredicate` rather than restating
+   * it), and `classifyVerifies` is a free function over the host.
+   */
   const acModule = host.getEntity('ac');
-  const acService = acModule ? (host.getEntityService('ac') as unknown as AcConsistencyService | null) : null;
-  if (acService) {
+  if (acModule) {
     const config = readConfig(deps.projectDir);
     const requireAcCoverage = config.consistency.requireAcCoverage;
     const requireModuleAc = config.consistency.requireModuleAc;
-    const activeAcs = acService.listRaw({ status: 'active' });
+    const activeAcs = readActiveAcs(reader);
 
     for (const ac of activeAcs) {
-      for (const broken of acService.classifyVerifies(ac.verifies)) {
+      for (const broken of classifyVerifies(host, ac.verifies)) {
         brokenAcVerifies.push({
           acSlug: ac.slug,
           verifyType: broken.type,
