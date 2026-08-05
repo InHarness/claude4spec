@@ -72,6 +72,36 @@ describe('M40 — flush vs the fs echo', () => {
 });
 
 describe('M40 — fs provider behaviour', () => {
+  it('delete then immediate re-create dispatches both', async () => {
+    // Regression: the DELETE route used to `suppress()`, leaving a token with no
+    // event of its own to consume it. An immediate re-create of the same path then
+    // popped that token and never dispatched — the new file had no version at all.
+    const dir = tmp();
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const file = path.join(dir, 'cycle.md');
+    const ops: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => void ops.push('change'), onUnlink: () => void ops.push('unlink') },
+      { id: 'm17-capture', phase: 'capture', scope: CTX },
+    );
+
+    fs.writeFileSync(file, '# One\n');
+    r.markOrigin(CTX, 'pages:pages', 'cycle.md', 'user');
+    await r.flush(CTX, 'pages:pages', 'cycle.md');
+
+    fs.rmSync(file);
+    r.markOrigin(CTX, 'pages:pages', 'cycle.md', 'user');
+    await r.flush(CTX, 'pages:pages', 'cycle.md', 'unlink');
+
+    fs.writeFileSync(file, '# Two\n');
+    r.markOrigin(CTX, 'pages:pages', 'cycle.md', 'user');
+    await r.flush(CTX, 'pages:pages', 'cycle.md');
+
+    expect(ops).toEqual(['change', 'unlink', 'change']);
+  });
+
   it('a second save inside the self-write window still dispatches', async () => {
     // Regression for the defect that made `capture` lose an edit outright: the
     // route write and the anchor write-back both touch the same file, chokidar

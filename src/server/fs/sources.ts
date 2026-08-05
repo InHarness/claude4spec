@@ -85,7 +85,7 @@ export function boundSuppress(
 export interface SelfWriteMarker {
   markOrigin(relPath: string, actor: WriteActor): void;
   /** Run the reaction chain for this path now, and swallow the fs echo. */
-  flush(relPath: string): Promise<void>;
+  flush(relPath: string, event?: 'add' | 'change' | 'unlink'): Promise<void>;
   suppress(relPath: string): void;
 }
 
@@ -95,14 +95,14 @@ export function boundWriter(
   registrar: {
     markOrigin(source: string, relPath: string, actor: WriteActor): void;
     suppress(source: string, relPath: string): void;
-    flush(source: string, relPath: string): Promise<void>;
+    flush(source: string, relPath: string, event?: 'add' | 'change' | 'unlink'): Promise<void>;
   },
   source: string,
 ): SelfWriteMarker {
   return {
     markOrigin: (relPath, actor) => registrar.markOrigin(source, relPath, actor),
     suppress: (relPath) => registrar.suppress(source, relPath),
-    flush: (relPath) => registrar.flush(source, relPath),
+    flush: (relPath, event) => registrar.flush(source, relPath, event),
   };
 }
 

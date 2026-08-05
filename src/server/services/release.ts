@@ -1512,11 +1512,14 @@ export class ReleaseService {
     if (!target || target.op === 'delete') {
       // Snapshot says page didn't exist — delete current file if present.
       if (await this.pagesService.exists(input.path)) {
-        // A delete is the one case `capture` cannot author on its own — the file
-        // is gone, so the tombstone content has to be written from here.
-        this.writerFor('pages')?.suppress(input.path);
+        // Same as the pages route: mark, remove, flush. A suppress here would
+        // linger and swallow an immediate re-create; `capture` synthesizes the
+        // tombstone from the last recorded version.
+        const deleteWriter = this.writerFor('pages');
+        deleteWriter?.markOrigin(input.path, 'user');
         await this.pagesService.remove(input.path);
-        await this.pageVersions.recordVersion(input.path, 'delete', 'user');
+        if (deleteWriter) await deleteWriter.flush(input.path, 'unlink');
+        else await this.pageVersions.recordVersion(input.path, 'delete', 'user');
         return { path: input.path, op: 'deleted' };
       }
       return { path: input.path, op: 'noop' };

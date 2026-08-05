@@ -184,18 +184,14 @@ export function pagesRouter(
           /* ignore */
         }
       }
-      // A delete is the one case capture cannot reconstruct on its own: the file
-      // is gone, so the last known content has to come from here. Suppress the
-      // event and record the tombstone directly.
-      rt.writer?.suppress(relPath);
+      // Deletes go through the same markOrigin + flush path as every other server
+      // write. They must NOT suppress: a suppress token issued here has no event
+      // of its own to be consumed by if the file is re-created immediately, and
+      // would then swallow that re-create (no version row at all). `capture`
+      // authors the tombstone, synthesizing the content from the last version.
+      rt.writer?.markOrigin(relPath, 'user');
       await rt.pages.remove(relPath);
-      if (pageVersions) {
-        try {
-          await pageVersions.recordVersion(relPath, 'delete', 'user', lastContent, undefined, rt.root.id);
-        } catch (err) {
-          console.warn(`[file-version] delete capture failed for ${relPath}:`, (err as Error).message);
-        }
-      }
+      await rt.writer?.flush(relPath, 'unlink');
       res.json({ ok: true });
     } catch (err) {
       next(err);

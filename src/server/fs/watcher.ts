@@ -175,7 +175,7 @@ export interface ScopedWatchRegistrar {
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions): void;
   markOrigin(source: string, relPath: string, actor: WatchActor): void;
   suppress(source: string, relPath: string): void;
-  flush(source: string, relPath: string): Promise<void>;
+  flush(source: string, relPath: string, event?: WatchEventKind): Promise<void>;
   broadcast(event: WsEvent): void;
   isMounted(source: string): boolean;
   dispose(): Promise<void>;
@@ -639,7 +639,7 @@ export class FileWatchRuntime {
       subscribe: (source, handler, opts) => this.subscribe(source, handler, { ...opts, scope }),
       markOrigin: (source, relPath, actor) => this.markOrigin(scope, source, relPath, actor),
       suppress: (source, relPath) => this.suppress(scope, source, relPath),
-      flush: (source, relPath) => this.flush(scope, source, relPath),
+      flush: (source, relPath, event) => this.flush(scope, source, relPath, event),
       broadcast: (event) => this.broadcast(scope, event),
       isMounted: (source) => this.isMounted(source, scope),
       dispose: () => this.disposeScope(scope),
