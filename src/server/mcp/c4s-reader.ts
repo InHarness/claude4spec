@@ -137,14 +137,17 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
   };
 
   /**
-   * `database_table` → `database-table`. A normalization, not a gate: an
+   * Coerce an incoming `type` argument to a string. Deliberately NOT a gate: an
    * unrecognized type falls through to the core, whose `INVALID_TYPE` lists the
    * types that ARE active. Refusing it here would answer with strictly less.
+   *
+   * 0.2.11: this used to also rewrite `database_table` → `database-table`, and
+   * was named `normalizeType` for it. A type id is always kebab-case, so that
+   * was not an alternative spelling but a malformed one — and no other type
+   * received the courtesy, which is precisely what made `database-table`
+   * privileged. Nothing is left to normalize, so the name no longer claims to.
    */
-  const normalizeType = (raw: unknown): string => {
-    const value = String(raw);
-    return value === 'database_table' ? 'database-table' : value;
-  };
+  const asTypeId = (raw: unknown): string => String(raw);
 
   const optionalString = (value: unknown): string | undefined =>
     value === undefined || value === null ? undefined : String(value);
@@ -203,7 +206,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     },
     (discovery, args) =>
       discovery.describeTypes({
-        types: (args.types as string[] | undefined)?.map(normalizeType),
+        types: (args.types as string[] | undefined)?.map(asTypeId),
         view: optionalString(args.view) as ViewKind | undefined,
       }),
   );
@@ -324,7 +327,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     },
     (discovery, args) =>
       discovery.searchEntities({
-        type: normalizeType(args.type),
+        type: asTypeId(args.type),
         query: String(args.query),
         fields: args.fields as string[] | undefined,
         view: args.view as ViewKind | undefined,
@@ -349,7 +352,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     },
     (discovery, args) =>
       discovery.listEntities({
-        type: normalizeType(args.type),
+        type: asTypeId(args.type),
         tags: args.tags as string[] | undefined,
         filter: args.filter as 'and' | 'or' | undefined,
         view: args.view as ViewKind | undefined,
@@ -369,7 +372,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     },
     (discovery, args) =>
       discovery.getEntities({
-        type: normalizeType(args.type),
+        type: asTypeId(args.type),
         slugs: (args.slugs as string[]).map(String),
         view: args.view as ViewKind | undefined,
       }),
@@ -410,7 +413,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     (discovery, args) =>
       discovery.findReferences({
         target: args.target,
-        type: args.type === undefined ? undefined : normalizeType(args.type),
+        type: args.type === undefined ? undefined : asTypeId(args.type),
         slug: optionalString(args.slug),
         anchor: optionalString(args.anchor),
         rootId: optionalString(args.rootId),
@@ -448,7 +451,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
     (discovery, args) =>
       discovery.resolveIdentity({
         query: String(args.query),
-        types: (args.types as string[] | undefined)?.map(normalizeType),
+        types: (args.types as string[] | undefined)?.map(asTypeId),
         limit: optionalNumber(args.limit),
       }),
   );

@@ -16,7 +16,7 @@
  * but after this it should be unreachable.
  */
 
-import { BASELINE_TABLES, COLLISION_EXEMPT_TABLES } from '../../db/baseline-tables.js';
+import { BASELINE_TABLES } from '../../db/baseline-tables.js';
 import {
   HOST_SHARED_TABLES,
   attachResolvedComposition,
@@ -136,7 +136,7 @@ function checkOwnedTable(
         `scopePredicate instead of claiming ownership of it`,
     );
   }
-  if (BASELINE_TABLES.has(table) && !COLLISION_EXEMPT_TABLES.has(table)) {
+  if (BASELINE_TABLES.has(table)) {
     fail(module, `${what} "${table}" belongs to the core baseline schema and cannot be claimed`);
   }
   /**

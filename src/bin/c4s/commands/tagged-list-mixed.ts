@@ -26,18 +26,13 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   }
   const ctx = await createContext(args);
   try {
-    // The seven original buckets are seeded first: a shell pipeline reading
-    // `.endpoints` must keep getting `[]` for a deactivated type rather than
-    // `null`.
-    const grouped: Record<string, unknown[]> = {
-      endpoints: [],
-      dtos: [],
-      'database-tables': [],
-      'ui-views': [],
-      acs: [],
-      'design-systems': [],
-      diagrams: [],
-    };
+    // 0.2.11: no seed. It named seven types unconditionally, so this command
+    // asserted a bucket for `database-tables` whether or not that plugin was
+    // installed, while a plugin type this project DID have got no such courtesy.
+    // Buckets now come from the registry alone; a shell pipeline reading
+    // `.endpoints` for a type this project lacks gets `null` rather than a `[]`
+    // that implies the type exists and is simply empty.
+    const grouped: Record<string, unknown[]> = {};
     for (const type of ctx.reader.listTypes()) {
       grouped[`${type}s`] = listEntitiesAll(ctx.discovery, {
         type,

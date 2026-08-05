@@ -53,6 +53,15 @@ export function getEntityDef<T = unknown>(type: string): EntityDef<T> | null {
   return (clientPluginHost.getEntity(type) as unknown as EntityDef<T> | null) ?? null;
 }
 
-export function listEntityDefs(): EntityDef[] {
-  return Object.values(registry).filter((def): def is EntityDef => Boolean(def));
+/**
+ * The ACTIVE entity types, in display order.
+ *
+ * 0.2.11 — replaces `listEntityDefs()`, which read the local `registry` object
+ * and therefore saw built-ins only: it was blind to exactly the plugin types
+ * `getEntityDef` above had been fixed to resolve. It had no callers left, so
+ * nothing depended on the wrong answer; this is the enumeration counterpart to
+ * `getEntityDef`, reading the same single source of truth.
+ */
+export function listActiveEntityTypes(): EntityType[] {
+  return clientPluginHost.listEntities().map((m) => m.type);
 }

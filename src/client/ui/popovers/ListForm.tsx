@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { ENTITY_TYPES } from '../events.js';
+import { listActiveEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
@@ -50,7 +50,7 @@ export function ListForm({ request, onClose }: PopoverFormProps<'list'>) {
         onChange={(e) => setType(e.target.value as EntityType)}
         style={{ marginBottom: 8 }}
       >
-        {ENTITY_TYPES.map((t) => (
+        {listActiveEntityTypes().map((t) => (
           <option key={t} value={t}>
             {t}
           </option>

@@ -10,11 +10,14 @@
 -- referenced entity tables, so the two could not be separated on a fresh
 -- database. This baseline severs that dependency.
 --
--- WHAT IS NOT HERE. No entity tables. `endpoint`, `dto`, `endpoint_dto`,
--- `ui_view`, `ac`, `design_system` and `diagram` are created by the
--- `backend.migrations` of the module that contributes each type, run from
--- `mountBackend` against the separate `plugin_schema_migrations` ledger. The
--- one exception is `database_table` below.
+-- WHAT IS NOT HERE. No entity tables, and as of 0.2.11 no exceptions. Every
+-- entity table is a GENERATED projection: the host derives it from the type's
+-- logical `data.schema` when the ProjectContext is built, and regenerates rather
+-- than migrates it. `database_table` was the last table created here -- it was
+-- grandfathered because its type comes from an external plugin with no in-repo
+-- module to own the DDL. That exception is what made `database-table` a
+-- privileged type in the migration chain, so it goes: the plugin that
+-- contributes the type also contributes the projection that creates its table.
 --
 -- Also absent: `schema_migrations` (the runner creates it) and
 -- `plugin_schema_migrations` (created lazily by the plugin runner).
@@ -104,20 +107,6 @@ CREATE TABLE chat_thread (
   parent_thread_id                 TEXT REFERENCES chat_thread(id) ON DELETE CASCADE,
   spawned_by_tool_use_id           TEXT,
   plan_path                        TEXT
-);
--- Grandfathered. `database-table` is contributed by an EXTERNAL plugin, so there
--- is no in-repo module whose migrations could own this DDL, and the plugin
--- re-creates the table with IF NOT EXISTS anyway. Dropping it here would make a
--- fresh database without that plugin diverge from every legacy one. It is
--- exempt from schema-ownership collision detection for the same reason.
-CREATE TABLE database_table (
-  slug TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  columns TEXT NOT NULL DEFAULT '[]',
-  indexes TEXT NOT NULL DEFAULT '[]',
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE entity_tag (
   entity_type TEXT NOT NULL,

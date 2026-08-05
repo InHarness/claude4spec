@@ -101,7 +101,7 @@ export function bundleEntityFileMap(modules: readonly BundleEntityModule[]): {
     const claimed = toType.get(file);
     if (claimed !== undefined && claimed !== module.type) {
       throw new DomainError(
-        'BUNDLE_FILE_NAME_COLLISION',
+        'BUNDLE_BASENAME_COLLISION',
         `entity types '${claimed}' and '${module.type}' both map to bundle file '${file}'`,
       );
     }
@@ -152,10 +152,13 @@ export interface BundleManifest {
   /** Build moment — `new Date().toISOString()`, distinct from `release.createdAt`. */
   createdAt: string;
   /**
-   * Per-type serializer versions at capture time (keys: endpoint, dto,
-   * database-table, ui-view, ac, page). The snapshot model carries serializer
-   * versions per-type, not per-entity — see the brief drift patch. M26 reads
-   * the version per type and delegates to the matching deserializer.
+   * Per-type serializer versions at capture time: one key per ACTIVE entity type
+   * (0.2.11 — no longer a fixed six), plus `page`. The snapshot model carries
+   * serializer versions per-type, not per-entity. M26 reads the version per type
+   * and delegates to the matching deserializer.
+   *
+   * Keys stay SINGULAR (the type id), independent of the bundle FILE name, which
+   * is derived separately — see {@link bundleEntityFileName}.
    */
   serializerVersions: Record<string, string>;
 }

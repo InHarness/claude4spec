@@ -159,78 +159,19 @@ export interface ReferenceHit {
   raw: string;
 }
 
-// --- M07: Database Table ---
-
-export interface DatabaseTableForeignKey {
-  table: string;
-  column: string;
-}
-
-export interface DatabaseTableColumn {
-  name: string;
-  type: string;
-  nullable?: boolean;
-  unique?: boolean;
-  pk?: boolean;
-  fk?: DatabaseTableForeignKey;
-  default?: string;
-  enumValues?: string[];
-  description?: string;
-}
-
-export interface DatabaseTableIndex {
-  columns: string[];
-  unique?: boolean;
-  name?: string;
-}
-
-export interface DatabaseTable {
-  slug: string;
-  name: string;
-  description: string | null;
-  columns: DatabaseTableColumn[];
-  indexes: DatabaseTableIndex[];
-  tags: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface DatabaseTableCreateInput {
-  name: string;
-  description?: string;
-  columns?: DatabaseTableColumn[];
-  indexes?: DatabaseTableIndex[];
-  slug?: string;
-  tags?: string[];
-}
-
-export interface DatabaseTableUpdateInput {
-  name?: string;
-  description?: string | null;
-  columns?: DatabaseTableColumn[];
-  indexes?: DatabaseTableIndex[];
-  tags?: string[];
-  newSlug?: string;
-}
-
-export interface DatabaseTableListQuery {
-  tags?: string[];
-  tagFilter?: 'and' | 'or';
-  search?: string;
-  limit?: number;
-  offset?: number;
-}
-
-export interface DatabaseTableDanglingFk {
-  tableSlug: string;
-  columnName: string;
-}
-
-export interface DatabaseTableDeleteResult {
-  deleted: true;
-  brokenReferences: BrokenReference[];
-  danglingFks: DatabaseTableDanglingFk[];
-}
+/*
+ * 0.2.11: the nine `DatabaseTable*` interfaces that stood here are GONE.
+ *
+ * `database-table` is contributed by an EXTERNAL plugin, so the host holding its
+ * field-level schema -- columns, indexes, foreign keys, its create/update/list
+ * shapes -- was the type system's version of the same privilege this release
+ * removes everywhere else. The plugin owns those shapes and declares them in its
+ * own `data.schema`.
+ *
+ * Eight of the nine had no importer anywhere in the repo. The ninth,
+ * `DatabaseTable`, was used by `snapshot-to-entity.ts` to rebuild a deleted
+ * entity's card, which is now one generic adapter that names no type at all.
+ */
 
 // --- UI View ---
 

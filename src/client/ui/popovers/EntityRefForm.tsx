@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { ENTITY_TYPES } from '../events.js';
+import { listActiveEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 // Handles `mention` and `element` popover kinds — both ask for { type, slug }.
@@ -63,7 +63,7 @@ function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
         <div style={{ width: 140 }}>
           <FieldLabel>Type</FieldLabel>
           <SelectInput value={type} onChange={(e) => setType(e.target.value as EntityType)}>
-            {ENTITY_TYPES.map((t) => (
+            {listActiveEntityTypes().map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>
