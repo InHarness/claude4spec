@@ -117,6 +117,8 @@ interface Mount {
   pending: Map<string, { event: WatchEventKind; origin: WatchOrigin }>;
   /** Tail of the dispatch chain, so `flush()` can await work already in flight. */
   inflight: Map<string, Promise<void>>;
+  /** Set on unmount: a dispatch already running stops before its next subscriber. */
+  closed: boolean;
 }
 
 /**
@@ -140,6 +142,7 @@ const SELF_WRITE_WINDOW_MS = 600;
 const DEBOUNCE_MS = 300;
 
 const AWAIT_WRITE_FINISH = { stabilityThreshold: 80, pollInterval: 20 } as const;
+
 
 /**
  * M40 provides the broadcast MECHANISM: an event reaches the WS room of the
@@ -280,6 +283,7 @@ export class FileWatchRuntime {
       timers: new Map(),
       pending: new Map(),
       inflight: new Map(),
+      closed: false,
     };
     this.mounts.set(key, mount);
     if (!this.fsEvents) return;
@@ -309,12 +313,11 @@ export class FileWatchRuntime {
     mount.timers.clear();
     mount.pending.clear();
     await mount.fsw?.close();
-    // Wait for dispatches already running. A ProjectContext closes its database
-    // immediately after disposing its scope, so a handler still suspended in an
-    // await would otherwise resume against a closed handle and leave a
-    // half-written projection behind.
-    await Promise.allSettled([...mount.inflight.values()]);
-    mount.inflight.clear();
+    // Do NOT await in-flight work here: `unmountSource` is on the dispose hot path
+    // and a handler that re-enters the runtime would deadlock against its own
+    // dispatch. The `closed` flag below stops the chain instead, and
+    // `disposeScope` drains with a bound.
+    mount.closed = true;
   }
 
   // ----------------------------------------------------------- subscriptions
@@ -590,6 +593,10 @@ export class FileWatchRuntime {
         const inPhase = matching.filter((s) => s.phase === phase);
         if (inPhase.length === 0) continue;
         for (const sub of orderWithinPhase(inPhase)) {
+          // The context that owns this mount closes its database right after
+          // disposing the scope. Stop advancing the chain the moment the mount is
+          // gone, so no later subscriber runs against a closed handle.
+          if (mount.closed) return;
           try {
             if (event === 'unlink') {
               await sub.handler.onUnlink(mount.scope, mount.source, relPath, origin);
@@ -645,8 +652,8 @@ export class FileWatchRuntime {
    * other contexts' mounts stay active.
    */
   async disposeScope(scope: WatchScope): Promise<void> {
-    const sources = [...this.mounts.values()].filter((m) => m.scope === scope).map((m) => m.source);
-    for (const source of sources) await this.unmountSource(source, scope);
+    const owned = [...this.mounts.values()].filter((m) => m.scope === scope);
+    for (const m of owned) await this.unmountSource(m.source, scope);
     const prefix = `${scope}${SEP}`;
     for (const m of [this.selfHash, this.pendingSuppress, this.originHint] as Array<Map<string, unknown>>) {
       for (const key of [...m.keys()]) if (key.startsWith(prefix)) m.delete(key);
