@@ -4,7 +4,7 @@ import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import { DomainError } from '../services/tags.js';
-import { isRawEntityType } from '../discovery/raw-entity-reader.js';
+
 import type { EntityType } from '../../shared/entities.js';
 import type { EntityStore } from '../services/entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
@@ -204,7 +204,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const existing = deps.tagsService.getEntityTagSlugs(type, slug);
         const union = [...new Set([...existing, ...newTags])];
         deps.tagsService.assignTags(type, slug, union);
-        if (isRawEntityType(type)) deps.entityStore.persist(type, slug);
+        deps.entityStore.persist(type, slug);
         deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
         return ok({ tagged: true, addedCount: union.length - existing.length });
       } catch (err) {
@@ -230,7 +230,7 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerI
         const existing = deps.tagsService.getEntityTagSlugs(type, slug);
         const remaining = existing.filter((s) => !toRemove.has(s));
         deps.tagsService.assignTags(type, slug, remaining);
-        if (isRawEntityType(type)) deps.entityStore.persist(type, slug);
+        deps.entityStore.persist(type, slug);
         deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
         return ok({ untagged: true, removedCount: existing.length - remaining.length });
       } catch (err) {

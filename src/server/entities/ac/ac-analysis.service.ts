@@ -3,11 +3,7 @@ import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { Root } from '../../../shared/types.js';
 import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
 import { readActiveAcs } from './read-acs.js';
-import {
-  type RawEntityReader,
-  isRawEntityType,
-  type RawEntityType,
-} from '../../discovery/raw-entity-reader.js';
+import { type RawEntityReader, type RawEntityType } from '../../discovery/raw-entity-reader.js';
 
 export interface AcAnalysisOptions {
   /** Limit to ACs carrying this tag slug. Omit for no tag filter. */
@@ -115,7 +111,10 @@ export class AcAnalysisService {
         continue;
       }
       const linked = ac.verifies.map((v) => {
-        if (!isRawEntityType(v.type)) {
+        // 0.2.11: "unknown type" is a question for the registry, not for a
+        // seven-literal predicate — which classified every plugin type as
+        // unknown and so made an AC verifying one look unverifiable.
+        if (!reader.host.getEntity(v.type)) {
           return { type: v.type, slug: v.slug, status: 'unknown-type' as const };
         }
         const entity = reader.getEntity(v.type as RawEntityType, v.slug);

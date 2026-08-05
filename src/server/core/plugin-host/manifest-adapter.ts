@@ -27,7 +27,7 @@ import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
 import type { BackendModule, MountContext, PluginMountFn, ProjectPluginHost } from './types.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
-import { isRawEntityType } from '../../discovery/raw-entity-reader.js';
+
 
 /** Thrown when a contribution is structurally invalid. Caught per-package by the loader. */
 export class PluginManifestError extends Error {

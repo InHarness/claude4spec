@@ -5,14 +5,17 @@ import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/d
 import { readProjectionCollection } from '../db/projection-read.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
-export type RawEntityType =
-  | 'endpoint'
-  | 'dto'
-  | 'database-table'
-  | 'ui-view'
-  | 'ac'
-  | 'design-system'
-  | 'diagram';
+/**
+ * An entity type id, kebab-case. 0.2.11: a plain `string`, not a union.
+ *
+ * The union used to name seven literals, which made "is this a real type?" a
+ * question the host answered from a constant instead of from its own registry —
+ * the exact privilege 0.2.11 removes. There is no set of "built-in types": a
+ * type is real iff a module contributes it, and whether it is usable is a
+ * question for `host.getEntity(type)` (active) or `host.partition()` (the three
+ * states). The alias survives only to keep call sites readable.
+ */
+export type RawEntityType = string;
 
 export interface RawEntity {
   type: string;
@@ -75,37 +78,21 @@ export interface SectionEntityRef {
   relation: string;
 }
 
-const ENTITY_TABLES: Record<RawEntityType, string> = {
-  endpoint: 'endpoint',
-  dto: 'dto',
-  'database-table': 'database_table',
-  'ui-view': 'ui_view',
-  ac: 'ac',
-  'design-system': 'design_system',
-  diagram: 'diagram',
-};
-
-const ALL_ENTITY_TYPES: RawEntityType[] = [
-  'endpoint',
-  'dto',
-  'database-table',
-  'ui-view',
-  'ac',
-  'design-system',
-  'diagram',
-];
-
-export function isRawEntityType(value: string): value is RawEntityType {
-  return (
-    value === 'endpoint' ||
-    value === 'dto' ||
-    value === 'database-table' ||
-    value === 'ui-view' ||
-    value === 'ac' ||
-    value === 'design-system' ||
-    value === 'diagram'
-  );
-}
+/*
+ * 0.2.11: `ENTITY_TABLES`, `ALL_ENTITY_TYPES` and `isRawEntityType` are GONE.
+ *
+ * All three were the same mistake wearing three hats — the host answering
+ * "which types exist?" and "what table backs this type?" from a constant that
+ * had to be hand-edited whenever a module was added, and that named
+ * `database-table` (an external plugin's type) as though it were the host's.
+ *
+ * The replacements are the registry itself: `compositionOf(host.getEntity(type))
+ * ?.mainTable` for the table, `listTypes()` for the vocabulary, and
+ * `host.getEntity(type) != null` for "is this type usable here?". There is no
+ * host-less fallback, deliberately: a reader with no registry cannot answer any
+ * of those questions truthfully, so `host` is now a required constructor
+ * argument rather than a value to paper over.
+ */
 
 export class RawEntityReader {
   constructor(
@@ -122,46 +109,45 @@ export class RawEntityReader {
      */
     readonly db: Database.Database,
     /**
-     * M17: write-path capture needs to read a plugin-contributed type's raw
-     * row before snapshotting, not just the 7 core types. Optional — callers
-     * that only ever touch core types (CLI tools, reference-tools,
-     * ac-analysis) keep working unchanged without a host.
+     * M17: write-path capture needs to read a plugin-contributed type's raw row
+     * before snapshotting, not just the types the host happens to ship.
+     *
+     * 0.2.11 — REQUIRED. It was optional while a static `ENTITY_TABLES` map
+     * could answer for the seven core types; with that map gone, a host-less
+     * reader has no way to resolve a table or enumerate types, and would have to
+     * either throw on first use or silently answer nothing. Every production
+     * call site already passed a host (`c4s-mcp.ts`, `bin/c4s/context.ts`,
+     * `project-host.ts`, `project-context.ts`), so requiring it costs nothing
+     * and turns a runtime failure into a compile-time one.
      *
      * 0.2.2 — public for the same reason as `db` above: a module's restore path
      * needs the service resolver (`getEntityService`) to drive its own auxiliary
      * writes, and `RestoreContext` carries the reader and the writer, nothing
      * else.
      */
-    readonly host?: ProjectPluginHost,
+    readonly host: ProjectPluginHost,
   ) {}
 
   /**
    * Resolves the SQL table for `type` — and only if that table actually exists.
    *
-   * The name comes from the static `ENTITY_TABLES` map (identical behavior/perf
-   * for the 7 core types) or, for a plugin type, from
-   * `host.getEntity(type)?.table` — the same `EntityModuleManifest.table` field
-   * `auto-schema.ts#resolveTable` already uses for schema introspection.
-   * `getEntity` (not `getAvailable`) so an inactive/deactivated plugin type
-   * resolves to nothing here too, matching every other host-gated read.
+   * The name comes from the module's own composition descriptor —
+   * `compositionOf(host.getEntity(type))?.mainTable`. `getEntity` (not
+   * `getAvailable`) so an inactive/deactivated type resolves to nothing here
+   * too, matching every other host-gated read.
    *
-   * 0.2.2 — the EXISTENCE check is the load-bearing half, and it is new. A name
-   * in that static map used to imply a table, because the host's own migration
-   * chain created all seven unconditionally. Now every entity table is created
-   * by the module that owns it, and two of those modules live in a builtin
-   * envelope the host loads FAIL-SOFT: a missing or unimportable
-   * `dist/plugins/…` bundle leaves `endpoint` and `dto` with no module and no
-   * table, while this map still happily answers `'endpoint'`. Every read then
-   * threw `no such table` — `find_by_tag`, a mixed `<tagged_list>` on a page,
-   * `listSlugs` — where the design says such a type is simply ABSENT. Guarding
-   * one caller (`count`) fixed one symptom; guarding the resolver fixes the
-   * class, and keeps `hasTable` honest for the callers that must fail loudly.
+   * 0.2.2 — the EXISTENCE check is the load-bearing half. A registered module
+   * names a table, but naming it does not create it: modules living in a builtin
+   * envelope are loaded FAIL-SOFT, so a missing or unimportable `dist/plugins/…`
+   * bundle leaves the type with no table while the descriptor still answers with
+   * a name. Every read then threw `no such table` — `find_by_tag`, a mixed
+   * `<tagged_list>` on a page, `listSlugs` — where the design says such a type is
+   * simply ABSENT. Guarding one caller (`count`) fixed one symptom; guarding the
+   * resolver fixes the class, and keeps `hasTable` honest for callers that must
+   * fail loudly.
    */
   private resolveTable(type: string): string | undefined {
-    // 0.2.4: the descriptor is the source; ENTITY_TABLES survives only as the
-    // host-less fallback and is deleted once every reader is built with a host.
-    const table =
-      compositionOf(this.host?.getEntity(type))?.mainTable ?? ENTITY_TABLES[type as RawEntityType];
+    const table = compositionOf(this.host.getEntity(type))?.mainTable;
     if (!table) return undefined;
     return this.tableExists(table) ? table : undefined;
   }
@@ -348,7 +334,6 @@ export class RawEntityReader {
    * nothing would silently empty those sweeps rather than fail them.
    */
   listTypes(): string[] {
-    if (!this.host) return [...ALL_ENTITY_TYPES];
     return this.host.listEntities().map((m) => m.type);
   }
 
@@ -366,7 +351,7 @@ export class RawEntityReader {
    * `listSlugs`, and for the same reason.
    */
   readCollection(type: string, slug: string, field: string): unknown[] {
-    const module = this.host?.getEntity(type);
+    const module = this.host.getEntity(type);
     const node = module?.data?.schema?.[field];
     if (!module || !node || node.kind !== 'collection') return [];
     return readProjectionCollection(this.db, module, field, node, slug);
@@ -444,7 +429,7 @@ export class RawEntityReader {
    * must not be the thing that throws.
    */
   private compileDefaultPredicate(type: string): { sql: string; params: unknown[] } {
-    const module = this.host?.getEntity(type);
+    const module = this.host.getEntity(type);
     const predicate = module?.systemPrompt?.defaultPredicate;
     if (!predicate?.field) return { sql: '', params: [] };
     const node = module?.data?.schema?.[predicate.field];
@@ -493,7 +478,7 @@ export class RawEntityReader {
     opts: { applyDefaultPredicate?: boolean } = {},
   ): Set<string> | null {
     const table = this.resolveTable(type);
-    const module = this.host?.getEntity(type);
+    const module = this.host.getEntity(type);
     const schema = module?.data?.schema;
     if (!table || !schema) return null;
 
@@ -642,21 +627,17 @@ export class RawEntityReader {
       countMap.set(row.slug, entry);
     }
 
+    const zeroCounts: RawTagCounts = Object.fromEntries(active.map((t) => [t, 0]));
+
     return rows.map((r) => ({
       slug: r.slug,
       name: r.name,
       color: r.color,
       description: r.description,
-      counts:
-        countMap.get(r.slug) ?? {
-          endpoint: 0,
-          dto: 0,
-          'database-table': 0,
-          'ui-view': 0,
-          ac: 0,
-          'design-system': 0,
-          diagram: 0,
-        },
+      // A tag with no assignments at all: zero for every ACTIVE type, rather
+      // than for a frozen list of seven that both omitted plugin types and
+      // invented counts for types this project may not have.
+      counts: countMap.get(r.slug) ?? zeroCounts,
     }));
   }
 
@@ -765,7 +746,7 @@ export class RawEntityReader {
     const cached = this.embeddedColumnCache.get(type);
     if (cached !== undefined) return cached;
 
-    const schema = this.host?.getEntity(type)?.data?.schema;
+    const schema = this.host.getEntity(type)?.data?.schema;
     let map: Map<string, FieldNode> | null = null;
     if (schema) {
       map = new Map();

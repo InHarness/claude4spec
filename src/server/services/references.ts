@@ -9,7 +9,7 @@ import type { PagesService } from './pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { EntityStore } from './entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
-import { isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
+import { type RawEntityType } from '../discovery/raw-entity-reader.js';
 import { findReferences as findReferencesCore } from '../../core/references/index.js';
 import type { PagesSource, ReferencePage } from '../../core/references/index.js';
 

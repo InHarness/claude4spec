@@ -3,15 +3,19 @@ import type { GitCommitStatus, GitSyncField } from './git.js';
 
 export type { TodoItem, UsageStats };
 
-export type EntityType =
-  | 'endpoint'
-  | 'dto'
-  | 'database-table'
-  | 'ui-view'
-  | 'ac'
-  | 'design-system'
-  | 'diagram'
-  | 'section';
+/**
+ * An entity type id, kebab-case — plus the pseudo-type `section`, which is not
+ * an entity but shares the versioning and reference surfaces.
+ *
+ * 0.2.11: a plain `string`, not a union, for the same reason as
+ * {@link RawEntityType} on the server. The union enumerated seven types the host
+ * happened to know about, three of which (`endpoint`, `dto`, `database-table`)
+ * are contributed by plugins the host must not name. Nearly every use was
+ * already `type as EntityType` on a string the registry had just validated, so
+ * the union bought no safety — it only made plugin types unrepresentable in the
+ * very APIs meant to carry them.
+ */
+export type EntityType = string;
 export type ChangedBy = 'user' | 'agent';
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
