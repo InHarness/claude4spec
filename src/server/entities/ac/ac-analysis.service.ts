@@ -1,11 +1,10 @@
 import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
-import type { Database } from 'better-sqlite3';
-import type { AcService } from './service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { Root } from '../../../shared/types.js';
 import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
+import { readActiveAcs } from './read-acs.js';
 import {
-  RawEntityReader,
+  type RawEntityReader,
   isRawEntityType,
   type RawEntityType,
 } from '../../discovery/raw-entity-reader.js';
@@ -44,8 +43,13 @@ export interface AcAnalysisResult {
 }
 
 export interface AcAnalysisDeps {
-  acService: AcService;
-  db: Database;
+  /**
+   * 2.0.0 tier K — was `acService: AcService` + `db: Database`, the second only
+   * so this service could build its OWN `RawEntityReader` to hydrate the
+   * verified entities. One injected reader does both jobs, and the audit is
+   * read-only, so it is also the whole of what this needs.
+   */
+  reader: RawEntityReader;
   cwd: string;
   /**
    * 0.2.8 (A19): the project's effective page roots, needed to resolve the SAME FS path
@@ -84,8 +88,8 @@ export class AcAnalysisService {
       };
     }
 
-    const allActive = this.deps.acService.listRaw({ status: 'active' });
-    let targets = allActive;
+    const reader = this.deps.reader;
+    let targets = readActiveAcs(reader);
     if (opts.ac_slug) {
       targets = targets.filter((a) => a.slug === opts.ac_slug);
     }
@@ -97,7 +101,6 @@ export class AcAnalysisService {
       return { issues: [], analyzed_count: 0, skipped_count: 0, skipped_reasons: [] };
     }
 
-    const reader = new RawEntityReader(this.deps.db);
     const skipped_reasons: AcSkippedEntry[] = [];
     const dossier: Array<{
       slug: string;

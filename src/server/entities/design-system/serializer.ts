@@ -6,7 +6,7 @@ import type {
   SerializationContribution,
 } from '../../serialization/types.js';
 import type { DesignMode, TokenGroup, TokenValue } from '../../../shared/entities.js';
-import { parseGroups, parseModes, resolve } from './service.js';
+import { parseGroups, parseModes, resolve } from '../../../shared/design-system.js';
 import { designSystemPayloadV1ToV2 } from './upgrades.js';
 
 // ─── snapshot shape (committed file format) ─────────────────────────────────

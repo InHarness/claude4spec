@@ -9,19 +9,20 @@
  * than by an index, so a client can add or drop one link without reading and
  * rewriting the whole array.
  *
- * They still answer with the whole updated endpoint, unwrapped — the shape
- * `endpointsApi.linkDto`/`unlinkDto` already expects — rather than the generated
- * router's `{ data }` envelope. That is deliberate for now: K3 re-expresses both
- * as generic collection writes when `EndpointService` is deleted, and moving the
- * envelope in the same commit as the service would put two unrelated reasons for
- * the client to change into one diff.
+ * WHAT THEY ANSWER CHANGED, and deliberately. They used to return the whole
+ * updated endpoint, which the client seeded straight into its detail cache. That
+ * made this file a SECOND spelling of "an endpoint, serialized" — one that had
+ * to keep agreeing with `GET /api/endpoints/:slug` forever, in a plugin, with no
+ * test comparing the two. It now answers `{ linked }` / `{ unlinked }`, the same
+ * shape the equivalent MCP tools answer, and the client invalidates its detail
+ * query so the refetch goes through the one canonical read.
  */
 
 import { Router } from 'express';
-import type { EndpointService } from './services.js';
 import { errorHandler } from '../../../host-kit/errors.js';
+import { linkDto, unlinkDto, type LinkDtoDeps } from './link-dto.js';
 
-export function endpointsRouter(endpoints: EndpointService): Router {
+export function endpointsRouter(deps: LinkDtoDeps): Router {
   const router = Router();
 
   router.post('/:slug/dtos', (req, res, next) => {
@@ -36,13 +37,8 @@ export function endpointsRouter(endpoints: EndpointService): Router {
         typeof body.statusCode === 'number' && Number.isInteger(body.statusCode)
           ? body.statusCode
           : null;
-      const updated = endpoints.linkDto(
-        req.params.slug,
-        body.dtoSlug,
-        body.relation as 'request' | 'response' | 'error',
-        statusCode
-      );
-      res.status(201).json(updated);
+      linkDto(deps, req.params.slug, body.dtoSlug, body.relation as 'request' | 'response' | 'error', statusCode);
+      res.status(201).json({ linked: true });
     } catch (err) {
       next(err);
     }
@@ -53,13 +49,14 @@ export function endpointsRouter(endpoints: EndpointService): Router {
       const q = req.query.statusCode;
       const statusCode =
         typeof q === 'string' && q !== '' && Number.isInteger(Number(q)) ? Number(q) : null;
-      const updated = endpoints.unlinkDto(
+      unlinkDto(
+        deps,
         req.params.slug,
         req.params.dtoSlug,
         req.params.relation as 'request' | 'response' | 'error',
-        statusCode
+        statusCode,
       );
-      res.json(updated);
+      res.json({ unlinked: true });
     } catch (err) {
       next(err);
     }

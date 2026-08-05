@@ -178,20 +178,27 @@ describe('overlay-loader', () => {
     expect(typeof mod?.backend?.mount).toBe('function');
   });
 
-  // Same bug class: mcpServer declared without service must be REJECTED at load
-  // time (PLUGIN_INVALID_MANIFEST), not silently registered with no mount.
-  // (Was `crud` without service until 2.0.0 tier K removed the `crud` slot.)
-  it('rejects an overlay entity declaring mcpServer without service', async () => {
-    const url = makePkg('invalid-pkg');
-    const invalidEntity: EntityContribution = {
+  /**
+   * 2.0.0 tier K — this used to assert PLUGIN_INVALID_MANIFEST. A custom MCP
+   * server with no `service` is now the ordinary case for a declarative type
+   * (the tool needs the manifest and the reader, not a CRUD object), so the
+   * overlay must LOAD it. Reversed rather than deleted: the file is where
+   * "which manifests does the loader accept" is pinned, and silently dropping
+   * the case would leave that question unanswered for the shape plugins now
+   * actually ship.
+   */
+  it('loads an overlay entity declaring mcpServer without service', async () => {
+    const url = makePkg('mcp-only-pkg');
+    const mcpOnlyEntity: EntityContribution = {
       ...entity('widget'),
       backend: { mcpServer: () => ({}) as never }, // no `service`
     };
     const res = await loadProjectOverlay(
       cwd,
-      fakeImporter({ [url]: { manifest: manifest({ contributes: { entities: [invalidEntity] } }) } }),
+      fakeImporter({ [url]: { manifest: manifest({ contributes: { entities: [mcpOnlyEntity] } }) } }),
     );
-    expect(res.records[0]).toMatchObject({ status: 'failed', code: 'PLUGIN_INVALID_MANIFEST' });
-    expect(res.overlay?.listLocal() ?? []).toEqual([]);
+    expect(res.records[0]).toMatchObject({ status: 'loaded' });
+    const mod = res.overlay?.listLocal().find((m) => m.type === 'widget');
+    expect(typeof mod?.backend?.mount).toBe('function');
   });
 });

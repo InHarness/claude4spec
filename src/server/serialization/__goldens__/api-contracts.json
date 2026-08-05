@@ -139,7 +139,8 @@
           "fields": [
             {
               "name": "nr",
-              "type": "number"
+              "type": "number",
+              "required": false
             }
           ],
           "tags": []
@@ -182,7 +183,8 @@
           "fields": [
             {
               "name": "message",
-              "type": "string"
+              "type": "string",
+              "required": false
             }
           ],
           "tags": []
@@ -254,6 +256,7 @@
     "fields": [
       {
         "name": "message",
+        "required": false,
         "type": "string"
       }
     ],
@@ -270,44 +273,56 @@
   "dto/error-dto/single_element": {
     "type": "dto",
     "slug": "error-dto",
+    "tags": [],
     "name": "ErrorDto",
     "description": null,
     "fields": [
       {
         "name": "message",
-        "type": "string"
+        "type": "string",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "single_element"
   },
   "dto/error-dto/element_list_item": {
     "type": "dto",
     "slug": "error-dto",
+    "tags": [],
     "name": "ErrorDto",
     "description": null,
     "fields": [
       {
         "name": "message",
-        "type": "string"
+        "type": "string",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "element_list_item"
   },
   "dto/error-dto/tagged_list_item": {
     "type": "dto",
     "slug": "error-dto",
+    "tags": [],
     "name": "ErrorDto",
     "description": null,
     "fields": [
       {
         "name": "message",
-        "type": "string"
+        "type": "string",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "tagged_list_item"
   },
   "dto/error-dto/detail": {
     "type": "dto",
@@ -317,7 +332,8 @@
     "fields": [
       {
         "name": "message",
-        "type": "string"
+        "type": "string",
+        "required": false
       }
     ],
     "examples": [],
@@ -339,6 +355,7 @@
     "fields": [
       {
         "name": "nr",
+        "required": false,
         "type": "number"
       }
     ],
@@ -355,44 +372,56 @@
   "dto/order-dto/single_element": {
     "type": "dto",
     "slug": "order-dto",
+    "tags": [],
     "name": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
         "name": "nr",
-        "type": "number"
+        "type": "number",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "single_element"
   },
   "dto/order-dto/element_list_item": {
     "type": "dto",
     "slug": "order-dto",
+    "tags": [],
     "name": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
         "name": "nr",
-        "type": "number"
+        "type": "number",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "element_list_item"
   },
   "dto/order-dto/tagged_list_item": {
     "type": "dto",
     "slug": "order-dto",
+    "tags": [],
     "name": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
         "name": "nr",
-        "type": "number"
+        "type": "number",
+        "required": false
       }
     ],
     "examples": [],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "tagged_list_item"
   },
   "dto/order-dto/detail": {
     "type": "dto",
@@ -402,7 +431,8 @@
     "fields": [
       {
         "name": "nr",
-        "type": "number"
+        "type": "number",
+        "required": false
       }
     ],
     "examples": [],
@@ -455,6 +485,7 @@
   "dto/user-dto/single_element": {
     "type": "dto",
     "slug": "user-dto",
+    "tags": [],
     "name": "UserDto",
     "description": "A user",
     "fields": [
@@ -479,11 +510,14 @@
         }
       }
     ],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "single_element"
   },
   "dto/user-dto/element_list_item": {
     "type": "dto",
     "slug": "user-dto",
+    "tags": [],
     "name": "UserDto",
     "description": "A user",
     "fields": [
@@ -508,11 +542,14 @@
         }
       }
     ],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "element_list_item"
   },
   "dto/user-dto/tagged_list_item": {
     "type": "dto",
     "slug": "user-dto",
+    "tags": [],
     "name": "UserDto",
     "description": "A user",
     "fields": [
@@ -537,7 +574,9 @@
         }
       }
     ],
-    "tags": []
+    "_generic": true,
+    "_type": "dto",
+    "_view": "tagged_list_item"
   },
   "dto/user-dto/detail": {
     "type": "dto",

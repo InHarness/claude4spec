@@ -83,7 +83,16 @@ export type { SlugPattern, SlugStep } from '../shared/plugin-host/slug-pattern.j
 // `mount(ctx)` body call host methods without casts.
 export interface MountContext {
   app: any;
-  db: any;
+  /**
+   * 2.0.0 (A.8) — `db` was REMOVED. A raw better-sqlite3 handle let a plugin
+   * write a row the host never validated, in a shape its own `data.schema` does
+   * not describe. `reader` is the read half (read-only by construction) and
+   * `crud` is the host's declarative write path — the SAME one `/api/{type}s`
+   * uses, so a plugin's own route and the generated router cannot disagree
+   * about what a write means.
+   */
+  reader: any;
+  crud: any;
   host: any;
   cwd: string;
   ws: { broadcast(msg: unknown): void };

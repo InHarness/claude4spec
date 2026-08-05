@@ -14,6 +14,9 @@ import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
 import { entitiesRouter } from '../core/plugin-host/entities-router.js';
 import { generatedCrudRouter } from '../core/plugin-host/generated-crud-router.js';
+import { registerRefRewriteListeners } from '../core/plugin-host/manifest-adapter.js';
+import { genericCreate, genericDelete, genericUpdate } from '../core/plugin-host/generic-crud.js';
+import type { CrudFacade } from '../core/plugin-host/types.js';
 import { referencesRouter } from '../routes/references.js';
 import { TagsService, DomainError } from '../services/tags.js';
 import { VersionService } from '../services/versions.js';
@@ -613,13 +616,39 @@ async function buildInner(
     );
   }
 
-  // Mount all active backend modules — each plugin constructs its own service,
-  // mounts its router, registers its MCP server, and registers its entity
-  // service via the supplied MountContext. Inactive plugins are skipped
+  /**
+   * 2.0.0 (A.8) — the declarative write door, built BEFORE `mountBackend` so a
+   * plugin's own route can use the same one `/api/{type}s` does.
+   *
+   * Every ingredient already exists by here; only `discovery` (constructed
+   * further down for the generated router's READ path) does not, and the write
+   * functions never touch it. The generated-router deps below extend this object
+   * rather than rebuild it, so the two cannot drift apart.
+   */
+  const crudDeps = {
+    host: pluginHost,
+    reader: rawReader,
+    tags: tagsService,
+    store: entityStore,
+    references: referencesService,
+    projection: { db: db.handle, store: entityStore, versions: versionService },
+  };
+
+  /** The three write verbs, bound to `crudDeps`. See `CrudFacade`. */
+  const crudFacade: CrudFacade = {
+    create: (type, input, actor) => genericCreate(crudDeps, type, input, actor),
+    update: (type, slug, input, actor) => genericUpdate(crudDeps, type, slug, input, actor),
+    delete: (type, slug, actor) => genericDelete(crudDeps, type, slug, actor),
+  };
+
+  // Mount all active backend modules — each plugin constructs its own domain
+  // helper, mounts its router, registers its MCP server, and registers that
+  // helper via the supplied MountContext. Inactive plugins are skipped
   // (config.entities).
   pluginHost.mountBackend({
     app: router,
-    db: db.handle,
+    reader: rawReader,
+    crud: crudFacade,
     host: pluginHost,
     cwd,
     roots: effectiveRoots,
@@ -632,6 +661,16 @@ async function buildInner(
     registerEntityService: (type, service) => pluginHost.registerEntityService(type, service),
     registerRenameListener: (fn) => pluginHost.registerRenameListener(fn),
   });
+
+  /**
+   * 2.0.0 (A.8) — rename propagation, registered from the declaration rather
+   * than from each type's synthesized `mount`. One listener per module whose
+   * schema carries a `ref` flag, over every registered module — including ones
+   * that write `mount` by hand, which previously needed a composed closure to
+   * get the same behaviour. Runs after `mountBackend` so a module's own listener
+   * (if it registered one) still sees the event first.
+   */
+  registerRefRewriteListeners(pluginHost, db.handle, entityStore);
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
   // Registered as a factory: a fresh instance is built per agent turn so
@@ -850,23 +889,13 @@ async function buildInner(
    *
    * Mounted HERE and not in `synthesizeMount` for one reason: it reads through
    * the M39 core, and `rawReader`/`discovery` do not exist yet at
-   * `mountBackend` time. That ordering also gives the staging this tier needs —
-   * `mountBackend` above already registered each type's own `backend.routes`
-   * under the same prefix, and Express matches in registration order, so a
-   * domain router still serving a CRUD verb keeps serving it. Tier K deletes
-   * those six routers and every built-in type lands on this one with no further
-   * change.
+   * `mountBackend` time.
+   *
+   * Tier K deleted the six per-type routers, so every built-in type lands here.
+   * The two `endpoint` relation routes that remain are mounted ahead of this one
+   * (registration order) and are not CRUD verbs, so they do not shadow anything.
    */
-  const genericCrudDeps = {
-    host: pluginHost,
-    reader: rawReader,
-    tags: tagsService,
-    store: entityStore,
-    references: referencesService,
-    projection: { db: db.handle, store: entityStore, versions: versionService },
-    discovery,
-    ws,
-  };
+  const genericCrudDeps = { ...crudDeps, discovery, ws };
   for (const module of pluginHost.listEntities()) {
     if (!module.data?.schema) continue;
     router.use(module.pathPrefix, generatedCrudRouter(genericCrudDeps, module));

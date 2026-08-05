@@ -25,18 +25,24 @@ const { resolveAgentExecutionScope } = await import('../../services/agent-execut
 describe('AcAnalysisService — adapter execution scope (A19)', () => {
   let cwd: string;
 
-  const deps = () =>
-    ({
-      cwd,
-      roots: [],
-      host: { getEntity: () => ({}) },
-      db: {},
-      acService: {
-        listRaw: () => [
-          { slug: 'ac-1', text: 'the thing works', kind: 'behavior', tags: [], verifies: [] },
-        ],
-      },
-    }) as never;
+  /**
+   * 2.0.0 tier K — the fixture is a READER, not an `AcService` plus a raw `db`
+   * handle. `readActiveAcs` asks it three questions (which slugs match the
+   * declared `status` default, the row, the `verifies` collection) and the
+   * dossier builder asks it for each verified entity; this stub answers exactly
+   * those and nothing else.
+   */
+  const reader = (verifies: Array<{ type: string; slug: string }>) => ({
+    slugsMatching: () => new Set(['ac-1']),
+    listSlugs: () => ['ac-1'],
+    getEntity: (type: string, slug: string) =>
+      type === 'ac'
+        ? { type, slug, tags: [], data: { text: 'the thing works', kind: 'behavior' } }
+        : { type, slug, tags: [], data: {} },
+    readCollection: () => verifies,
+  });
+
+  const deps = () => ({ cwd, roots: [], host: { getEntity: () => ({}) }, reader: reader([]) }) as never;
 
   beforeEach(() => {
     cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ac-analysis-')));
@@ -52,26 +58,13 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
   });
 
   /** An AC with no `verifies` is skipped before the adapter runs — give it one that resolves. */
-  const depsWithResolvableAc = () => {
-    const d = deps() as unknown as Record<string, unknown>;
-    (d.acService as { listRaw: () => unknown[] }).listRaw = () => [
-      {
-        slug: 'ac-1',
-        text: 'the thing works',
-        kind: 'behavior',
-        tags: [],
-        verifies: [{ type: 'endpoint', slug: 'e-1' }],
-      },
-    ];
-    // RawEntityReader reads through the `db` handle; stub the one query it makes.
-    d.db = {
-      prepare: () => ({
-        get: () => ({ slug: 'e-1', type: 'endpoint', data_json: '{}', status: 'active' }),
-        all: () => [],
-      }),
-    };
-    return d as never;
-  };
+  const depsWithResolvableAc = () =>
+    ({
+      cwd,
+      roots: [],
+      host: { getEntity: () => ({}) },
+      reader: reader([{ type: 'endpoint', slug: 'e-1' }]),
+    }) as never;
 
   it('passes the resolved path scope, the sandbox and planMode to adapter.execute', async () => {
     await new AcAnalysisService(depsWithResolvableAc()).analyze();

@@ -9,6 +9,13 @@ import { registerAllPlugins } from '../../src/server/serialization/registerAll.j
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
 import { generatedCrudRouter } from '../../src/server/core/plugin-host/generated-crud-router.js';
+import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/manifest-adapter.js';
+import {
+  genericCreate,
+  genericDelete,
+  genericUpdate,
+} from '../../src/server/core/plugin-host/generic-crud.js';
+import type { CrudFacade } from '../../src/server/core/plugin-host/types.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
 import { artifactsRouter } from '../../src/server/routes/artifacts.js';
 import { PlanService } from '../../src/server/services/plan.js';
@@ -107,10 +114,30 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    */
   applyProjection(db, host.listAvailable());
 
+  /**
+   * 2.0.0 (A.8) — the same two handles `buildProjectContext` puts on the mount
+   * context, built here for the same reason: `ctx.db` is gone, and a plugin's
+   * own router writes through the host's declarative door.
+   */
+  const crudDeps = {
+    host,
+    reader: rawReader,
+    tags: tagsService,
+    store: entityStore,
+    references: referencesService,
+    projection: { db, store: entityStore, versions: versionService },
+  };
+  const crudFacade: CrudFacade = {
+    create: (type, input, actor) => genericCreate(crudDeps, type, input, actor),
+    update: (type, slug, input, actor) => genericUpdate(crudDeps, type, slug, input, actor),
+    delete: (type, slug, actor) => genericDelete(crudDeps, type, slug, actor),
+  };
+
   const router = Router();
   host.mountBackend({
     app: router,
-    db,
+    reader: rawReader,
+    crud: crudFacade,
     host,
     cwd,
     ws,
@@ -125,6 +152,9 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   // M29: slug-rename propagation into entity files, as in production. Must come
   // after mountBackend — that is when modules contribute their rename listeners.
   referencesService.setPluginHost(host);
+  // 2.0.0 (A.8): rename listeners are registered over every module here, not
+  // from inside each type's mount. Mirrors `buildProjectContext`.
+  registerRefRewriteListeners(host, db, entityStore);
   /**
    * A real core, so an integration test can reach the keyed-collection routes
    * `entitiesRouter` mounts and the generated CRUD routes below. Pages are
@@ -156,19 +186,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     if (!module.data?.schema) continue;
     router.use(
       module.pathPrefix,
-      generatedCrudRouter(
-        {
-          host,
-          reader: rawReader,
-          tags: tagsService,
-          store: entityStore,
-          references: referencesService,
-          projection: { db, store: entityStore, versions: versionService },
-          discovery,
-          ws,
-        },
-        module,
-      ),
+      generatedCrudRouter({ ...crudDeps, discovery, ws }, module),
     );
   }
 

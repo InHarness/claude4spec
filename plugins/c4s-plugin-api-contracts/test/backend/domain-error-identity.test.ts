@@ -1,5 +1,5 @@
 /**
- * The errors these services throw must be the HOST's `DomainError`.
+ * The errors this package throws must be the HOST's `DomainError`.
  *
  * The host narrows with `instanceof`, in two places that decide what a caller
  * sees: the MCP entity-tools error mapper (`create_entities` / `update_entities`
@@ -13,53 +13,66 @@
  * deep host path: the facade is what an extracted copy of this package would
  * import, so the test survives extraction unchanged. Re-vendor the class in
  * `host-kit/errors.ts` and this goes red.
+ *
+ * 2.0.0 tier K — the SUBJECT changed, the property did not. `EndpointService` is
+ * deleted, and with it every error it threw; what this package still throws is
+ * `link-dto.ts`, the collection-write sugar behind `POST /:slug/dtos` and the
+ * `link_dto` MCP tool. Both of those reach the host's narrowing, so both need
+ * the identity — and this is now the only place in the package that throws at
+ * all, which makes it the whole surface rather than a sample of it.
  */
 
-import Database from 'better-sqlite3';
 import { DomainError as FacadeDomainError } from '@c4s/plugin-runtime';
 import { describe, expect, it } from 'vitest';
-import { EndpointService } from '../../src/entity/endpoint/backend/services.js';
-import { generateProjectionDDL } from '../../../../src/server/db/projection.js';
-import { dtoData } from '../../src/entity/dto/schema.js';
-import { endpointData } from '../../src/entity/endpoint/schema.js';
+import { linkDto, unlinkDto, type LinkDtoDeps } from '../../src/entity/endpoint/backend/link-dto.js';
 
-/**
- * The collaborators are never reached: every case here throws before the
- * service hydrates a row, which is the only thing that touches them.
- */
-function service(): EndpointService {
-  const db = new Database(':memory:');
-  for (const module of [{ type: 'dto', data: dtoData }, { type: 'endpoint', data: endpointData }]) {
-    for (const statement of generateProjectionDDL(module)) db.exec(statement);
-  }
-  db.prepare(`INSERT INTO endpoint (slug, method, path, summary) VALUES (?, ?, ?, ?)`).run(
-    'get-users',
-    'GET',
-    '/users',
-    'List users',
-  );
-  const unreached = {} as never;
-  return new EndpointService(db, unreached, unreached, unreached);
+/** A reader holding one endpoint and one DTO; `update` is never reached here. */
+function deps(overrides: Partial<LinkDtoDeps> = {}): LinkDtoDeps {
+  return {
+    reader: {
+      getEntity: (type: string, slug: string) =>
+        (type === 'endpoint' && slug === 'get-users') || (type === 'dto' && slug === 'user-dto')
+          ? { type, slug }
+          : null,
+      readCollection: () => [],
+    },
+    update: () => {
+      throw new Error('unreachable — every case below throws before the write');
+    },
+    ...overrides,
+  };
 }
 
 describe('DomainError identity across the package boundary', () => {
-  it('is the host class, so the host can narrow on what these services throw', () => {
-    const svc = service();
-
+  it('is the host class, so the host can narrow on a missing target', () => {
     let thrown: unknown;
     try {
-      svc.createRaw({ method: 'GET', path: '/users' }, 'user');
+      linkDto(deps(), 'get-users', 'ghost-dto', 'response', 200);
     } catch (err) {
       thrown = err;
     }
 
     // The narrowing the host performs, performed here.
     expect(thrown).toBeInstanceOf(FacadeDomainError);
-    expect((thrown as FacadeDomainError).code).toBe('SLUG_CONFLICT');
+    expect((thrown as FacadeDomainError).code).toBe('NOT_FOUND');
   });
 
   it('carries the same identity for validation failures', () => {
-    const svc = service();
-    expect(() => svc.createRaw({ method: 'GET', path: '' }, 'user')).toThrow(FacadeDomainError);
+    // The cross-field rule that outlived the service: a request body has no
+    // status code, which no single field's declaration can say.
+    let thrown: unknown;
+    try {
+      linkDto(deps(), 'get-users', 'user-dto', 'request', 200);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(FacadeDomainError);
+    expect((thrown as FacadeDomainError).code).toBe('VALIDATION');
+  });
+
+  it('carries it on the unlink path too', () => {
+    expect(() => unlinkDto(deps(), 'ghost-endpoint', 'user-dto', 'response', 200)).toThrow(
+      FacadeDomainError,
+    );
   });
 });

@@ -400,4 +400,50 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect((await request(t.app).post('/api/endpoints').send({ method: 'get', path: '/x' })).status).toBe(400);
     expect((await request(t.app).post('/api/endpoints').send({ method: 'GET', path: '/x' })).status).toBe(201);
   });
+
+  /**
+   * Item 56, and the brief's headline example.
+   *
+   * `DiagramService.readFormat` mapped everything that was not `'d2'` onto
+   * `'mermaid'`, so `POST /api/diagrams` with `format: 'graphviz'` answered 201
+   * and stored a diagram in a language the author did not ask for — a silent
+   * rewrite of the payload, discoverable only by re-reading the entity. The
+   * declaration already said `enum ['mermaid','d2']`; deleting the coercion is
+   * what lets it be enforced.
+   */
+  it('rejects a diagram format the declaration does not name, instead of coercing it', async () => {
+    const coerced = await request(t.app)
+      .post('/api/diagrams')
+      .send({ caption: 'Flow', format: 'graphviz', source: 'digraph { a -> b }' });
+    expect(coerced.status).toBe(400);
+
+    for (const format of ['mermaid', 'd2']) {
+      const ok = await request(t.app)
+        .post('/api/diagrams')
+        .send({ caption: `Flow ${format}`, format, source: 'x' });
+      expect(ok.status).toBe(201);
+      expect(ok.body.data.format).toBe(format);
+    }
+  });
+
+  /**
+   * The other half of what left with `DiagramService`: it ran `validateDiagram
+   * Source` on every create/update and answered `{ slug, warnings }`.
+   *
+   * Item 56 puts that validator in `validate_diagram` alone — a PRE-flight tool
+   * the author calls with a source string, before an entity exists. So the write
+   * path accepts an unparseable source verbatim and says nothing about it, which
+   * is the same move `ui-view` and `design-system` made in K2: linting belongs
+   * where the result is read, not on the one code path that happens to write.
+   */
+  it('stores an unparseable diagram source verbatim, and says nothing about it', async () => {
+    const res = await request(t.app)
+      .post('/api/diagrams')
+      .send({ caption: 'Broken', source: 'not a diagram at all' });
+    expect(res.status).toBe(201);
+    expect(res.body.data).not.toHaveProperty('warnings');
+    expect(res.body.data.source).toBe('not a diagram at all');
+    // Default format still applies — it is `default: 'mermaid'` on the field.
+    expect(res.body.data.format).toBe('mermaid');
+  });
 });

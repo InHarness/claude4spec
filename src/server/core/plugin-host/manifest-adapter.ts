@@ -17,14 +17,15 @@
  */
 
 import type { Router } from 'express';
+import type { Database } from 'better-sqlite3';
 import type {
   EntityContribution,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import type { SerializationContribution } from '../../serialization/types.js';
-import type { EntityCrudService } from './entity-crud-service.js';
 import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
-import type { BackendModule, MountContext, PluginMountFn } from './types.js';
+import type { BackendModule, MountContext, PluginMountFn, ProjectPluginHost } from './types.js';
+import type { EntityStore } from '../../services/entity-store.js';
 import { declaresRefs, rewriteRefsForRename } from '../../db/ref-rewrite.js';
 import { isRawEntityType } from '../../discovery/raw-entity-reader.js';
 
@@ -261,12 +262,10 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
 
     backendSlot = {
       mount,
-      service: backend.service as ((ctx: MountContext) => EntityCrudService) | undefined,
-      routes: backend.routes as
-        | { router: (service: EntityCrudService, ctx: MountContext) => Router }
-        | undefined,
+      service: backend.service as ((ctx: MountContext) => unknown) | undefined,
+      routes: backend.routes as { router: (service: unknown, ctx: MountContext) => Router } | undefined,
       mcpServer: backend.mcpServer as
-        | ((service: EntityCrudService, ctx: MountContext) => McpServerFactory)
+        | ((service: unknown, ctx: MountContext) => McpServerFactory)
         | undefined,
       auxTables: backend.auxTables as string[] | undefined,
     };
@@ -299,50 +298,33 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
  * through `lowerEntityContribution` first).
  *
  * Idempotent / side-effect-free at registration time: it only builds a new
- * `mount` closure, never calls it. Throws `PluginManifestError` if `mcpServer`
- * is declared without `service` (its factory receives the service instance as
- * its first argument) or if `routes.router` is present
- * but not a function (the pre-M13 bare-Router sugar) — all three would
- * otherwise fail confusingly at first mount, deep inside a project's request
- * path.
+ * `mount` closure, never calls it. Throws `PluginManifestError` if
+ * `routes.router` is present but not a function (the pre-M13 bare-Router
+ * sugar), which would otherwise fail confusingly at first mount, deep inside a
+ * project's request path.
+ *
+ * 2.0.0 tier K — the `mcpServer requires service` check is GONE. It encoded the
+ * old shape where a custom MCP server was a thin wrapper over that type's CRUD
+ * service; now that CRUD is the host's, a type can perfectly well contribute a
+ * non-CRUD tool and no service at all (`diagram`'s `validate_diagram` checks a
+ * raw string and touches no database). The service argument is simply
+ * `undefined` for such a type, which its own factory already ignores.
+ *
+ * 2.0.0 (A.8) — rename propagation left this function too. It was never a
+ * backend slot: it is derived from `data.schema`, so gating it on the presence
+ * of a synthesized `mount` meant a hand-written `mount` module got it only via a
+ * composed-closure special case. `registerRefRewriteListeners` below registers
+ * it for every module by one path.
  */
 export function synthesizeMount(module: BackendModule): BackendModule {
   const backend = module.backend;
 
-  // Item 24: a `ref` flag anywhere in the logical schema earns a generated
-  // rename listener, INDEPENDENTLY of the backend slots — a type that declares
-  // its data and nothing else still has references to repoint, and gating this
-  // on `backend` would make "has a service" the condition for a correct rename.
-  const rewritesRefs = declaresRefs(module);
-
-  /**
-   * The escape hatch still wins for everything it owns — but it does not opt a
-   * type OUT of rename propagation.
-   *
-   * `mount` replaces the slots this function synthesizes; propagation is not one
-   * of them. It is derived from `data.schema`, which a hand-written `mount` does
-   * not (and cannot) override, and `data-schema.ts` promises the `ref` flag works
-   * "with no per-type code on either side". Returning early here would have made
-   * that promise false for exactly one kind of module, silently — and since
-   * `backend.onEntityRenamed` is gone, there would be no slot left to opt back
-   * in with either.
-   */
-  if (backend?.mount) {
-    if (!rewritesRefs) return module;
-    const inner = backend.mount;
-    const composed: PluginMountFn = (ctx: MountContext): void => {
-      inner(ctx);
-      registerRefRewriteListener(module, ctx);
-    };
-    return { ...module, backend: { ...backend, mount: composed } };
-  }
+  // The escape hatch wins for everything it owns.
+  if (backend?.mount) return module;
 
   const { service, routes, mcpServer } = backend ?? {};
-  if (!service && !routes && !mcpServer && !rewritesRefs) return module;
+  if (!service && !routes && !mcpServer) return module;
 
-  if (mcpServer && !service) {
-    throw new PluginManifestError(`entity "${module.type}" — backend.mcpServer requires backend.service`);
-  }
   if (routes && typeof routes.router !== 'function') {
     // M13 breaking change: backend.routes.router is now ALWAYS a factory
     // `(service, ctx) => Router` — a manifest still written against the old
@@ -367,7 +349,7 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       ctx.registerEntityService(module.type, instance);
     }
     if (routes) {
-      ctx.app.use(module.pathPrefix, routes.router(instance as EntityCrudService, ctx));
+      ctx.app.use(module.pathPrefix, routes.router(instance, ctx));
     }
     if (mcpServer) {
       // 0.1.133: the slot returns the MCP server HANDLE directly (not a thunk).
@@ -378,10 +360,9 @@ export function synthesizeMount(module: BackendModule): BackendModule {
       // live in `ProjectPluginHostImpl.buildMcpServers()` — the single choke
       // point every registered factory passes through, including the ones a
       // plugin's own `mount()` registers without going through this adapter.
-      const svc = instance as EntityCrudService;
+      const svc = instance;
       ctx.registerMcpServer(`${module.type}-tools`, () => mcpServer(svc, ctx));
     }
-    if (rewritesRefs) registerRefRewriteListener(module, ctx);
   };
 
   return { ...module, backend: { ...backend, mount } };
@@ -394,18 +375,28 @@ export function synthesizeMount(module: BackendModule): BackendModule {
  * re-persist the files whose data actually changed. A file that will not write
  * must not abort the rename — the index is already correct by then, and the three
  * hooks this replaces swallowed the same failure.
+ *
+ * 2.0.0 (A.8) — called once by `ProjectContext` over every registered module,
+ * rather than from inside each type's synthesized `mount`. Item 24 says a `ref`
+ * flag earns propagation "with no per-type code on either side"; registering it
+ * from the lowering step made that true only for modules that HAD slots to lower,
+ * and a hand-written `mount` needed a composed closure to get the same thing.
+ * Here there is one path and one condition — the declaration.
  */
-function registerRefRewriteListener(module: BackendModule, ctx: MountContext): void {
-  ctx.registerRenameListener(({ type, oldSlug, newSlug }) => {
-    for (const slug of rewriteRefsForRename(ctx.db, module, type, oldSlug, newSlug)) {
-      try {
-        ctx.entityStore.persist(module.type, slug);
-      } catch (err) {
-        console.warn(
-          `[plugin-host] ${module.type}/${slug}: re-persist after ${type} rename ` +
-            `${oldSlug} -> ${newSlug} failed: ${String(err)}`,
-        );
+export function registerRefRewriteListeners(host: ProjectPluginHost, db: Database, store: EntityStore): void {
+  for (const module of host.listEntities()) {
+    if (!declaresRefs(module)) continue;
+    host.registerRenameListener(({ type, oldSlug, newSlug }) => {
+      for (const slug of rewriteRefsForRename(db, module, type, oldSlug, newSlug)) {
+        try {
+          store.persist(module.type, slug);
+        } catch (err) {
+          console.warn(
+            `[plugin-host] ${module.type}/${slug}: re-persist after ${type} rename ` +
+              `${oldSlug} -> ${newSlug} failed: ${String(err)}`,
+          );
+        }
       }
-    }
-  });
+    });
+  }
 }

@@ -3,7 +3,6 @@ import type { SerializationContribution } from '../../serialization/types.js';
 import { designSystemSlug } from '../../services/slug.js';
 import { designSystemSerializer } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
-import { DesignSystemService } from './service.js';
 import { designSystemData, designSystemSlugPattern } from '../../../shared/entities/design-system/schema.js';
 
 export const designSystemBackendModule: BackendModule = {
@@ -23,13 +22,16 @@ export const designSystemBackendModule: BackendModule = {
   pathPrefix: '/design-systems',
   serializer: designSystemSerializer as SerializationContribution<unknown>,
   systemPrompt: designSystemSystemPrompt,
-  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
-  // manifest-adapter.ts#synthesizeMount): construct the service once, register
-  // it for DI + entity-tools, mount the REST router. design-system has no
-  // non-CRUD tools, so there is no `mcpServer` key at all.
-  backend: {
-    service: (ctx) => new DesignSystemService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
-  },
+  /**
+   * 2.0.0 tier K (item 60) — NO `backend` block at all.
+   *
+   * The last thing this type contributed on the server was `resolve(groups,
+   * modes, activeMode?)`, and that was never the service's: `service.ts` merely
+   * re-exported it from `shared/design-system.ts`, where the client reads it
+   * from too. The serializer imports it from there directly now, so there is
+   * nothing left for a `service` slot to carry — CRUD, routes and the search
+   * scope all come from `data` above.
+   */
 };
 
 export function onRegister(registry: PluginRegistry): void {

@@ -192,19 +192,25 @@ function hitsIn(files: string[], pattern: RegExp): string[] {
 }
 
 describe('0.2.4 — the file owns the timestamps', () => {
-  it('no entity service mints its own timestamp', () => {
+  it('no entity service mints its own timestamp — there is no entity service left to do it', () => {
     /**
-     * `datetime('now')` in a service is the pre-0.2.4 behaviour verbatim: it
-     * makes the COLUMN authoritative and the file derived, which inverts the
-     * direction the whole tier establishes. A rebuild is a write, so every such
-     * call turns "the indexer ran" into "the content changed".
+     * `datetime('now')` in a service was the pre-0.2.4 behaviour verbatim: it
+     * made the COLUMN authoritative and the file derived, inverting the
+     * direction that tier establishes. A rebuild is a write, so every such call
+     * turned "the indexer ran" into "the content changed".
      *
-     * Migrations are exempt and not scanned: `DEFAULT (datetime('now'))` on the
-     * column is now unreachable, not wrong, and a migration is an applied ledger
-     * that must not be edited after the fact.
+     * 2.0.0 tier K settles it by removing the category. The six per-type CRUD
+     * services are deleted; timestamps are resolved once, by the host, in
+     * `serialization/system-fields.ts`. So the assertion inverts: this used to
+     * require the walker to FIND more than five service files, and now requires
+     * it to find none.
+     *
+     * The `datetime('now')` scan is kept rather than dropped — it costs nothing
+     * and it is what makes the first re-introduced service fail here rather than
+     * in production.
      */
     const services = typePackageFiles(/^services?\.ts$/);
-    expect(services.length).toBeGreaterThan(5); // the walker actually found them
+    expect(services.map((f) => path.relative(REPO_ROOT, f))).toEqual([]);
     expect(hitsIn(services, /datetime\('now'\)/)).toEqual([]);
   });
 

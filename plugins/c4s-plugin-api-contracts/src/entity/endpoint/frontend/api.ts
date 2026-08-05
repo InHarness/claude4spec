@@ -54,11 +54,14 @@ export const endpointsApi = {
     dtoSlug: string,
     relation: EndpointDtoRelation,
     statusCode: number | null = null
-  ): Promise<Endpoint> {
-    // NOT `unwrap` — the two relation routes are `endpoint`'s own domain router,
-    // not the generated one, and still answer with the bare endpoint. K3 moves
-    // them onto the generic collection write and the envelope with them.
-    return handle<Endpoint>(
+  ): Promise<{ linked: true }> {
+    // NOT `unwrap`, and no longer the endpoint either. 2.0.0 tier K: these two
+    // are `endpoint`'s own domain verbs over the `linkedDtos` collection, and
+    // they answer an acknowledgement. Returning the whole updated endpoint made
+    // the domain router a second spelling of "an endpoint, serialized" that had
+    // to keep agreeing with `GET /api/endpoints/:slug` by hand; the caller now
+    // invalidates and refetches through that one canonical read.
+    return handle<{ linked: true }>(
       await apiFetch(`/api/endpoints/${encodeURIComponent(slug)}/dtos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,12 +75,12 @@ export const endpointsApi = {
     dtoSlug: string,
     relation: EndpointDtoRelation,
     statusCode: number | null = null
-  ): Promise<Endpoint> {
+  ): Promise<{ unlinked: true }> {
     const url = new URL(
       `/api/endpoints/${encodeURIComponent(slug)}/dtos/${encodeURIComponent(dtoSlug)}/${relation}`,
       window.location.origin
     );
     if (statusCode !== null) url.searchParams.set('statusCode', String(statusCode));
-    return handle<Endpoint>(await apiFetch(url.pathname + url.search, { method: 'DELETE' }));
+    return handle<{ unlinked: true }>(await apiFetch(url.pathname + url.search, { method: 'DELETE' }));
   },
 };

@@ -11,19 +11,20 @@
  *     collision suffix. This is the first server-side consumer of
  *     `evaluateSlugPattern` — 0.2.9 tier A landed the grammar and every type's
  *     declaration, and left the six `slugFrom` functions still doing the work
- *     ("staged data, not yet the live rule"). For a type WITH a service that is
- *     still true; for one without, this is the rule.
+ *     ("staged data, not yet the live rule"). Tier K deletes those, so this is
+ *     now the rule for every type.
  *   - merge the tri-state update onto the current payload. The projection
  *     upsert names every column unconditionally, so handing it a PATCH body
  *     would blank every field the caller did not mention.
  *   - assign tags, persist the entity file, and drop the old file on a rename.
  *
- * WHY IT PREFERS A SERVICE. `HostEntityWriter` follows the same order and for
- * the same reason (see its `upsert`): a service carries domain validation and
- * derived fields the declaration does not describe, so bypassing one that
- * exists would write a row that type would never have written. Tier K deletes
- * the six services; until then this is the door for everything else, and the
- * `serviceless` branch is the one the plug-and-play test (item 63) exercises.
+ * THERE IS NO SERVICE FORK ANY MORE. This module used to defer to a registered
+ * `backend.service` where one existed, on the reasoning that a service carried
+ * domain validation the declaration could not express — which was true only
+ * because the declaration did not yet exist. Tier K deletes the six services;
+ * every type now writes through here, which is also what makes the write path
+ * one thing to test rather than two (item 63's plug-and-play test exercises the
+ * only branch there is).
  */
 
 import { customAlphabet } from 'nanoid';

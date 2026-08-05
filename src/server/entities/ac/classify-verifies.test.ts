@@ -6,7 +6,7 @@
  * the moment a type could declare `data.schema` and register nothing — and then
  * the method answered `false` for entities sitting in their own table.
  *
- * The blast radius is why the fix is on the host rather than in `AcService`:
+ * The blast radius is why the fix is on the host rather than in one type:
  * `section-indexer` uses this check to decide whether an `<inline_mention/>`
  * becomes a `section_entity` row, `entities-router` to decide 404, the reference
  * tools to resolve a target. Every one of them was wrong in the same way for the
@@ -16,14 +16,11 @@
 
 import { describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../../tests/helpers/test-db.js';
-import { AcService } from './service.js';
+import { classifyVerifies } from './classify-verifies.js';
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { PluginRegistryImpl } from '../../core/plugin-host/registry.js';
 import { designSystemBackendModule } from '../design-system/plugin.js';
 import type { BackendModule, ProjectPluginHost } from '../../core/plugin-host/types.js';
-import type { EntityStore } from '../../services/entity-store.js';
-import type { TagsService } from '../../services/tags.js';
-import type { VersionService } from '../../services/versions.js';
 
 /**
  * A REAL host holding `design-system` — with its index wired and, deliberately,
@@ -64,21 +61,15 @@ describe('ProjectPluginHost.entityExists', () => {
   });
 });
 
-describe('AcService.classifyVerifies', () => {
-  const acServiceOver = (db: ReturnType<typeof createTestDb>): AcService =>
-    new AcService(
-      db,
-      {} as TagsService,
-      {} as VersionService,
-      serviceLessHost(db, designSystemBackendModule),
-      {} as EntityStore,
-    );
+describe('classifyVerifies', () => {
+  const hostOver = (db: ReturnType<typeof createTestDb>): ProjectPluginHost =>
+    serviceLessHost(db, designSystemBackendModule);
 
   it('accepts a reference to an indexed entity whose type has no entity service', () => {
     const db = createTestDb();
     try {
       db.prepare("INSERT INTO design_system (slug, name) VALUES ('brand', 'Brand')").run();
-      expect(acServiceOver(db).classifyVerifies([{ type: 'design-system', slug: 'brand' }])).toEqual([]);
+      expect(classifyVerifies(hostOver(db), [{ type: 'design-system', slug: 'brand' }])).toEqual([]);
     } finally {
       db.close();
     }
@@ -87,7 +78,7 @@ describe('AcService.classifyVerifies', () => {
   it('still reports a reference to a slug that is not in the table', () => {
     const db = createTestDb();
     try {
-      expect(acServiceOver(db).classifyVerifies([{ type: 'design-system', slug: 'ghost' }])).toEqual([
+      expect(classifyVerifies(hostOver(db), [{ type: 'design-system', slug: 'ghost' }])).toEqual([
         { type: 'design-system', slug: 'ghost', reason: 'missing' },
       ]);
     } finally {
@@ -106,13 +97,12 @@ describe('AcService.classifyVerifies', () => {
       // but not active.
       const host = registry.consolidate({ entities: ['ac'] } as never);
       host.setRawReader(new RawEntityReader(db, host));
-      const service = new AcService(db, {} as TagsService, {} as VersionService, host, {} as EntityStore);
 
       db.prepare("INSERT INTO design_system (slug, name) VALUES ('brand', 'Brand')").run();
-      expect(service.classifyVerifies([{ type: 'design-system', slug: 'brand' }])).toEqual([
+      expect(classifyVerifies(host, [{ type: 'design-system', slug: 'brand' }])).toEqual([
         { type: 'design-system', slug: 'brand', reason: 'inactive' },
       ]);
-      expect(service.classifyVerifies([{ type: 'nope', slug: 'x' }])).toEqual([
+      expect(classifyVerifies(host, [{ type: 'nope', slug: 'x' }])).toEqual([
         { type: 'nope', slug: 'x', reason: 'unknown' },
       ]);
     } finally {

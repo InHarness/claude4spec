@@ -69,11 +69,19 @@ export function useLinkDto() {
       relation: EndpointDtoRelation;
       statusCode?: number | null;
     }) => endpointsApi.linkDto(slug, dtoSlug, relation, statusCode ?? null),
-    onSuccess: (ep: Endpoint) => {
-      qc.setQueryData(keys.detail(ep.slug), ep);
+    /**
+     * 2.0.0 tier K: the route acknowledges rather than returning the endpoint,
+     * so the detail cache is INVALIDATED instead of seeded. One extra refetch,
+     * and it comes from `GET /api/endpoints/:slug` — the same read the page uses
+     * on load, so the panel can no longer show a shape only this mutation
+     * produces. Only the DTO touched here needs invalidating; the old code
+     * looped every link because it had the whole endpoint in hand.
+     */
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: keys.detail(vars.slug) });
       qc.invalidateQueries({ queryKey: keys.all });
       qc.invalidateQueries({ queryKey: ['dtos'] });
-      for (const link of ep.dtos) qc.invalidateQueries({ queryKey: ['dto', link.dtoSlug] });
+      qc.invalidateQueries({ queryKey: ['dto', vars.dtoSlug] });
     },
   });
 }
@@ -92,8 +100,8 @@ export function useUnlinkDto() {
       relation: EndpointDtoRelation;
       statusCode?: number | null;
     }) => endpointsApi.unlinkDto(slug, dtoSlug, relation, statusCode ?? null),
-    onSuccess: (ep: Endpoint, vars) => {
-      qc.setQueryData(keys.detail(ep.slug), ep);
+    onSuccess: (_res, vars) => {
+      qc.invalidateQueries({ queryKey: keys.detail(vars.slug) });
       qc.invalidateQueries({ queryKey: keys.all });
       qc.invalidateQueries({ queryKey: ['dtos'] });
       qc.invalidateQueries({ queryKey: ['dto', vars.dtoSlug] });

@@ -2,8 +2,7 @@
 // (`@c4s/plugin-runtime`), never the vendor `@inharness-ai/agent-adapters` directly.
 import { createMcpServer, mcpTool, type McpServerInstance } from '../../plugin-runtime/index.js';
 import { z } from 'zod';
-import type { Database } from 'better-sqlite3';
-import type { AcService } from './service.js';
+import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { AcAnalysisService } from './ac-analysis.service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
 import type { Root } from '../../../shared/types.js';
@@ -15,9 +14,11 @@ import { DomainError } from '../../services/tags.js';
  * semantic audit.
  */
 export interface AcToolsDeps {
-  acService: AcService;
-  /** M19→AC: needed to hydrate verified-entity snapshots for the LLM audit. */
-  db: Database;
+  /**
+   * 2.0.0 tier K — replaces `acService` + `db`. This server's one tool reads the
+   * active ACs and hydrates the entities they verify; both are reader queries.
+   */
+  reader: RawEntityReader;
   /** M19→AC: project root for the LLM adapter. */
   cwd: string;
   /** 0.2.8 (A19): page roots — part of the LLM turn's FS path scope. */
@@ -40,8 +41,7 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
   };
 
   const analysisService = new AcAnalysisService({
-    acService: deps.acService,
-    db: deps.db,
+    reader: deps.reader,
     cwd: deps.cwd,
     roots: deps.roots,
     host: deps.host,

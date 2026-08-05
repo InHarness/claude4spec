@@ -80,7 +80,8 @@ describe('synthesizeMount', () => {
   function fakeCtx(overrides: Partial<MountContext> = {}): MountContext {
     return {
       app: { use: vi.fn() },
-      db: {} as MountContext['db'],
+      reader: {} as MountContext['reader'],
+      crud: {} as MountContext['crud'],
       host: {} as MountContext['host'],
       cwd: '/tmp',
       ws: { broadcast: vi.fn() },
@@ -122,9 +123,28 @@ describe('synthesizeMount', () => {
     expect((mod.backend as Record<string, unknown> | undefined)?.crud).toBeUndefined();
   });
 
-  it('throws PluginManifestError when mcpServer is declared without service', () => {
-    const mod = lowerEntityContribution(base({ backend: { mcpServer: () => ({}) as never } }));
-    expect(() => synthesizeMount(mod)).toThrow(PluginManifestError);
+  /**
+   * 2.0.0 tier K — the inverse of what this asserted. `mcpServer` without
+   * `service` used to be a manifest error, because a custom MCP server was
+   * assumed to be a wrapper over that type's CRUD service. With CRUD generated,
+   * the common case is a tool that needs no service at all: `diagram`'s
+   * `validate_diagram` parses a raw string, and the old rule forced that type to
+   * declare a service purely to satisfy the check.
+   */
+  it('accepts mcpServer with no service, and passes the factory an undefined instance', () => {
+    const mcpServer = vi.fn(() => ({ __server: true }) as never);
+    const synthesized = synthesizeMount(lowerEntityContribution(base({ backend: { mcpServer } })));
+    expect(typeof synthesized.backend?.mount).toBe('function');
+
+    const ctx = fakeCtx();
+    synthesized.backend!.mount!(ctx);
+    expect(ctx.registerEntityService).not.toHaveBeenCalled();
+
+    // The server is registered as a per-turn thunk; invoking it is what reaches
+    // the slot factory, and the service argument it gets is `undefined`.
+    expect(ctx.registerMcpServer).toHaveBeenCalledWith('glossary-tools', expect.any(Function));
+    vi.mocked(ctx.registerMcpServer).mock.calls[0][1]();
+    expect(mcpServer).toHaveBeenCalledWith(undefined, ctx);
   });
 
   // A manifest still written against the pre-M13 "bare Router" sugar

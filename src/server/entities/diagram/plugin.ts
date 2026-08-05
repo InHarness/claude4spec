@@ -2,7 +2,6 @@ import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types
 import type { SerializationContribution } from '../../serialization/types.js';
 import { diagramSerializer } from './serializer.js';
 import { diagramSystemPrompt } from './system-prompt.js';
-import { DiagramService } from './service.js';
 import { createDiagramToolsServer } from './mcp-server.js';
 import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';
 
@@ -23,12 +22,20 @@ export const diagramBackendModule: BackendModule = {
   pathPrefix: '/diagrams',
   serializer: diagramSerializer as SerializationContribution<unknown>,
   systemPrompt: diagramSystemPrompt,
-  // M13: declarative backend — the host synthesizes an equivalent `mount` (see
-  // manifest-adapter.ts#synthesizeMount): construct the service once, register
-  // it for DI + entity-tools, mount the REST router, mount the custom MCP
-  // server for diagram's pre-flight validation tool.
+  /**
+   * 2.0.0 tier K (item 56) — `mcpServer` and NOTHING else. `validate_diagram`
+   * checks a raw DSL string with no database lookup (the entity need not exist
+   * yet), so it never needed the service the old `mcpServer requires service`
+   * rule forced this type to declare.
+   *
+   * The service also carried `readFormat`, which COERCED an unknown `format` to
+   * `'mermaid'` on write. That is gone with it: `format` is declared
+   * `enum ['mermaid','d2']`, so `POST /api/diagrams` with `format: 'graphviz'`
+   * now answers 400 instead of quietly storing a mermaid diagram. Decoding a
+   * stored row still tolerates a bad value — a row written before the enum
+   * existed must still render.
+   */
   backend: {
-    service: (ctx) => new DiagramService(ctx.db, ctx.tagsService, ctx.versionService, ctx.entityStore),
     mcpServer: () => createDiagramToolsServer(),
   },
   // v0.1.129 (M19 Slot B) — <diagram/> as the 7th XML reference type, via the
