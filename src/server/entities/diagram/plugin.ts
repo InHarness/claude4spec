@@ -1,6 +1,6 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
-import { diagramSerializer } from './serializer.js';
+import { diagramSerializer } from './views.js';
 import { diagramSystemPrompt } from './system-prompt.js';
 import { createDiagramToolsServer } from './mcp-server.js';
 import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';

@@ -66,3 +66,57 @@ describe('no leaked per-type CRUD abstractions (M13)', () => {
     expect(hits).toEqual([]);
   });
 });
+
+/**
+ * 2.0.0 tier K, item 62 — the FILE SHAPE, pinned by name.
+ *
+ * The three things this tier removed are all removed by deletion, which means
+ * nothing fails if one comes back: a new `crud-schemas.ts` next to a type, a
+ * revived `createCrudRouter` helper, or a fresh per-type `service.ts`. Each
+ * would work, quietly, and each would re-open the drift the tier closed — a
+ * second description of a shape the declaration already gives, or a second write
+ * door the host does not know about.
+ *
+ * So the assertion is on the tree, not on behaviour. It scans both the in-repo
+ * types and the plugin envelope, because the envelope is where two of the six
+ * services lived.
+ */
+describe('tier K left nothing to grow back (item 62)', () => {
+  const TYPE_ROOTS = [
+    path.join(SRC_ROOT, 'src', 'server', 'entities'),
+    path.join(SRC_ROOT, 'plugins', 'c4s-plugin-api-contracts', 'src', 'entity'),
+  ].filter((dir) => fs.existsSync(dir));
+
+  const typeFiles = (): string[] => TYPE_ROOTS.flatMap((root) => walk(root));
+  const named = (re: RegExp): string[] =>
+    typeFiles()
+      .filter((f) => re.test(path.basename(f)))
+      .map((f) => path.relative(SRC_ROOT, f))
+      .sort();
+
+  it('no type ships a hand-written CRUD input schema', () => {
+    // Generated from `data.schema` (item 27). A second, hand-written description
+    // of the same fields can only ever drift from the table and the write door.
+    expect(named(/^crud-schemas\.ts$/)).toEqual([]);
+  });
+
+  it('no type ships a CRUD service', () => {
+    // `service.ts` / `services.ts`. What a type may still register on
+    // `backend.service` is a DOMAIN HELPER, and none of the six needs one — the
+    // file name is the signal, and its absence is the invariant.
+    expect(named(/^services?\.ts$/)).toEqual([]);
+  });
+
+  it('every type spells its computed views `views.ts`, and none says `serializer.ts`', () => {
+    expect(named(/^serializer\.ts$/)).toEqual([]);
+    // Sanity: the scan reaches the types at all. Without this the two
+    // assertions above pass just as well against an empty file list.
+    expect(named(/^views\.ts$/).length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('the createCrudRouter helper stays gone', () => {
+    // Removed before this tier began; item 62 asks for it to be pinned rather
+    // than removed again. The whole tree, not just the type packages.
+    expect(grep(/\bcreateCrudRouter\b/)).toEqual([]);
+  });
+});

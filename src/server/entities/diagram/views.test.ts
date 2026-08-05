@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
+import { diagramSerializer, type DiagramSnapshot } from './views.js';
 import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';

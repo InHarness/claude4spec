@@ -4,7 +4,7 @@ import {
   ENDPOINT_PATH_PREFIX,
   ENDPOINT_TYPE,
 } from '../../identity.js';
-import { endpointSerializer } from './serializer.js';
+import { endpointSerializer } from './views.js';
 import { endpointSystemPrompt } from './system-prompt.js';
 import { endpointsRouter } from './backend/routes.js';
 import { createEndpointToolsServer } from './backend/mcp.js';

@@ -1,7 +1,7 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
 import { designSystemSlug } from '../../services/slug.js';
-import { designSystemSerializer } from './serializer.js';
+import { designSystemSerializer } from './views.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemData, designSystemSlugPattern } from '../../../shared/entities/design-system/schema.js';
 

@@ -1,7 +1,7 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
 import { uiViewSlug } from '../../services/slug.js';
-import { uiViewSerializer } from './serializer.js';
+import { uiViewSerializer } from './views.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewData, uiViewSlugPattern } from '../../../shared/entities/ui-view/schema.js';
 

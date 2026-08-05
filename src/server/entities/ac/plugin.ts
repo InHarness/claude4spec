@@ -1,6 +1,6 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
 import type { SerializationContribution } from '../../serialization/types.js';
-import { acSerializer } from './serializer.js';
+import { acSerializer } from './views.js';
 import { acSystemPrompt } from './system-prompt.js';
 import { createAcToolsServer } from './mcp-server.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
