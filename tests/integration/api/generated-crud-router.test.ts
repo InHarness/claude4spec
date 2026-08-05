@@ -402,6 +402,52 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   /**
+   * `?view=detail` — found by the e2e suite, which the unit suite could not see.
+   *
+   * `view` was reserved as a query key and never read, so every GET answered
+   * `single_element`. That was harmless while each type had a router serving its
+   * own shape and became a CRASH when tier K deleted them: the DTO detail page
+   * reads `dto.endpoints.length`, `endpoints` is a reverse join that lives only
+   * in the `detail` view, and the page threw on load against a real server.
+   *
+   * Pinned on `dto` because it is the type whose two views genuinely differ.
+   */
+  it('serves the detail view on request, and single_element by default', async () => {
+    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+    await request(t.app)
+      .post('/api/endpoints')
+      .send({ slug: 'get-users', method: 'GET', path: '/users', summary: 'List' });
+    await request(t.app)
+      .post('/api/endpoints/get-users/dtos')
+      .send({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
+
+    const plain = await request(t.app).get('/api/dtos/user-dto');
+    expect(plain.status).toBe(200);
+    expect(plain.body.data.endpoints).toBeUndefined();
+
+    const detail = await request(t.app).get('/api/dtos/user-dto?view=detail');
+    expect(detail.status).toBe(200);
+    expect(detail.body.data.endpoints.map((e: { endpointSlug: string }) => e.endpointSlug)).toEqual([
+      'get-users',
+    ]);
+    // The stamp is attached to whichever view was asked for.
+    expect(detail.body.data.createdAt).toEqual(expect.any(String));
+  });
+
+  it('falls back to single_element for a view it does not serve', async () => {
+    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+    // `element_list_item` is a real ViewKind but not a READABLE one here, and
+    // `nonsense` is not a view at all. Both must answer the default rather than
+    // hand back a shape the caller did not ask for — or a 500.
+    for (const view of ['element_list_item', 'inline_mention', 'nonsense']) {
+      const res = await request(t.app).get(`/api/dtos/user-dto?view=${view}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.name).toBe('UserDto');
+      expect(res.body.data.endpoints).toBeUndefined();
+    }
+  });
+
+  /**
    * Item 56, and the brief's headline example.
    *
    * `DiagramService.readFormat` mapped everything that was not `'d2'` onto

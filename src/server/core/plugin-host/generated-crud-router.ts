@@ -17,19 +17,21 @@
  *
  * THE LIST VIEW IS `element_list_item`. Same rule the M39 core applies to
  * `list_entities` ("the item shape per type is the L9 list view"), so one
- * entity does not read differently depending on which transport asked. A single
- * entity comes back as `single_element` — `detail` resolves references the
- * detail panel fetches separately, and paying for that on every read would make
- * `GET /:slug` the most expensive route in the app.
+ * entity does not read differently depending on which transport asked.
  *
- * STAGING — read this before concluding the six built-ins moved. This router is
- * mounted AFTER each type's own `backend.routes` router, so wherever a domain
- * router still serves a CRUD verb it keeps serving it. Today that is all six
- * built-in types, which therefore behave exactly as before; the types this
- * router actually serves are the ones with no `routes` slot at all — which is
- * every declaratively-authored plugin, and what item 63's plug-and-play test
- * asserts. Tier K deletes the six routers, and they land here with nothing else
- * to change. Same staging as tier A's `slugPattern`.
+ * A single entity comes back as `single_element` by DEFAULT, and `?view=detail`
+ * asks for the expensive one. Paying for the joins on every read would make
+ * `GET /:slug` the most expensive route in the app; never offering them at all —
+ * which is what this router did until the parameter was wired — makes the detail
+ * views unreachable, and they are where `dto.endpoints` and the `_references`
+ * back-pointers live.
+ *
+ * TIER K un-staged this. The router used to be mounted AFTER each type's own
+ * `backend.routes`, so wherever a domain router still served a CRUD verb it kept
+ * serving it. Those six routers are gone; every built-in type is served from
+ * here, from its declaration, exactly as a declaratively-authored plugin is
+ * (item 63's plug-and-play test asserts the same surface for a type the host has
+ * never heard of).
  */
 
 import { Router } from 'express';
@@ -40,6 +42,7 @@ import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { genericCreate, genericDelete, genericUpdate, propagateRename, type GenericCrudDeps } from './generic-crud.js';
 import { isEmbedded, type FieldNode } from '../../../shared/plugin-host/data-schema.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
+import type { ViewKind } from '../../serialization/types.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { BackendModule } from './types.js';
 
@@ -139,8 +142,31 @@ function attachStamp(view: unknown, system: { createdAt: string; updatedAt: stri
   return system && view && typeof view === 'object' ? { ...(view as object), ...system } : view;
 }
 
-function readOne(deps: GeneratedCrudDeps, type: string, slug: string): unknown {
-  const [result] = deps.discovery.getEntities({ type, slugs: [slug], view: 'single_element' }).results;
+/**
+ * The views a GET may ask for. `detail` is the reason this exists.
+ *
+ * `view` was already RESERVED as a query key — excluded from the field filters —
+ * and then never read, so every GET answered `single_element` and the `detail`
+ * view was unreachable over REST for every type. That was invisible while each
+ * type still had a router that served its own shape, and became visible the
+ * moment tier K deleted them: `detail` is where the JOINS live (`dto.endpoints`,
+ * the `_references` back-pointers), and those are exactly the fields a detail
+ * PAGE needs and a list row does not.
+ *
+ * Not an open parameter: an arbitrary string would reach `serializeEntity` as a
+ * view no type computes, and the caller would get a generic row while believing
+ * it asked for something else.
+ */
+const READABLE_VIEWS = new Set<ViewKind>(['single_element', 'detail']);
+
+function requestedView(raw: unknown): ViewKind {
+  return typeof raw === 'string' && READABLE_VIEWS.has(raw as ViewKind)
+    ? (raw as ViewKind)
+    : 'single_element';
+}
+
+function readOne(deps: GeneratedCrudDeps, type: string, slug: string, view: ViewKind = 'single_element'): unknown {
+  const [result] = deps.discovery.getEntities({ type, slugs: [slug], view }).results;
   if (!result || result.entity == null) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
   return withSystem(deps, type, slug, result.entity);
 }
@@ -250,7 +276,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
 
   router.get('/:slug', (req, res, next) => {
     try {
-      res.json({ data: readOne(deps, type, req.params.slug) });
+      res.json({ data: readOne(deps, type, req.params.slug, requestedView(req.query.view)) });
     } catch (err) {
       next(err);
     }

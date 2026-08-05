@@ -291,14 +291,16 @@ export function DtoDetail({
           />
         </div>
 
-        {dto.endpoints.length > 0 && (
+        {/* Defensive: `endpoints` comes from the `detail` view only, so a caller
+            that fetched `single_element` must degrade rather than throw. */}
+        {(dto.endpoints?.length ?? 0) > 0 && (
           <div className="mt-6">
           <FieldRow label="Used by endpoints" align="start">
             <ul
               className="rounded-md"
               style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
             >
-              {dto.endpoints.map((link, i) => (
+              {dto.endpoints?.map((link, i) => (
                 <li
                   key={`${link.endpointSlug}-${link.relation}-${link.statusCode ?? 'null'}`}
                   className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"

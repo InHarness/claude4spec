@@ -18,8 +18,17 @@ export const dtosApi = {
     return unwrapList<Dto>(await apiFetch(`/api/dtos${q}`));
   },
 
+  /**
+   * `?view=detail`, because the detail PAGE is what this feeds.
+   *
+   * `endpoints` — which endpoints reference this DTO — is a reverse join, so it
+   * lives in the `detail` view and not in `single_element`. Until tier K, `dto`
+   * had its own router that served the detail shape from `GET /:slug` and the
+   * distinction never surfaced; the generated router answers `single_element`
+   * unless asked, so the page has to ask.
+   */
   async get(slug: string): Promise<Dto> {
-    return unwrap<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}`));
+    return unwrap<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}?view=detail`));
   },
 
   async create(input: DtoCreateInput): Promise<Dto> {

@@ -61,7 +61,7 @@ describe.skipIf(!BASE)('keyed-collection read routes — end to end', () => {
       body: JSON.stringify({ text: `Keyed route smoke ${Date.now()}`, kind: 'requirement', status: 'active' }),
     });
     expect([200, 201]).toContain(created.status);
-    acSlug = created.body.slug;
+    acSlug = created.body.data.slug;
   }, 120_000);
 
   it('refuses a field that is not a keyed collection with 400, not 500', () => {
