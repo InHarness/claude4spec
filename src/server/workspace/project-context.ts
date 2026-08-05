@@ -32,7 +32,7 @@ import { SectionsService } from '../services/sections.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 import { SUPPORTED_LANGUAGES, isSupportedLanguage } from '../../shared/languages.js';
 import { slugify } from '../../shared/slug.js';
-import { PlanService } from '../services/plan.js';
+import { PlanService, injectAnchors } from '../services/plan.js';
 import { plansRouter } from '../routes/plans.js';
 import { backfillPlansToFilesystem } from './plan-migration.js';
 import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
@@ -64,11 +64,24 @@ import { createReleaseToolsServer } from '../mcp/release-tools/index.js';
 import { GitService } from '../services/git.js';
 import { gitRouter } from '../routes/git.js';
 import type { WsGateway } from '../ws/gateway.js';
-import { PagesWatcher } from '../fs/watcher.js';
-import { EntitiesWatcher } from '../fs/entities-watcher.js';
+import type { WatchScope, WatchSubscriber, FileWatchRuntime } from '../fs/watcher.js';
+import {
+  pageSource,
+  artifactSource,
+  boundSuppress,
+  boundWriter,
+  ENTITIES_SOURCE,
+  RELEASES_SOURCE,
+  PLUGINS_OVERLAY_SOURCE,
+  MARKDOWN_FILTER,
+  HTML_FILTER,
+  JSON_FILTER,
+  type SelfWriteMarker,
+} from '../fs/sources.js';
+import { pageChangedNotifier, htmlPreviewNotifier, artifactChangedNotifier } from '../fs/notifications.js';
+import { FileVersionCapture } from '../services/file-version-capture.js';
 import { EntityStore } from '../services/entity-store.js';
 import { EntityIndexerService } from '../services/entity-indexer.js';
-import { ReleasesWatcher } from '../fs/releases-watcher.js';
 import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
@@ -93,7 +106,6 @@ import {
   projectPluginsDir,
   type ProjectOverlayResult,
 } from '../core/plugin-host/overlay-loader.js';
-import { PluginWatcher } from '../core/plugin-host/plugin-watcher.js';
 import { buildBasePluginPackages } from '../routes/plugins.js';
 import type { PluginLoadRecord } from '../core/plugin-host/loader.js';
 import type { ActiveAdapter, PendingInput } from '../routes/agent-turn.js';
@@ -165,6 +177,8 @@ export interface ProjectContextDeps {
   projectId: string;
   cwd: string;
   gateway: WsGateway;
+  /** M40: the process-wide file-watch runtime. Mounts made here carry `scope: 'context:<id>'`. */
+  watchRuntime: FileWatchRuntime;
   mode: 'dev' | 'prod';
   /** Resolved `--remote-url` value (flag > config.json); null/absent ⇒ prod constant. */
   remoteApiUrl?: string | null;
@@ -174,7 +188,7 @@ export interface ProjectContextDeps {
   onTurnFinished?: () => void;
   /** M31: PATCH /config touched a context-defining field → cache.invalidate(projectId). */
   onContextConfigChanged?: () => void;
-  /** M27: bootstrap-time clone — runs inside build, before watchers start. */
+  /** M27: bootstrap-time clone — runs inside build, before mounts dispatch. */
   clone?: {
     slug: string;
     nameOverride?: string;
@@ -398,15 +412,26 @@ async function buildInner(
   cleanup.push(() => db.close());
   const dbSlotDir = registry.slotDir(workspace, projectId);
 
-  // 0.1.96: one runtime (PagesService + StaticHtmlService + PagesWatcher +
-  // FileSerializer) per configured page root. The built-in 'pages' root is
-  // always present; user roots are additive. Every per-directory behaviour is
-  // gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
+  // ── M40 phase A: MOUNTS ────────────────────────────────────────────────────
+  // Mount → subscribe is a contract, not a preference: `subscribe` to an
+  // unmounted source throws, so every directory owner claims its source here and
+  // every subscription is registered further down, after the services exist.
+  // Scope is this context: dispose unmounts exactly these, and leaves
+  // `scope: 'process'` mounts (the base plugin pool) alone.
+  const watchScope: WatchScope = `context:${projectId}`;
+  const w = deps.watchRuntime.scoped(watchScope);
+  cleanup.push(() => w.dispose());
+
+  // 0.1.96: one runtime (PagesService + StaticHtmlService + FileSerializer) per
+  // configured page root, plus a `pages:<rootId>` mount. The built-in 'pages'
+  // root is always present; user roots are additive. Every per-directory
+  // behaviour is gated on the root's PROPERTIES below, never on `root.id === 'pages'`.
   interface RootRuntime {
     root: Root;
     pages: PagesService;
     staticHtml: StaticHtmlService;
-    watcher: PagesWatcher;
+    source: string;
+    writer: SelfWriteMarker;
     serializer: FileSerializer;
   }
   const rootRuntimes: RootRuntime[] = [];
@@ -414,26 +439,27 @@ async function buildInner(
     const pagesSvc = new PagesService(cwd, root.dir, root.id);
     await pagesSvc.ensureRoot();
     const staticSvc = new StaticHtmlService(cwd, root.dir);
-    const rootWatcher = new PagesWatcher(pagesSvc.root, ws, root.id);
-    cleanup.push(() => rootWatcher.close());
+    const source = pageSource(root.id);
+    w.mountSource({ source, dir: pagesSvc.root });
     rootRuntimes.push({
       root,
       pages: pagesSvc,
       staticHtml: staticSvc,
-      watcher: rootWatcher,
+      source,
+      writer: boundWriter(w, source),
       serializer: new FileSerializer(pagesSvc),
     });
   }
   const rootById = new Map(rootRuntimes.map((rt) => [rt.root.id, rt]));
   // The built-in 'pages' runtime backs the many single-root consumers that still
-  // take one PagesService/PagesWatcher/FileSerializer (release restore, entity
-  // reference-tools, current-page fetch, etc.).
+  // take one PagesService/FileSerializer (release restore, entity reference-tools,
+  // current-page fetch, etc.).
   const pagesRuntime = rootById.get('pages')!;
   const pages = pagesRuntime.pages;
-  const watcher = pagesRuntime.watcher;
+  const pagesWriter = pagesRuntime.writer;
   const pageSerializer = pagesRuntime.serializer;
 
-  // M36: artifact mounts — one {PagesService, PagesWatcher, FileSerializer} per
+  // M36: artifact mounts — one {PagesService, M40 mount, FileSerializer} per
   // `artifactRegistry` entry (brief/patch today; a follow-up brief adds 'plan').
   // Briefs & patches are NOT roots — `Root`'s releasable/referenceValidated/
   // linkTargets/sidebar/briefTarget flags have no meaning for artifacts — so
@@ -445,7 +471,8 @@ async function buildInner(
   interface ArtifactMount {
     entry: ArtifactRegistryEntry;
     pages: PagesService;
-    watcher: PagesWatcher;
+    source: string;
+    writer: SelfWriteMarker;
     serializer: FileSerializer;
   }
   const artifactDirs: Record<ArtifactRegistryEntry['dirConfigKey'], string> = {
@@ -458,12 +485,13 @@ async function buildInner(
     Object.values(artifactRegistry).map(async (entry) => {
       const mountPages = new PagesService(cwd, artifactDirs[entry.dirConfigKey], entry.rootId);
       await mountPages.ensureRoot();
-      const mountWatcher = new PagesWatcher(mountPages.root, ws, entry.rootId);
-      cleanup.push(() => mountWatcher.close());
+      const source = artifactSource(entry.kind);
+      w.mountSource({ source, dir: mountPages.root });
       artifactMounts.set(entry.kind, {
         entry,
         pages: mountPages,
-        watcher: mountWatcher,
+        source,
+        writer: boundWriter(w, source),
         serializer: new FileSerializer(mountPages),
       });
     }),
@@ -502,87 +530,70 @@ async function buildInner(
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
 
-  // Per-root PagesWatchers live in rootRuntimes (created above); artifact
-  // watchers (brief/patch) live in `artifactMounts` (created above).
-  // M29: dedicated watcher + file store + indexer for the committed entity store.
-  // The page-family watchers above are rooted outside `.claude4spec/`, so this
-  // watcher owns `<entitiesDir>` exclusively.
-  const entitiesWatcher = new EntitiesWatcher(entitiesAbs);
-  cleanup.push(() => entitiesWatcher.close());
-  // M33 phase 3: hot-reload watcher for the project-local plugin overlay
-  // (axis B — pool composition). Mounted ONLY behind the trust gate, so an
-  // untrusted/undecided repo never reloads project-committed plugin code
-  // without consent. On a debounced change it invalidates THIS context (the
-  // next build re-imports with a fresh content-hash cache-bust → new pool) and
-  // broadcasts `plugin:reloaded` so the editor remounts extensions without a
-  // document reset. In-flight turns finish on the captured (old) context.
+  // M29: `entities` + `releases` mounts for the committed entity store. The
+  // page-family mounts above are rooted outside `.claude4spec/`, so these own
+  // their directories exclusively.
+  w.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs });
+  w.mountSource({ source: RELEASES_SOURCE, dir: releasesAbs });
+
+  // M33 phase 3: the project-local plugin overlay (axis B — pool composition).
+  // The trust gate blocks the MOUNT, not just the subscription: without consent
+  // the source does not exist at all, so an untrusted repo can never reload
+  // project-committed plugin code. (Contrast `sectionIndexed`, which gates only
+  // whether M02 registers M06's subscription on an always-mounted source.)
+  const overlayMounted = trust === true;
+  if (overlayMounted) w.mountSource({ source: PLUGINS_OVERLAY_SOURCE, dir: projectPluginsDir(cwd) });
   const overlayVersionByPkg = new Map(
     overlayRecords.filter((r) => r.manifestVersion).map((r) => [r.package, r.manifestVersion!]),
   );
-  const pluginOverlayWatcher = new PluginWatcher(
-    trust === true ? [projectPluginsDir(cwd)] : [],
-    (changedPaths) => {
-      const pkgs = affectedOverlayPackages(projectPluginsDir(cwd), changedPaths);
-      // Invalidating THIS context retires it; the rebuilt context mounts its own
-      // fresh watcher. Stop this one now so a retired-but-not-yet-disposed
-      // context (in-flight turn) can't keep re-invalidating the projectId that
-      // the new context now owns.
-      void pluginOverlayWatcher.close();
-      deps.onContextConfigChanged?.();
-      // Broadcast only for changes attributable to a package — no empty-name
-      // event when a change doesn't map to a plugin dir.
-      for (const pkg of pkgs) {
-        ws.broadcast({
-          kind: 'plugin:reloaded',
-          name: pkg,
-          version: overlayVersionByPkg.get(pkg) ?? '',
-          tier: 'overlay',
-        });
-      }
-    },
-  );
-  cleanup.push(() => pluginOverlayWatcher.close());
-  const entityStore = new EntityStore(cwd, entitiesDir, entitiesWatcher, rawReader, pluginHost);
+  const entityStore = new EntityStore(cwd, entitiesDir, boundSuppress(w, ENTITIES_SOURCE), rawReader, pluginHost);
   entityStore.ensureRoot();
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
   const entityIndexer = new EntityIndexerService(
     db.handle,
     entityStore,
-    entitiesWatcher,
+    boundSuppress(w, ENTITIES_SOURCE),
     ws,
     pluginHost,
     tagsService,
     rawReader,
   );
   // 0.1.118: sibling triad for the on-disk release-identity store — mirrors
-  // the entities triad above exactly (watcher rooted at releasesDir, atomic
-  // file store, upsert-by-slug indexer keeping spec_release.id stable — see
+  // the entities triad above exactly (its own mount, atomic file store,
+  // upsert-by-slug indexer keeping spec_release.id stable — see
   // ReleaseIndexerService's header comment for why it must NOT delete-all).
-  const releasesWatcher = new ReleasesWatcher(releasesAbs);
-  cleanup.push(() => releasesWatcher.close());
-  const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, releasesWatcher);
+  const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, boundSuppress(w, RELEASES_SOURCE));
   releaseFileStore.ensureRoot();
-  const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, releasesWatcher);
+  const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, boundSuppress(w, RELEASES_SOURCE));
   // 0.1.96: per-behaviour root maps (gated on root PROPERTIES, not id).
   const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
   const referenceValidatedServices = new Map<string, PagesService>();
-  const referenceValidatedWatchers = new Map<string, PagesWatcher>();
+  const referenceValidatedWriters = new Map<string, SelfWriteMarker>();
   const sidebarRoots = new Map<string, PagesService>(); // todos: any root with a visible tree
   const allRootServices = new Map<string, PagesService>();
   for (const rt of rootRuntimes) {
     allRootServices.set(rt.root.id, rt.pages);
-    if (rt.root.sectionIndexed) sectionIndexedRoots.set(rt.root.id, { pages: rt.pages, watcher: rt.watcher });
+    if (rt.root.sectionIndexed) sectionIndexedRoots.set(rt.root.id, { pages: rt.pages });
     if (rt.root.referenceValidated) {
       referenceValidatedServices.set(rt.root.id, rt.pages);
-      referenceValidatedWatchers.set(rt.root.id, rt.watcher);
+      referenceValidatedWriters.set(rt.root.id, rt.writer);
     }
     if (rt.root.sidebar !== 'hidden') sidebarRoots.set(rt.root.id, rt.pages);
   }
 
-  const referencesService = new ReferencesService(referenceValidatedServices, referenceValidatedWatchers);
+  const referencesService = new ReferencesService(referenceValidatedServices, referenceValidatedWriters);
   const sectionsService = new SectionsService(db.handle);
-  sectionsService.setWriteDeps(sectionIndexedRoots);
+  // SectionsService rewrites `<section_ref/>` anchors across every section-indexed
+  // root, so it needs each root's write handle as well as its PagesService.
+  sectionsService.setWriteDeps(
+    new Map(
+      [...sectionIndexedRoots.keys()].map((rootId) => [
+        rootId,
+        { pages: rootById.get(rootId)!.pages, watcher: rootById.get(rootId)!.writer },
+      ]),
+    ),
+  );
 
   const sectionIndexer = new SectionIndexerService(db.handle, sectionIndexedRoots, ws, pluginHost);
   const todosIndexer = new TodosIndexerService(sidebarRoots, ws);
@@ -772,7 +783,7 @@ async function buildInner(
     rawReader,
     tagsService,
     pages,
-    watcher,
+    (rootId) => rootById.get(rootId)?.writer ?? null,
     cwd,
     releasableRootIds,
     releasableRootDirs,
@@ -839,7 +850,7 @@ async function buildInner(
   // PlanService. Mountowany router /briefs poniżej.
   const briefService = new BriefService({
     briefsPages: briefsMount.pages,
-    briefsWatcher: briefsMount.watcher,
+    briefsWatcher: briefsMount.writer,
     briefsSerializer: briefsMount.serializer,
     pageVersions,
     chatService,
@@ -852,7 +863,7 @@ async function buildInner(
   // BriefService. Mountowany router /patches poniżej.
   const patchService = new PatchService({
     patchesPages: patchesMount.pages,
-    patchesWatcher: patchesMount.watcher,
+    patchesWatcher: patchesMount.writer,
     patchesSerializer: patchesMount.serializer,
     pageVersions,
     chatService,
@@ -864,7 +875,7 @@ async function buildInner(
   // pattern as BriefService/PatchService above.
   const planService = new PlanService({
     plansPages: plansMount.pages,
-    plansWatcher: plansMount.watcher,
+    plansWatcher: plansMount.writer,
     plansSerializer: plansMount.serializer,
     pageVersions,
     chatService,
@@ -907,7 +918,7 @@ async function buildInner(
   // segment; unknown id → 404 ROOT_NOT_FOUND.
   const resolveRoot = (rootId: string): PageRootRuntime | undefined => {
     const rt = rootById.get(rootId);
-    return rt ? { root: rt.root, pages: rt.pages, watcher: rt.watcher } : undefined;
+    return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer } : undefined;
   };
   const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
   router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
@@ -1015,105 +1026,187 @@ async function buildInner(
   router.use('/chat', chatRouter(agentDeps));
   router.use(errorHandler);
 
-  // 0.1.96: one fan-out per root. Indexers are invoked only when the root's
-  // property gates them (sectionIndexed / sidebar-visible / referenceValidated);
-  // file_version + frontmatter always capture, with the root's id + serializer.
+  // ── M40 phase B: SUBSCRIPTIONS ────────────────────────────────────────────
+  // Every mount above is claimed; now each module registers its reactions with a
+  // declared phase and, where it matters, an `after`. Order is enforced by the
+  // runtime at dispatch time, not by the order of these lines. There are no
+  // wildcards on `source`, so a subscriber of many sources iterates them here
+  // explicitly.
+  const captureSerializers = new Map<string, FileSerializer>();
+  for (const rt of rootRuntimes) captureSerializers.set(rt.root.id, rt.serializer);
+  for (const m of artifactMounts.values()) captureSerializers.set(m.entry.rootId, m.serializer);
+  const versionCapture = new FileVersionCapture(pageVersions, captureSerializers, (scope, source, relPath) =>
+    deps.watchRuntime.peekActor(scope, source, relPath),
+  );
+  const anchorInjection = sectionIndexer.anchorInjectionSubscriber((source, relPath) => w.suppress(source, relPath));
+
+  // M06 anchor injection for plan files written OUTSIDE `PlanService.update`
+  // (an agent or user editing `plansDir` directly). `PlanService.update` runs the
+  // same `injectAnchors` synchronously, because `insert_after_section` must see
+  // the anchors with no debounce window in between.
+  const planAnchorInjection: WatchSubscriber = {
+    onChange: async (_scope, source, relPath) => {
+      const mount = artifactMounts.get('plan')!;
+      let page;
+      try {
+        page = await mount.pages.read(relPath);
+      } catch {
+        return; // already gone — skip idempotently
+      }
+      const injected = injectAnchors(page.body);
+      if (injected === page.body) return;
+      w.suppress(source, relPath);
+      await mount.pages.write(relPath, { frontmatter: page.frontmatter, body: injected });
+    },
+    onUnlink: () => {},
+  };
+
   for (const rt of rootRuntimes) {
-    const rootId = rt.root.id;
-    rt.watcher.onChange((relPath, kind) => {
-      if (kind === 'unlink') {
-        if (rt.root.sectionIndexed) {
-          sectionIndexer.handleUnlink(rootId, relPath).catch((err) => {
-            console.error('[section-indexer] unlink error:', err);
-          });
-        }
-        if (rt.root.sidebar !== 'hidden') todosIndexer.handleUnlink(rootId, relPath);
-        pagesLinkIndexer.handleUnlink(rootId, relPath);
-        pagesFrontmatterIndexer.handleUnlink(rootId, relPath);
-        // M17: capture filesystem-origin delete (chokidar saw external rm)
-        pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[file-version] watcher delete capture for ${rootId}:${relPath}:`, (err as Error).message);
-        });
-      } else {
-        if (rt.root.sectionIndexed) sectionIndexer.schedulePage(rootId, relPath);
-        if (rt.root.sidebar !== 'hidden') todosIndexer.schedulePage(rootId, relPath);
-        pagesLinkIndexer.schedulePage(rootId, relPath);
-        pagesFrontmatterIndexer.schedulePage(rootId, relPath);
-        // M17: capture filesystem-origin add/change. `kind === 'add'` may be a
-        // real new file (op=create) or a re-detection — pageVersions.hasAny distinguishes.
-        const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, rootId) ? 'create' : 'update';
-        pageVersions.recordVersion(relPath, op, 'filesystem', undefined, rt.serializer, rootId).catch((err) => {
-          console.warn(`[file-version] watcher capture for ${rootId}:${relPath}:`, (err as Error).message);
-        });
-      }
+    const source = rt.source;
+
+    // M02 — frontmatter projection + the `file:changed` notification it owns.
+    w.subscribe(source, pagesFrontmatterIndexer, {
+      id: 'm02-frontmatter-indexer',
+      phase: 'projection',
+      filter: MARKDOWN_FILTER,
+    });
+    w.subscribe(source, pageChangedNotifier(ws), {
+      id: 'm02-file-changed',
+      phase: 'notification',
+      filter: MARKDOWN_FILTER,
+    });
+
+    // M06 — the gate decides whether the SUBSCRIPTION exists; the source is
+    // mounted for every root regardless. That is why M14's `after` below can go
+    // unsatisfied on a non-indexed root without being a registration race.
+    if (rt.root.sectionIndexed) {
+      w.subscribe(source, sectionIndexer, {
+        id: 'm06-section-indexer',
+        phase: 'projection',
+        filter: MARKDOWN_FILTER,
+      });
+      w.subscribe(source, anchorInjection, {
+        id: 'm06-anchor-injection',
+        phase: 'write-back',
+        filter: MARKDOWN_FILTER,
+      });
+    }
+
+    // M08 — todos, on any root with a visible tree. Read-only; never suppresses.
+    if (rt.root.sidebar !== 'hidden') {
+      w.subscribe(source, todosIndexer, { id: 'm08-todos-indexer', phase: 'projection', filter: MARKDOWN_FILTER });
+    }
+
+    // M14 — link index. Must not run before M06 has minted anchors on a root
+    // where M06 runs at all; where it does not, this dependency is simply
+    // unsatisfied and M14 runs alone (leaving `@page.md#anchor` unresolved,
+    // which is a signal to the author rather than silence).
+    w.subscribe(source, pagesLinkIndexer, {
+      id: 'm14-link-indexer',
+      phase: 'projection',
+      after: ['m06-section-indexer'],
+      filter: MARKDOWN_FILTER,
+    });
+
+    // M30 — `.html` preview refresh. The filter is the whole reaction: html files
+    // get no anchors, no references and no versions.
+    w.subscribe(source, htmlPreviewNotifier(ws), {
+      id: 'm30-html-preview',
+      phase: 'notification',
+      filter: HTML_FILTER,
+    });
+
+    // M17 — capture, after every write-back, so the version contains the anchors.
+    w.subscribe(source, versionCapture, {
+      id: 'm17-capture',
+      phase: 'capture',
+      after: ['write-back'],
+      filter: MARKDOWN_FILTER,
     });
   }
 
-  // M36: one watcher fan-out per artifact mount. Only frontmatter indexer +
-  // file_version capture — section/todos/pages-link indexers NEVER run on
-  // artifact mounts (briefs/patches are not pages in the M02 sense: not part
-  // of the navigable tree, don't aggregate section_ref/todos into tables;
-  // `sectionIndexed: false` on every registry entry formalizes this).
+  // M36: artifact sources get the frontmatter projection, their own owner's
+  // notification, and capture — but NEVER section/todos/link indexing. Briefs and
+  // patches are not pages in the M02 sense: not part of the navigable tree, and
+  // they do not aggregate section_ref/todos into tables. `sectionIndexed: false`
+  // on every registry entry formalizes this.
   for (const m of artifactMounts.values()) {
-    const { entry, watcher: artifactWatcher, serializer: artifactSerializer } = m;
-    artifactWatcher.onChange((relPath, kind) => {
-      if (kind === 'unlink') {
-        pagesFrontmatterIndexer.handleUnlink(entry.rootId, relPath);
-        pageVersions.recordVersion(relPath, 'delete', 'filesystem', undefined, artifactSerializer, entry.rootId).catch((err) => {
-          console.warn(`[file-version] ${entry.kind} delete capture for ${relPath}:`, (err as Error).message);
-        });
-      } else {
-        pagesFrontmatterIndexer.schedulePage(entry.rootId, relPath);
-        const op: 'create' | 'update' = kind === 'add' && !pageVersions.hasAny(relPath, entry.rootId) ? 'create' : 'update';
-        pageVersions.recordVersion(relPath, op, 'filesystem', undefined, artifactSerializer, entry.rootId).catch((err) => {
-          console.warn(`[file-version] ${entry.kind} capture for ${relPath}:`, (err as Error).message);
-        });
-        if (entry.kind === 'brief') {
-          // Direct disk edit (not suppressed): refresh open BriefEditors. The indexer
-          // only fires `briefs:changed` on frontmatter changes, so body-only edits
-          // need this explicit broadcast. `external` → reload-or-confirm like Pages.
-          // Patches have no open-editor-refresh equivalent, so this stays brief-only.
-          ws.broadcast({ kind: 'briefs:changed', path: relPath, origin: 'external' });
-        } else if (entry.kind === 'plan') {
-          // v0.1.129 fix: plans are user/agent-edited the same way briefs are
-          // (external tool, git pull, another process writing plansDir
-          // directly) but had no equivalent live-refresh broadcast — an open
-          // PlanPage kept showing stale content until navigated away and back.
-          // `plans:changed` has no `origin` field (unlike `briefs:changed`) —
-          // plans don't have the reload-or-confirm dialog flow briefs do, so
-          // this is a plain "go refetch" signal the client invalidates on.
-          ws.broadcast({ kind: 'plans:changed', path: relPath });
-        }
-      }
+    const source = m.source;
+    w.subscribe(source, pagesFrontmatterIndexer, {
+      id: 'm02-frontmatter-indexer',
+      phase: 'projection',
+      filter: MARKDOWN_FILTER,
+    });
+    const notifier = artifactChangedNotifier(ws, m.entry.kind);
+    if (notifier) {
+      w.subscribe(source, notifier, {
+        id: `m36-${m.entry.kind}-changed`,
+        phase: 'notification',
+        filter: MARKDOWN_FILTER,
+      });
+    }
+    // Plans are the one artifact kind with `anchorInjection: true` — the same
+    // implementation `PlanService.update` runs synchronously, registered here for
+    // writes that bypass the service entirely (an agent or user editing the file
+    // on disk).
+    if (m.entry.kind === 'plan') {
+      w.subscribe(source, planAnchorInjection, {
+        id: 'm06-plan-anchor-injection',
+        phase: 'write-back',
+        filter: MARKDOWN_FILTER,
+      });
+    }
+    w.subscribe(source, versionCapture, {
+      id: 'm17-capture',
+      phase: 'capture',
+      after: ['write-back'],
+      filter: MARKDOWN_FILTER,
     });
   }
 
-  // M29: external edits / git pull of entity files → incremental reindex.
-  entitiesWatcher.onChange((relPath, kind) => {
-    if (kind === 'unlink') {
-      entityIndexer.handleUnlink(relPath).catch((err) => {
-        console.error(`[entity-indexer] unlink ${relPath}:`, err);
-      });
-    } else {
-      entityIndexer.schedulePage(relPath);
-    }
+  // M29: external edits / git pull of entity files → incremental reindex. This
+  // projection blocks project readiness (see the awaited `indexAll()` below).
+  w.subscribe(ENTITIES_SOURCE, entityIndexer, {
+    id: 'm29-entity-indexer',
+    phase: 'projection',
+    filter: JSON_FILTER,
+  });
+  // 0.1.118: same for release-identity files — upsert-by-slug, never delete-all
+  // (see ReleaseIndexerService's header comment).
+  w.subscribe(RELEASES_SOURCE, releaseIndexer, {
+    id: 'm29-release-cache',
+    phase: 'projection',
+    filter: JSON_FILTER,
   });
 
-  // 0.1.118: external edits / git pull of release-identity files → incremental
-  // spec_release cache reindex (upsert-by-slug, never delete-all — see
-  // ReleaseIndexerService's header comment).
-  releasesWatcher.onChange((relPath, kind) => {
-    if (kind === 'unlink') {
-      releaseIndexer.handleUnlink(relPath).catch((err) => {
-        console.error(`[release-indexer] unlink ${relPath}:`, err);
-      });
-    } else {
-      releaseIndexer.schedulePage(relPath);
-    }
-  });
+  // M33 phase 3: overlay reload. Only registered when the trust gate let the
+  // mount exist at all. Invalidating THIS context retires it and the rebuilt
+  // context mounts its own source, so a retired-but-not-yet-disposed context
+  // (in-flight turn) cannot keep re-invalidating the projectId the new context
+  // now owns — dispose unmounts this source.
+  if (overlayMounted) {
+    const onOverlayChange = (relPath: string): void => {
+      const abs = path.join(projectPluginsDir(cwd), relPath);
+      const pkgs = affectedOverlayPackages(projectPluginsDir(cwd), [abs]);
+      deps.onContextConfigChanged?.();
+      // Broadcast only for changes attributable to a package — no empty-name
+      // event when a change doesn't map to a plugin dir.
+      for (const pkg of pkgs) {
+        ws.broadcast({
+          kind: 'plugin:reloaded',
+          name: pkg,
+          version: overlayVersionByPkg.get(pkg) ?? '',
+          tier: 'overlay',
+        });
+      }
+    };
+    w.subscribe(
+      PLUGINS_OVERLAY_SOURCE,
+      { onChange: (_s, _src, relPath) => onOverlayChange(relPath), onUnlink: (_s, _src, relPath) => onOverlayChange(relPath) },
+      { id: 'm33-overlay-reload', phase: 'reload' },
+    );
+  }
 
-  for (const rt of rootRuntimes) rt.watcher.start();
-  for (const m of artifactMounts.values()) m.watcher.start();
 
   sectionIndexer.indexAll().catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
@@ -1302,12 +1395,10 @@ async function buildInner(
     console.error('[release-indexer] boot indexAll failed:', err);
   }
 
-  // Start the entities watcher only after the boot export/rebuild, so bulk
-  // self-writes during export never race a live reindex.
-  entitiesWatcher.start();
-  // 0.1.118: same reasoning — start after the boot release-cache rebuild.
-  releasesWatcher.start();
-  pluginOverlayWatcher.start();
+  // NOTE: mounts are live from the moment `mountSource` runs (M40 phase A). The
+  // boot export/rebuild below therefore writes through the entity store's
+  // `suppress()` primitive, which is what keeps a bulk rebuild from re-entering
+  // its own indexer.
 
   const writingStyle = initialWritingStyle
     ? { slug: initialWritingStyle, title: skillRegistry.resolve(initialWritingStyle).metadata.title }
@@ -1326,12 +1417,14 @@ async function buildInner(
     pendingInputs,
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
-    // M31 dispose sequence: watchers → MCP factories → room → db handle.
+    // M31 dispose sequence: this scope's mounts → MCP factories → room → db handle.
     dispose: async () => {
-      for (const rt of rootRuntimes) await rt.watcher.close();
-      for (const m of artifactMounts.values()) await m.watcher.close();
-      await entitiesWatcher.close();
-      await pluginOverlayWatcher.close();
+      // One call retires every mount and subscription of THIS context —
+      // pages, artifacts, entities, releases and the plugin overlay — and settles
+      // its pending debounce timers. `scope: 'process'` mounts (the base plugin
+      // pool) and other contexts' mounts are untouched. This also closes the
+      // pre-0.2.10 gap where `releasesWatcher` was never closed on dispose.
+      await w.dispose();
       pluginHost.clearMcpFactories();
       // M33 phase 2: drop references to dynamically imported project-local
       // modules (next rebuild re-imports), alongside the MCP factory release.

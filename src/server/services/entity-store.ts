@@ -25,7 +25,7 @@ import type { SnapshotData } from '../serialization/types.js';
 import { canonicalize } from '../serialization/snapshot.js';
 import { attachPayloadVersion } from '../serialization/payload-upgrade.js';
 import { DomainError } from './tags.js';
-import type { EntitiesWatcher } from '../fs/entities-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 
 const ENTITY_TYPE_DIRS: RawEntityType[] = [
   'endpoint',
@@ -59,7 +59,7 @@ export class EntityStore {
   constructor(
     cwd: string,
     entitiesDir: string,
-    private watcher: EntitiesWatcher,
+    private watcher: SelfWriteSuppressor,
     private reader: RawEntityReader,
     private host: PluginHost,
   ) {

@@ -2,15 +2,21 @@ import { parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
 import type { TodoHit } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
+import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
+import { requireRootId } from '../fs/sources.js';
 
 /**
  * 0.1.96: indexes `<todo/>` tags across every root that has a sidebar tree.
  * Keyed by `${rootId}:${relPath}`; `TodoHit`/`countByPath` carry the rootId so
  * the sidebar can attribute indicators to the right root.
+ *
+ * 0.2.10 (M40): the whole substance of this module is its reaction to a file
+ * change, so it implements the subscriber contract directly — `onChange` /
+ * `onUnlink`, nothing more. It merges events from every `pages:<rootId>` source
+ * and derives `rootId` from the source-name suffix. It is read-only and never
+ * calls `suppress()`. Debounce is gone: it belongs to the mount now.
  */
-export class TodosIndexerService {
-  private debounceMs = 300;
-  private pending = new Map<string, NodeJS.Timeout>();
+export class TodosIndexerService implements WatchSubscriber {
   private byKey = new Map<string, TodoHit[]>();
 
   constructor(private roots: Map<string, PagesService>, private ws: WsEmitter) {}
@@ -19,27 +25,13 @@ export class TodosIndexerService {
     return `${rootId}:${relPath}`;
   }
 
-  schedulePage(rootId: string, relPath: string): void {
-    const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(k);
-      this.indexPage(rootId, relPath).catch((err) => {
-        console.error(`[todos-indexer] failed to index ${k}:`, err);
-      });
-    }, this.debounceMs);
-    this.pending.set(k, timer);
+  async onChange(_scope: WatchScope, source: string, relPath: string): Promise<void> {
+    await this.indexPage(requireRootId(source), relPath);
   }
 
-  handleUnlink(rootId: string, relPath: string): void {
-    const k = this.key(rootId, relPath);
-    const prev = this.pending.get(k);
-    if (prev) {
-      clearTimeout(prev);
-      this.pending.delete(k);
-    }
-    if (this.byKey.delete(k)) {
+  onUnlink(_scope: WatchScope, source: string, relPath: string): void {
+    const rootId = requireRootId(source);
+    if (this.byKey.delete(this.key(rootId, relPath))) {
       this.ws.broadcast({ kind: 'todos:changed', rootId, pagePath: relPath });
     }
   }

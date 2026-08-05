@@ -6,7 +6,7 @@ import {
   type XmlTag,
 } from '../../shared/xml-tags.js';
 import type { PagesService } from './pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import type { EntityStore } from './entity-store.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { isRawEntityType, type RawEntityType } from '../discovery/raw-entity-reader.js';
@@ -39,15 +39,15 @@ export class ReferencesService {
    * 0.1.96 multiroot: the service is bound to the REFERENCE-VALIDATED page roots
    * (config.roots filtered by `referenceValidated`), keyed by `rootId`. Every
    * walk/propagate iterates that subset keyed `(rootId, path)`; writes go through
-   * the matching root's `PagesService` + `PagesWatcher` (suppress before write).
+   * the matching root's `PagesService` + M40 write handle (markOrigin before write).
    * Entity-file propagation (setPluginHost) is root-agnostic and unchanged.
    */
   constructor(
     private roots: Map<string, PagesService>,
-    private watchers: Map<string, PagesWatcher>,
+    private watchers: Map<string, SelfWriteMarker>,
   ) {}
 
-  private watcherFor(rootId: string): PagesWatcher | undefined {
+  private watcherFor(rootId: string): SelfWriteMarker | undefined {
     return this.watchers.get(rootId);
   }
 

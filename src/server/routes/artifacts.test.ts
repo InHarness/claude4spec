@@ -8,7 +8,8 @@ import request from 'supertest';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { PagesService } from '../services/pages.js';
-import { PagesWatcher } from '../fs/watcher.js';
+import { FileWatchRuntime } from '../fs/watcher.js';
+import { artifactSource, boundWriter } from '../fs/sources.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { PagesFrontmatterIndexer } from '../services/pages-frontmatter-indexer.js';
@@ -65,9 +66,14 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
     await patchesPages.ensureRoot();
     const plansPages = new PagesService(cwd, plansDir, PLAN_ROOT_MARKER);
     await plansPages.ensureRoot();
-    const briefsWatcher = new PagesWatcher(briefsPages.root, fakeWs, BRIEF_ROOT_MARKER);
-    const patchesWatcher = new PagesWatcher(patchesPages.root, fakeWs, PATCH_ROOT_MARKER);
-    const plansWatcher = new PagesWatcher(plansPages.root, fakeWs, PLAN_ROOT_MARKER);
+    const watchRuntime = new FileWatchRuntime({ fsEvents: false });
+    const scoped = watchRuntime.scoped('context:test');
+    for (const [kind, svc] of [['brief', briefsPages], ['patch', patchesPages], ['plan', plansPages]] as const) {
+      watchRuntime.mountSource({ source: artifactSource(kind), dir: svc.root, scope: 'context:test' });
+    }
+    const briefsWatcher = boundWriter(scoped, artifactSource('brief'));
+    const patchesWatcher = boundWriter(scoped, artifactSource('patch'));
+    const plansWatcher = boundWriter(scoped, artifactSource('plan'));
     briefsSerializer = new FileSerializer(briefsPages);
     patchesSerializer = new FileSerializer(patchesPages);
     const plansSerializer = new FileSerializer(plansPages);

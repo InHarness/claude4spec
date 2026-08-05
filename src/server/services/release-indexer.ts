@@ -27,8 +27,9 @@
 
 import type Database from 'better-sqlite3';
 import type { ReleaseFileStore, ReleaseFileData } from './release-store.js';
-import type { ReleasesWatcher } from '../fs/releases-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 import { isReservedReleaseName } from './release.js';
+import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
 
 /**
  * 0.2.2: `roots` joins the rebuilt columns (migration 049).
@@ -50,14 +51,12 @@ const UPSERT_SQL = `
     roots = excluded.roots
 `;
 
-export class ReleaseIndexerService {
-  private debounceMs = 300;
-  private pending = new Map<string, NodeJS.Timeout>();
+export class ReleaseIndexerService implements WatchSubscriber {
 
   constructor(
     private db: Database.Database,
     private store: ReleaseFileStore,
-    private watcher: ReleasesWatcher,
+    private watcher: SelfWriteSuppressor,
   ) {}
 
   // ─── boot full rebuild ────────────────────────────────────────────────────
@@ -90,26 +89,16 @@ export class ReleaseIndexerService {
 
   // ─── incremental (file-watch) ─────────────────────────────────────────────
 
-  schedulePage(relPath: string): void {
-    const prev = this.pending.get(relPath);
-    if (prev) clearTimeout(prev);
-    const timer = setTimeout(() => {
-      this.pending.delete(relPath);
-      try {
-        this.indexFromWatch(relPath);
-      } catch (err) {
-        console.error(`[release-indexer] failed to index ${relPath}:`, err);
-      }
-    }, this.debounceMs);
-    this.pending.set(relPath, timer);
+  /** M40 subscriber contract. Debounce lives in the mount, not here. */
+  onChange(_scope: WatchScope, _source: string, relPath: string): void {
+    this.indexFromWatch(relPath);
+  }
+
+  onUnlink(_scope: WatchScope, _source: string, relPath: string): Promise<void> {
+    return this.handleUnlink(relPath);
   }
 
   async handleUnlink(relPath: string): Promise<void> {
-    const prev = this.pending.get(relPath);
-    if (prev) {
-      clearTimeout(prev);
-      this.pending.delete(relPath);
-    }
     const slug = this.store.parseRelPath(relPath);
     if (!slug) return;
     // No DB-level FK cascade exists (spec_release.id is only a loose

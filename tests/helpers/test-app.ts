@@ -28,12 +28,12 @@ import { VersionService } from '../../src/server/services/versions.js';
 import { ReferencesService } from '../../src/server/services/references.js';
 import { RawEntityReader } from '../../src/server/discovery/raw-entity-reader.js';
 import { PagesService } from '../../src/server/services/pages.js';
-import { PagesWatcher } from '../../src/server/fs/watcher.js';
+import { FileWatchRuntime, type WatchScope } from '../../src/server/fs/watcher.js';
+import { pageSource, artifactSource, boundWriter, boundSuppress, ENTITIES_SOURCE } from '../../src/server/fs/sources.js';
 import { FileSerializer } from '../../src/server/services/file-serializer.js';
 import { FileVersionService } from '../../src/server/services/file-version.js';
 import { PagesFrontmatterIndexer } from '../../src/server/services/pages-frontmatter-indexer.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER, PLAN_ROOT_MARKER } from '../../src/shared/types.js';
-import { EntitiesWatcher } from '../../src/server/fs/entities-watcher.js';
 import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { createDiscoveryCore } from '../../src/server/discovery/index.js';
@@ -43,6 +43,9 @@ import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
 import type Database from 'better-sqlite3';
+
+/** One synthetic context scope for the whole harness — production uses `context:<projectId>`. */
+const TEST_SCOPE: WatchScope = 'context:test';
 
 export interface TestApp {
   app: express.Express;
@@ -54,7 +57,7 @@ export interface TestApp {
   entityStore: EntityStore;
   /** 0.2.4: exposed so a test can build a real EntityIndexerService for round-trip checks. */
   tagsService: TagsService;
-  entitiesWatcher: EntitiesWatcher;
+  watchRuntime: FileWatchRuntime;
   /** A.8: the write door a plugin's `mount` is handed, so a test can drive it. */
   crud: CrudFacade;
   cwd: string;
@@ -95,18 +98,28 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   const rawReader = new RawEntityReader(db, host);
   versionService.configureSnapshot(rawReader, host);
 
-  const entitiesWatcher = new EntitiesWatcher(path.join(cwd, '.claude4spec/entities'));
-  const entityStore = new EntityStore(cwd, '.claude4spec/entities', entitiesWatcher, rawReader, host);
+  const watchRuntime = new FileWatchRuntime({ fsEvents: false });
+  const scopedWatch = watchRuntime.scoped(TEST_SCOPE);
+  const entitiesAbs = path.join(cwd, '.claude4spec/entities');
+  watchRuntime.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs, scope: TEST_SCOPE });
+  const entityStore = new EntityStore(
+    cwd,
+    '.claude4spec/entities',
+    boundSuppress(scopedWatch, ENTITIES_SOURCE),
+    rawReader,
+    host,
+  );
   entityStore.ensureRoot();
 
   const pages = new PagesService(cwd, 'pages', 'pages');
   await pages.ensureRoot();
-  const watcher = new PagesWatcher(pages.root, ws, 'pages');
+  watchRuntime.mountSource({ source: pageSource('pages'), dir: pages.root, scope: TEST_SCOPE });
+  const pagesWriter = boundWriter(scopedWatch, pageSource('pages'));
   // 0.1.96: ReferencesService is bound to the reference-validated roots (here just
   // the built-in 'pages' root) keyed by rootId.
   const referencesService = new ReferencesService(
     new Map([['pages', pages]]),
-    new Map([['pages', watcher]]),
+    new Map([['pages', pagesWriter]]),
   );
   /**
    * 2.0.0: build the projection before anything mounts, over every AVAILABLE
@@ -222,9 +235,13 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   await patchesPages.ensureRoot();
   const plansPages = new PagesService(cwd, 'plans', PLAN_ROOT_MARKER);
   await plansPages.ensureRoot();
-  const briefsWatcher = new PagesWatcher(briefsPages.root, ws, BRIEF_ROOT_MARKER);
-  const patchesWatcher = new PagesWatcher(patchesPages.root, ws, PATCH_ROOT_MARKER);
-  const plansWatcher = new PagesWatcher(plansPages.root, ws, PLAN_ROOT_MARKER);
+  for (const kind of ['brief', 'patch', 'plan'] as const) {
+    const dir = { brief: briefsPages, patch: patchesPages, plan: plansPages }[kind].root;
+    watchRuntime.mountSource({ source: artifactSource(kind), dir, scope: TEST_SCOPE });
+  }
+  const briefsWatcher = boundWriter(scopedWatch, artifactSource('brief'));
+  const patchesWatcher = boundWriter(scopedWatch, artifactSource('patch'));
+  const plansWatcher = boundWriter(scopedWatch, artifactSource('plan'));
   const briefsSerializer = new FileSerializer(briefsPages);
   const patchesSerializer = new FileSerializer(patchesPages);
   const plansSerializer = new FileSerializer(plansPages);
@@ -281,7 +298,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     referencesService,
     entityStore,
     tagsService,
-    entitiesWatcher,
+    watchRuntime,
     crud: crudFacade,
     cwd,
     plansPages,

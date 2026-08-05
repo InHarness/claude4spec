@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
 import { ReleaseFileStore } from './release-store.js';
-import { ReleasesWatcher } from '../fs/releases-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 import { GitService } from './git.js';
 import { FileSerializer } from './file-serializer.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
@@ -70,7 +70,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     releaseStore: ReleaseFileStore;
     gitService: GitService;
   } {
-    const releasesWatcher = new ReleasesWatcher(path.join(dir, '.claude4spec/releases'));
+    const releasesWatcher = { suppress: () => {} } as SelfWriteSuppressor;
     const releaseStore = new ReleaseFileStore(dir, '.claude4spec/releases', releasesWatcher);
     releaseStore.ensureRoot();
     const gitService = new GitService(dir, [pagesDir]);
@@ -98,7 +98,7 @@ describe('ReleaseService.getReleaseDiff — git-anchored branch (0.1.118)', () =
     rootIds: string[],
     rootDirs: string[],
   ): { releaseService: ReleaseService; releaseStore: ReleaseFileStore } {
-    const releasesWatcher = new ReleasesWatcher(path.join(dir, '.claude4spec/releases'));
+    const releasesWatcher = { suppress: () => {} } as SelfWriteSuppressor;
     const releaseStore = new ReleaseFileStore(dir, '.claude4spec/releases', releasesWatcher);
     releaseStore.ensureRoot();
     const gitService = new GitService(dir, rootDirs);

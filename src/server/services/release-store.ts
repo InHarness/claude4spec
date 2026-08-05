@@ -15,7 +15,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ReleasesWatcher } from '../fs/releases-watcher.js';
+import type { SelfWriteSuppressor } from '../fs/sources.js';
 
 export interface ReleaseFileData {
   name: string;
@@ -55,7 +55,7 @@ export class ReleaseFileStore {
   constructor(
     cwd: string,
     releasesDir: string,
-    private watcher: ReleasesWatcher,
+    private watcher: SelfWriteSuppressor,
   ) {
     this.root = path.resolve(cwd, releasesDir);
   }

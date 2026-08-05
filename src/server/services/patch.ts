@@ -27,7 +27,7 @@ import type {
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
-import type { PagesWatcher } from '../fs/watcher.js';
+import type { SelfWriteMarker } from '../fs/sources.js';
 import type { FileVersionService } from './file-version.js';
 import { hashContent, toIso } from './artifact-content.js';
 import type { FileSerializer } from './file-serializer.js';
@@ -38,7 +38,7 @@ import { ConflictError } from './brief.js';
 
 export interface PatchServiceDeps {
   patchesPages: PagesService;
-  patchesWatcher: PagesWatcher;
+  patchesWatcher: SelfWriteMarker;
   patchesSerializer: FileSerializer;
   pageVersions: FileVersionService;
   chatService: ChatService;
