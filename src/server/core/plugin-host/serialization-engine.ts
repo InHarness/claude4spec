@@ -108,7 +108,9 @@ export class SerializationEngine {
     entity: RawEntity,
     reader: RawEntityReader
   ): SerializeResult {
-    return this.invoke(type, view, entity, reader, () => genericEntity(entity, view));
+    return this.invoke(type, view, entity, reader, () =>
+      genericEntity(entity, view, this.host.getAvailable(type)?.data?.schema),
+    );
   }
 
   serializeSection(view: ViewKind, section: RawSection, reader: RawEntityReader): SerializeResult {
