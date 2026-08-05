@@ -114,7 +114,7 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
 
     // Read from the DTO side: it is the end the junction does NOT bind, so a
     // link that survived only as a stale endpoint_slug would not show up here.
-    const after = await api(p(`/dtos/${renamed}`));
+    const after = await api(p(`/dtos/${renamed}?view=detail`));
     expect(after.status).toBe(200);
     expect(after.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
       endpoint.body.data.slug,

@@ -61,8 +61,8 @@ async function listVersions(
  */
 async function endpointWithHistory(projectId: string): Promise<string> {
   const res = await fetch(`${BASE}/api/projects/${projectId}/endpoints`);
-  const body = (await res.json()) as { endpoints: { slug: string }[] };
-  const slug = body.endpoints[0]?.slug;
+  const body = (await res.json()) as { data: { slug: string }[] };
+  const slug = body.data[0]?.slug;
   if (!slug) throw new Error('no endpoint in this environment — seed one first');
 
   while ((await listVersions(projectId, slug)).length < 2) {
@@ -89,7 +89,7 @@ async function endpointWithOneVersion(projectId: string): Promise<string> {
     }),
   });
   if (!res.ok) throw new Error(`could not create a probe endpoint: ${res.status}`);
-  const { slug } = (await res.json()) as { slug: string };
+  const { data: { slug } } = (await res.json()) as { data: { slug: string } };
   const versions = await listVersions(projectId, slug);
   if (versions.length !== 1) throw new Error(`expected exactly one version, got ${versions.length}`);
   return slug;
@@ -98,8 +98,8 @@ async function endpointWithOneVersion(projectId: string): Promise<string> {
 /** An entity that has never been mutated — no version rows at all. */
 async function acWithNoVersions(projectId: string): Promise<string | null> {
   const res = await fetch(`${BASE}/api/projects/${projectId}/acs`);
-  const body = (await res.json()) as { acs: { slug: string }[] };
-  for (const { slug } of body.acs) {
+  const body = (await res.json()) as { data: { slug: string }[] };
+  for (const { slug } of body.data) {
     if ((await listVersions(projectId, slug, 'ac')).length === 0) return slug;
   }
   return null;

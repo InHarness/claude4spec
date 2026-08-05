@@ -149,7 +149,9 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     // Readable from BOTH ends — the junction is the only table generated from a
     // value collection rather than as a column, so a one-directional read would
     // hide half of it.
-    const dto = await api(`/api/projects/${projectId}/dtos/${created.dto!.slug}`);
+    // `?view=detail`: `endpoints` is a reverse join, and the generated GET
+    // answers `single_element` unless asked. See generated-crud-router.
+    const dto = await api(`/api/projects/${projectId}/dtos/${created.dto!.slug}?view=detail`);
     expect(dto.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
       created.endpoint!.slug,
     );
