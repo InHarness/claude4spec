@@ -29,6 +29,7 @@
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
 import type { DataDeclaration, FieldNode } from '../../../shared/plugin-host/data-schema.js';
+import type { SlugPattern, SlugStep } from '../../../shared/plugin-host/slug-pattern.js';
 
 /**
  * The shape UNDER construction. `ZodRawShape` is `Readonly`, so it is the
@@ -104,12 +105,68 @@ const TAGS_INPUT = z
   .optional()
   .describe('Tag slugs; non-existent tags are auto-created.');
 
+/**
+ * A field the SLUG is derived from must not be blank.
+ *
+ * The six retired services each opened with a hand-written `if (!x) throw
+ * VALIDATION` — `AcService` on `text`, `EndpointService` on `path`. Tier K
+ * deleted them on the reading that `required` says the same thing, and it does
+ * not: `z.string()` accepts `''` and the projection's required check only fires
+ * on `null`/absent.
+ *
+ * But `required` is the wrong test for it, and trying that first is what caught
+ * this: `endpoint.summary` is `required: true, default: ''`, so a blanket
+ * non-blank rule on required strings rejects a legitimately empty summary. What
+ * the retired services actually guarded was narrower and has a reason —
+ * `text` and `path` are what their `slugPattern` SLUGIFIES.
+ *
+ * That is the invariant: a blank slug source produces a degenerate slug.
+ * `POST /api/acs {"text": ""}` slugified to nothing and left the bare literal
+ * prefix `ac-` — non-empty, so slug allocation accepted it — producing a blank
+ * AC that shows as an empty row in the list and in every agent's active-AC set.
+ * The next such create then failed with `SLUG_CONFLICT: ac slug 'ac-' already
+ * exists`, which tells the author nothing about what they did wrong.
+ *
+ * `\S` rather than `.min(1)`: whitespace slugifies to nothing exactly as `''`
+ * does, so length is the wrong question. Validation only — no `.trim()`, which
+ * would TRANSFORM the value and quietly rewrite what the caller sent.
+ */
+function slugSourceFields(pattern: SlugPattern | undefined): Set<string> {
+  const fields = new Set<string>();
+  if (!pattern || pattern.length === 0) return fields;
+
+  /**
+   * A FALLBACK CHAIN exempts everything in it.
+   *
+   * `SlugPattern` is either one step list or an ordered list of alternatives,
+   * and the chain exists precisely so a blank source is survivable: `diagram` is
+   * `slugify(caption)` → `slugify(firstSourceIdentifier)` → `nanoid(8)`, so a
+   * captionless diagram is not a mistake, it is the case alternative two and
+   * three are for. Only a single-alternative pattern has no recovery, and only
+   * there does a blank source degenerate into the bare literal prefix.
+   */
+  const alternatives = Array.isArray(pattern[0]) ? (pattern as SlugStep[][]) : [pattern as SlugStep[]];
+  if (alternatives.length > 1) return fields;
+
+  for (const step of alternatives[0] ?? []) {
+    if (step.op === 'slugify') fields.add(step.field);
+  }
+  return fields;
+}
+
+function nonBlankIfSlugSource(name: string, node: FieldNode, sources: Set<string>, t: ZodTypeAny): ZodTypeAny {
+  return node.kind === 'string' && sources.has(name)
+    ? z.string().regex(/\S/, 'must not be blank')
+    : t;
+}
+
 /** The `create_entities` input shape for a type. */
-export function buildCreateShape(data: DataDeclaration): ZodRawShape {
+export function buildCreateShape(data: DataDeclaration, slugPattern?: SlugPattern): ZodRawShape {
+  const sources = slugSourceFields(slugPattern);
   const shape: MutableShape = {};
   for (const [name, node] of Object.entries(data.schema)) {
     if (!callerSupplied(node)) continue;
-    let t = nodeType(node);
+    let t = nonBlankIfSlugSource(name, node, sources, nodeType(node));
     if (node.clearable) t = t.nullable();
     // A default or a computedDefault fills an absent field, so demanding it
     // would reject a payload the declaration says is complete.
@@ -131,11 +188,14 @@ export function buildCreateShape(data: DataDeclaration): ZodRawShape {
  * replaces. A `transientInput` field is absent entirely — it exists to seed the
  * slug at create, and there is nothing for it to do in an update.
  */
-export function buildUpdateShape(data: DataDeclaration): ZodRawShape {
+export function buildUpdateShape(data: DataDeclaration, slugPattern?: SlugPattern): ZodRawShape {
+  const sources = slugSourceFields(slugPattern);
   const shape: MutableShape = {};
   for (const [name, node] of Object.entries(data.schema)) {
     if (!callerSupplied(node) || node.transientInput) continue;
-    let t = nodeType(node);
+    // Same rule on update. The slug is not recomputed, but the FIELD is still
+    // what the entity is named after, and blanking it is the write create refuses.
+    let t = nonBlankIfSlugSource(name, node, sources, nodeType(node));
     if (node.clearable) t = t.nullable();
     t = t.optional();
     shape[name] = node.description ? t.describe(node.description) : t;

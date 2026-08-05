@@ -137,8 +137,10 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
    * an agent, accepts both, and drops them with no error. Tier K deleted the
    * services and the slot; what is described is now what the write path does.
    */
-  const createSchemaOf = (module: BackendModule) => z.object(buildCreateShape(module.data!));
-  const updateSchemaOf = (module: BackendModule) => z.object(buildUpdateShape(module.data!));
+  const createSchemaOf = (module: BackendModule) =>
+    z.object(buildCreateShape(module.data!, module.slugPattern));
+  const updateSchemaOf = (module: BackendModule) =>
+    z.object(buildUpdateShape(module.data!, module.slugPattern));
 
   /**
    * The generic write door — the only one.

@@ -49,9 +49,9 @@ export const endpointEntity: EntityContribution = {
    * that still embed the old slug.
    */
   backend: {
-    routes: { router: (_service: unknown, ctx: MountContext) => endpointsRouter(linkDeps(ctx)) },
+    routes: { router: (_service: unknown, ctx: MountContext) => endpointsRouter(linkDeps(ctx, 'user')) },
     mcpServer: (_service: unknown, ctx: MountContext) =>
-      createEndpointToolsServer({ links: linkDeps(ctx), ws: ctx.ws }),
+      createEndpointToolsServer({ links: linkDeps(ctx, 'agent'), ws: ctx.ws }),
   },
 } as EntityContribution;
 
@@ -62,11 +62,19 @@ export const endpointEntity: EntityContribution = {
  * is what `collection: 'value'` means — the host diffs the junction rows, keeps
  * the FK, captures the version and re-persists the file. None of that is this
  * plugin's business any more.
+ *
+ * `actor` is a PARAMETER because the two doors are two different actors. The
+ * REST routes are the human editing the detail panel; the MCP tools are the
+ * agent. Both went through one `linkDeps(ctx)` hardcoding `'user'`, so every
+ * agent-issued `link_dto` landed in `entity_version` attributed to the author —
+ * which is the one thing version history exists to tell apart, and the retired
+ * service never even captured.
  */
-function linkDeps(ctx: MountContext): LinkDtoDeps {
+function linkDeps(ctx: MountContext, actor: 'user' | 'agent'): LinkDtoDeps {
   return {
     reader: ctx.reader,
-    update: (slug: string, linkedDtos: DtoLink[]) =>
-      void ctx.crud.update(ENDPOINT_TYPE, slug, { linkedDtos }, 'user'),
+    update: async (slug: string, linkedDtos: DtoLink[]) => {
+      await ctx.crud.update(ENDPOINT_TYPE, slug, { linkedDtos }, actor);
+    },
   };
 }

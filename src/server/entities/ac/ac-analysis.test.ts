@@ -35,11 +35,20 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
   const reader = (verifies: Array<{ type: string; slug: string }>) => ({
     slugsMatching: () => new Set(['ac-1']),
     listSlugs: () => ['ac-1'],
+    /**
+     * `verifies` goes in `data`, where the real reader puts it.
+     *
+     * This stub used to answer `readCollection: () => verifies`, which is how
+     * the embedded-vs-projected mix-up in `read-acs.ts` survived: the fake
+     * confirmed the caller's own belief about the storage layout instead of
+     * contradicting it. `read-acs.test.ts` now covers the layout against a real
+     * projection; this file only needs the ANALYSIS behaviour, so the stub still
+     * earns its place — it just has to be wrong in no interesting way.
+     */
     getEntity: (type: string, slug: string) =>
       type === 'ac'
-        ? { type, slug, tags: [], data: { text: 'the thing works', kind: 'behavior' } }
+        ? { type, slug, tags: [], data: { text: 'the thing works', kind: 'behavior', verifies } }
         : { type, slug, tags: [], data: {} },
-    readCollection: () => verifies,
   });
 
   const deps = () => ({ cwd, roots: [], host: { getEntity: () => ({}) }, reader: reader([]) }) as never;

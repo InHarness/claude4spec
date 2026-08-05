@@ -434,17 +434,55 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(detail.body.data.createdAt).toEqual(expect.any(String));
   });
 
-  it('falls back to single_element for a view it does not serve', async () => {
+  it('refuses a view it does not serve, rather than quietly serving another', async () => {
     await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
-    // `element_list_item` is a real ViewKind but not a READABLE one here, and
-    // `nonsense` is not a view at all. Both must answer the default rather than
-    // hand back a shape the caller did not ask for — or a 500.
-    for (const view of ['element_list_item', 'inline_mention', 'nonsense']) {
+    /**
+     * `element_list_item` is a real ViewKind but not a readable one here, and
+     * `nonsense` is not a view at all. Both are a 400 naming the alternatives.
+     *
+     * Falling back to `single_element` — which this did at first — reproduces
+     * the exact bug the parameter was added to fix: `?view=details` (a typo)
+     * answers 200 with no `endpoints`, and the caller cannot tell it was not
+     * given what it asked for.
+     */
+    for (const view of ['element_list_item', 'inline_mention', 'nonsense', 'details']) {
       const res = await request(t.app).get(`/api/dtos/user-dto?view=${view}`);
-      expect(res.status).toBe(200);
-      expect(res.body.data.name).toBe('UserDto');
-      expect(res.body.data.endpoints).toBeUndefined();
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION');
+      expect(res.body.error.message).toMatch(/single_element, detail/);
     }
+
+    // An absent or empty `view` is not a request for a strange one.
+    for (const q of ['', '?view=']) {
+      expect((await request(t.app).get(`/api/dtos/user-dto${q}`)).status).toBe(200);
+    }
+  });
+
+  /**
+   * The `if (!text) throw` the retired services opened with.
+   *
+   * Tier K deleted those on the reading that `required` in the declaration says
+   * the same thing. It does not: `z.string()` accepts `''`. The consequence is
+   * specific to a SLUG SOURCE — `name` slugifies to nothing, the base is the
+   * empty string, and the entity lands somewhere degenerate. `endpoint.summary`
+   * is `required: true, default: ''` and must stay writable as blank, which is
+   * why the rule keys on the slug pattern rather than on `required`.
+   */
+  it('refuses a blank value in the field the slug is derived from', async () => {
+    for (const name of ['', '   ']) {
+      const res = await request(t.app).post('/api/widgets').send({ name });
+      expect(res.status).toBe(400);
+      expect(res.body.error.message).toMatch(/must not be blank/);
+    }
+    // Blanking it later is the same write.
+    await request(t.app).post('/api/widgets').send({ name: 'Real' });
+    expect((await request(t.app).patch('/api/widgets/real').send({ name: '' })).status).toBe(400);
+
+    // A required field that is NOT a slug source keeps accepting blank —
+    // `endpoint.summary` is the shipped example.
+    const ep = await request(t.app).post('/api/endpoints').send({ method: 'GET', path: '/x', summary: '' });
+    expect(ep.status).toBe(201);
+    expect(ep.body.data.summary).toBe('');
   });
 
   /**

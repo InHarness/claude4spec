@@ -100,16 +100,20 @@ export type EntityServiceLike = unknown;
  *
  * `type` is a parameter rather than bound because a plugin legitimately writes
  * types other than its own (`endpoint` reads `dto` to validate a link).
+ *
+ * ASYNC, and not merely as a convenience: `update` propagates a rename to every
+ * referencing entity and page, which is I/O. A synchronous facade could only
+ * have skipped that step — which is exactly what the first version did.
  */
 export interface CrudFacade {
-  create(type: string, input: unknown, actor: ChangedBy): { slug: string; warnings?: string[] };
+  create(type: string, input: unknown, actor: ChangedBy): Promise<{ slug: string; warnings?: string[] }>;
   update(
     type: string,
     slug: string,
     input: unknown,
     actor: ChangedBy,
-  ): { slug: string; warnings?: string[] };
-  delete(type: string, slug: string, actor: ChangedBy): { deleted: boolean };
+  ): Promise<{ slug: string; warnings?: string[] }>;
+  delete(type: string, slug: string, actor: ChangedBy): Promise<{ deleted: boolean }>;
 }
 
 export interface RouteRegistration {

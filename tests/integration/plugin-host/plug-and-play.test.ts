@@ -264,6 +264,34 @@ describe('item 63 — a type that declares only its data is a first-class type',
     }
   });
 
+  /**
+   * `MountContext.crud` is the door A.8 hands a plugin, and it must be the SAME
+   * one `/api/{type}s` is — not `genericUpdate` alone.
+   *
+   * The first version bound the three verbs bare, so a plugin renaming through
+   * the facade moved the row and the file while every `ref`-flagged field and
+   * every `<inline_mention/>` kept pointing at the old slug. Nothing exercised
+   * it, which is why the review could only call it plausible: the one shipped
+   * caller (`endpoint`'s link routes) does not rename.
+   */
+  it('the crud facade a plugin is handed propagates a rename, like the REST route does', async () => {
+    const t = await app();
+    try {
+      await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+      await request(t.app)
+        .post('/api/sprockets')
+        .send({ name: 'Linked', fitsWith: [{ dto: 'user-dto' }] });
+
+      // Straight through the facade, as a plugin's own route would.
+      await t.crud.update('dto', 'user-dto', { newSlug: 'account-dto' }, 'user');
+
+      const after = await request(t.app).get('/api/sprockets/spr-linked');
+      expect(after.body.data.fitsWith).toEqual([{ dto: 'account-dto' }]);
+    } finally {
+      t.cleanup();
+    }
+  });
+
   it('snapshots and restores through the host, with no serializer of its own', async () => {
     const t = await app();
     try {

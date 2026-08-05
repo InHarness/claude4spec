@@ -25,7 +25,7 @@ import { linkDto, unlinkDto, type LinkDtoDeps } from './link-dto.js';
 export function endpointsRouter(deps: LinkDtoDeps): Router {
   const router = Router();
 
-  router.post('/:slug/dtos', (req, res, next) => {
+  router.post('/:slug/dtos', async (req, res, next) => {
     try {
       const body = req.body as { dtoSlug?: string; relation?: string; statusCode?: number | null };
       if (!body.dtoSlug || !body.relation) {
@@ -37,19 +37,19 @@ export function endpointsRouter(deps: LinkDtoDeps): Router {
         typeof body.statusCode === 'number' && Number.isInteger(body.statusCode)
           ? body.statusCode
           : null;
-      linkDto(deps, req.params.slug, body.dtoSlug, body.relation as 'request' | 'response' | 'error', statusCode);
+      await linkDto(deps, req.params.slug, body.dtoSlug, body.relation as 'request' | 'response' | 'error', statusCode);
       res.status(201).json({ linked: true });
     } catch (err) {
       next(err);
     }
   });
 
-  router.delete('/:slug/dtos/:dtoSlug/:relation', (req, res, next) => {
+  router.delete('/:slug/dtos/:dtoSlug/:relation', async (req, res, next) => {
     try {
       const q = req.query.statusCode;
       const statusCode =
         typeof q === 'string' && q !== '' && Number.isInteger(Number(q)) ? Number(q) : null;
-      unlinkDto(
+      await unlinkDto(
         deps,
         req.params.slug,
         req.params.dtoSlug,

@@ -14,6 +14,7 @@ import {
   genericCreate,
   genericDelete,
   genericUpdate,
+  propagateRename,
 } from '../../src/server/core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../../src/server/core/plugin-host/types.js';
 import { plansRouter } from '../../src/server/routes/plans.js';
@@ -54,6 +55,8 @@ export interface TestApp {
   /** 0.2.4: exposed so a test can build a real EntityIndexerService for round-trip checks. */
   tagsService: TagsService;
   entitiesWatcher: EntitiesWatcher;
+  /** A.8: the write door a plugin's `mount` is handed, so a test can drive it. */
+  crud: CrudFacade;
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
   plansPages: PagesService;
@@ -127,10 +130,29 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     references: referencesService,
     projection: { db, store: entityStore, versions: versionService },
   };
+  /**
+   * Mirrors `buildProjectContext` exactly, INCLUDING `propagateRename` and the
+   * broadcast. A helper that bound the three verbs bare would make every test
+   * pass against a facade production does not have — which is how the missing
+   * rename fan-out survived its first review.
+   */
   const crudFacade: CrudFacade = {
-    create: (type, input, actor) => genericCreate(crudDeps, type, input, actor),
-    update: (type, slug, input, actor) => genericUpdate(crudDeps, type, slug, input, actor),
-    delete: (type, slug, actor) => genericDelete(crudDeps, type, slug, actor),
+    create: async (type, input, actor) => {
+      const result = genericCreate(crudDeps, type, input, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    update: async (type, slug, input, actor) => {
+      const result = genericUpdate(crudDeps, type, slug, input, actor);
+      await propagateRename(crudDeps, type, slug, result.slug);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    delete: async (type, slug, actor) => {
+      const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
   };
 
   const router = Router();
@@ -260,6 +282,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     entityStore,
     tagsService,
     entitiesWatcher,
+    crud: crudFacade,
     cwd,
     plansPages,
     plansSerializer,

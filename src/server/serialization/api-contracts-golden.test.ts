@@ -139,10 +139,18 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
          * collapse (five computed views down to two) into 175 deleted lines of
          * coverage for shapes that are still very much on the wire.
          *
+         * The SCHEMA is passed, as `SerializationEngine` does. Without it
+         * `genericEntity` short-circuits its column→field re-keying, so the
+         * golden recorded a snake_case shape the engine never emits — and a
+         * regression in `byFieldName` (the very bug the tier-L fixture exists to
+         * catch) would have left every golden green.
+         *
          * NOT canonicalized: view projections are handed to the client as-is, so
          * their key order is part of the contract in a way the snapshot's is not.
          */
-        out[`${type}/${slug}/${view}`] = fn ? fn(raw, reader) : genericEntity(raw, view);
+        out[`${type}/${slug}/${view}`] = fn
+          ? fn(raw, reader)
+          : genericEntity(raw, view, module.data?.schema);
       }
     }
   }

@@ -156,13 +156,23 @@ function attachStamp(view: unknown, system: { createdAt: string; updatedAt: stri
  * Not an open parameter: an arbitrary string would reach `serializeEntity` as a
  * view no type computes, and the caller would get a generic row while believing
  * it asked for something else.
+ *
+ * And REJECTED, not downgraded. The first cut of this silently fell back to
+ * `single_element` for anything unrecognised, which is the same failure it
+ * exists to prevent one level up: `?view=details` (a typo) answered 200 with no
+ * `endpoints`, and the caller had no way to tell it had not been given what it
+ * asked for. That is precisely how the missing parameter went unnoticed for the
+ * whole tier — `view` was accepted-and-ignored rather than refused.
  */
 const READABLE_VIEWS = new Set<ViewKind>(['single_element', 'detail']);
 
 function requestedView(raw: unknown): ViewKind {
-  return typeof raw === 'string' && READABLE_VIEWS.has(raw as ViewKind)
-    ? (raw as ViewKind)
-    : 'single_element';
+  if (raw === undefined || raw === '') return 'single_element';
+  if (typeof raw === 'string' && READABLE_VIEWS.has(raw as ViewKind)) return raw as ViewKind;
+  throw new DomainError(
+    'VALIDATION',
+    `unknown view '${String(raw)}' — expected one of ${[...READABLE_VIEWS].join(', ')}`,
+  );
 }
 
 function readOne(deps: GeneratedCrudDeps, type: string, slug: string, view: ViewKind = 'single_element'): unknown {
@@ -174,8 +184,8 @@ function readOne(deps: GeneratedCrudDeps, type: string, slug: string, view: View
 export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModule): Router {
   const router = Router();
   const type = module.type;
-  const createSchema = z.object(buildCreateShape(module.data!));
-  const updateSchema = z.object(buildUpdateShape(module.data!));
+  const createSchema = z.object(buildCreateShape(module.data!, module.slugPattern));
+  const updateSchema = z.object(buildUpdateShape(module.data!, module.slugPattern));
 
   const broadcast = (slug: string): void => {
     deps.ws.broadcast({ kind: 'entity:changed', entityType: type, slug });

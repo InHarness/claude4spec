@@ -44,10 +44,10 @@ function deps(overrides: Partial<LinkDtoDeps> = {}): LinkDtoDeps {
 }
 
 describe('DomainError identity across the package boundary', () => {
-  it('is the host class, so the host can narrow on a missing target', () => {
+  it('is the host class, so the host can narrow on a missing target', async () => {
     let thrown: unknown;
     try {
-      linkDto(deps(), 'get-users', 'ghost-dto', 'response', 200);
+      await linkDto(deps(), 'get-users', 'ghost-dto', 'response', 200);
     } catch (err) {
       thrown = err;
     }
@@ -57,12 +57,12 @@ describe('DomainError identity across the package boundary', () => {
     expect((thrown as FacadeDomainError).code).toBe('NOT_FOUND');
   });
 
-  it('carries the same identity for validation failures', () => {
+  it('carries the same identity for validation failures', async () => {
     // The cross-field rule that outlived the service: a request body has no
     // status code, which no single field's declaration can say.
     let thrown: unknown;
     try {
-      linkDto(deps(), 'get-users', 'user-dto', 'request', 200);
+      await linkDto(deps(), 'get-users', 'user-dto', 'request', 200);
     } catch (err) {
       thrown = err;
     }
@@ -70,8 +70,8 @@ describe('DomainError identity across the package boundary', () => {
     expect((thrown as FacadeDomainError).code).toBe('VALIDATION');
   });
 
-  it('carries it on the unlink path too', () => {
-    expect(() => unlinkDto(deps(), 'ghost-endpoint', 'user-dto', 'response', 200)).toThrow(
+  it('carries it on the unlink path too', async () => {
+    await expect(unlinkDto(deps(), 'ghost-endpoint', 'user-dto', 'response', 200)).rejects.toThrow(
       FacadeDomainError,
     );
   });

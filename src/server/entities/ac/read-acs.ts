@@ -14,7 +14,7 @@
  * restating it.
  */
 
-import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
+import type { RawEntity, RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { AcVerifyRef } from '../../../shared/entities.js';
 
 /**
@@ -30,14 +30,29 @@ export interface ActiveAc {
   verifies: AcVerifyRef[];
 }
 
-function verifiesOf(reader: RawEntityReader, slug: string): AcVerifyRef[] {
-  const rows = reader.readCollection('ac', slug, 'verifies');
+/**
+ * Off `entity.data`, NOT through `readCollection`.
+ *
+ * `verifies` is a value collection with no `keyFields`, so `hasProjectionTable`
+ * is false and it stays EMBEDDED JSON on the `ac.verifies` column — the
+ * declaration's own comment says so. `readCollection` is for the projected kind:
+ * it queries `ac_verifies`, that table does not exist, and the reader swallows
+ * the error and answers `[]`.
+ *
+ * Silently. Which is the whole problem — every AC came back with no verifies, so
+ * `check_consistency` reported every entity as lacking AC coverage and never
+ * reported a broken verify, and the LLM audit skipped every AC as unresolvable.
+ * `ac/views.ts` reads the same field this way; this file was the odd one out.
+ */
+function verifiesOf(entity: RawEntity): AcVerifyRef[] {
+  const raw = entity.data.verifies;
+  if (!Array.isArray(raw)) return [];
   const refs: AcVerifyRef[] = [];
-  for (const row of rows) {
+  for (const row of raw) {
     const r = row as { type?: unknown; slug?: unknown };
-    // Both fields are `required` in the declaration, so a row missing either is
-    // a corrupt projection rather than a legal state — skip it rather than
-    // surface `undefined` as a reference the caller then reports as broken.
+    // Both fields are `required` in the declaration, so an entry missing either
+    // is corrupt rather than a legal state — skip it rather than surface
+    // `undefined` as a reference the caller then reports as broken.
     if (typeof r.type === 'string' && typeof r.slug === 'string') {
       refs.push({ type: r.type, slug: r.slug });
     }
@@ -65,7 +80,7 @@ export function readActiveAcs(reader: RawEntityReader): ActiveAc[] {
       text: typeof entity.data.text === 'string' ? entity.data.text : '',
       kind: typeof entity.data.kind === 'string' ? entity.data.kind : 'requirement',
       tags: entity.tags,
-      verifies: verifiesOf(reader, slug),
+      verifies: verifiesOf(entity),
     });
   }
   return acs;

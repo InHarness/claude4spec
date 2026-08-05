@@ -15,7 +15,12 @@ import { tagsRouter } from '../routes/tags.js';
 import { entitiesRouter } from '../core/plugin-host/entities-router.js';
 import { generatedCrudRouter } from '../core/plugin-host/generated-crud-router.js';
 import { registerRefRewriteListeners } from '../core/plugin-host/manifest-adapter.js';
-import { genericCreate, genericDelete, genericUpdate } from '../core/plugin-host/generic-crud.js';
+import {
+  genericCreate,
+  genericDelete,
+  genericUpdate,
+  propagateRename,
+} from '../core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../core/plugin-host/types.js';
 import { referencesRouter } from '../routes/references.js';
 import { TagsService, DomainError } from '../services/tags.js';
@@ -634,11 +639,39 @@ async function buildInner(
     projection: { db: db.handle, store: entityStore, versions: versionService },
   };
 
-  /** The three write verbs, bound to `crudDeps`. See `CrudFacade`. */
+  /**
+   * The three write verbs, bound to `crudDeps` — and doing everything the
+   * generated router does around them, which is the whole claim `CrudFacade`
+   * makes ("the SAME write door `/api/{type}s` goes through").
+   *
+   * The first cut was three bare `generic*` calls, and that claim was false in
+   * two ways. `propagateRename` was missing, so a plugin renaming an entity
+   * through the facade moved the row and the file while leaving every
+   * `<inline_mention/>` and every `ref`-flagged field pointing at the old slug —
+   * the exact fan-out `PATCH /api/{type}s/:slug` performs. And the
+   * `entity:changed` broadcast was missing, so no open client saw the write.
+   *
+   * Async because `propagateRename` is: a plugin awaiting a write it has to
+   * await is the correct contract, and fire-and-forget here would reintroduce
+   * the same silence one layer down.
+   */
   const crudFacade: CrudFacade = {
-    create: (type, input, actor) => genericCreate(crudDeps, type, input, actor),
-    update: (type, slug, input, actor) => genericUpdate(crudDeps, type, slug, input, actor),
-    delete: (type, slug, actor) => genericDelete(crudDeps, type, slug, actor),
+    create: async (type, input, actor) => {
+      const result = genericCreate(crudDeps, type, input, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    update: async (type, slug, input, actor) => {
+      const result = genericUpdate(crudDeps, type, slug, input, actor);
+      await propagateRename(crudDeps, type, slug, result.slug);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug: result.slug });
+      return result;
+    },
+    delete: async (type, slug, actor) => {
+      const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
   };
 
   // Mount all active backend modules — each plugin constructs its own domain

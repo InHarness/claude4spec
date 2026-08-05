@@ -107,7 +107,7 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
     // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
     const { data: endpoints } = (await res.json()) as {
-      endpoints: Array<{ slug: string; dtos: Array<{ dtoName: string }> }>;
+      data: Array<{ slug: string; dtos: Array<{ dtoName: string }> }>;
     };
     const linked = endpoints.find((e) => e.dtos.length > 0);
     if (!linked) {
@@ -141,7 +141,7 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
 
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
     // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
-    const { data: endpoints } = (await res.json()) as { endpoints: Array<{ slug: string }> };
+    const { data: endpoints } = (await res.json()) as { data: Array<{ slug: string }> };
     const slug = endpoints[0]?.slug;
     if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
 
@@ -182,7 +182,7 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
 
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
     // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
-    const { data: endpoints } = (await res.json()) as { endpoints: Array<{ slug: string }> };
+    const { data: endpoints } = (await res.json()) as { data: Array<{ slug: string }> };
     const slug = endpoints[0]?.slug;
     if (!slug) throw new Error('environment has no endpoint to exercise — seed one first');
 

@@ -17,6 +17,7 @@
 
 import { DomainError } from '../../../host-kit/errors.js';
 import type { EndpointDtoRelation } from '../../../types.js';
+import { endpointData } from '../schema.js';
 
 /** One entry of `linkedDtos`, in DECLARED field names (not junction columns). */
 export interface DtoLink {
@@ -36,10 +37,21 @@ export interface LinkDtoDeps {
     getEntity(type: string, slug: string): unknown;
     readCollection(type: string, slug: string, field: string): unknown[];
   };
-  update(slug: string, linkedDtos: DtoLink[]): void;
+  update(slug: string, linkedDtos: DtoLink[]): Promise<void>;
 }
 
-const RELATIONS = new Set<string>(['request', 'response', 'error']);
+/**
+ * Read off the DECLARATION, not restated.
+ *
+ * This was a private `new Set(['request','response','error'])` sitting three
+ * lines under a comment claiming the hand-written allowlist was gone. Adding a
+ * fourth relation to `endpointData` would have made it valid for the generated
+ * `PATCH /api/endpoints/:slug` and still 400 here and on the `link_dto` tool.
+ */
+const RELATION_NODE = endpointData.schema.linkedDtos as unknown as {
+  item: { fields: { relation: { values: readonly string[] } } };
+};
+const RELATIONS = new Set<string>(RELATION_NODE.item.fields.relation.values);
 
 function normalizeStatus(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) ? value : null;
@@ -70,18 +82,18 @@ function sameLink(a: DtoLink, b: DtoLink): boolean {
 /**
  * Add one link. Idempotent — re-linking an identical entry is a no-op write.
  *
- * The `relation` allowlist is now the field's `enum`, so the hand-written
- * `invalid relation` check is gone. The status-code rule is NOT: "a request body
- * has no status code" relates two fields to each other, which no single field's
- * declaration expresses, so it stays here as an explicit domain rule.
+ * The `relation` allowlist is READ from the field's `enum` (see `RELATIONS`), so
+ * this check is the declaration's, not a second copy of it. The status-code rule
+ * is genuinely local: "a request body has no status code" relates two fields to
+ * each other, which no single field's declaration expresses.
  */
-export function linkDto(
+export async function linkDto(
   deps: LinkDtoDeps,
   endpointSlug: string,
   dtoSlug: string,
   relation: EndpointDtoRelation,
   statusCode: number | null = null,
-): void {
+): Promise<void> {
   if (!RELATIONS.has(relation)) {
     throw new DomainError('VALIDATION', `invalid relation '${relation}'`);
   }
@@ -95,7 +107,7 @@ export function linkDto(
   const links = readLinks(deps, endpointSlug);
   const next: DtoLink = { dto: dtoSlug, relation, statusCode: normalizeStatus(statusCode) };
   if (links.some((l) => sameLink(l, next))) return;
-  deps.update(endpointSlug, [...links, next]);
+  await deps.update(endpointSlug, [...links, next]);
 }
 
 /**
@@ -103,13 +115,13 @@ export function linkDto(
  * (dto, relation) pair — the documented behaviour of the retired route, and the
  * only way to unlink a `request` link, which never has one.
  */
-export function unlinkDto(
+export async function unlinkDto(
   deps: LinkDtoDeps,
   endpointSlug: string,
   dtoSlug: string,
   relation: EndpointDtoRelation,
   statusCode: number | null = null,
-): void {
+): Promise<void> {
   const links = readLinks(deps, endpointSlug);
   const status = normalizeStatus(statusCode);
   const kept = links.filter((l) => {
@@ -117,5 +129,5 @@ export function unlinkDto(
     return status !== null && normalizeStatus(l.statusCode) !== status;
   });
   if (kept.length === links.length) return;
-  deps.update(endpointSlug, kept);
+  await deps.update(endpointSlug, kept);
 }

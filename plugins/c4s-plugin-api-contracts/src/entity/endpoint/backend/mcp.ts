@@ -45,7 +45,7 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
     async (raw) => {
       const args = raw as Record<string, unknown>;
       try {
-        linkDto(
+        await linkDto(
           deps.links,
           String(args.endpointSlug),
           String(args.dtoSlug),
@@ -72,7 +72,7 @@ export function createEndpointToolsServer(deps: EndpointToolsDeps): McpServerFac
     async (raw) => {
       const args = raw as Record<string, unknown>;
       try {
-        unlinkDto(
+        await unlinkDto(
           deps.links,
           String(args.endpointSlug),
           String(args.dtoSlug),
