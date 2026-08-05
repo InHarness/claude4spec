@@ -72,6 +72,48 @@ describe('M40 — flush vs the fs echo', () => {
 });
 
 describe('M40 — fs provider behaviour', () => {
+  it('a server write whose own write-back rewrites the same file dispatches exactly once', async () => {
+    // Regression: one dispatch legitimately produces TWO writes to the same path
+    // — the server write (markOrigin) and, inside its own reaction chain, the M06
+    // anchor write-back (suppress). With one token slot per key the second token
+    // overwrote the first, the first fs echo consumed the survivor, and the
+    // write-back's own echo arrived unguarded — minting a spurious extra
+    // `file_version` row. Caught by the live smoke test, not by any unit test.
+    const dir = tmp();
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const file = path.join(dir, 'a.md');
+    fs.writeFileSync(file, '# Heading\n');
+
+    const captures: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      {
+        onChange: () => {
+          if (fs.readFileSync(file, 'utf-8').includes('anchor:')) return;
+          r.suppress(CTX, 'pages:pages', 'a.md');
+          fs.writeFileSync(file, '<!-- anchor: abc123 -->\n# Heading\n');
+        },
+        onUnlink: () => {},
+      },
+      { id: 'm06-anchor-injection', phase: 'write-back', scope: CTX },
+    );
+    r.subscribe(
+      'pages:pages',
+      { onChange: () => void captures.push('capture'), onUnlink: () => {} },
+      { id: 'm17-capture', phase: 'capture', after: ['write-back'], scope: CTX },
+    );
+
+    r.markOrigin(CTX, 'pages:pages', 'a.md', 'user');
+    fs.writeFileSync(file, '# Heading\n\nedited\n');
+    await r.flush(CTX, 'pages:pages', 'a.md');
+    expect(captures).toEqual(['capture']);
+
+    // Both fs echoes (the server write's and the write-back's) must be swallowed.
+    await new Promise((res) => setTimeout(res, 800));
+    expect(captures).toEqual(['capture']);
+  });
+
   it('debounces a burst of writes to a single dispatch', async () => {
     const dir = tmp();
     const r = runtime();

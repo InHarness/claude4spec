@@ -245,7 +245,7 @@ function globToRegExp(glob: string): RegExp {
 export class FileWatchRuntime {
   private readonly mounts = new Map<string, Mount>();
   private readonly subs = new Map<string, Subscription[]>();
-  private readonly selfWrites = new Map<string, SelfWrite>();
+  private readonly selfWrites = new Map<string, SelfWrite[]>();
   /** Actor of the in-flight dispatch, so `capture` can read it — see `peekActor`. */
   private readonly dispatchActor = new Map<string, WatchActor>();
   private readonly fsEvents: boolean;
@@ -371,11 +371,7 @@ export class FileWatchRuntime {
    * write, so the UI can tell its own write from an external edit.
    */
   markOrigin(scope: WatchScope, source: string, relPath: string, actor: WatchActor): void {
-    this.selfWrites.set(writeKey(scope, source, relPath), {
-      mode: 'origin',
-      actor,
-      until: Date.now() + SELF_WRITE_WINDOW_MS,
-    });
+    this.pushSelfWrite(scope, source, relPath, { mode: 'origin', actor, until: Date.now() + SELF_WRITE_WINDOW_MS });
   }
 
   /**
@@ -387,10 +383,29 @@ export class FileWatchRuntime {
    * using it for an ordinary server write is a bug (that is what `markOrigin` is for).
    */
   suppress(scope: WatchScope, source: string, relPath: string): void {
-    this.selfWrites.set(writeKey(scope, source, relPath), {
-      mode: 'suppress',
-      until: Date.now() + SELF_WRITE_WINDOW_MS,
-    });
+    this.pushSelfWrite(scope, source, relPath, { mode: 'suppress', until: Date.now() + SELF_WRITE_WINDOW_MS });
+  }
+
+  /**
+   * Tokens are a FIFO QUEUE per key, not a single slot.
+   *
+   * One dispatch can legitimately produce SEVERAL writes to the same path: a
+   * server write (`markOrigin`) is immediately followed, inside its own reaction
+   * chain, by the M06 anchor write-back (`suppress`) on the very same file. With
+   * one slot the second token overwrote the first, the first fs echo consumed the
+   * survivor, and the second echo arrived unguarded — landing as an `external`
+   * change and minting a spurious extra `file_version` row.
+   *
+   * Queued, the echoes consume tokens in the order the writes were made.
+   */
+  private pushSelfWrite(scope: WatchScope, source: string, relPath: string, entry: SelfWrite): void {
+    const key = writeKey(scope, source, relPath);
+    const queue = this.selfWrites.get(key) ?? [];
+    // Drop anything already expired so a stale token can never mask a real edit.
+    const now = Date.now();
+    const live = queue.filter((e) => now < e.until);
+    live.push(entry);
+    this.selfWrites.set(key, live);
   }
 
   /**
@@ -410,17 +425,26 @@ export class FileWatchRuntime {
     const key = writeKey(scope, source, relPath);
     const live = this.dispatchActor.get(key);
     if (live) return live;
-    const entry = this.selfWrites.get(key);
-    if (!entry || Date.now() >= entry.until) return undefined;
-    return entry.actor;
+    const now = Date.now();
+    return this.selfWrites.get(key)?.find((e) => now < e.until && e.actor)?.actor;
   }
 
+  /** Consume the OLDEST live token for this key, if any. */
   private takeSelfWrite(scope: WatchScope, source: string, relPath: string): SelfWrite | null {
     const key = writeKey(scope, source, relPath);
-    const entry = this.selfWrites.get(key);
+    const queue = this.selfWrites.get(key);
+    if (!queue) return null;
+    const now = Date.now();
+    let entry: SelfWrite | undefined;
+    while (queue.length > 0) {
+      const next = queue.shift()!;
+      if (now < next.until) {
+        entry = next;
+        break;
+      }
+    }
+    if (queue.length === 0) this.selfWrites.delete(key);
     if (!entry) return null;
-    this.selfWrites.delete(key);
-    if (Date.now() >= entry.until) return null;
     if (entry.mode === 'origin' && entry.actor) this.dispatchActor.set(key, entry.actor);
     return entry;
   }
@@ -478,10 +502,7 @@ export class FileWatchRuntime {
 
   /** Swallow the fs echo of a write we already dispatched synchronously. */
   private guardEcho(scope: WatchScope, source: string, relPath: string): void {
-    this.selfWrites.set(writeKey(scope, source, relPath), {
-      mode: 'echo',
-      until: Date.now() + SELF_WRITE_WINDOW_MS,
-    });
+    this.pushSelfWrite(scope, source, relPath, { mode: 'echo', until: Date.now() + SELF_WRITE_WINDOW_MS });
   }
 
   // --------------------------------------------------------------- broadcast
