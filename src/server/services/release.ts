@@ -1538,8 +1538,13 @@ export class ReleaseService {
       return { path: input.path, op: 'noop' };
     }
 
+    // Restore must land byte-for-byte, so it SUPPRESSES rather than marking origin:
+    // a marked write would run the M06 anchor write-back, which rewrites the file
+    // through `pages.write` — re-serializing frontmatter and injecting anchors the
+    // restored version never had. Because the reaction chain is suppressed, this is
+    // one of the few places that must author its own `file_version` row.
     const restoreWriter = this.writerFor('pages');
-    restoreWriter?.markOrigin(input.path, 'user');
+    restoreWriter?.suppress(input.path);
     // Write raw content directly — bypass frontmatter splitting so byte-for-byte fidelity is preserved.
     const fsP = await import('node:fs/promises');
     const pathMod = await import('node:path');
@@ -1547,9 +1552,7 @@ export class ReleaseService {
     await fsP.mkdir(pathMod.dirname(abs), { recursive: true });
     await fsP.writeFile(abs, data.content, 'utf-8');
     const op: 'created' | 'updated' = exists ? 'updated' : 'created';
-    // No `recordVersion` here: `capture` is the sole author, and `flush` runs it
-    // before we return so the restored version is visible to the caller.
-    await restoreWriter?.flush(input.path);
+    await this.pageVersions.recordVersion(input.path, op === 'created' ? 'create' : 'update', 'user');
     return { path: input.path, op };
   }
 
@@ -1762,11 +1765,20 @@ export class ReleaseService {
           assertSafeBundlePath(rel);
           const content = nodeFs.readFileSync(nodePath.join(srcDir, rel), 'utf8');
           const abs = nodePath.join(destRoot, rel);
+          // A bundle can carry a root the destination project does not have
+          // configured yet — the clone case, where config.json is itself being
+          // restored FROM the bundle. There is no mount and no writer for it, so
+          // `capture` cannot author the row and this must.
           const rootWriter = this.writerFor(root.id);
-          rootWriter?.markOrigin(rel, 'user');
           nodeFs.mkdirSync(nodePath.dirname(abs), { recursive: true });
-          nodeFs.writeFileSync(abs, content, 'utf8');
-          await rootWriter?.flush(rel);
+          if (rootWriter) {
+            rootWriter.markOrigin(rel, 'user');
+            nodeFs.writeFileSync(abs, content, 'utf8');
+            await rootWriter.flush(rel);
+          } else {
+            nodeFs.writeFileSync(abs, content, 'utf8');
+            await this.pageVersions.recordVersion(rel, 'create', 'user', undefined, undefined, root.id);
+          }
           pages.push({ path: rel, op: 'create', data: { path: rel, content } });
         }
       }

@@ -226,6 +226,12 @@ export interface ProjectContext {
  * Await cost ≈ entityIndexer.indexAll() (<1s budget); section/todos/link
  * indexers stay fire-and-forget.
  */
+/** Monotonic per-process counter making each ProjectContext's watch scope unique. */
+let contextInstanceSeq = 0;
+function nextContextInstance(): number {
+  return ++contextInstanceSeq;
+}
+
 export async function buildProjectContext(deps: ProjectContextDeps): Promise<ProjectContext> {
   // Partial-build cleanup: resources acquired before a build failure (db
   // handle, watcher fds) are released in reverse order — a failed build is
@@ -418,7 +424,12 @@ async function buildInner(
   // every subscription is registered further down, after the services exist.
   // Scope is this context: dispose unmounts exactly these, and leaves
   // `scope: 'process'` mounts (the base plugin pool) alone.
-  const watchScope: WatchScope = `context:${projectId}`;
+  // Scope is per CONTEXT INSTANCE, not per project. A retired-but-not-yet-disposed
+  // context (one with an in-flight turn) still owns its mounts, so keying on the
+  // projectId alone made the replacement collide with it on `mountSource` — the
+  // rebuild threw, and its cleanup then unmounted the LIVE context's watchers.
+  // The instance suffix is stripped when routing WS, so the room is still the project.
+  const watchScope: WatchScope = `context:${projectId}#${nextContextInstance()}`;
   const w = deps.watchRuntime.scoped(watchScope);
   cleanup.push(() => w.dispose());
 
@@ -530,12 +541,6 @@ async function buildInner(
   // procesu (SIGKILL/OOM) — brak aktywnego adaptera po starcie, flipujemy wszystkie na 'complete'.
   chatService.finalizeAllStreamingRows();
 
-  // M29: `entities` + `releases` mounts for the committed entity store. The
-  // page-family mounts above are rooted outside `.claude4spec/`, so these own
-  // their directories exclusively.
-  w.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs });
-  w.mountSource({ source: RELEASES_SOURCE, dir: releasesAbs });
-
   // M33 phase 3: the project-local plugin overlay (axis B — pool composition).
   // The trust gate blocks the MOUNT, not just the subscription: without consent
   // the source does not exist at all, so an untrusted repo can never reload
@@ -548,6 +553,11 @@ async function buildInner(
   );
   const entityStore = new EntityStore(cwd, entitiesDir, boundSuppress(w, ENTITIES_SOURCE), rawReader, pluginHost);
   entityStore.ensureRoot();
+  // M29: mount only AFTER `ensureRoot()` — chokidar silently swallows ENOENT on a
+  // missing directory and never picks it up later, so mounting first left a fresh
+  // project with entity edits that were never reindexed for the whole life of the
+  // context. (The page and artifact mounts above already await `ensureRoot()`.)
+  w.mountSource({ source: ENTITIES_SOURCE, dir: entitiesAbs });
   // M34/L11: wire version-restore deps now that entityStore exists.
   versionService.configureRestore(entityStore, tagsService);
   const entityIndexer = new EntityIndexerService(
@@ -565,6 +575,7 @@ async function buildInner(
   // ReleaseIndexerService's header comment for why it must NOT delete-all).
   const releaseFileStore = new ReleaseFileStore(cwd, releasesDir, boundSuppress(w, RELEASES_SOURCE));
   releaseFileStore.ensureRoot();
+  w.mountSource({ source: RELEASES_SOURCE, dir: releasesAbs });
   const releaseIndexer = new ReleaseIndexerService(db.handle, releaseFileStore, boundSuppress(w, RELEASES_SOURCE));
   // 0.1.96: per-behaviour root maps (gated on root PROPERTIES, not id).
   const sectionIndexedRoots = new Map<string, SectionIndexRoot>();
@@ -1185,7 +1196,16 @@ async function buildInner(
   // (in-flight turn) cannot keep re-invalidating the projectId the new context
   // now owns — dispose unmounts this source.
   if (overlayMounted) {
+    let overlayFired = false;
     const onOverlayChange = (relPath: string): void => {
+      // Fire ONCE. Invalidating this context retires it, and the rebuilt context
+      // mounts its own overlay source — but a retired context with an in-flight
+      // turn is not disposed for a while, and every further save here would keep
+      // invalidating the projectId its replacement now owns, destroying the
+      // context the user is actually browsing. Unmounting stops that dead.
+      if (overlayFired) return;
+      overlayFired = true;
+      void w.unmountSource(PLUGINS_OVERLAY_SOURCE);
       const abs = path.join(projectPluginsDir(cwd), relPath);
       const pkgs = affectedOverlayPackages(projectPluginsDir(cwd), [abs]);
       deps.onContextConfigChanged?.();
@@ -1208,7 +1228,13 @@ async function buildInner(
   }
 
 
-  sectionIndexer.indexAll().catch((err) => {
+  // The boot rebuild mints anchors but nothing dispatches for those files, so the
+  // `write-back` phase never runs — drain the stash explicitly or the anchors
+  // would live only in `section_index` and never reach the .md files.
+  sectionIndexer
+    .indexAll()
+    .then(() => sectionIndexer.flushPendingInjections((source, relPath) => w.suppress(source, relPath)))
+    .catch((err) => {
     console.error('[section-indexer] initial indexAll failed:', err);
   });
 

@@ -72,6 +72,75 @@ describe('M40 — flush vs the fs echo', () => {
 });
 
 describe('M40 — fs provider behaviour', () => {
+  it('a second save inside the self-write window still dispatches', async () => {
+    // Regression for the defect that made `capture` lose an edit outright: the
+    // route write and the anchor write-back both touch the same file, chokidar
+    // coalesces them into ONE event, and the old token queue was left holding a
+    // live `suppress`. The next save then popped that stale token and never
+    // dispatched — no version row, no reindex, HTTP 200 all the same.
+    const dir = tmp();
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const file = path.join(dir, 'a.md');
+
+    const captures: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      {
+        onChange: () => {
+          const body = fs.readFileSync(file, 'utf-8');
+          if (body.includes('anchor:')) return;
+          r.suppress(CTX, 'pages:pages', 'a.md');
+          fs.writeFileSync(file, `<!-- anchor: abc123 -->\n${body}`);
+        },
+        onUnlink: () => {},
+      },
+      { id: 'm06-anchor-injection', phase: 'write-back', scope: CTX },
+    );
+    r.subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, _p) => void captures.push(fs.readFileSync(file, 'utf-8')), onUnlink: () => {} },
+      { id: 'm17-capture', phase: 'capture', after: ['write-back'], scope: CTX },
+    );
+
+    // Two saves back to back, well inside the 600 ms self-write window.
+    r.markOrigin(CTX, 'pages:pages', 'a.md', 'user');
+    fs.writeFileSync(file, '# One\n');
+    await r.flush(CTX, 'pages:pages', 'a.md');
+
+    r.markOrigin(CTX, 'pages:pages', 'a.md', 'user');
+    fs.writeFileSync(file, '# Two\n');
+    await r.flush(CTX, 'pages:pages', 'a.md');
+
+    expect(captures.length).toBe(2);
+    expect(captures[1]).toContain('# Two');
+
+    // ...and neither write's fs echo adds a third.
+    await new Promise((res) => setTimeout(res, 800));
+    expect(captures.length).toBe(2);
+  });
+
+  it('an external edit is never masked by a leftover self-write token', async () => {
+    const dir = tmp();
+    const r = runtime();
+    r.mountSource({ source: 'pages:pages', dir, scope: CTX });
+    const file = path.join(dir, 'b.md');
+    const seen: string[] = [];
+    r.subscribe(
+      'pages:pages',
+      { onChange: (_s, _src, _p, origin) => void seen.push(origin), onUnlink: () => {} },
+      { id: 'm02-notify', phase: 'notification', scope: CTX },
+    );
+
+    // A suppress that never gets its event (the write failed, say).
+    r.suppress(CTX, 'pages:pages', 'b.md');
+    await new Promise((res) => setTimeout(res, 700)); // outlive the window
+
+    fs.writeFileSync(file, 'external edit\n');
+    expect(await until(() => seen.length > 0)).toBe(true);
+    expect(seen).toEqual(['external']);
+  });
+
   it('a server write whose own write-back rewrites the same file dispatches exactly once', async () => {
     // Regression: one dispatch legitimately produces TWO writes to the same path
     // — the server write (markOrigin) and, inside its own reaction chain, the M06

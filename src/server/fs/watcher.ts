@@ -1,4 +1,6 @@
 import chokidar, { type FSWatcher } from 'chokidar';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import type { WsEvent } from '../../shared/types.js';
 import { makeWatchIgnore } from './watch-ignore.js';
@@ -115,14 +117,6 @@ interface Mount {
   pending: Map<string, { event: WatchEventKind; origin: WatchOrigin }>;
   /** Tail of the dispatch chain, so `flush()` can await work already in flight. */
   inflight: Map<string, Promise<void>>;
-}
-
-type SelfWriteMode = 'origin' | 'suppress' | 'echo';
-
-interface SelfWrite {
-  mode: SelfWriteMode;
-  actor?: WatchActor;
-  until: number;
 }
 
 /**
@@ -245,7 +239,12 @@ function globToRegExp(glob: string): RegExp {
 export class FileWatchRuntime {
   private readonly mounts = new Map<string, Mount>();
   private readonly subs = new Map<string, Subscription[]>();
-  private readonly selfWrites = new Map<string, SelfWrite[]>();
+  /** Content hash of each file as the runtime last left it — see the self-writes section. */
+  private readonly selfHash = new Map<string, string>();
+  /** Write-back suppress tokens issued outside a dispatch, with expiry. */
+  private readonly pendingSuppress = new Map<string, number>();
+  /** `markOrigin` labels awaiting their event. Expiry only downgrades the label. */
+  private readonly originHint = new Map<string, { actor: WatchActor; until: number }>();
   /** Actor of the in-flight dispatch, so `capture` can read it — see `peekActor`. */
   private readonly dispatchActor = new Map<string, WatchActor>();
   private readonly fsEvents: boolean;
@@ -310,6 +309,12 @@ export class FileWatchRuntime {
     mount.timers.clear();
     mount.pending.clear();
     await mount.fsw?.close();
+    // Wait for dispatches already running. A ProjectContext closes its database
+    // immediately after disposing its scope, so a handler still suspended in an
+    // await would otherwise resume against a closed handle and leave a
+    // half-written projection behind.
+    await Promise.allSettled([...mount.inflight.values()]);
+    mount.inflight.clear();
   }
 
   // ----------------------------------------------------------- subscriptions
@@ -366,12 +371,50 @@ export class FileWatchRuntime {
   // ------------------------------------------------------------- self-writes
 
   /**
+   * How the runtime recognizes its OWN writes.
+   *
+   * The first design counted tokens: one token per write, consumed one per fs
+   * event. That is unsound, because the relationship between writes and events is
+   * not 1:1 — chokidar's `awaitWriteFinish` deliberately coalesces a burst into a
+   * single event, and a slow write can split into several. Any leftover token then
+   * swallowed a LATER, genuine write, which (with `capture` as the sole author of
+   * `file_version`) silently lost the user's edit.
+   *
+   * So identity is by CONTENT, not by counting: after every write the runtime
+   * drove, it records the file's hash. An incoming event whose current content
+   * hashes to that value is our own echo, however many events the provider chose
+   * to emit. Anything else is a genuine external edit.
+   *
+   * The one deliberate blind spot: an external edit that restores a file to
+   * byte-identical content is treated as an echo. Nothing observable depends on
+   * it — every projection would compute the same result.
+   */
+  private hashFile(dir: string, relPath: string): string | null {
+    try {
+      return crypto.createHash('sha256').update(fs.readFileSync(path.join(dir, relPath))).digest('hex');
+    } catch {
+      return null; // gone, or unreadable — nothing to compare against
+    }
+  }
+
+  /** Record the file as the runtime just left it, so its echo is recognizable. */
+  private stampSelfHash(mount: Mount, relPath: string): void {
+    const key = writeKey(mount.scope, mount.source, relPath);
+    const hash = this.hashFile(mount.dir, relPath);
+    if (hash === null) this.selfHash.delete(key);
+    else this.selfHash.set(key, hash);
+  }
+
+  /**
    * Label a server write. Does NOT suppress: the event travels on with
    * `origin: 'server'` and every phase runs normally. Called before EVERY server
    * write, so the UI can tell its own write from an external edit.
+   *
+   * This is a LABEL only — if it expires unused the write is merely reported as
+   * `external`, never dropped.
    */
   markOrigin(scope: WatchScope, source: string, relPath: string, actor: WatchActor): void {
-    this.pushSelfWrite(scope, source, relPath, { mode: 'origin', actor, until: Date.now() + SELF_WRITE_WINDOW_MS });
+    this.originHint.set(writeKey(scope, source, relPath), { actor, until: Date.now() + SELF_WRITE_WINDOW_MS });
   }
 
   /**
@@ -381,31 +424,15 @@ export class FileWatchRuntime {
    *
    * A reaction that does not WRITE into the observed directory never uses this;
    * using it for an ordinary server write is a bug (that is what `markOrigin` is for).
+   *
+   * A suppress issued from INSIDE a dispatch needs no token at all — the
+   * post-dispatch hash stamp already covers that write — so the dispatch clears it
+   * on the way out. The token exists for write primitives that run outside any
+   * dispatch (the entity and release stores), where there is nothing to stamp
+   * against until the event arrives.
    */
   suppress(scope: WatchScope, source: string, relPath: string): void {
-    this.pushSelfWrite(scope, source, relPath, { mode: 'suppress', until: Date.now() + SELF_WRITE_WINDOW_MS });
-  }
-
-  /**
-   * Tokens are a FIFO QUEUE per key, not a single slot.
-   *
-   * One dispatch can legitimately produce SEVERAL writes to the same path: a
-   * server write (`markOrigin`) is immediately followed, inside its own reaction
-   * chain, by the M06 anchor write-back (`suppress`) on the very same file. With
-   * one slot the second token overwrote the first, the first fs echo consumed the
-   * survivor, and the second echo arrived unguarded — landing as an `external`
-   * change and minting a spurious extra `file_version` row.
-   *
-   * Queued, the echoes consume tokens in the order the writes were made.
-   */
-  private pushSelfWrite(scope: WatchScope, source: string, relPath: string, entry: SelfWrite): void {
-    const key = writeKey(scope, source, relPath);
-    const queue = this.selfWrites.get(key) ?? [];
-    // Drop anything already expired so a stale token can never mask a real edit.
-    const now = Date.now();
-    const live = queue.filter((e) => now < e.until);
-    live.push(entry);
-    this.selfWrites.set(key, live);
+    this.pendingSuppress.set(writeKey(scope, source, relPath), Date.now() + SELF_WRITE_WINDOW_MS);
   }
 
   /**
@@ -417,36 +444,33 @@ export class FileWatchRuntime {
    * is retained for exactly the duration of the dispatch it belongs to, and
    * `capture` reads it here: `server`+`user` → `user`, `server`+`agent` → `agent`,
    * `external` → `filesystem`.
-   *
-   * Before the dispatch begins it also answers from the un-consumed token, so a
-   * caller can assert what it just marked.
    */
   peekActor(scope: WatchScope, source: string, relPath: string): WatchActor | undefined {
     const key = writeKey(scope, source, relPath);
     const live = this.dispatchActor.get(key);
     if (live) return live;
-    const now = Date.now();
-    return this.selfWrites.get(key)?.find((e) => now < e.until && e.actor)?.actor;
+    const hint = this.originHint.get(key);
+    return hint && Date.now() < hint.until ? hint.actor : undefined;
   }
 
-  /** Consume the OLDEST live token for this key, if any. */
-  private takeSelfWrite(scope: WatchScope, source: string, relPath: string): SelfWrite | null {
+  /** Consume the origin label, if one is still live. */
+  private takeOrigin(scope: WatchScope, source: string, relPath: string): WatchActor | undefined {
     const key = writeKey(scope, source, relPath);
-    const queue = this.selfWrites.get(key);
-    if (!queue) return null;
-    const now = Date.now();
-    let entry: SelfWrite | undefined;
-    while (queue.length > 0) {
-      const next = queue.shift()!;
-      if (now < next.until) {
-        entry = next;
-        break;
-      }
-    }
-    if (queue.length === 0) this.selfWrites.delete(key);
-    if (!entry) return null;
-    if (entry.mode === 'origin' && entry.actor) this.dispatchActor.set(key, entry.actor);
-    return entry;
+    const hint = this.originHint.get(key);
+    if (!hint) return undefined;
+    this.originHint.delete(key);
+    if (Date.now() >= hint.until) return undefined;
+    this.dispatchActor.set(key, hint.actor);
+    return hint.actor;
+  }
+
+  /** Consume a pending suppress token, if one is still live. */
+  private takeSuppress(scope: WatchScope, source: string, relPath: string): boolean {
+    const key = writeKey(scope, source, relPath);
+    const until = this.pendingSuppress.get(key);
+    if (until === undefined) return false;
+    this.pendingSuppress.delete(key);
+    return Date.now() < until;
   }
 
   // ------------------------------------------------------------------- flush
@@ -461,8 +485,13 @@ export class FileWatchRuntime {
    * consistent (`markOrigin` → write → `await flush` → HTTP 200), and what lets
    * the runtime work with `fsEvents: false`.
    *
-   * The fs echo of that same write arrives ~100 ms later; `flush` leaves an echo
-   * guard behind so it is swallowed and `capture` does not run twice.
+   * It honours a live `suppress()` (AC: a suppressed write runs no reaction), but
+   * CONSUMES the token in doing so. The earlier design left tokens behind and
+   * popped the oldest of a queue, so a stale token from one write silently dropped
+   * the NEXT one — losing the user's edit outright once `capture` became the sole
+   * author of `file_version`. Nothing lingers now: a token issued by a write-back
+   * inside a dispatch is cleared when that dispatch ends, and echo recognition is
+   * by content hash rather than by counting events.
    */
   async flush(scope: WatchScope, source: string, relPath: string, event: WatchEventKind = 'change'): Promise<void> {
     const mount = this.mounts.get(mountKey(scope, source));
@@ -479,30 +508,21 @@ export class FileWatchRuntime {
     let resolvedEvent: WatchEventKind;
     let origin: WatchOrigin;
     if (queued) {
-      // A queued event already resolved its origin at arrival (a suppressed write
-      // never reaches `pending`, so anything queued here runs).
+      // A queued event already resolved its origin when it arrived.
       resolvedEvent = queued.event;
       origin = queued.origin;
     } else {
-      // A synchronous server write whose token is still sitting in `selfWrites`.
-      const self = this.takeSelfWrite(scope, source, relPath);
-      if (self?.mode === 'suppress' || self?.mode === 'echo') {
-        this.guardEcho(scope, source, relPath);
+      if (this.takeSuppress(scope, source, relPath)) {
+        this.stampSelfHash(mount, relPath);
         await mount.inflight.get(relPath);
         return;
       }
-      origin = self?.mode === 'origin' ? 'server' : 'external';
+      origin = this.takeOrigin(scope, source, relPath) ? 'server' : 'external';
       resolvedEvent = event;
     }
 
-    this.guardEcho(scope, source, relPath);
     await mount.inflight.get(relPath);
     await this.dispatch(mount, relPath, resolvedEvent, origin);
-  }
-
-  /** Swallow the fs echo of a write we already dispatched synchronously. */
-  private guardEcho(scope: WatchScope, source: string, relPath: string): void {
-    this.pushSelfWrite(scope, source, relPath, { mode: 'echo', until: Date.now() + SELF_WRITE_WINDOW_MS });
   }
 
   // --------------------------------------------------------------- broadcast
@@ -516,13 +536,26 @@ export class FileWatchRuntime {
   private onFsEvent(mount: Mount, event: WatchEventKind, absPath: string): void {
     const relPath = path.relative(mount.dir, absPath).replaceAll(path.sep, '/');
     if (!relPath || relPath.startsWith('..')) return;
+    const key = writeKey(mount.scope, mount.source, relPath);
 
-    // Self-write is resolved HERE, at arrival — a token checked after the 300 ms
-    // debounce would have to outlive the debounce window too.
-    const self = this.takeSelfWrite(mount.scope, mount.source, relPath);
-    if (self && (self.mode === 'suppress' || self.mode === 'echo')) return;
-    const origin: WatchOrigin = self?.mode === 'origin' ? 'server' : 'external';
+    if (event === 'unlink') {
+      // Nothing to hash — a delete falls back to the token, and clears any stamp.
+      this.selfHash.delete(key);
+      if (this.takeSuppress(mount.scope, mount.source, relPath)) return;
+    } else {
+      // Our own echo, whether the provider emitted one event for several writes
+      // or several for one.
+      const hash = this.hashFile(mount.dir, relPath);
+      if (hash !== null && this.selfHash.get(key) === hash) return;
+      if (this.takeSuppress(mount.scope, mount.source, relPath)) {
+        // A write made outside any dispatch (the entity/release store primitives).
+        // Record what it left behind so its later echoes are recognized too.
+        if (hash !== null) this.selfHash.set(key, hash);
+        return;
+      }
+    }
 
+    const origin: WatchOrigin = this.takeOrigin(mount.scope, mount.source, relPath) ? 'server' : 'external';
     mount.pending.set(relPath, { event, origin });
     const prev = mount.timers.get(relPath);
     if (prev) clearTimeout(prev);
@@ -575,7 +608,14 @@ export class FileWatchRuntime {
 
     // Chain so `flush()` can await work already in flight for this key.
     const chained: Promise<void> = run.finally(() => {
-      this.dispatchActor.delete(writeKey(mount.scope, mount.source, relPath));
+      const key = writeKey(mount.scope, mount.source, relPath);
+      // Whatever the write-backs left on disk is now OUR content: stamp it so the
+      // resulting echoes are recognized. This also subsumes any `suppress()` a
+      // write-back issued during the dispatch, so no token outlives it.
+      if (event === 'unlink') this.selfHash.delete(key);
+      else this.stampSelfHash(mount, relPath);
+      this.pendingSuppress.delete(key);
+      this.dispatchActor.delete(key);
       if (mount.inflight.get(relPath) === chained) mount.inflight.delete(relPath);
     });
     mount.inflight.set(relPath, chained);
@@ -608,8 +648,8 @@ export class FileWatchRuntime {
     const sources = [...this.mounts.values()].filter((m) => m.scope === scope).map((m) => m.source);
     for (const source of sources) await this.unmountSource(source, scope);
     const prefix = `${scope}${SEP}`;
-    for (const key of [...this.selfWrites.keys()]) {
-      if (key.startsWith(prefix)) this.selfWrites.delete(key);
+    for (const m of [this.selfHash, this.pendingSuppress, this.originHint] as Array<Map<string, unknown>>) {
+      for (const key of [...m.keys()]) if (key.startsWith(prefix)) m.delete(key);
     }
     for (const key of [...this.dispatchActor.keys()]) {
       if (key.startsWith(prefix)) this.dispatchActor.delete(key);
@@ -621,7 +661,9 @@ export class FileWatchRuntime {
     for (const mount of [...this.mounts.values()]) {
       await this.unmountSource(mount.source, mount.scope);
     }
-    this.selfWrites.clear();
+    this.selfHash.clear();
+    this.pendingSuppress.clear();
+    this.originHint.clear();
     this.dispatchActor.clear();
   }
 

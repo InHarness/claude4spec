@@ -5,7 +5,7 @@ import { parseXmlTags, parseXmlTagsExcludingCode } from '../../shared/xml-tags.j
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
-import { requireRootId } from '../fs/sources.js';
+import { requireRootId, pageSource } from '../fs/sources.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 
@@ -41,10 +41,18 @@ export interface SectionIndexRoot {
   pages: PagesService;
 }
 
-/** A minted-but-not-yet-written anchor injection, handed from projection to write-back. */
+/**
+ * A minted-but-not-yet-written anchor injection, handed from projection to write-back.
+ *
+ * `sourceBody` is the body the injection was computed FROM. The write-back
+ * re-reads the file and applies the injection only if the page still looks like
+ * that — otherwise the stash is stale (the page was edited or replaced between
+ * the two phases) and writing it would revert the newer content.
+ */
 interface PendingInjection {
   frontmatter: Record<string, unknown>;
   body: string;
+  sourceBody: string;
 }
 
 /**
@@ -118,13 +126,66 @@ export class SectionIndexerService implements WatchSubscriber {
         this.pendingInjections.delete(k);
         const root = this.roots.get(rootId);
         if (!root) return;
-        suppress(source, relPath);
-        await root.pages.write(relPath, { frontmatter: injection.frontmatter, body: injection.body });
+        await this.persistInjection(root, source, relPath, injection, suppress);
       },
       onUnlink: (_scope, source, relPath) => {
         this.pendingInjections.delete(this.key(requireRootId(source), relPath));
       },
     };
+  }
+
+  /**
+   * Write a stashed injection, unless the page moved on underneath it.
+   *
+   * Re-reading is the whole point: between the projection that minted these
+   * anchors and this write, the file may have been edited, replaced by a
+   * `git checkout`, or deleted. Writing a stale stash would silently revert the
+   * newer content — and because the write is suppressed, neither the UI nor the
+   * version log would show it happening.
+   */
+  private async persistInjection(
+    root: SectionIndexRoot,
+    source: string,
+    relPath: string,
+    injection: PendingInjection,
+    suppress: (source: string, relPath: string) => void,
+  ): Promise<void> {
+    let current;
+    try {
+      current = await root.pages.read(relPath);
+    } catch {
+      return; // gone — nothing to inject into
+    }
+    if (current.body !== injection.sourceBody) return; // moved on; a later pass will re-mint
+    suppress(source, relPath);
+    await root.pages.write(relPath, { frontmatter: injection.frontmatter, body: injection.body });
+  }
+
+  /**
+   * Persist every anchor `indexAll()` minted.
+   *
+   * `indexAll()` calls `indexPage` directly, so nothing dispatches for those files
+   * and the `write-back` phase never runs for them. Without this the anchors would
+   * exist in `section_index` — and be handed to the UI, to `@page#anchor`
+   * autocomplete and to `<section_ref/>` insertion — while the files on disk still
+   * had none, so every reference made against one would point at text that does
+   * not exist and would break the moment the page was next edited.
+   */
+  async flushPendingInjections(suppress: (source: string, relPath: string) => void): Promise<void> {
+    const entries = [...this.pendingInjections.entries()];
+    this.pendingInjections.clear();
+    for (const [k, injection] of entries) {
+      const sep = k.indexOf(':');
+      const rootId = k.slice(0, sep);
+      const relPath = k.slice(sep + 1);
+      const root = this.roots.get(rootId);
+      if (!root) continue;
+      try {
+        await this.persistInjection(root, pageSource(rootId), relPath, injection, suppress);
+      } catch (err) {
+        console.error(`[section-indexer] anchor injection for ${rootId}:${relPath}:`, err);
+      }
+    }
   }
 
   async handleUnlink(rootId: string, relPath: string): Promise<void> {
@@ -309,8 +370,17 @@ export class SectionIndexerService implements WatchSubscriber {
       // here: `capture` runs after `write-back`, so the version it records
       // contains the anchors. The sections below are built from `lines`, which
       // already carries them, so the index never waits for the disk write.
-      body = lines.join('\n');
-      this.pendingInjections.set(this.key(rootId, relPath), { frontmatter: page.frontmatter, body });
+      const injected = lines.join('\n');
+      this.pendingInjections.set(this.key(rootId, relPath), {
+        frontmatter: page.frontmatter,
+        body: injected,
+        sourceBody: page.body,
+      });
+      body = injected;
+    } else {
+      // Nothing to inject THIS pass — drop any older stash for this page, or the
+      // write-back would later apply it on top of newer content.
+      this.pendingInjections.delete(this.key(rootId, relPath));
     }
 
     const sections = buildSections(lines, headings);

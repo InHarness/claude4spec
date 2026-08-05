@@ -287,7 +287,9 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
           for (const id of cache.liveProjectIds()) gateway.broadcast(id, event);
           return;
         }
-        gateway.broadcast(scope.slice('context:'.length), event);
+        // Scope is `context:<projectId>#<instance>` — the instance suffix keeps
+        // two live contexts for one project apart; the ROOM is still the project.
+        gateway.broadcast(scope.slice('context:'.length).split('#')[0]!, event);
       },
     },
   });
@@ -352,6 +354,24 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   for (const dir of new Set(baseDirByPkg.values())) {
     watchRuntime.mountSource({ source: `${PLUGINS_BASE_SOURCE}:${dir}`, dir, scope: 'process' });
   }
+  // The runtime debounces PER FILE, but a plugin rebuild rewrites a whole dist/
+  // at once — without a burst-level coalesce that is one reloadPlugin() and one
+  // cache.invalidateAll() per file (~30 full context rebuilds for one `npm run
+  // build`, and 30 `plugin:reloaded` events at the client). The watcher this
+  // replaced coalesced a burst into a single reload; keep that invariant here.
+  const BURST_MS = 300;
+  const burstTimers = new Map<string, NodeJS.Timeout>();
+  const scheduleBaseChange = (dir: string): void => {
+    const prev = burstTimers.get(dir);
+    if (prev) clearTimeout(prev);
+    burstTimers.set(
+      dir,
+      setTimeout(() => {
+        burstTimers.delete(dir);
+        onBaseChange(dir);
+      }, BURST_MS),
+    );
+  };
   const onBaseChange = (dir: string): void => {
     const affected = [...baseDirByPkg.entries()].filter(([, d]) => d === dir).map(([pkg]) => pkg);
     if (affected.length === 0) return;
@@ -378,7 +398,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   for (const dir of new Set(baseDirByPkg.values())) {
     watchRuntime.subscribe(
       `${PLUGINS_BASE_SOURCE}:${dir}`,
-      { onChange: () => onBaseChange(dir), onUnlink: () => onBaseChange(dir) },
+      { onChange: () => scheduleBaseChange(dir), onUnlink: () => scheduleBaseChange(dir) },
       { id: 'm33-base-reload', phase: 'reload', scope: 'process' },
     );
   }
