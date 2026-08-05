@@ -18,7 +18,9 @@ import type { PagesService } from '../services/pages.js';
 // exercises the `:to === 'current'` dispatch ahead of `decodeIdOrName`
 // (release.ts's diffing algorithm itself is covered by
 // release-unreleased-diff.test.ts), so bare fakes suffice.
-const fakeHost = { getEntity: () => null } as unknown as PluginHost;
+// 0.2.11: `buildSnapshot` iterates `listEntities()`. This suite exercises the
+// page/git side, so an empty type list is the right fake — it just has to exist.
+const fakeHost = { getEntity: () => null, listEntities: () => [] } as unknown as PluginHost;
 const fakeFileSerializer = { version: 'v1' } as unknown as FileSerializer;
 const fakeVersions = {} as unknown as VersionService;
 const fakeFileVersions = { assignToRelease: () => {} } as unknown as FileVersionService;

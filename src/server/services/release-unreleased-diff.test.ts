@@ -15,7 +15,11 @@ import type { PagesService } from './pages.js';
 // readConfig, or the on-disk release store — an in-memory DB + these fakes is
 // enough. `host.diff` delegates to the real `defaultDeepDiff` so entity `op`
 // values match production semantics instead of being hand-rolled per test.
+// 0.2.11: `listEntities()` is what `buildSnapshot` iterates now — the covered
+// types come from the registry rather than a hardcoded five — so a fake host
+// must enumerate as well as resolve.
 const fakeHost = {
+  listEntities: () => [{ type: 'endpoint', payloadVersion: 1 }],
   getEntity: (type: string) => (type === 'endpoint' ? { payloadVersion: 1 } : null),
   diff: (type: string, a: unknown, b: unknown, slug: string) => defaultDeepDiff(type, slug, a, b),
 } as unknown as PluginHost;

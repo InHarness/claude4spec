@@ -37,11 +37,28 @@ import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loade
 
 const MIGRATIONS_DIR = path.join(import.meta.dirname, '../../../src/server/db/migrations');
 
-/** Ledger tables and SQLite bookkeeping are not part of the comparison. */
+/**
+ * Ledger tables and SQLite bookkeeping are not part of the comparison.
+ *
+ * `database_table` joins them in 0.2.11, and it is the one entry here that is a
+ * real divergence rather than bookkeeping. The historical chain creates it
+ * (`006_database_table.sql`), and the baseline used to as well — grandfathered,
+ * because the type comes from an EXTERNAL plugin with no in-repo module to own
+ * the DDL. That grandfathering was the last thing making `database-table` a
+ * privileged type in the migration chain, so it is gone: the table now exists
+ * only where the plugin contributing the type is installed, generated from its
+ * `data.schema` like every other entity table.
+ *
+ * A legacy database keeps its copy (nothing drops it) and a fresh one without
+ * that plugin has none — a deliberate, accepted divergence, and the only reason
+ * these two schemas are no longer identical. Comparing it would assert the
+ * privilege this release removed.
+ */
 const IGNORED = (name: string) =>
   name === 'schema_migrations' ||
   name === 'plugin_schema_migrations' ||
   name === 'sqlite_sequence' ||
+  name === 'database_table' ||
   name.startsWith('sqlite_stat');
 
 type TableShape = {
@@ -208,9 +225,10 @@ describe('000_baseline.sql', () => {
       for (const entityTable of ['endpoint', 'dto', 'endpoint_dto', 'ui_view', 'ac', 'design_system', 'diagram']) {
         expect(tables).not.toContain(entityTable);
       }
-      // Grandfathered: contributed by an external plugin, so no in-repo module
-      // can own its DDL. See the note in 000_baseline.sql.
-      expect(tables).toContain('database_table');
+      // 0.2.11: `database_table` is no longer grandfathered in. It was the last
+      // entity table the baseline created without owning; it now comes from the
+      // external plugin that contributes the type, like every other one.
+      expect(tables).not.toContain('database_table');
       // Host tables are all here.
       expect(tables).toEqual(expect.arrayContaining(['tag', 'entity_tag', 'entity_version', 'file_version', 'spec_release', 'section_index']));
     } finally {

@@ -31,7 +31,9 @@ async function git(args: string[], cwd: string): Promise<string> {
 // instance (0.1.124: the git-anchored path now runs real section diffing) —
 // its `snapshotFromContent`/`diff` methods never touch `this.pages`, only the
 // (here-unused) `snapshot()` does, so a shapeless fake PagesService is safe.
-const fakeHost = { getEntity: () => null } as unknown as PluginHost;
+// 0.2.11: `buildSnapshot` iterates `listEntities()`. This suite exercises the
+// page/git side, so an empty type list is the right fake — it just has to exist.
+const fakeHost = { getEntity: () => null, listEntities: () => [] } as unknown as PluginHost;
 const fakePagesService = {} as unknown as PagesService;
 const fakeFileSerializer = new FileSerializer(fakePagesService);
 const fakeVersions = {} as unknown as VersionService;

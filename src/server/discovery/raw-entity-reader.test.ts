@@ -38,8 +38,8 @@ beforeEach(() => {
 afterEach(() => db.close());
 
 describe('listSlugs', () => {
-  it('still resolves the core types from the static map', () => {
-    const reader = new RawEntityReader(db);
+  it('resolves a type through the host manifest', () => {
+    const reader = new RawEntityReader(db, host([{ type: 'endpoint' }]));
     expect(reader.listSlugs('endpoint')).toEqual(['e1']);
   });
 
@@ -56,8 +56,15 @@ describe('listSlugs', () => {
     expect(reader.listSlugs('ghost' as never)).toEqual([]);
   });
 
-  it('returns [] with no host at all (CLI readers construct one without)', () => {
-    const reader = new RawEntityReader(db);
+  /**
+   * 0.2.11 — replaces "returns [] with no host at all". A host-less reader no
+   * longer exists: `host` is a required constructor argument, because with the
+   * static table map gone such a reader could not resolve a table or enumerate a
+   * type, and would answer "absent" for everything rather than admit it cannot
+   * tell. A host that knows nothing is the honest way to say that.
+   */
+  it('returns [] from a host that contributes no types', () => {
+    const reader = new RawEntityReader(db, host([]));
     expect(reader.listSlugs('use-case' as never)).toEqual([]);
   });
 });
@@ -85,14 +92,16 @@ describe('count', () => {
  * which turned any page carrying a mixed `<tagged_list>` into a 500 and broke
  * the `find_by_tag` MCP tool.
  *
- * `dto` is the probe here precisely because it IS in the static map — the
- * fixture database just has no such table, which is exactly the shipped failure.
+ * `dto` is the probe here because the host DOES contribute it — the fixture
+ * database just has no such table, which is exactly the shipped failure. (Before
+ * 0.2.11 the same case was reached via the static table map, which answered with
+ * a name for all seven core types whether or not the table existed.)
  */
 describe('a core type whose table was never created', () => {
   const missing = 'dto' as never;
 
   it('reports no table rather than a name', () => {
-    expect(new RawEntityReader(db).hasTable(missing)).toBe(false);
+    expect(new RawEntityReader(db, host([{ type: 'dto' }])).hasTable(missing)).toBe(false);
   });
 
   it('reads as absent everywhere, not as an error', () => {
