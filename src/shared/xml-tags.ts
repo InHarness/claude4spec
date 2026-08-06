@@ -122,9 +122,27 @@ function escapeAttr(v: string | null | undefined): string {
 }
 
 export function extractSlugs(tag: XmlTag): string[] {
-  // `diagram` is a self-closing entity reference whose tag name IS the type;
-  // its `slug` attr points at the diagram entity (`caption` is per-reference prose).
+  /**
+   * A self-closing entity reference whose TAG NAME is the type, and whose `slug`
+   * attr points at the entity (`caption`, where present, is per-reference prose).
+   *
+   * `diagram` stays a literal AND the registry is consulted, which is belt and
+   * braces on purpose. The registry is the general answer — it is what lets a
+   * tag contributed through `frontend.referenceType` (M19 Slot B) work at all —
+   * but it is populated by module registration, and this function is reachable
+   * from parsing paths that run before any module has registered. Dropping the
+   * literal would make `diagram`'s slug depend on that ordering; keeping it
+   * costs one comparison.
+   *
+   * Before the registry branch existed, a plugin-contributed tag parsed into an
+   * `entityEmbeds` edge carrying no slug at all: callers were told a section
+   * embeds something, but not which one, and every where-used walk that follows
+   * `entityEmbeds[].slug` reported zero pages.
+   */
   if (tag.kind === 'inline_mention' || tag.kind === 'single_element' || tag.kind === 'diagram') {
+    return tag.attrs.slug ? [tag.attrs.slug] : [];
+  }
+  if (getExtensionReferenceType(tag.kind)?.entityType) {
     return tag.attrs.slug ? [tag.attrs.slug] : [];
   }
   if (tag.kind === 'element_list') {

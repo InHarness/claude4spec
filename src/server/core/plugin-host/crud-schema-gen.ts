@@ -42,8 +42,19 @@ function nodeType(node: FieldNode): ZodTypeAny {
   switch (node.kind) {
     case 'string':
       return z.string();
-    case 'number':
-      return z.number();
+    case 'number': {
+      /**
+       * The numeric bounds a declaration may carry. Applied here rather than
+       * only as a SQL `CHECK` because the two answer differently: a CHECK
+       * surfaces as a driver error the REST layer renders `500 INTERNAL`, while
+       * a zod refusal is the `400 VALIDATION` a caller can act on.
+       */
+      let out = z.number();
+      if (node.integer) out = out.int();
+      if (node.min !== undefined) out = out.min(node.min);
+      if (node.max !== undefined) out = out.max(node.max);
+      return out;
+    }
     case 'boolean':
       return z.boolean();
     case 'enum':

@@ -84,11 +84,20 @@ describe('upgrading a pre-0.2.2 database', () => {
       ).map((r) => r.version);
       expect(versions).not.toContain('000_baseline');
 
-      // 2. The projection created NOTHING and altered NOTHING. This is the
-      //    assertion that would catch a generated schema disagreeing with the
-      //    historical one: a column the old chain never wrote would show up here
-      //    as an ALTER, silently changing a table under live data.
-      expect(result.created).toEqual([]);
+      // 2. The projection ADOPTED every table this database already had, and
+      //    altered nothing. This is the assertion that would catch a generated
+      //    schema disagreeing with the historical one: a column the old chain
+      //    never wrote would show up here as an ALTER, silently changing a table
+      //    under live data.
+      //
+      //    `created` is not empty, and must not be: a type this database predates
+      //    has no table to adopt, so creating one is the correct outcome rather
+      //    than a rebuild. `spreadsheet` shipped after this legacy schema was
+      //    frozen. What matters is that nothing the legacy chain DID write is in
+      //    the list.
+      const legacyTables = ['dto', 'endpoint', 'ac'];
+      expect(result.created).not.toEqual(expect.arrayContaining(legacyTables));
+      expect(result.created).toEqual(['spreadsheet']);
       expect(result.alteredColumns).toEqual([]);
 
       // 3. The retired ledger is gone, dropped by the host chain rather than

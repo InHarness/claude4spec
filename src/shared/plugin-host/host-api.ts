@@ -164,7 +164,13 @@ export interface HostApiUnversionedChange {
    * because a surface that grew silently is a surface nobody knows they may
    * use, which is the additive twin of the failure the removals below record.
    */
-  kind: 'slot-removed' | 'slot-added';
+  /**
+   * `behaviour-changed` carries no slot change at all: the surface is identical
+   * and the answer it gives is different. Recorded for the same reason as the
+   * other two — a repair nobody can see is a repair nobody can reason about when
+   * their data looks different after an upgrade.
+   */
+  kind: 'slot-removed' | 'slot-added' | 'behaviour-changed';
   /** Why it needed no bump, and what it replaces or enables. */
   summary: string;
 }
@@ -226,6 +232,41 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'against 2.0.0 keeps loading. Per M33 an additive slot stays inside the ' +
       'current baseline while no external packages are published; once they are, ' +
       'the same class of change bumps the MINOR.',
+  },
+  {
+    release: '0.2.12',
+    slot: 'ScalarNode.integer / ScalarNode.min / ScalarNode.max',
+    kind: 'slot-added',
+    summary:
+      'Numeric bounds on a `kind: \'number\'` leaf, applied by `crud-schema-gen` ' +
+      'to the generated create/update shapes. Added because the declaration had ' +
+      'no way to say "this is a count": a type carrying one had to either accept ' +
+      '`-1` and `2.5` or hand-write the schema it was supposed to derive, and ' +
+      'the first type to declare a keyed collection showed what that costs — an ' +
+      'axis extent of `-1` makes every cell write and every axis insert refuse, ' +
+      'so the row is created and is then unusable by construction. Optional and ' +
+      'absent everywhere until declared, so no existing type changes shape. The ' +
+      'flags are rejected at registration on a non-number leaf rather than ' +
+      'ignored, because a constraint the author believes is enforced is worse ' +
+      'than no constraint.',
+  },
+  {
+    release: '0.2.12',
+    slot: 'keyed collection — rows past an axis extent',
+    kind: 'behaviour-changed',
+    summary:
+      'A keyed row whose coordinate exceeds its axis\'s declared extent is now ' +
+      'removed when the entity is written, instead of lingering in the ' +
+      'projection. Nothing else in the host believed such a row existed: the ' +
+      'write door refuses that coordinate, an axis op refuses that position, ' +
+      'and `collectionOverview` reports the grid FROM the extent columns rather ' +
+      'than from MAX(coordinate). Only the projection disagreed — and because ' +
+      'the snapshot reads the projection, those rows were being written into the ' +
+      'entity FILE, so shrinking a grid did not survive a round trip and growing ' +
+      'it back resurrected content the author had deleted. Reaching that state ' +
+      'requires writing an out-of-extent coordinate through a path that does not ' +
+      'validate (a restore, or a hand-edited file); no supported write produces ' +
+      'one, which is why this is a repair rather than a semantic change.',
   },
 ];
 
