@@ -268,6 +268,61 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'validate (a restore, or a hand-edited file); no supported write produces ' +
       'one, which is why this is a repair rather than a semantic change.',
   },
+  {
+    release: '0.2.13',
+    slot: 'ScalarNode.pattern',
+    kind: 'slot-added',
+    summary:
+      'A regex a `kind: \'string\'` leaf must match, applied by `crud-schema-gen` ' +
+      'to the generated create/update shapes. Added on the same argument as the ' +
+      'numeric bounds: the declaration had no way to say "this value is an ' +
+      'identifier", and after tier K deleted `backend.crud` there is no ' +
+      'per-type schema left to say it in either — `EntityContribution` carries ' +
+      'no validation hook at all. A source string, not a `RegExp`, because a ' +
+      'declaration has to survive serialisation; applied with `.regex()`, which ' +
+      'SEARCHES, so a caller anchors it. Rejected at registration on a ' +
+      'non-string leaf, and rejected when it does not compile, so a typo cannot ' +
+      'surface later as a throw from inside router construction. Optional and ' +
+      'absent everywhere until declared, so no existing type changes shape.',
+  },
+  {
+    release: '0.2.13',
+    slot: 'ScalarNode.notReserved',
+    kind: 'slot-added',
+    summary:
+      'Refuses a `kind: \'string\'` value that is a reserved SQL word, compared ' +
+      'case-insensitively against `SQL_RESERVED_WORDS` — the list ' +
+      '`data-schema-validation` already screened host-DERIVED identifiers with, ' +
+      'hoisted to `shared/` so a caller-SUPPLIED value can be screened against ' +
+      'the same copy. A separate slot rather than a `pattern` with a negative ' +
+      'lookahead: a 123-alternative lookahead is unreviewable, is ' +
+      'case-sensitive where the rule is not, and collapses "that word is ' +
+      'reserved" into a generic shape mismatch that does not tell the author ' +
+      'what to do. A flag rather than a list on the declaration, because a type ' +
+      'transcribing its own copy drifts from the host on the first keyword the ' +
+      'host adds.',
+  },
+  {
+    release: '0.2.13',
+    slot: 'ref / onMissing on a nested or embedded field',
+    kind: 'behaviour-changed',
+    summary:
+      'A dangling `ref` now warns wherever the declaration puts one, instead of ' +
+      'only on a top-level scalar or the DIRECT field of a table-backed ' +
+      'collection\'s item. Not a new slot — the flags already existed and were ' +
+      'being silently ignored everywhere else, which is the failure mode the ' +
+      'flag screening elsewhere in this file exists to prevent. The gap was the ' +
+      'width of every embedded container: a ref inside an object inside an ' +
+      'embedded value collection was invisible to `danglingScalarRefs` (which ' +
+      'skipped collections outright) and to `syncProjectionTable` (which never ' +
+      'runs for an embedded collection), so the reference dangled and every ' +
+      'write reported clean. The walk is now shape-driven and deliberately the ' +
+      'same recursion `ref-rewrite` uses for renames: a ref the rename path can ' +
+      'repoint is a ref the warning path must be able to report, or the two ' +
+      'disagree about what a reference IS. Table-backed collections are skipped ' +
+      'here and still reported by `syncProjectionTable`, which also DROPS the ' +
+      'row — walking both would double-report and then contradict itself.',
+  },
 ];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */

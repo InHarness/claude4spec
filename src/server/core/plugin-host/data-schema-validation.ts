@@ -38,6 +38,7 @@ import {
   type SlugPattern,
 } from '../../../shared/plugin-host/slug-pattern.js';
 import { PluginManifestError } from './manifest-adapter.js';
+import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
 
 /**
  * snake_case only — stricter than the bare-identifier rule in
@@ -50,31 +51,11 @@ import { PluginManifestError } from './manifest-adapter.js';
 const SNAKE_CASE_RE = /^[a-z_][a-z0-9_]*$/;
 
 /**
- * SQL reserved words, maintained by the HOST rather than deferred to SQLite.
- *
- * SQLite would happily accept most of these when quoted, which is the problem:
- * the projection generator emits bare identifiers, and a column called `order`
- * or `default` produces a syntax error at `CREATE TABLE` time — at boot, inside
- * a transaction, from a manifest that passed registration. Rejecting the name up
- * front turns that into a load failure with the field name in the message.
+ * Hoisted to `shared/` so `ScalarNode.notReserved` screens caller-supplied
+ * VALUES against the very list this file screens host-derived IDENTIFIERS with.
+ * Aliased rather than renamed at the ~30 use sites below.
  */
-const RESERVED_WORDS: ReadonlySet<string> = new Set([
-  'abort', 'action', 'add', 'after', 'all', 'alter', 'analyze', 'and', 'as', 'asc',
-  'attach', 'autoincrement', 'before', 'begin', 'between', 'by', 'cascade', 'case',
-  'cast', 'check', 'collate', 'column', 'commit', 'conflict', 'constraint', 'create',
-  'cross', 'current_date', 'current_time', 'current_timestamp', 'database', 'default',
-  'deferrable', 'deferred', 'delete', 'desc', 'detach', 'distinct', 'drop', 'each',
-  'else', 'end', 'escape', 'except', 'exclusive', 'exists', 'explain', 'fail', 'for',
-  'foreign', 'from', 'full', 'glob', 'group', 'having', 'if', 'ignore', 'immediate',
-  'in', 'index', 'indexed', 'initially', 'inner', 'insert', 'instead', 'intersect',
-  'into', 'is', 'isnull', 'join', 'key', 'left', 'like', 'limit', 'match', 'natural',
-  'no', 'not', 'notnull', 'null', 'of', 'offset', 'on', 'or', 'order', 'outer',
-  'plan', 'pragma', 'primary', 'query', 'raise', 'references', 'regexp', 'reindex',
-  'release', 'rename', 'replace', 'restrict', 'right', 'rollback', 'row', 'savepoint',
-  'select', 'set', 'table', 'temp', 'temporary', 'then', 'to', 'transaction',
-  'trigger', 'union', 'unique', 'update', 'using', 'vacuum', 'values', 'view',
-  'virtual', 'when', 'where', 'with', 'without',
-]);
+const RESERVED_WORDS = SQL_RESERVED_WORDS;
 
 /** Column names the host writes on every entity row; a type may not redeclare them. */
 const HOST_RESERVED_COLUMNS: ReadonlySet<string> = new Set(['slug', 'id']);
@@ -264,6 +245,39 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
       const { min, max } = node as { min?: number; max?: number };
       if (min !== undefined && max !== undefined && min > max) {
         fail(type, `"${path}" declares min ${min} above max ${max} — no value can satisfy it`);
+      }
+    }
+
+    /**
+     * The string constraints, screened by the same rule and for the same reason
+     * as the numeric ones: a `pattern` sitting on a boolean is an author who
+     * believes a shape is enforced.
+     */
+    if (node.kind !== 'string') {
+      for (const flag of ['pattern', 'notReserved'] as const) {
+        if ((node as unknown as Record<string, unknown>)[flag] !== undefined) {
+          fail(
+            type,
+            `"${path}" is a ${node.kind}, but carries \`${flag}\` — the string constraints apply ` +
+              `to \`kind: 'string'\` only. Silently ignoring it would leave a constraint the ` +
+              `author believes is enforced`,
+          );
+        }
+      }
+    } else if (node.pattern !== undefined) {
+      /**
+       * Compiled HERE so a typo fails at registration, naming the type and the
+       * field. `crud-schema-gen` compiles it once per generated schema, which is
+       * router-construction time — far from the declaration, with no type name
+       * in the message, and only for the types whose routers get built.
+       */
+      try {
+        new RegExp(node.pattern);
+      } catch (err) {
+        fail(
+          type,
+          `"${path}" declares a \`pattern\` that does not compile: ${(err as Error).message}`,
+        );
       }
     }
 

@@ -124,6 +124,40 @@ export interface ScalarNode extends FieldFlags {
   min?: number;
   /** NUMBER ONLY — inclusive upper bound. */
   max?: number;
+  /**
+   * STRING ONLY — a regex the value must match.
+   *
+   * A SOURCE STRING, not a `RegExp`: a declaration is pure data that has to
+   * survive being read, serialised and compared, and a live object survives none
+   * of that.
+   *
+   * ANCHOR IT YOURSELF. It is applied with zod's `.regex()`, which SEARCHES —
+   * `'[a-z]+'` accepts `'!!! nope ???'`. Every caller so far means `^…$`.
+   *
+   * Present for the same reason `integer` is: a type whose identifier must be a
+   * SQL identifier had no way to say so, and the only other place to put the
+   * rule — a per-type validation hook — does not exist on `EntityContribution`.
+   *
+   * Rejected on a non-string leaf rather than ignored, and rejected at
+   * registration when it does not compile, so a typo cannot surface later as a
+   * throw from deep inside router construction.
+   */
+  pattern?: string;
+  /**
+   * STRING ONLY — the value may not be a reserved SQL word, compared
+   * case-insensitively against the same list the host screens its own generated
+   * identifiers with (`SQL_RESERVED_WORDS`).
+   *
+   * Deliberately NOT expressible as a `pattern`. A 123-alternative negative
+   * lookahead is unreviewable, is case-sensitive where the rule is not, and
+   * collapses a distinct failure — "that word is reserved", which tells the
+   * author what to do — into a generic shape mismatch that does not.
+   *
+   * A flag rather than a list on the declaration, because the list is the
+   * HOST's: a type transcribing its own copy drifts from the one the host
+   * actually enforces on the first keyword the host adds.
+   */
+  notReserved?: 'sql';
 }
 
 /** A leaf constrained to a closed set of strings. Projects to `TEXT`, validated on write. */

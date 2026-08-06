@@ -32,6 +32,7 @@ import { diagramData } from '../../../shared/entities/diagram/schema.js';
 import { uiViewData } from '../../../shared/entities/ui-view/schema.js';
 import { designSystemData } from '../../../shared/entities/design-system/schema.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
+import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
 // ─── FROZEN: the retired hand-written shapes, verbatim ──────────────────────
 
@@ -363,5 +364,80 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     expect(json.properties.text?.description).toBe(
       'Observable behavior the AC asserts. One sentence is best.',
     );
+  });
+});
+
+/**
+ * The string constraints, and the composition that makes one of them reachable.
+ *
+ * `pattern` and `notReserved` exist for a type whose payload field becomes a SQL
+ * identifier somewhere the host cannot see — `database-table.name` is a real
+ * table name in someone else's schema. That field is also, necessarily, the
+ * field the type SLUGIFIES, which is what makes the second half of this block
+ * the load-bearing one.
+ */
+describe('string constraints', () => {
+  const shapeFor = (node: Record<string, unknown>, slug?: SlugPattern) =>
+    z.object(buildCreateShape({ schema: { name: node as never } }, slug));
+
+  it('applies a declared pattern', () => {
+    const s = shapeFor({ kind: 'string', required: true, pattern: '^[A-Za-z_][A-Za-z0-9_]*$' });
+    expect(s.safeParse({ name: 'order_items' }).success).toBe(true);
+    expect(s.safeParse({ name: 'Order_Items' }).success).toBe(true);
+    expect(s.safeParse({ name: 'order items' }).success).toBe(false);
+    expect(s.safeParse({ name: '2fast' }).success).toBe(false);
+  });
+
+  it('refuses a reserved SQL word, case-insensitively, where the declaration asks', () => {
+    const s = shapeFor({ kind: 'string', required: true, notReserved: 'sql' });
+    expect(s.safeParse({ name: 'table' }).success).toBe(false);
+    expect(s.safeParse({ name: 'TABLE' }).success).toBe(false);
+    expect(s.safeParse({ name: 'tables' }).success).toBe(true);
+  });
+
+  it('names the reserved word in the message, rather than reporting a shape mismatch', () => {
+    const s = shapeFor({ kind: 'string', required: true, notReserved: 'sql' });
+    const res = s.safeParse({ name: 'select' });
+    expect(res.success).toBe(false);
+    if (!res.success) expect(res.error.issues[0]?.message).toContain('reserved SQL word');
+  });
+
+  /**
+   * THE REGRESSION THIS BLOCK EXISTS FOR.
+   *
+   * `nonBlankIfSlugSource` used to REPLACE the derived type with a bare
+   * `z.string().regex(/\S/)`, so a constraint declared on the slug source was
+   * accepted at registration and enforced nowhere. Asserted on BOTH shapes: the
+   * update path had the identical bug, and a rename is exactly when a bad
+   * identifier arrives.
+   */
+  it('composes declared constraints with the non-blank slug-source rule', () => {
+    const data: DataDeclaration = {
+      schema: {
+        name: {
+          kind: 'string',
+          required: true,
+          pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
+          notReserved: 'sql',
+        },
+      },
+    };
+    const slug: SlugPattern = [{ op: 'slugify', field: 'name' }];
+
+    for (const shape of [buildCreateShape(data, slug), buildUpdateShape(data, slug)]) {
+      const s = z.object(shape);
+      expect(s.safeParse({ name: 'order_items' }).success).toBe(true);
+      expect(s.safeParse({ name: 'order items' }).success).toBe(false); // pattern survives
+      expect(s.safeParse({ name: 'select' }).success).toBe(false); // notReserved survives
+      expect(s.safeParse({ name: '   ' }).success).toBe(false); // and so does non-blank
+    }
+  });
+
+  it('leaves a slug source with no declared constraints exactly as it was', () => {
+    // The four frozen goldens rest on this: an unflagged string leaf must emit
+    // the same schema it emitted before `stringType` existed.
+    const s = shapeFor({ kind: 'string', required: true }, [{ op: 'slugify', field: 'name' }]);
+    expect(s.safeParse({ name: 'anything at all' }).success).toBe(true);
+    expect(s.safeParse({ name: '  ' }).success).toBe(false);
   });
 });
