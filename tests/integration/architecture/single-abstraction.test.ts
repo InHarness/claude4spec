@@ -106,6 +106,10 @@ describe('Single Abstraction Rule', () => {
       // Pass-through, not dispatch: the project config is copied verbatim into
       // the release bundle so a restore can reproduce the activation set.
       expect.stringContaining('release-bundle.ts'),
+      // A user-facing sentence that happens to name the field: the refusal when
+      // a bundle carries a type this installation has deactivated tells the
+      // reader where to go and fix it. Naming a setting is not dispatching on it.
+      expect.stringContaining('release.ts'),
     ]);
   });
 

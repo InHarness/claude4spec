@@ -32,6 +32,7 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
     const { resolved, inlineContent } = resolvePageContent(md, {
       discovery: ctx.discovery,
       activeTypes: ctx.reader.listTypes(),
+      availableTypes: ctx.reader.host.listAvailable().map((m) => m.type),
     });
 
     if (format === 'json') {

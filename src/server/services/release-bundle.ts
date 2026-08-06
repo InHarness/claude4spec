@@ -38,8 +38,18 @@ import { DomainError } from './tags.js';
  * `pages/`); the manifest gains `roots[]` and the sanitized config carries
  * `roots[]` instead of the `pagesDir` scalar. v1 bundles (flat `pages/`, no
  * `manifest.roots`) are still readable — see `ReleaseService.restoreBundleArchive`.
+ *
+ * v3 (0.2.11): `entities/` carries one file per ACTIVE entity type, derived from
+ * each module's `pathPrefix`, instead of the five names a static map allowed. The
+ * LAYOUT rule changed, so the version had to move: a v3 bundle can contain
+ * `design-systems.json`, `diagrams.json` or a plugin type's file, and a pre-0.2.11
+ * reader has no entry for those. Left at 2, that reader's version guard would pass
+ * and it would then abort on the first unmappable file — reporting a broken
+ * archive when the real problem is version skew, which is the one thing this
+ * constant exists to say. v2 and v1 bundles remain readable: the derivation
+ * reproduces all five historical names exactly.
  */
-export const BUNDLE_SCHEMA_VERSION = 2 as const;
+export const BUNDLE_SCHEMA_VERSION = 3 as const;
 
 /** The minimum a module must expose to be laid out in a bundle. */
 export interface BundleEntityModule {
@@ -86,29 +96,49 @@ export function bundleEntityFileName(module: BundleEntityModule): string {
 
 /**
  * Both directions of the type ↔ bundle-file-name mapping, built from a module
- * list. Throws on a collision rather than letting one type's rows overwrite
- * another's: two prefixes with the same last segment (`/acs` and `/v2/acs`)
- * would otherwise silently claim the same file.
+ * list, plus any file name more than one type claims.
+ *
+ * Collisions are REPORTED, not thrown, because the two call sites need different
+ * answers. The write side builds this over ACTIVE modules and must refuse: two
+ * types sharing a file name means one silently overwrites the other's rows in the
+ * archive. The read side builds it over AVAILABLE modules — every installed
+ * plugin, activated or not — where a throw would be indefensible: an unrelated
+ * deactivated plugin declaring `/v2/acs` would abort every clone, import and
+ * restore in the project, before a single file of the archive is read, over a
+ * type the bundle does not even contain. There, only a collision on a file
+ * ACTUALLY PRESENT is a real ambiguity.
  */
 export function bundleEntityFileMap(modules: readonly BundleEntityModule[]): {
   toFile: Map<string, string>;
   toType: Map<string, string>;
+  collisions: Map<string, string[]>;
 } {
   const toFile = new Map<string, string>();
   const toType = new Map<string, string>();
+  const collisions = new Map<string, string[]>();
   for (const module of modules) {
     const file = bundleEntityFileName(module);
     const claimed = toType.get(file);
     if (claimed !== undefined && claimed !== module.type) {
-      throw new DomainError(
-        'BUNDLE_BASENAME_COLLISION',
-        `entity types '${claimed}' and '${module.type}' both map to bundle file '${file}'`,
-      );
+      collisions.set(file, [...(collisions.get(file) ?? [claimed]), module.type]);
     }
     toFile.set(module.type, file);
-    toType.set(file, module.type);
+    if (claimed === undefined) toType.set(file, module.type);
   }
-  return { toFile, toType };
+  return { toFile, toType, collisions };
+}
+
+/** The write-side map: a collision here corrupts the archive, so it refuses. */
+export function bundleEntityFileMapForWrite(modules: readonly BundleEntityModule[]): Map<string, string> {
+  const { toFile, collisions } = bundleEntityFileMap(modules);
+  const [file, types] = collisions.entries().next().value ?? [];
+  if (file && types) {
+    throw new DomainError(
+      'BUNDLE_BASENAME_COLLISION',
+      `entity types ${types.map((t) => `'${t}'`).join(' and ')} both map to bundle file '${file}'`,
+    );
+  }
+  return toFile;
 }
 
 /** One releasable page root as carried by the bundle manifest (id/name/dir only). */
@@ -135,7 +165,14 @@ export interface BundleConfig {
 }
 
 export interface BundleManifest {
-  bundleSchemaVersion: 2;
+  /**
+   * The version this bundle was WRITTEN at. Not pinned to a single literal: the
+   * read path parses manifests from older bundles into this same shape, and
+   * `restoreBundleArchive` branches on the value (v1 has a flat `pages/` tree and
+   * no `roots[]`). Pinning it to the current constant would make every older
+   * manifest un-typeable at the very site that has to handle them.
+   */
+  bundleSchemaVersion: number;
   /**
    * v2 (0.1.96): releasable roots present in the bundle (id/name/dir only). The
    * pages tree is laid out under `<rootId>/…`. Absent on v1 bundles (flat `pages/`).

@@ -56,6 +56,7 @@ import {
   extractBundleStream,
   BUNDLE_SCHEMA_VERSION,
   bundleEntityFileMap,
+  bundleEntityFileMapForWrite,
   type BuildBundleResult,
   type BundleManifest,
   type BundlePageInput,
@@ -1702,8 +1703,10 @@ export class ReleaseService {
       readConfig(this.cwd),
       pageRows,
       // ACTIVE modules: the write side must only lay out types this host could
-      // also read back, which is the same set `buildSnapshot` captured.
-      bundleEntityFileMap(this.host.listEntities()).toFile,
+      // also read back, which is the same set `buildSnapshot` captured. Refuses
+      // on a name collision — here it would mean one type's rows overwriting
+      // another's inside the archive.
+      bundleEntityFileMapForWrite(this.host.listEntities()),
     );
   }
 
@@ -1813,15 +1816,36 @@ export class ReleaseService {
         // the two refusals below stay distinguishable: a file belonging to an
         // installed-but-deactivated type must say "not active locally" rather
         // than be misreported as an unrecognised file.
-        const fileToType = bundleEntityFileMap(this.host.listAvailable()).toType;
+        //
+        // Collisions are checked per FILE PRESENT, not globally: an unrelated
+        // deactivated plugin whose `pathPrefix` basename happens to clash must
+        // not abort an import of an archive that contains neither type.
+        const { toType: fileToType, collisions } = bundleEntityFileMap(this.host.listAvailable());
         const byType = new Map<RawEntityType, SpecSnapshotEntityRow[]>();
         for (const file of nodeFs.readdirSync(entitiesDir).filter((f) => f.endsWith('.json'))) {
+          const ambiguous = collisions.get(file);
+          if (ambiguous) {
+            throw new DomainError(
+              'BUNDLE_BASENAME_COLLISION',
+              `bundle file '${file}' is claimed by more than one installed type ` +
+                `(${ambiguous.map((t) => `'${t}'`).join(', ')}) — deactivating or removing one resolves it`,
+            );
+          }
           const type = fileToType.get(file);
           if (!type) {
             throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `unknown entity bundle file '${file}'`);
           }
           if (!this.host.getEntity(type)) {
-            throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `entity type '${type}' is not active locally`);
+            // Deliberately fatal rather than a skip: the alternative is dropping
+            // every row of that type from the restore without saying so, and a
+            // half-restored spec is worse than a refused one. 0.2.11 made this
+            // reachable for the first time (the old static map never wrote a file
+            // for `design-system`/`diagram`/plugin types), so it is called out in
+            // the CHANGELOG. The remedy is one setting.
+            throw new DomainError(
+              'BUNDLE_UNKNOWN_ENTITY_TYPE',
+              `entity type '${type}' is not active locally — activate it in config.entities to import this bundle`,
+            );
           }
           byType.set(
             type,

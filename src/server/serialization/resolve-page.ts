@@ -28,6 +28,12 @@ export interface ResolvePageDeps {
   discovery: DiscoveryCore;
   /** Active entity types, for the untyped `<tagged_list_mixed/>` sweep. */
   activeTypes: string[];
+  /**
+   * Every INSTALLED type, active or not. Only used to seed the
+   * `<tagged_list_mixed>` group keys, so a deactivated type still reports `[]`
+   * rather than vanishing from the payload. Defaults to `activeTypes`.
+   */
+  availableTypes?: string[];
 }
 
 export interface ResolvedEntry {
@@ -224,13 +230,17 @@ function resolveTaggedListMixed(tag: XmlTag, deps: ResolvePageDeps): ResolveOutc
   // of any other type silently vanished from a mixed list. Every one of those
   // four keys was the type name plus an `s`, so deriving it covers the same
   // four identically and stops dropping the rest.
-  // 0.2.11: no seed. It named four types unconditionally -- two of them
-  // (`endpoints`, `dtos`) contributed by a plugin and one (`database-tables`) by
-  // an external one -- so the host asserted a shape for types it must not name,
-  // and a deactivated type still reported an empty group as though it existed.
-  // `renderTaggedListMixed` skips empty groups, so the rendered output is
-  // unchanged; only the JSON `data` loses keys for types this project lacks.
-  const groups: Record<string, unknown[]> = {};
+  // 0.2.11: the seed is registry-driven. It used to name four types
+  // unconditionally -- two of them (`endpoints`, `dtos`) contributed by a plugin
+  // and one (`database-tables`) by an external one -- so the host asserted a
+  // shape for types it must not name. Seeding from AVAILABLE types keeps the
+  // reason the seed existed (a consumer reading `groups.endpoints.length` must
+  // not hit `undefined` when the type is merely deactivated) without the frozen
+  // list. `renderTaggedListMixed` skips empty groups, so rendered output is
+  // unaffected either way.
+  const groups: Record<string, unknown[]> = Object.fromEntries(
+    (deps.availableTypes ?? deps.activeTypes).map((t) => [`${t}s`, [] as unknown[]]),
+  );
   for (const type of deps.activeTypes) {
     groups[`${type}s`] = itemsFor(deps, type, tags, filter);
   }

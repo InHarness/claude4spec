@@ -14,6 +14,7 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   bundleEntityFileMap,
+  bundleEntityFileMapForWrite,
   bundleEntityFileName,
   buildBundleArchive,
   extractBundleStream,
@@ -82,15 +83,35 @@ describe('bundleEntityFileName', () => {
 
   /**
    * Two prefixes sharing a last segment would otherwise have one type's rows
-   * silently overwrite the other's inside the archive.
+   * silently overwrite the other's inside the archive — so the WRITE side
+   * refuses.
    */
-  it('throws BUNDLE_BASENAME_COLLISION rather than letting one type claim another file', () => {
+  it('the write-side map throws BUNDLE_BASENAME_COLLISION', () => {
     expect(() =>
-      bundleEntityFileMap([
+      bundleEntityFileMapForWrite([
         { type: 'ac', pathPrefix: '/acs' },
         { type: 'ac-v2', pathPrefix: '/v2/acs' },
       ]),
     ).toThrow(/both map to bundle file 'acs.json'/);
+  });
+
+  /**
+   * The read side must NOT throw on construction. It is built over every
+   * INSTALLED module, so a single deactivated plugin claiming a clashing
+   * basename would otherwise abort every clone, import and restore in the
+   * project — including archives containing neither colliding type. The
+   * ambiguity is only real for a file actually present, which the caller checks.
+   */
+  it('reports collisions instead of throwing, so an unrelated clash cannot block every import', () => {
+    const { collisions, toType } = bundleEntityFileMap([
+      { type: 'ac', pathPrefix: '/acs' },
+      { type: 'ac-v2', pathPrefix: '/v2/acs' },
+      { type: 'endpoint', pathPrefix: '/endpoints' },
+    ]);
+    expect(collisions.get('acs.json')).toEqual(['ac', 'ac-v2']);
+    // Untouched types still resolve, so a bundle of endpoints imports fine.
+    expect(toType.get('endpoints.json')).toBe('endpoint');
+    expect(collisions.has('endpoints.json')).toBe(false);
   });
 
   it('tolerates the same module appearing twice', () => {
