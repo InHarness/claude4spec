@@ -1,0 +1,137 @@
+{
+  "columns": [
+    {
+      "description": "Surrogate PK (autoincrement).",
+      "name": "id",
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "FK → `spec_release.id` (M17) — lokalny release pushowany. Brak `ON DELETE` (spec_release praktycznie nie kasuje wierszy).",
+      "fk": {
+        "column": "id",
+        "table": "spec_release"
+      },
+      "name": "release_id",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "UUID projektu po stronie remote — z `CreateProjectAndPushResponse.project.id` (first push) lub z `config.remoteProjectId` (subsequent push). **Nullable**: dla `status='error'` na first push (`POST /v1/projects` failowało zanim peer-specka zwróciła `project.id`, a `config.remoteProjectId` jest jeszcze `null`) wpis ma `NULL`. Subsequent-push error rows persistują znane `config.remoteProjectId`. Stable identifier, bez FK (zewnętrzny system).",
+      "name": "remote_project_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "UUID zdalnego release'u — z `release.id` w response. NULL dla `status='error'` (peer-specka nigdy nie zwróciła ID przed error).",
+      "name": "remote_release_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Sekwencyjny numer remote release'u w obrębie projektu — z `release.sequence`. NULL dla `status='error'`. Używany w toascie UI („Pushed as release #N\").",
+      "name": "remote_release_sequence",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Lowercase hex SHA-256 bundle bytes (regex `^[0-9a-f]{64}$`). Wartość zwrócona przez `releaseService.buildBundleArchive` (M17, `m17bndsv1`); wysyłana jako header `X-Content-SHA256`. M25 NIE liczy SHA samodzielnie.",
+      "name": "content_sha256",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Rozmiar bundle bytes — z `buildBundleArchive` (M17) / `Content-Length` w request. Audytowe + UI „Bundle size: X MB\".",
+      "name": "content_size_bytes",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "default": "0",
+      "description": "0 lub 1. Z `PushReleaseResponse.deduplicated` (subsequent push) — peer-specka dedup'uje przez SHA-256 ostatniego release'u projektu, identyczny SHA → `200` + `deduplicated:true` (bez nowego wiersza po stronie remote). `CreateProjectAndPushResponse` (first push) zawsze zapisuje `0` — first push tworzy nowy projekt, brak dedup z definicji.",
+      "name": "deduplicated",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Snapshot `remote_session.remote_account_id` z momentu pusha (UUID z `AccountProfileResponse.id` peer-specki M02). Bez FK — musi przeżyć logout.",
+      "name": "pushed_by_account_id",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Snapshot `remote_session.account_email` z momentu pusha — cache identity dla UI audit'u (chcemy widzieć jak nazywało się konto W MOMENCIE pusha, nawet jeśli user później zmienił email).",
+      "name": "pushed_by_account_email",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Z `buildBundleArchive` (M17 `m17bndsv1`). Peer-specka tej wartości nie zwraca; persistujemy lokalnie do audit'u kompatybilności bundle'a (M26 import w przyszłości odrzuci niewspierane wersje).",
+      "name": "bundle_schema_version",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "`'success'` lub `'error'`. Walidacja enum w aplikacji (L1: bez SQL CHECK).",
+      "enumValues": [
+        "success",
+        "error"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Wypełniane tylko dla `status='error'`. Krótki opis błędu („Session expired\", „Bundle too large\", „Integrity mismatch\", „Network error\").",
+      "name": "error_message",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "ISO 8601 timestamp INSERT'u. Sortowanie głównej osi UI „Pushes\" per release.",
+      "name": "pushed_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 `9erjs0ir`). Zawsze == `pushed_at` (append-only).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 `9erjs0ir`). Zawsze == `pushed_at` (append-only, brak UPDATE).",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-05-26T17:45:10.000Z",
+  "description": "Audit log akcji pushu lokalnego release'u na zdalny serwer (M25). Append-only: każdy zakończony `POST /api/release-pushes` (sukces lub error) zapisuje wiersz. In-progress nie persistujemy. Korelacja c4s `spec_release` (M17) ↔ remote release (peer-specka `claude4spec-api` M05) przez `release_id` ↔ `remote_release_id`. Brak FK do `remote_session` — `pushed_by_account_id` / `pushed_by_account_email` to snapshot z momentu pusha (musi przeżyć logout). Indeks na `(release_id, pushed_at DESC)` dla listing per release; `remote_release_id` NON-UNIQUE (`deduplicated=1` legitnie wielokrotnie referuje ten sam zdalny release).",
+  "indexes": [
+    {
+      "columns": [
+        "release_id",
+        "pushed_at"
+      ],
+      "name": "idx_release_push_release_id",
+      "unique": false
+    },
+    {
+      "columns": [
+        "remote_release_id"
+      ],
+      "name": "idx_release_push_remote_release_id",
+      "unique": false
+    }
+  ],
+  "name": "release_push",
+  "slug": "release-push",
+  "tags": [
+    "m25-release-push"
+  ],
+  "updatedAt": "2026-05-28T09:26:12.000Z"
+}

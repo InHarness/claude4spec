@@ -1,0 +1,50 @@
+{
+  "columns": [
+    {
+      "description": "Właściciel preferencji.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "user_id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Kod typu zdarzenia z rejestru L4, którego dotyczy preferencja.",
+      "name": "event_type",
+      "nullable": false,
+      "pk": true,
+      "type": "varchar"
+    },
+    {
+      "default": "true",
+      "description": "Czy kanał in-app włączony dla tego typu zdarzenia.",
+      "name": "in_app_enabled",
+      "nullable": false,
+      "type": "boolean"
+    },
+    {
+      "default": "true",
+      "description": "Czy kanał push włączony dla tego typu zdarzenia.",
+      "name": "push_enabled",
+      "nullable": false,
+      "type": "boolean"
+    },
+    {
+      "default": "true",
+      "description": "Czy kanał email włączony dla tego typu zdarzenia.",
+      "name": "email_enabled",
+      "nullable": false,
+      "type": "boolean"
+    }
+  ],
+  "description": "Preferencje kanałów powiadomień użytkownika per typ zdarzenia. Brak wiersza dla danej pary (user, typ) → framework stosuje domyślny zestaw kanałów z rejestru L4. Pozwala wyciszyć wybrany kanał (in-app/push/email) dla wybranego typu zdarzenia. Klucz złożony (user_id, event_type).",
+  "indexes": [],
+  "name": "notification_preference",
+  "slug": "notification-preference",
+  "tags": [
+    "m09"
+  ]
+}

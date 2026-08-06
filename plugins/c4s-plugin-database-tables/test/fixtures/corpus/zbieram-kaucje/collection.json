@@ -1,0 +1,148 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator zbiórki.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Konto zbieracza-właściciela zbiórki.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "collector_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Krótki tytuł celu (publiczny).",
+      "name": "title",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Opis celu zbiórki (publiczny, opcjonalny).",
+      "name": "description",
+      "nullable": true,
+      "type": "text"
+    },
+    {
+      "description": "Kwota docelowa w PLN (numeric, dwie cyfry po przecinku).",
+      "name": "target_amount",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "default": "0",
+      "description": "Postęp w PLN — suma zaliczonych dokładnych kwot odbiorów. Denormalizowany, utrzymywany przez M06.",
+      "name": "collected_amount",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Szerokość geo środka obszaru zbiórki.",
+      "name": "center_lat",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Długość geo środka obszaru zbiórki.",
+      "name": "center_lng",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Promień obszaru zbiórki w metrach.",
+      "name": "radius_m",
+      "nullable": false,
+      "type": "int"
+    },
+    {
+      "description": "Miasto środka zbiórki ustalane serwerowo przez reverse-geokod (L6) przy create/edit; NULL gdy środek poza słownikiem miast (M01). Atrybut filtrujący listing miejski (M05); nie jest polem wejściowym użytkownika.",
+      "fk": {
+        "column": "slug",
+        "table": "city"
+      },
+      "name": "city_slug",
+      "nullable": true,
+      "type": "varchar"
+    },
+    {
+      "description": "Zdenormalizowany URL zdjęcia głównego (cover) galerii — źródło miniatury w listingu M05 bez JOIN-a po collection_photo. Właściciel aktualizacji: M04 (jak collected_amount utrzymuje M06). NULL gdy zbiórka nie ma zdjęć.",
+      "name": "cover_photo_url",
+      "nullable": true,
+      "type": "varchar"
+    },
+    {
+      "default": "active",
+      "description": "Status cyklu życia: aktywna lub zamknięta.",
+      "enumValues": [
+        "active",
+        "closed"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "enum"
+    },
+    {
+      "default": "now()",
+      "description": "Utworzenie zbiórki.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Moment zamknięcia (NULL gdy aktywna).",
+      "name": "closed_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "default": "now()",
+      "description": "Ostatnia modyfikacja.",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Cel zbiórki publikowany przez zbieracza: kwota docelowa, obszar (punkt środkowy + promień), status i postęp. Maksymalnie jedna aktywna zbiórka per zbieracz (indeks częściowy WHERE status='active'). Postęp (collected_amount) jest denormalizowany i utrzymywany przez M06 (zaliczanie dokładnych kwot odbiorów).",
+  "indexes": [
+    {
+      "columns": [
+        "collector_id"
+      ],
+      "name": "uq_collection_one_active_per_collector",
+      "unique": true
+    },
+    {
+      "columns": [
+        "center_lat",
+        "center_lng"
+      ],
+      "name": "ix_collection_geo",
+      "unique": false
+    },
+    {
+      "columns": [
+        "status"
+      ],
+      "name": "ix_collection_status",
+      "unique": false
+    },
+    {
+      "columns": [
+        "city_slug"
+      ],
+      "name": "ix_collection_city",
+      "unique": false
+    }
+  ],
+  "name": "collection",
+  "slug": "collection",
+  "tags": [
+    "m04"
+  ]
+}

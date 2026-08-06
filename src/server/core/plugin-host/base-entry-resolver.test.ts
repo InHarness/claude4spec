@@ -4,10 +4,19 @@
  * The base-watcher discovers a package's `dist` dir to observe by resolving its
  * main entry. That discovery MUST use the same ESM resolution as the bootstrap
  * `import(pkg)` — `import.meta.resolve` (honors the `import` condition) — not CJS
- * `createRequire(...).resolve`. The reference preinstalled base package
- * `@inharness-ai/c4s-plugin-simple-database-tables` is ESM-only (`exports["."]`
- * declares only `import`/`types`, no `require`/`default`), so it is the parity
- * witness: the CJS path can't see it, the ESM path can.
+ * `createRequire(...).resolve`. The witness has to be an ESM-only package —
+ * `exports["."]` declaring only `import`/`types`, no `require`/`default` — so
+ * the CJS path cannot see it and the ESM path can.
+ *
+ * The witness WAS `@inharness-ai/c4s-plugin-simple-database-tables`, the
+ * preinstalled base package. That dependency was removed when `database-table`
+ * became a built-in envelope, which left this file resolving a package no
+ * longer installed: both assertions kept passing on a developer machine with a
+ * stale `node_modules` and went red on any clean checkout. `@openai/codex-sdk`
+ * is a direct dependency with the same packaging shape (`exports["."]` =
+ * `{import: './dist/index.js', types: …}`), so the assertions below are
+ * unchanged — only the subject moved. Any ESM-only direct dependency serves;
+ * what must not happen again is naming a package the repo does not install.
  *
  * Note: vitest's module runner throws on `import.meta.resolve` ("not supported"),
  * so `resolveBaseEntry` can't be exercised in-process here. The positive case runs
@@ -20,7 +29,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const PKG = '@inharness-ai/c4s-plugin-simple-database-tables';
+const PKG = '@openai/codex-sdk';
 const repoRoot = process.cwd();
 const tsx = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
 

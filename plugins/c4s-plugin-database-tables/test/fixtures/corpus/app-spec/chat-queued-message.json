@@ -1,0 +1,70 @@
+{
+  "columns": [
+    {
+      "description": "PK (autoincrement)",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "FK → chat_thread.id, ON DELETE CASCADE. Uwaga: chat_thread.id to nanoid TEXT (nie INTEGER), więc kolumna jest TEXT. Usunięcie wątku kasuje jego kolejkę.",
+      "fk": {
+        "column": "id",
+        "table": "chat_thread"
+      },
+      "name": "thread_id",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Porządek w kolejce (monotoniczny per thread). Dispatch po turze popuje wiersze rosnąco po position i scala w jeden prompt.",
+      "name": "position",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Treść wiadomości (markdown z serializowanymi PageRefNode, identycznie jak body POST /api/chat).",
+      "name": "prompt",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Adnotacje z momentu enqueue (kształt jak pole annotations w POST /api/chat). Przy dostarczeniu wspólny formatter serializuje je do tekstu wiadomości (ten sam formatter dla mid-turn push i merged dispatch).",
+      "name": "annotations_json",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Kontekst aktualnej strony z momentu enqueue (path). NULL gdy enqueue bez otwartej strony.",
+      "name": "current_page",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "ISO timestamp enqueue. Mapowany na QueuedMessage.createdAt w snapshotach API.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-06-14T09:40:46.000Z",
+  "description": "Kolejka wiadomości oczekujących na dostarczenie do agenta podczas aktywnej tury (M05, feature kolejkowanie czatu). Wiersz istnieje od enqueue (POST /api/chat/queue/:threadId) do faktycznego dostarczenia: przy mid-turn push (adapter.pushMessage) albo merged after-turn dispatch wiersz jest kasowany, a chat_message (role 'user') insertowany w momencie dostarczenia — porządek wiadomości w wątku odpowiada porządkowi widzianemu przez model. Kolejka = stan przejściowy; persystencja przeżywa restart serwera i odświeżenie karty (jedno źródło prawdy dla wielu klientów wątku). Limit 20 wierszy per thread (400 QUEUE_FULL). Wiersze, które przeżyły crash serwera, są widoczne po restarcie — UI oferuje 'Wyślij teraz'. Abort (Stop) czyści wszystkie wiersze wątku, a ich teksty wracają do composera (clearedTexts).",
+  "indexes": [
+    {
+      "columns": [
+        "thread_id",
+        "position"
+      ],
+      "name": "idx_chat_queued_message_thread_pos"
+    }
+  ],
+  "name": "chat_queued_message",
+  "slug": "chat-queued-message",
+  "tags": [
+    "chat-queue",
+    "m05-chat-agent"
+  ],
+  "updatedAt": "2026-06-14T09:40:46.000Z"
+}

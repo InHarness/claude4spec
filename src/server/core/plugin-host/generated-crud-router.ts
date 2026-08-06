@@ -276,9 +276,18 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
   router.post('/', (req, res, next) => {
     try {
       const input = parse(createSchema, req.body);
-      const { slug } = genericCreate(deps, type, input, 'user');
+      /**
+       * `warnings` rides ALONGSIDE `data`, and only when there are any.
+       *
+       * A dangling soft ref (`onMissing: 'warn'`) is the case this exists for:
+       * the write succeeded and the caller must be told what is now broken.
+       * Dropping it here made the whole warning path invisible on the two doors
+       * a user or an agent can actually reach.
+       */
+      const { slug, warnings } = genericCreate(deps, type, input, 'user');
       broadcast(slug);
-      res.status(201).json({ data: readOne(deps, type, slug) });
+      const body = { data: readOne(deps, type, slug) };
+      res.status(201).json(warnings?.length ? { ...body, warnings } : body);
     } catch (err) {
       next(err);
     }
@@ -301,7 +310,7 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       const input = parse(updateSchema, { ...body, newSlug: undefined, slug: undefined });
       const newSlug = typeof body.newSlug === 'string' ? body.newSlug : undefined;
       const previous = req.params.slug;
-      const { slug } = genericUpdate(
+      const { slug, warnings } = genericUpdate(
         deps,
         type,
         previous,
@@ -310,7 +319,8 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
       );
       await propagateRename(deps, type, previous, slug);
       broadcast(slug);
-      res.json({ data: readOne(deps, type, slug) });
+      const out = { data: readOne(deps, type, slug) };
+      res.json(warnings?.length ? { ...out, warnings } : out);
     } catch (err) {
       next(err);
     }

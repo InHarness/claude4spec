@@ -1,0 +1,59 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator konta.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Adres email (login). Unikalny case-insensitive.",
+      "name": "email",
+      "nullable": false,
+      "type": "varchar",
+      "unique": true
+    },
+    {
+      "description": "Hash hasła (algorytm po stronie implementacji).",
+      "name": "password_hash",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Moment weryfikacji email; NULL = niezweryfikowany.",
+      "name": "email_verified_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "default": "now()",
+      "description": "Utworzenie konta.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "default": "now()",
+      "description": "Ostatnia modyfikacja.",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Tożsamość uwierzytelniania: email + hasło. Dane profilowe (nazwa, role sytuacyjne) należą do M03 i referują ten rekord.",
+  "indexes": [
+    {
+      "columns": [
+        "email"
+      ],
+      "name": "ux_user_account_email",
+      "unique": true
+    }
+  ],
+  "name": "user_account",
+  "slug": "user-account",
+  "tags": [
+    "m02"
+  ]
+}

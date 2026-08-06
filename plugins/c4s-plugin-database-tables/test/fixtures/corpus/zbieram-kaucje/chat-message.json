@@ -1,0 +1,66 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator wiadomości.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Wątek, do którego należy wiadomość.",
+      "fk": {
+        "column": "id",
+        "table": "chat-thread"
+      },
+      "name": "thread_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Autor wiadomości (jedna ze stron wątku).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "sender_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Treść wiadomości (niepusta).",
+      "name": "body",
+      "nullable": false,
+      "type": "text"
+    },
+    {
+      "default": "now()",
+      "description": "Czas wysłania.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Czas odczytania przez odbiorcę; NULL gdy nieprzeczytana.",
+      "name": "read_at",
+      "nullable": true,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Pojedyncza wiadomość w wątku czatu. Należy do jednego wątku (chat_thread) i ma autora będącego jedną ze stron wątku. Stan przeczytania śledzony przez read_at.",
+  "indexes": [
+    {
+      "columns": [
+        "thread_id",
+        "created_at"
+      ],
+      "name": "ix_chat_message_thread_created",
+      "unique": false
+    }
+  ],
+  "name": "chat_message",
+  "slug": "chat-message",
+  "tags": [
+    "m07"
+  ]
+}

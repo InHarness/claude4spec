@@ -491,3 +491,51 @@ describe('slugPattern', () => {
     expect(check(OK, [{ op: 'nanoid', n: -1 }])).toThrow(/nanoid\(-1\)/);
   });
 });
+
+/**
+ * The string constraints are screened exactly as the numeric ones are: rejected
+ * where they cannot apply rather than ignored, because a constraint the author
+ * believes is enforced is worse than no constraint.
+ */
+describe('string constraints — pattern and notReserved', () => {
+  const withName = (node: Record<string, unknown>) =>
+    ({ schema: { name: { kind: 'string', required: true }, f: node } }) as unknown as DataDeclaration;
+
+  it('accepts pattern and notReserved on a string leaf', () => {
+    expect(
+      check(withName({ kind: 'string', pattern: '^[a-z_]+$', notReserved: 'sql' })),
+    ).not.toThrow();
+  });
+
+  for (const kind of ['number', 'boolean'] as const) {
+    it(`rejects pattern on a ${kind} leaf`, () => {
+      expect(check(withName({ kind, pattern: '^x$' }))).toThrow(/carries `pattern`/);
+    });
+    it(`rejects notReserved on a ${kind} leaf`, () => {
+      expect(check(withName({ kind, notReserved: 'sql' }))).toThrow(/carries `notReserved`/);
+    });
+  }
+
+  /**
+   * Compiled at registration so the type name is in the message. `crud-schema-gen`
+   * compiles it at router-construction time, which is far from the declaration
+   * and only happens for the types whose routers get built.
+   */
+  it('rejects a pattern that does not compile', () => {
+    expect(check(withName({ kind: 'string', pattern: '[' }))).toThrow(/does not compile/);
+  });
+
+  it('reaches a leaf nested inside a collection item', () => {
+    const data = {
+      schema: {
+        name: { kind: 'string', required: true },
+        rows: {
+          kind: 'collection',
+          collection: 'value',
+          item: { kind: 'object', fields: { n: { kind: 'number', pattern: '^x$' } } },
+        },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data)).toThrow(/carries `pattern`/);
+  });
+});

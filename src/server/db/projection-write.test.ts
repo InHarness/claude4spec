@@ -20,6 +20,7 @@ import { describe, expect, it, vi } from 'vitest';
 import Database from 'better-sqlite3';
 import { applyProjection } from './projection.js';
 import {
+  danglingScalarRefs,
   mutateAxis,
   renameProjectionRow,
   syncProjectionTables,
@@ -856,5 +857,234 @@ describe('the generic junction door keeps the per-type guarantees', () => {
     expect(warnings.join()).toMatch(/expected one of request, response/);
     // The GOOD row still landed — one bad item must not cost the collection.
     expect(rows(db)).toHaveLength(1);
+  });
+});
+
+/**
+ * `ref` means the same thing wherever the declaration puts it.
+ *
+ * It did not. `danglingScalarRefs` reported top-level scalars only, and
+ * `syncProjectionTable` reported the direct fields of a table-backed item —
+ * leaving every embedded container unwatched. `database-table.columns[].fk.table`
+ * sits three layers into that gap, and the reference dangled while every write
+ * reported clean.
+ */
+describe('dangling refs — anywhere the declaration puts one', () => {
+  /** The real `database-table` shape: embedded collection → object → object → scalar ref. */
+  const tabley: WritableModule = {
+    type: 'tabley',
+    payloadVersion: 1,
+    data: {
+      schema: {
+        name: { kind: 'string', required: true },
+        columns: {
+          kind: 'collection',
+          collection: 'value',
+          item: {
+            kind: 'object',
+            fields: {
+              name: { kind: 'string' },
+              fk: {
+                kind: 'object',
+                fields: {
+                  table: { kind: 'string', ref: 'tabley', onMissing: 'warn', onDelete: 'leave-dangling' },
+                  column: { kind: 'string' },
+                },
+              },
+            },
+          },
+        },
+        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    },
+  };
+
+  const seed = () => {
+    const db = projected(tabley);
+    upsertProjectionRow({ db, versions: null }, tabley, 'orders', { name: 'orders', columns: [] }, 'user', WRITE_OPTS);
+    return db;
+  };
+
+  /** The function `entity-writer` calls at the write chokepoint. */
+  const check = (db: Database.Database, columns: unknown[]) =>
+    danglingScalarRefs(db, tabley, 'order-items', { name: 'order_items', columns });
+
+  const write = (db: Database.Database, columns: unknown[]) =>
+    upsertProjectionRow(
+      { db, versions: null },
+      tabley,
+      'order-items',
+      { name: 'order_items', columns },
+      'user',
+      WRITE_OPTS,
+    );
+
+  it('warns about a ref nested in an object inside an embedded collection', () => {
+    const db = seed();
+    expect(
+      check(db, [
+        { name: 'order_id', fk: { table: 'orders', column: 'id' } },
+        { name: 'ghost_id', fk: { table: 'nope', column: 'id' } },
+      ]),
+    ).toEqual([
+      "tabley/order-items: columns[1].fk.table references tabley 'nope', which does not exist (dangling)",
+    ]);
+  });
+
+  it('says nothing when every target resolves', () => {
+    const db = seed();
+    expect(check(db, [{ name: 'order_id', fk: { table: 'orders', column: 'id' } }])).toEqual([]);
+  });
+
+  it('warns without blocking — the row is written either way', () => {
+    // `onMissing: 'warn'` is documented as "a broken ref never blocks a write",
+    // and an embedded ref has no FK to enforce precisely so it can dangle.
+    const db = seed();
+    write(db, [{ name: 'ghost_id', fk: { table: 'nope', column: 'id' } }]);
+    const row = db.prepare('SELECT name, columns FROM tabley WHERE slug = ?').get('order-items') as
+      | { name: string; columns: string }
+      | undefined;
+    expect(row?.name).toBe('order_items');
+    expect(JSON.parse(row!.columns)).toHaveLength(1);
+  });
+
+  it('leaves a table-backed collection alone — that is syncProjectionTable’s to report', () => {
+    /**
+     * The guard that keeps this change from double-reporting. A collection with
+     * `keyFields` projects to a junction, and `syncProjectionTable` both warns
+     * about a dangling item AND drops the row. If this walk also reported it,
+     * the two would contradict each other: one says "kept, with a warning", the
+     * other has already dropped it.
+     *
+     * `linksy` mirrors `endpoint.linkedDtos` — a ref on the item's DIRECT field,
+     * with a projection table behind it.
+     */
+    const linksy: WritableModule = {
+      type: 'linksy',
+      payloadVersion: 1,
+      data: {
+        schema: {
+          label: { kind: 'string', required: true },
+          links: {
+            kind: 'collection',
+            collection: 'value',
+            keyFields: ['target'],
+            projectionTable: 'linksy_link',
+            item: {
+              kind: 'object',
+              fields: {
+                target: {
+                  kind: 'string',
+                  required: true,
+                  ref: 'linksy',
+                  onMissing: 'warn',
+                  onDelete: 'leave-dangling',
+                },
+              },
+            },
+          },
+          createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+          updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        },
+      },
+    };
+    const db = projected(linksy);
+    expect(
+      danglingScalarRefs(db, linksy, 'l1', { label: 'L', links: [{ target: 'absent' }] }),
+    ).toEqual([]);
+  });
+
+  it('still reports a plain top-level scalar ref, unchanged', () => {
+    // `ui-view.designSystemSlug` is the shape that already worked; the message
+    // must come out byte-identical or whatever asserts on it breaks.
+    const viewy: WritableModule = {
+      type: 'viewy',
+      payloadVersion: 1,
+      data: {
+        schema: {
+          label: { kind: 'string', required: true },
+          designSystemSlug: {
+            kind: 'string',
+            column: 'design_system_slug',
+            ref: 'viewy',
+            onMissing: 'warn',
+            onDelete: 'leave-dangling',
+          },
+          createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+          updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+        },
+      },
+    };
+    const db = projected(viewy);
+    expect(danglingScalarRefs(db, viewy, 'v1', { label: 'V', designSystemSlug: 'gone' })).toEqual([
+      "viewy/v1: designSystemSlug references viewy 'gone', which does not exist (dangling)",
+    ]);
+  });
+});
+
+/**
+ * A POLYMORPHIC ref is NOT checked, and that exclusion is deliberate.
+ *
+ * The first cut of the shape-driven walk dropped the `$type` skip along with
+ * the collection skip, which made `ac.verifies[]` report a dangling reference
+ * for every AC verifying a type this project has not activated. `rowExists`
+ * cannot tell "the entity is missing" from "its type is not projected here", so
+ * for a polymorphic ref — whose whole point is pointing at types that may not
+ * be present — the answer is false far more often than it is true.
+ */
+describe('dangling refs — polymorphic refs are excluded', () => {
+  const acLike: WritableModule = {
+    type: 'aclike',
+    payloadVersion: 1,
+    data: {
+      schema: {
+        text: { kind: 'string', required: true },
+        verifies: {
+          kind: 'collection',
+          collection: 'value',
+          item: {
+            kind: 'object',
+            fields: {
+              type: { kind: 'string' },
+              slug: { kind: 'string', ref: '$type', onMissing: 'warn' },
+            },
+          },
+        },
+        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    },
+  };
+
+  it('says nothing about a $type ref, even when its type is not projected', () => {
+    const db = projected(acLike);
+    expect(
+      danglingScalarRefs(db, acLike, 'a1', {
+        text: 'A',
+        verifies: [{ type: 'design-system', slug: 'tokens' }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('still reports a FIXED ref beside it, so the exclusion is narrow', () => {
+    const mixed: WritableModule = {
+      type: 'aclike',
+      payloadVersion: 1,
+      data: {
+        schema: {
+          ...acLike.data!.schema,
+          owner: { kind: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
+        },
+      },
+    };
+    const db = projected(mixed);
+    expect(
+      danglingScalarRefs(db, mixed, 'a1', {
+        text: 'A',
+        owner: 'ghost',
+        verifies: [{ type: 'design-system', slug: 'tokens' }],
+      }),
+    ).toEqual(["aclike/a1: owner references aclike 'ghost', which does not exist (dangling)"]);
   });
 });

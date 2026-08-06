@@ -69,22 +69,21 @@
     "test:ac-coverage": "node scripts/ac-coverage.mjs",
     "deps:link": "node scripts/deps-link.mjs",
     "deps:unlink": "node scripts/deps-unlink.mjs",
-    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build",
-    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev",
+    "build:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run build && npm --prefix plugins/c4s-plugin-spreadsheets run build && npm --prefix plugins/c4s-plugin-database-tables run build",
+    "dev:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run dev & npm --prefix plugins/c4s-plugin-spreadsheets run dev & npm --prefix plugins/c4s-plugin-database-tables run dev",
     "prebuild": "npm run build:envelopes",
     "predev": "npm run build:envelopes",
     "predev:default": "npm run build:envelopes",
     "pretest": "npm run build:envelopes",
     "pretest:watch": "npm run build:envelopes",
-    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test",
-    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck"
+    "test:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts test && npm --prefix plugins/c4s-plugin-spreadsheets test && npm --prefix plugins/c4s-plugin-database-tables test",
+    "typecheck:envelopes": "npm --prefix plugins/c4s-plugin-api-contracts run typecheck && npm --prefix plugins/c4s-plugin-spreadsheets run typecheck && npm --prefix plugins/c4s-plugin-database-tables run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.210",
     "@google/gemini-cli-core": "^0.38.2",
     "@inharness-ai/agent-adapters": "^0.9.1",
     "@inharness-ai/agent-chat": "^0.3.1",
-    "@inharness-ai/c4s-plugin-simple-database-tables": "^0.1.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@monaco-editor/react": "^4.7.0",
     "@openai/codex-sdk": "^0.120.0",
@@ -147,11 +146,6 @@
     "typescript": "^5.7.2",
     "vite": "^6.0.7",
     "vitest": "^4.1.8"
-  },
-  "overrides": {
-    "@inharness-ai/c4s-plugin-simple-database-tables": {
-      "@inharness-ai/agent-adapters": "$@inharness-ai/agent-adapters"
-    }
   },
   "engines": {
     "node": ">=20"

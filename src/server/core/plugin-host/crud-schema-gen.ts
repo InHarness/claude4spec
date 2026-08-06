@@ -28,7 +28,8 @@
 
 import { z } from 'zod';
 import type { ZodRawShape, ZodTypeAny } from 'zod';
-import type { DataDeclaration, FieldNode } from '../../../shared/plugin-host/data-schema.js';
+import type { DataDeclaration, FieldNode, ScalarNode } from '../../../shared/plugin-host/data-schema.js';
+import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
 import type { SlugPattern, SlugStep } from '../../../shared/plugin-host/slug-pattern.js';
 
 /**
@@ -37,11 +38,42 @@ import type { SlugPattern, SlugStep } from '../../../shared/plugin-host/slug-pat
  */
 type MutableShape = Record<string, ZodTypeAny>;
 
+/**
+ * The string leaf's own constraints.
+ *
+ * Extracted rather than inlined into `nodeType` because `nonBlankIfSlugSource`
+ * has to be able to rebuild exactly this and add to it: the field a type
+ * slugifies is a string leaf like any other, and before this existed the
+ * slug-source branch replaced it wholesale.
+ *
+ * Order is checks-only, so it does not affect what is accepted — but it does
+ * decide which message a caller sees first, and "must match …" before "is a
+ * reserved SQL word" reads in the order an author fixes them.
+ */
+function stringType(node: ScalarNode): z.ZodString {
+  let out = z.string();
+  if (node.pattern !== undefined) {
+    /**
+     * Compiled per generated schema, not per parse. `data-schema-validation`
+     * has already refused an uncompilable pattern at registration, so this
+     * cannot be the throw site.
+     */
+    out = out.regex(new RegExp(node.pattern), `must match ${node.pattern}`);
+  }
+  if (node.notReserved === 'sql') {
+    out = out.refine((v) => !SQL_RESERVED_WORDS.has(v.toLowerCase()), {
+      error: (iss) => `"${String(iss.input)}" is a reserved SQL word`,
+      params: { code: 'RESERVED_TABLE_NAME' },
+    }) as unknown as z.ZodString;
+  }
+  return out;
+}
+
 /** One field node → one zod type. Flags are applied by the callers below. */
 function nodeType(node: FieldNode): ZodTypeAny {
   switch (node.kind) {
     case 'string':
-      return z.string();
+      return stringType(node);
     case 'number': {
       /**
        * The numeric bounds a declaration may carry. Applied here rather than
@@ -165,9 +197,23 @@ function slugSourceFields(pattern: SlugPattern | undefined): Set<string> {
   return fields;
 }
 
+/**
+ * COMPOSES onto the derived type; it does not replace it.
+ *
+ * It used to return a bare `z.string().regex(/\S/)`, which discarded everything
+ * `nodeType` had derived for the field. Harmless while a string leaf carried no
+ * flags — and a silent hole the moment one did, because the field a type
+ * SLUGIFIES is the field most likely to constrain: it is the entity's name.
+ * A leaf declaring both would have its own rule accepted at registration and
+ * enforced nowhere.
+ *
+ * `t` is `nodeType(node)`'s output, which for `kind: 'string'` is always a
+ * `ZodString`, so `.regex()` chains off it — that is what makes the composition
+ * possible at all rather than needing a wrapper.
+ */
 function nonBlankIfSlugSource(name: string, node: FieldNode, sources: Set<string>, t: ZodTypeAny): ZodTypeAny {
   return node.kind === 'string' && sources.has(name)
-    ? z.string().regex(/\S/, 'must not be blank')
+    ? (t as z.ZodString).regex(/\S/, 'must not be blank')
     : t;
 }
 

@@ -1,0 +1,44 @@
+{
+  "columns": [
+    {
+      "description": "PK — kebab-case (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku diagram/<slug>.json w M29). Generacja: jawny | slugify(caption) | diagram-<nanoid>",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "'mermaid'",
+      "description": "Format DSL — 'mermaid' (default) | 'd2' (slot otwarty, impl tylko mermaid)",
+      "name": "format",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "''",
+      "description": "Cialo DSL (literalne, bez trim). Moze byc puste (legalny stan — placeholder). Walidacja mermaid.parse() → warnings, nigdy nie blokuje",
+      "name": "source",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-06-16T10:47:38.000Z",
+  "description": "Pochodny indeks encji Diagram (zrodlo prawdy = plik .claude4spec/entities/diagram/<slug>.json, M29; gitignored w db.sqlite). Minimalny zestaw kolumn — body DSL trzymane literalnie w `source`. Brak kolumny `caption` (caption zyje jako atrybut referencji <diagram/> po stronie strony, nie na encji). Liść grafu: brak junction tables, nie wskazuje innych encji.",
+  "indexes": [],
+  "name": "diagram",
+  "slug": "diagram",
+  "tags": [],
+  "updatedAt": "2026-06-16T10:47:38.000Z"
+}

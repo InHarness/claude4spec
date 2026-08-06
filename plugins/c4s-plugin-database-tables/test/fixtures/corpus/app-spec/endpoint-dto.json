@@ -1,0 +1,59 @@
+{
+  "columns": [
+    {
+      "description": "FK → endpoint.slug ON DELETE CASCADE (decyzja #13: slug zamiast integer id)",
+      "fk": {
+        "column": "slug",
+        "table": "endpoint"
+      },
+      "name": "endpoint_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "FK → dto.slug ON DELETE CASCADE",
+      "fk": {
+        "column": "slug",
+        "table": "dto"
+      },
+      "name": "dto_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Typ relacji",
+      "enumValues": [
+        "request",
+        "response",
+        "error"
+      ],
+      "name": "relation",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "HTTP status code (np. 200, 201, 401, 404)",
+      "name": "status_code",
+      "nullable": true,
+      "type": "INTEGER"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:32.000Z",
+  "description": "Junction endpoint ↔ DTO z typem relacji (request/response/error) i opcjonalnym kodem HTTP. Klucze naturalne slug (decyzja #13): (endpoint_slug, dto_slug). Pochodny indeks (M29) — derywowany z inline linked_dtos[] w pliku endpointu (link trzymany RAZ po stronie endpointu, finding #8).",
+  "indexes": [
+    {
+      "columns": [
+        "endpoint_slug",
+        "dto_slug",
+        "relation",
+        "status_code"
+      ],
+      "name": "uq_endpoint_dto",
+      "unique": true
+    }
+  ],
+  "name": "endpoint_dto",
+  "slug": "endpoint-dto",
+  "tags": [],
+  "updatedAt": "2026-06-03T18:59:38.000Z"
+}

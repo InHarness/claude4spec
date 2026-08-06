@@ -1,0 +1,62 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator, kebab-case (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku <type>/<slug>.json w M29)",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "HTTP method",
+      "enumValues": [
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE"
+      ],
+      "name": "method",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "URL path (np. /api/users/:id)",
+      "name": "path",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "''",
+      "description": "Krótki opis (1 linia)",
+      "name": "summary",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Pełny opis (markdown)",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:28.000Z",
+  "description": "Definicje HTTP endpointów API. Każdy endpoint ma unikalny slug i metodę HTTP.",
+  "indexes": [],
+  "name": "endpoint",
+  "slug": "endpoint",
+  "tags": [],
+  "updatedAt": "2026-06-03T18:58:57.000Z"
+}

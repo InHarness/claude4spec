@@ -1,0 +1,56 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator, kebab-case (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku <type>/<slug>.json w M29)",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Nazwa DTO (PascalCase, np. UserResponse)",
+      "name": "name",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opis przeznaczenia",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "'[]'",
+      "description": "JSON array: [{name, type, required, description}]",
+      "name": "fields",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'[]'",
+      "description": "JSON array: [{name, summary?, value}]. Soft-validated względem fields[] — walidacja po stronie autora/agenta",
+      "name": "examples",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:35.000Z",
+  "description": "Data Transfer Objects – definicje struktur danych używanych w API. Pola przechowywane jako JSON array. Examples (opcjonalne) jako JSON array nazwanych przykładów (soft-validated względem fields[]).",
+  "indexes": [],
+  "name": "dto",
+  "slug": "dto",
+  "tags": [],
+  "updatedAt": "2026-06-03T18:59:03.000Z"
+}

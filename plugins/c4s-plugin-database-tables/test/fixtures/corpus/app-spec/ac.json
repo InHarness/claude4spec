@@ -1,0 +1,78 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator, kebab-case z prefiksem 'ac-' (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku ac/<slug>.json w M29). Generowany z text.slice(0, ~40 chars)",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Zdanie AC opisujące observable behavior (np. 'Endpoint /auth/verify returns 204 on success')",
+      "name": "text",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'requirement'",
+      "description": "'requirement' (default) lub 'edge-case' (warunek brzegowy, error path, rare condition)",
+      "enumValues": [
+        "requirement",
+        "edge-case"
+      ],
+      "name": "kind",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'active'",
+      "description": "'active' (default, widoczny w list) lub 'deprecated' (soft delete — niewidoczny w default list, zachowany w version history i referencjach)",
+      "enumValues": [
+        "active",
+        "deprecated"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "JSON array: [{type:'endpoint'|'dto'|'database-table'|'ui-view'|..., slug:string}]. Każdy ref weryfikowany przez M19 reguła 9 (referential integrity). Soft warning, nie blokuje save.",
+      "name": "verifies",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opcjonalna proza wyjaśniająca AC (rationale, kontekst, edge case details)",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-05-09T19:30:54.000Z",
+  "description": "Acceptance Criteria — encja-plugin reprezentująca observable behavior do sprawdzenia w specyfikacji. AC żyją niezależnie od modułów/encji; powiązanie z modułem/encją realizowane przez tagi M18 (konwencja: tag `mNN` dla AC modułu, `entity-{slug}` dla AC encji), klasyfikacja krzyżowa przez tagi `security`/`compliance`/`breaking`/`perf`/`accessibility`. Pole `verifies` (JSON array) wskazuje na konkretne encje (endpoint/dto/database-table/ui-view) i jest weryfikowane przez M19 `check_consistency` reguła 9.",
+  "indexes": [
+    {
+      "columns": [
+        "status"
+      ],
+      "name": "idx_ac_status",
+      "unique": false
+    }
+  ],
+  "name": "ac",
+  "slug": "ac",
+  "tags": [],
+  "updatedAt": "2026-06-03T18:59:30.000Z"
+}

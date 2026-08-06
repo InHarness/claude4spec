@@ -1,0 +1,82 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator zdjęcia.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Zbiórka-właściciel galerii. Usunięcie zbiórki kasuje kaskadowo jej zdjęcia.",
+      "fk": {
+        "column": "id",
+        "table": "collection"
+      },
+      "name": "collection_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Klucz obiektu w object storage (L7) — referencja do pliku binarnego, nie sam plik.",
+      "name": "storage_key",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Typ MIME zdjęcia (jpeg/png/webp). Walidowany w L2 przed uploadem do L7.",
+      "name": "content_type",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Rozmiar pliku w bajtach. Walidowany wobec limitu w L2.",
+      "name": "size_bytes",
+      "nullable": false,
+      "type": "int"
+    },
+    {
+      "default": "false",
+      "description": "Czy to zdjęcie główne (cover) zbiórki. Dokładnie jedno per zbiórka — indeks częściowy uq_collection_photo_one_cover WHERE is_cover = true.",
+      "name": "is_cover",
+      "nullable": false,
+      "type": "boolean"
+    },
+    {
+      "default": "0",
+      "description": "Kolejność prezentacji w galerii (rosnąco).",
+      "name": "sort_order",
+      "nullable": false,
+      "type": "int"
+    },
+    {
+      "default": "now()",
+      "description": "Moment dodania zdjęcia.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Zdjęcie galerii zbiórki (M04). Galeria 1:N do zbiórki, maksymalnie 5 zdjęć per zbiórka (limit egzekwowany w L2 → 409, nie indeksem). Dokładnie jedno zdjęcie jest oznaczone jako cover — egzekwowane indeksem częściowym uq_collection_photo_one_cover (predykat WHERE is_cover = true). Plik binarny przechowywany w obiektowym storage (L7); rekord trzyma klucz obiektu (storage_key), nie sam plik. Kasowane kaskadowo wraz ze zbiórką (FK collection_id). Brak własnej tożsamości poza zbiórką — media podrzędne wobec M04.",
+  "indexes": [
+    {
+      "columns": [
+        "collection_id"
+      ],
+      "name": "ix_collection_photo_collection",
+      "unique": false
+    },
+    {
+      "columns": [
+        "collection_id"
+      ],
+      "name": "uq_collection_photo_one_cover",
+      "unique": true
+    }
+  ],
+  "name": "collection_photo",
+  "slug": "collection-photo",
+  "tags": [
+    "m04"
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "columns": [
+    {
+      "description": "FK → chat_thread.id ON DELETE CASCADE, część composite PK",
+      "fk": {
+        "column": "id",
+        "table": "chat_thread"
+      },
+      "name": "thread_id",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "taskId z subagent_started, część composite PK",
+      "name": "task_id",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "toolUseId z subagent_started",
+      "name": "tool_use_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Krótki opis widoczny w SubagentPanel",
+      "name": "description",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'running'",
+      "description": "Status tasku",
+      "enumValues": [
+        "running",
+        "completed",
+        "failed"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opcjonalne podsumowanie z subagent_completed",
+      "name": "summary",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Aktualizowane przy progress/completion",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:48.000Z",
+  "description": "Śledzenie cyklu życia subagentów (native Task w claude-code). Composite PK: (thread_id, task_id).",
+  "indexes": [
+    {
+      "columns": [
+        "thread_id"
+      ],
+      "name": "idx_cst_thread",
+      "unique": false
+    }
+  ],
+  "name": "chat_subagent_task",
+  "slug": "chat-subagent-task",
+  "tags": [],
+  "updatedAt": "2026-04-21T21:10:48.000Z"
+}

@@ -409,6 +409,22 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
   });
   tx();
 
+  /**
+   * The dangling-ref check lives HERE, not at one caller.
+   *
+   * It used to sit in `HostEntityWriter.upsert` alone, under a comment claiming
+   * "one rule, one place" — but the door a user actually reaches is
+   * `genericCreate`/`genericUpdate`, which call this function and never called
+   * that one. So a broken `fk` typed into the UI, or sent through
+   * `update_entities`, came back 200 with no warning at all, while only a
+   * release restore ever reported it. Checking it at the write itself is what
+   * makes the rule true for every door instead of for one of them.
+   *
+   * After the transaction, so it never affects what is written: `onMissing:
+   * 'warn'` is documented as never blocking a write.
+   */
+  warnings.push(...danglingScalarRefs(deps.db, module, target, payload));
+
   // `slug` LAST: the payload may still carry `newSlug`, and a caller reading
   // `.slug` off the result must get the slug that was actually written —
   // `HostEntityWriter` syncs projection tables against exactly this value.
@@ -558,17 +574,81 @@ export function removeProjectionRow(
  * that matters (a key absent from the payload).
  */
 /**
- * Warn about a SCALAR `ref` whose target does not exist.
+ * Walk one declared subtree, reporting every `onMissing: 'warn'` ref that does
+ * not resolve.
  *
- * `syncProjectionTable` honours `onMissing: 'warn'` for refs carried by
- * COLLECTION ITEMS, and nothing honoured it for a ref sitting directly on the
- * entity row — `ui-view.designSystemSlug` is the one in this repo. The deleted
- * `uiViewRestore` used to emit that warning by hand, so removing it made a
- * dangling design-system reference completely silent: a rebuild or a release
- * restore reported clean success and the user found out by opening the view.
+ * Deliberately the SAME recursion `ref-rewrite`'s `rewriteValue` performs for
+ * renames, and that symmetry is the argument for it: a ref the rename path can
+ * repoint is a ref the warning path must be able to report, or the two layers
+ * disagree about what a reference is.
+ *
+ * A ref node is a scalar, so there is nothing below it to descend into — the
+ * early return after reporting is not an optimisation.
+ */
+function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, out: string[]): void {
+  if (node.ref && node.onMissing === 'warn') {
+    /**
+     * A POLYMORPHIC ref is not checked, and that is deliberate.
+     *
+     * `rowExists` cannot distinguish "the target is missing" from "the target's
+     * type is not projected in this project" — it swallows `no such table` and
+     * answers false either way. For a fixed `ref` that ambiguity is rare; for
+     * `$type` it is the normal case, because the whole point of a polymorphic
+     * ref is that it points at types this project may not have activated.
+     * Checking it here reported `ac.verifies[]` as dangling for every AC
+     * verifying a deactivated type — a claim that is simply false, since the
+     * entity is on disk.
+     *
+     * Every other layer that reads `$type` excludes it for exactly this reason:
+     * `syncProjectionTable`'s ref filter and `projection.ts`'s FK generator
+     * both skip it. This is the third.
+     */
+    if (node.ref === '$type') return;
+    if (typeof value !== 'string' || !value) return;
+    if (rowExists(db, typeTablePrefix(node.ref), value)) return;
+    out.push(`${path} references ${node.ref} '${value}', which does not exist (dangling)`);
+    return;
+  }
+
+  if (node.kind === 'collection') {
+    if (!Array.isArray(value)) return;
+    value.forEach((item, i) => walkRefs(db, node.item, item, `${path}[${i}]`, out));
+    return;
+  }
+
+  if (node.kind === 'record') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      walkRefs(db, node.value, v, `${path}.${k}`, out);
+    }
+    return;
+  }
+
+  if (node.kind === 'object') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+    const record = value as Record<string, unknown>;
+    for (const [name, child] of Object.entries(node.fields)) {
+      walkRefs(db, child, record[name], `${path}.${name}`, out);
+    }
+  }
+}
+
+/**
+ * Warn about a `ref` whose target does not exist — ANYWHERE the declaration
+ * puts one that a projection table is not already answering for.
+ *
+ * This was scalar-and-top-level-only, and `syncProjectionTable` covered the
+ * direct fields of a TABLE-BACKED collection's item. Between them sat a hole the
+ * width of every embedded container: `database-table.columns[].fk.table` is a
+ * ref inside an object inside an embedded value collection, and neither path
+ * could see it — the reference dangled and every write reported clean. The
+ * declaration said `ref` + `onMissing: 'warn'` and the host silently did
+ * nothing with it, which is the failure mode the flag screening in
+ * `data-schema-validation` exists to prevent everywhere else.
  *
  * A warning, never a block. The declaration says `onDelete: 'leave-dangling'`,
- * and there is no FK on the column precisely so the value survives its target.
+ * and an embedded ref has no FK to enforce precisely so the value survives its
+ * target.
  */
 export function danglingScalarRefs(
   db: Database,
@@ -582,14 +662,13 @@ export function danglingScalarRefs(
 
   const warnings: string[] = [];
   for (const [name, node] of Object.entries(schema)) {
-    if (node.kind === 'collection' || !node.ref || node.ref === '$type') continue;
-    if (node.onMissing !== 'warn') continue;
-    const target = input[name];
-    if (typeof target !== 'string' || !target) continue;
-    if (rowExists(db, typeTablePrefix(node.ref), target)) continue;
-    warnings.push(
-      `${module.type}/${slug}: ${name} references ${node.ref} '${target}', which does not exist (dangling)`,
-    );
+    /**
+     * A table-backed collection is `syncProjectionTable`'s to report, and it
+     * both warns AND drops the offending row. Walking it here too would
+     * double-report and then contradict itself.
+     */
+    if (hasProjectionTable(node)) continue;
+    walkRefs(db, node, input[name], `${module.type}/${slug}: ${name}`, warnings);
   }
   return warnings;
 }

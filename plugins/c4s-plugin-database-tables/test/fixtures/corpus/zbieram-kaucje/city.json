@@ -1,0 +1,55 @@
+{
+  "columns": [
+    {
+      "description": "Stabilny kebab-case slug miasta w ścieżce /miasto/[slug], np. bielsko-biala. Wartość zapisywana w collection.city_slug (M04).",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "varchar"
+    },
+    {
+      "description": "Nazwa wyświetlana (mianownik), np. „Bielsko-Biała”.",
+      "name": "name",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Forma odmieniona do nagłówka H1, np. „Bielsku-Białej” w „zbiórka kaucji w Bielsku-Białej”.",
+      "name": "name_locative",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Szerokość geo centroidu miasta — punkt odniesienia dopasowania reverse-geokodu.",
+      "name": "centroid_lat",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Długość geo centroidu miasta.",
+      "name": "centroid_lng",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Opcjonalny bounding box miasta (minLng,minLat,maxLng,maxLat) do precyzyjniejszego dopasowania reverse-geokodu.",
+      "name": "bbox",
+      "nullable": true,
+      "type": "varchar"
+    },
+    {
+      "default": "true",
+      "description": "Czy strona-miasto jest publikowana i miasto bierze udział w dopasowaniu.",
+      "name": "active",
+      "nullable": false,
+      "type": "boolean"
+    }
+  ],
+  "description": "Słownik miast pod strony-miasta (SEO) i dopasowanie reverse-geokodu środka zbiórki. Dane referencyjne (seed), nie tworzone w runtime. Rola: (a) kanoniczna lista miast pod ścieżki /miasto/[slug], (b) zbiór docelowy dopasowania wyniku reverse-geokodu (M04 ustala city_slug), (c) etykieta lokalizacji w headerze (M05).",
+  "indexes": [],
+  "name": "city",
+  "slug": "city",
+  "tags": [
+    "m01"
+  ]
+}

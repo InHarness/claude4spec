@@ -1,0 +1,60 @@
+{
+  "columns": [
+    {
+      "description": "Konto właściciela profilu (1:1).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "user_id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Nazwa wyświetlana (publiczna).",
+      "name": "display_name",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Krótki opis (publiczny).",
+      "name": "bio",
+      "nullable": true,
+      "type": "text"
+    },
+    {
+      "description": "Telefon kontaktowy; prywatny, ujawniany tylko przez M07.",
+      "name": "phone",
+      "nullable": true,
+      "type": "varchar"
+    },
+    {
+      "description": "URL awatara (publiczny).",
+      "name": "avatar_url",
+      "nullable": true,
+      "type": "varchar"
+    },
+    {
+      "default": "now()",
+      "description": "Utworzenie profilu.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "default": "now()",
+      "description": "Ostatnia modyfikacja.",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Dane profilowe konta (1:1 z user_account). Telefon prywatny domyślnie; ujawniany wyłącznie mechanizmem M07.",
+  "indexes": [],
+  "name": "user_profile",
+  "slug": "user-profile",
+  "tags": [
+    "m03"
+  ]
+}

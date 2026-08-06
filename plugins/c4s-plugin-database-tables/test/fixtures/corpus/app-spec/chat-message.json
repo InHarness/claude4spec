@@ -1,0 +1,121 @@
+{
+  "columns": [
+    {
+      "default": "AUTOINCREMENT",
+      "description": "PK",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "FK → chat_thread.id ON DELETE CASCADE",
+      "fk": {
+        "column": "id",
+        "table": "chat_thread"
+      },
+      "name": "thread_id",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Rola wiadomości",
+      "enumValues": [
+        "user",
+        "assistant",
+        "tool_use",
+        "tool_result",
+        "user_input_request",
+        "user_input_response"
+      ],
+      "name": "role",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "JSON: tekst dla user/assistant, dane tool call dla tool_use/tool_result",
+      "name": "content",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Nazwa narzędzia (np. mcp__entity-tools__create_entities)",
+      "name": "tool_name",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "toolUseId z UnifiedEvent (łączy tool_use z tool_result)",
+      "name": "tool_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "subagentTaskId z UnifiedEvent",
+      "name": "subagent_task_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "0",
+      "description": "Snapshot plan mode w momencie insertu (0/1)",
+      "name": "plan_mode",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "default": "'complete'",
+      "description": "Lifecycle wiadomości (migracja v12). Insert 'streaming' tylko dla tool_use; flushed assistant/thinking idą od razu 'complete' (flush na granicach zamkniętych fragmentów). Flip → 'complete' przez markToolUseComplete(tool_use przy paring tool_result), finalizeStreamingRows(finally handlera: result/error/abort/disconnect), finalizeAllStreamingRows(bootstrap serwera: orphan cleanup po crash). useChat wykrywa niezakończoną turę i uruchamia auto-resume przez GET /api/chat/stream/:threadId.",
+      "enumValues": [
+        "streaming",
+        "complete"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Per-turn snapshot UsageStats (JSON) dopinany przez attachTurnUsage() na evencie result. Non-null tylko na OSTATNIM rowsie każdej tury (MAX(id) WHERE thread_id = ?) — najczęściej flushed assistant text, w edge-turach tool-only na ostatnim tool_result. Pozwala odbudować krzywą wzrostu kontekstu per tura.",
+      "name": "usage_json",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:44.000Z",
+  "created_at": "2026-07-10T13:45:12.775Z",
+  "description": "Wiadomości w wątku czatu – immutable append-only log. content to JSON (tekst lub dane tool call).",
+  "indexes": [
+    {
+      "columns": [
+        "thread_id"
+      ],
+      "name": "idx_cm_thread",
+      "unique": false
+    },
+    {
+      "columns": [
+        "tool_id"
+      ],
+      "name": "idx_cm_tool",
+      "unique": false
+    },
+    {
+      "columns": [
+        "subagent_task_id"
+      ],
+      "name": "idx_cm_subagent_task",
+      "unique": false
+    }
+  ],
+  "name": "chat_message",
+  "slug": "chat-message",
+  "tags": [],
+  "updatedAt": "2026-04-23T07:28:15.000Z",
+  "updated_at": "2026-07-11T11:52:38.491Z"
+}
