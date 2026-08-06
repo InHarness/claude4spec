@@ -14,8 +14,14 @@ import { onRegister as registerDiagram } from '../entities/diagram/plugin.js';
  * `endpoint` and `dto` left in 0.2.2: they ship together in the builtin envelope
  * `plugins/c4s-plugin-api-contracts/`, registered through the M33 loader like any
  * other package — the third registration tier, and the pilot for migrating the
- * remaining four. `database-table` left earlier, as the preinstalled external
- * plugin `c4s-plugin-simple-database-tables`. Both load right after this call.
+ * remaining four. `spreadsheet` and `database-table` followed, in
+ * `plugins/c4s-plugin-spreadsheets/` and `plugins/c4s-plugin-database-tables/`.
+ * All of them load right after this call.
+ *
+ * `database-table` used to be described here as a "preinstalled external
+ * plugin". That stopped being true at 2.0.0 and the description outlived it by
+ * two releases: the packages it named declare `hostApiVersion: '^1.0.0'`, so the
+ * loader's gate dropped them and the type was not preinstalled — it was absent.
  */
 export function registerAllPlugins(registry: PluginRegistry): void {
   registerUiView(registry);

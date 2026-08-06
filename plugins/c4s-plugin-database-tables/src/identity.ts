@@ -44,6 +44,41 @@ export const DATABASE_TABLE_POPOVER_KIND = 'database-table-create';
 export const DATABASE_TABLE_ATTR_ORDER = ['type', 'slug'] as const;
 
 /**
+ * The HOST's slug normalisation, vendored byte-for-byte from `src/shared/slug.ts`.
+ *
+ * The detail panel only sends `newSlug` when the slug it computes DIFFERS from
+ * the current one, so a client that disagrees with the server about slugification
+ * either renames when it should not or fails to when it should. That makes this
+ * a correctness dependency, not a convenience.
+ *
+ * The retired plugin shipped its own NFKD-based version, and it was WRONG for
+ * this corpus: `ł` has no NFD decomposition, so `Zbiórka_Ł` slugified one way in
+ * the browser and another on the server. The explicit `ł → l` map below is the
+ * host's fix, and half the real corpus is Polish.
+ *
+ * Vendored rather than imported because `@c4s/plugin-runtime` does not export
+ * it; if it ever does, delete this and import it.
+ */
+export function slugify(input: string): string {
+  const base = input
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (base) return base;
+  // An input outside the Latin-diacritic set (CJK, Cyrillic, …) or pure
+  // punctuation collapses to '' above; a deterministic fallback keeps the
+  // result non-empty and never dot-prefixed.
+  let hash = 0;
+  for (let i = 0; i < input.length; i++) {
+    hash = (hash * 31 + input.charCodeAt(i)) >>> 0;
+  }
+  return `x-${hash.toString(36)}`;
+}
+
+/**
  * The index name a consumer shows when the author did not write one.
  *
  * Applied at the point of DISPLAY and nowhere else. Canonicalising a missing

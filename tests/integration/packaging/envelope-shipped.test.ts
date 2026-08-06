@@ -25,7 +25,11 @@ import { describe, expect, it } from 'vitest';
 const REPO_ROOT = path.join(import.meta.dirname, '../../..');
 
 /** Every envelope in `plugins/` must reach the tarball on the same terms. */
-const ENVELOPES = ['c4s-plugin-api-contracts', 'c4s-plugin-spreadsheets'];
+const ENVELOPES = [
+  'c4s-plugin-api-contracts',
+  'c4s-plugin-spreadsheets',
+  'c4s-plugin-database-tables',
+];
 
 describe('npm package contents', () => {
   it('ships every builtin envelope’s built bundles', () => {
