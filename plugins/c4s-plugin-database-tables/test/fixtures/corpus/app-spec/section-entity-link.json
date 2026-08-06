@@ -1,0 +1,77 @@
+{
+  "columns": [
+    {
+      "description": "FK → section_index.anchor ON DELETE CASCADE",
+      "fk": {
+        "column": "anchor",
+        "table": "section_index"
+      },
+      "name": "anchor",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Typ encji",
+      "enumValues": [
+        "endpoint",
+        "dto",
+        "database-table",
+        "ui-view",
+        "ac"
+      ],
+      "name": "entity_type",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Slug encji (polimorficzny — nie FK, decyzja #13: slug zamiast integer entity_id)",
+      "name": "entity_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'describes'",
+      "description": "Typ relacji sekcja↔encja",
+      "enumValues": [
+        "describes",
+        "uses",
+        "defines"
+      ],
+      "name": "relation",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:11:05.000Z",
+  "description": "Most między systemem sekcji a systemem encji. Polimorficzny pattern slug-based (entity_type + entity_slug, decyzja #13 — encje nie mają już integer id). Pochodny indeks (M06) rebuilt z markdown przy każdym passie section-indexera.",
+  "indexes": [
+    {
+      "columns": [
+        "anchor",
+        "entity_type",
+        "entity_slug"
+      ],
+      "name": "uq_sel_link",
+      "unique": true
+    },
+    {
+      "columns": [
+        "anchor"
+      ],
+      "name": "idx_sel_anchor",
+      "unique": false
+    },
+    {
+      "columns": [
+        "entity_type",
+        "entity_slug"
+      ],
+      "name": "idx_sel_entity",
+      "unique": false
+    }
+  ],
+  "name": "section_entity_link",
+  "slug": "section-entity-link",
+  "tags": [],
+  "updatedAt": "2026-06-03T19:00:24.000Z"
+}

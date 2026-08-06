@@ -1,0 +1,61 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator, kebab-case (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku <type>/<slug>.json w M29). Generowany ze slugify(name).",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Nazwa widoku — human-readable (np. 'User Profile Screen', 'Confirm Delete Modal').",
+      "name": "name",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "URL ekranu (np. '/users/:id', '/orders'). NULL dla modali/drawerow bez wlasnego routingu.",
+      "name": "url",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opis przeznaczenia widoku (long-form, multi-line).",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "'[]'",
+      "description": "JSON array: [{name, in:'path'|'query'|'hash', type?, required?, default?, description?}]. Pelna specyfikacja w entities/ui-view.md (Pole params[] — kontrakt routingu).",
+      "name": "params",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Relacja strukturalna ui-view -> design-system: slug uzywanego design systemu (encja design-system). Nullable (widok bez przypisanego DS). Slug-based, nie FK constraint (integrity programmatic, decyzja #13). Rename slug design-system propaguje tutaj (M29/M19). Delete design-system -> dangling (warning, nie blokuje). Zrodlo prawdy = pole designSystemSlug w pliku ui-view/<slug>.json.",
+      "name": "design_system_slug",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-05-28T06:57:30.000Z",
+  "description": "UI Views — encja-plugin opisujaca ekrany (screen-level) interfejsu uzytkownika dokumentowanego systemu. Granularnosc v1: screen-only. Komponenty (props/states/atomic-design) celowo wyniesione poza zakres v1 — dolozenie `ui-component` jako osobnej encji jest forward-compatible. Relacja `ui-view ↔ endpoint`/`dto`/`database-table` realizowana przez tagi M18 (`tagged_list_mixed`), zero junction tables. Relacja `ui-view → design-system` realizowana strukturalnym polem `design_system_slug` (slug-based, nullable, nie junction).",
+  "indexes": [],
+  "name": "ui_view",
+  "slug": "ui-view",
+  "tags": [],
+  "updatedAt": "2026-08-04T20:18:49.406Z"
+}

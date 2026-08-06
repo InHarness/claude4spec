@@ -1,0 +1,106 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator wątku.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Odbiór, do którego należy wątek (1:1).",
+      "fk": {
+        "column": "id",
+        "table": "pickup"
+      },
+      "name": "pickup_id",
+      "nullable": false,
+      "type": "uuid",
+      "unique": true
+    },
+    {
+      "description": "Posiadacz (uczestnik wątku).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "holder_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Zbieracz (uczestnik wątku).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "collector_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "default": "none",
+      "description": "Stan obustronnej zgody na ujawnienie numerów: brak / poprośono / przyznano (obie strony widzą numery).",
+      "enumValues": [
+        "none",
+        "requested",
+        "granted"
+      ],
+      "name": "phone_reveal_status",
+      "nullable": false,
+      "type": "enum"
+    },
+    {
+      "description": "Strona, która zainicjowała prośbę o wymianę numerów; NULL gdy brak otwartej prośby.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "phone_reveal_requested_by",
+      "nullable": true,
+      "type": "uuid"
+    },
+    {
+      "default": "now()",
+      "description": "Utworzenie wątku (przy inicjacji odbioru).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Czas ostatniej wiadomości (denormalizacja do sortowania listy wątków).",
+      "name": "last_message_at",
+      "nullable": true,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Wątek rozmowy posiadacz↔zbieracz, 1:1 z odbiorem (pickup). Powstaje automatycznie przy inicjacji odbioru (M06). Trzyma stan obustronnej zgody na ujawnienie numerów telefonów. Brak samodzielnego tworzenia wątku poza odbiorem.",
+  "indexes": [
+    {
+      "columns": [
+        "pickup_id"
+      ],
+      "name": "uq_chat_thread_pickup",
+      "unique": true
+    },
+    {
+      "columns": [
+        "holder_id"
+      ],
+      "name": "ix_chat_thread_holder",
+      "unique": false
+    },
+    {
+      "columns": [
+        "collector_id"
+      ],
+      "name": "ix_chat_thread_collector",
+      "unique": false
+    }
+  ],
+  "name": "chat_thread",
+  "slug": "chat-thread",
+  "tags": [
+    "m07"
+  ]
+}

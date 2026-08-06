@@ -1,0 +1,88 @@
+{
+  "columns": [
+    {
+      "description": "Surrogate PK. Single-row tabela — w praktyce zawsze 1 wiersz, ale PK wymagany przez konwencję L1.",
+      "name": "id",
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Opaque Bearer token wydany przez remote w DeviceTokenResponse (M03 peer-specki). Sekret — wstrzykiwany jako `Authorization: Bearer <access_token>` do każdego outbound calla z M24 klienta HTTP. NIE logowany, NIE eksponowany w GET /api/remote-account.",
+      "name": "access_token",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "UUID wiersza `api_token` po stronie remote (z DeviceTokenResponse.token_id). Używany do diagnostyki i mapowania w panelu właściciela na remote (`POST /v1/auth/tokens/:id/revoke` — odrębna akcja z panelu, nie wołana z M24).",
+      "name": "token_id",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "ISO 8601 z DeviceTokenResponse — moment wydania tokenu przez remote. Audytowe; klient nie używa do TTL bo brak `token_expires_at`.",
+      "name": "issued_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "UUID konta z AccountProfileResponse.id (M02 peer-specki używa nazewnictwa `account`, nie `user`). Stable identifier; służy do dołączania tożsamości do operacji push w M25.",
+      "name": "remote_account_id",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Email z AccountProfileResponse — jedyna etykieta UI w M24 shellu (\"połączono jako X\"). M02 peer-specki nie eksponuje display_name/handle/avatar_url, więc email pełni rolę identity label.",
+      "name": "account_email",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Z AccountProfileResponse. `deactivated` → UI sygnalizuje stan i blokuje publish (M25). Walidacja enum w aplikacji (L1: TEXT + enum check w kodzie, bez SQL CHECK).",
+      "enumValues": [
+        "active",
+        "deactivated"
+      ],
+      "name": "account_status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Local timestamp loginu (kiedy `remote_session` zostało zapisane). Niezależne od `issued_at` (remote-side timestamp) — używane do UI 'połączono X dni temu'.",
+      "name": "connected_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 `9erjs0ir`).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 `9erjs0ir`). Aktualizowany programatycznie przy każdym UPDATE (np. odświeżenie `account_status` po post-login fetchu).",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-05-22T10:36:51.000Z",
+  "description": "Bieżąca sesja zdalnego logowania (M24). Single-row: co najwyżej jeden wiersz; login = upsert, logout = delete. Token (sekret) musi przeżyć restart serwera → SQLite, nie config.json, nie pamięć. To NIE jest rejestr kont — c4s pozostaje lokalny i single-user; zdalny serwer jest providerem tożsamości. Bez `refresh_token` ani `token_expires_at` — M03 peer-specki (claude4spec-api) nie definiuje endpointu refresh; sygnał wygaśnięcia = HTTP 401, klient wymusza nowy device flow. Kolumny wyrównane do `DeviceTokenResponse` i `AccountProfileResponse` peer-specki M02/M03.",
+  "indexes": [
+    {
+      "columns": [
+        "remote_account_id"
+      ],
+      "name": "uq_remote_session_remote_account_id",
+      "unique": true
+    }
+  ],
+  "name": "remote_session",
+  "slug": "remote-session",
+  "tags": [
+    "m24-remote-account"
+  ],
+  "updatedAt": "2026-05-22T10:36:51.000Z"
+}

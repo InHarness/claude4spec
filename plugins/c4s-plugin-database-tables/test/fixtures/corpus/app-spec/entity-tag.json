@@ -1,0 +1,65 @@
+{
+  "columns": [
+    {
+      "description": "Typ encji — czesc zlozonego PK (entity_type, entity_slug, tag_slug)",
+      "enumValues": [
+        "endpoint",
+        "dto",
+        "database-table",
+        "ui-view",
+        "ac"
+      ],
+      "name": "entity_type",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Slug encji (polimorficzny — NIE jest FK, decyzja #13: cel zalezy od entity_type). Czesc PK. Integralnosc programatyczna przy reindeksie M29.",
+      "name": "entity_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "PRAWDZIWY FK → tag.slug ON DELETE CASCADE (decyzja #13: slug zamiast integer tag_id), egzekwowany przez silnik przy PRAGMA foreign_keys = ON. Kaskada ma prawo zadzialac wylacznie przy delete tagu z tags.json (M18) — nie przy rebuildzie indeksu.",
+      "fk": {
+        "column": "slug",
+        "table": "tag"
+      },
+      "name": "tag_slug",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:25.000Z",
+  "description": "Junction M:N między encjami a tagami. Polimorficzny pattern slug-based (entity_type + entity_slug + tag_slug, decyzja #13 — koniec integer entity_id/tag_id). Pochodny indeks (M29) derywowany z inline tags\\[\\] w plikach encji; tag_slug referuje tags.json. Dwa reżimy integralności: entity_slug — programatyczny przy reindeksie (cel zależy od entity_type, brak prawdziwego FK); tag_slug — prawdziwy FK na tag(slug) z ON DELETE CASCADE egzekwowany przez silnik (PRAGMA foreign_keys = ON, M01). Dlatego rejestr tag przy rebuildzie jest rekonsyliowany, nie opróżniany — truncate rejestru wymiótłby kaskadą przypisania wszystkich typów (M29).",
+  "indexes": [
+    {
+      "columns": [
+        "entity_type",
+        "entity_slug",
+        "tag_slug"
+      ],
+      "name": "uq_entity_tag",
+      "unique": true
+    },
+    {
+      "columns": [
+        "tag_slug"
+      ],
+      "name": "idx_entity_tag_tag_slug",
+      "unique": false
+    },
+    {
+      "columns": [
+        "entity_type",
+        "entity_slug"
+      ],
+      "name": "idx_entity_tag_entity",
+      "unique": false
+    }
+  ],
+  "name": "entity_tag",
+  "slug": "entity-tag",
+  "tags": [],
+  "updatedAt": "2026-08-03T11:05:40.140Z"
+}

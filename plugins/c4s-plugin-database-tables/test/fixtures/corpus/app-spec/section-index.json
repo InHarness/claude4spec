@@ -1,0 +1,115 @@
+{
+  "columns": [
+    {
+      "default": "AUTOINCREMENT",
+      "description": "PK",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Stabilny 8-znakowy nanoid (immutable)",
+      "name": "anchor",
+      "nullable": false,
+      "type": "TEXT",
+      "unique": true
+    },
+    {
+      "description": "Relatywna ścieżka pliku (np. modules/auth.md)",
+      "name": "page_path",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Slash-separated hierarchia nagłówków",
+      "name": "heading_path",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "GitHub-style slug (np. oauth-flow)",
+      "name": "heading_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Poziom nagłówka 1–6",
+      "name": "heading_level",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Surowy tekst nagłówka",
+      "name": "heading_text",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "SHA-256 znormalizowanej zawartości sekcji",
+      "name": "content_hash",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Aktualna linia startowa",
+      "name": "line_start",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Aktualna linia końcowa",
+      "name": "line_end",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "default": "0",
+      "description": "Liczba paragrafów w sekcji",
+      "name": "paragraph_count",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:55.000Z",
+  "description": "Indeks wszystkich sekcji (heading-delimited) w plikach markdown. Podstawa systemu zależności między sekcjami.",
+  "indexes": [
+    {
+      "columns": [
+        "anchor"
+      ],
+      "name": "uq_si_anchor",
+      "unique": true
+    },
+    {
+      "columns": [
+        "page_path"
+      ],
+      "name": "idx_si_page",
+      "unique": false
+    },
+    {
+      "columns": [
+        "content_hash"
+      ],
+      "name": "idx_si_hash",
+      "unique": false
+    }
+  ],
+  "name": "section_index",
+  "slug": "section-index",
+  "tags": [],
+  "updatedAt": "2026-04-21T21:10:55.000Z"
+}

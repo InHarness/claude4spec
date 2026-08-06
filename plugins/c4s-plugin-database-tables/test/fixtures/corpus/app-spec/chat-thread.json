@@ -1,0 +1,139 @@
+{
+  "columns": [
+    {
+      "description": "PK (nanoid)",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Auto-generowany z pierwszej wiadomości lub ustawiony przez użytkownika",
+      "name": "title",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "sessionId z adapter result event",
+      "name": "last_session_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Snapshot najnowszego UsageStats z ostatniego result eventu (JSON: {inputTokens, outputTokens, cacheReadInputTokens?, cacheCreationInputTokens?}). Nadpisywany (latest-wins) przy każdym result. Używany do hydracji <UsageBadge /> przy loadThread. Eksponowany zawsze w GET /api/threads/:id jako pole usage.",
+      "name": "last_usage_json",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "0",
+      "description": "Bieżące ustawienie plan mode (toggle w ModelSettingsPopover)",
+      "name": "plan_mode",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Relatywna ścieżka pliku planu w plansDir (M10 — kind `plan` w artifactRegistry M36; np. cleanup-legacy-auth.md). Relacja N:1 (attach) — wiele wątków może wskazywać tego samego planu, wątek wskazuje co najwyżej jeden plan. Brak FK — plik żyje na FS (skasowany/przeniesiony → referencja dangling, polityka graceful-degrade M36; UI banner 'Plan file deleted'). NULL gdy wątek nie ma jeszcze planu; pierwsze wywołanie update_plan tworzy plik planu (slug=slugify(title)) i ustawia tu jego relatywną ścieżkę. UI eksponuje plan_path w GET /api/threads/:id; klik w ChatOverlay → /plans/:slug. Zastępuje dawną kolumnę plan_id (SQLite plan, ON DELETE SET NULL) po migracji planu na dysk.",
+      "name": "plan_path",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "chat",
+      "description": "Dyskryminator kontekstu wątku ('chat'/'brief'/'patch'). Decyduje o (system prompt skill, MCP tools whitelist, UI chrome) — patrz modules/m05-chat-agent/L1-db.md sekcja 'Brief & patch reference'. Enum walidowany w aplikacji (rejestr contextTypeRegistry w chat-context.ts, M05), BEZ CHECK — zgodnie z konwencją layers/L1-db.md. Migracja 022 (M21) założyła legacy CHECK(context_type IN ('chat','brief')); M23 zdjął go FK-safe rebuildem tabeli (CHECK w SQLite immutable). Default 'chat' zachowuje backward-compat dla istniejących wątków.",
+      "enumValues": [
+        "chat",
+        "brief",
+        "patch"
+      ],
+      "name": "context_type",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Relatywna ścieżka pliku briefu w briefsDir (np. v0-3-to-v0-4.md), M21. Relacja N:1 — jeden brief może mieć wiele wątków editorial, wątek wskazuje co najwyżej jeden brief. Brak FK — brief żyje na FS (plik może być skasowany/przeniesiony przez usera). Invariant (L2): context_type='brief' ⇒ brief_path IS NOT NULL i plik istnieje przy tworzeniu wątku.",
+      "name": "brief_path",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Relatywna ścieżka pliku patcha w patchesDir (M23). Relacja N:1 — jeden patch może mieć wiele wątków wdrożeniowych, wątek wskazuje co najwyżej jeden patch. Brak FK — plik żyje na FS, analogicznie do brief_path. Invariant (L2): context_type='patch' ⇒ patch_path IS NOT NULL i plik istnieje przy tworzeniu wątku.",
+      "name": "patch_path",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Self-FK do wątku-rodzica (M05 runTransagent, transagent-tools). NULL = wątek top-level (widoczny dla usera). NOT NULL = ukryty WĄTEK-DZIECKO (bańka) zrodzony przez runTransagent z wątku-rodzica — wykluczony ze WSZYSTKICH list/liczników wątków usera przez `WHERE parent_thread_id IS NULL` (lista wątków, panel 'Threads' briefu, threadCount per brief, last-thread-of-plan, wątki patcha). ON DELETE CASCADE — skasowanie rodzica wymiata bańki (świadoma decyzja: różni się od brak-FK brief_path/patch_path/plan_path). Dodawany przez ALTER TABLE ADD COLUMN (default NULL, bez rebuildu — self-FK dopuszczalny). JEST flagą guardu rekurencji: parent_thread_id IS NOT NULL ⟹ transagent-tools NIE montowany w bańce (max głębokość 1).",
+      "fk": {
+        "column": "id",
+        "table": "chat_thread"
+      },
+      "name": "parent_thread_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Id spawnującego tool_use(runTransagent) z wątku-rodzica (M05 transagent). NULL dla wątków top-level i baniek utworzonych poza runTransagent. Służy do render-linku (nested live-join panelu rodzica) i reconstruction po reload: parent_thread_id + spawned_by_tool_use_id rozwiązują childThreadId z wiersza tool_use(runTransagent) rodzica → ponowny nested live-join lub render z wierszy wątku-dziecka.",
+      "name": "spawned_by_tool_use_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Snapshot wyrenderowanego system promptu z PIERWSZEJ tury (zapisywany raz, przed pierwszym adapter.execute). Claude Code CLI po resumeSessionId ignoruje kolejne systemPrompty — wiążący jest tylko pierwszy, więc debug/audyt wymaga przechowania tylko jednego. Inspekcja przez sqlite3 CLI.",
+      "name": "initial_system_prompt",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Snapshot { model, architectureConfig } z PIERWSZEJ tury — `original` dla findResumeViolations (agent-adapters). Zapisywany idempotentnie przed pierwszym adapter.execute (UPDATE ... WHERE initial_architecture_config_json IS NULL), analogicznie do initial_system_prompt. Resume guard w routes/chat.ts porównuje config bieżącej tury z tym snapshotem; różnica na polu immutable (model / claude_thinking / claude_thinking_budget / claude_effort) → 409 RESUME_CONFIG_LOCKED. Debug-only: NIE zwracany w domyślnej projekcji GET /api/threads/:id.",
+      "name": "initial_architecture_config_json",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Aktualizowane przy każdej nowej wiadomości",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:38.000Z",
+  "description": "Wątki czatu agenta AI. PK to nanoid (TEXT), nie AUTOINCREMENT. updated_at aktualizowane przy każdej nowej wiadomości. Wątek może (ale nie musi) być przyłączony do planu przez `plan_path` (N:1 attach — wiele wątków może referować jednego planu; plan to artefakt dyskowy M10/M36, plik w plansDir, bez FK). Analogicznie brief_path (M21) / patch_path (M23).",
+  "indexes": [
+    {
+      "columns": [
+        "plan_path"
+      ],
+      "name": "idx_chat_thread_plan_path"
+    },
+    {
+      "columns": [
+        "brief_path"
+      ],
+      "name": "idx_chat_thread_brief_path"
+    },
+    {
+      "columns": [
+        "patch_path"
+      ],
+      "name": "idx_chat_thread_patch_path"
+    },
+    {
+      "columns": [
+        "parent_thread_id"
+      ],
+      "name": "idx_chat_thread_parent_thread_id"
+    }
+  ],
+  "name": "chat_thread",
+  "slug": "chat-thread",
+  "tags": [],
+  "updatedAt": "2026-08-05T09:54:12.311Z"
+}

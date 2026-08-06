@@ -1,0 +1,48 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator, kebab-case (decyzja #13: slug = jedyna tozsamosc; = klucz w tags.json)",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Display name",
+      "name": "name",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Kolor hex (np. #4A90D9)",
+      "name": "color",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opis tagu",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:10:21.000Z",
+  "description": "Tagi cross-cutting (capability M18). Każdy tag ma unikalny slug w kebab-case i opcjonalny kolor hex. Pochodny indeks (M29) — źródło prawdy to .claude4spec/entities/tags.json (rebuilt z tekstu, gitignored). Slug = PK (decyzja #13: brak integer id; junction entity_tag referuje tag.slug).",
+  "indexes": [],
+  "name": "tag",
+  "slug": "tag",
+  "tags": [],
+  "updatedAt": "2026-08-01T10:17:46.000Z"
+}

@@ -1,0 +1,59 @@
+{
+  "columns": [
+    {
+      "default": "AUTOINCREMENT",
+      "description": "PK",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Publiczny identyfikator release'a — freeform UNIQUE non-empty. Walidacja non-empty w aplikacji (length(trim(name)) > 0), bez CHECK. Przyklady: 'v1.0.0', 'audit-2026-q1', 'pre-launch'. Lookup przez idOrName. Edytowalny wylacznie dla release'u o MAX(id).",
+      "name": "name",
+      "nullable": false,
+      "type": "TEXT",
+      "unique": true
+    },
+    {
+      "description": "Intencja release'a — wymagany non-empty tekst. Surowiec dla M18 brief-buildera. Walidacja non-empty w aplikacji. Edytowalny wylacznie dla release'u o MAX(id).",
+      "name": "description",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Kto wywolal createRelease — UI (user) czy MCP tool (agent).",
+      "enumValues": [
+        "user",
+        "agent"
+      ],
+      "name": "created_by",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Timestamp utworzenia. Brak updated_at — tabela jest append-only poza jednym jawnym wyjatkiem (edycja name/description na MAX(id)).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-29T13:49:01.000Z",
+  "description": "Meta release'a — nazwany punkt w historii calej specyfikacji (M17). Append-only z jednym jawnym wyjatkiem: wiersz po INSERT nie jest UPDATE'owany, poza edycja metadanych (`name`/`description`) ostatniego release'u wyznaczanego przez `MAX(id)` — kontrakt „implicit last = mutable\" (M17, updateRelease). Dane wersji trzymaja `entity_version` i `file_version` przez FK `release_id`. Identyfikator publiczny to freeform `name` (release-style, np. \"v1.0.0\", \"audit-2026-q1\", \"pre-launch\") — patrz L1 sekcja „Identyfikator publiczny — name (release-style, alternatywa)\". Metadane tabeli sa odtwarzalne z plikow `releasesDir/<slug>.json` (odbudowa: M29); kolumna `release_id` na tabelach wersji pozostaje nieodtwarzalnym runtime.",
+  "indexes": [
+    {
+      "columns": [
+        "created_at"
+      ],
+      "name": "idx_spec_release_created_at",
+      "unique": false
+    }
+  ],
+  "name": "spec_release",
+  "slug": "spec-release",
+  "tags": [
+    "m17"
+  ],
+  "updatedAt": "2026-08-04T20:19:01.639Z"
+}

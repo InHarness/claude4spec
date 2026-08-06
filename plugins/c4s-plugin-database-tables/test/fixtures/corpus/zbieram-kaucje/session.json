@@ -1,0 +1,60 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator/token sesji (opaque).",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Właściciel sesji.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "user_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "default": "now()",
+      "description": "Utworzenie sesji (login).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Moment wygaśnięcia.",
+      "name": "expires_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Moment unieważnienia (logout); NULL = aktywna.",
+      "name": "revoked_at",
+      "nullable": true,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Sesja uwierzytelnienia powiązana z kontem. Token opaque; wygasa lub jest unieważniana przy wylogowaniu.",
+  "indexes": [
+    {
+      "columns": [
+        "user_id"
+      ],
+      "name": "ix_session_user_id"
+    },
+    {
+      "columns": [
+        "expires_at"
+      ],
+      "name": "ix_session_expires_at"
+    }
+  ],
+  "name": "session",
+  "slug": "session",
+  "tags": [
+    "m02"
+  ]
+}

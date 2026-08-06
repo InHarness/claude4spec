@@ -1,0 +1,127 @@
+{
+  "columns": [
+    {
+      "description": "PK AUTOINCREMENT",
+      "name": "id",
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Lokalny release #1 utworzony przez createRelease po restore (krok 6 algorytmu). NULL gdy clone failed przed krokiem 6. Brak ON DELETE (spec_release praktycznie nie kasuje wierszy).",
+      "fk": {
+        "column": "id",
+        "table": "spec_release"
+      },
+      "name": "local_release_id",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "UUID projektu na remote — z headera X-Project-Id snapshotu. NULL gdy failed przed snapshot response. Stable identifier, bez FK (zewnętrzny system).",
+      "name": "remote_project_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Input slug podany w --clone <slug>. Snapshot w momencie clone'u (slug mutowalny na remote).",
+      "name": "remote_project_slug",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "UUID remote release'u — z headera X-Release-Id. NULL gdy failed przed download.",
+      "name": "remote_release_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Sequence remote release'u — z headera X-Release-Sequence. Używany w nazwie lokalnego release'u (imported-from-<slug>@r<seq>).",
+      "name": "remote_release_sequence",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Hex64 SHA-256 bundla — z headera X-Content-SHA256. NULL gdy failed przed verify.",
+      "name": "content_sha256",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Rozmiar bundla w bajtach — z headera Content-Length.",
+      "name": "content_size_bytes",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Wersja schematu bundla z MANIFESTU bundla (nie z headera HTTP — X-Bundle-Schema-Version nie istnieje w peer-spece). NULL gdy failed przed parse manifestu.",
+      "name": "bundle_schema_version",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "UUID konta importującego. NULL dla anon clone v1 (snapshot publiczny, brak sesji). Forward-compat na v2 bearer clone.",
+      "name": "imported_by_account_id",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Email konta importującego. NULL dla anon clone v1.",
+      "name": "imported_by_account_email",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "'success' lub 'error'. Walidacja enum w aplikacji (L1: bez SQL CHECK — analogicznie do release_push.status).",
+      "enumValues": [
+        "success",
+        "error"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Wypełniane tylko dla status='error'. Krótki opis błędu (CLONE_TARGET_NOT_EMPTY, REMOTE_PROJECT_NOT_FOUND, BUNDLE_HASH_MISMATCH, BUNDLE_SCHEMA_UNSUPPORTED, CLONE_FAILED).",
+      "name": "error_message",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "ISO 8601 timestamp clone'u. Główna oś czasu audit logu.",
+      "name": "imported_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 9erjs0ir). Zawsze == imported_at (append-only).",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Audit column (L1 9erjs0ir). Zawsze == imported_at (append-only, brak UPDATE).",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-05-30T11:14:55.000Z",
+  "description": "Audit log akcji clone-on-bootstrap (M27 — Project Clone): import zdalnego published projektu (snapshot anon) do świeżej instancji c4s. Append-only — każdy zakończony `--clone <slug>` (sukces lub error) zapisuje wiersz. Symetria z `release_push` (M25), odwrotny kierunek: remote → local. Korelacja lokalny `spec_release` (M17, release #1 utworzony po restore) ↔ remote release przez `local_release_id` ↔ `remote_release_id`. Brak FK do obiektów remote (osobny system) — `remote_project_id`/`remote_release_id`/`remote_release_sequence` to snapshot z headerów snapshotu (`X-Project-Id`/`X-Release-Id`/`X-Release-Sequence`). `bundle_schema_version` z manifestu bundla (NIE z headera HTTP — `X-Bundle-Schema-Version` nie istnieje). `imported_by_account_*` = NULL dla anon clone v1 (snapshot jest publiczny, brak sesji). Forward-compat na v2 (post-bootstrap import, UI history, `/api/release-imports/*`).",
+  "indexes": [
+    {
+      "columns": [
+        "local_release_id"
+      ],
+      "name": "idx_release_import_local_release"
+    }
+  ],
+  "name": "release_import",
+  "slug": "release-import",
+  "tags": [
+    "m27-release-import"
+  ],
+  "updatedAt": "2026-05-30T11:16:10.000Z"
+}

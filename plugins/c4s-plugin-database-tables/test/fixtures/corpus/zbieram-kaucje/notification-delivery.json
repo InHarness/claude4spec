@@ -1,0 +1,98 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator próby dostarczenia.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Powiadomienie, którego dotyczy dostarczenie.",
+      "fk": {
+        "column": "id",
+        "table": "notification"
+      },
+      "name": "notification_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Kanał docelowy dostarczenia.",
+      "enumValues": [
+        "in_app",
+        "push",
+        "email"
+      ],
+      "name": "channel",
+      "nullable": false,
+      "type": "enum"
+    },
+    {
+      "default": "queued",
+      "description": "Status dostarczenia w danym kanale.",
+      "enumValues": [
+        "queued",
+        "sent",
+        "failed"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "enum"
+    },
+    {
+      "default": "0",
+      "description": "Liczba podjętych prób dostarczenia.",
+      "name": "attempts",
+      "nullable": false,
+      "type": "integer"
+    },
+    {
+      "description": "Znacznik ostatniej próby; NULL przed pierwszą próbą.",
+      "name": "last_attempt_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "description": "Komunikat ostatniego błędu dostarczenia; NULL gdy brak.",
+      "name": "error",
+      "nullable": true,
+      "type": "text"
+    },
+    {
+      "default": "now()",
+      "description": "Czas utworzenia rekordu dostarczenia.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Status dostarczenia powiadomienia per kanał (jeden wiersz na powiadomienie × kanał docelowy). Kanał in-app domyślnie sent synchronicznie (utworzenie wiersza notification); push/email dostarczane asynchronicznie z ponawianiem. Pozwala śledzić obserwowalność dostarczeń i wznawiać nieudane. Źródłem prawdy treści jest notification.",
+  "indexes": [
+    {
+      "columns": [
+        "notification_id"
+      ],
+      "name": "idx_notification_delivery_notification"
+    },
+    {
+      "columns": [
+        "status"
+      ],
+      "name": "idx_notification_delivery_status"
+    },
+    {
+      "columns": [
+        "notification_id",
+        "channel"
+      ],
+      "name": "uq_notification_delivery_channel",
+      "unique": true
+    }
+  ],
+  "name": "notification_delivery",
+  "slug": "notification-delivery",
+  "tags": [
+    "m09"
+  ]
+}

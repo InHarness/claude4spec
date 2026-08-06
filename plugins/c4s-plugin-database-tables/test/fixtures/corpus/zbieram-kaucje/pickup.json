@@ -1,0 +1,142 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator odbioru.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Zbiórka, pod którą następuje odbiór.",
+      "fk": {
+        "column": "id",
+        "table": "collection"
+      },
+      "name": "collection_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Posiadacz opakowań inicjujący odbiór.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "holder_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Zbieracz-właściciel zbiórki (denormalizacja z collection.collector_id dla zapytań „moje odbiory”).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "collector_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Orientacyjny przedział wartości zadeklarowany przez posiadacza (słownik M01).",
+      "fk": {
+        "column": "code",
+        "table": "value-range"
+      },
+      "name": "value_range_code",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Dokładna kwota PLN wpisana przez zbieracza przy potwierdzeniu; NULL dopóki status='requested'. Może wykraczać poza zadeklarowany przedział.",
+      "name": "exact_amount",
+      "nullable": true,
+      "type": "numeric"
+    },
+    {
+      "default": "requested",
+      "description": "Cykl życia odbioru.",
+      "enumValues": [
+        "requested",
+        "confirmed",
+        "cancelled"
+      ],
+      "name": "status",
+      "nullable": false,
+      "type": "enum"
+    },
+    {
+      "default": "now()",
+      "description": "Inicjacja odbioru przez posiadacza.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    },
+    {
+      "description": "Moment potwierdzenia (wpisania dokładnej kwoty); NULL gdy niepotwierdzony.",
+      "name": "confirmed_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "description": "Moment anulowania; NULL gdy nieanulowany.",
+      "name": "cancelled_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "description": "Konto, które anulowało odbiór (posiadacz lub zbieracz); NULL gdy nieanulowany.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "cancelled_by",
+      "nullable": true,
+      "type": "uuid"
+    }
+  ],
+  "description": "Odbiór opakowań pod zbiórkę: posiadacz inicjuje odbiór i deklaruje orientacyjny przedział wartości; zbieracz po fizycznym odbiorze wpisuje dokładną kwotę, co potwierdza odbiór i zalicza kwotę do postępu zbiórki (collection.collected_amount, denormalizacja utrzymywana przez M06). Cykl: requested → confirmed | cancelled. Uwaga: indeks unikalny uq_pickup_one_open_per_holder_collection (collection_id, holder_id) jest indeksem CZĘŚCIOWYM — obowiązuje wyłącznie dla wierszy status='requested' (WHERE status='requested'). Gwarantuje co najwyżej jeden otwarty odbiór danego posiadacza w danej zbiórce, dopuszczając jednocześnie historię wielu wierszy confirmed/cancelled dla tej samej pary.",
+  "indexes": [
+    {
+      "columns": [
+        "collection_id"
+      ],
+      "name": "ix_pickup_collection",
+      "unique": false
+    },
+    {
+      "columns": [
+        "holder_id"
+      ],
+      "name": "ix_pickup_holder",
+      "unique": false
+    },
+    {
+      "columns": [
+        "collector_id"
+      ],
+      "name": "ix_pickup_collector",
+      "unique": false
+    },
+    {
+      "columns": [
+        "status"
+      ],
+      "name": "ix_pickup_status",
+      "unique": false
+    },
+    {
+      "columns": [
+        "collection_id",
+        "holder_id"
+      ],
+      "name": "uq_pickup_one_open_per_holder_collection",
+      "unique": true
+    }
+  ],
+  "name": "pickup",
+  "slug": "pickup",
+  "tags": [
+    "m06"
+  ]
+}

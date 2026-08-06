@@ -1,0 +1,71 @@
+{
+  "columns": [
+    {
+      "description": "Konto zbieracza, którego dotyczą statystyki (jeden wiersz na zbieracza).",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "collector_id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "default": "0",
+      "description": "Liczba potwierdzonych odbiorów (sygnał częstości/aktywności).",
+      "name": "confirmed_pickups_count",
+      "nullable": false,
+      "type": "integer"
+    },
+    {
+      "default": "0",
+      "description": "Suma exact_amount ze wszystkich potwierdzonych odbiorów zbieracza (PLN).",
+      "name": "total_collected_amount",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "default": "0",
+      "description": "Liczba odbiorów anulowanych przez zbieracza (sygnał rzetelności — negatywny).",
+      "name": "cancelled_by_collector_count",
+      "nullable": false,
+      "type": "integer"
+    },
+    {
+      "description": "Znacznik ostatniego potwierdzonego odbioru; NULL gdy brak historii (świeżość aktywności).",
+      "name": "last_confirmed_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "default": "0",
+      "description": "Zdenormalizowany wskaźnik reputacji wyliczany z pozostałych pól; wejście do rankingu M05 i prezentacji M03.",
+      "name": "reputation_score",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "default": "now()",
+      "description": "Moment ostatniego przeliczenia agregatu.",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Zdenormalizowany agregat statystyk reputacji per zbieracz (jeden wiersz na konto). Utrzymywany wyłącznie przez M08 reaktywnie na zdarzenia cyklu odbioru z M06 (pickup.confirmed / pickup.cancelled). Źródłem prawdy są rekordy `pickup`; ta tabela to materializowana migawka do szybkiego odczytu (publiczny profil M03, ranking listingu M05). reputation_score wyliczany z pozostałych pól wg udokumentowanej formuły (rzetelność + częstość).",
+  "indexes": [
+    {
+      "columns": [
+        "reputation_score"
+      ],
+      "name": "ix_collector_stats_reputation",
+      "unique": false
+    }
+  ],
+  "name": "collector_stats",
+  "slug": "collector-stats",
+  "tags": [
+    "m08"
+  ]
+}

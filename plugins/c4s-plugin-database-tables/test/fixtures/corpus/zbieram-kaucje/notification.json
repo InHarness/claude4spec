@@ -1,0 +1,75 @@
+{
+  "columns": [
+    {
+      "description": "Identyfikator powiadomienia.",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "uuid"
+    },
+    {
+      "description": "Konto odbiorcy powiadomienia.",
+      "fk": {
+        "column": "id",
+        "table": "user_account"
+      },
+      "name": "recipient_id",
+      "nullable": false,
+      "type": "uuid"
+    },
+    {
+      "description": "Kod typu zdarzenia z rejestru L4 (np. pickup.requested, chat.message, collection.goal_reached).",
+      "name": "type",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Zdenormalizowany ładunek zdarzenia zadeklarowany przez moduł-producent.",
+      "name": "payload",
+      "nullable": false,
+      "type": "jsonb"
+    },
+    {
+      "description": "Znacznik przeczytania in-app; null = nieprzeczytane.",
+      "name": "read_at",
+      "nullable": true,
+      "type": "timestamp"
+    },
+    {
+      "description": "Klucz idempotencji zdarzenia — ponowne wyzwolenie tego samego zdarzenia nie tworzy duplikatu.",
+      "name": "dedup_key",
+      "nullable": true,
+      "type": "varchar",
+      "unique": true
+    },
+    {
+      "default": "now()",
+      "description": "Czas utworzenia powiadomienia.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "timestamp"
+    }
+  ],
+  "description": "Zmaterializowane powiadomienie in-app dla odbiorcy (jeden wiersz na zdarzenie × odbiorca). Tworzone przez framework M09 przy wyzwoleniu zarejestrowanego typu zdarzenia przez moduły domenowe (M04/M06/M07). type = kod typu zdarzenia z rejestru L4; payload = zdenormalizowany ładunek zdarzenia. read_at śledzi przeczytanie (in-app inbox). dedup_key zapewnia idempotencję przy ponownym wyzwoleniu tego samego zdarzenia przez producenta.",
+  "indexes": [
+    {
+      "columns": [
+        "recipient_id",
+        "created_at"
+      ],
+      "name": "idx_notification_recipient_created"
+    },
+    {
+      "columns": [
+        "recipient_id",
+        "read_at"
+      ],
+      "name": "idx_notification_recipient_unread"
+    }
+  ],
+  "name": "notification",
+  "slug": "notification",
+  "tags": [
+    "m09"
+  ]
+}

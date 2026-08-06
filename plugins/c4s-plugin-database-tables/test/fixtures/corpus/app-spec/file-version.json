@@ -1,0 +1,116 @@
+{
+  "columns": [
+    {
+      "default": "AUTOINCREMENT",
+      "description": "PK",
+      "name": "id",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Sciezka pliku wzgledna do dir rootu (lub briefsDir/patchesDir/plansDir). Plain text, nie FK — pliki zyja na filesystemie, brak tabeli `page`. Ta sama path moze istniec w wielu zrodlach — tozsamosc to (rootId, path). Przyklad: 'modules/m01-auth.md'.",
+      "name": "path",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Sekwencyjny numer wersji per (rootId, path). Auto-inkrementowany jako MAX(version) + 1 WHERE path = :path AND rootId = :rootId w transakcji zapisu.",
+      "name": "version",
+      "nullable": false,
+      "type": "INTEGER"
+    },
+    {
+      "description": "JSON serializowany przez FileSerializer.snapshot(path) — FileSnapshotData: { path, content, frontmatter, anchors[], xml_refs[] }. Kontrakt szczegolowy w m02-pages.md sekcja 'Page versioning (M17)'.",
+      "name": "data",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Wersja FileSerializera ('1.0.0'). Wymagane dla cross-project import (M27) i diff fallback przy schema bumpach.",
+      "name": "serializer_version",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Typ operacji. Walidacja w aplikacji, bez CHECK constraint. op='delete' to tombstone — `data` zachowuje ostatnia tresc przed usunieciem (do restore'u).",
+      "enumValues": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "name": "op",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "pages",
+      "description": "Dyskryminator przestrzeni pliku. Dla stron Page Rootu (L13) = id rootu: 'pages' (builtin) lub slug user-rootu. Dla artefaktow czatu (M36) = literalny MARKER 'brief' (M21) / 'patch' (M23) / 'plan' (M10) — artefakty NIE sa Page Rootami (brak wpisu w config.roots[]), wiec wartosc to marker, nie id rootu. releaseService.assignToRelease()/getReleaseSnapshot()/getReleaseDiff() filtruja WHERE rootId IN (releasable roota) — markery brief/patch/plan (spoza roots[]) i nie-releasable user-rooty wykluczone z release'ow. Wartosci dynamiczne (user-rooty + markery), bez CHECK/enum. Niezalezna os czasu per (rootId, path).",
+      "name": "rootId",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "FK do spec_release. NULL = wpis 'wiszacy', przypisany przy nastepnym createRelease. ON DELETE SET NULL — usuniecie release'a (out-of-scope MVP) nie kasuje historii. Wpisy z markerem brief/patch/plan (nie-roota) oraz nie-releasable user-rooty zostaja NULL na zawsze.",
+      "fk": {
+        "column": "id",
+        "table": "spec_release"
+      },
+      "name": "release_id",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Origin zmiany: 'user' (UI lub restorePage), 'agent' (Write tool przez chat M05), 'filesystem' (FSWatcher chokidar wykryl edycje w IDE poza tool'em — wzorzec self-write detection z M02). Walidacja w aplikacji.",
+      "enumValues": [
+        "user",
+        "agent",
+        "filesystem"
+      ],
+      "name": "changed_by",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Timestamp wersji. Append-only, brak updated_at.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-07-14T20:35:53.000Z",
+  "created_at": "2026-07-14T19:03:04.629Z",
+  "description": "Append-only versioning plikow-na-dysku (M17, rownolegle do entity_version dla encji-w-SQLite — to jest wlasnie dychotomia systemu: file_version vs entity_version). Rename z page_version (D10): tabela obejmuje ZAROWNO strony Page Rootow (M02) JAK I artefakty czatu (M36: brief/patch/plan). M02 NIE jest pluginem M13 — pliki maja wlasna sciezke z wlasnym FileSerializerem (poza L9). Kazda mutacja pliku (PUT /api/pages/:rootId/*, PUT /api/artifacts/:kind/:path/content, agent Write tool, FSWatcher chokidar) tworzy nowy wiersz przez wspolny FileVersionService (keyed (rootId, path)). Wpis 'wiszacy' (release_id = NULL) zostaje przypisany przy nastepnym createRelease. Tozsamosc pliku i sekwencja wersji: (rootId, path). rootId = id Page Rootu dla stron, lub literalny marker 'brief'/'patch'/'plan' dla artefaktow czatu — te NIE sa Page Rootami (brak wpisu w config.roots[]).",
+  "indexes": [
+    {
+      "columns": [
+        "path",
+        "rootId",
+        "version"
+      ],
+      "name": "uq_file_version_path_root_version",
+      "unique": true
+    },
+    {
+      "columns": [
+        "release_id"
+      ],
+      "name": "idx_file_version_release_id",
+      "unique": false
+    },
+    {
+      "columns": [
+        "rootId",
+        "path"
+      ],
+      "name": "idx_file_version_root_path",
+      "unique": false
+    }
+  ],
+  "name": "file_version",
+  "slug": "file-version",
+  "tags": [],
+  "updatedAt": "2026-07-14T20:35:53.000Z",
+  "updated_at": "2026-07-14T19:24:03.585Z"
+}

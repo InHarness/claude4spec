@@ -1,0 +1,58 @@
+{
+  "columns": [
+    {
+      "description": "Stabilny kod przedziału, np. PLN_1_5; referencowany przez pickup w M06.",
+      "name": "code",
+      "nullable": false,
+      "pk": true,
+      "type": "varchar"
+    },
+    {
+      "description": "Etykieta do wyświetlenia, np. „1–5 PLN”.",
+      "name": "label",
+      "nullable": false,
+      "type": "varchar"
+    },
+    {
+      "description": "Dolna granica przedziału (włącznie).",
+      "name": "min_pln",
+      "nullable": false,
+      "type": "numeric"
+    },
+    {
+      "description": "Górna granica przedziału; NULL = przedział otwarty (50+).",
+      "name": "max_pln",
+      "nullable": true,
+      "type": "numeric"
+    },
+    {
+      "description": "Kolejność prezentacji.",
+      "name": "sort_order",
+      "nullable": false,
+      "type": "integer",
+      "unique": true
+    },
+    {
+      "default": "true",
+      "description": "Czy przedział jest dostępny do wyboru.",
+      "name": "active",
+      "nullable": false,
+      "type": "boolean"
+    }
+  ],
+  "description": "Słownik orientacyjnych przedziałów wartości opakowań (PLN) deklarowanych przez posiadacza w M06. Dane referencyjne (seed), dialekto-agnostyczne.",
+  "indexes": [
+    {
+      "columns": [
+        "sort_order"
+      ],
+      "name": "ux_value_range_sort_order",
+      "unique": true
+    }
+  ],
+  "name": "value_range",
+  "slug": "value-range",
+  "tags": [
+    "m01"
+  ]
+}

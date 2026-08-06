@@ -1,0 +1,56 @@
+{
+  "columns": [
+    {
+      "description": "PK — unikalny identyfikator kebab-case (decyzja #13: slug = jedyna tozsamosc encji, brak integer id; = nazwa pliku design-system/<slug>.json w M29). Generowany ze slugify(name).",
+      "name": "slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Nazwa design systemu — human-readable (np. 'Brand 2026', 'Marketing Site DS').",
+      "name": "name",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opis przeznaczenia design systemu (long-form, multi-line).",
+      "name": "description",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "'[]'",
+      "description": "JSON array: [{name, tier:'primitive'|'semantic', tokens:[{name, type, value, description?}]}]. value = literal | alias '{token}' | obiekt composite (typography/shadow). Pelna specyfikacja w entities/design-system.md (Model danych L1 — Ksztalt groups).",
+      "name": "groups",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "'[]'",
+      "description": "JSON array opcjonalnych wariantow motywu: [{name, overrides:[{token, value}]}]. Override tokenow (zwykle semantic) per tryb (light/dark/custom). Pelna specyfikacja w entities/design-system.md (Model danych L1 — Ksztalt modes).",
+      "name": "modes",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "name": "updated_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-06-11T18:29:32.000Z",
+  "description": "Design System — encja-plugin opisujaca nazwane zestawy tokenow (kolory, typografia, spacing, ...) design systemu DOKUMENTOWANEGO systemu, z live preview. Rodzenstwo ui-view/endpoint/dto. Model dwupoziomowy (primitive -> semantic) z aliasami {token} i trybami (light/dark/custom). Tabela = pochodny indeks (M29) odbudowywany z pliku .claude4spec/entities/design-system/<slug>.json (zrodlo prawdy). groups/modes jako embedded JSON (wzorzec params w ui_view). Relacja ui-view -> design-system przez bezposrednie pole design_system_slug (nie tagi).",
+  "indexes": [],
+  "name": "design_system",
+  "slug": "design-system",
+  "tags": [],
+  "updatedAt": "2026-08-04T20:18:40.025Z"
+}

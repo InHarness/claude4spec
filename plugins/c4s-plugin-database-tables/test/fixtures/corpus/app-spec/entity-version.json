@@ -1,0 +1,122 @@
+{
+  "columns": [
+    {
+      "description": "Typ encji — dyskryminator polimorficzny + czesc PK. Walidacja w aplikacji. Lista rozszerzana wraz z dodawaniem nowych typow encji (plugin L9).",
+      "enumValues": [
+        "endpoint",
+        "dto",
+        "database-table",
+        "ui-view",
+        "ac"
+      ],
+      "name": "entity_type",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Slug encji (klucz naturalny, decyzja #13 — nie integer FK). Czesc zlozonego PK (entity_type, entity_slug, version). Integralnosc programatycznie przy reindeksie M29.",
+      "name": "entity_slug",
+      "nullable": false,
+      "pk": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Sekwencyjny per (entity_type, entity_slug), zaczyna od 1. Czesc PK.",
+      "name": "version",
+      "nullable": false,
+      "pk": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "JSON snapshot pelnego stanu encji (lub 'null' dla delete/tombstone). Format zalezny od `serializer_version`.",
+      "name": "data",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Wersja serializera ktory utworzyl ten snapshot ('1.0.0', '1.1.0'). NULL = legacy snapshot sprzed M17 — diff fallback uzywa default JSON deep-diff zamiast semantycznego (L9 `diff()` slot).",
+      "name": "serializer_version",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "Typ operacji. NULL = legacy wpis sprzed M17. Walidacja w aplikacji (bez CHECK).",
+      "enumValues": [
+        "create",
+        "update",
+        "delete"
+      ],
+      "name": "op",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "description": "FK do spec_release. NULL = wpis 'wiszacy', zostanie przypisany przy nastepnym createRelease. ON DELETE SET NULL — usuniecie release'a (out-of-scope MVP) nie kasuje historii.",
+      "fk": {
+        "column": "id",
+        "table": "spec_release"
+      },
+      "name": "release_id",
+      "nullable": true,
+      "type": "INTEGER"
+    },
+    {
+      "description": "Origin zmiany: 'user' (UI/REST) lub 'agent' (MCP tool przez chat M05). Walidacja w aplikacji.",
+      "enumValues": [
+        "user",
+        "agent"
+      ],
+      "name": "changed_by",
+      "nullable": false,
+      "type": "TEXT"
+    },
+    {
+      "description": "Opcjonalny opis zmiany (diff summary, motywacja edycji).",
+      "name": "change_summary",
+      "nullable": true,
+      "type": "TEXT"
+    },
+    {
+      "default": "datetime('now')",
+      "description": "Timestamp tej wersji. Append-only, brak updated_at.",
+      "name": "created_at",
+      "nullable": false,
+      "type": "TEXT"
+    }
+  ],
+  "createdAt": "2026-04-21T21:11:14.000Z",
+  "description": "Immutable snapshots stanu encji przy kazdej mutacji (event-sourcing-lite z M13 / L9). Polimorficzny: entity_type + entity_slug (klucz naturalny, decyzja #13 — koniec integer entity_id). Dane zserializowane przez plugin host (per typ ma swoj serializer z `serializer_version`). M17 dorzucil kolumny `release_id`, `serializer_version`, `op` — wpis 'wiszacy' (release_id = NULL) zostaje przypisany przy nastepnym createRelease. Wersja z `data = 'null'` lub `op = 'delete'` to tombstone. Jako jedyna trwala-przez-reboot tabela referujaca encje kluczuje po slug (symetria z page_version↔path); rename sluga rozcina lokalny log, trwala historia w git.",
+  "indexes": [
+    {
+      "columns": [
+        "entity_type",
+        "entity_slug",
+        "version"
+      ],
+      "name": "uq_entity_version_entity_version",
+      "unique": true
+    },
+    {
+      "columns": [
+        "entity_type",
+        "entity_slug"
+      ],
+      "name": "idx_entity_version_entity",
+      "unique": false
+    },
+    {
+      "columns": [
+        "release_id"
+      ],
+      "name": "idx_entity_version_release_id",
+      "unique": false
+    }
+  ],
+  "name": "entity_version",
+  "slug": "entity-version",
+  "tags": [
+    "m17"
+  ],
+  "updatedAt": "2026-06-03T18:58:10.000Z"
+}
