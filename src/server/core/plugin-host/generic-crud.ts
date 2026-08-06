@@ -38,9 +38,12 @@ import type { ReferencesService } from '../../services/references.js';
 import type { ProjectPluginHost, BackendModule } from './types.js';
 import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';
 import {
+  mutateAxis,
   removeProjectionRow,
   renameProjectionRow,
   upsertProjectionRow,
+  writeKeyedWindow,
+  type KeyedEntry,
   type ProjectionWriteDeps,
 } from '../../db/projection-write.js';
 
@@ -300,6 +303,74 @@ export function genericDelete(
   const result = removeProjectionRow(deps.projection, module, slug, actor, DELETE_OPTS);
   if (result.deleted) deps.store.remove(type, slug);
   return result;
+}
+
+/**
+ * Keyed-collection writes, unlike create/update, keep `capture: true`.
+ *
+ * There is nothing to interleave here — no tag assignment, no slug mint — so
+ * the capture the write function already does at the close of its own
+ * transaction is both correct and the thing that makes the guarantee: ONE
+ * `entity_version` row per call, for one key or a hundred. Capturing again out
+ * here would produce two rows for one operation, which is precisely the AC.
+ *
+ * `writeFile: false` for the same reason as `ROW_ONLY`: the file is written by
+ * the explicit `store.persist` below, after the transaction has committed.
+ */
+const KEYED_OPTS = { capture: true, writeFile: false } as const;
+
+/**
+ * `ctx.crud.writeCollectionWindow` — the point/range write into a keyed
+ * collection.
+ *
+ * Everything domain-shaped (the merge, the transaction, the parent stamp, the
+ * single version capture, and every validation — the entry list, the
+ * coordinates, the extents) belongs to `writeKeyedWindow`, so that a caller
+ * reaching it by another route gets the same answers. What this adds is the
+ * wrapping every other mutation gets — the module lookup, and the entity file.
+ * The grid is part of the entity's snapshot (`normalizeKeyed`), so skipping the
+ * persist would leave the file describing a grid the database no longer has.
+ *
+ * There are no `warnings` on this path: a rejected entry rolls the whole write
+ * back rather than returning as a success with a note (see `writeKeyedWindow`).
+ */
+export function genericWriteCollectionWindow(
+  deps: GenericCrudDeps,
+  type: string,
+  slug: string,
+  field: string,
+  entries: readonly KeyedEntry[],
+  actor: ChangedBy,
+): GenericMutateResult {
+  const module = requireModule(deps, type);
+  const { applied } = writeKeyedWindow(deps.projection, module, slug, field, entries, actor, KEYED_OPTS);
+  // An empty window validated fine and changed nothing; rewriting the entity
+  // file from a row nobody touched is the one part of this that is not free.
+  if (applied) deps.store.persist(type, slug);
+  return { slug };
+}
+
+/**
+ * `ctx.crud.mutateCollectionAxis` — insert/delete one axis position.
+ *
+ * Same division of labour as above. No rename can happen here, so there is no
+ * `propagateRename` and no old file to drop: the slug the caller passed is the
+ * slug that comes back.
+ */
+export function genericMutateCollectionAxis(
+  deps: GenericCrudDeps,
+  type: string,
+  slug: string,
+  field: string,
+  axisKey: string,
+  op: 'insert' | 'delete',
+  at: number,
+  actor: ChangedBy,
+): { slug: string; extent: number } {
+  const module = requireModule(deps, type);
+  const { extent } = mutateAxis(deps.projection, module, slug, field, axisKey, op, at, actor, KEYED_OPTS);
+  deps.store.persist(type, slug);
+  return { slug, extent };
 }
 
 /**

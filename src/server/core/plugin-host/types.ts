@@ -93,10 +93,17 @@ export type EntityServiceLike = unknown;
  * `genericCreate`/`genericUpdate` (they are host internals, and the published
  * `MountContext` types every host handle as `any` precisely so the contract
  * carries no host imports), so handing over the deps object would give it
- * something it has no way to call. These three methods are the whole of what a
- * declarative type's write path is, and they are the SAME ones `/api/{type}s`
- * goes through — including validation, slug rules, `entity_version` capture and
- * the entity-file write.
+ * something it has no way to call. These methods are the whole of what a
+ * declarative type's write path is, and the first three are the SAME ones
+ * `/api/{type}s` goes through — including validation, slug rules,
+ * `entity_version` capture and the entity-file write.
+ *
+ * The two keyed operations share the capture and the file write but NOT the
+ * REST half: no generated route reaches them (the M39 collection routes are
+ * read-only by design), so they also do not run the generated create/update
+ * schema. Their validation is the write path's own — the entry list, the
+ * coordinates, the extents, the declared enums — and it rejects rather than
+ * warns: a partial write is rolled back whole.
  *
  * `type` is a parameter rather than bound because a plugin legitimately writes
  * types other than its own (`endpoint` reads `dto` to validate a link).
@@ -104,6 +111,15 @@ export type EntityServiceLike = unknown;
  * ASYNC, and not merely as a convenience: `update` propagates a rename to every
  * referencing entity and page, which is I/O. A synchronous facade could only
  * have skipped that step — which is exactly what the first version did.
+ *
+ * The last two exist because whole-entity verbs cannot express a KEYED
+ * collection's write. `update` reconciles a supplied keyed collection
+ * REPLACE-ALL, so changing one cell means resending the entire grid — which
+ * defeats windowing, and makes two writers to disjoint cells overwrite each
+ * other. `writeCollectionWindow` merges instead: only the keys named are
+ * touched. Both go through the same domain write-path as the verbs above, so a
+ * cell write stamps the parent's `updatedAt` and captures exactly ONE
+ * `entity_version` row per call, whether it carried one key or a hundred.
  */
 export interface CrudFacade {
   create(type: string, input: unknown, actor: ChangedBy): Promise<{ slug: string; warnings?: string[] }>;
@@ -114,6 +130,39 @@ export interface CrudFacade {
     actor: ChangedBy,
   ): Promise<{ slug: string; warnings?: string[] }>;
   delete(type: string, slug: string, actor: ChangedBy): Promise<{ deleted: boolean }>;
+  /**
+   * Point or range write into a keyed collection — a MERGE of the named keys.
+   *
+   * Each entry carries its own coordinates (the node's `keyFields`) alongside
+   * the item payload. An entry whose payload is empty DELETES that key: a keyed
+   * collection is sparse, so "no value here" and "no row here" are the same
+   * state, and there is no separate delete verb to get them out of step.
+   */
+  writeCollectionWindow(
+    type: string,
+    slug: string,
+    field: string,
+    entries: readonly Record<string, unknown>[],
+    actor: ChangedBy,
+  ): Promise<{ slug: string; warnings?: string[] }>;
+  /**
+   * Insert or remove one position on an axis, reindexing every element behind
+   * it and updating the parent's extent field.
+   *
+   * Not derivable from writing the extent through `update`: `nRows = 4` on a
+   * 5-row grid does not say WHICH row went. Returns the extent AFTER the
+   * operation — the caller cannot compute it, since keys are not a stable
+   * identity across this call and a cached one now addresses a different item.
+   */
+  mutateCollectionAxis(
+    type: string,
+    slug: string,
+    field: string,
+    axisKey: string,
+    op: 'insert' | 'delete',
+    at: number,
+    actor: ChangedBy,
+  ): Promise<{ slug: string; extent: number }>;
 }
 
 export interface RouteRegistration {

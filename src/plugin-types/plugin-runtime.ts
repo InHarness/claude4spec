@@ -90,6 +90,13 @@ export interface MountContext {
    * `crud` is the host's declarative write path — the SAME one `/api/{type}s`
    * uses, so a plugin's own route and the generated router cannot disagree
    * about what a write means.
+   *
+   * `crud` carries `create` / `update` / `delete` of a whole entity, plus
+   * `writeCollectionWindow(type, slug, field, entries, actor)` and
+   * `mutateCollectionAxis(type, slug, field, axisKey, op, at, actor)` for a
+   * KEYED collection. Use the window write for a cell or a range: `update`
+   * reconciles a supplied keyed collection replace-all, so it is the wrong
+   * verb for a grid. An entry with an empty payload deletes that key.
    */
   reader: any;
   crud: any;

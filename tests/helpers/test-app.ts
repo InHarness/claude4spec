@@ -13,7 +13,9 @@ import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/m
 import {
   genericCreate,
   genericDelete,
+  genericMutateCollectionAxis,
   genericUpdate,
+  genericWriteCollectionWindow,
   propagateRename,
 } from '../../src/server/core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../../src/server/core/plugin-host/types.js';
@@ -60,6 +62,8 @@ export interface TestApp {
   watchRuntime: FileWatchRuntime;
   /** A.8: the write door a plugin's `mount` is handed, so a test can drive it. */
   crud: CrudFacade;
+  /** Every `ws` message the mounted backend emitted, in order. */
+  broadcasts: unknown[];
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
   plansPages: PagesService;
@@ -92,7 +96,14 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   for (const mod of opts.extraModules ?? []) registry.registerEntityModule(mod);
   const host = registry.consolidate(null);
 
-  const ws: WsEmitter = { broadcast: () => {} };
+  /**
+   * Recorded rather than dropped: the broadcast is the only part of the crud
+   * facade a caller cannot observe through the database or the entity file, so
+   * a wrapper that forgot it looked identical to one that did not — and every
+   * open client would keep rendering the pre-write state until a manual reload.
+   */
+  const broadcasts: unknown[] = [];
+  const ws: WsEmitter = { broadcast: (msg) => void broadcasts.push(msg) };
   const tagsService = new TagsService(db);
   const versionService = new VersionService(db);
   const rawReader = new RawEntityReader(db, host);
@@ -145,8 +156,8 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   };
   /**
    * Mirrors `buildProjectContext` exactly, INCLUDING `propagateRename` and the
-   * broadcast. A helper that bound the three verbs bare would make every test
-   * pass against a facade production does not have — which is how the missing
+   * broadcast. A helper that bound the verbs bare would make every test pass
+   * against a facade production does not have — which is how the missing
    * rename fan-out survived its first review.
    */
   const crudFacade: CrudFacade = {
@@ -163,6 +174,16 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     },
     delete: async (type, slug, actor) => {
       const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    writeCollectionWindow: async (type, slug, field, entries, actor) => {
+      const result = genericWriteCollectionWindow(crudDeps, type, slug, field, entries, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    mutateCollectionAxis: async (type, slug, field, axisKey, op, at, actor) => {
+      const result = genericMutateCollectionAxis(crudDeps, type, slug, field, axisKey, op, at, actor);
       ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
       return result;
     },
@@ -300,6 +321,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     tagsService,
     watchRuntime,
     crud: crudFacade,
+    broadcasts,
     cwd,
     plansPages,
     plansSerializer,

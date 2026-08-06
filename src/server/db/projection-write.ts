@@ -917,6 +917,37 @@ function applyKeyedEntries(
     }
   };
 
+  /**
+   * Does the STORED row still hold content in fields this entry did not name?
+   *
+   * Only asked when an entry looks empty, so it costs one point SELECT on the
+   * clearing path and nothing at all on the ordinary one. Cached by column set
+   * for the same reason the upserts are: a payload is homogeneous.
+   */
+  const probes = new Map<string, Statement<Array<string | number | null>>>();
+  const storedHasContent = (
+    slug: string,
+    key: ReadonlyArray<string | number>,
+    omitted: Array<[string, FieldNode]>,
+  ): boolean => {
+    if (!omitted.length) return false;
+    const cols = omitted.map(([name, n]) => columnOf(name, n));
+    const cacheKey = cols.join(',');
+    let probe = probes.get(cacheKey);
+    if (!probe) {
+      probe = db.prepare<Array<string | number | null>>(
+        `SELECT ${cols.join(', ')} FROM ${table} WHERE ${binding} = ? AND ${keyColumns
+          .map((c) => `${c} = ?`)
+          .join(' AND ')}`,
+      );
+      probes.set(cacheKey, probe);
+    }
+    const stored = probe.get(slug, ...key) as Record<string, unknown> | undefined;
+    if (!stored) return false;
+    // Same rule as `isEmptyKeyedItem`: `0` and `false` are content.
+    return cols.some((c) => stored[c] !== undefined && stored[c] !== null && stored[c] !== '');
+  };
+
   const warnings: string[] = [];
   const seen = new Set<string>();
 
@@ -958,8 +989,29 @@ function applyKeyedEntries(
      */
     try {
       if (isEmptyKeyedItem(node, row)) {
-        remove.run(slug, ...key);
-        continue;
+        /**
+         * Emptiness is judged on the MERGED item, not on the entry alone.
+         *
+         * The upsert below merges at FIELD granularity — an omitted field keeps
+         * whatever is stored — and the delete has to agree with it, or the two
+         * halves of one write disagree about what the entry said. They did:
+         * clearing a cell's `value` while leaving its `note` alone sent
+         * `{r, c, value: ''}`, whose OMITTED `note` read as empty, so the whole
+         * row was deleted and the note the caller never mentioned went with it.
+         *
+         * An entry carrying NO payload field at all is still a plain deletion —
+         * "remove this key" needs a spelling, and naming every field of a wide
+         * item just to clear it is not one.
+         */
+        const omitted = payloadColumns.filter(
+          ([name]) => !Object.prototype.hasOwnProperty.call(row, name),
+        );
+        if (omitted.length < payloadColumns.length && storedHasContent(slug, key, omitted)) {
+          // Fall through: clear the fields the entry named, keep the rest.
+        } else {
+          remove.run(slug, ...key);
+          continue;
+        }
       }
 
       const carried = payloadColumns.filter(([name]) =>
@@ -1122,28 +1174,124 @@ export function writeKeyedWindow(
   entries: readonly KeyedEntry[],
   actor: ChangedBy,
   opts: WriteOpts,
-): { warnings: string[] } {
+): { applied: boolean } {
   const { db } = deps;
   const node = requireKeyed(module, field);
   const table = mainTableOf(module);
+
+  /**
+   * Checked rather than trusted, because this is a PLUGIN-facing door and the
+   * published `MountContext.crud` is typed `any` — the `readonly KeyedEntry[]`
+   * above narrows nothing outside the host. A plugin route forwarding a JSON
+   * body reaches straight here, and without this the failure was
+   * `TypeError: entries.map is not a function`, which the error middleware has
+   * no case for and renders as a 500.
+   */
+  if (!Array.isArray(entries)) {
+    throw new DomainError(
+      'VALIDATION',
+      `${module.type}.${field}: expected an array of entries, got ${
+        entries === null ? 'null' : typeof entries
+      } — a single entry must still be wrapped in one`,
+    );
+  }
 
   if (!rowExists(db, table, slug)) {
     throw new DomainError('NOT_FOUND', `${module.type} '${slug}' not found`);
   }
 
+  /**
+   * Nothing to write is not a mutation. A grid editor flushing a dirty-cell
+   * batch on a timer or on blur calls this with an empty window routinely, and
+   * running the body anyway stamped `updatedAt`, captured an `entity_version`
+   * row carrying a copy of the WHOLE grid, and rewrote the entity file — so an
+   * entity nobody edited climbed the recency order and its version history
+   * filled with identical entries. The field is still validated above: an empty
+   * write to a field that is not a keyed collection is still an error.
+   */
+  if (entries.length === 0) return { applied: false };
+
   const rows: Array<Record<string, unknown>> = entries.map((entry) =>
     node.item.kind === 'object' ? entry : { value: entry },
   );
 
-  const warnings: string[] = [];
+  requireWithinExtents(db, module, slug, field, node, rows);
+
   const tx = db.transaction(() => {
-    warnings.push(...applyKeyedEntries(db, module, slug, field, node, rows));
+    const warnings = applyKeyedEntries(db, module, slug, field, node, rows);
+    /**
+     * A partial write is a FAILED write here, and this is the one place the two
+     * keyed doors deliberately diverge.
+     *
+     * `reconcileKeyedCollection` degrades a bad entry to a warning because it
+     * runs on the restore path, where throwing means the indexer skips the
+     * entity and empties the collection — a warning genuinely is the lesser
+     * loss. This door has nothing to protect: its caller is a live write with a
+     * user behind it. Returning `{ slug, warnings }` there reads as success to
+     * every caller that does not inspect an optional field — `create`/`update`
+     * use the same field for non-fatal notes — so a rejected cell was reported
+     * as saved while the entity was stamped, versioned and rewritten around a
+     * value that never landed. Throwing rolls the transaction back instead, so
+     * the request is applied whole or not at all.
+     */
+    if (warnings.length) {
+      throw new DomainError(
+        'VALIDATION',
+        `${module.type}/${slug}: ${field} write rejected — ${warnings.join('; ')}`,
+      );
+    }
     stampParent(deps, module, slug, opts);
     capture(deps, module, slug, actor, opts);
   });
   tx();
 
-  return { warnings };
+  return { applied: true };
+}
+
+/**
+ * Refuse a coordinate past the axis's declared extent (item 20's other half).
+ *
+ * The extent lives on the PARENT and is never `MAX(coordinate)`, so a cell
+ * written outside it is not merely untidy — it is unreachable. `overview`
+ * reports the grid from the extent columns, every window read is bounded by
+ * what overview said, and `mutateAxis` refuses a position past the extent, so
+ * the cell cannot even be deleted by the operation that would shift it. It sits
+ * in the projection and in the entity file, invisible, until some later axis
+ * insert silently moves it.
+ *
+ * Growing the extent instead was the alternative and is wrong: resize and axis
+ * insert are their OWN operations precisely because "make room" is a decision
+ * about the grid, not a side effect of typing in a cell.
+ */
+function requireWithinExtents(
+  db: Database,
+  module: WritableModule,
+  slug: string,
+  field: string,
+  node: CollectionNode,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): void {
+  const axes = axesOf(node);
+  const columns = axes.map((axis, i) => `${extentColumnOf(module, axis)} AS e${i}`).join(', ');
+  const parent = db
+    .prepare(`SELECT ${columns} FROM ${mainTableOf(module)} WHERE slug = ?`)
+    .get(slug) as Record<string, number | null> | undefined;
+
+  axes.forEach((axis, i) => {
+    const extent = Number(parent?.[`e${i}`] ?? 0);
+    for (const row of rows) {
+      const at = row[axis.key];
+      // A coordinate that is not a positive integer is `applyKeyedEntries`'s to
+      // report — it names the whole key tuple, which is the more useful message.
+      if (typeof at !== 'number' || !Number.isInteger(at) || at < 1 || at <= extent) continue;
+      throw new DomainError(
+        'VALIDATION',
+        `${module.type}/${slug}: ${field} coordinate ${axis.key}=${at} is past the ` +
+          `declared extent (${axis.extent} = ${extent}) — grow the axis first ` +
+          `(insert a position, or write the extent), then write the cell`,
+      );
+    }
+  });
 }
 
 /**
@@ -1186,6 +1334,23 @@ export function mutateAxis(
   }
   if (!Number.isInteger(at) || at < 1) {
     throw new DomainError('VALIDATION', `axis position must be an integer >= 1, got ${at}`);
+  }
+  /**
+   * Checked, not trusted — for the same reason `at` and `axisKey` are, and with
+   * a worse failure than either. The bounds and the extent below read `op ===
+   * 'insert'` while the body reads `op === 'delete'`, so an out-of-vocabulary
+   * value (`'remove'`, `'del'`, anything a plugin's HTTP body carries) took the
+   * INSERT arm while computing the DECREMENT extent: nothing was removed,
+   * everything past the position was pushed down, and the parent then reported
+   * one position fewer than the cells actually occupy — the exact unreachable
+   * state the bound check below exists to prevent. The union in `CrudFacade`
+   * narrows nothing here: `MountContext.crud` is published as `any`.
+   */
+  if (op !== 'insert' && op !== 'delete') {
+    throw new DomainError(
+      'VALIDATION',
+      `axis operation must be 'insert' or 'delete', got ${JSON.stringify(op)}`,
+    );
   }
 
   const table = mainTableOf(module);
