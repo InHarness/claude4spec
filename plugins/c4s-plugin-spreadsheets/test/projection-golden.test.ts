@@ -1,33 +1,48 @@
 /**
- * The generated projection against the v1 plugin's hand-written migrations.
+ * The generated projection, against v1's hand-written migrations.
  *
- * This is the de-risking test for the whole port: the claim it makes is that
- * `data.schema` alone reproduces the two tables `backend/migrations.ts` used to
- * create, so nothing about the sheet's storage changed on the way across and an
- * existing database needs no migration of its own.
+ * The claim under test is NOT "the tables are the same" — they are not, and the
+ * point of this file is to pin exactly where they differ and why that is safe.
+ * v1's cell table binds on `slug`; a keyed collection projects to a table bound
+ * on `<parent>_slug`. Those two cannot be the same table, so the port takes a
+ * NEW cell table and leaves v1's alone.
  *
- * `spreadsheet_cell` is the interesting one, and it is the first table in this
- * repo generated from a KEYED collection — its UNIQUE tuple, its cascade and its
- * binding column exist only because the generator emits them.
+ * An earlier version of this file compared against a DDL written from memory
+ * (it gave the parent `created_at`/`updated_at`, which v1 never had, and did not
+ * mention the cell table at all) and was then cited as evidence that an existing
+ * database is adopted unchanged. It was not evidence of anything. Both goldens
+ * below are copied verbatim from
+ * `c4s-plugin-spreadsheets@0.0.6 src/entity/backend/migrations.ts`.
  */
 
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { generateProjectionDDL } from '../../../src/server/db/projection.js';
 import { spreadsheetData } from '../src/entity/spreadsheet/schema.js';
+import { LEGACY_SPREADSHEET_CELL_TABLE, SPREADSHEET_CELL_TABLE } from '../src/identity.js';
 
-/** The DDL as the v1 plugin's `backend/migrations.ts` wrote it. */
-const RETIRED_DDL = `
+/** v1 migration 1, verbatim. */
+const RETIRED_PARENT_DDL = `
   CREATE TABLE IF NOT EXISTS spreadsheet (
-    slug TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    n_rows INTEGER NOT NULL DEFAULT 0,
-    n_cols INTEGER NOT NULL DEFAULT 0,
-    header_row INTEGER NOT NULL DEFAULT 0,
-    header_col INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    slug        TEXT PRIMARY KEY NOT NULL,
+    name        TEXT NOT NULL,
+    n_rows      INTEGER NOT NULL DEFAULT 0,
+    n_cols      INTEGER NOT NULL DEFAULT 0,
+    header_row  INTEGER NOT NULL DEFAULT 0,
+    header_col  INTEGER NOT NULL DEFAULT 0
   );
+`;
+
+/** v1 migration 2, verbatim. Note `slug`, and the composite PRIMARY KEY. */
+const RETIRED_CELL_DDL = `
+  CREATE TABLE IF NOT EXISTS spreadsheet_cell (
+    slug   TEXT    NOT NULL,
+    r      INTEGER NOT NULL,
+    c      INTEGER NOT NULL,
+    value  TEXT    NOT NULL,
+    PRIMARY KEY (slug, r, c)
+  );
+  CREATE INDEX IF NOT EXISTS idx_spreadsheet_cell_slug_r ON spreadsheet_cell (slug, r);
 `;
 
 const MODULE = { type: 'spreadsheet', data: spreadsheetData };
@@ -49,47 +64,79 @@ function generatedDb(): Database.Database {
 const columnsOf = (db: Database.Database, table: string) =>
   db.prepare(`PRAGMA table_info(${table})`).all() as ColumnInfo[];
 
+const tablesOf = (db: Database.Database) =>
+  (db.prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`).all() as Array<{
+    name: string;
+  }>).map((r) => r.name);
+
 describe('spreadsheet projection', () => {
-  it('generates the parent table and the cell table, and nothing else', () => {
-    const tables = (
-      generatedDb()
-        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name`)
-        .all() as Array<{ name: string }>
-    ).map((r) => r.name);
-    expect(tables).toEqual(['spreadsheet', 'spreadsheet_cell']);
+  it('generates the parent table and a cell table, and nothing else', () => {
+    expect(tablesOf(generatedDb())).toEqual(['spreadsheet', SPREADSHEET_CELL_TABLE]);
   });
 
-  it('keeps v1 cell table NAME rather than taking the host default', () => {
+  it('does NOT reuse v1’s cell table name', () => {
     /**
-     * `projectionTable: 'spreadsheet_cell'` is doing real work here. The host
-     * would otherwise name it `spreadsheet_cells` from the field, and an
-     * existing project's index would have to be dropped and rebuilt under the
-     * new name for no reason at all.
+     * The single most important assertion in this file.
+     *
+     * Reusing `spreadsheet_cell` does not adopt v1's table, it collides with it:
+     * `CREATE TABLE IF NOT EXISTS` no-ops on the existing table, column
+     * reconciliation adds a nullable `spreadsheet_slug` beside v1's NOT NULL
+     * `slug`, every read then filters on a column that is NULL in every legacy
+     * row, and the first write dies on an `ON CONFLICT` clause matching no
+     * constraint — inside the rebuild transaction, so the whole reindex rolls
+     * back and the project serves a permanently stale index.
+     *
+     * Every test in this package builds a FRESH database, so none of them can
+     * see that. This one pins the decision that makes it unreachable.
      */
-    const tables = (
-      generatedDb()
-        .prepare(`SELECT name FROM sqlite_master WHERE type = 'table'`)
-        .all() as Array<{ name: string }>
-    ).map((r) => r.name);
-    expect(tables).toContain('spreadsheet_cell');
-    expect(tables).not.toContain('spreadsheet_cells');
+    expect(SPREADSHEET_CELL_TABLE).not.toBe(LEGACY_SPREADSHEET_CELL_TABLE);
+    expect(tablesOf(generatedDb())).not.toContain(LEGACY_SPREADSHEET_CELL_TABLE);
   });
 
-  it('reproduces v1 parent columns: same names, order, types and defaults', () => {
+  it('v1’s cell table is incompatible with the generated one — the reason for the rename', () => {
+    // Stated as a test rather than a comment so that a future change to either
+    // side has to confront it.
+    const legacy = new Database(':memory:');
+    legacy.exec(RETIRED_CELL_DDL);
+    const legacyCols = columnsOf(legacy, LEGACY_SPREADSHEET_CELL_TABLE);
+
+    expect(legacyCols.map((c) => c.name)).toContain('slug');
+    expect(legacyCols.map((c) => c.name)).not.toContain('spreadsheet_slug');
+    // And its identity is a composite PRIMARY KEY, not the UNIQUE the generator emits.
+    expect(legacyCols.filter((c) => c.pk > 0).map((c) => c.name)).toEqual(['slug', 'r', 'c']);
+
+    const generatedCols = columnsOf(generatedDb(), SPREADSHEET_CELL_TABLE);
+    expect(generatedCols.map((c) => c.name)).toContain('spreadsheet_slug');
+    expect(generatedCols.filter((c) => c.pk > 0)).toEqual([]);
+  });
+
+  it('reproduces v1’s parent columns, which ARE adopted', () => {
+    /**
+     * The parent table is the half that carries over: same names, same order,
+     * same types, same defaults. The two system-managed timestamps are the only
+     * additions, and they are added to an existing database by column
+     * reconciliation (nullable, no default, filled by the next index rebuild) —
+     * which is the path a new field is designed to take.
+     */
     const retired = new Database(':memory:');
-    retired.exec(RETIRED_DDL);
+    retired.exec(RETIRED_PARENT_DDL);
     const before = columnsOf(retired, 'spreadsheet');
     const after = columnsOf(generatedDb(), 'spreadsheet');
 
-    expect(after.map((c) => c.name)).toEqual(before.map((c) => c.name));
-    expect(after.map((c) => c.type)).toEqual(before.map((c) => c.type));
-    expect(after.map((c) => c.dflt_value)).toEqual(before.map((c) => c.dflt_value));
-    expect(after.map((c) => c.pk)).toEqual(before.map((c) => c.pk));
+    const v1Names = before.map((c) => c.name);
+    expect(after.map((c) => c.name).slice(0, v1Names.length)).toEqual(v1Names);
+    expect(after.map((c) => c.name).slice(v1Names.length)).toEqual(['created_at', 'updated_at']);
+
+    for (const [i, col] of before.entries()) {
+      expect(after[i]?.type, `${col.name} type`).toBe(col.type);
+      expect(after[i]?.dflt_value, `${col.name} default`).toBe(col.dflt_value);
+      expect(after[i]?.pk, `${col.name} pk`).toBe(col.pk);
+    }
   });
 
   it('binds cells to their sheet, and takes them with it on delete', () => {
     const db = generatedDb();
-    const fks = db.prepare(`PRAGMA foreign_key_list(spreadsheet_cell)`).all() as Array<{
+    const fks = db.prepare(`PRAGMA foreign_key_list(${SPREADSHEET_CELL_TABLE})`).all() as Array<{
       table: string;
       from: string;
       to: string;
@@ -107,7 +154,12 @@ describe('spreadsheet projection', () => {
 
   it('makes (sheet, r, c) the cell identity', () => {
     const db = generatedDb();
-    const uniques = (db.prepare(`PRAGMA index_list(spreadsheet_cell)`).all() as Array<{ name: string; unique: number }>)
+    const uniques = (
+      db.prepare(`PRAGMA index_list(${SPREADSHEET_CELL_TABLE})`).all() as Array<{
+        name: string;
+        unique: number;
+      }>
+    )
       .filter((i) => i.unique === 1)
       .map((i) =>
         (db.prepare(`PRAGMA index_info(${i.name})`).all() as Array<{ name: string }>).map((c) => c.name),
@@ -116,18 +168,16 @@ describe('spreadsheet projection', () => {
   });
 
   it('carries the cell payload column', () => {
-    const names = columnsOf(generatedDb(), 'spreadsheet_cell').map((c) => c.name);
-    expect(names).toContain('value');
-    expect(names).toContain('r');
-    expect(names).toContain('c');
+    const names = columnsOf(generatedDb(), SPREADSHEET_CELL_TABLE).map((c) => c.name);
+    expect(names).toEqual(expect.arrayContaining(['spreadsheet_slug', 'r', 'c', 'value']));
   });
 
   it('enforces the identity it declares', () => {
     const db = generatedDb();
     db.exec(`INSERT INTO spreadsheet (slug, name) VALUES ('s', 'S')`);
-    db.exec(`INSERT INTO spreadsheet_cell (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'a')`);
+    db.exec(`INSERT INTO ${SPREADSHEET_CELL_TABLE} (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'a')`);
     expect(() =>
-      db.exec(`INSERT INTO spreadsheet_cell (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'b')`),
+      db.exec(`INSERT INTO ${SPREADSHEET_CELL_TABLE} (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'b')`),
     ).toThrow(/UNIQUE/);
   });
 });

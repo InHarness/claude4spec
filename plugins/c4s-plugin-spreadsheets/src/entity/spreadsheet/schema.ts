@@ -27,16 +27,36 @@ import { SPREADSHEET_CELL_TABLE } from '../../identity.js';
 export const spreadsheetData: DataDeclaration = {
   schema: {
     name: { kind: 'string', required: true, description: 'Human title of the sheet.' },
+    /**
+     * `integer` + `min: 0` restore v1's `z.number().int().nonnegative()`, which
+     * the first translation of this schema dropped.
+     *
+     * They are not cosmetic. An extent below zero makes the sheet unusable by
+     * construction rather than merely odd: `requireWithinExtents` refuses every
+     * cell write because no coordinate satisfies `at <= extent`, and `mutateAxis`
+     * refuses every insert because the highest legal position is `extent + 1`,
+     * which is below the 1-based floor. The row is created, accepts no content
+     * and cannot be grown — only deleted. A fractional extent is the same class
+     * of thing one step further along.
+     *
+     * `max` is deliberately absent: a genuinely large sheet is a legitimate
+     * thing to author, and the read path is bounded by the window cap rather
+     * than by the sheet's size.
+     */
     nRows: {
       kind: 'number',
       column: 'n_rows',
       default: 0,
+      integer: true,
+      min: 0,
       description: 'Row count. The `r` axis extent — authored, not derived from written cells.',
     },
     nCols: {
       kind: 'number',
       column: 'n_cols',
       default: 0,
+      integer: true,
+      min: 0,
       description: 'Column count. The `c` axis extent — authored, not derived from written cells.',
     },
     headerRow: {
@@ -52,11 +72,14 @@ export const spreadsheetData: DataDeclaration = {
       description: 'Column 1 holds row labels.',
     },
     /**
-     * The grid. `projectionTable` is pinned to v1's `spreadsheet_cell` rather
-     * than taking the host's `spreadsheet_cells` default — the index is derived
-     * and rebuildable either way, but keeping the name means an existing
-     * database needs no rename, and every v1-era query in a note or a script
-     * still reads true.
+     * The grid.
+     *
+     * `projectionTable` is stated explicitly even though it equals the host's
+     * default (`spreadsheet_cells`), because the interesting fact about this
+     * line is which name it does NOT use — see the note on
+     * `SPREADSHEET_CELL_TABLE` in `identity.ts`. v1's `spreadsheet_cell` binds
+     * on `slug`; a keyed projection binds on `<parent>_slug`, so reusing the old
+     * name collides with the old table rather than adopting it.
      *
      * `value` is the only field outside the key, which is what a keyed
      * collection requires: the key is the ADDRESS, so a collection whose every

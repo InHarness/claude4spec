@@ -372,6 +372,18 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
     }
 
     /**
+     * After the parent row is written, so it reads the extents the caller just
+     * set — and inside this transaction, so a shrink and its pruning commit
+     * together or not at all.
+     *
+     * The `continue` above is what makes this necessary. Skipping a keyed
+     * collection the payload does not mention is correct (silence is not
+     * "empty"), but it means a SHRINK — a write to `nRows` alone — leaves the
+     * cells beyond the new extent behind.
+     */
+    pruneBeyondExtents(db, module, target);
+
+    /**
      * The capture belongs INSIDE the transaction, as it does in every service.
      *
      * `captureEntitySnapshot` deliberately rethrows on failure "so the caller's
@@ -619,9 +631,72 @@ export function syncProjectionTables(
       if (!Object.prototype.hasOwnProperty.call(input, name)) continue;
       warnings.push(...syncProjectionTable(db, module, slug, name, node as CollectionNode, input[name]));
     }
+    pruneBeyondExtents(db, module, slug);
   });
   tx();
   return warnings;
+}
+
+/**
+ * Drop keyed rows sitting past their axis's declared extent.
+ *
+ * UNCONDITIONAL, on every entity write, because "past the extent" is already
+ * invalid everywhere else in the host and the projection was the one place that
+ * disagreed. `writeKeyedWindow` refuses such a coordinate; `mutateAxis` refuses
+ * such a position; `collectionOverview` reports the grid FROM the extents, so a
+ * row beyond them is unreadable by construction. Leaving it in the table made
+ * the projection the only component that believed it existed.
+ *
+ * Runs on EVERY entity write, for every keyed collection, whether or not the
+ * payload mentioned the collection — because the case that needs it is exactly
+ * the one where it did not. Shrinking a grid is a write to `nRows` alone;
+ * `syncProjectionTables` skips a field the payload omits, so the cells beyond
+ * the new extent stayed in the table. They were invisible — `overview` reports
+ * from the extent columns and `collectionWindow` is bounded by the caller's
+ * rectangle — right up until someone grew the axis back, at which point content
+ * the user had deleted reappeared. Worse, the snapshot reads the projection, so
+ * those rows were also being written into the entity file, which is the source
+ * of truth: the deletion did not survive a round trip.
+ *
+ * v1 got this for free by densifying `1..nRows × 1..nCols` in its own snapshot
+ * and letting anything outside fall off the end. The generated snapshot has no
+ * reason to know about extents, so the rule moves to where the extents live.
+ *
+ * Deleting is safe precisely because it is unreachable data: no read can address
+ * a coordinate past the extent, and no write can create one — the write door
+ * refuses it. This only ever removes rows a previous shrink orphaned.
+ */
+function pruneBeyondExtents(db: Database, module: WritableModule, slug: string): void {
+  const schema = module.data?.schema;
+  if (!schema) return;
+  const binding = bindingColumnOf(module);
+
+  for (const [field, node] of Object.entries(schema)) {
+    if (node.kind !== 'collection' || !isKeyed(node)) continue;
+    const collection = node as CollectionNode;
+    const axes = axesOf(collection);
+    if (!axes.length) continue;
+
+    const table = projectionTableOf(module, field, collection);
+
+    const extents = db
+      .prepare(
+        `SELECT ${axes.map((a, i) => `${extentColumnOf(module, a)} AS e${i}`).join(', ')} ` +
+          `FROM ${mainTableOf(module)} WHERE slug = ?`,
+      )
+      .get(slug) as Record<string, unknown> | undefined;
+    if (!extents) continue;
+
+    for (const [i, axis] of axes.entries()) {
+      const raw = extents[`e${i}`];
+      const extent = Number(raw);
+      // A non-numeric or negative extent is not authority to empty the
+      // collection — that is a broken declaration, not a shrink.
+      if (raw == null || !Number.isFinite(extent) || extent < 0) continue;
+      const column = keyColumnAt(collection, axis);
+      db.prepare(`DELETE FROM ${table} WHERE ${binding} = ? AND ${column} > ?`).run(slug, extent);
+    }
+  }
 }
 
 function syncProjectionTable(

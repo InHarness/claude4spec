@@ -31,7 +31,7 @@ describe('spreadsheet — the shipped type', () => {
   afterEach(() => t.cleanup());
 
   const cells = () =>
-    t.db.prepare('SELECT r, c, value FROM spreadsheet_cell ORDER BY r, c').all() as Array<{
+    t.db.prepare('SELECT r, c, value FROM spreadsheet_cells ORDER BY r, c').all() as Array<{
       r: number;
       c: number;
       value: string;
@@ -171,6 +171,68 @@ describe('spreadsheet — the shipped type', () => {
     expect(cells()).toEqual([
       { r: 1, c: 1, value: 'a' },
       { r: 1, c: 2, value: 'c' },
+    ]);
+  });
+
+  it('shrinking the sheet deletes the cells that fall outside it', async () => {
+    /**
+     * v1 got this for free: its snapshot densified `1..nRows × 1..nCols`, so
+     * anything outside fell off the end on the way to the file. The generated
+     * snapshot has no reason to know about extents, and a shrink is a write to
+     * `nRows` ALONE — which `syncProjectionTables` skips, because the payload
+     * says nothing about `cells`.
+     *
+     * The orphans were invisible (every read is bounded by the extents) right
+     * up until someone grew the axis back, at which point content the user had
+     * deleted reappeared. And because the snapshot reads the projection, they
+     * were being written into the entity file — so the deletion did not even
+     * survive a round trip.
+     */
+    await t.crud.writeCollectionWindow(
+      'spreadsheet',
+      'q1-revenue',
+      'cells',
+      [
+        { r: 1, c: 1, value: 'keep' },
+        { r: 4, c: 1, value: 'doomed' },
+      ],
+      'user',
+    );
+    expect(cells()).toHaveLength(2);
+
+    await t.crud.update('spreadsheet', 'q1-revenue', { nRows: 2 }, 'user');
+
+    expect(cells()).toEqual([{ r: 1, c: 1, value: 'keep' }]);
+    // And the file agrees, so a rebuild does not resurrect it.
+    expect(entityFile().cells).toEqual([{ r: 1, c: 1, value: 'keep' }]);
+  });
+
+  it('growing the sheet back does not resurrect deleted content', async () => {
+    await t.crud.writeCollectionWindow('spreadsheet', 'q1-revenue', 'cells', [{ r: 4, c: 1, value: 'gone' }], 'user');
+    await t.crud.update('spreadsheet', 'q1-revenue', { nRows: 2 }, 'user');
+    await t.crud.update('spreadsheet', 'q1-revenue', { nRows: 4 }, 'user');
+
+    expect(cells()).toEqual([]);
+  });
+
+  it('an unchanged extent prunes nothing', async () => {
+    // The prune runs on every write; it must only ever remove rows a shrink
+    // orphaned, never rows inside the grid.
+    await t.crud.writeCollectionWindow(
+      'spreadsheet',
+      'q1-revenue',
+      'cells',
+      [
+        { r: 1, c: 1, value: 'a' },
+        { r: 4, c: 3, value: 'b' },
+      ],
+      'user',
+    );
+    await t.crud.update('spreadsheet', 'q1-revenue', { name: 'Q1 revenue renamed' }, 'user');
+
+    expect(cells()).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 4, c: 3, value: 'b' },
     ]);
   });
 

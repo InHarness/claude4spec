@@ -47,8 +47,17 @@ export function denseCellsToSparse(payload: SnapshotData): SnapshotData {
    * reachable only through a hand-edited marker, but "already migrated" must
    * never mean "migrate again" — the second pass would read `{r, c, value}` as
    * a dense row and produce nonsense.
+   *
+   * The decision is made over the WHOLE array, not over `raw[0]`. Judging by the
+   * first element alone misreads a dense payload whose first row is `null` (or
+   * anything else non-array) as already-sparse: it is then returned unmigrated,
+   * the host stamps it `payloadVersion: 2`, and the miss is PERMANENT — the
+   * upgrade never runs again, so no rebuild recovers a sheet whose content is
+   * still sitting in the file. Dense is the safe reading when the two are mixed,
+   * because `dense()` skips a malformed row while `sparse` would swallow one.
    */
-  if (raw.length > 0 && !Array.isArray(raw[0])) return payload;
+  const looksSparse = raw.length > 0 && raw.every((row) => !Array.isArray(row));
+  if (looksSparse) return payload;
 
   const dense = raw as unknown[][];
   const cells: Array<{ r: number; c: number; value: string }> = [];

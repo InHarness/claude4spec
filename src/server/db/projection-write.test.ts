@@ -240,13 +240,13 @@ describe('keyed collections', () => {
 
   const cell = (r: number, c: number, value: string) => ({ r, c, value });
 
-  function seeded(cells = [cell(1, 1, 'a'), cell(2, 2, 'b')]): Database.Database {
+  function seeded(cells = [cell(1, 1, 'a'), cell(2, 2, 'b')], nRows = 3): Database.Database {
     const db = projected(grid);
     upsertProjectionRow(
       { db, versions: null },
       grid,
       'g1',
-      { name: 'g', nRows: 3, nCols: 3, cells },
+      { name: 'g', nRows, nCols: 3, cells },
       'user',
       WRITE_OPTS,
     );
@@ -372,7 +372,12 @@ describe('keyed collections', () => {
     // `UNIQUE(binding, row, col)` is checked per row as SQLite applies an
     // UPDATE, so a naive `SET row = row + 1` collides on adjacent occupied
     // positions, and `ORDER BY … DESC` is unavailable in this build.
-    const db = seeded([cell(1, 1, 'a'), cell(2, 1, 'b'), cell(3, 1, 'c'), cell(4, 1, 'd')]);
+    //
+    // Seeded at nRows 4, not 3: a cell at row 4 of a 3-row grid is past the
+    // declared extent, which the write path refuses and the projection now
+    // prunes. Four occupied adjacent rows is what this case is about, and it
+    // needs a grid that legitimately has four.
+    const db = seeded([cell(1, 1, 'a'), cell(2, 1, 'b'), cell(3, 1, 'c'), cell(4, 1, 'd')], 4);
     expect(() =>
       mutateAxis({ db, versions: null }, grid, 'g1', 'cells', 'r', 'insert', 1, 'user', WRITE_OPTS),
     ).not.toThrow();

@@ -3,7 +3,7 @@
 import { createMcpServer, mcpTool, type McpServerFactory, type MountContext } from '@c4s/plugin-runtime';
 import { z } from 'zod';
 import type { KeyedCrudLike, RawEntity, ReaderLike } from '../../host-kit/host-types.js';
-import { CELLS_FIELD, SPREADSHEET_TYPE } from '../../identity.js';
+import { CELLS_FIELD, MAX_WINDOW_CELLS, SPREADSHEET_TYPE } from '../../identity.js';
 import { buildOverview, cellLookup, densify, metaOf, toSparseCells } from './overview.js';
 
 /**
@@ -75,7 +75,7 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
 
   const getRange = mcpTool(
     'get_range',
-    'Read a rectangular window of cells. Indices are 1-based and inclusive. Empty cells come back as "". Fetch in windows; never pull the whole sheet at once.',
+    `Read a rectangular window of cells. Indices are 1-based and inclusive. Empty cells come back as "". Fetch in windows; never pull the whole sheet at once — a window over ${MAX_WINDOW_CELLS} cells is refused.`,
     {
       slug: z.string().describe('Spreadsheet slug (PK).'),
       r1: z.number().int().min(1).describe('First row (1-based, inclusive).'),
@@ -91,6 +91,21 @@ export function createSpreadsheetMcpServer(ctx: MountContext): McpServerFactory 
       const r2 = Number(args.r2);
       const c2 = Number(args.c2);
       if (!(r2 >= r1 && c2 >= c1)) return fail('r2 >= r1 and c2 >= c1 required');
+      /*
+       * The cap, before anything is allocated. `densify` materialises every
+       * coordinate in the rectangle, so an unchecked `r2`/`c2` is not a slow
+       * read — it is the server's memory. This handler runs in-process, so an
+       * agent asking for a million rows would take every project on the box
+       * down with it. The HTTP window route refuses the same call with a 400;
+       * refusing it here too is what keeps the two doors honest.
+       */
+      const cells = (r2 - r1 + 1) * (c2 - c1 + 1);
+      if (cells > MAX_WINDOW_CELLS) {
+        return fail(
+          `window of ${cells} cells exceeds the ${MAX_WINDOW_CELLS}-cell limit — ` +
+            `read it in smaller windows (e.g. ${MAX_WINDOW_CELLS / Math.max(1, c2 - c1 + 1) | 0} rows at a time)`,
+        );
+      }
       try {
         const row = rowOf(slug);
         if (!row) return notFound(slug);

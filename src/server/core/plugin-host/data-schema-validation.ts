@@ -243,6 +243,30 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
           `writes fine, never appears in search, and vanishes from the snapshot`,
       );
     }
+    /**
+     * The numeric bounds belong to a number and nowhere else. Rejected rather
+     * than ignored: a `min` sitting on a string is an author who believes a
+     * constraint is being enforced, and the whole point of the flags is that the
+     * declaration is the contract.
+     */
+    if (node.kind !== 'number') {
+      for (const flag of ['integer', 'min', 'max'] as const) {
+        if ((node as unknown as Record<string, unknown>)[flag] !== undefined) {
+          fail(
+            type,
+            `"${path}" is a ${node.kind}, but carries \`${flag}\` — the numeric bounds apply to ` +
+              `\`kind: 'number'\` only. Silently ignoring it would leave a constraint the author ` +
+              `believes is enforced`,
+          );
+        }
+      }
+    } else {
+      const { min, max } = node as { min?: number; max?: number };
+      if (min !== undefined && max !== undefined && min > max) {
+        fail(type, `"${path}" declares min ${min} above max ${max} — no value can satisfy it`);
+      }
+    }
+
     if (node.kind === 'collection') {
       const declared = (node as { collection?: unknown }).collection;
       if (declared !== 'value' && declared !== 'keyed') {

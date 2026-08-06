@@ -3,7 +3,7 @@ import { createElement, useEffect, useMemo, useState, type FC } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { fetchShape, fetchWindow, useEntityChanged, type SpreadsheetShape } from './hooks.js';
 import { renderInlineMarkdown } from './inline-markdown.js';
-import { SPREADSHEET_TYPE } from '../../../identity.js';
+import { MAX_WINDOW_CELLS, SPREADSHEET_ATTR_ORDER, SPREADSHEET_TYPE } from '../../../identity.js';
 
 /**
  * `<spreadsheet slug caption/>` — the type's primary surface, and one of only
@@ -20,6 +20,20 @@ import { SPREADSHEET_TYPE } from '../../../identity.js';
 /** Rows fetched at a time. A window, not a viewport — no measuring, no virtual scroller. */
 const ROW_WINDOW = 50;
 
+/**
+ * Rows this grid may ask for, given how wide it is.
+ *
+ * The read route refuses any window over `MAX_WINDOW_CELLS`, so a fixed 50-row
+ * window is only safe up to 200 columns — past that every request was refused
+ * and the embed rendered a permanently blank table with no error, because a
+ * failed read and an empty sheet looked identical on screen. Narrowing the
+ * window keeps a wide sheet readable (fewer rows per page) instead of unreadable.
+ */
+function rowsPerWindow(nCols: number): number {
+  if (nCols < 1) return ROW_WINDOW;
+  return Math.max(1, Math.min(ROW_WINDOW, Math.floor(MAX_WINDOW_CELLS / nCols)));
+}
+
 const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption }) => {
   // `undefined` = still loading, `null` = no such sheet. Two different renders,
   // so they cannot share one falsy state.
@@ -27,6 +41,8 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
   const [start, setStart] = useState<number>(1);
   const [cells, setCells] = useState<string[][]>([]);
   const [reloadKey, setReloadKey] = useState<number>(0);
+  // A refused or failed window is NOT an empty sheet, and must not render as one.
+  const [windowError, setWindowError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -41,21 +57,37 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
   const nRows = shape?.nRows ?? 0;
   const nCols = shape?.nCols ?? 0;
 
+  const pageRows = useMemo(() => rowsPerWindow(nCols), [nCols]);
+
   const windowRange = useMemo(() => {
     const r1 = Math.max(1, Math.min(start, Math.max(1, nRows)));
-    const r2 = Math.min(nRows, r1 + ROW_WINDOW - 1);
+    const r2 = Math.min(nRows, r1 + pageRows - 1);
     return { r1, r2 };
-  }, [start, nRows]);
+  }, [start, nRows, pageRows]);
 
   useEffect(() => {
     if (!shape || nRows < 1 || nCols < 1) {
       setCells([]);
+      setWindowError(null);
       return;
     }
     let alive = true;
     fetchWindow(slug, windowRange.r1, 1, windowRange.r2, nCols)
-      .then((rows) => alive && setCells(rows ?? []))
-      .catch(() => alive && setCells([]));
+      .then((rows) => {
+        if (!alive) return;
+        if (rows === null) {
+          setCells([]);
+          setWindowError('could not be read');
+          return;
+        }
+        setCells(rows);
+        setWindowError(null);
+      })
+      .catch(() => {
+        if (!alive) return;
+        setCells([]);
+        setWindowError('could not be read');
+      });
     return () => {
       alive = false;
     };
@@ -108,6 +140,19 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
 
   const windowedAbove = windowRange.r1 > 1;
   const windowedBelow = windowRange.r2 < nRows;
+
+  // Shown INSTEAD of an empty grid: a read the server refused and a sheet with
+  // nothing in it are the same picture otherwise.
+  const errorBanner = windowError
+    ? createElement(
+        'div',
+        {
+          className: 'c4s-spreadsheet__error',
+          style: { fontSize: 12, color: 'var(--c-red, #b3261e)', margin: '4px 0' },
+        },
+        `⚠ Rows ${windowRange.r1}–${windowRange.r2} ${windowError}.`,
+      )
+    : null;
   const pager =
     windowedAbove || windowedBelow
       ? createElement(
@@ -121,7 +166,7 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
             {
               type: 'button',
               disabled: !windowedAbove,
-              onClick: () => setStart((s) => Math.max(1, s - ROW_WINDOW)),
+              onClick: () => setStart((s) => Math.max(1, s - pageRows)),
             },
             '↑ Prev rows',
           ),
@@ -135,7 +180,7 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
             {
               type: 'button',
               disabled: !windowedBelow,
-              onClick: () => setStart((s) => Math.min(nRows, s + ROW_WINDOW)),
+              onClick: () => setStart((s) => Math.min(nRows, s + pageRows)),
             },
             '↓ Next rows',
           ),
@@ -155,11 +200,28 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
           ...renderInlineMarkdown(caption, 'caption'),
         )
       : null,
+    errorBanner,
     // A wide sheet scrolls inside its own box rather than widening the page.
     createElement('div', { className: 'c4s-spreadsheet__scroll', style: { overflowX: 'auto' } }, table),
     pager,
   );
 };
+
+/**
+ * `<spreadsheet slug="…" caption="…"/>` — the self-closing form, attributes in
+ * the order `frontend.referenceType.attrOrder` declares, empty ones omitted.
+ *
+ * Mirrors the host's `serializeXmlTag`; see the note on `addStorage` below.
+ */
+export function serializeSpreadsheetTag(attrs: Record<string, unknown>): string {
+  const parts: string[] = [];
+  for (const key of SPREADSHEET_ATTR_ORDER) {
+    const value = attrs[key];
+    if (value == null || value === '') continue;
+    parts.push(`${key}="${String(value).replace(/"/g, '&quot;')}"`);
+  }
+  return `<${SPREADSHEET_TYPE} ${parts.join(' ')}/>`;
+}
 
 export const spreadsheetNode = Node.create({
   name: SPREADSHEET_TYPE,
@@ -175,6 +237,32 @@ export const spreadsheetNode = Node.create({
   },
   renderHTML({ HTMLAttributes }) {
     return [SPREADSHEET_TYPE, mergeAttributes(HTMLAttributes)];
+  },
+  /**
+   * How this node goes BACK to markdown.
+   *
+   * Without it tiptap-markdown has no serializer for the node and falls back to
+   * its generic HTML writer, which emits the PAIRED form — `<spreadsheet …>` on
+   * one line and a stray `</spreadsheet>` on the next. Every save of every page
+   * carrying an embed would then rewrite the tag into a shape that is not the
+   * `<spreadsheet slug caption/>` syntax the type documents, producing a
+   * two-line diff in the spec repo that nobody authored.
+   *
+   * `serializeXmlTag` is mirrored rather than imported: it lives in the host's
+   * `shared/xml-tags.ts` and is not exported through `@c4s/plugin-runtime`, the
+   * same host gap `frontend-kit/slash-create.tsx` records for the embed node
+   * name and the command event. The attribute ORDER here must stay in step with
+   * the `attrOrder` declared in `entity/spreadsheet/index.ts`; a test pins it.
+   */
+  addStorage() {
+    return {
+      markdown: {
+        serialize(state: { write: (s: string) => void; closeBlock: (n: unknown) => void }, node: { attrs: Record<string, unknown> }) {
+          state.write(serializeSpreadsheetTag(node.attrs));
+          state.closeBlock(node);
+        },
+      },
+    };
   },
   addNodeView() {
     return (props) => {

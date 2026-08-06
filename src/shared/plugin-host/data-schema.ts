@@ -105,6 +105,25 @@ export interface FieldFlags {
 /** A leaf holding a single scalar. */
 export interface ScalarNode extends FieldFlags {
   kind: 'string' | 'number' | 'boolean';
+  /**
+   * NUMBER ONLY — the value must be an integer.
+   *
+   * Present because a declaration that cannot say "this is a count" forces every
+   * type carrying one to either accept `-1` and `2.5` or hand-write the schema
+   * it was supposed to have derived. A count reaching the projection is not a
+   * cosmetic problem: an extent of `-1` makes every keyed write refuse (no
+   * coordinate satisfies `at <= extent`) and every axis insert refuse (the
+   * highest legal position is `extent + 1 = 0`, below the 1-based floor), so the
+   * row is created and is then unusable by construction.
+   *
+   * Ignored on a non-number leaf rather than rejected — see
+   * `data-schema-validation`, which reports it, so the silent case cannot arise.
+   */
+  integer?: boolean;
+  /** NUMBER ONLY — inclusive lower bound. */
+  min?: number;
+  /** NUMBER ONLY — inclusive upper bound. */
+  max?: number;
 }
 
 /** A leaf constrained to a closed set of strings. Projects to `TEXT`, validated on write. */

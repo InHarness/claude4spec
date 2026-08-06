@@ -1,5 +1,6 @@
 import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
+  SPREADSHEET_ATTR_ORDER,
   SPREADSHEET_DISPLAY_ORDER,
   SPREADSHEET_LABEL,
   SPREADSHEET_LABEL_PLURAL,
@@ -69,7 +70,7 @@ export const spreadsheetEntity: EntityContribution = {
      */
     referenceType: {
       tag: SPREADSHEET_TYPE,
-      attrOrder: ['slug', 'caption'],
+      attrOrder: [...SPREADSHEET_ATTR_ORDER],
       validate: (attrs: Record<string, string>) => {
         const ok = typeof attrs.slug === 'string' && attrs.slug.trim().length > 0;
         return { ok, category: ok ? 'ok' : 'missing-slug' };

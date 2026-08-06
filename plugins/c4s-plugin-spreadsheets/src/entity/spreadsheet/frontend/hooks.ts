@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_BASE, apiFetch } from '../../../frontend-kit/api-core.js';
+import { PROJECT_ID, apiFetch } from '../../../frontend-kit/api-core.js';
 import { CELLS_FIELD, SPREADSHEET_TYPE } from '../../../identity.js';
 
 /**
@@ -115,6 +115,12 @@ export async function fetchWindow(
 ): Promise<string[][] | null> {
   const query = `a1=${r1}&b1=${c1}&a2=${r2}&b2=${c2}`;
   const res = await apiFetch(`${COLLECTION_BASE(slug)}/window?${query}`);
+  /*
+   * `null` means "no window", and the CALLER must say so on screen. Returning
+   * `[]` here would render an empty grid that looks exactly like a sheet with
+   * no content — which is how a window the route refuses became a permanently
+   * blank table with nothing explaining it.
+   */
   if (!res.ok) return null;
   const body = (await res.json()) as { items?: unknown[][] };
   const items = Array.isArray(body.items) ? body.items : [];
@@ -144,11 +150,22 @@ export function useEntityChanged(slug: string, onChange: () => void): void {
   handler.current = onChange;
 
   useEffect(() => {
-    if (typeof WebSocket === 'undefined' || !slug) return;
+    if (typeof WebSocket === 'undefined' || !slug || !PROJECT_ID) return;
     let socket: WebSocket | null = null;
     try {
+      /*
+       * `/ws?project=<id>`, NOT `${API_BASE}/ws`.
+       *
+       * The gateway is a per-project room on ONE path: it upgrades only when
+       * `url.pathname === '/ws'` and refuses a missing `project` param outright.
+       * Reusing `API_BASE` (which is `/api/projects/<id>`) produced
+       * `/api/projects/<id>/ws`, which the upgrade handler simply ignores — so
+       * the socket never opened, `entity:changed` never arrived, and the embed
+       * silently stopped live-updating. Silently, because a socket that never
+       * connects looks exactly like one where nothing has changed yet.
+       */
       const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      socket = new WebSocket(`${proto}//${window.location.host}${API_BASE}/ws`);
+      socket = new WebSocket(`${proto}//${window.location.host}/ws?project=${encodeURIComponent(PROJECT_ID)}`);
     } catch {
       return;
     }

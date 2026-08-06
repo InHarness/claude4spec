@@ -29,10 +29,25 @@ const SAFE_SCHEMES = new Set(['http', 'https', 'mailto']);
  * scheme is allowed only when the scheme is in {@link SAFE_SCHEMES}.
  */
 function safeHref(url: string): string | null {
-  const trimmed = url.trim();
-  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(trimmed);
+  /*
+   * Strip C0/C1 control characters and spaces BEFORE looking for a scheme, and
+   * emit the stripped string rather than the original.
+   *
+   * `String.prototype.trim()` removes whitespace and nothing else, but a browser
+   * parsing an `href` also strips leading control characters — so `javascript:…`
+   * reached this function looking schemeless (its first byte is not `[a-zA-Z]`,
+   * so the regex did not match), passed the allowlist untouched, and was then
+   * read by the browser as the `javascript:` URL the allowlist exists to refuse.
+   * Cell values come from agents over `set_cell`, so this is reachable input.
+   *
+   * Emitting the STRIPPED value matters as much as testing it: returning the
+   * original would hand the browser back the exact string that bypassed the
+   * check.
+   */
+  const cleaned = url.replace(/[\u0000-\u0020\u007f-\u009f]/g, '');
+  const scheme = /^([a-zA-Z][a-zA-Z0-9+.-]*):/.exec(cleaned);
   if (scheme && !SAFE_SCHEMES.has(scheme[1].toLowerCase())) return null;
-  return trimmed;
+  return cleaned;
 }
 
 /**

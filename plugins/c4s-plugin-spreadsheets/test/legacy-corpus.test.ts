@@ -49,7 +49,7 @@ describe('a v1 spreadsheet file, through the real indexer', () => {
     );
 
   const cells = () =>
-    t.db.prepare('SELECT r, c, value FROM spreadsheet_cell ORDER BY r, c').all() as Array<{
+    t.db.prepare('SELECT r, c, value FROM spreadsheet_cells ORDER BY r, c').all() as Array<{
       r: number;
       c: number;
       value: string;
