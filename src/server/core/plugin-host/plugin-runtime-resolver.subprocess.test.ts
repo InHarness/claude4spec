@@ -209,7 +209,7 @@ describe('M33 — resolver from a plugin-like location', () => {
  * outside vitest's module graph, exactly as the dev server does.
  */
 describe('builtin envelope — real load path', () => {
-  it('registers endpoint and dto through the loader, not through a test alias', () => {
+  it('registers every envelope’s types through the loader, not through a test alias', () => {
     const result = runProbe(
       `const { loadBuiltinEnvelopes } = await import('./src/server/core/plugin-host/loader.js');\n` +
         `const { PluginRegistryImpl } = await import('./src/server/core/plugin-host/registry.js');\n` +
@@ -232,7 +232,10 @@ describe('builtin envelope — real load path', () => {
     // A `failed` record here means PLUGIN_IMPORT_FAILED — the bare specifier did
     // not resolve — which is the exact regression the alias would mask.
     expect(parsed.reasons.filter(Boolean)).toEqual([]);
-    expect(parsed.statuses).toEqual(['loaded']);
-    expect(parsed.types).toEqual(['dto', 'endpoint']);
+    // Every envelope in `plugins/`, and every one of them `loaded` — a `skipped`
+    // here would be the version gate, which is how `spreadsheet` was absent for
+    // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
+    expect(parsed.statuses).toEqual(['loaded', 'loaded']);
+    expect(parsed.types).toEqual(['dto', 'endpoint', 'spreadsheet']);
   });
 });

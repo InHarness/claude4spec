@@ -176,6 +176,22 @@ const PROJECTED_TABLES = new Set([
   'endpoint_dto',
 ]);
 
+/**
+ * Tables that exist ONLY in the fresh database, because their type shipped after
+ * the historical chain was frozen.
+ *
+ * This is not a delta to normalize away — there is nothing on the legacy side to
+ * compare them against — so they are removed from the comparison outright. Named
+ * one by one for the same reason the deltas are: a type added later must be
+ * listed here deliberately, not swept in by a pattern, or the gate stops being
+ * able to see a table appearing that nobody meant to add. Their presence is
+ * asserted separately below, so excluding them cannot hide them going missing.
+ */
+const NEW_SINCE_LEGACY = new Set(['spreadsheet', 'spreadsheet_cell']);
+
+const withoutNewTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>
+  Object.fromEntries(Object.entries(schema).filter(([table]) => !NEW_SINCE_LEGACY.has(table)));
+
 /** Apply the two known deltas to the LEGACY snapshot so the rest compares strictly. */
 function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string, TableShape> {
   const out: Record<string, TableShape> = {};
@@ -207,9 +223,22 @@ describe('000_baseline.sql', () => {
     const legacy = legacyDb();
     const fresh = await baselineDb();
     try {
-      expect(snapshotSchema(fresh)).toEqual(applyExpectedDeltas(snapshotSchema(legacy)));
+      expect(withoutNewTables(snapshotSchema(fresh))).toEqual(applyExpectedDeltas(snapshotSchema(legacy)));
     } finally {
       legacy.close();
+      fresh.close();
+    }
+  });
+
+  it('still projects the tables excluded from that comparison', async () => {
+    // The exclusion above is scoped to "the legacy chain has no counterpart",
+    // not to "do not check these" — without this case, deleting the spreadsheet
+    // envelope's projection entirely would leave the suite green.
+    const fresh = await baselineDb();
+    try {
+      const tables = Object.keys(snapshotSchema(fresh));
+      for (const table of NEW_SINCE_LEGACY) expect(tables).toContain(table);
+    } finally {
       fresh.close();
     }
   });
