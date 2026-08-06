@@ -24,6 +24,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestApp } from '../../../tests/helpers/test-app.js';
 import { EntityIndexerService } from '../../../src/server/services/entity-indexer.js';
 import { backfillEntityTimestamps } from '../../../src/server/workspace/entity-timestamp-backfill.js';
+import { danglingScalarRefs } from '../../../src/server/db/projection-write.js';
+
+/** Measured on the raw corpus — see `fk-normalization.test.ts`, which drives them to 0. */
+const EXPECTED_DANGLING: Record<string, number> = { 'app-spec': 9, 'zbieram-kaucje': 15 };
 
 const CORPORA = ['app-spec', 'zbieram-kaucje'] as const;
 const fixtureDir = (corpus: string) =>
@@ -215,5 +219,71 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
         .get() as { c: number }
     ).c;
     expect(n).toBe(0);
+  });
+});
+
+/**
+ * PHASE 6 — the soft FK, measured on the real corpus through the host's own
+ * checker rather than through a re-implementation of it.
+ *
+ * This is the reward the `ref` declaration buys, and it is only a reward if it
+ * actually fires: before the shape-driven walk, a ref three layers inside an
+ * embedded collection was invisible and every one of these wrote clean.
+ */
+describe.each(CORPORA)('%s — soft foreign keys', (corpus) => {
+  let t: TestApp;
+
+  const indexer = () =>
+    new EntityIndexerService(
+      t.db,
+      t.entityStore,
+      (t as unknown as { entitiesWatcher: never }).entitiesWatcher,
+      { broadcast: () => {} },
+      t.host,
+      t.tagsService,
+      t.rawReader,
+    );
+
+  beforeEach(async () => {
+    t = await createTestApp();
+    const dir = path.join(t.entityStore.root, 'database-table');
+    fs.mkdirSync(dir, { recursive: true });
+    for (const f of fs.readdirSync(fixtureDir(corpus)).filter((n) => n.endsWith('.json'))) {
+      fs.copyFileSync(path.join(fixtureDir(corpus), f), path.join(dir, f));
+    }
+    backfillEntityTimestamps(t.db, t.entityStore, t.cwd, '.claude4spec/entities');
+    await indexer().indexAll();
+  });
+  afterEach(() => t.cleanup());
+
+  const module = () => t.host.getEntity('database-table')!;
+
+  const warningsFor = (slug: string) => {
+    const file = JSON.parse(
+      fs.readFileSync(path.join(t.entityStore.root, 'database-table', `${slug}.json`), 'utf-8'),
+    ) as Record<string, unknown>;
+    return danglingScalarRefs(t.db, module() as never, slug, file);
+  };
+
+  const allWarnings = () =>
+    fs
+      .readdirSync(path.join(t.entityStore.root, 'database-table'))
+      .filter((n) => n.endsWith('.json'))
+      .flatMap((n) => warningsFor(n.replace(/\.json$/, '')));
+
+  it('reports exactly the references the corpus really has broken', () => {
+    expect(allWarnings()).toHaveLength(EXPECTED_DANGLING[corpus]);
+  });
+
+  it('names the path and the missing target, not just the entity', () => {
+    const [first] = allWarnings();
+    // The path is what makes a warning actionable in a 30-column table.
+    expect(first).toMatch(/columns\[\d+\]\.fk\.table references database-table '.+' \(dangling\)|columns\[\d+\]\.fk\.table references database-table '.+', which does not exist/);
+  });
+
+  it('warns without dropping anything — every table is still indexed', () => {
+    // `onMissing: 'warn'` never blocks. A dangling fk must not cost a table.
+    const n = (t.db.prepare('SELECT COUNT(*) AS c FROM database_table').get() as { c: number }).c;
+    expect(n).toBe(fs.readdirSync(fixtureDir(corpus)).filter((x) => x.endsWith('.json')).length);
   });
 });
