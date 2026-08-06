@@ -153,19 +153,24 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
   },
 ];
 
-/** One slot removed WITHOUT crossing a major, during stabilization. */
+/** One slot changed WITHOUT crossing a major, during stabilization. */
 export interface HostApiUnversionedChange {
-  /** Release that removed it, e.g. "0.2.4". */
+  /** Release that made the change, e.g. "0.2.4". */
   release: string;
-  /** The removed slot's path on the manifest / interface. */
+  /** The affected slot's path on the manifest / interface. */
   slot: string;
-  kind: 'slot-removed';
-  /** Why it could be removed without a bump, and what replaces it. */
+  /**
+   * `slot-added` carries no obligation on a plugin author at all — it is here
+   * because a surface that grew silently is a surface nobody knows they may
+   * use, which is the additive twin of the failure the removals below record.
+   */
+  kind: 'slot-removed' | 'slot-added';
+  /** Why it needed no bump, and what it replaces or enables. */
   summary: string;
 }
 
 /**
- * Removals made inside the `1.0.0` baseline.
+ * Changes made inside the current baseline without a version bump.
  *
  * This list exists because "no version bump" must never mean "no record". A
  * removal that nobody wrote down is strictly worse than a recorded breaking
@@ -203,6 +208,24 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'columns the host cannot see could not honestly report `searchedFields`. ' +
       'The interface keeps the write path and the operations that cannot be ' +
       'derived from the composition descriptor.',
+  },
+  {
+    release: '0.2.12',
+    slot: 'MountContext.crud.writeCollectionWindow / MountContext.crud.mutateCollectionAxis',
+    kind: 'slot-added',
+    summary:
+      'The point/range write and the axis insert/delete for a KEYED collection. ' +
+      'Both operations were already specified (M39 tier C) and already ' +
+      'implemented on the domain write-path, but no host-facing surface reached ' +
+      'them: `crud.update` reconciles a supplied keyed collection replace-all, ' +
+      'so a plugin could only change one cell by resending the whole grid — ' +
+      'which loses the merge, and with it the guarantee that two writers to ' +
+      'disjoint keys do not overwrite each other. This CLOSES that contract ' +
+      'rather than opening a new one, which is why it is additive: no existing ' +
+      'slot changes shape, no plugin needs to do anything, and a package built ' +
+      'against 2.0.0 keeps loading. Per M33 an additive slot stays inside the ' +
+      'current baseline while no external packages are published; once they are, ' +
+      'the same class of change bumps the MINOR.',
   },
 ];
 

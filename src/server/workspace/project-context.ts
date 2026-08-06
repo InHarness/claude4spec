@@ -18,7 +18,9 @@ import { registerRefRewriteListeners } from '../core/plugin-host/manifest-adapte
 import {
   genericCreate,
   genericDelete,
+  genericMutateCollectionAxis,
   genericUpdate,
+  genericWriteCollectionWindow,
   propagateRename,
 } from '../core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../core/plugin-host/types.js';
@@ -691,6 +693,16 @@ async function buildInner(
     },
     delete: async (type, slug, actor) => {
       const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    writeCollectionWindow: async (type, slug, field, entries, actor) => {
+      const result = genericWriteCollectionWindow(crudDeps, type, slug, field, entries, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    mutateCollectionAxis: async (type, slug, field, axisKey, op, at, actor) => {
+      const result = genericMutateCollectionAxis(crudDeps, type, slug, field, axisKey, op, at, actor);
       ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
       return result;
     },

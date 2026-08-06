@@ -13,7 +13,9 @@ import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/m
 import {
   genericCreate,
   genericDelete,
+  genericMutateCollectionAxis,
   genericUpdate,
+  genericWriteCollectionWindow,
   propagateRename,
 } from '../../src/server/core/plugin-host/generic-crud.js';
 import type { CrudFacade } from '../../src/server/core/plugin-host/types.js';
@@ -145,8 +147,8 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   };
   /**
    * Mirrors `buildProjectContext` exactly, INCLUDING `propagateRename` and the
-   * broadcast. A helper that bound the three verbs bare would make every test
-   * pass against a facade production does not have — which is how the missing
+   * broadcast. A helper that bound the verbs bare would make every test pass
+   * against a facade production does not have — which is how the missing
    * rename fan-out survived its first review.
    */
   const crudFacade: CrudFacade = {
@@ -163,6 +165,16 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     },
     delete: async (type, slug, actor) => {
       const result = genericDelete(crudDeps, type, slug, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    writeCollectionWindow: async (type, slug, field, entries, actor) => {
+      const result = genericWriteCollectionWindow(crudDeps, type, slug, field, entries, actor);
+      ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
+      return result;
+    },
+    mutateCollectionAxis: async (type, slug, field, axisKey, op, at, actor) => {
+      const result = genericMutateCollectionAxis(crudDeps, type, slug, field, axisKey, op, at, actor);
       ws.broadcast({ kind: 'entity:changed', entityType: type, slug });
       return result;
     },
