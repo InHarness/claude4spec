@@ -19,7 +19,6 @@ export const BASELINE_TABLES: ReadonlySet<string> = new Set([
   'chat_queued_message',
   'chat_subagent_task',
   'chat_thread',
-  'database_table',
   'entity_tag',
   'entity_version',
   'file_version',
@@ -34,10 +33,15 @@ export const BASELINE_TABLES: ReadonlySet<string> = new Set([
   'tag',
 ]);
 
-/**
- * `database-table` is contributed by an EXTERNAL plugin, but its table predates
- * the plugin split and is still created by the baseline (see the note there).
- * Without this exemption the preinstalled plugin would fail every project build
- * on a collision the host itself caused.
+/*
+ * 0.2.11: `COLLISION_EXEMPT_TABLES` is gone.
+ *
+ * It existed to excuse exactly one table, `database_table`, from
+ * schema-ownership collision detection -- necessary only because the baseline
+ * created a table it did not own. With that `CREATE TABLE` removed from
+ * `000_baseline.sql`, the collision it was papering over cannot occur: the
+ * module that contributes the type is the only thing that creates its table.
+ *
+ * There is deliberately no replacement. An exemption list is the mechanism by
+ * which a type becomes privileged, which is the thing this release removes.
  */
-export const COLLISION_EXEMPT_TABLES: ReadonlySet<string> = new Set(['database_table']);

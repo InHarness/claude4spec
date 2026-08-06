@@ -36,6 +36,13 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
     slugsMatching: () => new Set(['ac-1']),
     listSlugs: () => ['ac-1'],
     /**
+     * 0.2.11: "is this verify's type real?" is asked of the registry rather than
+     * a seven-literal predicate, so the reader stub has to carry a host. This
+     * one recognises every type — the suite's cases are about analysis, not
+     * about unknown-type classification.
+     */
+    host: { getEntity: () => ({}) },
+    /**
      * `verifies` goes in `data`, where the real reader puts it.
      *
      * This stub used to answer `readCollection: () => verifies`, which is how

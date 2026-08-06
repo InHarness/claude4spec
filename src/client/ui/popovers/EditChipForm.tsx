@@ -9,7 +9,8 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { ENTITY_TYPES, type ChipNodeType } from '../events.js';
+import { type ChipNodeType } from '../events.js';
+import { listActiveEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 type FilterMode = 'and' | 'or';
@@ -36,8 +37,11 @@ export function EditChipForm({ request, onClose }: PopoverFormProps<'edit-chip'>
   const { nodeType, attrs, onRemove } = request.props;
   const firstRef = useRef<HTMLInputElement>(null);
 
+  // 0.2.11: the chip's OWN type wins (editing must not silently retype it); the
+  // fallback is the first active type rather than a hardcoded 'endpoint', which
+  // may not be among the <option>s this project offers.
   const [type, setType] = useState<EntityType>(
-    (str(attrs.type, 'endpoint') as EntityType) || 'endpoint',
+    (str(attrs.type, '') as EntityType) || listActiveEntityTypes()[0] || '',
   );
   const [slug, setSlug] = useState(str(attrs.slug));
   const [slugsRaw, setSlugsRaw] = useState(parseCsv(attrs.slugs));
@@ -120,7 +124,7 @@ export function EditChipForm({ request, onClose }: PopoverFormProps<'edit-chip'>
             onChange={(e) => setType(e.target.value as EntityType)}
             style={{ marginBottom: 8 }}
           >
-            {ENTITY_TYPES.map((t) => (
+            {listActiveEntityTypes().map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

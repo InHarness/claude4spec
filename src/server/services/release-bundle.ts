@@ -38,25 +38,108 @@ import { DomainError } from './tags.js';
  * `pages/`); the manifest gains `roots[]` and the sanitized config carries
  * `roots[]` instead of the `pagesDir` scalar. v1 bundles (flat `pages/`, no
  * `manifest.roots`) are still readable — see `ReleaseService.restoreBundleArchive`.
+ *
+ * v3 (0.2.11): `entities/` carries one file per ACTIVE entity type, derived from
+ * each module's `pathPrefix`, instead of the five names a static map allowed. The
+ * LAYOUT rule changed, so the version had to move: a v3 bundle can contain
+ * `design-systems.json`, `diagrams.json` or a plugin type's file, and a pre-0.2.11
+ * reader has no entry for those. Left at 2, that reader's version guard would pass
+ * and it would then abort on the first unmappable file — reporting a broken
+ * archive when the real problem is version skew, which is the one thing this
+ * constant exists to say. v2 and v1 bundles remain readable: the derivation
+ * reproduces all five historical names exactly.
  */
-export const BUNDLE_SCHEMA_VERSION = 2 as const;
+export const BUNDLE_SCHEMA_VERSION = 3 as const;
+
+/** The minimum a module must expose to be laid out in a bundle. */
+export interface BundleEntityModule {
+  type: string;
+  pathPrefix: string;
+}
 
 /**
- * Strict singular entity type → plural bundle file name. Published for M26
- * (read direction maps plural file → entity type via the reverse).
+ * The bundle file name for an entity type: the last segment of its `pathPrefix`.
+ *
+ * 0.2.11 — this replaces a hand-written singular→plural map of five entries.
+ * The map was the reason `design-system` and `diagram` were silently absent from
+ * every bundle ever produced (step 4 below skips a type with no entry), and the
+ * reason a plugin type could never appear in one at all.
+ *
+ * `pathPrefix` rather than `labelPlural`: `labelPlural` is a presentation string
+ * (sidebar, chips), so a type author retitling "Acceptance Criteria" would
+ * silently rename a file inside an archive format — and `slugify('Acceptance
+ * Criteria')` is `acceptance-criteria`, not the `acs` every existing bundle
+ * carries. `pathPrefix` is already a durable identifier: it mounts REST routes
+ * and client navigation, so changing it is a breaking change either way.
+ *
+ * The LAST segment, not the whole prefix with its leading slash stripped, so the
+ * rule is indifferent to whether a prefix is spelled `/acs` or `/api/acs` — and
+ * so it can never yield a name containing a path separator.
+ *
+ * It reproduces every pre-0.2.11 name exactly, which is what keeps old bundles
+ * readable with no compatibility table: `/endpoints`→`endpoints.json`,
+ * `/dtos`→`dtos.json`, `/ui-views`→`ui-views.json`, `/acs`→`acs.json`,
+ * `/database-tables`→`database-tables.json`. `pathPrefix` is required on every
+ * manifest, so there is no fallback path to get wrong.
  */
-export const ENTITY_TYPE_TO_PLURAL_FILE: Record<string, string> = {
-  endpoint: 'endpoints.json',
-  dto: 'dtos.json',
-  'database-table': 'database-tables.json',
-  'ui-view': 'ui-views.json',
-  ac: 'acs.json',
-};
+export function bundleEntityFileName(module: BundleEntityModule): string {
+  const segments = module.pathPrefix.split('/').filter(Boolean);
+  const base = segments[segments.length - 1];
+  if (!base) {
+    throw new DomainError(
+      'VALIDATION',
+      `entity type '${module.type}' has an empty pathPrefix — cannot derive a bundle file name`,
+    );
+  }
+  return `${base}.json`;
+}
 
-/** Reverse of {@link ENTITY_TYPE_TO_PLURAL_FILE} — read direction (M27 clone). */
-export const PLURAL_FILE_TO_ENTITY_TYPE: Record<string, string> = Object.fromEntries(
-  Object.entries(ENTITY_TYPE_TO_PLURAL_FILE).map(([type, file]) => [file, type]),
-);
+/**
+ * Both directions of the type ↔ bundle-file-name mapping, built from a module
+ * list, plus any file name more than one type claims.
+ *
+ * Collisions are REPORTED, not thrown, because the two call sites need different
+ * answers. The write side builds this over ACTIVE modules and must refuse: two
+ * types sharing a file name means one silently overwrites the other's rows in the
+ * archive. The read side builds it over AVAILABLE modules — every installed
+ * plugin, activated or not — where a throw would be indefensible: an unrelated
+ * deactivated plugin declaring `/v2/acs` would abort every clone, import and
+ * restore in the project, before a single file of the archive is read, over a
+ * type the bundle does not even contain. There, only a collision on a file
+ * ACTUALLY PRESENT is a real ambiguity.
+ */
+export function bundleEntityFileMap(modules: readonly BundleEntityModule[]): {
+  toFile: Map<string, string>;
+  toType: Map<string, string>;
+  collisions: Map<string, string[]>;
+} {
+  const toFile = new Map<string, string>();
+  const toType = new Map<string, string>();
+  const collisions = new Map<string, string[]>();
+  for (const module of modules) {
+    const file = bundleEntityFileName(module);
+    const claimed = toType.get(file);
+    if (claimed !== undefined && claimed !== module.type) {
+      collisions.set(file, [...(collisions.get(file) ?? [claimed]), module.type]);
+    }
+    toFile.set(module.type, file);
+    if (claimed === undefined) toType.set(file, module.type);
+  }
+  return { toFile, toType, collisions };
+}
+
+/** The write-side map: a collision here corrupts the archive, so it refuses. */
+export function bundleEntityFileMapForWrite(modules: readonly BundleEntityModule[]): Map<string, string> {
+  const { toFile, collisions } = bundleEntityFileMap(modules);
+  const [file, types] = collisions.entries().next().value ?? [];
+  if (file && types) {
+    throw new DomainError(
+      'BUNDLE_BASENAME_COLLISION',
+      `entity types ${types.map((t) => `'${t}'`).join(' and ')} both map to bundle file '${file}'`,
+    );
+  }
+  return toFile;
+}
 
 /** One releasable page root as carried by the bundle manifest (id/name/dir only). */
 export interface BundleRoot {
@@ -82,7 +165,14 @@ export interface BundleConfig {
 }
 
 export interface BundleManifest {
-  bundleSchemaVersion: 2;
+  /**
+   * The version this bundle was WRITTEN at. Not pinned to a single literal: the
+   * read path parses manifests from older bundles into this same shape, and
+   * `restoreBundleArchive` branches on the value (v1 has a flat `pages/` tree and
+   * no `roots[]`). Pinning it to the current constant would make every older
+   * manifest un-typeable at the very site that has to handle them.
+   */
+  bundleSchemaVersion: number;
   /**
    * v2 (0.1.96): releasable roots present in the bundle (id/name/dir only). The
    * pages tree is laid out under `<rootId>/…`. Absent on v1 bundles (flat `pages/`).
@@ -99,10 +189,13 @@ export interface BundleManifest {
   /** Build moment — `new Date().toISOString()`, distinct from `release.createdAt`. */
   createdAt: string;
   /**
-   * Per-type serializer versions at capture time (keys: endpoint, dto,
-   * database-table, ui-view, ac, page). The snapshot model carries serializer
-   * versions per-type, not per-entity — see the brief drift patch. M26 reads
-   * the version per type and delegates to the matching deserializer.
+   * Per-type serializer versions at capture time: one key per ACTIVE entity type
+   * (0.2.11 — no longer a fixed six), plus `page`. The snapshot model carries
+   * serializer versions per-type, not per-entity. M26 reads the version per type
+   * and delegates to the matching deserializer.
+   *
+   * Keys stay SINGULAR (the type id), independent of the bundle FILE name, which
+   * is derived separately — see {@link bundleEntityFileName}.
    */
   serializerVersions: Record<string, string>;
 }
@@ -223,6 +316,17 @@ export async function buildBundleArchive(
   release: Release,
   config: NormalizedConfig,
   pageRows: BundlePageInput[],
+  /**
+   * Entity type → bundle file name, resolved by the caller from the host's
+   * ACTIVE modules (see {@link bundleEntityFileMap}).
+   *
+   * A parameter rather than a host lookup inside this module: `release-bundle.ts`
+   * deliberately depends on nothing but node, `shared/`, and the config — it is
+   * the pure `(snapshot, release, config) → bytes` half, which is what makes it
+   * testable without standing up a project. `ReleaseService` already holds the
+   * host and resolves the map there.
+   */
+  entityFiles: ReadonlyMap<string, string>,
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));
   try {
@@ -276,8 +380,11 @@ export async function buildBundleArchive(
       const entitiesDir = path.join(tempDir, 'entities');
       fs.mkdirSync(entitiesDir, { recursive: true });
       for (const [type, rows] of byType) {
-        const fileName = ENTITY_TYPE_TO_PLURAL_FILE[type];
-        if (!fileName) continue; // defensively skip unknown types
+        const fileName = entityFiles.get(type);
+        // A type the host no longer knows — its rows survive in `entity_version`
+        // but there is no module left to name a file for them. Skip rather than
+        // guess a name the read direction could not map back.
+        if (!fileName) continue;
         fs.writeFileSync(path.join(entitiesDir, fileName), JSON.stringify(rows, null, 2), 'utf8');
       }
     }

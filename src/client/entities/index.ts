@@ -8,7 +8,7 @@ import './ac/plugin.js';
 import './design-system/plugin.js';
 import './diagram/plugin.js';
 
-export { getEntityDef, listEntityDefs, registerEntity } from './registry.js';
+export { getEntityDef, listActiveEntityTypes, registerEntity } from './registry.js';
 export type {
   EntityDef,
   EntityRowProps,

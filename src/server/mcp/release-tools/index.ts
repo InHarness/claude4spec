@@ -33,7 +33,15 @@ export interface ReleaseToolsDeps {
 }
 
 const INCLUDE_VALUES = ['pages', 'entities'] as const;
-const ENTITY_TYPE_VALUES = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'] as const;
+/*
+ * 0.2.11: `ENTITY_TYPE_VALUES` (a closed five-value zod enum) is gone. It
+ * rejected any other type at the MCP boundary, so a caller could not ask about a
+ * design system, a diagram or a plugin type even once the release layer began
+ * capturing them. `z.string()` now carries the argument; the validation that
+ * mattered — empty array, and the `entityTypes`-without-`entities` conflict —
+ * lives in `validateFilters` and is unchanged. An unknown type is not an error,
+ * it simply matches nothing, which is what a filter should do.
+ */
 const DEFAULT_INCLUDE: IncludeFilter[] = ['pages', 'entities'];
 
 export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInstance {
@@ -109,10 +117,10 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
           "Filter dimensions. Default ['pages','entities']. Empty array → 400 INVALID_INCLUDE_FILTER.",
         ),
       entityTypes: z
-        .array(z.enum(ENTITY_TYPE_VALUES))
+        .array(z.string())
         .optional()
         .describe(
-          "Filter entity types. Default all 5 types. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
+          "Filter entity types. Default: every active entity type. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
         ),
       limit: z
         .number()
@@ -159,10 +167,10 @@ export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInsta
           "Filter dimensions. Default ['pages','entities']. Empty array → 400 INVALID_INCLUDE_FILTER.",
         ),
       entityTypes: z
-        .array(z.enum(ENTITY_TYPE_VALUES))
+        .array(z.string())
         .optional()
         .describe(
-          "Filter entity types. Default all 5 types. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
+          "Filter entity types. Default: every active entity type. Empty array → 400 INVALID_ENTITY_TYPES_FILTER. Passing this without 'entities' in `include` → 400 CONFLICTING_FILTERS.",
         ),
       summaryOnly: z
         .boolean()

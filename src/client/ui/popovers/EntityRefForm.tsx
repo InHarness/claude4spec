@@ -9,7 +9,7 @@ import {
   TextInput,
   type PopoverFormProps,
 } from '../Popover.js';
-import { ENTITY_TYPES } from '../events.js';
+import { listActiveEntityTypes } from '../../entities/index.js';
 import type { EntityType } from '../../../shared/entities.js';
 
 // Handles `mention` and `element` popover kinds — both ask for { type, slug }.
@@ -29,7 +29,13 @@ interface InnerProps {
 }
 
 function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
-  const [type, setType] = useState<EntityType>('endpoint');
+  // 0.2.11: default to the first ACTIVE type, not a hardcoded 'endpoint'. The
+  // <option> list is registry-driven now, so a project without `endpoint`
+  // (deactivated, or its envelope failed to load — a FAIL-SOFT state this host
+  // documents) would render a <select> whose value matches no option: the browser
+  // shows the first real one while state still says 'endpoint', and the chip is
+  // written with a type the project does not have.
+  const [type, setType] = useState<EntityType>(() => listActiveEntityTypes()[0] ?? '');
   const [slug, setSlug] = useState('');
   const [error, setError] = useState<string | null>(null);
   const slugRef = useRef<HTMLInputElement>(null);
@@ -63,7 +69,7 @@ function EntityRefForm({ request, onClose, title, iconKind }: InnerProps) {
         <div style={{ width: 140 }}>
           <FieldLabel>Type</FieldLabel>
           <SelectInput value={type} onChange={(e) => setType(e.target.value as EntityType)}>
-            {ENTITY_TYPES.map((t) => (
+            {listActiveEntityTypes().map((t) => (
               <option key={t} value={t}>
                 {t}
               </option>

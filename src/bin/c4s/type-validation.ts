@@ -1,21 +1,39 @@
-import { isRawEntityType, type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
-// 0.2.9: one vocabulary, declared beside `ViewKind`. The CLI keeps its eager
-// check — it can fail before opening a project — but no longer keeps its own
-// copy of the list to fall out of date with the core's guard.
+import { type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
 import { VIEW_KINDS, type ViewKind } from '../../server/serialization/types.js';
 import { CliError } from './errors.js';
 
-/** Accepts both 'database-table' (canonical) and 'database_table' (spec-alias). */
+/** An entity type id is kebab-case: lowercase alphanumerics joined by hyphens. */
+const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Validate the SHAPE of a `--type` argument. Existence is not checked here.
+ *
+ * 0.2.11: this used to hold the vocabulary — a seven-literal membership test
+ * plus a `database_table` → `database-table` alias. Both are gone.
+ *
+ * The membership test could not survive genericisation: which types exist is a
+ * property of the project's registry, and this function runs EAGERLY, before a
+ * project is open and therefore before any registry exists. Keeping a static
+ * list so the CLI could answer early meant rejecting every plugin-contributed
+ * type outright — all 13 commands that call this were unusable for them. So the
+ * check narrows to what can honestly be decided without a project (is this
+ * even shaped like a type id?), and existence is left to the discovery core,
+ * which answers it with the navigation this error never had: the known types,
+ * and the call that would have worked.
+ *
+ * The alias is gone for a simpler reason: a type id is always kebab-case, so
+ * `database_table` and `ui_view` are not alternative spellings of anything —
+ * they are malformed, and now say so.
+ */
 export function normalizeEntityType(raw: string): RawEntityType {
-  const normalized = raw === 'database_table' ? 'database-table' : raw;
-  if (!isRawEntityType(normalized)) {
+  if (!KEBAB_RE.test(raw)) {
     throw new CliError(
       'INVALID_TYPE',
-      `unknown entity type '${raw}'`,
-      "allowed: 'endpoint', 'dto', 'database-table', 'ui-view' — run `c4s catalog` for the full list"
+      `invalid entity type '${raw}'`,
+      'an entity type is kebab-case, e.g. `ui-view` (not `ui_view`) — run `c4s catalog` for the types this project has'
     );
   }
-  return normalized;
+  return raw;
 }
 
 /** Validates a view kind, throwing INVALID_VIEW when outside the ViewKind enum. */

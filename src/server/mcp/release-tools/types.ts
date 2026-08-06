@@ -33,7 +33,7 @@ export interface MCPReleaseDiff {
 
 /** Light delta-map entry (`summaryOnly: true`) — identifier + op, no `before`/`after`. */
 export interface MCPEntityDeltaLight {
-  type: 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac';
+  type: EntityTypeFilter;
   slug: string;
   name: string;
   op: 'create' | 'update' | 'delete';
@@ -46,7 +46,7 @@ export interface MCPPageDeltaLight {
 }
 
 export interface MCPEntityDelta {
-  type: 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac';
+  type: EntityTypeFilter;
   slug: string;
   name: string;
   op: 'create' | 'update' | 'delete';
@@ -106,7 +106,14 @@ export interface MCPSpecSnapshot {
 }
 
 export type IncludeFilter = 'pages' | 'entities';
-export type EntityTypeFilter = 'endpoint' | 'dto' | 'database-table' | 'ui-view' | 'ac';
+/**
+ * An entity type id. 0.2.11: `string`, not a five-literal union.
+ *
+ * The union was re-inlined verbatim in three places in this file, and every one
+ * of them made a type the release layer had captured unrepresentable in the tool
+ * output that reports on it.
+ */
+export type EntityTypeFilter = string;
 
 export interface ProjectionOpts {
   include: IncludeFilter[];

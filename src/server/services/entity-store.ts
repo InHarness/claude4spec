@@ -16,26 +16,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { PluginHost } from '../core/plugin-host/types.js';
-import {
-  type RawEntityReader,
-  type RawEntityType,
-  isRawEntityType,
-} from '../discovery/raw-entity-reader.js';
+import { type RawEntityReader, type RawEntityType } from '../discovery/raw-entity-reader.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { canonicalize } from '../serialization/snapshot.js';
 import { attachPayloadVersion } from '../serialization/payload-upgrade.js';
 import { DomainError } from './tags.js';
 import type { SelfWriteSuppressor } from '../fs/sources.js';
 
-const ENTITY_TYPE_DIRS: RawEntityType[] = [
-  'endpoint',
-  'dto',
-  'database-table',
-  'ui-view',
-  'ac',
-  'design-system',
-  'diagram',
-];
 const TAGS_FILE = 'tags.json';
 const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -80,20 +67,42 @@ export class EntityStore {
    * `parseRelPath` below deliberately still gates: the INBOUND direction has to
    * decide whether an arbitrary path under the entities root is an entity file
    * at all, and that is a question about the active type set rather than about
-   * path shape. Widening it is its own change, and it affects every write path,
-   * not this one.
+   * path shape.
    */
   relPathFor(type: string, slug: string): string {
     return `${type}/${slug}.json`;
   }
 
-  /** Invert a relPath → {type, slug}; null if it is not an active-type entity file. */
+  /**
+   * Invert a relPath → {type, slug}; null if it is not a known-type entity file.
+   *
+   * 0.2.11: "is this an entity type?" is answered by the registry, not by a
+   * seven-literal predicate. The predicate made the inbound direction blind to
+   * exactly the plugin types the outbound direction (`relPathFor`) had already
+   * been widened to serve in 2.0.0 — so a plugin entity could be written to disk
+   * and then not recognised when the watcher read it back.
+   *
+   * `getAvailable`, NOT `getEntity` — the predicate this replaced ignored
+   * activation, and two callers depend on that. `EntityIndexer.handleUnlink`
+   * deliberately resolves the table through `getAvailable` so a file removed
+   * while its type is DEACTIVATED still has its row dropped (nothing else ever
+   * would: the rebuild skips inactive tables too). `release.ts`'s git-anchored
+   * diff classifies deletions the same way. Gating here on ACTIVE would return
+   * null before either could run, silently stranding the row — the file is gone
+   * but the entity keeps showing up in `find_by_tag`, in `<tagged_list>` renders
+   * and in the sidebar the moment the type is re-activated.
+   *
+   * The alphabet matches `KEBAB_RE` (the store's own rule for a slug, and what
+   * `normalizeEntityType` accepts for a type): digits are legal in a type id, so
+   * `[a-z-]+` would refuse `oauth2-scope` — a directory `relPathFor` writes
+   * happily, leaving its files permanently unreadable on the way back in.
+   */
   parseRelPath(relPath: string): { type: RawEntityType; slug: string } | null {
     const norm = relPath.replaceAll('\\', '/');
-    const m = /^([a-z-]+)\/([^/]+)\.json$/.exec(norm);
+    const m = /^([a-z0-9-]+)\/([^/]+)\.json$/.exec(norm);
     if (!m) return null;
     const [, type, slug] = m;
-    if (!type || !slug || !isRawEntityType(type)) return null;
+    if (!type || !slug || !this.host.getAvailable(type)) return null;
     return { type, slug };
   }
 
@@ -172,9 +181,24 @@ export class EntityStore {
       .sort();
   }
 
+  /**
+   * 0.2.11: the directories to sweep come from the registry, not from a frozen
+   * seven-entry list. A plugin type's entities lived under `<type>/` all along
+   * (`relPathFor` never gated); they were simply never enumerated here, so every
+   * consumer of `listAll()` — the reindex sweep among them — silently skipped
+   * them.
+   *
+   * `listAvailable`, like `parseRelPath` above: this answers "what entity files
+   * are on disk", and a deactivated type's files are still on disk. Both callers
+   * need that. `project-context` compares this count against the DB's to choose a
+   * migration direction, and undercounting files would push it down the wrong
+   * branch; the timestamp backfill would skip those files entirely. The frozen
+   * list this replaced was activation-independent, so gating on ACTIVE here would
+   * be a behaviour change smuggled in under a generalisation.
+   */
   listAll(): EntityStoreFile[] {
     const out: EntityStoreFile[] = [];
-    for (const type of ENTITY_TYPE_DIRS) {
+    for (const type of this.host.listAvailable().map((m) => m.type)) {
       for (const slug of this.listType(type)) {
         out.push({ type, slug, relPath: this.relPathFor(type, slug) });
       }

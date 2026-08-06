@@ -5,20 +5,28 @@ import { createInvalidationBatcher } from '../lib/wsBatcher.js';
 import { PROJECT_ID } from '../lib/api-core.js';
 import { useFileEventsStore } from '../state/fileEvents.js';
 import { reloadFrontendPlugins } from '../runtime/boot-plugins.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 
 /** M33 phase 3: window event a live editor listens for to re-apply extensions (no setContent). */
 export const PLUGINS_RELOADED_EVENT = 'c4s:plugins-reloaded';
 
-/** Map an entity type → its React Query list key (plural). */
-const ENTITY_LIST_KEY: Record<string, string> = {
-  endpoint: 'endpoints',
-  dto: 'dtos',
-  'database-table': 'database-tables',
-  'ui-view': 'ui-views',
-  ac: 'acs',
-};
+/**
+ * An entity type → its React Query list key (plural).
+ *
+ * 0.2.11: derived from the type's own `pathPrefix` (last segment), the same rule
+ * the release bundle uses for file names, instead of a five-entry map. The map
+ * omitted `design-system` and `diagram` and every plugin type, so a change to
+ * one of those invalidated only the generic `entities` key and left its own list
+ * showing stale rows until something else evicted it.
+ *
+ * Falls back to `entities` when the type is unknown to the client host — which
+ * includes the window before plugin boot settles, where answering with a
+ * specific key would be a guess.
+ */
 function entityListKey(type: string): string {
-  return ENTITY_LIST_KEY[type] ?? 'entities';
+  const prefix = clientPluginHost.getAvailable(type)?.pathPrefix;
+  const base = prefix?.split('/').filter(Boolean).pop();
+  return base ?? 'entities';
 }
 
 export function useFileWatcher() {
@@ -57,10 +65,16 @@ export function useFileWatcher() {
             batcher.queue([data.type, data.slug]);
             batcher.queue(['entities']);
           } else if (data.kind === 'tag:changed') {
+            // 0.2.11: every active type, not three hardcoded ones. A tag
+            // change alters the tag chips on every entity list, but this
+            // invalidated only endpoints/dtos/database-tables -- so ui-view,
+            // ac, design-system, diagram and all plugin lists kept rendering
+            // the old tags.
             batcher.queue(['tags']);
-            batcher.queue(['endpoints']);
-            batcher.queue(['dtos']);
-            batcher.queue(['database-tables']);
+            for (const m of clientPluginHost.listEntities()) {
+              batcher.queue([entityListKey(m.type)]);
+            }
+            batcher.queue(['entities']);
           } else if (data.kind === 'section:indexed') {
             batcher.queue(['sections']);
           } else if (data.kind === 'todos:changed') {

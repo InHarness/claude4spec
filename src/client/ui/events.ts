@@ -197,5 +197,15 @@ export const UI_EVENTS = {
   GIT_ERROR: GIT_ERROR_EVENT,
 } as const;
 
-export const ENTITY_TYPES: readonly EntityType[] = ['endpoint', 'dto', 'database-table'];
+/*
+ * 0.2.11: `ENTITY_TYPES` is gone from here.
+ *
+ * It listed three types, and its only consumers were the four XML-chip popovers'
+ * <option> lists -- so an author could insert a chip for `endpoint`, `dto` or
+ * `database-table` and for nothing else. `ui-view`, `ac`, `design-system`,
+ * `diagram` and every plugin type were unreachable from the editor, not by
+ * decision but because this constant had never been extended.
+ *
+ * The popovers now read `listActiveEntityTypes()` from the entity registry.
+ */
 export const HTTP_METHODS: readonly HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];

@@ -106,6 +106,10 @@ describe('Single Abstraction Rule', () => {
       // Pass-through, not dispatch: the project config is copied verbatim into
       // the release bundle so a restore can reproduce the activation set.
       expect.stringContaining('release-bundle.ts'),
+      // A user-facing sentence that happens to name the field: the refusal when
+      // a bundle carries a type this installation has deactivated tells the
+      // reader where to go and fix it. Naming a setting is not dispatching on it.
+      expect.stringContaining('release.ts'),
     ]);
   });
 
@@ -125,6 +129,41 @@ describe('Single Abstraction Rule', () => {
       // there compares the resolved AC module's identity rather than
       // re-hardcoding the literal a second time.
     ]);
+  });
+
+  /**
+   * 0.2.11 — the falsifiable form of "the release tier enumerates no entity
+   * type". This tier held three separate hardcoded lists: the snapshot's covered
+   * types, the bundle's singular→plural file-name map, and the bundle-restore
+   * order. Each silently dropped whatever it did not name, and the three did not
+   * even agree with each other.
+   *
+   * Exact-zero is achievable because the surviving mentions in these files are
+   * all prose in comments, which `codeLines()` strips.
+   */
+  it('the release tier enumerates no entity type', () => {
+    const files = ['release.ts', 'release-bundle.ts', 'release-push.ts'].map((f) =>
+      path.join(REPO_ROOT, 'src', 'server', 'services', f),
+    );
+    const pattern = /['"](endpoint|dto|database-table|ui-view|ac|design-system|diagram)['"]/;
+    expect(hitsIn(files, pattern)).toEqual([]);
+  });
+
+  /**
+   * 0.2.11 — likewise for the MCP release tools, which re-narrowed to the same
+   * five one layer above `ReleaseService`: a whitelist in `projection.ts` and a
+   * closed zod enum in `index.ts`. Left in place, they would have hidden the
+   * newly-covered types from the brief-authoring agent, which is the main
+   * consumer of these tools.
+   */
+  it('the MCP release tools enumerate no entity type', () => {
+    const dir = path.join(REPO_ROOT, 'src', 'server', 'mcp', 'release-tools');
+    const files = fs
+      .readdirSync(dir)
+      .filter((f) => f.endsWith('.ts'))
+      .map((f) => path.join(dir, f));
+    const pattern = /['"](endpoint|dto|database-table|ui-view|ac|design-system|diagram)['"]/;
+    expect(hitsIn(files, pattern)).toEqual([]);
   });
 
   it('no entity service CLASS is imported outside the package that owns it', () => {

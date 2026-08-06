@@ -26,18 +26,18 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   }
   const ctx = await createContext(args);
   try {
-    // The seven original buckets are seeded first: a shell pipeline reading
-    // `.endpoints` must keep getting `[]` for a deactivated type rather than
-    // `null`.
-    const grouped: Record<string, unknown[]> = {
-      endpoints: [],
-      dtos: [],
-      'database-tables': [],
-      'ui-views': [],
-      acs: [],
-      'design-systems': [],
-      diagrams: [],
-    };
+    // 0.2.11: the seed is registry-driven, not a frozen seven. It used to assert
+    // a bucket for `database-tables` whether or not that plugin was installed,
+    // while a plugin type the project DID have got no such courtesy.
+    //
+    // It is seeded from AVAILABLE types, not active ones, so the contract the old
+    // comment promised survives: "a shell pipeline reading `.endpoints` must keep
+    // getting `[]` for a deactivated type rather than `null`". `jq '.endpoints |
+    // length'` breaks on a missing key, and a script cannot tell "this type has
+    // nothing" from "this key was never emitted".
+    const grouped: Record<string, unknown[]> = Object.fromEntries(
+      ctx.reader.host.listAvailable().map((m) => [`${m.type}s`, [] as unknown[]]),
+    );
     for (const type of ctx.reader.listTypes()) {
       grouped[`${type}s`] = listEntitiesAll(ctx.discovery, {
         type,

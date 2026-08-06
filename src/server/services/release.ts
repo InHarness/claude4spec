@@ -55,32 +55,13 @@ import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
   BUNDLE_SCHEMA_VERSION,
-  PLURAL_FILE_TO_ENTITY_TYPE,
+  bundleEntityFileMap,
+  bundleEntityFileMapForWrite,
   type BuildBundleResult,
   type BundleManifest,
   type BundlePageInput,
   type BundleRoot,
 } from './release-bundle.js';
-
-/**
- * The types a release SNAPSHOT covers — and it is a hardcoded five, which
- * `design-system` and `diagram` are not among.
- *
- * That is drift, not a decision: `restoreSpec` iterates every active module, and
- * the brief's §4 says every active type with a `data.schema` is restorable. A
- * release therefore restores types its own snapshot never captured, so a design
- * system or a diagram is invisible in every release diff and unrecoverable from
- * every release.
- *
- * NOT widened here. Doing so changes what M17 releases contain, which is a
- * behaviour change to a different tier's surface and would move the release-diff
- * fixtures with it. Flagged in a patch against the brief instead.
- *
- * It does not affect the payload chain: a type absent from `serializerVersions`
- * reads as version 1 through `payloadVersionOfCapture(null)`, which is the right
- * default for a capture with no recorded version.
- */
-const ENTITY_TYPES: RawEntityType[] = ['endpoint', 'dto', 'database-table', 'ui-view', 'ac'];
 
 /** Shared by `classifyGitDiffFiles`/`diffPageCandidates` — `diffRefs`/`diffRefToWorkingTree` already flatten renames (R) into a D(old)+A(new) pair. */
 const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'deleted'> = {
@@ -627,13 +608,29 @@ export class ReleaseService {
    * (0.1.122 code-review fix — was duplicated between the two): per (type, slug)
    * the latest entity_version row, and per (rootId, path) the latest file_version
    * row, either bounded at-or-before `releaseId` or (releaseId === null) unbounded.
+   *
+   * 0.2.11 — the covered types come from the registry. They used to come from a
+   * hardcoded five, which `design-system`, `diagram` and every plugin type were
+   * not among: a release restored types its own snapshot had never captured, so
+   * those entities were invisible in every release diff and unrecoverable from
+   * every release. Nothing needs backfilling to fix it — `createRelease`'s
+   * `UPDATE entity_version SET release_id = ...` is untyped, so their history was
+   * always captured and always release-bound; only this loop refused to read it.
+   * Past releases therefore become complete retroactively.
+   *
+   * SCOPE = ACTIVE modules (`listEntities()`, not `listAvailable()`). A snapshot
+   * may only name types this host can `diff()`, `upgradeCapture()` and re-import
+   * — `restoreBundleArchive` rejects a bundle file whose type is inactive
+   * locally, so capturing one would produce an archive this same installation
+   * could not read. A type deactivated in `config.entities` therefore drops out
+   * of new snapshots, and loses nothing by it: its rows keep their release
+   * binding, so re-activating restores every past snapshot retroactively.
    */
   private buildSnapshot(release: Release, releaseId: number | null): SpecSnapshot {
     const entities: SpecSnapshotEntityRow[] = [];
     const serializerVersions: Record<string, string> = {};
-    for (const type of ENTITY_TYPES) {
-      const module = this.host.getEntity(type);
-      if (!module) continue;
+    for (const module of this.host.listEntities()) {
+      const type = module.type;
       // 0.2.9 (item 13): the type's integer `payloadVersion`, stringified —
       // same vocabulary the `entity_version.serializer_version` column now
       // holds. `page` below stays a semver because a page is a file, not an
@@ -1700,7 +1697,17 @@ export class ReleaseService {
       op: p.op as 'create' | 'update' | 'delete',
       content: (safeJsonParse(p.data) as FileSnapshotData).content,
     }));
-    return buildBundleArchiveImpl(snapshot, release, readConfig(this.cwd), pageRows);
+    return buildBundleArchiveImpl(
+      snapshot,
+      release,
+      readConfig(this.cwd),
+      pageRows,
+      // ACTIVE modules: the write side must only lay out types this host could
+      // also read back, which is the same set `buildSnapshot` captured. Refuses
+      // on a name collision — here it would mean one type's rows overwriting
+      // another's inside the archive.
+      bundleEntityFileMapForWrite(this.host.listEntities()),
+    );
   }
 
   /**
@@ -1804,21 +1811,63 @@ export class ReleaseService {
       const entitiesDir = nodePath.join(restoreDir, 'entities');
       if (nodeFs.existsSync(entitiesDir)) {
         // Validate every bundle file maps to a known + locally-active type up front.
+        //
+        // The reverse map is built from AVAILABLE modules, not active ones, so
+        // the two refusals below stay distinguishable: a file belonging to an
+        // installed-but-deactivated type must say "not active locally" rather
+        // than be misreported as an unrecognised file.
+        //
+        // Collisions are checked per FILE PRESENT, not globally: an unrelated
+        // deactivated plugin whose `pathPrefix` basename happens to clash must
+        // not abort an import of an archive that contains neither type.
+        const { toType: fileToType, collisions } = bundleEntityFileMap(this.host.listAvailable());
         const byType = new Map<RawEntityType, SpecSnapshotEntityRow[]>();
         for (const file of nodeFs.readdirSync(entitiesDir).filter((f) => f.endsWith('.json'))) {
-          const type = PLURAL_FILE_TO_ENTITY_TYPE[file] as RawEntityType | undefined;
+          const ambiguous = collisions.get(file);
+          if (ambiguous) {
+            throw new DomainError(
+              'BUNDLE_BASENAME_COLLISION',
+              `bundle file '${file}' is claimed by more than one installed type ` +
+                `(${ambiguous.map((t) => `'${t}'`).join(', ')}) — deactivating or removing one resolves it`,
+            );
+          }
+          const type = fileToType.get(file);
           if (!type) {
             throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `unknown entity bundle file '${file}'`);
           }
           if (!this.host.getEntity(type)) {
-            throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `entity type '${type}' is not active locally`);
+            // Deliberately fatal rather than a skip: the alternative is dropping
+            // every row of that type from the restore without saying so, and a
+            // half-restored spec is worse than a refused one. 0.2.11 made this
+            // reachable for the first time (the old static map never wrote a file
+            // for `design-system`/`diagram`/plugin types), so it is called out in
+            // the CHANGELOG. The remedy is one setting.
+            throw new DomainError(
+              'BUNDLE_UNKNOWN_ENTITY_TYPE',
+              `entity type '${type}' is not active locally — activate it in config.entities to import this bundle`,
+            );
           }
           byType.set(
             type,
             JSON.parse(nodeFs.readFileSync(nodePath.join(entitiesDir, file), 'utf8')) as SpecSnapshotEntityRow[],
           );
         }
-        const order: RawEntityType[] = ['dto', 'database-table', 'ui-view', 'endpoint', 'ac'];
+        /**
+         * 0.2.11 — declared `dependsOn` order over the ACTIVE modules, the same
+         * source and cycle handling `restoreSpec` has used since 0.2.2.
+         *
+         * This was the last divergent order array, and it was not merely
+         * redundant: a bundle carrying a type outside its five literals passed
+         * the validation loop above (the type IS active) and was then never
+         * iterated, so its rows were dropped in silence — after the code had
+         * just confirmed they were restorable.
+         */
+        const order = topoSortModules(this.host.listEntities(), (remaining) =>
+          console.warn(
+            `[release] dependsOn cycle among [${remaining.join(', ')}] — ` +
+              `restoring those types in displayOrder instead`,
+          ),
+        ).map((m) => m.type);
         for (const type of order) {
           const rows = byType.get(type);
           if (!rows) continue;

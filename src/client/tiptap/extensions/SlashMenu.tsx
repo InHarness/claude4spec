@@ -2,24 +2,18 @@ import { forwardRef, useEffect, useImperativeHandle, useState } from 'react';
 import type { SuggestionProps } from '@tiptap/suggestion';
 
 export interface SlashCommand {
-  id:
-    | 'mention'
-    | 'element'
-    | 'list'
-    | 'tagged'
-    | 'tagged-mixed'
-    | 'endpoint'
-    | 'dto'
-    | 'database-table'
-    | 'ui-view'
-    | 'ac'
-    | 'design-system'
-    | 'todo'
-    | 'diagram'
-    | 'section'
-    // M33: plugin-contributed command id (any string) — kept assignable
-    // while preserving autocompletion of the known literals above.
-    | (string & {});
+  /**
+   * Command id. The generic XML-chip commands (`mention`, `element`, `list`,
+   * `tagged`, `tagged-mixed`, `section`, `todo`) are host-owned; every other id
+   * is contributed by the module that owns the type.
+   *
+   * 0.2.11 — the entity-type literals that used to be enumerated here are gone.
+   * The union was already open (`| (string & {})`) so they carried no type
+   * safety, only editor autocompletion — and the list they autocompleted named
+   * `endpoint`, `dto` and `database-table`, types the host does not own, while
+   * omitting whichever plugin types a project actually had.
+   */
+  id: string;
   label: string;
   description: string;
   hint: string;

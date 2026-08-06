@@ -52,7 +52,7 @@ import { PagesLinkIndexerService } from '../services/pages-link-indexer.js';
 import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
-import { isRawEntityType, RawEntityReader } from '../discovery/raw-entity-reader.js';
+import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { createDiscoveryCore } from '../discovery/index.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import { ReleaseService } from '../services/release.js';
@@ -1307,11 +1307,12 @@ async function buildInner(
       backupDbBeforeMigration(dbSlotDir);
       for (const type of rawReader.listTypes()) {
         if (!pluginHost.getEntity(type)) continue;
-        // The M29 store still lays out one directory per CORE type, so it only
-        // accepts those; `listTypes()` widened to every active type in M39.
-        // Narrowing here keeps this one-time export exactly as it was rather
-        // than quietly extending the on-disk layout as a side effect.
-        if (!isRawEntityType(type)) continue;
+        // 0.2.11: the extra `isRawEntityType` narrowing here is gone. It was
+        // added when the M29 store laid out one directory per CORE type and
+        // accepted only those; the store now derives its directories from the
+        // registry (`<type>/<slug>.json` for every active type), so restricting
+        // the one-time DB→text export to seven literals would silently drop a
+        // plugin type's entities from the very migration meant to rescue them.
         for (const slug of rawReader.listSlugs(type)) entityStore.persist(type, slug);
       }
       entityStore.persistTags();

@@ -3,30 +3,41 @@ import { normalizeEntityType, normalizeViewKind } from './type-validation.js';
 import { CliError } from './errors.js';
 
 describe('normalizeEntityType', () => {
-  it("normalizes the spec-alias 'database_table' to canonical 'database-table'", () => {
-    expect(normalizeEntityType('database_table')).toBe('database-table');
-  });
-
-  it('passes canonical types through unchanged', () => {
-    expect(normalizeEntityType('endpoint')).toBe('endpoint');
-    expect(normalizeEntityType('dto')).toBe('dto');
-    expect(normalizeEntityType('database-table')).toBe('database-table');
-    expect(normalizeEntityType('ui-view')).toBe('ui-view');
-    expect(normalizeEntityType('ac')).toBe('ac');
-  });
-
-  it("throws CliError 'INVALID_TYPE' with a hint for unknown types", () => {
-    let caught: unknown;
-    try {
-      normalizeEntityType('widget');
-    } catch (err) {
-      caught = err;
+  it('passes any kebab-case type through unchanged', () => {
+    for (const t of ['endpoint', 'dto', 'database-table', 'ui-view', 'ac', 'design-system']) {
+      expect(normalizeEntityType(t)).toBe(t);
     }
-    expect(caught).toBeInstanceOf(CliError);
-    const cliErr = caught as CliError;
-    expect(cliErr.code).toBe('INVALID_TYPE');
-    expect(cliErr.message).toContain("unknown entity type 'widget'");
-    expect(cliErr.hint).toContain('c4s catalog');
+  });
+
+  /**
+   * 0.2.11 — the inverse of the old assertion, and the point of the change.
+   * `widget` used to throw because it was not one of five literals; a
+   * plugin-contributed type is exactly as unknown to this function as `widget`
+   * was, so rejecting it here made all 13 commands that call this unusable for
+   * plugin types. Existence is now the discovery core's question, answered with
+   * the project's real type list.
+   */
+  it('accepts a type it has never heard of, leaving existence to the core', () => {
+    expect(normalizeEntityType('widget')).toBe('widget');
+    expect(normalizeEntityType('spreadsheet')).toBe('spreadsheet');
+  });
+
+  it("throws CliError 'INVALID_TYPE' for a value that is not a type id at all", () => {
+    // Including the underscore spellings that used to be aliased: a type id is
+    // kebab-case, so these are malformed rather than alternative.
+    for (const bad of ['database_table', 'ui_view', 'Endpoint', 'has space', '-leading', '']) {
+      let caught: unknown;
+      try {
+        normalizeEntityType(bad);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(CliError);
+      const cliErr = caught as CliError;
+      expect(cliErr.code).toBe('INVALID_TYPE');
+      expect(cliErr.message).toContain(`invalid entity type '${bad}'`);
+      expect(cliErr.hint).toContain('c4s catalog');
+    }
   });
 });
 
