@@ -94,9 +94,16 @@ export type EntityServiceLike = unknown;
  * `MountContext` types every host handle as `any` precisely so the contract
  * carries no host imports), so handing over the deps object would give it
  * something it has no way to call. These methods are the whole of what a
- * declarative type's write path is, and they are the SAME ones `/api/{type}s`
- * goes through — including validation, slug rules, `entity_version` capture and
- * the entity-file write.
+ * declarative type's write path is, and the first three are the SAME ones
+ * `/api/{type}s` goes through — including validation, slug rules,
+ * `entity_version` capture and the entity-file write.
+ *
+ * The two keyed operations share the capture and the file write but NOT the
+ * REST half: no generated route reaches them (the M39 collection routes are
+ * read-only by design), so they also do not run the generated create/update
+ * schema. Their validation is the write path's own — the entry list, the
+ * coordinates, the extents, the declared enums — and it rejects rather than
+ * warns: a partial write is rolled back whole.
  *
  * `type` is a parameter rather than bound because a plugin legitimately writes
  * types other than its own (`endpoint` reads `dto` to validate a link).

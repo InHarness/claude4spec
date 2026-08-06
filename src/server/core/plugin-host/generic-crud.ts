@@ -324,10 +324,15 @@ const KEYED_OPTS = { capture: true, writeFile: false } as const;
  * collection.
  *
  * Everything domain-shaped (the merge, the transaction, the parent stamp, the
- * single version capture) belongs to `writeKeyedWindow`; what this adds is the
+ * single version capture, and every validation — the entry list, the
+ * coordinates, the extents) belongs to `writeKeyedWindow`, so that a caller
+ * reaching it by another route gets the same answers. What this adds is the
  * wrapping every other mutation gets — the module lookup, and the entity file.
  * The grid is part of the entity's snapshot (`normalizeKeyed`), so skipping the
  * persist would leave the file describing a grid the database no longer has.
+ *
+ * There are no `warnings` on this path: a rejected entry rolls the whole write
+ * back rather than returning as a success with a note (see `writeKeyedWindow`).
  */
 export function genericWriteCollectionWindow(
   deps: GenericCrudDeps,
@@ -338,9 +343,11 @@ export function genericWriteCollectionWindow(
   actor: ChangedBy,
 ): GenericMutateResult {
   const module = requireModule(deps, type);
-  const { warnings } = writeKeyedWindow(deps.projection, module, slug, field, entries, actor, KEYED_OPTS);
-  deps.store.persist(type, slug);
-  return warnings.length ? { slug, warnings } : { slug };
+  const { applied } = writeKeyedWindow(deps.projection, module, slug, field, entries, actor, KEYED_OPTS);
+  // An empty window validated fine and changed nothing; rewriting the entity
+  // file from a row nobody touched is the one part of this that is not free.
+  if (applied) deps.store.persist(type, slug);
+  return { slug };
 }
 
 /**

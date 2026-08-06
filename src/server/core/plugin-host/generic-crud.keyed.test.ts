@@ -1,6 +1,10 @@
 /**
- * `ctx.crud.writeCollectionWindow` / `ctx.crud.mutateCollectionAxis` — the
- * facade half of the keyed-collection write.
+ * `genericWriteCollectionWindow` / `genericMutateCollectionAxis` — the host half
+ * of the keyed-collection write, one layer below `ctx.crud`.
+ *
+ * The facade WRAPPERS (the async binding and the `entity:changed` broadcast in
+ * `project-context.ts`) are exercised in `tests/integration/plugin-host/`, where
+ * a registered type and a real `ws` exist; here everything is synchronous.
  *
  * The domain semantics (merge vs replace, the parent stamp, one `entity_version`
  * per call, sparse deletion, axis reindexing) belong to `writeKeyedWindow` /
@@ -81,13 +85,17 @@ interface Harness {
  * the wrapping had grown a step neither operation can need (no tag is assigned,
  * no slug can change), and the failure would be a TypeError naming the step.
  */
-function harness(cells = [cell(1, 1, 'a'), cell(2, 2, 'b')]): Harness {
+function harness(cells = [cell(1, 1, 'a'), cell(2, 2, 'b')], extent = 3): Harness {
   const db = new Database(':memory:');
   applyProjection(db, [grid]);
-  upsertProjectionRow({ db, versions: null }, grid, 'g1', { name: 'g', nRows: 3, nCols: 3, cells }, 'user', {
-    capture: false,
-    writeFile: false,
-  });
+  upsertProjectionRow(
+    { db, versions: null },
+    grid,
+    'g1',
+    { name: 'g', nRows: extent, nCols: extent, cells },
+    'user',
+    { capture: false, writeFile: false },
+  );
 
   const persist = vi.fn();
   const captureEntitySnapshot = vi.fn();
@@ -123,13 +131,46 @@ describe('genericWriteCollectionWindow', () => {
     // `KEYED_OPTS` keeps `capture: true` so the write function's own capture at
     // the close of its transaction is the only one. A second capture out here
     // would double every row count below.
-    const t = harness();
+    const t = harness([], 10);
     const hundred = Array.from({ length: 100 }, (_, i) => cell(Math.floor(i / 10) + 1, (i % 10) + 1, `v${i}`));
     genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'cells', hundred, 'user');
 
     expect(t.captureEntitySnapshot).toHaveBeenCalledTimes(1);
     expect(t.persist).toHaveBeenCalledTimes(1);
     expect(t.persist).toHaveBeenCalledWith('grid', 'g1');
+  });
+
+  it('forwards the ACTOR to the version capture — the one argument this layer owns', () => {
+    // Counts alone let a wrapper hard-code `'system'`, or pass `type` into the
+    // actor slot, and stay green while every keyed write in production is
+    // attributed to the wrong author.
+    const t = harness();
+    genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'cells', [cell(1, 1, 'x')], 'agent');
+    expect(t.captureEntitySnapshot).toHaveBeenCalledWith('grid', 'g1', 'update', 'agent', 'Updated');
+  });
+
+  it('an empty window is not a mutation — no version, no stamp, no file write', () => {
+    // A grid editor flushing a dirty-cell batch on a timer calls this with
+    // nothing to send; running the body anyway climbed the entity up the
+    // recency order and filled its history with identical entries.
+    const t = harness();
+    t.db.prepare(`UPDATE grid SET updated_at = '2000-01-01T00:00:00.000Z' WHERE slug = 'g1'`).run();
+
+    expect(genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'cells', [], 'user')).toEqual({ slug: 'g1' });
+
+    expect(t.captureEntitySnapshot).not.toHaveBeenCalled();
+    expect(t.persist).not.toHaveBeenCalled();
+    expect(t.db.prepare(`SELECT updated_at FROM grid WHERE slug = 'g1'`).get()).toEqual({
+      updated_at: '2000-01-01T00:00:00.000Z',
+    });
+  });
+
+  it('still validates the field when the window is empty', () => {
+    // The short-circuit is after the declaration check, not before it.
+    const t = harness();
+    expect(() => genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'name', [], 'user')).toThrow(
+      /not a keyed collection/,
+    );
   });
 
   it('stamps the parent, and the stamped row is what gets persisted', () => {
@@ -153,9 +194,61 @@ describe('genericWriteCollectionWindow', () => {
 
   it('rejects an unknown type as VALIDATION, before any write is attempted', () => {
     const t = harness();
-    expect(() => genericWriteCollectionWindow(t.deps, 'nope', 'g1', 'cells', [cell(1, 1, 'x')], 'user')).toThrow(
-      DomainError,
-    );
+    expect(() =>
+      genericWriteCollectionWindow(t.deps, 'nope', 'g1', 'cells', [cell(1, 1, 'x')], 'user'),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION' }));
+    expect(t.persist).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-array entry list as VALIDATION, not as a raw TypeError', () => {
+    // `MountContext.crud` is published as `any`, so the parameter type narrows
+    // nothing for a plugin forwarding an HTTP body. A `TypeError` reaches the
+    // client as a 500; a `DomainError` reaches it as the 4xx it is.
+    const t = harness();
+    expect(() =>
+      genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'cells', cell(1, 1, 'x') as never, 'user'),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION' }));
+    expect(t.persist).not.toHaveBeenCalled();
+  });
+
+  it('rejects a coordinate past the declared extent instead of hiding a cell behind it', () => {
+    // `overview` reports the grid from the parent's extent columns, so a cell
+    // past them is unreachable — and `mutateCollectionAxis` refuses to delete a
+    // position past the extent, so it cannot even be removed afterwards.
+    const t = harness();
+    expect(() =>
+      genericWriteCollectionWindow(t.deps, 'grid', 'g1', 'cells', [cell(9, 9, 'far')], 'user'),
+    ).toThrow(/past the declared extent/);
+    expect(t.cells()).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 2, value: 'b' },
+    ]);
+    expect(t.persist).not.toHaveBeenCalled();
+  });
+
+  it('rolls the WHOLE window back when one entry is rejected', () => {
+    // The restore path degrades a bad entry to a warning because throwing there
+    // empties the collection. This door has nothing to protect: reporting a
+    // rejected cell as `{slug}` — success — while stamping and versioning the
+    // entity around a value that never landed is the worse answer.
+    const t = harness();
+    expect(() =>
+      genericWriteCollectionWindow(
+        t.deps,
+        'grid',
+        'g1',
+        'cells',
+        [cell(3, 3, 'good'), { r: 0, c: 1, value: 'unusable key' }],
+        'user',
+      ),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION' }));
+
+    // Not even the entry that was fine.
+    expect(t.cells()).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 2, value: 'b' },
+    ]);
+    expect(t.captureEntitySnapshot).not.toHaveBeenCalled();
     expect(t.persist).not.toHaveBeenCalled();
   });
 
@@ -196,6 +289,12 @@ describe('genericMutateCollectionAxis', () => {
     ]);
   });
 
+  it('forwards the ACTOR to the version capture', () => {
+    const t = harness();
+    genericMutateCollectionAxis(t.deps, 'grid', 'g1', 'cells', 'r', 'insert', 1, 'agent');
+    expect(t.captureEntitySnapshot).toHaveBeenCalledWith('grid', 'g1', 'update', 'agent', 'Updated');
+  });
+
   it('surfaces the write path\'s own errors rather than restating them', () => {
     const t = harness();
     expect(() => genericMutateCollectionAxis(t.deps, 'grid', 'g1', 'cells', 'z', 'insert', 1, 'user')).toThrow(
@@ -204,6 +303,25 @@ describe('genericMutateCollectionAxis', () => {
     expect(() => genericMutateCollectionAxis(t.deps, 'grid', 'g1', 'name', 'r', 'insert', 1, 'user')).toThrow(
       /is not a keyed collection/,
     );
+    expect(t.persist).not.toHaveBeenCalled();
+  });
+
+  it('refuses an op outside the vocabulary instead of inserting while shrinking', () => {
+    // `'remove'` took the INSERT arm (`op !== 'delete'`) while the extent came
+    // from the DELETE arm (`op !== 'insert'`): nothing was removed, every row
+    // past the position was pushed down, and the parent then claimed one row
+    // fewer than the cells occupy — cells no window can address again.
+    const t = harness([cell(1, 1, 'a'), cell(2, 1, 'b'), cell(3, 1, 'c')]);
+    expect(() =>
+      genericMutateCollectionAxis(t.deps, 'grid', 'g1', 'cells', 'r', 'remove' as never, 2, 'user'),
+    ).toThrow(expect.objectContaining({ code: 'VALIDATION' }));
+
+    expect(t.cells()).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 1, value: 'b' },
+      { r: 3, c: 1, value: 'c' },
+    ]);
+    expect(t.db.prepare(`SELECT n_rows FROM grid WHERE slug = 'g1'`).get()).toEqual({ n_rows: 3 });
     expect(t.persist).not.toHaveBeenCalled();
   });
 });

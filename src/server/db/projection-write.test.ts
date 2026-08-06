@@ -506,35 +506,50 @@ describe('keyed collections', () => {
     expect(cellsOf(db)).toEqual([{ r: 1, c: 1, value: 'a' }]);
   });
 
-  it('a windowed write merges at FIELD granularity, not just at key granularity', () => {
-    // Naming every column and binding absentValue for the omitted ones meant
-    // updating a cell's `value` silently nulled its `note`.
-    const twoField: WritableModule = {
-      ...grid,
-      data: {
-        schema: {
-          ...grid.data!.schema,
-          cells: {
-            kind: 'collection',
-            collection: 'keyed',
-            keyFields: ['r', 'c'],
-            axes: [
-              { key: 'r', extent: 'nRows' },
-              { key: 'c', extent: 'nCols' },
-            ],
-            item: {
-              kind: 'object',
-              fields: {
-                r: { kind: 'number', required: true },
-                c: { kind: 'number', required: true },
-                value: { kind: 'string' },
-                note: { kind: 'string' },
-              },
+  /** A grid whose cell carries TWO payload fields — where merge granularity shows. */
+  const twoField: WritableModule = {
+    ...grid,
+    data: {
+      schema: {
+        ...grid.data!.schema,
+        cells: {
+          kind: 'collection',
+          collection: 'keyed',
+          keyFields: ['r', 'c'],
+          axes: [
+            { key: 'r', extent: 'nRows' },
+            { key: 'c', extent: 'nCols' },
+          ],
+          item: {
+            kind: 'object',
+            fields: {
+              r: { kind: 'number', required: true },
+              c: { kind: 'number', required: true },
+              value: { kind: 'string' },
+              note: { kind: 'string' },
             },
           },
         },
       },
-    };
+    },
+  };
+
+  function seededTwoField(): Database.Database {
+    const db = projected(twoField);
+    upsertProjectionRow(
+      { db, versions: null },
+      twoField,
+      'g1',
+      { name: 'g', nRows: 2, nCols: 2, cells: [{ r: 1, c: 1, value: 'v', note: 'keep me' }] },
+      'user',
+      WRITE_OPTS,
+    );
+    return db;
+  }
+
+  it('a windowed write merges at FIELD granularity, not just at key granularity', () => {
+    // Naming every column and binding absentValue for the omitted ones meant
+    // updating a cell's `value` silently nulled its `note`.
     const db = projected(twoField);
     upsertProjectionRow(
       { db, versions: null },
@@ -559,6 +574,86 @@ describe('keyed collections', () => {
       value: 'v2',
       note: 'keep me',
     });
+  });
+
+  it('clearing ONE field of a cell does not delete the fields it did not name', () => {
+    // Emptiness has to be judged on the MERGED item, or the delete disagrees
+    // with the upsert directly above it: `{r, c, value: ''}` omits `note`, the
+    // omission read as empty, and the whole row went — taking a note the caller
+    // never mentioned. The upsert half has merged at field granularity since it
+    // was written; this is the delete half finally agreeing with it.
+    const db = seededTwoField();
+    writeKeyedWindow({ db, versions: null }, twoField, 'g1', 'cells', [{ r: 1, c: 1, value: '' }], 'user', WRITE_OPTS);
+
+    expect(db.prepare('SELECT value, note FROM grid_cells').get()).toEqual({ value: '', note: 'keep me' });
+  });
+
+  it('clearing the LAST field with content deletes the key, sparse discipline intact', () => {
+    const db = seededTwoField();
+    writeKeyedWindow({ db, versions: null }, twoField, 'g1', 'cells', [{ r: 1, c: 1, note: '' }], 'user', WRITE_OPTS);
+    // `value` still holds 'v', so the item is not empty and the key survives.
+    expect(db.prepare('SELECT value, note FROM grid_cells').get()).toEqual({ value: 'v', note: '' });
+
+    writeKeyedWindow({ db, versions: null }, twoField, 'g1', 'cells', [{ r: 1, c: 1, value: '' }], 'user', WRITE_OPTS);
+    expect(db.prepare('SELECT COUNT(*) AS c FROM grid_cells').get()).toEqual({ c: 0 });
+  });
+
+  it('an entry carrying no payload field at all is still a plain deletion', () => {
+    // "Remove this key" needs a spelling that does not require naming every
+    // field of a wide item.
+    const db = seededTwoField();
+    writeKeyedWindow({ db, versions: null }, twoField, 'g1', 'cells', [{ r: 1, c: 1 }], 'user', WRITE_OPTS);
+    expect(db.prepare('SELECT COUNT(*) AS c FROM grid_cells').get()).toEqual({ c: 0 });
+  });
+
+  it('refuses a coordinate past the declared extent, where no window could reach it', () => {
+    // `overview` reports the grid from the parent's extent columns and never
+    // from MAX(coordinate), so a cell written outside them is invisible — and
+    // `mutateAxis` refuses a position past the extent, so it cannot be deleted
+    // by the operation that would otherwise shift it.
+    const db = seeded();
+    expect(() =>
+      writeKeyedWindow({ db, versions: null }, grid, 'g1', 'cells', [cell(9, 1, 'far')], 'user', WRITE_OPTS),
+    ).toThrow(/past the declared extent/);
+    expect(cellsOf(db)).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 2, value: 'b' },
+    ]);
+  });
+
+  it('rolls the whole window back when one entry is rejected', () => {
+    // The reconcile door degrades a bad entry to a warning because throwing on
+    // the restore path empties the collection. This door has a live caller, so
+    // a rejected entry is an error, not a note attached to a success.
+    const db = seeded();
+    expect(() =>
+      writeKeyedWindow(
+        { db, versions: null },
+        grid,
+        'g1',
+        'cells',
+        [cell(3, 3, 'good'), { r: 0, c: 1, value: 'unusable key' }],
+        'user',
+        WRITE_OPTS,
+      ),
+    ).toThrow(/write rejected/);
+    expect(cellsOf(db)).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 2, value: 'b' },
+    ]);
+  });
+
+  it('refuses an axis op outside the vocabulary', () => {
+    // `'remove'` took the insert arm while computing the delete extent.
+    const db = seeded([cell(1, 1, 'a'), cell(2, 1, 'b')]);
+    expect(() =>
+      mutateAxis({ db, versions: null }, grid, 'g1', 'cells', 'r', 'remove' as never, 2, 'user', WRITE_OPTS),
+    ).toThrow(/must be 'insert' or 'delete'/);
+    expect(cellsOf(db)).toEqual([
+      { r: 1, c: 1, value: 'a' },
+      { r: 2, c: 1, value: 'b' },
+    ]);
+    expect(db.prepare(`SELECT n_rows FROM grid WHERE slug = 'g1'`).get()).toEqual({ n_rows: 3 });
   });
 
   it('refuses an axis position past the current extent', () => {

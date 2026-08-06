@@ -62,6 +62,8 @@ export interface TestApp {
   watchRuntime: FileWatchRuntime;
   /** A.8: the write door a plugin's `mount` is handed, so a test can drive it. */
   crud: CrudFacade;
+  /** Every `ws` message the mounted backend emitted, in order. */
+  broadcasts: unknown[];
   cwd: string;
   /** M36 plan mount — exposed so tests can seed `.md` files directly (mirrors artifacts.test.ts's writeArtifact). */
   plansPages: PagesService;
@@ -94,7 +96,14 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   for (const mod of opts.extraModules ?? []) registry.registerEntityModule(mod);
   const host = registry.consolidate(null);
 
-  const ws: WsEmitter = { broadcast: () => {} };
+  /**
+   * Recorded rather than dropped: the broadcast is the only part of the crud
+   * facade a caller cannot observe through the database or the entity file, so
+   * a wrapper that forgot it looked identical to one that did not — and every
+   * open client would keep rendering the pre-write state until a manual reload.
+   */
+  const broadcasts: unknown[] = [];
+  const ws: WsEmitter = { broadcast: (msg) => void broadcasts.push(msg) };
   const tagsService = new TagsService(db);
   const versionService = new VersionService(db);
   const rawReader = new RawEntityReader(db, host);
@@ -312,6 +321,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     tagsService,
     watchRuntime,
     crud: crudFacade,
+    broadcasts,
     cwd,
     plansPages,
     plansSerializer,
