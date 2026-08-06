@@ -26,7 +26,7 @@ import { EntityListRow } from '@c4s/plugin-runtime/ui';
 import type { Tag } from '@c4s/plugin-runtime/ui';
 import type { EntityRowProps } from '@c4s/plugin-runtime';
 import { DatabaseTableIcon } from './icon.js';
-import { shapeSummary } from './render-card.js';
+import { countsOf, shapeSummary } from './render-card.js';
 import type { DatabaseTable } from '../types.js';
 
 /** Embedded rows carry no tag chips — the host embed passes no tag context. */
@@ -56,7 +56,7 @@ export const DatabaseTableRow: FC<EntityRowProps<DatabaseTable>> = ({ entity, ac
       </span>
     </div>
     <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>
-      {shapeSummary({ columns: entity.columns?.length, indexes: entity.indexes?.length })}
+      {shapeSummary(countsOf(entity))}
     </div>
   </EntityListRow>
 );

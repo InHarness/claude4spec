@@ -74,7 +74,12 @@ import {
   type VersionHistoryItem,
 } from '@c4s/plugin-runtime/ui';
 import { DATABASE_TABLE_LABEL_PLURAL, DATABASE_TABLE_TYPE, slugify } from '../../../identity.js';
-import type { Column, DatabaseTableResponse, Index } from '../types.js';
+import type {
+  Column,
+  DatabaseTableResponse,
+  DatabaseTableUpdateInput,
+  Index,
+} from '../types.js';
 import { useDeleteDatabaseTable, useGetBySlug, useUpdateDatabaseTable } from './hooks.js';
 
 /** Entity detail's two sibling views — mirrors the host's own Details/History split. */
@@ -1175,20 +1180,78 @@ const DatabaseTableDetailForm: FC<{
     el.style.height = `${el.scrollHeight}px`;
   }, [draft.name]);
 
+  /**
+   * The last saved state, as a REF.
+   *
+   * `scheduleSave` runs from a `setTimeout` closure created several renders
+   * earlier, so reading the `baseline` STATE there sees whatever it held when
+   * the timer was armed. The body below is computed by diffing against it, and
+   * a stale baseline produces a wrong diff.
+   */
+  const baselineRef = useRef<Draft>(baseline);
+  useEffect(() => {
+    baselineRef.current = baseline;
+  }, [baseline]);
+
+  /** A draft that arrived while a PATCH was in flight, waiting for its turn. */
+  const pendingRef = useRef<Draft | null>(null);
+
   const scheduleSave = (next: Draft) => {
-    // Skip while the name is blank (would `slugify` to an empty slug) or a
-    // mutation is already in flight.
-    if (!next.name.trim() || update.isPending || del.isPending) return;
+    // A blank name would `slugify` to an empty slug.
+    if (!next.name.trim()) return;
+
+    /**
+     * QUEUE, do not drop.
+     *
+     * This used to `return` when a mutation was in flight, and nothing
+     * rescheduled — so with no Save button the edit was simply never sent. The
+     * sequence is ordinary: type, pause past the debounce so a PATCH fires,
+     * type once more, stop. `onSettled` below flushes whatever landed here.
+     */
+    if (update.isPending || del.isPending) {
+      pendingRef.current = next;
+      return;
+    }
+
+    /**
+     * A PATCH carries only what CHANGED, and that is a correctness requirement
+     * rather than a bandwidth one.
+     *
+     * Sending `name` unconditionally broke two things. It made every save a
+     * potential rename — the old code asked for `newSlug` whenever
+     * `slugify(name)` differed from the current slug, which is true of any
+     * entity whose slug legitimately diverges from its name (an explicit slug
+     * at create, a collision suffix inherited from the retired plugin, a name
+     * edited in an earlier session). Editing a DESCRIPTION then moved the
+     * entity's file and rewrote every page reference to it.
+     *
+     * And it made inherited tables uneditable. The retired plugin validated
+     * `name` as a bare string, so a corpus can hold `order`, `group` or
+     * `user profile`; indexing from disk still bypasses validation, but the
+     * generated update schema now enforces `pattern` + `notReserved`. Resending
+     * an untouched illegal name turned every keystroke in the description into
+     * a 400 with no way out of the panel.
+     */
+    const base = baselineRef.current;
+    const body: DatabaseTableUpdateInput = {};
+    if (next.name !== base.name) body.name = next.name;
+    if (next.description !== base.description) body.description = next.description;
+    if (JSON.stringify(next.columns) !== JSON.stringify(base.columns)) body.columns = next.columns;
+    if (JSON.stringify(next.indexes) !== JSON.stringify(base.indexes)) body.indexes = next.indexes;
+
+    // Nothing actually changed — a timer fired on a draft that matches the
+    // baseline (an edit typed and then undone).
+    if (Object.keys(body).length === 0) return;
+
+    /**
+     * A rename is requested ONLY when the user edited the name AND the slug it
+     * derives to actually differs. Both halves matter: the first keeps an
+     * unrelated edit from renaming, the second keeps a cosmetic name edit
+     * (`order_items` → `Order_Items`) from a no-op rename.
+     */
     const nextSlug = slugify(next.name);
-    const body = {
-      name: next.name,
-      description: next.description,
-      columns: next.columns,
-      indexes: next.indexes,
-      // A `name` edit alone does NOT move the slug server-side — request the
-      // rename explicitly, and ONLY when the derived slug actually differs.
-      ...(nextSlug !== currentSlugRef.current ? { newSlug: nextSlug } : {}),
-    };
+    if (body.name !== undefined && nextSlug !== currentSlugRef.current) body.newSlug = nextSlug;
+
     update.mutate(
       { slug: currentSlugRef.current, body },
       {
@@ -1202,6 +1265,14 @@ const DatabaseTableDetailForm: FC<{
           });
           // Notify the host ONLY on a real slug change.
           if (saved.slug !== entity.slug) onRenamed?.(saved.slug);
+        },
+        onSettled: () => {
+          // Flush whatever arrived mid-flight. On failure too: the draft is
+          // still what the user typed, and a retry is better than silence.
+          const queued = pendingRef.current;
+          if (!queued) return;
+          pendingRef.current = null;
+          scheduleSave(queued);
         },
       },
     );

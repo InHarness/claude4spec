@@ -95,12 +95,10 @@ export class HostEntityWriter implements EntityWriter {
      */
     const module = this.host.getEntity(type);
     if (module?.data?.schema && this.projection) {
-      const result = upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
-      // The projection branch syncs its own collections inside its transaction,
-      // but scalar refs are checked here for both branches — one rule, one place.
-      const dangling = danglingScalarRefs(this.projection.db, module, slug, input);
-      if (dangling.length) result.warnings = [...(result.warnings ?? []), ...dangling];
-      return result;
+      // Dangling refs are reported by `upsertProjectionRow` itself now, so every
+      // write door gets them — this one used to be the only caller that checked,
+      // which left the REST and MCP doors silent.
+      return upsertProjectionRow<T>(this.projection, module, slug, input, actor, this.mutateOpts);
     }
 
     /**

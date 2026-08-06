@@ -25,14 +25,32 @@ export function useDatabaseTableList(query: DatabaseTableListQuery = {}) {
 /**
  * THREE STATES, and the panel discriminates all three: `undefined` while
  * loading, `null` when the slug resolves to nothing, the table otherwise.
- * Collapsing the last two is what turns "deleted in another tab" into a
- * permanent spinner.
+ *
+ * The `null` arm has to be MADE. `apiFetch` → `handle()` throws `ApiError` on
+ * any non-2xx, so a 404 left `data` permanently `undefined` and the panel
+ * rendered a skeleton forever — the exact "deleted in another tab → permanent
+ * spinner" outcome this comment used to claim it prevented, with the
+ * `entity === null` branch unreachable dead code beneath it.
+ *
+ * Only 404 becomes `null`. A 500 or a dropped connection still throws, because
+ * "this table does not exist" and "the server did not answer" are different
+ * facts and the panel should not report the second as the first.
  */
 export function useGetBySlug(slug: string | null) {
   return useQuery({
     queryKey: slug ? keys.detail(slug) : [DATABASE_TABLE_TYPE, 'detail', 'none'],
-    queryFn: () => databaseTablesApi.get(slug as string),
+    queryFn: async (): Promise<DatabaseTable | null> => {
+      try {
+        return await databaseTablesApi.get(slug as string);
+      } catch (err) {
+        if ((err as { status?: number }).status === 404) return null;
+        throw err;
+      }
+    },
     enabled: Boolean(slug),
+    // A missing entity is an ANSWER, not a failure to get one — retrying it
+    // just delays the empty state by the backoff.
+    retry: (count, err) => (err as { status?: number }).status !== 404 && count < 3,
   });
 }
 

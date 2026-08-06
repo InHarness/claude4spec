@@ -1022,3 +1022,69 @@ describe('dangling refs — anywhere the declaration puts one', () => {
     ]);
   });
 });
+
+/**
+ * A POLYMORPHIC ref is NOT checked, and that exclusion is deliberate.
+ *
+ * The first cut of the shape-driven walk dropped the `$type` skip along with
+ * the collection skip, which made `ac.verifies[]` report a dangling reference
+ * for every AC verifying a type this project has not activated. `rowExists`
+ * cannot tell "the entity is missing" from "its type is not projected here", so
+ * for a polymorphic ref — whose whole point is pointing at types that may not
+ * be present — the answer is false far more often than it is true.
+ */
+describe('dangling refs — polymorphic refs are excluded', () => {
+  const acLike: WritableModule = {
+    type: 'aclike',
+    payloadVersion: 1,
+    data: {
+      schema: {
+        text: { kind: 'string', required: true },
+        verifies: {
+          kind: 'collection',
+          collection: 'value',
+          item: {
+            kind: 'object',
+            fields: {
+              type: { kind: 'string' },
+              slug: { kind: 'string', ref: '$type', onMissing: 'warn' },
+            },
+          },
+        },
+        createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      },
+    },
+  };
+
+  it('says nothing about a $type ref, even when its type is not projected', () => {
+    const db = projected(acLike);
+    expect(
+      danglingScalarRefs(db, acLike, 'a1', {
+        text: 'A',
+        verifies: [{ type: 'design-system', slug: 'tokens' }],
+      }),
+    ).toEqual([]);
+  });
+
+  it('still reports a FIXED ref beside it, so the exclusion is narrow', () => {
+    const mixed: WritableModule = {
+      type: 'aclike',
+      payloadVersion: 1,
+      data: {
+        schema: {
+          ...acLike.data!.schema,
+          owner: { kind: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
+        },
+      },
+    };
+    const db = projected(mixed);
+    expect(
+      danglingScalarRefs(db, mixed, 'a1', {
+        text: 'A',
+        owner: 'ghost',
+        verifies: [{ type: 'design-system', slug: 'tokens' }],
+      }),
+    ).toEqual(["aclike/a1: owner references aclike 'ghost', which does not exist (dangling)"]);
+  });
+});

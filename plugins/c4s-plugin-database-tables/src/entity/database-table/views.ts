@@ -61,14 +61,34 @@ export const databaseTableSerializer: SerializationContribution<RawEntity> = {
     }),
 
     /**
-     * Embedded in a page: the table SUMMARISED, not enumerated.
+     * THE FULL RECORD, columns and indexes included.
      *
-     * A `database-table` embed sits inline in prose. Expanding 30 columns there
-     * buries the sentence around it — the reader wants "this is a 30-column
-     * table with a key", and follows the link when they want the columns.
+     * This was a counts-only summary, on the reasoning that an inline embed
+     * should not bury its surrounding prose under 30 columns. That reasoning
+     * was wrong about what `single_element` IS. It is not only the page embed:
+     * `discovery/ops/entities.ts` makes it the DEFAULT view of the MCP
+     * `read_entities` tool for a single slug, which is how a coding agent
+     * resolves a table before writing a migration. Summarising it there hands
+     * the agent a column COUNT and no column names, types, nullability or
+     * foreign keys — and no page tag can ask for `?view=detail` instead.
+     *
+     * A `<single_element/>` embedding a table to SHOW its columns is also the
+     * ordinary reason to embed one. The retired plugin returned the full record
+     * here, and the sibling `dto` envelope still emits its `fields[]`.
+     * Presentation belongs to the renderer, which can collapse what it does not
+     * want; a view that never sends the data leaves it nothing to collapse.
      */
-    single_element: summary,
+    single_element: (entity) => ({
+      ...summary(entity),
+      columns: entity.data.columns ?? [],
+      indexes: entity.data.indexes ?? [],
+    }),
 
+    /**
+     * The LIST views stay summarised, and that distinction is the real one: a
+     * list renders one line per table, so shipping every column object of every
+     * table is pure waste — 186 of them across a 22-table corpus.
+     */
     element_list_item: summary,
     tagged_list_item: summary,
   },

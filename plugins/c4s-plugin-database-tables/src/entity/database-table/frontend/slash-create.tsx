@@ -22,7 +22,12 @@
  */
 
 import type { CSSProperties, FC } from 'react';
-import { useState } from 'react';
+import { createElement, useState } from 'react';
+import {
+  SlashPopoverShell,
+  mountSlashCreatePopover,
+  type EmbedEditor,
+} from '../../../frontend-kit/slash-create.js';
 import {
   DATABASE_TABLE_LABEL_PLURAL,
   DATABASE_TABLE_POPOVER_KIND,
@@ -31,11 +36,26 @@ import {
 } from '../../../identity.js';
 import { useCreateDatabaseTable, useDatabaseTableList } from './hooks.js';
 
-/** Window event the host's editor framework dispatches for a declarative plugin command. */
-export const PLUGIN_COMMAND_EVENT = 'c4s:plugin-command';
+/**
+ * THE MOUNT MACHINERY IS THE KIT'S, not this file's.
+ *
+ * This file used to re-implement `subscribeToSlashCreate` and
+ * `mountSlashCreatePopover` itself, and the copy was missing the one thing that
+ * matters: the kit keeps a `window`-level registry of live mounts and tears the
+ * previous mount of a kind down before installing a new one. Without it every
+ * frontend reload — a dev-watch rebuild, any reinstall — stacked another
+ * `c4s:plugin-command` listener, so after two reloads one `/database-table`
+ * opened three overlapping popovers and creating from them made `orders`,
+ * `orders-2` and `orders-3`. The kit's own comment says it exists to prevent
+ * exactly that, and `frontend.tsx` already claimed this file behaved that way.
+ *
+ * The kit also anchors the popover at the caret; the hand-rolled copy ignored
+ * the coords the host sends and rendered it unpositioned.
+ */
 
 /** This plugin's popover kind — the value carried by the slash-command registration. */
 export { DATABASE_TABLE_POPOVER_KIND };
+export type { EmbedEditor };
 
 /**
  * The Tiptap node the slash command inserts: the generic inline entity embed,
@@ -43,19 +63,6 @@ export { DATABASE_TABLE_POPOVER_KIND };
  * has to re-resolve the entity from the index.
  */
 export const DATABASE_TABLE_EMBED_NODE = 'inline_mention';
-
-/**
- * Structural view of the Tiptap `Editor` the host hands over in the event detail.
- * `@tiptap/core` is an optional peer, so the boundary is kept loose here rather
- * than importing the full `Editor` type.
- */
-export interface EmbedEditor {
-  chain: () => {
-    focus: () => {
-      insertContent: (content: unknown) => { run: () => void };
-    };
-  };
-}
 
 /** The embed node the slash command inserts for `slug`. */
 export function databaseTableEmbedNode(slug: string): {
@@ -70,16 +77,8 @@ export function insertDatabaseTableEmbed(editor: EmbedEditor, slug: string): voi
   editor.chain().focus().insertContent(databaseTableEmbedNode(slug)).run();
 }
 
-const POPOVER_STYLE: CSSProperties = {
-  minWidth: 280,
-  maxWidth: 360,
-  padding: 8,
-  borderRadius: 8,
-  border: '1px solid var(--c-hair)',
-  background: 'var(--c-panel)',
-  color: 'var(--c-ink)',
-  fontSize: 13,
-};
+/** Width the kit's shell is asked for; the chrome around it is the shell's. */
+const POPOVER_WIDTH = 320;
 
 const INPUT_STYLE: CSSProperties = {
   width: '100%',
@@ -146,15 +145,12 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
   };
 
   return (
-    <div data-plugin-popover={DATABASE_TABLE_POPOVER_KIND} style={POPOVER_STYLE} role="dialog">
+    <div data-plugin-popover={DATABASE_TABLE_POPOVER_KIND}>
       <input
         autoFocus
         value={query}
         placeholder={`Embed one of ${DATABASE_TABLE_LABEL_PLURAL}…`}
         onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose();
-        }}
         style={INPUT_STYLE}
       />
       <div role="listbox" style={{ marginTop: 6 }}>
@@ -185,78 +181,23 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
   );
 };
 
-/** Payload the host puts on the `c4s:plugin-command` event. */
-export interface PluginCommandDetail {
-  popoverKind?: string;
-  commandId?: string;
-  editor?: EmbedEditor;
-}
-
 /**
- * Listen for THIS plugin's slash command. Commands of any other kind are ignored
- * — the event is a single broadcast channel shared by every installed plugin.
- * Returns an unsubscribe function.
+ * Mount this plugin's popover, through the kit.
+ *
+ * Idempotent per kind: a second call replaces the first mount instead of adding
+ * a listener beside it.
  */
-export function subscribeToSlashCreate(open: (editor: EmbedEditor) => void): () => void {
-  const handler = (event: Event) => {
-    const detail = (event as CustomEvent<PluginCommandDetail>).detail;
-    if (!detail || detail.popoverKind !== DATABASE_TABLE_POPOVER_KIND || !detail.editor) return;
-    open(detail.editor);
-  };
-  window.addEventListener(PLUGIN_COMMAND_EVENT, handler);
-  return () => window.removeEventListener(PLUGIN_COMMAND_EVENT, handler);
+export function mountDatabaseTableSlashCreate(): () => void {
+  return mountSlashCreatePopover(DATABASE_TABLE_POPOVER_KIND, ({ editor, coords, onClose }) =>
+    createElement(
+      SlashPopoverShell,
+      {
+        width: POPOVER_WIDTH,
+        title: `Embed one of ${DATABASE_TABLE_LABEL_PLURAL}`,
+        coords,
+        onCancel: onClose,
+        children: createElement(DatabaseTableSlashCreatePopover, { editor, onClose }),
+      },
+    ),
+  );
 }
-
-/**
- * Entry-point side effect: subscribe, and on the first invocation mount the
- * popover into a plugin-owned container on `document.body`. React DOM and the
- * host's shared `queryClient` are pulled in LAZILY (both are host-provided peers
- * resolved through the import-map shim) so merely importing the frontend entry
- * costs nothing and needs no host present.
- */
-export function mountSlashCreatePopover(): () => void {
-  if (typeof window === 'undefined' || typeof document === 'undefined') return () => undefined;
-
-  let host: HTMLElement | null = null;
-  let root: { render: (node: unknown) => void; unmount: () => void } | null = null;
-
-  const close = () => {
-    root?.render(null);
-  };
-
-  const unsubscribe = subscribeToSlashCreate(async (editor) => {
-    const [{ createRoot }, { queryClient }, { QueryClientProvider }, { createElement }] =
-      await Promise.all([
-        import('react-dom/client'),
-        import('@c4s/plugin-runtime') as Promise<{ queryClient: unknown }>,
-        import('@tanstack/react-query'),
-        import('react'),
-      ]);
-    if (!host) {
-      host = document.createElement('div');
-      host.dataset.plugin = DATABASE_TABLE_POPOVER_KIND;
-      document.body.appendChild(host);
-    }
-    root ??= createRoot(host) as unknown as typeof root;
-    root!.render(
-      createElement(
-        QueryClientProvider,
-        { client: queryClient as never },
-        createElement(DatabaseTableSlashCreatePopover, { editor, onClose: close }),
-      ),
-    );
-  });
-
-  return () => {
-    unsubscribe();
-    root?.unmount();
-    host?.remove();
-  };
-}
-
-/**
- * Named for the entry that calls it. One popover kind, defined in `identity.ts`
- * and re-exported above rather than recomputed here — the manifest command and
- * this listener have to agree on the string or the popover never opens.
- */
-export { mountSlashCreatePopover as mountDatabaseTableSlashCreate };

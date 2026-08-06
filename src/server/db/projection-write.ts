@@ -409,6 +409,22 @@ export function upsertProjectionRow<T = Record<string, unknown>>(
   });
   tx();
 
+  /**
+   * The dangling-ref check lives HERE, not at one caller.
+   *
+   * It used to sit in `HostEntityWriter.upsert` alone, under a comment claiming
+   * "one rule, one place" — but the door a user actually reaches is
+   * `genericCreate`/`genericUpdate`, which call this function and never called
+   * that one. So a broken `fk` typed into the UI, or sent through
+   * `update_entities`, came back 200 with no warning at all, while only a
+   * release restore ever reported it. Checking it at the write itself is what
+   * makes the rule true for every door instead of for one of them.
+   *
+   * After the transaction, so it never affects what is written: `onMissing:
+   * 'warn'` is documented as never blocking a write.
+   */
+  warnings.push(...danglingScalarRefs(deps.db, module, target, payload));
+
   // `slug` LAST: the payload may still carry `newSlug`, and a caller reading
   // `.slug` off the result must get the slug that was actually written —
   // `HostEntityWriter` syncs projection tables against exactly this value.
@@ -569,32 +585,41 @@ export function removeProjectionRow(
  * A ref node is a scalar, so there is nothing below it to descend into — the
  * early return after reporting is not an optimisation.
  */
-function walkRefs(
-  db: Database,
-  node: FieldNode,
-  value: unknown,
-  path: string,
-  out: string[],
-  siblingType?: unknown,
-): void {
+function walkRefs(db: Database, node: FieldNode, value: unknown, path: string, out: string[]): void {
   if (node.ref && node.onMissing === 'warn') {
-    const target = node.ref === '$type' ? String(siblingType ?? '') : node.ref;
-    if (!target || typeof value !== 'string' || !value) return;
-    if (rowExists(db, typeTablePrefix(target), value)) return;
-    out.push(`${path} references ${target} '${value}', which does not exist (dangling)`);
+    /**
+     * A POLYMORPHIC ref is not checked, and that is deliberate.
+     *
+     * `rowExists` cannot distinguish "the target is missing" from "the target's
+     * type is not projected in this project" — it swallows `no such table` and
+     * answers false either way. For a fixed `ref` that ambiguity is rare; for
+     * `$type` it is the normal case, because the whole point of a polymorphic
+     * ref is that it points at types this project may not have activated.
+     * Checking it here reported `ac.verifies[]` as dangling for every AC
+     * verifying a deactivated type — a claim that is simply false, since the
+     * entity is on disk.
+     *
+     * Every other layer that reads `$type` excludes it for exactly this reason:
+     * `syncProjectionTable`'s ref filter and `projection.ts`'s FK generator
+     * both skip it. This is the third.
+     */
+    if (node.ref === '$type') return;
+    if (typeof value !== 'string' || !value) return;
+    if (rowExists(db, typeTablePrefix(node.ref), value)) return;
+    out.push(`${path} references ${node.ref} '${value}', which does not exist (dangling)`);
     return;
   }
 
   if (node.kind === 'collection') {
     if (!Array.isArray(value)) return;
-    value.forEach((item, i) => walkRefs(db, node.item, item, `${path}[${i}]`, out, siblingType));
+    value.forEach((item, i) => walkRefs(db, node.item, item, `${path}[${i}]`, out));
     return;
   }
 
   if (node.kind === 'record') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      walkRefs(db, node.value, v, `${path}.${k}`, out, siblingType);
+      walkRefs(db, node.value, v, `${path}.${k}`, out);
     }
     return;
   }
@@ -602,11 +627,8 @@ function walkRefs(
   if (node.kind === 'object') {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return;
     const record = value as Record<string, unknown>;
-    // This object's own `type` field, if any, discriminates every `$type` ref
-    // below it — the same rule `rewriteValue` applies.
-    const nested = 'type' in record ? record.type : siblingType;
     for (const [name, child] of Object.entries(node.fields)) {
-      walkRefs(db, child, record[name], `${path}.${name}`, out, nested);
+      walkRefs(db, child, record[name], `${path}.${name}`, out);
     }
   }
 }

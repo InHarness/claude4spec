@@ -42,6 +42,28 @@ import { DatabaseTableIcon } from './icon.js';
 /** How many columns the card lists before collapsing the rest into `… +N more`. */
 const MAX_VISIBLE_COLUMNS = 6;
 
+/**
+ * The two shapes a render slot can be handed, reconciled.
+ *
+ * A LIST view (`element_list_item` / `tagged_list_item`, and `listByTags`)
+ * carries `columnCount` / `indexCount` and no arrays at all — sending 186
+ * column objects to a screen that draws one line each is pure waste.
+ * `single_element` carries the arrays. A slot that reads only the arrays
+ * therefore renders "0 columns · 0 indexes" for every row of a
+ * `<tagged_list/>`, which is what this reconciliation exists to prevent.
+ */
+export function countsOf(entity: {
+  columns?: unknown[];
+  indexes?: unknown[];
+  columnCount?: number;
+  indexCount?: number;
+}): { columns: number; indexes: number } {
+  return {
+    columns: entity.columnCount ?? entity.columns?.length ?? 0,
+    indexes: entity.indexCount ?? entity.indexes?.length ?? 0,
+  };
+}
+
 /** "3 columns · 1 index" — the shape summary shared by the card and the embedded row. */
 export function shapeSummary(counts: { columns?: number; indexes?: number }): string {
   const columns = counts.columns ?? 0;
@@ -131,7 +153,7 @@ export const DatabaseTableCard: FC<EntityCardProps<DatabaseTable>> = ({ slug, en
       </div>
 
       <div className="c4s-card__shape mt-1.5 text-[12.5px]" style={{ color: 'var(--c-muted)' }}>
-        {shapeSummary({ columns: columns.length, indexes: entity.indexes?.length })}
+        {shapeSummary(countsOf(entity))}
       </div>
 
       {entity.description ? (

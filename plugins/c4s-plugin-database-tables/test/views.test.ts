@@ -73,10 +73,22 @@ describe('database-table — serializer views', () => {
     expect(rows.find((r) => r.slug === 'keyless')!.hasPrimaryKey).toBe(false);
   });
 
-  it('summarises on the bare GET, and keeps the collections on ?view=detail', async () => {
+  /**
+   * `single_element` carries the FULL record, counts included.
+   *
+   * It was a counts-only summary, which read fine for an inline page embed and
+   * was wrong for the other consumer: `single_element` is the DEFAULT view of
+   * the MCP `read_entities` tool for a single slug, so an agent resolving a
+   * table before writing a migration got a column COUNT and no column names,
+   * types or foreign keys — with no way to ask for `detail` from a page tag.
+   */
+  it('carries the collections on single_element, and the derived counts with them', async () => {
     const summary = await one('order-items');
     expect(summary.columnCount).toBe(3);
-    expect(summary).not.toHaveProperty('columns');
+    expect(summary.indexCount).toBe(2);
+    expect(summary.hasPrimaryKey).toBe(true);
+    expect(summary.columns).toHaveLength(3);
+    expect(summary.indexes).toHaveLength(2);
 
     const full = await detail('order-items');
     expect(full.columns).toHaveLength(3);
