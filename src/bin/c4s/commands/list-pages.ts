@@ -43,6 +43,6 @@ export const listPagesCommand: CliCommandContribution = {
   name: 'list-pages',
   operation: 'list_pages',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
   handler: runListPages,
 };

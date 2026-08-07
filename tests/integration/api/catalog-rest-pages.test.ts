@@ -110,6 +110,35 @@ describe('GET /api/pages/search — the cross-root search_pages', () => {
   });
 });
 
+describe('an unknown :rootId', () => {
+  it('names the roots that DO exist rather than answering a bare not-found', () => {
+    /**
+     * Before the read commands became server-delegating this refusal came from
+     * the core (`PageSource.service()` → `invalidArgument('unknown rootId …',
+     * 'roots in this project: …')`), so `c4s list-pages --root-id typo` printed
+     * the list. The REST rendering short-circuits ahead of the core, and its
+     * first version answered a bare message — turning a one-keystroke mistake
+     * into a dead end on the surface whose whole job is to be navigable.
+     */
+    const app = express();
+    app.use(
+      '/api/pages/:rootId',
+      pagesRouter((id) => (id === 'mainspec' ? ROOT : undefined), null, recordingCore().core, () => [
+        'mainspec',
+        'guides',
+      ]),
+    );
+    return request(app)
+      .get('/api/pages/nope/list')
+      .expect(404)
+      .then((res) => {
+        expect(res.body.error.code).toBe('ROOT_NOT_FOUND');
+        expect(res.body.error.hint).toContain('mainspec');
+        expect(res.body.error.hint).toContain('guides');
+      });
+  });
+});
+
 describe('GET /api/pages/:rootId/list — the flat list_pages', () => {
   it('answers beside the tree rather than replacing it', async () => {
     const { core, calls } = recordingCore();

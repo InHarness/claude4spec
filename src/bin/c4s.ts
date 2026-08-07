@@ -269,6 +269,16 @@ function codeToExit(code: string): number {
     case 'INVALID_TYPE':
     case 'INVALID_VIEW':
     case 'INVALID_ARGS':
+    /**
+     * 0.2.13 — a `--root-id` that names nothing is the same CLASS of mistake as
+     * a bad `--type`: the caller asked for something the contract does not
+     * offer. It reached this table only after the read commands became
+     * server-delegating (the core used to answer `INVALID_ARGUMENT`, already in
+     * this group); unmapped, it fell to the `default: 1` bucket that also holds
+     * UNKNOWN_COMMAND, so a wrapper branching on exit 4 for "you typed the flags
+     * wrong" read a typo'd root id as an infrastructure failure.
+     */
+    case 'ROOT_NOT_FOUND':
     // M39 — the core's refusal shares the "you asked for something the contract
     // does not allow" exit, since a caller scripting c4s branches on the class
     // of failure and these are the same class.

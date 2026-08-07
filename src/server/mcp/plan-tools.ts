@@ -7,7 +7,29 @@ import { PLAN_ROOT_MARKER } from '../../shared/types.js';
 import { DomainError } from '../services/tags.js';
 
 export interface PlanToolsContext {
+  /**
+   * The thread these tools address a plan through — the `internal` channel's
+   * default binding.
+   *
+   * On a channel that HAS no thread, pass `target: 'explicit'` instead of
+   * inventing an id. A synthetic `threadId` resolves to no plan, so every
+   * `update_plan` took the create branch, wrote a file, and then threw
+   * NOT_FOUND attaching it to a thread that does not exist — leaving an orphan
+   * plan (and a version row) behind on every attempt, forever, since retrying
+   * just allocates the next free slug.
+   */
   threadId: string;
+  /**
+   * 0.2.13 — how a plan is addressed on this mount.
+   *
+   * `'thread'` (default) is the internal channel: the plan is the one bound to
+   * `threadId`, and the first update in a thread with no plan CREATES it.
+   * `'explicit'` is a threadless channel (the external MCP mount): every call
+   * names its `path`, and creation is unavailable — §7 says a plan is born only
+   * from a thread, so a channel with no thread edits plans and does not mint
+   * them. Same shape as `brief-tools`' `target`.
+   */
+  target?: 'thread' | 'explicit';
   planService: PlanService;
   /** 0.1.127: list_plan_versions/get_plan_version now read the shared M17
    *  file_version log (keyed rootId='plan') instead of the dropped
@@ -19,6 +41,19 @@ const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 
 export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
   const { threadId, planService, pageVersions } = ctx;
+  const explicit = ctx.target === 'explicit';
+  /** `path` is required exactly when there is no thread to default it from. */
+  const pathParam = explicit
+    ? { path: z.string().describe('Plan path relative to plansDir, from list_plans.') }
+    : {};
+  const requirePath = (raw: unknown): string => {
+    if (typeof raw === 'string' && raw !== '') return raw;
+    throw new DomainError(
+      'VALIDATION',
+      'path is required on this connection — there is no thread to take the plan from',
+      'list the plans with list_plans, then pass one of their paths',
+    );
+  };
 
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
@@ -34,11 +69,15 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
 
   const getPlan = mcpTool(
     'get_plan',
-    'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating.',
-    {},
-    async () => {
+    explicit
+      ? 'Read a plan by path (latest content, version). Use list_plans to find one.'
+      : 'Get the current plan attached to this thread (latest content, version). Returns { plan: null } if the thread has no plan yet. Use to inspect plan state before updating.',
+    pathParam,
+    async (args) => {
       try {
-        const plan = await planService.getByThread(threadId);
+        const plan = explicit
+          ? await planService.getByPath(requirePath(args.path))
+          : await planService.getByThread(threadId);
         if (!plan) return ok({ plan: null });
         return ok({
           plan: {
@@ -70,6 +109,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       'Available in plan_mode=true (preferred) and plan_mode=false.',
     ].join('\n'),
     {
+      ...pathParam,
       action: AGENT_ACTIONS,
       content: z.string(),
       anchor: z.string().optional(),
@@ -82,6 +122,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         const action = args.action as PlanAction;
         const result = await planService.update({
           threadId,
+          ...(explicit ? { planPath: requirePath(args.path) } : {}),
           action,
           content: String(args.content ?? ''),
           anchor: typeof args.anchor === 'string' ? args.anchor : undefined,
@@ -99,6 +140,23 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         return fail(err);
       }
     }
+  );
+
+  const listPlans = mcpTool(
+    'list_plans',
+    'List the plans in this project — path, title, last update. The path is what get_plan / update_plan take on this connection.',
+    { search: z.string().optional().describe('Filter by title or path substring.') },
+    async (args) => {
+      try {
+        return ok({
+          plans: planService
+            .listPlans(typeof args.search === 'string' ? { search: args.search } : {})
+            .map((p) => ({ path: p.path, title: p.title, updatedAt: p.updatedAt })),
+        });
+      } catch (err) {
+        return fail(err);
+      }
+    },
   );
 
   const listPlanVersions = mcpTool(
@@ -150,6 +208,19 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
 
   return createMcpServer({
     name: 'plan-tools',
-    tools: [getPlan, updatePlan, listPlanVersions, getPlanVersion],
+    tools: [
+      getPlan,
+      updatePlan,
+      listPlanVersions,
+      getPlanVersion,
+      /**
+       * Only on the threadless mount, and not for symmetry: without it `path`
+       * is a required parameter with no operation that can produce a value for
+       * it, which is the same unreachable-contract shape as an `expectedHash`
+       * no read returns. In `thread` mode the plan is implicit and listing every
+       * plan in the project would widen the internal surface for nothing.
+       */
+      ...(explicit ? [listPlans] : []),
+    ],
   });
 }

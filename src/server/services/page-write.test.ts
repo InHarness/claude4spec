@@ -110,6 +110,54 @@ describe('the page write primitive', () => {
     expect(await fs.readFile(path.join(pages.root, 'c.md'), 'utf-8')).toBe('someone else');
   });
 
+  it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] the hash get_page returns is the one update_page accepts', async () => {
+    /**
+     * The guard is only real if the read side can produce its input, and it
+     * could not: `GetPageResult` was `{rootId, path, content}` with no hash, so
+     * an agent — the caller item 28 funnels ALL page writes through — had no way
+     * to obtain one and every agent write was last-write-wins over whatever a
+     * human had just saved in the editor.
+     *
+     * Asserted end-to-end through the real core rather than by comparing two
+     * digest calls, because the failure would be a hash of the WRONG bytes
+     * (the body without frontmatter, or a truncated window) — which a
+     * same-function comparison cannot see.
+     */
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-hash-rt-'));
+    const db = createTestDb();
+    try {
+      const pagesSvc = new PagesService(dir, 'pages', 'pages');
+      await pagesSvc.ensureRoot();
+      const t = { pages: pagesSvc, writer: null };
+      await updatePage(t, { path: 'h.md', body: '# Hello', frontmatter: { order: 1 } }, 'user');
+
+      const core = createDiscoveryCore({
+        reader: new RawEntityReader(db, host),
+        db,
+        host,
+        serialization: new SerializationEngine(host, sectionSerializer),
+        roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+        projectDir: dir,
+        packageVersion: 'test',
+      });
+      const read = await core.getPage({ rootId: 'pages', path: 'h.md' });
+      expect(read.hash).toHaveLength(64);
+
+      // Accepted — so the round-trip an agent must perform actually closes.
+      await expect(
+        updatePage(t, { path: 'h.md', body: '# Hello again', expectedHash: read.hash }, 'agent'),
+      ).resolves.toBeTruthy();
+      // …and the SAME hash is now stale, which is the other half of the contract.
+      const err = await updatePage(t, { path: 'h.md', body: 'x', expectedHash: read.hash }, 'agent').catch(
+        (e) => e,
+      );
+      expect(err.code).toBe('PAGE_CONFLICT');
+    } finally {
+      db.close();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('an ABSENT page is not a conflict — update_page doubles as create', async () => {
     // The editor saves a brand-new page through this path with a hash it got
     // from nowhere; there is no earlier state for it to be stale against.

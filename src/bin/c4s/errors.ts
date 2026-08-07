@@ -67,7 +67,13 @@ export type CliErrorCode =
   | 'PAGE_NOT_FOUND'
   | 'INVALID_ARGUMENT'
   | 'AMBIGUOUS_ENTITY'
-  | 'AMBIGUOUS_PAGE';
+  | 'AMBIGUOUS_PAGE'
+  // 0.2.13 — `--root-id` naming a root the project does not have. Raised by the
+  // REST rendering ahead of the core (the per-root routers resolve the id from
+  // the path segment), so it never travelled the `INVALID_ARGUMENT` path the
+  // core would have used. Exits 4 with the other "you asked for something the
+  // contract does not offer" codes.
+  | 'ROOT_NOT_FOUND';
 
 export class CliError extends Error {
   constructor(public code: CliErrorCode, message: string, public hint?: string) {

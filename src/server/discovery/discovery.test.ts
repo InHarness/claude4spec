@@ -1256,7 +1256,7 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     const configured = [pagesRoot()];
 
     // The whole point of the flag: `scratch` is not a configured root.
-    const narrowed = build(applyPagesOverride(configured, 'scratch'));
+    const narrowed = build(applyPagesOverride(configured, 'scratch', cwd));
     const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
     expect(found.total).toBe(1);
     expect(found.references[0]!.pagePath).toBe('draft.md');
@@ -1269,7 +1269,7 @@ describe('applyPagesOverride, through the core that consumes it', () => {
     const wide = build([pagesRoot()]);
     expect((await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).total).toBe(1);
 
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'scratch'));
+    const narrowed = build(applyPagesOverride([pagesRoot()], 'scratch', cwd));
     const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
     // One hit, and it is the SCRATCH one — not the configured page, and not both.
     expect(found.total).toBe(1);
@@ -1278,9 +1278,41 @@ describe('applyPagesOverride, through the core that consumes it', () => {
 
   it('a directory a configured root already claims is answered by that root, id intact', async () => {
     await write('pages', 'configured.md', CITES);
-    const narrowed = build(applyPagesOverride([pagesRoot()], 'pages'));
+    const narrowed = build(applyPagesOverride([pagesRoot()], 'pages', cwd));
     const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
     expect(found.total).toBe(1);
     expect(found.references[0]!.rootId).toBe('pages');
+  });
+
+  it('a hit from an ad-hoc root carries NO anchor, even when a real page shares its name', async () => {
+    /**
+     * The failure this pins: the ad-hoc root used to keep the built-in root's
+     * id, and `anchorFor` matches `section_index` on `(rootId, pagePath, line)`
+     * alone — so a hit in `drafts/notes.md` was decorated with the anchor of
+     * `pages/notes.md`. `c4s get-sections --anchors <that>` then read a section
+     * of a completely different file and nothing in the answer said so.
+     *
+     * The row is inserted by hand rather than indexed, because what is under
+     * test is the JOIN, not the indexer.
+     */
+    await write('pages', 'notes.md', CITES);
+    await write('drafts', 'notes.md', CITES);
+    db.prepare(
+      `INSERT INTO section_index
+         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
+          content_hash, line_start, line_end, paragraph_count)
+       VALUES ('pages', 'aaaa1111', 'notes.md', 'Notes', 'notes', 1, 'Notes', 'h', 1, 9, 1)`,
+    ).run();
+
+    // The configured root DOES get the anchor — the control that gives the
+    // assertion below its meaning.
+    const wide = build([pagesRoot()]);
+    const wideHit = (await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    expect(wideHit.anchor).toBe('aaaa1111');
+
+    const narrowed = build(applyPagesOverride([pagesRoot()], 'drafts', cwd));
+    const hit = (await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).references[0]!;
+    expect(hit.pagePath).toBe('notes.md');
+    expect(hit.anchor).toBeUndefined();
   });
 });

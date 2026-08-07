@@ -5,6 +5,7 @@ import { referencesRouter } from '../../../src/server/routes/references.js';
 import type { DiscoveryCore } from '../../../src/server/discovery/types.js';
 import type { ReferencesService } from '../../../src/server/services/references.js';
 import type { ProjectPluginHost } from '../../../src/server/core/plugin-host/types.js';
+import { applyPagesOverride } from '../../../src/server/discovery/pages-override.js';
 
 /**
  * 0.2.13 (tier C) — `GET /api/references?pages=<dir>`.
@@ -80,6 +81,32 @@ describe('GET /api/references?pages=', () => {
     await request(app).get('/api/references?type=ac&slug=x&pages=').expect(200);
     await request(app).get('/api/references?type=ac&slug=x&pages=%20%20').expect(200);
     expect(seen).toEqual([]);
+  });
+
+  it('a traversing `?pages=` is refused, not served', async () => {
+    /**
+     * The narrowing factory is where containment lives, so this asserts the
+     * refusal reaches the WIRE — a throw the route swallowed would be worse than
+     * no check, and the harness's factory is the only place a caller can see it.
+     *
+     * The parameter is no longer a flag on the user's own shell: it arrives over
+     * HTTP and through the MCP mount, and `PageSource` joins it onto the project
+     * dir with no guard of its own, so `../../..` walked and read every markdown
+     * file above the project and returned its paths and tag text.
+     */
+    const app = express();
+    app.use(
+      '/api/references',
+      referencesRouter(
+        { getAvailable: (t: string) => t === 'ac', listEntities: () => [{ type: 'ac' }] } as never,
+        { findReferences: async () => [] } as never,
+        { findReferences: async () => ({ references: [], total: 0, hasMore: false }) } as never,
+        (dir) => applyPagesOverride([{ id: 'pages', dir: 'pages' } as never], dir, '/repo/spec') as never,
+      ),
+    );
+    const res = await request(app).get('/api/references?type=ac&slug=x&pages=../../..').expect(400);
+    expect(res.body.error.code).toBe('INVALID_ARGUMENT');
+    expect(res.body.error.hint).toContain('inside the project');
   });
 
   it('refuses to be combined with type=section rather than dropping it silently', async () => {

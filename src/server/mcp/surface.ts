@@ -142,12 +142,26 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
     servers.push({
       name: 'plan-tools',
       /**
-       * `threadId` is the plan tools' provenance stamp for versions they write,
-       * not an addressing parameter — there is no thread on this channel, so the
-       * connection says so rather than borrowing an unrelated id.
+       * `threadId` here is a PROVENANCE STAMP and nothing else — the comment
+       * that used to sit on this line said so, and the code contradicted it.
+       *
+       * `PlanService.update` addressed the plan THROUGH `threadId`
+       * (`getThreadPlanPath` / `attachPlanToThread`), so the synthetic id
+       * resolved to no plan, took the create branch, wrote a plan file and a
+       * version row, and then threw NOT_FOUND attaching it to a thread that
+       * does not exist. `update_plan` could never succeed on this channel, and
+       * every retry left another orphan (`auth-rollout-2.md`, `-3.md`, …) in the
+       * user's spec repo. It was reachable from the generated `mcp.json`, i.e.
+       * from every editor an upgrading user opens.
+       *
+       * `target: 'explicit'` is the fix and matches what the catalog already
+       * says: a plan is addressed by `path`, and the thread binding is a default
+       * of the `internal` channel, not part of the operation. Creation stays
+       * thread-bound, so this mount edits plans and cannot mint them.
        */
       server: buildPlanToolsServer({
         threadId: 'mcp-external',
+        target: 'explicit',
         planService: deps.planService,
         pageVersions: deps.pageVersions,
       }),

@@ -54,6 +54,6 @@ export const getPageCommand: CliCommandContribution = {
   name: 'get-page',
   operation: 'get_page',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
   handler: runGetPage,
 };

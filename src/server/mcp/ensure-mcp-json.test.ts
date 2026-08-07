@@ -8,6 +8,7 @@ import {
   GENERATED_MCP_PROFILE,
   mcpJsonPath,
   mcpMountPath,
+  OWNER_KEY,
   renderMcpJson,
 } from './ensure-mcp-json.js';
 
@@ -16,7 +17,8 @@ import {
  * MCP process and starts describing where to REACH the one in the server.
  */
 describe('mcp.json is an HTTP entry', () => {
-  const rendered = () => JSON.parse(renderMcpJson({ projectAbsPath: '/spec/repo', port: 3123, projectId: 'proj-7' }));
+  const rendered = () =>
+    JSON.parse(renderMcpJson({ projectAbsPath: '/spec/repo', port: 3123, projectId: 'proj-7', workspace: 'default' }));
 
   it('declares an http server pointing at the project mount point', () => {
     const entry = rendered().mcpServers['c4s-spec-reader'];
@@ -47,7 +49,7 @@ describe('mcp.json is an HTTP entry', () => {
     // the file and why the reader needed to resolve a workspace at all. The
     // project is addressed by id now, and workspace resolution belongs to M31
     // inside the server process.
-    const text = renderMcpJson({ projectAbsPath: '/spec/repo', port: 3123, projectId: 'proj-7' });
+    const text = renderMcpJson({ projectAbsPath: '/spec/repo', port: 3123, projectId: 'proj-7', workspace: 'default' });
     expect(text).not.toContain('/spec/repo');
     expect(text).not.toContain('--workspace');
     expect(text).not.toContain('--project');
@@ -56,15 +58,15 @@ describe('mcp.json is an HTTP entry', () => {
   it('rewrites only when the URL actually moves', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-mcpjson-'));
     try {
-      ensureMcpJson({ projectAbsPath: dir, port: 3000, projectId: 'p1' });
+      ensureMcpJson({ projectAbsPath: dir, port: 3000, projectId: 'p1', workspace: 'default' });
       const first = fs.statSync(mcpJsonPath(dir)).mtimeMs;
 
       // Same inputs: `writeIfChanged` must leave the file alone, so re-activating
       // an unchanged project does not churn a gitignored-but-watched file.
-      ensureMcpJson({ projectAbsPath: dir, port: 3000, projectId: 'p1' });
+      ensureMcpJson({ projectAbsPath: dir, port: 3000, projectId: 'p1', workspace: 'default' });
       expect(fs.statSync(mcpJsonPath(dir)).mtimeMs).toBe(first);
 
-      ensureMcpJson({ projectAbsPath: dir, port: 3001, projectId: 'p1' });
+      ensureMcpJson({ projectAbsPath: dir, port: 3001, projectId: 'p1', workspace: 'default' });
       expect(JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url).toContain(':3001');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
@@ -169,24 +171,72 @@ describe('ensureMcpJsonForWorkspace', () => {
     }
   });
 
-  it('does not steal a config that addresses a DIFFERENT project', () => {
+  it('does not steal a config another WORKSPACE generated', () => {
     /**
      * One directory can be registered in two workspaces, and it has one
      * `mcp.json`. Last writer wins would mean an editor open on workspace A
      * silently starts talking to workspace B's copy — same repo, different
      * database, different entities, no error anywhere. A stale address the user
      * can see beats a live one pointing at the wrong specification.
+     *
+     * The first version of this guard compared `projectId`, and this test passed
+     * it by handing in two ids that could never co-occur. In production both
+     * workspaces derive the id from `sha1(cwd)` — the SAME directory, so the
+     * SAME id — and the comparison was a value against itself. Hence the ids
+     * here are deliberately IDENTICAL: that is the real situation, and the test
+     * is worthless unless it reproduces it.
      */
     const dir = tmp();
     try {
-      ensureMcpJson({ projectAbsPath: dir, port: 4500, projectId: 'first-owner' });
-      ensureMcpJson({ projectAbsPath: dir, port: 4600, projectId: 'other-workspace' });
-      const url = JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url;
-      expect(url).toContain('/first-owner/');
-      expect(url).toContain(':4500');
-      // The owner may still refresh its own entry.
-      ensureMcpJson({ projectAbsPath: dir, port: 4700, projectId: 'first-owner' });
-      expect(JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url).toContain(':4700');
+      const projectId = 'same-hash-both-workspaces';
+      ensureMcpJson({ projectAbsPath: dir, port: 4500, projectId, workspace: 'default' });
+      ensureMcpJson({ projectAbsPath: dir, port: 4600, projectId, workspace: 'team' });
+      expect(
+        JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url,
+      ).toContain(':4500');
+
+      // The owner may still refresh its own entry — the port is exactly what it
+      // is allowed to change, which is why the port cannot be the discriminator.
+      ensureMcpJson({ projectAbsPath: dir, port: 4700, projectId, workspace: 'default' });
+      expect(
+        JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url,
+      ).toContain(':4700');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('adopts a managed file written before the owner was recorded', () => {
+    // Upgrading from an earlier 0.2.13 build must not strand a config: no owner
+    // recorded means nobody has claimed it, not "claimed by someone else".
+    const dir = tmp();
+    try {
+      fs.mkdirSync(path.join(dir, '.claude4spec'), { recursive: true });
+      fs.writeFileSync(
+        mcpJsonPath(dir),
+        JSON.stringify({
+          mcpServers: { 'c4s-spec-reader': { type: 'http', url: 'http://127.0.0.1:4500/api/projects/p1/mcp?profile=ask' } },
+        }),
+      );
+      ensureMcpJson({ projectAbsPath: dir, port: 4700, projectId: 'p1', workspace: 'default' });
+      const parsed = JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8'));
+      expect(parsed.mcpServers['c4s-spec-reader'].url).toContain(':4700');
+      expect(parsed[OWNER_KEY].workspace).toBe('default');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('records the owner as provenance, not as an addressing selector', () => {
+    // §8: the entry carries no workspace SELECTOR — the reader addresses the
+    // project by its `:id` segment and resolution belongs to M31 in the server.
+    // The owner key is bookkeeping for the writer; an MCP client ignores it.
+    const dir = tmp();
+    try {
+      ensureMcpJson({ projectAbsPath: dir, port: 4500, projectId: 'p1', workspace: 'team' });
+      const parsed = JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8'));
+      expect(parsed[OWNER_KEY]).toEqual({ workspace: 'team' });
+      expect(parsed.mcpServers['c4s-spec-reader'].url).not.toContain('team');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

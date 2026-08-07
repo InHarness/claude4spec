@@ -88,6 +88,11 @@ export function pagesRouter(
   resolveRoot: (rootId: string) => PageRootRuntime | undefined,
   pageVersions: FileVersionService | null,
   discovery: DiscoveryCore,
+  /**
+   * 0.2.13 review fix: the ids that DO exist, for the refusal below. Optional so
+   * the hand-rolled test rigs keep compiling; a real project always passes it.
+   */
+  rootIds: () => string[] = () => [],
 ): Router {
   // mergeParams so the mount-level `:rootId` is visible inside this router.
   const router = Router({ mergeParams: true });
@@ -96,7 +101,25 @@ export function pagesRouter(
     const rootId = (req.params as Record<string, string>).rootId ?? '';
     const rt = resolveRoot(rootId);
     if (!rt) {
-      res.status(404).json({ error: { code: 'ROOT_NOT_FOUND', message: `root '${rootId}' not found` } });
+      /**
+       * The refusal carries the roots that DO exist.
+       *
+       * Before the CLI moved server-side this refusal came from the core
+       * (`PageSource.service()` → `invalidArgument('unknown rootId …', 'roots in
+       * this project: …')`), so `c4s list-pages --root-id typo` printed the
+       * list. This short-circuits ahead of the core, and the first version of it
+       * answered a bare message — turning a one-keystroke mistake into a dead
+       * end on the surface whose whole job is to be navigable. The catalog's own
+       * contract says a NOT_FOUND carries its alternatives.
+       */
+      const known = rootIds();
+      res.status(404).json({
+        error: {
+          code: 'ROOT_NOT_FOUND',
+          message: `root '${rootId}' not found`,
+          ...(known.length ? { hint: `roots in this project: ${known.join(', ')}` } : {}),
+        },
+      });
       return null;
     }
     return rt;

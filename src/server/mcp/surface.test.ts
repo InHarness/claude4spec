@@ -7,6 +7,7 @@ import {
   RETIRED_EXTERNAL_MCP_ERROR_CODES,
   type ExternalSurfaceDeps,
 } from './surface.js';
+import { buildPlanToolsServer } from './plan-tools.js';
 import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
 import { toolAdmittedByProfile } from '../operations/profile-gate.js';
 import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
@@ -289,5 +290,51 @@ describe('plugin tools cannot shadow host operations', () => {
     expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(true);
     // …and does not vouch for a HOST server's tool of that name either.
     expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: false })).toBe(true);
+  });
+});
+
+/**
+ * 0.2.13 review fix — the external mount addresses a plan by PATH.
+ *
+ * `plan-tools` was mounted with `threadId: 'mcp-external'`, a value the comment
+ * beside it called a provenance stamp. `PlanService.update` used it to ADDRESS
+ * the plan, so it resolved to nothing, took the create branch, wrote a plan file
+ * and a version row, and then threw NOT_FOUND attaching it to a thread that does
+ * not exist. Reachable from the `mcp.json` this release generates, i.e. from
+ * every editor an upgrading user opens — and each retry left another orphan.
+ */
+describe('plan addressing on the threadless channel', () => {
+  it('takes an explicit `path`, and offers a way to discover one', () => {
+    const surface = composeExternalSurface(stubDeps({ profile: 'ask' }));
+
+    for (const name of ['get_plan', 'update_plan']) {
+      const decl = surface.byName.get(name);
+      expect(decl, name).toBeDefined();
+      // The parameter has to be in the SCHEMA — a handler-side check would leave
+      // the model unaware it must supply one.
+      expect(Object.keys(decl!.inputSchema as Record<string, unknown>), name).toContain('path');
+    }
+
+    /**
+     * And `path` must be obtainable. A required parameter no operation can
+     * produce a value for is the same unreachable-contract shape as an
+     * `expectedHash` that no read returns — which is the other finding from this
+     * same review.
+     */
+    expect(surface.toolNames).toContain('list_plans');
+  });
+
+  it('the INTERNAL channel keeps its implicit, thread-bound plan', () => {
+    // The thread binding is the internal channel's default and stays one; adding
+    // `path` there would widen the surface and contradict §7.
+    const internal = buildPlanToolsServer({
+      threadId: 't-1',
+      planService: {} as never,
+      pageVersions: {} as never,
+    });
+    const names = internal.tools!.map((t) => t.name);
+    expect(names).not.toContain('list_plans');
+    const update = internal.tools!.find((t) => t.name === 'update_plan')!;
+    expect(Object.keys(update.inputSchema as Record<string, unknown>)).not.toContain('path');
   });
 });

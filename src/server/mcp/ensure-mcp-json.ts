@@ -54,10 +54,13 @@ export const GENERATED_MCP_PROFILE = 'ask';
 export function renderMcpJson({
   port,
   projectId,
+  workspace,
 }: {
   projectAbsPath: string;
   port: number;
   projectId: string;
+  /** Which workspace generated this file. Provenance only — see {@link OWNER_KEY}. */
+  workspace: string;
 }): string {
   return (
     JSON.stringify(
@@ -71,12 +74,29 @@ export function renderMcpJson({
             url: `http://127.0.0.1:${port}${mcpMountPath(projectId)}?profile=${GENERATED_MCP_PROFILE}`,
           },
         },
+        [OWNER_KEY]: { workspace },
       },
       null,
       2,
     ) + '\n'
   );
 }
+
+/**
+ * Where the generating workspace is recorded — provenance, NOT addressing.
+ *
+ * The file deliberately carries no workspace selector: resolution belongs to M31
+ * inside the server, and the reader addresses the project by the `:id` segment
+ * alone. But the WRITER still has to answer "is this file mine?", and it had
+ * nothing to answer with. `projectId` cannot: it is `sha1(cwd)`, so the same
+ * directory registered in two workspaces produces the same id in both and the
+ * ownership guard below compared a value to itself. The port cannot either —
+ * it is the one component that legitimately changes for the owner.
+ *
+ * An unknown top-level key is ignored by MCP clients, so this changes nothing
+ * about what the file MEANS to a reader.
+ */
+export const OWNER_KEY = 'x-c4s-generated-by';
 
 function sha256(buf: Buffer | string): string {
   return createHash('sha256').update(buf).digest('hex');
@@ -104,13 +124,31 @@ export function mcpJsonPath(projectAbsPath: string): string {
  * addressing project X" must be distinguishable rather than both falsy.
  */
 function addressedProjectId(absPath: string): string | null {
+  return readManaged(absPath)?.projectId ?? null;
+}
+
+/**
+ * The file's own account of itself: which project it addresses, and which
+ * workspace wrote it.
+ *
+ * `null` for an absent, unreadable, or non-HTTP file — the last of which is the
+ * pre-0.2.13 stdio entry this release has to replace, so "not ours" and "ours,
+ * addressing project X" must be distinguishable rather than both falsy.
+ * `workspace: null` inside a non-null result is the third state: ours, written
+ * before this field existed, and therefore adoptable.
+ */
+function readManaged(absPath: string): { projectId: string; workspace: string | null } | null {
   try {
     const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8')) as {
       mcpServers?: Record<string, { type?: string; url?: string }>;
+      [OWNER_KEY]?: { workspace?: unknown };
     };
     const url = parsed.mcpServers?.['c4s-spec-reader']?.url;
     if (typeof url !== 'string') return null;
-    return /\/api\/projects\/([^/?#]+)\/mcp/.exec(url)?.[1] ?? null;
+    const projectId = /\/api\/projects\/([^/?#]+)\/mcp/.exec(url)?.[1];
+    if (!projectId) return null;
+    const workspace = parsed[OWNER_KEY]?.workspace;
+    return { projectId, workspace: typeof workspace === 'string' ? workspace : null };
   } catch {
     return null;
   }
@@ -120,14 +158,16 @@ export function ensureMcpJson({
   projectAbsPath,
   port,
   projectId,
+  workspace,
 }: {
   projectAbsPath: string;
   port: number;
   projectId: string;
+  workspace: string;
 }): void {
   const target = mcpJsonPath(projectAbsPath);
   /**
-   * A file already addressing a DIFFERENT project is left alone.
+   * A file another WORKSPACE generated is left alone.
    *
    * One directory can be registered in two workspaces, and it has one
    * `mcp.json`. Whichever server started last would otherwise own it, so an
@@ -136,10 +176,19 @@ export function ensureMcpJson({
    * different set of entities, and no error anywhere to say so. First writer
    * wins is not obviously the right owner, but it is stable, and a stale
    * address the user can see beats a live one pointing at the wrong project.
+   *
+   * This compared `projectId` until the review caught that the comparison could
+   * never be true: `projectIdForCwd` is a pure hash of the absolute path, so
+   * both workspaces derive the SAME id for the shared directory and the guard
+   * was a no-op. The port is the only thing that differed — and the port is
+   * exactly what the owner is allowed to change. Hence {@link OWNER_KEY}.
+   *
+   * A managed file with no owner recorded predates the field and is adopted,
+   * so upgrading does not strand anyone's config.
    */
-  const existing = addressedProjectId(target);
-  if (existing !== null && existing !== projectId) return;
-  writeIfChanged(target, renderMcpJson({ projectAbsPath, port, projectId }));
+  const existing = readManaged(target);
+  if (existing !== null && existing.workspace !== null && existing.workspace !== workspace) return;
+  writeIfChanged(target, renderMcpJson({ projectAbsPath, port, projectId, workspace }));
 }
 
 /**
@@ -186,6 +235,7 @@ export function ensureMcpJsonForWorkspace(
   projects: readonly { id: string; cwd: string }[],
   port: number,
   canonicalPort: number = port,
+  workspace = 'default',
 ): void {
   const canonical = port === canonicalPort;
   for (const project of projects) {
@@ -197,6 +247,7 @@ export function ensureMcpJsonForWorkspace(
         projectAbsPath: project.cwd,
         port: canonical ? port : canonicalPort,
         projectId: project.id,
+        workspace,
       });
     } catch {
       /* a removed or read-only project directory must not fail the start */

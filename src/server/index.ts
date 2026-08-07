@@ -419,11 +419,28 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
      * `c4s-spec-reader` server and the spec-reader skill had no MCP surface —
      * until the user happened to restart.
      *
-     * `portRef.current` rather than the requested port: by the time a project
-     * can be added the server has bound, and `listenOrExit` may have moved.
+     * The CANONICAL port, not `portRef.current`.
+     *
+     * This wrote the bound port, which is the same mistake
+     * `ensureMcpJsonForWorkspace` was rewritten to stop making one call site
+     * over: a one-off `--port 5050`, a second instance, or `listenOrExit`
+     * retrying past a busy port is not the address an editor should be sent to.
+     * A project added through the UI of such a process got a config pointing at
+     * a port that dies with it, while the canonical server keeps serving that
+     * project and answering nothing — until some later canonical start happens
+     * to rewrite the file.
+     *
+     * The workspace default IS the canonical port; falling back to the bound one
+     * only when there is no default keeps a workspace-less start working.
      */
     try {
-      ensureMcpJson({ projectAbsPath: project.cwd, port: portRef.current, projectId: project.id });
+      const liveWs = registry.getWorkspace(workspace.name) ?? workspace;
+      ensureMcpJson({
+        projectAbsPath: project.cwd,
+        port: liveWs.defaultPort ?? portRef.current,
+        projectId: project.id,
+        workspace: liveWs.name,
+      });
     } catch {
       /* a read-only project directory must not fail activation */
     }
@@ -471,7 +488,7 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
    * pre-0.2.13 stdio entries the rewritten `c4s-mcp` can no longer start.
    */
   const liveWorkspace = registry.getWorkspace(workspace.name) ?? workspace;
-  ensureMcpJsonForWorkspace(liveWorkspace.projects, port, liveWorkspace.defaultPort);
+  ensureMcpJsonForWorkspace(liveWorkspace.projects, port, liveWorkspace.defaultPort, liveWorkspace.name);
   if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   const url = `http://localhost:${port}`;
 

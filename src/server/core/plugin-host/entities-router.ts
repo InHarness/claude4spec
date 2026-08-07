@@ -326,7 +326,20 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
         // The repair path, not just the refusal: which field, and what it wanted.
         throw new DomainError('VALIDATION', parsed.error.message);
       }
-      const result = await host.callTypeTool(type, tool.name, parsed.data as Record<string, unknown>);
+      /**
+       * The handler off the declaration this route ALREADY resolved, rather than
+       * `host.callTypeTool(type, name, …)`.
+       *
+       * Not a shortcut around the host: `tool` came out of `host.listTypeTools`,
+       * so this is the same registry object and the same handler the MCP channel
+       * invokes. What it avoids is the second lookup — `callTypeTool` calls
+       * `listTypeTools` again, and `listTypeTools` runs the plugin's registered
+       * factory, i.e. a full `createMcpServer` with every tool's zod shape
+       * registered. Two of those were constructed and discarded per request, so
+       * a spreadsheet driven through `POST /tools/set_cell` in a cell-write loop
+       * paid for two throwaway `spreadsheet-tools` servers per cell.
+       */
+      const result = await tool.handler(parsed.data as Record<string, unknown>, {});
       /**
        * A tool that FAILED must not arrive as `200 OK`.
        *

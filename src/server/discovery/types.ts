@@ -247,6 +247,19 @@ export interface GetPageResult {
   rootId: string;
   path: string;
   content: string;
+  /**
+   * 0.2.13 (item 28): sha256 of the WHOLE file as read, to hand back as
+   * `expectedHash` on `update_page` / `update_section`.
+   *
+   * Present even when `content` was truncated or narrowed by `range`, and it
+   * describes the file rather than what was returned — which is the only way it
+   * can serve its purpose. Without it the optimistic-concurrency guard on the
+   * page writes was unreachable from the read side of the same surface: the
+   * agent had no way to obtain a hash, so every agent write was
+   * last-write-wins over whatever a human had just saved in the editor.
+   * `brief-tools.get_brief` has always returned one for exactly this round-trip.
+   */
+  hash: string;
   truncated?: boolean;
   truncationHint?: string;
 }

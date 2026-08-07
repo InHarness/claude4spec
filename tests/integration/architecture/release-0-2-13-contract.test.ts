@@ -384,6 +384,21 @@ describe('the CLI holds no handle on the specification', () => {
     const activate = /const activateProject = async[\s\S]*?\n  };/.exec(src)?.[0] ?? '';
     expect(activate, 'activateProject not found — the regex needs updating').toContain('bootstrapProject');
     expect(activate, 'a project added at runtime gets no mcp.json').toContain('ensureMcpJson');
+
+    /**
+     * …and it writes the CANONICAL port, not the one this process bound.
+     *
+     * The first version of this call passed `portRef.current`, which is the very
+     * mistake `ensureMcpJsonForWorkspace` was rewritten to stop making: a one-off
+     * `--port 5050`, a second instance, or `listenOrExit` retrying past a busy
+     * port is not the address an editor should be sent to. A project added
+     * through the UI of such a process got a config pointing at a port that dies
+     * with it, while the canonical server keeps serving that project.
+     */
+    expect(activate, 'activateProject writes the bound port instead of the canonical one').not.toMatch(
+      /port:\s*portRef\.current\s*[,}]/,
+    );
+    expect(activate).toContain('defaultPort');
   });
 
   it('item 22: the HELP text\'s exception list matches the actual non-delegating commands', () => {

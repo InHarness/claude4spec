@@ -845,7 +845,7 @@ async function buildInner(
       db: db.handle,
       host: pluginHost,
       serialization: serializationEngine,
-      roots: applyPagesOverride(effectiveRoots, pagesOverride),
+      roots: applyPagesOverride(effectiveRoots, pagesOverride, cwd),
       projectDir: cwd,
       packageVersion: readPackageVersion(),
     });
@@ -1050,7 +1050,7 @@ async function buildInner(
    * root id and the operation answers `ROOT_NOT_FOUND`.
    */
   router.use('/pages', crossRootPagesRouter(discovery));
-  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions, discovery));
+  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()]));
   router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
