@@ -4,7 +4,6 @@ import { delegateGet, delegateGetAll } from '../delegate.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { pickEntityPage, withMeta } from './_meta.js';
-import type { OverviewResult } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -12,8 +11,8 @@ import type { CliCommandContribution } from '../registry.js';
  * operation: the core answers per type (`list_entities`), and grouping those
  * answers under plural keys is presentation.
  *
- * 0.2.13 — `server-delegating`. The type set comes from `overview`, so the
- * buckets are the SERVER host's types by construction. That closes the last way
+ * 0.2.13 — `server-delegating`. The type set comes from the SERVER's activation
+ * partition, so the buckets are its host's types by construction. That closes the last way
  * this command could lie: it used to read a loader of its own, so a project
  * whose server had a plugin the `c4s` package did not — or a different version
  * of one — got buckets that did not match the specification it was describing.
@@ -30,15 +29,22 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--filter must be 'and' or 'or', got '${filterRaw}'`);
   }
 
-  const overview = (await delegateGet(args, '/_meta/overview')) as OverviewResult & {
-    availableTypes?: string[];
+  /**
+   * TWO calls, because the buckets and the rows come from different questions.
+   *
+   * `_meta/entities` is the ACTIVATION PARTITION — `active` plus `inactive` is
+   * the installed set, which is what seeds the empty buckets. `overview` reports
+   * only the active types, and seeding from those would make a deactivated type
+   * VANISH from the payload rather than report `[]`. That distinction is the
+   * contract: `jq '.endpoints | length'` breaks on a missing key, and a script
+   * cannot tell "this type has nothing" from "this key was never emitted".
+   */
+  const partition = (await delegateGet(args, '/_meta/entities')) as {
+    active?: string[];
+    inactive?: string[];
   };
-  const activeTypes = Object.keys(overview.types ?? {});
-  // `overview` reports the ACTIVE types keyed by name. The available set is the
-  // wider one the empty buckets come from; when the payload does not carry it,
-  // the active set is the honest fallback — a bucket that is absent is better
-  // than one invented from a list this process no longer has.
-  const seedTypes = overview.availableTypes ?? activeTypes;
+  const activeTypes = partition.active ?? [];
+  const seedTypes = [...activeTypes, ...(partition.inactive ?? [])];
 
   const grouped: Record<string, unknown[]> = Object.fromEntries(
     seedTypes.map((t) => [`${t}s`, [] as unknown[]]),

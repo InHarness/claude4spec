@@ -328,9 +328,22 @@ export function pagesRouter(
     }
   });
 
-  router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(500).json({ error: err.message });
-  });
+  /**
+   * 0.2.13 (tier C) — the shared handler, replacing a local catch-all that
+   * answered `500 { error: <string> }` for everything.
+   *
+   * The catch-all had to go for the new routes to work at all: `/get` refuses a
+   * malformed `range` with `DomainError('VALIDATION')`, and the catch-all turned
+   * that into a 500 — a caller's typo reported as a server fault, with the
+   * repair path dropped.
+   *
+   * It is a REPLACEMENT rather than a layer above it, because the shape it
+   * produced was already unreadable to the only client there is: `api-core.ts`
+   * reads `body.error.message` and `body.error.code`, so a bare string yielded
+   * `HTTP_ERROR` plus the status text and the real message was thrown away. Every
+   * other router in the process uses this handler; this one was the exception.
+   */
+  router.use(errorHandler);
 
   return router;
 }
