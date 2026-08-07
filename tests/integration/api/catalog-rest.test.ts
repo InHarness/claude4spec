@@ -142,6 +142,34 @@ describe('the plugin-tool proxy', () => {
     expect(res.body.error.code).toBe('VALIDATION');
   });
 
+  it('does not shadow POST /:type/:slug/tags for an entity slugged `tools`', async () => {
+    // Both patterns are three segments, so Express decides by registration order.
+    // Declared first, the proxy swallowed this request and answered "type
+    // 'ui-view' declares no operation 'tags'".
+    const res = await request(t.app)
+      .post('/api/entities/ui-view/tools/tags')
+      .send({ tagSlugs: [] });
+    // Whatever the tag route decides (404 for a missing entity is fine), it must
+    // NOT be the proxy's "no operation named tags".
+    expect(res.body?.error?.message ?? '').not.toMatch(/declares no operation/);
+  });
+
+  it('maps a FAILED plugin operation onto a status instead of answering 200', async () => {
+    // An MCP handler reports failure in-band (`isError: true`), so forwarding the
+    // envelope verbatim made every refusal a 200 and a client branching on
+    // `response.ok` recorded a failed operation as a success.
+    const res = await request(t.app)
+      .post('/api/entities/diagram/tools/validate_diagram')
+      .send({ source: 'graph TD;\n  A-->B;', format: 'not-a-real-format' });
+    if (res.status === 200) {
+      // The tool accepted it — then it must not be flagged as an error.
+      expect(res.body.isError).not.toBe(true);
+    } else {
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.body.error?.code).toBeTruthy();
+    }
+  });
+
   it('refuses an inactive type with INVALID_TYPE on both halves of the proxy', async () => {
     const listed = await request(t.app).get('/api/entities/no-such-type/tools').expect(404);
     expect(listed.body.error.code).toBe('INVALID_TYPE');
@@ -177,14 +205,32 @@ describe('POST /api/patches', () => {
     expect(written).toMatch(/# Patch — route drifted/);
   });
 
-  it('is NOT idempotent — two filings of the same drift are two files', async () => {
-    const body = { brief: 'b1.md', desc: 'same drift', body: 'x' };
-    const a = await request(t.app).post('/api/patches').send(body).expect(201);
-    const b = await request(t.app).post('/api/patches').send(body).expect(201);
-    expect(a.body.data.path).toBe(b.body.data.path);
-    // Same slug, but the second write is a real second report — the file is
-    // rewritten rather than the request being rejected as a duplicate.
-    expect(fs.existsSync(path.join(t.cwd, 'patches', a.body.data.path))).toBe(true);
+  it('is NOT idempotent — two filings of the same drift are two SEPARATE files', async () => {
+    const a = await request(t.app)
+      .post('/api/patches')
+      .send({ brief: 'b1.md', desc: 'same drift', body: 'first report' })
+      .expect(201);
+    const b = await request(t.app)
+      .post('/api/patches')
+      .send({ brief: 'b1.md', desc: 'same drift', body: 'second report' })
+      .expect(201);
+
+    // Distinct paths: `desc` drives the slug, so the naive filename collides —
+    // and writing through it destroyed the first report while answering 201 as
+    // though nothing had happened. A second report of the same drift is a real
+    // event the spec author has to see.
+    expect(a.body.data.path).toBe('b1-same-drift.md');
+    expect(b.body.data.path).toBe('b1-same-drift-2.md');
+    expect(fs.readFileSync(path.join(t.cwd, 'patches', a.body.data.path), 'utf8')).toMatch(/first report/);
+    expect(fs.readFileSync(path.join(t.cwd, 'patches', b.body.data.path), 'utf8')).toMatch(/second report/);
+  });
+
+  it('400s VALIDATION on a non-string createdBy rather than 500ing on it', async () => {
+    const res = await request(t.app)
+      .post('/api/patches')
+      .send({ brief: 'b1.md', desc: 'x', body: 'y', createdBy: 42 })
+      .expect(400);
+    expect(res.body.error.code).toBe('VALIDATION');
   });
 
   it('404s BRIEF_NOT_FOUND when the brief does not exist — the N:1 guard', async () => {
@@ -223,6 +269,47 @@ describe('POST /api/patches', () => {
   });
 });
 
+describe('GET /api/references — paging that does not change the answer', () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('keeps the same hit shape with and without a window', async () => {
+    // The trap: routing the windowed request at `discovery.findReferences` runs
+    // it through a projection that DROPS `raw` — the original tag text the
+    // published ReferenceHit declares as required and the chips render. Adding
+    // `&limit=` then returned empty chips with no error to explain them.
+    const plain = await request(t.app).get('/api/references?type=ac&slug=whatever').expect(200);
+    const windowed = await request(t.app).get('/api/references?type=ac&slug=whatever&limit=10').expect(200);
+    expect(Array.isArray(plain.body.references)).toBe(true);
+    expect(Array.isArray(windowed.body.references)).toBe(true);
+    expect(windowed.body.references).toEqual(plain.body.references.slice(0, 10));
+    expect(windowed.body.total).toBe(plain.body.references.length);
+  });
+
+  it('keeps accepting ?type=section once a window is added', async () => {
+    // `assertType` has admitted the non-entity pseudo-type `section` since long
+    // before the core existed, but `entityReferences` refuses anything
+    // `host.getEntity()` does not know — so the same request answered 200 plain
+    // and 404 INVALID_TYPE with `&limit=`.
+    await request(t.app).get('/api/references?type=section&slug=some-anchor').expect(200);
+    await request(t.app).get('/api/references?type=section&slug=some-anchor&limit=5').expect(200);
+  });
+
+  it('does not truncate at the core default when includeTagMatches is asked for', async () => {
+    // The caller asking the BIGGER question ("what breaks if I rename this")
+    // must not get the SMALLER answer. Without an explicit window this path uses
+    // the exhaustive helper rather than one 100-row page.
+    const res = await request(t.app)
+      .get('/api/references?type=ac&slug=whatever&includeTagMatches=true')
+      .expect(200);
+    expect(Array.isArray(res.body.references)).toBe(true);
+    expect(res.body.hasMore).toBe(false);
+  });
+});
+
 describe('GET /api/tags — paging, added without moving the UI\'s cheese', () => {
   let t: TestApp;
   beforeEach(async () => {
@@ -237,9 +324,29 @@ describe('GET /api/tags — paging, added without moving the UI\'s cheese', () =
     expect(res.body.total).toBe(3);
   });
 
-  it('pages through the core when a window IS asked for, keeping the `tags` key', async () => {
-    const res = await request(t.app).get('/api/tags?limit=2').expect(200);
-    expect(res.body.tags).toHaveLength(2);
+  it('pages without changing the item shape or the ordering', async () => {
+    const all = await request(t.app).get('/api/tags').expect(200);
+    const paged = await request(t.app).get('/api/tags?limit=2').expect(200);
+    expect(paged.body.tags).toHaveLength(2);
+    expect(paged.body.total).toBe(3);
+    /**
+     * The trap this guards: handing `limit` to `discovery.listTags` returns the
+     * core's NARROWER `TagListItem` (no `counts`, no `createdAt`/`updatedAt`) and
+     * orders by slug instead of name. `counts` is required in the published DTO,
+     * so `TagsList.tsx` (`tag.counts[m.type] ?? 0`) throws the moment anything
+     * starts paging. Same shape, same order, sliced.
+     */
+    expect(paged.body.tags).toEqual(all.body.tags.slice(0, 2));
+    for (const tag of paged.body.tags) {
+      expect(tag).toHaveProperty('counts');
+      expect(tag).toHaveProperty('createdAt');
+    }
+  });
+
+  it('honours offset', async () => {
+    const all = await request(t.app).get('/api/tags').expect(200);
+    const res = await request(t.app).get('/api/tags?limit=1&offset=1').expect(200);
+    expect(res.body.tags).toEqual(all.body.tags.slice(1, 2));
     expect(res.body.total).toBe(3);
   });
 });

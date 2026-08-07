@@ -107,6 +107,22 @@ describe('POST /api/chat/abort/:threadId', () => {
     expect(res.body.error.code).toBe('THREAD_NOT_FOUND');
   });
 
+  it('still aborts a live turn whose thread row was deleted underneath it', async () => {
+    // `DELETE /api/threads/:id` removes the row without touching `activeAdapters`
+    // or aborting anything, so the turn keeps running — and keeps writing to the
+    // specification. A thread-existence check placed BEFORE the adapter lookup
+    // answers 404 here and leaves that turn with no kill switch at all, since a
+    // resume-SSE or CLI caller holds only a threadId.
+    let aborted = false;
+    activate(h, { onAbort: () => (aborted = true) });
+    h.chat.deleteThread(h.threadId);
+    expect(h.chat.getThreadMeta(h.threadId)).toBeNull();
+
+    const res = await request(h.app).post(`/api/chat/abort/${h.threadId}`).expect(200);
+    expect(res.body.data.aborted).toBe(true);
+    expect(aborted).toBe(true);
+  });
+
   it('leaves the requestId-addressed variant alone', async () => {
     activate(h, { requestId: 'req-9' });
     const res = await request(h.app).post('/api/chat/abort').send({ requestId: 'req-9' }).expect(200);

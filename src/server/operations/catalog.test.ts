@@ -10,7 +10,7 @@ import {
 } from './catalog.js';
 import { registerCoreOperations } from './core-operations.js';
 import { KNOWN_OPERATION_CLASSES, PROFILES, mcpServerSetForProfile, profileAdmits } from './profiles.js';
-import { toolAdmittedByProfile, withheldTools } from './profile-gate.js';
+import { pluginServerNamesFor, toolAdmittedByProfile, withheldTools } from './profile-gate.js';
 import { toolError, toolSuccess } from './envelope.js';
 import { httpStatusForCode } from './error-codes.js';
 
@@ -222,12 +222,63 @@ describe('the profile gate', () => {
     expect(withheldTools('chat', entityTools)).toEqual([]);
   });
 
-  it('passes through a tool the catalog has no declaration for', () => {
+  it('passes through an undeclared tool on a HOST-owned server', () => {
     // Declaring an operation must be what NARROWS access, never what accidentally
-    // grants it — so an undeclared name stays governed by the coarse server gate.
+    // grants it — so an undeclared name on a surface this repo ships stays
+    // governed by the coarse server gate.
     expect(CATALOG.has('release_create')).toBe(false);
     expect(toolAdmittedByProfile('ask', 'release_create')).toBe(true);
     expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
+  });
+
+  it('[ac:ac-operacja-spoza-profilu-polaczenia-nie] withholds a PLUGIN\'s declared write tools from `ask`', () => {
+    // The real spreadsheet-tools surface. Six of these eight mutate a
+    // specification, and before they were catalogued the gate waved all eight
+    // through to a consulted peer.
+    const spreadsheet = [
+      'get_overview',
+      'get_range',
+      'set_cell',
+      'set_range',
+      'insert_row',
+      'insert_column',
+      'delete_row',
+      'delete_column',
+    ].map((name) => ({ name, description: '', inputSchema: {}, handler: async () => ({}) }));
+
+    expect(withheldTools('ask', spreadsheet, { plugin: true }).sort()).toEqual([
+      'delete_column',
+      'delete_row',
+      'insert_column',
+      'insert_row',
+      'set_cell',
+      'set_range',
+    ]);
+    // The reads survive — cataloguing them is what keeps the fail-closed rule
+    // from swallowing the whole plugin surface.
+    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(true);
+    expect(toolAdmittedByProfile('ask', 'get_range', { plugin: true })).toBe(true);
+    // `chat` admits writes, so it loses nothing.
+    expect(withheldTools('chat', spreadsheet, { plugin: true })).toEqual([]);
+  });
+
+  it('fails CLOSED on an UNDECLARED plugin tool for a profile that admits no writes', () => {
+    // The case the catalog cannot enumerate in advance: a plugin published
+    // tomorrow. Guessing "probably a read" is what made this a hole.
+    const unknown = [{ name: 'obliterate_everything', description: '', inputSchema: {}, handler: async () => ({}) }];
+    expect(withheldTools('ask', unknown, { plugin: true })).toEqual(['obliterate_everything']);
+    expect(withheldTools('brief', unknown, { plugin: true })).toEqual(['obliterate_everything']);
+    // …but a write-admitting profile still gets it, and the same tool on a
+    // host-owned server is still passed through.
+    expect(withheldTools('chat', unknown, { plugin: true })).toEqual([]);
+    expect(withheldTools('ask', unknown)).toEqual([]);
+  });
+
+  it('derives plugin server names the same way the host mounts them', () => {
+    expect([...pluginServerNamesFor(['spreadsheet', 'diagram'])].sort()).toEqual([
+      'diagram-tools',
+      'spreadsheet-tools',
+    ]);
   });
 });
 

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
@@ -8,6 +8,7 @@ import type { EntityType } from '../../../shared/entities.js';
 import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
 import { invalidType } from '../../discovery/errors.js';
+import { httpStatusForCode } from '../../operations/error-codes.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
@@ -81,6 +82,41 @@ function toJsonSchema(shape: unknown): unknown {
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Pull `{ code, message }` out of a failed MCP tool envelope.
+ *
+ * The payload is a JSON string inside a text block, and the shape of what tools
+ * put there is not uniform — `entity-tools` writes `{error:{code,message}}`
+ * while the `operations/envelope.ts` helper writes `{error,code}`. Both are read
+ * here rather than one being declared correct, because a transport that lost the
+ * code on the spelling it did not expect would answer 500 for a refusal that
+ * named itself perfectly well.
+ */
+function decodeToolFailure(result: unknown): { code: string; message: string } {
+  const text = (result as { content?: Array<{ text?: unknown }> } | null)?.content?.[0]?.text;
+  if (typeof text === 'string') {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const nested = parsed.error as { code?: unknown; message?: unknown } | undefined;
+      if (nested && typeof nested === 'object') {
+        return {
+          code: typeof nested.code === 'string' ? nested.code : 'INTERNAL',
+          message: typeof nested.message === 'string' ? nested.message : text,
+        };
+      }
+      if (typeof parsed.code === 'string') {
+        return { code: parsed.code, message: typeof parsed.error === 'string' ? parsed.error : text };
+      }
+    } catch {
+      /* not JSON — fall through to the opaque form below */
+    }
+  }
+  // The tool said it failed but not why in any shape we recognise. Reporting
+  // INTERNAL is honest: the caller learns the operation failed, which is the part
+  // that was being lost.
+  return { code: 'INTERNAL', message: typeof text === 'string' ? text : 'tool reported an error' };
 }
 
 /**
@@ -198,9 +234,9 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * `link_dto`/`unlink_dto` live at `POST /api/endpoints/:slug/dtos` and its
    * symmetric unlink. This proxy is the fallback for the ones that have none.
    */
-  router.post('/:type/tools/:tool', async (req, res, next) => {
+  const invokeTypeTool: RequestHandler = async (req, res, next) => {
     try {
-      const type = assertActiveType(host, req.params.type);
+      const type = assertActiveType(host, req.params.type!);
       const declared = host.listTypeTools(type);
       const tool = declared.find((t) => t.name === req.params.tool);
       if (!tool) {
@@ -217,11 +253,30 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
         throw new DomainError('VALIDATION', parsed.error.message);
       }
       const result = await host.callTypeTool(type, tool.name, parsed.data as Record<string, unknown>);
+      /**
+       * A tool that FAILED must not arrive as `200 OK`.
+       *
+       * An MCP handler reports failure in-band: `{ content: [...], isError: true }`,
+       * with the code inside the text payload. Forwarding that verbatim made every
+       * refusal — `NOT_FOUND`, `VALIDATION`, a plugin's `INTERNAL` — a 200, so a
+       * REST client branching on `response.ok` recorded a failed operation as a
+       * success and carried on with an empty result. The tool channel surfaces the
+       * same failure as an error; the two channels must agree.
+       *
+       * So the envelope is unwrapped here and re-rendered through the SHARED
+       * taxonomy: the code the tool chose picks the status, exactly as it would
+       * had the handler thrown. A success is still forwarded untouched.
+       */
+      const failed = (result as { isError?: unknown } | null)?.isError === true;
+      if (failed) {
+        const { code, message } = decodeToolFailure(result);
+        return res.status(httpStatusForCode(code)).json({ error: { code, message } });
+      }
       res.json(result);
     } catch (err) {
       next(err);
     }
-  });
+  };
 
   /**
    * M39 L2 over HTTP (item 18) — the generic read surface for a keyed
@@ -420,5 +475,21 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
   });
 
   router.use(errorHandler);
+  /**
+   * Registered HERE, below every pre-existing `/:type/:slug/...` route, and not
+   * up beside its `GET` sibling.
+   *
+   * `POST /:type/tools/:tool` and `POST /:type/:slug/tags` are both three
+   * segments, so Express decides between them purely by registration order.
+   * Declared first, the proxy swallowed `POST /api/entities/ui-view/tools/tags`
+   * — tagging the entity whose slug is literally `tools` — and answered "type
+   * 'ui-view' declares no operation 'tags'", which is both wrong and confusing.
+   * Declared last, the tag route claims the requests that end in `/tags` and the
+   * proxy claims everything else, which is the right split: `tags` is a real
+   * resource on every type, while an operation NAMED `tags` on a type whose
+   * entity is SLUGGED `tools` is a collision no ordering can resolve.
+   */
+  router.post('/:type/tools/:tool', invokeTypeTool);
+
   return router;
 }

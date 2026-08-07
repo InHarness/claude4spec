@@ -281,15 +281,36 @@ export function chatRouter(deps: AgentTurnDeps): Router {
   router.post('/abort/:threadId', (req, res, next) => {
     try {
       const { threadId } = req.params;
+      /**
+       * The live adapter is consulted FIRST, and the thread row only after.
+       *
+       * Order matters here in a way that is easy to get backwards. `activeAdapters`
+       * and `chat_thread` can disagree: `DELETE /api/threads/:id` removes the row
+       * without touching the adapter map or aborting anything, so a turn can still
+       * be streaming — and still writing to the specification — for a thread that
+       * no longer exists. Checking the row first would answer that request
+       * `404 THREAD_NOT_FOUND` and leave the orphaned turn running with no kill
+       * switch at all, since a resume-SSE or CLI caller holds only a threadId and
+       * cannot reach the requestId-addressed variant.
+       *
+       * So: if something is running under this id, stop it, whatever the database
+       * thinks. The row lookup exists only to tell the two NON-aborting outcomes
+       * apart.
+       */
+      const active = activeAdapters.get(threadId);
+      if (active) {
+        cancelPendingForRequest(pendingInputs, active.requestId);
+        active.adapter.abort();
+        cascadeAbortChildren(threadId);
+        return res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
+      }
+      // Nothing running. Now the two outcomes that used to be one: a thread that
+      // exists and is simply idle (idempotent no-op) versus one that never did
+      // (a caller bug, which reporting as success made invisible).
       if (!deps.chatService.getThreadMeta(threadId)) {
         throw new DomainError('THREAD_NOT_FOUND', `thread '${threadId}' not found`);
       }
-      const active = activeAdapters.get(threadId);
-      if (!active) return res.json({ data: { aborted: false }, clearedTexts: [] });
-      cancelPendingForRequest(pendingInputs, active.requestId);
-      active.adapter.abort();
-      cascadeAbortChildren(threadId);
-      res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
+      res.json({ data: { aborted: false }, clearedTexts: [] });
     } catch (err) {
       next(err);
     }

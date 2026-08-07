@@ -416,6 +416,16 @@ export interface ReferenceHit {
   anchor?: string;
   tagType: string;
   line: number;
+  /**
+   * The originating tag's own text, where the scan produced one.
+   *
+   * Optional because a tag-MATCH hit (phase 2, carrying `via`) is inferred from
+   * an entity's tags rather than read off a tag in the page, and a section/page
+   * reference is matched structurally — none of those has an original string to
+   * quote. Present on every direct entity reference, which is what the published
+   * `ReferenceHit` and the reference chips that render it expect.
+   */
+  raw?: string;
   via?: string[];
 }
 

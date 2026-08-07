@@ -3,6 +3,7 @@ import type { ReferencesService } from '../services/references.js';
 import type { EntityType } from '../../shared/entities.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
+import { findReferencesAllPaged } from '../discovery/index.js';
 import { errorHandler } from './errors.js';
 
 /**
@@ -88,16 +89,56 @@ export function referencesRouter(
       if (!type || !slug) {
         return res.status(400).json({ error: { code: 'VALIDATION', message: 'type and slug query params required' } });
       }
+
       /**
-       * The service call is kept for the plain, unparameterised case that the UI
-       * makes — it is the same core operation with the same defaults, and going
-       * through the service preserves the reference-hydration the client's
-       * chips rely on. Anything that asks for tag matches or a page window goes
-       * to the core directly, because that is where those options live.
+       * The entity target answers from the SERVICE, always, and the window is
+       * applied here.
+       *
+       * Handing `limit`/`offset` to the core instead looks equivalent and is not,
+       * in three ways a caller notices:
+       *
+       *   - SHAPE. `ops/references.ts` maps its hits through a projection that
+       *     drops `raw` — the original tag text. The published `ReferenceHit`
+       *     declares `raw` as required and the reference chips render it, so a
+       *     request that merely added `&limit=` came back with empty chips and no
+       *     error to explain them.
+       *   - TYPE VOCABULARY. `assertType` admits the non-entity pseudo-type
+       *     `section`, which this route has accepted since long before the core
+       *     existed; `entityReferences` refuses anything `host.getEntity()` does
+       *     not know. So `?type=section&slug=x` answered 200, and
+       *     `?type=section&slug=x&limit=20` answered 404 INVALID_TYPE.
+       *   - COMPLETENESS. The core paginates at `DEFAULT_LIMITS.findReferences`
+       *     (100). An entity cited on 150 pages answered with 150 references
+       *     plain and 100 with a flag set — the caller asking the BIGGER question
+       *     ("what breaks if I rename this") got the smaller answer.
+       *
+       * `includeTagMatches` is the one thing the service cannot do, so it — and
+       * only it — goes to the core.
        */
-      if (!includeTagMatches && limit === undefined && offset === undefined) {
+      if (!includeTagMatches) {
         const hits = await references.findReferences(type, slug);
-        return res.json({ references: hits });
+        if (limit === undefined && offset === undefined) return res.json({ references: hits });
+        const start = offset ?? 0;
+        const window = limit === undefined ? hits.slice(start) : hits.slice(start, start + limit);
+        return res.json({ references: window, total: hits.length, hasMore: start + window.length < hits.length });
+      }
+
+      /**
+       * Tag matches: the core's phase 2, which no service method exposes.
+       *
+       * With no explicit window the exhaustive helper is used rather than one
+       * `findReferences` call, so this path cannot silently stop at the core's
+       * default page. `exhausted: false` means the runaway guard tripped, which
+       * is reported as `hasMore` rather than passed off as a complete answer.
+       */
+      if (limit === undefined && offset === undefined) {
+        const { references: all, exhausted } = await findReferencesAllPaged(discovery, {
+          target: 'entity',
+          type,
+          slug,
+          includeTagMatches: true,
+        });
+        return res.json({ references: all, total: all.length, hasMore: !exhausted });
       }
       const result = await discovery.findReferences({ target: 'entity', type, slug, ...paging });
       res.json({ references: result.references, total: result.total, hasMore: result.hasMore });

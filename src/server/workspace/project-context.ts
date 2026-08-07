@@ -975,7 +975,7 @@ async function buildInner(
   );
   router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
   router.use('/static/:rootId', staticRouter(resolveStatic));
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(pluginHost, referencesService, discovery));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
 

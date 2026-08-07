@@ -79,6 +79,13 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
       if (typeof body.body !== 'string' || body.body === '') {
         throw new DomainError('VALIDATION', 'body is required');
       }
+      // Validated like every other field rather than trusted because it is
+      // optional: `body.createdBy?.trim()` on a non-string threw a TypeError the
+      // handler could not attribute, so a client bug surfaced as 500 INTERNAL
+      // with a stack in the server log and no indication of which field was wrong.
+      if (body.createdBy !== undefined && typeof body.createdBy !== 'string') {
+        throw new DomainError('VALIDATION', 'createdBy must be a string when present');
+      }
       const kind = body.patchKind ?? 'drift';
       if (!PATCH_KINDS.includes(kind)) {
         throw new DomainError(

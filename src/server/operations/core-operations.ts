@@ -44,7 +44,7 @@
  */
 
 import { z } from 'zod';
-import { CATALOG, direct, na, type OperationDeclaration } from './catalog.js';
+import { CATALOG, direct, na, via, type OperationDeclaration } from './catalog.js';
 
 /** Shared by every operation that projects an entity through the serialization layer. */
 const viewParam = {
@@ -448,6 +448,66 @@ export function registerCoreOperations(): void {
     idempotent: false,
     channels: fullParity(),
   });
+
+  // ── M13 type-specific operations (per §7 of the release) ──────────────────
+  //
+  // The operations entity plugins declare in their `backend.mcpServer` slot.
+  // Declared here for the same reason as the entity writes above: the profile
+  // gate can only withhold what the catalog can classify, and `spreadsheet`'s
+  // eight operations include six that mutate a specification.
+  //
+  // These live on `${type}-tools` servers, which for a restrictive profile are
+  // additionally FAIL-CLOSED in `profile-gate.ts` — this list makes the reads
+  // reachable again rather than being swept up with the writes.
+
+  const typeOp = (
+    name: string,
+    summary: string,
+    opClass: 'read' | 'write',
+    idempotent: boolean,
+    inputSchema: z.ZodRawShape = {},
+  ) =>
+    CATALOG.register({
+      name,
+      summary,
+      scope: 'project',
+      mediation: 'direct',
+      opClass,
+      inputSchema,
+      errorCodes: opClass === 'write' ? ['NOT_FOUND', 'VALIDATION'] : ['NOT_FOUND'],
+      sideEffects: opClass === 'write' ? ['file', 'db', 'ui-notify'] : ['none'],
+      idempotent,
+      channels: {
+        internal: direct(),
+        cli: direct(),
+        mcp: direct(),
+        // Reachable over REST through the generic host proxy
+        // (`POST /api/entities/:type/tools/:tool`) rather than a route of its own.
+        rest: via('call_type_tool', 'generic host proxy — the plugin contributes no router'),
+      },
+    });
+
+  // spreadsheet — sheet by slug, cells 1-based inclusive (r1,c1)-(r2,c2).
+  typeOp('get_overview', 'Shape of a spreadsheet: sheets, dimensions, populated ranges.', 'read', true);
+  typeOp('get_range', 'Read a rectangular window of cells.', 'read', true);
+  typeOp('set_cell', 'Write one cell. Idempotent; an empty string removes it from the index.', 'write', true);
+  typeOp('set_range', 'Write a rectangle of cells. Idempotent.', 'write', true);
+  // Not idempotent: these shift every index past the insertion/removal point, so
+  // cell coordinates are not stable across them.
+  typeOp('insert_row', 'Insert a row, reindexing every row past it.', 'write', false);
+  typeOp('insert_column', 'Insert a column, reindexing every column past it.', 'write', false);
+  typeOp('delete_row', 'Delete a row, reindexing every row past it.', 'write', false);
+  typeOp('delete_column', 'Delete a column, reindexing every column past it.', 'write', false);
+
+  // endpoint — both idempotent; unlink without a statusCode removes every
+  // binding matching (endpoint, dto, relation).
+  typeOp('link_dto', 'Bind a DTO to an endpoint. Idempotent — a duplicate binding is a no-op.', 'write', true);
+  typeOp('unlink_dto', 'Remove a DTO binding. Idempotent.', 'write', true);
+
+  // ac / diagram — read-only analysis. `analyze_ac_against_entities` is
+  // idempotent in STATE but not in content: its answer comes from an LLM.
+  typeOp('analyze_ac_against_entities', 'Analyse acceptance criteria against the entity graph. Unanalysable input lands in `skipped_reasons[]`, not in an error.', 'read', true);
+  typeOp('validate_diagram', 'Validate diagram source. Pure; bad syntax is a warning, not an error.', 'read', true);
 
   // ── M05 Agent turn ────────────────────────────────────────────────────────
 

@@ -23,7 +23,7 @@ import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
-import { gateServers } from '../operations/profile-gate.js';
+import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
@@ -699,6 +699,10 @@ export async function runAgentTurn(
         .filter(({ name }) =>
           ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
         ),
+      // Which of the survivors are a PLUGIN's own surface. For a profile that
+      // admits no writes, an undeclared tool on one of those is denied rather
+      // than waved through — the host cannot vouch for what it never wrote.
+      pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type)),
     )
       // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
       // only forwards it. THIS is the adapter boundary where it is re-widened to

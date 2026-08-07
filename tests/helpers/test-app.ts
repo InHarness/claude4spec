@@ -241,7 +241,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    * `pluginHostRouter`, which this harness does not mount.
    */
   router.use('/_meta', metaRouter(discovery));
-  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService));
   router.use('/references', referencesRouter(host, referencesService, discovery));
   router.use(
     '/patches',
