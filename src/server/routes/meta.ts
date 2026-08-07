@@ -32,13 +32,7 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { resolvePageContent } from '../serialization/resolve-page.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
-
-/** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined (let the core default). */
-function positiveInt(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
-}
+import { commaList, positiveInt } from './query-params.js';
 
 function optionalString(raw: unknown): string | undefined {
   return typeof raw === 'string' && raw.trim() !== '' ? raw : undefined;
@@ -95,9 +89,15 @@ export function metaRouter(discovery: DiscoveryCore, host: ProjectPluginHost): R
   router.get('/identities', (req, res, next) => {
     try {
       const query = optionalString(req.query.q);
+      // 0.2.13 (tier C) — `?types=` narrows the sweep to a subset, which the
+      // core has always taken (`ResolveIdentityInput.types`) and this route
+      // dropped. The `cli` rendering has spelled it `--types` since 0.2.6, so
+      // without it the two channels answered differently for the same call.
+      const types = commaList(req.query.types);
       res.json(
         discovery.resolveIdentity({
           query: query ?? '',
+          ...(types ? { types } : {}),
           ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
         }),
       );

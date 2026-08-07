@@ -162,12 +162,29 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const type = assertActiveType(host, req.params.type);
       const q = typeof req.query.q === 'string' ? req.query.q : '';
       const limit = positiveInt(req.query.limit);
-      const offset = positiveInt(req.query.offset);
+      // `offset` is read with the non-negative parser: 0 is a legitimate offset
+      // and a meaningless limit, and the exhaustive sweeps page from 0.
+      const offset = nonNegativeInt(req.query.offset);
       const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      /**
+       * 0.2.13 (tier C) — `fields` and `mode` joined the wire.
+       *
+       * The core has taken both since M39 and this route took neither, which
+       * only stopped mattering when `c4s search-entities` started delegating
+       * here: it has spelled them `--fields` and `--mode` since 0.2.6, so the
+       * two channels would have answered differently for the same call —
+       * `--mode count` paying for a full listing, `--fields` searching
+       * everything. Dropping a narrowing silently is the failure this release
+       * exists to end.
+       */
+      const fields = commaList(req.query.fields);
+      const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'hits' ? 'hits' : undefined;
       const result = discovery.searchEntities({
         type,
         query: q,
         ...(view ? { view: view as never } : {}),
+        ...(fields ? { fields } : {}),
+        ...(mode ? { mode } : {}),
         ...(limit !== undefined ? { limit } : {}),
         ...(offset !== undefined ? { offset } : {}),
       });

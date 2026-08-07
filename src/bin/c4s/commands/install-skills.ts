@@ -1,7 +1,7 @@
 import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalString, optionalStringList } from '../args.js';
-import { resolveWorkspaceProjectOrThrow } from '../context.js';
+import { resolveWorkspaceProjectOrThrow } from '../project-selector.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import {

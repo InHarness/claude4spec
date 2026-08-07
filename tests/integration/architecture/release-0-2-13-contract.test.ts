@@ -218,3 +218,134 @@ describe('the external MCP surface has no second execution locus', () => {
     expect(src).toContain('gateServer');
   });
 });
+
+/**
+ * Tier C — §2 and items 22, 24, 26. The `c4s` bin stops being a reader.
+ *
+ * These are the release's most breaking change, and they are all claims of
+ * ABSENCE: no db handle, no serialization, no plugin loader driving the type
+ * set. Absence is exactly what a normal test cannot observe — a command that
+ * quietly reopened SQLite would still answer correctly on a machine where the
+ * file happens to be there, and would still pass every behavioural test in the
+ * suite. So these read the source.
+ */
+describe('the CLI holds no handle on the specification', () => {
+  const cliSources = (): Array<{ file: string; text: string }> => {
+    const out: Array<{ file: string; text: string }> = [];
+    const walk = (dir: string): void => {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const abs = path.join(dir, e.name);
+        if (e.isDirectory()) walk(abs);
+        else if (e.name.endsWith('.ts') && !e.name.endsWith('.test.ts')) {
+          out.push({ file: path.relative(REPO_ROOT, abs), text: fs.readFileSync(abs, 'utf8') });
+        }
+      }
+    };
+    walk(path.join(REPO_ROOT, 'src/bin/c4s'));
+    out.push({ file: 'src/bin/c4s.ts', text: read('src/bin/c4s.ts') });
+    return out;
+  };
+
+  it('[ac:ac-zero-logiki-formatowania-w-cli-subkome] the brief\'s own control grep returns nothing', () => {
+    // Verbatim from item 22. It targets SERIALIZATION specifically because that
+    // is the part that looks harmless to reintroduce: a command that formats one
+    // entity locally is one `registerSerializer` away from a second L9 registry
+    // that drifts from the server's by a package version.
+    const forbidden = /config\.entities|registerSerializer|serializerRegistry|serialize\(host/;
+    for (const { file, text } of cliSources()) {
+      expect(forbidden.exec(text)?.[0], `${file} still touches CLI-side serialization`).toBeUndefined();
+    }
+  });
+
+  it('[ac:ac-cli-otwiera-sqlite-wylacznie-readonly] nothing under bin/c4s opens a database', () => {
+    // The handle itself, not just the reads through it. `openDbReadonly` was the
+    // single door; better-sqlite3 is named too, so reopening it by hand does not
+    // slip past.
+    const forbidden = /openDbReadonly|better-sqlite3|db\/readonly\.js/;
+    for (const { file, text } of cliSources()) {
+      expect(forbidden.exec(text)?.[0], `${file} opens a db slot`).toBeUndefined();
+    }
+  });
+
+  it('src/bin/c4s/context.ts is gone, not emptied', () => {
+    // It resolved the project AND built a discovery core. A file left in place
+    // with the core removed would invite the core back; `project-selector.ts`
+    // carries the half that survived, and its name says what it does.
+    expect(fs.existsSync(path.join(REPO_ROOT, 'src/bin/c4s/context.ts'))).toBe(false);
+    expect(fs.existsSync(path.join(REPO_ROOT, 'src/bin/c4s/project-selector.ts'))).toBe(true);
+  });
+
+  it('[ac:ac-komenda-o-trybie-server-delegating-pr] exit 8 is SERVER_NOT_RUNNING, and INDEX_NOT_MATERIALIZED no longer claims it', () => {
+    const bin = read('src/bin/c4s.ts');
+    const eight = /case '([A-Z_]+)':\s*\n\s*return 8;/.exec(bin);
+    expect(eight?.[1]).toBe('SERVER_NOT_RUNNING');
+    expect(bin).not.toMatch(/case 'INDEX_NOT_MATERIALIZED':/);
+  });
+
+  it('[ac:ac-kazda-komenda-modulowa-wchodzi-do-bin-c] the execution-mode enum no longer offers a way to read without a server', () => {
+    const registry = read('src/bin/c4s/registry.ts');
+    const union = /executionMode:\s*([^;]+);/.exec(registry)?.[1] ?? '';
+    expect(union).toContain("'server-delegating'");
+    // `readonly-reader` named the second execution locus. Removing the mode is
+    // what makes reintroducing it a type error rather than a review comment.
+    expect(union).not.toContain('readonly-reader');
+  });
+
+  it('[ac:ac-c4s-agent-c4s-ask-i-c4s-mark-brief] the bridge and the CLI agree that neither starts a server', () => {
+    const help = read('src/bin/c4s.ts');
+    expect(help).toMatch(/SERVER_NOT_RUNNING/);
+    expect(help).toMatch(/never starts one/);
+  });
+});
+
+/**
+ * Item 26, against the REAL contributions.
+ *
+ * `registry.test.ts` proves the check refuses a violation; this proves the
+ * shipped commands contain none. Both are needed: a check nobody runs on the
+ * real data is decoration, and a check run only on real data that happens to be
+ * clean cannot be told apart from a check that always says yes.
+ *
+ * The contributions are PARSED rather than imported, for the same reason the
+ * M39 reachability gate parses them: `src/bin/c4s.ts` runs `main()` at import,
+ * so pulling the array in would execute the CLI.
+ */
+describe('[ac:ac-kontrybucja-komendy-jest-niepoprawna] every shipped command contribution is valid', () => {
+  it('renders its catalog operation in server-delegating mode, or renders none', async () => {
+    const { validateCommandContributions } = await import('../../../src/bin/c4s/registry.js');
+    const { CATALOG } = await import('../../../src/server/operations/catalog.js');
+    const { registerCoreOperations } = await import('../../../src/server/operations/core-operations.js');
+    registerCoreOperations();
+
+    const dir = path.join(REPO_ROOT, 'src/bin/c4s/commands');
+    const parsed: Array<{
+      name: string;
+      operation?: string;
+      executionMode: 'server-delegating' | 'fs-scoped' | 'registry-write' | 'scaffold';
+      errorCodes: [];
+      handler: () => Promise<void>;
+    }> = [];
+    for (const f of fs.readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'))) {
+      const text = fs.readFileSync(path.join(dir, f), 'utf8');
+      const decl = /: CliCommandContribution = \{([\s\S]*?)\n\};/.exec(text)?.[1];
+      if (!decl) continue;
+      const name = /name: '([^']+)'/.exec(decl)?.[1];
+      const mode = /executionMode: '([^']+)'/.exec(decl)?.[1];
+      expect(name, `${f}: no name in the contribution`).toBeTruthy();
+      expect(mode, `${f}: no executionMode in the contribution`).toBeTruthy();
+      const operation = /operation: '([^']+)'/.exec(decl)?.[1];
+      parsed.push({
+        name: name!,
+        ...(operation ? { operation } : {}),
+        executionMode: mode as 'server-delegating',
+        errorCodes: [],
+        handler: async () => {},
+      });
+    }
+    // A parse that found nothing would pass the assertion below vacuously.
+    expect(parsed.length).toBeGreaterThan(20);
+
+    const problems = validateCommandContributions(parsed, (n) => CATALOG.get(n) !== undefined);
+    expect(problems).toEqual([]);
+  });
+});

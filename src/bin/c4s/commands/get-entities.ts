@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, refuseFlags, requireString, requireStringList } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -18,6 +18,10 @@ import type { CliCommandContribution } from '../registry.js';
  *
  * No `--limit`/`--offset`: the caller names the rows, so the valve is the input
  * length cap plus the response budget, not a page.
+ *
+ * 0.2.13 — `server-delegating`. The payload is the operation's own envelope,
+ * printed as it arrived: the entities were serialized by the server, which is
+ * the only process that still knows how.
  */
 export async function runGetEntities(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -27,17 +31,13 @@ export async function runGetEntities(args: ParsedArgs): Promise<void> {
 
   refuseFlags(args, ['limit', 'offset'], 'get-entities is fetch-by-key: you name the rows, so the valve is the slug-list cap plus the response budget');
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(ctx.discovery.getEntities({ type, slugs, ...(view ? { view } : {}) }), args);
-  } finally {
-    ctx.close();
-  }
+  writeOutput(await delegateGet(args, `/entities/${type}/get`, { slugs, view }), args);
 }
 
 export const getEntitiesCommand: CliCommandContribution = {
   name: 'get-entities',
-  executionMode: 'readonly-reader',
+  operation: 'get_entities',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runGetEntities,
 };

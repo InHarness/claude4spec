@@ -28,6 +28,25 @@ export function withMeta(record: { data?: unknown; entity?: unknown } & Serializ
 }
 
 /**
+ * Read one page of `list_entities` off the wire, for the exhaustive sweeps.
+ *
+ * `mode: 'count'` is the other arm of the result union and carries no `items`;
+ * the sweeps never ask for it, and treating an absent `items` as the end of the
+ * sweep rather than crashing is what keeps a surprising payload from taking the
+ * command down mid-page.
+ */
+export function pickEntityPage(payload: unknown): {
+  items: Array<{ slug: string; data: unknown } & SerializedMeta>;
+  hasMore: boolean;
+} {
+  const p = (payload ?? {}) as {
+    items?: Array<{ slug: string; data: unknown } & SerializedMeta>;
+    hasMore?: boolean;
+  };
+  return { items: Array.isArray(p.items) ? p.items : [], hasMore: p.hasMore === true };
+}
+
+/**
  * One slug is the degenerate case of a slug LIST in the core, so the
  * single-entity commands unwrap it here — and turn "no such entity" back into
  * the CLI's `ENTITY_NOT_FOUND`, which the list-shaped operation reports as a

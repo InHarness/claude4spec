@@ -2,7 +2,7 @@ import type { ParsedArgs } from '../args.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { collectPluginDiagnostics } from '../../../server/core/plugin-host/cli-plugins.js';
-import { mapWorkspaceResolveError } from '../context.js';
+import { mapWorkspaceResolveError } from '../project-selector.js';
 import type { PluginLoadRecord } from '../../../server/core/plugin-host/loader.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -97,7 +97,11 @@ function trustLabel(p: PluginLoadRecord): string {
 
 export const pluginsCommand: CliCommandContribution = {
   name: 'plugins',
-  executionMode: 'readonly-reader',
+  // Item 25 (deferred) moves this to `server-delegating` over
+  // `GET /api/_meta/plugins`, so it reports the SERVER host's loader rather than
+  // one of its own. Until then it is `fs-scoped`: it reads the registry and the
+  // package pool from disk, opens no db slot, and needs no server.
+  executionMode: 'fs-scoped',
   errorCodes: ['INVALID_ARGS', 'HOST_API_INCOMPATIBLE'],
   handler: runPlugins,
 };

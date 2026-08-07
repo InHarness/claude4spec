@@ -64,10 +64,19 @@ export function sectionsRouter(sections: SectionsService, discovery: DiscoveryCo
    */
   router.get('/get', async (req, res, next) => {
     try {
-      const anchors = commaList(req.query.anchors);
-      if (!anchors || anchors.length === 0) {
+      /**
+       * ABSENT is refused here; EMPTY is passed to the core.
+       *
+       * The distinction matters because the core refuses an empty list with the
+       * operative bounds in the message ("1..50"), and the caller who sent an
+       * empty list is precisely the one who needs to be told what they are. A
+       * transport that refused it first would answer the same mistake with less
+       * information — which is why `c4s get-sections` does not refuse it either.
+       */
+      if (req.query.anchors === undefined) {
         throw new DomainError('VALIDATION', 'anchors query param required (comma-separated)');
       }
+      const anchors = commaList(req.query.anchors) ?? [];
       const includeSubtree = boolFlag(req.query.includeSubtree);
       res.json(await discovery.getSections({ anchors, ...(includeSubtree ? { includeSubtree } : {}) }));
     } catch (err) {

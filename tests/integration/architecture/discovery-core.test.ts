@@ -388,40 +388,84 @@ describe('M39 — Discovery Core', () => {
     }
     const commandFiles = commandFilesText.join('\n');
 
-    for (const [op, reachedBy] of [
+    /**
+     * 0.2.13 (item 22) — reachability is asserted through the DECLARATION, not
+     * through an import of the core.
+     *
+     * This block used to require that some command file contained
+     * `.overview(` — evidence that a command called the discovery core in the
+     * `c4s` process. That evidence is now the opposite of what should be true:
+     * executing a catalog operation belongs to the server process, and a command
+     * importing the core would be the second locus this release removed. If the
+     * old form were kept, the only way to make it pass again would be to
+     * reintroduce the bug.
+     *
+     * So each M39 operation must be named by a `server-delegating` contribution
+     * instead. That is a STRONGER claim than the old one: it pins the mode as
+     * well as the reachability, and `validateCommandContributions` (item 26)
+     * separately checks that a named operation exists in the catalog.
+     */
+    const operationByCommandName = new Map<string, string>();
+    const modeByCommandName = new Map<string, string>();
+    for (const text of commandFilesText) {
+      for (const m of text.matchAll(
+        /name: '([^']+)',\s*\n(?:\s*operation: '([^']+)',\s*\n)?(?:\s*(?:\/\/[^\n]*\n|\s*\/\*[\s\S]*?\*\/\s*\n)*)\s*executionMode: '([^']+)'/g,
+      )) {
+        if (m[2]) operationByCommandName.set(m[1]!, m[2]);
+        modeByCommandName.set(m[1]!, m[3]!);
+      }
+    }
+
+    for (const [operation, reachedBy] of [
       ['overview', 'catalog'],
-      ['describeTypes', 'describe'],
-      ['listPages', 'list-pages'],
-      ['listSections', 'list-sections'],
-      ['getSections', 'get-sections'],
-      ['getPage', 'get-page'],
-      ['searchPages', 'search-pages'],
-      ['searchEntities', 'search-entities'],
-      ['listEntities', 'list-entities'],
-      ['getEntities', 'get-entities'],
-      ['listTags', 'list-tags'],
-      ['findReferences', 'find-references'],
-      ['checkConsistency', 'check-consistency'],
-      ['resolveIdentity', 'resolve-identity'],
+      ['describe_types', 'describe'],
+      ['list_pages', 'list-pages'],
+      ['list_sections', 'list-sections'],
+      ['get_sections', 'get-sections'],
+      ['get_page', 'get-page'],
+      ['search_pages', 'search-pages'],
+      ['search_entities', 'search-entities'],
+      ['list_entities', 'list-entities'],
+      ['get_entities', 'get-entities'],
+      ['list_tags', 'list-tags'],
+      ['find_references', 'find-references'],
+      ['check_consistency', 'check-consistency'],
+      ['resolve_identity', 'resolve-identity'],
     ] as const) {
-      /**
-       * Either the operation itself or its sanctioned exhaustive wrapper
-       * (`getEntitiesAll`, `findReferencesAll`, `findReferencesAllPaged`, …). A
-       * command that has to read past a page boundary — `find-references` sweeps
-       * before a rename, so a capped answer is a wrong one — goes through the
-       * wrapper, and that is still the core answering. The `…All` stem is
-       * matched as a PREFIX so a wrapper variant (one that also reports whether
-       * the sweep reached the end) does not read as "the CLI stopped calling the
-       * core".
-       */
-      const callsOp = commandFiles.includes(`.${op}(`) || commandFiles.includes(`${op}All`);
-      expect(callsOp, `no CLI command calls discovery.${op} (or ${op}All)`).toBe(true);
       const identifier = identifierByCommandName.get(reachedBy);
       expect(identifier, `no command module declares name: '${reachedBy}'`).toBeTruthy();
       expect(
         registeredIdentifiers.has(identifier!),
         `'${reachedBy}' (${identifier}) is declared but not in the COMMANDS array — it would be UNKNOWN_COMMAND at runtime`,
       ).toBe(true);
+      expect(
+        operationByCommandName.get(reachedBy),
+        `'${reachedBy}' must declare operation: '${operation}' — that declaration is the only record of which catalog operation the CLI renders`,
+      ).toBe(operation);
+      expect(
+        modeByCommandName.get(reachedBy),
+        `'${reachedBy}' renders a catalog operation, so its mode must be 'server-delegating'`,
+      ).toBe('server-delegating');
+    }
+
+    /**
+     * The counterpart, and the reason the assertion above had to change shape:
+     * no command may import a VALUE from the discovery core any more.
+     *
+     * `import type` is deliberately allowed and is not a loophole. A type is
+     * erased at compile time — it carries no execution — and the shapes the core
+     * answers with are exactly what a transport has to name in order to unwrap a
+     * response without inventing its own vocabulary for it. What would be a
+     * second execution locus is `import { createDiscoveryCore }` or
+     * `import { listEntitiesAll }`, and that is what this matches.
+     */
+    const valueImport = /import\s+(?!type\b)[^;]*?from\s+'[^']*\/server\/discovery\//;
+    for (const text of commandFilesText) {
+      const hit = valueImport.exec(text);
+      expect(
+        hit?.[0],
+        'a command imports a VALUE from the discovery core: executing a catalog operation belongs to the server process',
+      ).toBeUndefined();
     }
   });
 

@@ -7,6 +7,7 @@ import type { SelfWriteMarker } from '../fs/sources.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
+import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 import { nonNegativeInt, positiveInt } from './query-params.js';
 
@@ -39,6 +40,20 @@ export interface PageRootRuntime {
  * `hits`/`pages`/`count` modes, paging, and an anchor on every hit that falls
  * inside an indexed section.
  */
+/**
+ * `?range=1:200` → `{ start: 1, end: 200 }`, 1-based and inclusive.
+ *
+ * A malformed value is REFUSED rather than dropped. `range` narrows what comes
+ * back, and a narrowing quietly ignored answers with the whole page while the
+ * caller believes it asked for twenty lines.
+ */
+function parseRange(raw: unknown): { start: number; end: number } | undefined {
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  const m = /^(\d+):(\d+)$/.exec(raw);
+  if (!m) throw new DomainError('VALIDATION', `range must be '<from>:<to>', got '${raw}'`);
+  return { start: Number(m[1]), end: Number(m[2]) };
+}
+
 export function crossRootPagesRouter(discovery: DiscoveryCore): Router {
   const router = Router();
 
@@ -125,6 +140,37 @@ export function pagesRouter(
           ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
           ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
         }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `get_page`.
+   *
+   * The read wildcard below is not it, and the difference is not cosmetic. That
+   * one answers `PagesService.read` — the editor's payload — with a bare
+   * `{ error: 'not found' }` for a missing page and no notion of `range`. This
+   * answers the core: the page AS AUTHORED with its XML tags untouched, a
+   * `PAGE_NOT_FOUND` carrying the repair path, and `range` — which the core
+   * accepts only on a root WITHOUT a section index, a refusal it owns because it
+   * owns root properties.
+   *
+   * The path is a QUERY parameter, not a wildcard segment. A page path contains
+   * slashes and may collide with any static segment this router adds later; put
+   * it in the query and the operation's route can never be shadowed by a page
+   * whose name happens to match.
+   */
+  router.get('/get', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
+      if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
+      const range = parseRange(req.query.range);
+      res.json(
+        await discovery.getPage({ rootId: rt.root.id, path: pagePath, ...(range ? { range } : {}) }),
       );
     } catch (err) {
       next(err);

@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalStringList, refuseFlags } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -19,6 +19,11 @@ import type { CliCommandContribution } from '../registry.js';
  * 2. No `--root-id`, and no `--limit`/`--offset`. Anchors are globally unique,
  *    and the caller named the rows, so the valve is the input-length cap plus
  *    the response budget.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/sections/get`. Property 1 is what
+ * makes that route answer 200 with a per-item error rather than 404 for the
+ * call: the two channels have to agree, or a shell caller sees the batch
+ * succeed over MCP and fail over the CLI for the same anchors.
  */
 export async function runGetSections(args: ParsedArgs): Promise<void> {
   if (args.flags.has('root-id')) {
@@ -39,17 +44,13 @@ export async function runGetSections(args: ParsedArgs): Promise<void> {
 
   refuseFlags(args, ['limit', 'offset'], 'get-sections is fetch-by-key: you name the rows, so the valve is the anchor-list cap plus the response budget');
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(await ctx.discovery.getSections({ anchors, includeSubtree }), args);
-  } finally {
-    ctx.close();
-  }
+  writeOutput(await delegateGet(args, '/sections/get', { anchors, includeSubtree }), args);
 }
 
 export const getSectionsCommand: CliCommandContribution = {
   name: 'get-sections',
-  executionMode: 'readonly-reader',
+  operation: 'get_sections',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'SECTION_NOT_FOUND'],
   handler: runGetSections,
 };

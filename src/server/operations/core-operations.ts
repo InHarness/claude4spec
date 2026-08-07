@@ -393,6 +393,43 @@ export function registerCoreOperations(): void {
     channels: fullParity(),
   });
 
+  /**
+   * 0.2.13 (tier C) — `list_briefs` was missing from the catalog.
+   *
+   * It is reachable in three channels and has been for releases: `c4s
+   * list-briefs`, `GET /api/artifacts/brief`, and the briefs list in the UI. It
+   * was simply never declared, so nothing gated it and nothing checked its
+   * parity — the exact gap the catalog exists to make visible. It surfaced when
+   * item 23 moved `c4s list-briefs` onto its server route and the command had no
+   * operation to name.
+   *
+   * `internal` is `na`: the built-in agent working on a brief already has one,
+   * addressed by the thread. Listing the others is a navigation question a
+   * consultant asks, not something a brief-scoped turn needs.
+   */
+  CATALOG.register({
+    name: 'list_briefs',
+    summary: 'Briefs of the project, newest release first, optionally narrowed to implemented or pending.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'brief',
+    inputSchema: {
+      implemented: z
+        .boolean()
+        .optional()
+        .describe('Narrow to implemented (true) or pending (false). Omit for all.'),
+    },
+    errorCodes: ['VALIDATION'],
+    sideEffects: ['none'],
+    idempotent: true,
+    channels: {
+      internal: na('a brief-scoped turn is already addressed at its brief; listing the others is a navigation question, not part of the work'),
+      cli: direct(),
+      mcp: direct(),
+      rest: direct(),
+    },
+  });
+
   CATALOG.register({
     name: 'get_brief',
     summary: 'Read a brief: frontmatter and body.',

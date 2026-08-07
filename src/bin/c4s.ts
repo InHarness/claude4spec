@@ -109,17 +109,18 @@ Graph reader (no XML counterpart):
 Utility:
   resolve <file.md> [--format inline|json]
 
-Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
+Agent:
   agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
   agent "<msg>" --ct brief --brief <path>
   agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
   ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
   ask "<msg>" --thread <id>                   continue an existing ask thread
     --server <url>                                    override server discovery (remote / one-off --port)
+                                                      accepted by every server-delegating command, not just these
     --effort <low|medium|high>                        reasoning level for the turn (default medium)
     --model <fable-5|sonnet-4.6|opus-5|opus-4.8|haiku-4.5>  model for the turn (default opus-4.8)
 
-Discovery:
+Discovery (through the server's operations — see "Server required" below):
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
   describe --type <t> [--view <v>] JSON Schema per view for one type, plus the paths a
                                     search would cover. Since 0.2.6 the payload is the core's
@@ -162,7 +163,7 @@ Pagination (every list command above):
                                     nor by resolve-identity / check-consistency, whose output is
                                     bounded by its own nature (a top-N ranking; a counted report).
 
-Plugins (M33 — reads loader state, no running server):
+Plugins (M33 — reads this package's loader state; no server):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
   plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
@@ -171,25 +172,34 @@ Plugins (M33 — reads loader state, no running server):
                                     workspaces.json, creating the project record if absent — for
                                     non-interactive Docker plugin smoke-testing (see DOCKER.md)
 
-Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NOT_MATERIALIZED):
+Brief/patch (M11 — server-delegating, like every read above):
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
   read-brief <brief-path>           <brief-path> relative to briefsDir
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
-             [--body-file <f>]      body from --body-file or stdin; writes to patchesDir
+             [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
+                                    file under patchesDir and mints its slug
   mark-brief-implemented <brief-path> --project <slug> --workspace <name>
-                                     server-delegating (unlike the three above) — wraps
-                                     PATCH /api/briefs/:path/frontmatter; requires a running server
+                                     wraps PATCH /api/artifacts/brief/:path/frontmatter
+                                     ('implemented' is the only mutable frontmatter key)
 
-Skills (M22 — filesystem-only, no server, no sqlite; on-demand, no bootstrap side-effect):
+Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect):
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
                   writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
                   CODE repo), not the --project spec repo; --skills default: all three
 
-Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server, no sqlite):
+Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server):
   create-plugin <target-dir> [--template <git-url>] [--branch <name>] [--force] [--no-install]
                   creates <target-dir> under the current working directory and fills it from
                   the scaffold repo (default: github.com/InHarness/c4s-plugin-scaffold), git
                   history NOT carried over, then runs npm install unless --no-install
+
+Server required — for every step:
+  Since 0.2.13 the \`c4s\` process holds no database handle and reads no
+  specification files. It resolves an ADDRESS locally (.claude4spec/config.json,
+  ~/.claude4spec/workspaces.json, defaultPort) and every command above delegates
+  to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
+  create-plugin, plugins.
+  No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
 
 Global flags:
   --project <path|name>  override project (path tried first, else matched by registered name)
@@ -271,7 +281,19 @@ function codeToExit(code: string): number {
       return 6;
     case 'AMBIGUOUS_WORKSPACE':
       return 7;
-    case 'INDEX_NOT_MATERIALIZED':
+    /**
+     * 0.2.13 item 24 — exit 8 changed hands.
+     *
+     * It used to be `INDEX_NOT_MATERIALIZED`: this process opened the db slot,
+     * so "the index has not been built" was a condition it could observe and the
+     * caller could act on. It no longer opens one, so it cannot observe that at
+     * all — and the condition an external caller now hits in its place is that
+     * nothing is listening. Reusing the number rather than adding one is
+     * deliberate: a script's `if [ $? -eq 8 ]` branch means "the specification is
+     * not readable yet, deal with the environment", and that is still exactly
+     * what it means. `INDEX_NOT_MATERIALIZED` survives only on internal paths.
+     */
+    case 'SERVER_NOT_RUNNING':
       return 8;
     case 'HOST_API_INCOMPATIBLE':
       return 9;
