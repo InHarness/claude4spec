@@ -5,6 +5,8 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readConfig } from '../config.js';
+import { workspaceMcpRouter } from '../routes/mcp.js';
+import { readPackageVersion } from '../../bin/c4s/package-version.js';
 
 const pexec = promisify(execFile);
 import type { ProjectContextCache } from './context-cache.js';
@@ -31,6 +33,20 @@ export interface WorkspaceRoutesDeps {
 export function workspaceRouter(deps: WorkspaceRoutesDeps): Router {
   const { registry, workspace, cache, mode } = deps;
   const router = Router();
+
+  /**
+   * 0.2.13 `workspace-bound` MCP. Registered FIRST so `/workspace/mcp` is
+   * matched before any later `/workspace/...` pattern could shadow it.
+   *
+   * Same catalog as the project-bound mount; the difference is that the project
+   * parameter has no default here and must be named with `?project=`.
+   */
+  router.use('/workspace/mcp', workspaceMcpRouter({
+    registry,
+    workspace,
+    cache,
+    packageVersion: readPackageVersion(),
+  }));
 
   // Registry stores `name` as basename(cwd) at registration; prefer the
   // project's own configured name so the switcher lists project names.

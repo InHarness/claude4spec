@@ -43,6 +43,21 @@ import type { OperationClass, OperationDeclaration } from './catalog.js';
  * pool and the narrow read-only release whitelist, which is a statement about
  * server composition, not about an operation class.
  */
+/**
+ * What `pluginServers: 'release-only'` actually names.
+ *
+ * M21 m05ctxreg: a brief profile gets brief-tools (addressed per the channel)
+ * plus read-only release-tools, and nothing else from the plugin pool — not the
+ * generic `entity-tools`, not a per-type custom server, not `reference-tools`.
+ *
+ * 0.2.13 moved it here from `routes/agent-turn.ts`, where it was private to the
+ * turn dispatcher. It is the definition of a value declared in this file, and
+ * the external MCP surface has to select servers by exactly the same rule — a
+ * second copy over there would have been one of the two-sources-for-one-fact
+ * pairs this release exists to remove.
+ */
+export const BRIEF_ALLOWED_PLUGIN_MCP: ReadonlySet<string> = new Set(['release-tools']);
+
 export interface McpServerSet {
   /** `'all'` = full entity-plugin servers + tag/reference; `'release-only'` = `BRIEF_ALLOWED_PLUGIN_MCP`. */
   pluginServers: 'all' | 'release-only';
@@ -134,3 +149,13 @@ export function mcpServerSetForProfile(profile: ChatContextType): McpServerSet {
 
 /** Exported for the completeness test — every declared class must be reachable from some profile. */
 export const KNOWN_OPERATION_CLASSES = ALL_CLASSES;
+
+/**
+ * The profile names, at runtime.
+ *
+ * Derived from `PROFILES` rather than written out again, so a profile added to
+ * the registry is immediately nameable on the wire — the external MCP mount
+ * validates `?profile=` against this. `ChatContextType` is a type and cannot be
+ * enumerated at runtime, which is what made a hand-kept second list tempting.
+ */
+export const KNOWN_PROFILES = Object.keys(PROFILES) as readonly ChatContextType[];

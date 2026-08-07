@@ -1,11 +1,23 @@
 /**
- * M21 brief-tools MCP server. Per-thread instance (analog `plan-tools` from
- * M10) — `briefPath` is captured from `chat_thread.brief_path` at thread
- * creation time. Mounted by `routes/chat.ts` ONLY for threads with
- * `context_type='brief'`.
+ * M21 brief-tools MCP server.
  *
  * Two tools (get_brief, update_brief) — no `create_brief`/`list_briefs`/
  * `brief_generate` (UI/user surface, not agent loop).
+ *
+ * ## Two ways the brief gets addressed
+ *
+ * `thread` — the original. `briefPath` is captured from
+ * `chat_thread.brief_path` at thread creation and closed over here; the tools
+ * take no brief argument. Mounted by `routes/chat.ts` only for threads with
+ * `context_type='brief'`.
+ *
+ * `explicit` — 0.2.13, for the external MCP surface. A connection has no
+ * thread, so there is no ambient brief to close over, and the tools take a
+ * REQUIRED `brief` argument instead. The distinction is not cosmetic: falling
+ * back to "the" brief on a channel that never had one is how an update lands in
+ * a file the caller did not name. `PROFILES.brief.requiresExplicitBriefTarget`
+ * is what selects this mode, and it exists so that the fallback cannot be
+ * reintroduced by accident.
  */
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
@@ -21,12 +33,38 @@ export interface BriefToolsContext {
   briefService: BriefService;
 }
 
+/**
+ * The external-surface variant: no thread, no ambient brief. Every call names
+ * the brief it means.
+ */
+export interface ExplicitBriefToolsContext {
+  briefService: BriefService;
+  target: 'explicit';
+}
+
+/** The `brief` argument of the explicit mode, described once for both tools. */
+const EXPLICIT_BRIEF_ARG = {
+  brief: z
+    .string()
+    .describe(
+      'Path of the brief relative to `briefsDir`, e.g. `0-2-12-to-0-2-13.md`. Required: this connection has no thread, so there is no default brief. List the candidates with the brief artifact read operations.',
+    ),
+};
+
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
-export function buildBriefToolsServer(ctx: BriefToolsContext): CapturedMcpServer {
-  const { briefService, briefPath } = ctx;
+export function buildBriefToolsServer(
+  ctx: BriefToolsContext | ExplicitBriefToolsContext,
+): CapturedMcpServer {
+  const { briefService } = ctx;
+  const explicit = 'target' in ctx;
+  /**
+   * The thread's brief in `thread` mode; in `explicit` mode there is none, and
+   * `resolveBrief` reads the call's own argument instead.
+   */
+  const ambientBriefPath = explicit ? null : ctx.briefPath;
 
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
@@ -42,19 +80,41 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): CapturedMcpServer
     };
   };
 
+  /**
+   * The one place the two addressing modes differ at runtime.
+   *
+   * In `explicit` mode the zod schema already marks `brief` required, so a
+   * client that omits it is rejected before the handler runs. This guard is for
+   * what the schema cannot express — a present-but-empty string — and it fails
+   * the same way, naming the field, rather than resolving to `briefsDir` itself.
+   */
+  const resolveBrief = (args: Record<string, unknown>): string => {
+    if (!explicit) return ambientBriefPath!;
+    const raw = typeof args.brief === 'string' ? args.brief.trim() : '';
+    if (raw === '') {
+      throw new DomainError(
+        'VALIDATION',
+        'brief is required: this connection has no thread, so there is no default brief to fall back on',
+      );
+    }
+    return raw;
+  };
+
   const getBrief = mcpTool(
     'get_brief',
     [
-      'Read the full current state of the brief attached to this thread.',
+      explicit
+        ? 'Read the full current state of the brief named by `brief`.'
+        : 'Read the full current state of the brief attached to this thread.',
       'Returns { frontmatter, body, content, hash }. Use `hash` as `expectedHash`',
       'in the next `update_brief` call to detect concurrent edits.',
       'Brief lives on disk under `briefsDir`; you do NOT have filesystem access',
       '(no Read/Write/Edit) — this tool is the only way to read brief content.',
     ].join(' '),
-    {},
-    async () => {
+    explicit ? { ...EXPLICIT_BRIEF_ARG } : {},
+    async (args) => {
       try {
-        const brief = await briefService.getBrief(briefPath);
+        const brief = await briefService.getBrief(resolveBrief(args));
         return ok(brief);
       } catch (err) {
         return fail(err);
@@ -81,6 +141,7 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): CapturedMcpServer
       'Each mutation captures a row in file_version with changed_by="agent".',
     ].join(' '),
     {
+      ...(explicit ? EXPLICIT_BRIEF_ARG : {}),
       action: AGENT_ACTIONS,
       content: z.string(),
       anchor: z.string().optional(),
@@ -90,6 +151,7 @@ export function buildBriefToolsServer(ctx: BriefToolsContext): CapturedMcpServer
     },
     async (args) => {
       try {
+        const briefPath = resolveBrief(args);
         const action = args.action as 'replace' | 'append' | 'insert_after_section';
         const current = await briefService.getBrief(briefPath);
         const newBody = composeBody(

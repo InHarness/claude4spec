@@ -24,6 +24,7 @@ import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
 import { gateServers, pluginServerNamesFor } from '../operations/profile-gate.js';
+import { BRIEF_ALLOWED_PLUGIN_MCP } from '../operations/profiles.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
@@ -106,13 +107,6 @@ export interface AgentTurnDeps {
    */
   listWorkspacePeers?: () => PeerProject[];
 }
-
-/** M21 m05ctxreg: tools whitelist per context_type. Brief threads get only
- *  brief-tools (per-thread, mounted below) + release-tools (read-only).
- *  All other plugin servers (M13: the generic entity-tools server, any
- *  surviving per-type custom server, plan-tools, reference-tools) are NOT
- *  mounted. */
-const BRIEF_ALLOWED_PLUGIN_MCP = new Set(['release-tools']);
 
 import { ALLOWED_MODELS, type Model } from './models.js';
 export { ALLOWED_MODELS, type Model };

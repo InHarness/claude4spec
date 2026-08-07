@@ -60,6 +60,9 @@ import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from 
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { createDiscoveryCore } from '../discovery/index.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
+import { projectMcpRouter } from '../routes/mcp.js';
+import type { ExternalSurfaceDeps } from '../mcp/surface.js';
+import type { ChatContextType } from '../../shared/entities.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { ReleasePushService } from '../services/release-push.js';
@@ -221,6 +224,19 @@ export interface ProjectContext {
   writingStyle: { slug: string; title: string } | null;
   /** True while any agent turn runs in this project (LRU dispose guard). */
   hasInFlightTurn: () => boolean;
+  /**
+   * 0.2.13: everything the external MCP surface needs, for one profile.
+   *
+   * Exposed on the context rather than assembled by the caller because the
+   * services it names (`planService`, `briefService`, the discovery core…) are
+   * locals of `buildInner` and belong to THIS context's lifetime. The workspace
+   * mount reaches a project through the cache and calls this; the project-bound
+   * mount uses the same function through the per-context router.
+   *
+   * Calling it does not make the connection a turn: it hands back services, it
+   * does not touch `hasInFlightTurn` or pin the context.
+   */
+  mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
   dispose: () => Promise<void>;
 }
 
@@ -1059,6 +1075,35 @@ async function buildInner(
      */
     listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
   };
+
+  /**
+   * 0.2.13: the same services, handed to the EXTERNAL channel.
+   *
+   * Deliberately built from the identical locals `agentDeps` closes over — one
+   * discovery core, one plugin host, one brief service. The whole point of the
+   * release is that an external caller and the built-in agent reach the same
+   * operations; two dependency sets here would have re-created the drift by
+   * construction.
+   */
+  const mcpSurfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
+    profile,
+    reader: {
+      reader: rawReader,
+      discovery,
+      db: db.handle,
+      projectDir: cwd,
+      packageVersion: readPackageVersion(),
+    },
+    pluginHost,
+    planService,
+    pageVersions,
+    briefService,
+    listProjects: agentDeps.listWorkspaceProjects,
+    workspaceName: workspace.name,
+  });
+  // `project-bound`: the project parameter's default comes from the URL this
+  // router is already mounted under. See `routes/mcp.ts`.
+  router.use('/mcp', projectMcpRouter(readPackageVersion(), mcpSurfaceDeps));
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService));
   router.use('/todos', todosRouter(todosIndexer));
@@ -1493,6 +1538,7 @@ async function buildInner(
     pendingInputs,
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
+    mcpSurfaceDeps,
     // M31 dispose sequence: this scope's mounts → MCP factories → room → db handle.
     dispose: async () => {
       // One call retires every mount and subscription of THIS context —

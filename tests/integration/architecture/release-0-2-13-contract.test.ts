@@ -137,9 +137,27 @@ describe('the plugin-runtime facade is the only MCP builder', () => {
       }
     };
     walk(dir);
+    /**
+     * What matters is the BUILDER's provenance, not the vendor's name appearing
+     * in the file. Importing `type McpToolDefinition` from the vendor is fine and
+     * unavoidable — it is the shape `mcpTool()` produces. The original check was
+     * "mentions createMcpServer AND imports from the vendor", which conflated the
+     * two and flagged a file that imports the builder from the facade and only a
+     * type from the vendor.
+     *
+     * So: look at each vendor import clause and ask whether `createMcpServer` is
+     * bound by it as a VALUE.
+     */
     const offenders = files.filter((f) => {
       const src = fs.readFileSync(f, 'utf8');
-      return /createMcpServer/.test(src) && /from '@inharness-ai\/agent-adapters'/.test(src);
+      for (const m of src.matchAll(/import\s+(type\s+)?({[^}]*}|\w+)\s+from\s+'@inharness-ai\/agent-adapters'/g)) {
+        if (m[1]) continue; // `import type { … }` binds no value
+        const clause = m[2] ?? '';
+        // Strip per-specifier `type` markers before looking for the builder.
+        const values = clause.replace(/\btype\s+\w+(\s+as\s+\w+)?/g, '');
+        if (/\bcreateMcpServer\b/.test(values)) return true;
+      }
+      return false;
     });
     expect(offenders.map((f) => path.relative(REPO_ROOT, f))).toEqual([]);
   });
