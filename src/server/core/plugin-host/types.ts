@@ -10,7 +10,7 @@
 import type { Database } from 'better-sqlite3';
 import type { Router } from 'express';
 import type { ZodRawShape } from 'zod';
-import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
+import type { McpServerFactory, McpToolDeclaration } from '../../../shared/plugin-host/mcp.js';
 import type {
   EntityModuleManifest,
   PluginActivationState,
@@ -533,6 +533,23 @@ export interface ProjectPluginHost {
    * shared transport.
    */
   buildMcpServers(): Array<{ name: string; server: McpServerFactory }>;
+
+  /**
+   * 0.2.13 — the type-specific operations of `:type`, read from the SAME factory
+   * map `buildMcpServers()` builds from. This is what lets `GET /api/entities/
+   * :type/tools` be a rendering of the plugin's one declaration rather than a
+   * second list that drifts from it. A type with no custom operations answers
+   * with an empty array — that is the normal case, not an error.
+   */
+  listTypeTools(type: string): readonly McpToolDeclaration[];
+
+  /**
+   * Invoke one of them. Calls the very handler the MCP channel calls and returns
+   * its result unreshaped — the REST proxy is packing, not a second semantics.
+   * `undefined` when the type declares no such tool, so the caller can answer
+   * NOT_FOUND with the names it does declare.
+   */
+  callTypeTool(type: string, tool: string, args: Record<string, unknown>): Promise<unknown | undefined>;
 
   /**
    * Entity counts for the active types, keyed by `module.type`, in

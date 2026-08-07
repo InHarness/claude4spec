@@ -10,6 +10,7 @@ import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 import { CLAUDE_CODE_READONLY_BUILTINS, CLAUDE_CODE_MUTATING_BUILTINS } from '@inharness-ai/agent-adapters/claude-code';
+import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
  * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
@@ -19,18 +20,19 @@ import { CLAUDE_CODE_READONLY_BUILTINS, CLAUDE_CODE_MUTATING_BUILTINS } from '@i
  * in `shared/entities.ts` — no edits to dispatch logic. NOT a SQLite table: the values are code
  * artifacts (bundled skills, MCP servers, React chrome, SubagentDefinition). */
 
-/** Which built-in MCP servers a context_type mounts. The dispatcher resolves this descriptor to
- *  the real server set; `transagentTools` stays AND-gated by the recursion-depth guard
- *  (`!isChildBanka`) at the call site. */
-export interface McpServerSet {
-  /** `'all'` = full entity-plugin servers + tag/reference; `'release-only'` = whitelist
-   *  (`BRIEF_ALLOWED_PLUGIN_MCP`, i.e. read-only release-tools) for the narrow brief toolset. */
-  pluginServers: 'all' | 'release-only';
-  planTools: boolean;
-  briefTools: boolean;
-  c4sTools: boolean;
-  transagentTools: boolean;
-}
+/**
+ * 0.2.13 — `McpServerSet` moved to `operations/profiles.ts` and is now DERIVED
+ * from the context profile's admitted operation classes rather than written out
+ * per row. Re-exported here because this module's consumers have always named it
+ * from this path.
+ *
+ * The direction of the dependency is the point: a profile declares which classes
+ * of catalog operations it admits, and the mounted server set falls out of that.
+ * Written side by side, the two drifted — the registry could say `planTools:
+ * true` for a profile whose operation set had no plan entries, and nothing
+ * disagreed.
+ */
+export type { McpServerSet } from '../operations/profiles.js';
 
 /** One registry row — the five dimensions spec `m05ctxreg` dispatches per thread. */
 export interface ContextTypeEntry {
@@ -59,33 +61,39 @@ export interface ContextTypeEntry {
 export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = {
   chat: {
     attachInternalSkills: ['writing-style-author'],
-    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
+    mcp: mcpServerSetForProfile('chat'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
-    builtinPosture: 'follow-thread',
+    builtinPosture: PROFILES.chat.builtinPosture,
   },
   brief: {
     attachInternalSkills: ['brief-author'],
-    mcp: { pluginServers: 'release-only', planTools: false, briefTools: true, c4sTools: false, transagentTools: false },
+    mcp: mcpServerSetForProfile('brief'),
     uiChrome: 'brief-detail',
     subagent: 'diff-explore',
-    builtinPosture: 'follow-thread',
+    builtinPosture: PROFILES.brief.builtinPosture,
   },
   patch: {
     attachInternalSkills: ['patch-implementer'],
-    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: true, transagentTools: true },
+    mcp: mcpServerSetForProfile('patch'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
-    builtinPosture: 'follow-thread',
+    builtinPosture: PROFILES.patch.builtinPosture,
   },
   ask: {
     // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
     // peer cannot consult/delegate to another peer). Read-only enforced via forced plan-mode.
+    //
+    // 0.2.13 sharpens that from a posture into a gate: the `ask` profile admits
+    // only the `read` and `plan` operation classes, so the WRITE tools of the
+    // mounted plugin servers are filtered out of `tools/list` rather than merely
+    // being discouraged by forced plan mode. A peer may leave a plan; it cannot
+    // mutate the spec it was consulted about.
     attachInternalSkills: [],
-    mcp: { pluginServers: 'all', planTools: true, briefTools: false, c4sTools: false, transagentTools: false },
+    mcp: mcpServerSetForProfile('ask'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
-    builtinPosture: 'force-plan',
+    builtinPosture: PROFILES.ask.builtinPosture,
   },
 };
 

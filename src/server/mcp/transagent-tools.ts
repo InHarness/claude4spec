@@ -15,7 +15,7 @@
  * Read-only cross-spec counterpart: `c4s-tools` (consults a DIFFERENT spec).
  */
 
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
@@ -29,7 +29,7 @@ export interface TransagentToolsContext {
   dispatcher: TransagentDispatcher;
 }
 
-export function buildTransagentToolsServer(ctx: TransagentToolsContext): McpServerInstance {
+export function buildTransagentToolsServer(ctx: TransagentToolsContext): CapturedMcpServer {
   const runTransagent = mcpTool(
     'runTransagent',
     [

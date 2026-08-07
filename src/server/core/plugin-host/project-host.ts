@@ -5,7 +5,7 @@
  */
 
 import type { Database } from 'better-sqlite3';
-import type { McpServerFactory } from '../../../shared/plugin-host/mcp.js';
+import type { McpServerFactory, McpToolDeclaration } from '../../../shared/plugin-host/mcp.js';
 import type {
   BackendModule,
   EntityRenamedEvent,
@@ -254,6 +254,58 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
 
   clearMcpFactories(): void {
     this.mcpServerFactories.clear();
+  }
+
+  /**
+   * 0.2.13 — the type-specific operations a plugin declared in its
+   * `backend.mcpServer` slot, as the host itself sees them.
+   *
+   * Reads `mcpServerFactories` — literally the map `buildMcpServers()` iterates —
+   * so `GET /api/entities/:type/tools` and the MCP mount cannot disagree about
+   * what a type can do. Deactivating a type through `config.entities` removes it
+   * from `listEntities()`, `mountBackend` never registers its server, and the
+   * operation disappears from BOTH renderings in the same breath. That is the
+   * property being bought here; a separately-maintained list would not have it.
+   *
+   * The `${type}-tools` key is not a convention this method invented — it is
+   * where `manifest-adapter` lowers the declarative slot, deriving the server
+   * name from the type id rather than letting the plugin choose it.
+   *
+   * A type with no custom operations answers with an EMPTY LIST, not an error: a
+   * plugin declaring no extra tools is the normal case (`dto`, `ui-view`,
+   * `design-system` all do), not a misconfiguration.
+   */
+  listTypeTools(type: string): readonly McpToolDeclaration[] {
+    const factory = this.mcpServerFactories.get(`${type}-tools`);
+    if (!factory) return [];
+    let server: unknown;
+    try {
+      server = factory();
+    } catch (err) {
+      // Same posture as buildMcpServers(): one broken plugin degrades to "its
+      // tools are missing", never to a 500 on a route about a different type.
+      console.warn(
+        `[plugin-host] MCP server "${type}-tools" — factory threw while listing tools: ${(err as Error).message}`,
+      );
+      return [];
+    }
+    const tools = (server as { tools?: readonly McpToolDeclaration[] } | null)?.tools;
+    return tools ?? [];
+  }
+
+  /**
+   * Invoke one type-specific operation. The REST proxy is a PACKING layer, not a
+   * second semantics: this calls the very handler the MCP channel calls, with
+   * arguments validated by the very schema MCP validates against, and returns
+   * its result unreshaped.
+   *
+   * Returns `undefined` when the type declares no such tool, so the caller can
+   * answer `NOT_FOUND` with the list of the ones it does declare.
+   */
+  async callTypeTool(type: string, tool: string, args: Record<string, unknown>): Promise<unknown | undefined> {
+    const found = this.listTypeTools(type).find((t) => t.name === tool);
+    if (!found) return undefined;
+    return found.handler(args, {});
   }
 
   entityExists(type: string, slug: string): boolean {

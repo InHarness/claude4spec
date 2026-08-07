@@ -1,4 +1,4 @@
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
@@ -42,7 +42,7 @@ export interface ReferenceToolsDeps {
   entityStore: EntityStore;
 }
 
-export function createReferenceToolsServer(deps: ReferenceToolsDeps): McpServerInstance {
+export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMcpServer {
   const pluginHost = deps.pluginHost;
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],

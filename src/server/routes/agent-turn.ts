@@ -22,6 +22,9 @@ import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
+import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
+import { gateServers } from '../operations/profile-gate.js';
+import type { ListProjectsResult } from '../workspace/list-projects.js';
 import {
   buildSystemPrompt,
   subagentsFor,
@@ -89,6 +92,12 @@ export interface AgentTurnDeps {
    * `<workspace_projects>` prompt block.
    */
   workspaceName?: string;
+  /**
+   * 0.2.13 M31: the `list_projects` operation, as a thunk so the registry is
+   * re-read per call. Renders into the tool channel as `workspace-tools`.
+   * Absent ⇒ the server is not mounted (hand-built test rigs).
+   */
+  listWorkspaceProjects?: () => ListProjectsResult;
   /**
    * 0.1.58: workspace peers (current project excluded) for the
    * `<workspace_projects>` discovery block. Lazily read from each peer's
@@ -643,6 +652,13 @@ export async function runAgentTurn(
     // excluded — a consulted peer cannot consult another).
     const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
 
+    // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
+    // it — see the note at its mount below. Absent only when the deps were built
+    // without a workspace (the hand-rolled test rigs).
+    const workspaceTools = deps.listWorkspaceProjects
+      ? buildWorkspaceToolsServer(deps.listWorkspaceProjects)
+      : null;
+
     // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
     //   - registry dimension `transagentTools` (chat + patch only — never brief/`ask`).
     //   - recursion depth 1: never inside a child banka (parentThreadId != null), so a
@@ -661,13 +677,29 @@ export async function runAgentTurn(
         })
       : null;
 
-    // Registry `pluginServers`: 'all' mounts every entity-plugin server; 'release-only'
-    // narrows to the BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
-    const pluginMcpEntries = deps.pluginHost
-      .buildMcpServers()
-      .filter(({ name }) =>
-        ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
-      )
+    /**
+     * Two gates, coarse then fine.
+     *
+     * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
+     * entity-plugin server, 'release-only' narrows to the
+     * BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
+     *
+     * 0.2.13 adds `gateServers`, which then picks TOOLS within the survivors by
+     * the context profile's admitted operation classes. The coarse gate could
+     * never express "this profile gets `get_page` but not `create_tag`" — both
+     * live on `reference-tools` — so `ask` was handed the write tools of every
+     * mounted server and held back only by forced plan mode, which does not
+     * apply to MCP at all. A server left with no admitted tools is dropped
+     * rather than mounted empty.
+     */
+    const pluginMcpEntries = gateServers(
+      thread.contextType,
+      deps.pluginHost
+        .buildMcpServers()
+        .filter(({ name }) =>
+          ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
+        ),
+    )
       // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
       // only forwards it. THIS is the adapter boundary where it is re-widened to
       // the vendor's config type, and the only place in the host that needs to.
@@ -677,6 +709,16 @@ export async function runAgentTurn(
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;
     if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
     if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
+    /**
+     * 0.2.13 — M31's `list_projects`, mounted for EVERY context type.
+     *
+     * Unconditional because it is a read-class operation, which every profile
+     * admits, and because the alternative homes both carry a gate that has
+     * nothing to do with it: `c4s-tools` is withheld from `ask`/`brief` by the
+     * peer-consultation recursion guard, and the plugin pool is narrowed to
+     * release-tools for `brief`. Workspace discovery must not inherit either.
+     */
+    if (workspaceTools) mcpServers['workspace-tools'] = workspaceTools.config;
 
     // M05 queue: streaming-input keeps the SDK input channel open across turns so
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).

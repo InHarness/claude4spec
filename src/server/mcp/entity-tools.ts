@@ -14,9 +14,9 @@
 import {
   createMcpServer,
   mcpTool,
-  type McpServerInstance,
+  type CapturedMcpServer,
   type McpToolDefinition,
-} from '@inharness-ai/agent-adapters';
+} from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { EntityType } from '../../shared/entities.js';
@@ -594,6 +594,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   ];
 }
 
-export function createEntityToolsServer(deps: EntityToolsDeps): McpServerInstance {
+export function createEntityToolsServer(deps: EntityToolsDeps): CapturedMcpServer {
   return createMcpServer({ name: 'entity-tools', tools: buildEntityTools(deps) });
 }

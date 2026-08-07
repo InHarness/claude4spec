@@ -1,4 +1,4 @@
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
@@ -77,7 +77,7 @@ export const C4S_READER_TOOL_NAMES = [
   'resolve_identity',
 ] as const;
 
-export function createC4sReaderServer(deps: C4sReaderDeps): McpServerInstance {
+export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
   });

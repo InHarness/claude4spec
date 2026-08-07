@@ -10,6 +10,7 @@ import {
 } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
 import type { Annotation } from '../../shared/entities.js';
+import { DomainError } from '../services/tags.js';
 import { QUEUE_LIMIT } from '../services/chat.js';
 import {
   cancelPendingForRequest,
@@ -253,16 +254,45 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(found, foundThreadId) });
   });
 
-  // Abort per threadId — uzywany gdy klient podlaczyl sie tylko przez resume SSE
-  // i nie zna requestId. Jest jedna aktywna tura per threadId.
-  router.post('/abort/:threadId', (req, res) => {
-    const { threadId } = req.params;
-    const active = activeAdapters.get(threadId);
-    if (!active) return res.json({ data: { aborted: false }, clearedTexts: [] });
-    cancelPendingForRequest(pendingInputs, active.requestId);
-    active.adapter.abort();
-    cascadeAbortChildren(threadId);
-    res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
+  /**
+   * Abort per threadId — used when the client joined only over resume-SSE and
+   * has no requestId. There is exactly one active turn per threadId.
+   *
+   * 0.2.13 — the catalog's `abort_turn` operation, addressed BY THREAD rather
+   * than by request. Reachability from outside is REQUIRED rather than a
+   * convenience, because `ask` blocks its caller: without it, a caller whose
+   * turn overruns its timeout has no way out. A CLI caller, an external
+   * orchestrator and a resume-SSE client all hold a `threadId` from the start
+   * response and nothing else.
+   *
+   * Two outcomes that used to be one. Both answered `{ aborted: false }`:
+   *
+   *   - the thread exists and simply has no turn running — an IDEMPOTENT no-op,
+   *     which is the contract (aborting twice must not be an error);
+   *   - the thread does not exist at all — a caller bug, and reporting it as a
+   *     successful no-op meant a typo'd id looked like a completed abort.
+   *
+   * Now the second is `404 THREAD_NOT_FOUND` and the first is unchanged.
+   *
+   * The `requestId`-addressed variant above is deliberately left alone: it
+   * searches the live adapter map by a value that only exists WHILE a turn runs,
+   * so it has no thread to have found or not found.
+   */
+  router.post('/abort/:threadId', (req, res, next) => {
+    try {
+      const { threadId } = req.params;
+      if (!deps.chatService.getThreadMeta(threadId)) {
+        throw new DomainError('THREAD_NOT_FOUND', `thread '${threadId}' not found`);
+      }
+      const active = activeAdapters.get(threadId);
+      if (!active) return res.json({ data: { aborted: false }, clearedTexts: [] });
+      cancelPendingForRequest(pendingInputs, active.requestId);
+      active.adapter.abort();
+      cascadeAbortChildren(threadId);
+      res.json({ data: { aborted: true }, clearedTexts: clearThreadQueue(active, threadId) });
+    } catch (err) {
+      next(err);
+    }
   });
 
   // --- M05: message queue (composer stays unlocked during a live turn) -------

@@ -8,7 +8,7 @@
  * `brief_generate` (UI/user surface, not agent loop).
  */
 
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { BriefService } from '../services/brief.js';
 import { ConflictError } from '../services/brief.js';
@@ -25,7 +25,7 @@ const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 const ANCHOR_RE = new RegExp(ANCHOR_PATTERN_SOURCE);
 const HEADING_RE = /^(#{2,6})\s+(.+?)\s*$/;
 
-export function buildBriefToolsServer(ctx: BriefToolsContext): McpServerInstance {
+export function buildBriefToolsServer(ctx: BriefToolsContext): CapturedMcpServer {
   const { briefService, briefPath } = ctx;
 
   const ok = (payload: unknown) => ({

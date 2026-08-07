@@ -1,4 +1,4 @@
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { PlanAction } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
@@ -17,7 +17,7 @@ export interface PlanToolsContext {
 
 const AGENT_ACTIONS = z.enum(['replace', 'append', 'insert_after_section']);
 
-export function buildPlanToolsServer(ctx: PlanToolsContext): McpServerInstance {
+export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
   const { threadId, planService, pageVersions } = ctx;
 
   const ok = (payload: unknown) => ({

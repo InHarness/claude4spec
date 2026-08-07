@@ -40,6 +40,9 @@ import { backfillPlansToFilesystem } from './plan-migration.js';
 import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
+import { patchesRouter } from '../routes/patches.js';
+import { metaRouter } from '../routes/meta.js';
+import { listProjects } from './list-projects.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -944,6 +947,32 @@ async function buildInner(
     return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer } : undefined;
   };
   const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
+  /**
+   * 0.2.13 — the `rest` rendering of four M39 core operations (`overview`,
+   * `describe_types`, `resolve_identity`, `check_consistency`). Shares the
+   * `/_meta` prefix with `pluginHostRouter` above, which owns activation and
+   * plugin diagnostics; the paths are disjoint, so both mount.
+   */
+  router.use('/_meta', metaRouter(discovery));
+  /**
+   * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
+   * the generic `/api/artifacts/:kind/*` family: a patch's provenance is DRIFT
+   * AGAINST A BRIEF, so the route takes the intention (which brief, what class of
+   * deviation, what drifted) rather than a finished file. The server writes the
+   * file; the caller never composes one.
+   *
+   * This is the hard prerequisite for taking `fs-scoped` away from
+   * `c4s file-patch` — until there was a route, the CLI had to write the file in
+   * its own process, which is the last reason it needed a filesystem handle to
+   * the specification.
+   */
+  router.use(
+    '/patches',
+    patchesRouter({
+      briefsDirAbs: path.resolve(cwd, briefsDir),
+      patchesDirAbs: path.resolve(cwd, patchesDir),
+    }),
+  );
   router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
   router.use('/static/:rootId', staticRouter(resolveStatic));
   router.use('/tags', tagsRouter(tagsService, referencesService));
@@ -1021,6 +1050,14 @@ async function buildInner(
     db,
     workspaceName: workspace.name,
     listWorkspacePeers,
+    /**
+     * 0.2.13 — M31's `list_projects`, rendered into the tool channel by
+     * `workspace-tools`. Re-reads the registry per call rather than closing over
+     * a snapshot: the whole reason this operation exists is that the
+     * `<workspace_projects>` prompt block is rendered once per thread and goes
+     * stale, and a captured record would have gone stale the same way.
+     */
+    listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
   };
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService));

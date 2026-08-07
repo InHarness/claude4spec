@@ -6,14 +6,20 @@ import type { PlanService } from '../services/plan.js';
  * `/api/artifacts/plan/*` family (routes/artifacts.ts) — `GET /api/plans`,
  * `GET/PUT/PATCH /api/plans/:planId`, `GET /api/plans/:planId/versions[/:version]`,
  * `GET /api/plans/:planId/blame` are all GONE. What stays here is plan's
- * bespoke thread-binding behavior (`binding.mode: 'attach'`), re-pathed
- * `:planId` (integer) → `:slug` (string, the file path relative to plansDir):
+ * bespoke thread-binding behavior (`binding.mode: 'attach'`):
  * `create-thread` attaches the plan by `plan_path` (the generic
  * `POST .../threads` has no such binding), and `last-thread`/`by-thread`/
  * `by-anchor` are plan-specific queries with no generic-family equivalent.
  * Note `CreateThreadFromPlanRequest.initialMessage` is part of the documented
  * wire shape but is deliberately NOT acted on here — the backend sends no
  * message on the caller's behalf.
+ *
+ * 0.2.13: the path parameter of `last-thread`/`create-thread` is spelled
+ * `:planId` again. It is NOT the old integer id — the VALUE is unchanged, still
+ * the plan file's path relative to `plansDir`. Only the parameter's NAME
+ * changed, so no URL and no caller moved; `:planId` is simply what L4 calls a
+ * plan's identifier now that "the id of a plan" means its path, and the two
+ * routes had been the last places still calling it `:slug`.
  *
  * 0.1.139: `GET /:slug/threads` is GONE — listing an artifact's threads is now
  * generic (`GET /api/artifacts/plan/:path/threads`, one query for brief/patch/
@@ -53,18 +59,18 @@ export function plansRouter(plan: PlanService): Router {
     }
   });
 
-  router.get('/:slug/last-thread', (req, res, next) => {
+  router.get('/:planId/last-thread', (req, res, next) => {
     try {
-      const threadId = plan.findLastThreadIdForPlan(req.params.slug);
+      const threadId = plan.findLastThreadIdForPlan(req.params.planId);
       res.json({ data: { threadId } });
     } catch (err) {
       next(err);
     }
   });
 
-  router.post('/:slug/create-thread', async (req, res, next) => {
+  router.post('/:planId/create-thread', async (req, res, next) => {
     try {
-      const result = await plan.attachThreadToPlan(req.params.slug);
+      const result = await plan.attachThreadToPlan(req.params.planId);
       res.status(201).json({ data: result });
     } catch (err) {
       next(err);

@@ -5,7 +5,9 @@ import type { EntityStore } from '../../services/entity-store.js';
 import { type RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { EntityCountsResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
+import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
+import { invalidType } from '../../discovery/errors.js';
 import { errorHandler } from '../../routes/errors.js';
 import type { ProjectPluginHost } from './types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
@@ -34,6 +36,54 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
 }
 
 /**
+ * 0.2.13 — the type guard for the CATALOG routes below (`/:type/search`,
+ * `/:type/tools`), distinct from `assertType` above on two counts that matter.
+ *
+ * It demands an ACTIVE type, not merely an available one: a type switched off
+ * for this project has no operations, and answering as if it did would make it
+ * look half-alive. And it refuses with `INVALID_TYPE` carrying the active list,
+ * which is the code the same refusal already uses in the MCP and CLI channels —
+ * a catalog operation must not answer differently depending on how it was
+ * reached.
+ *
+ * `assertType` keeps its own contract: the version/tag/collection routes it
+ * guards accept the non-entity `section` pseudo-type and have answered
+ * `VALIDATION` since before the catalog existed.
+ */
+function assertActiveType(host: ProjectPluginHost, type: string): EntityType {
+  if (host.isActive(type)) return type as EntityType;
+  throw invalidType(
+    type,
+    host.listEntities().map((m) => m.type),
+  );
+}
+
+/** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined (core default wins). */
+function positiveInt(raw: unknown): number | undefined {
+  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/**
+ * Project a zod RAW SHAPE into JSON Schema for the tool listing.
+ *
+ * `z.toJSONSchema` is a zod v4 walker over each node's internal `.def`, so it
+ * only works on schemas built with the HOST's zod — which is exactly what the
+ * `@c4s/plugin-runtime` facade's re-exported `z` guarantees. A plugin that
+ * bundled its own zod throws here instead of walking; that is a real
+ * misconfiguration, but it must not turn a request for a NAME LIST into a 500.
+ * The tool still lists, with its schema reported as absent.
+ */
+function toJsonSchema(shape: unknown): unknown {
+  try {
+    return z.toJSONSchema(z.object(shape as z.ZodRawShape), { io: 'input' });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Cross-cutting host-owned router for /api/entities/:type/:slug/...:
  *   - GET    versions, GET version detail
  *   - POST   version restore (M34/L11)
@@ -55,6 +105,119 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const counts: EntityCountsResponse = {};
       for (const type of reader.listTypes()) counts[type] = reader.count(type);
       res.json(counts);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 — the `rest` rendering of the `search_entities` core operation.
+   *
+   * NOT a duplicate of `?search=` on the entity list route. That one stays what
+   * it is: a filter on a UI list, defaulting to a page size chosen for list
+   * pages and returning the projection those pages render. This is the CATALOG
+   * operation — the core's own paging, response budget and sort determinism,
+   * reachable identically from all four channels.
+   *
+   * `searchedFields` is part of the answer, not a debugging extra: without it an
+   * empty result cannot be told apart from a field that was never searched, and
+   * those two call for opposite next moves by the caller.
+   *
+   * Registered above `/:type/:slug/...` — `/:type/search` is two segments and
+   * cannot be captured by them — and after the static `/counts`.
+   */
+  router.get('/:type/search', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const q = typeof req.query.q === 'string' ? req.query.q : '';
+      const limit = positiveInt(req.query.limit);
+      const offset = positiveInt(req.query.offset);
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      const result = discovery.searchEntities({
+        type,
+        query: q,
+        ...(view ? { view: view as never } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 — the generic host proxy (M13), giving a type's non-CRUD operations a
+   * `rest` rendering without the plugin contributing a router.
+   *
+   * ONE DECLARATION, THREE RENDERINGS. A plugin declares a type-specific
+   * operation once, as a tool in its `backend.mcpServer` slot. The host is
+   * responsible for exposing it in every channel — so these two routes read the
+   * SAME registry the MCP servers are mounted from (`host.listTypeTools`, over
+   * the very map `buildMcpServers()` iterates). They cannot drift from it, and
+   * deactivating a type removes its operations from all renderings at once.
+   *
+   * Read-only listing. Names, LLM-facing descriptions and input schemas, in the
+   * same form the agent sees them in the tool channel.
+   *
+   * A type with no custom operations answers with an EMPTY LIST, not an error:
+   * `dto`, `ui-view` and `design-system` all legitimately declare none.
+   */
+  router.get('/:type/tools', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const tools = host.listTypeTools(type).map((t) => ({
+        name: t.name,
+        description: t.description,
+        // The zod RAW SHAPE is not JSON — project it the same way the host
+        // introspects plugin schemas elsewhere. A shape that cannot be walked
+        // (a plugin bundling its own zod, the failure the runtime facade exists
+        // to prevent) degrades to an absent schema rather than a 500 on a route
+        // that is only trying to list names.
+        inputSchema: toJsonSchema(t.inputSchema),
+      }));
+      res.json({ tools });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Execute one type-specific operation.
+   *
+   * The body IS the operation's arguments, validated by the SAME schema the tool
+   * channel validates against, and the response has the SAME shape the tool
+   * channel returns. This is a packing layer, not a second semantics: it calls
+   * the owning core's function and forwards what comes back.
+   *
+   * Side effects and idempotency therefore belong to the invoked operation, not
+   * to this route — `set_cell` is idempotent here because `set_cell` is
+   * idempotent, and `insert_row` is not because it reindexes.
+   *
+   * Operations with a natural URL shape keep their own resource routes —
+   * `link_dto`/`unlink_dto` live at `POST /api/endpoints/:slug/dtos` and its
+   * symmetric unlink. This proxy is the fallback for the ones that have none.
+   */
+  router.post('/:type/tools/:tool', async (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const declared = host.listTypeTools(type);
+      const tool = declared.find((t) => t.name === req.params.tool);
+      if (!tool) {
+        throw new DomainError(
+          'NOT_FOUND',
+          `type '${type}' declares no operation '${req.params.tool}' — available: ${
+            declared.length > 0 ? declared.map((t) => t.name).join(', ') : '(none)'
+          }`,
+        );
+      }
+      const parsed = z.object(tool.inputSchema as z.ZodRawShape).safeParse(req.body ?? {});
+      if (!parsed.success) {
+        // The repair path, not just the refusal: which field, and what it wanted.
+        throw new DomainError('VALIDATION', parsed.error.message);
+      }
+      const result = await host.callTypeTool(type, tool.name, parsed.data as Record<string, unknown>);
+      res.json(result);
     } catch (err) {
       next(err);
     }

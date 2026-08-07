@@ -1,4 +1,4 @@
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import { runAgent, AgentError } from '../../core/agent/run-agent.js';
 import { ALLOWED_MODELS } from '../routes/models.js';
@@ -30,7 +30,7 @@ import { ALLOWED_MODELS } from '../routes/models.js';
  * zwraca terse `{ threadId, answer }`. Parametry `contextType` i `brief` usuniete
  * z wejscia.
  */
-export function buildC4sToolsServer(callerWorkspace?: string): McpServerInstance {
+export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer {
   const ask = mcpTool(
     'ask',
     [
