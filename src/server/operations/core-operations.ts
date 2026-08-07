@@ -23,6 +23,24 @@
  * one tool and a `view` parameter. Note the CLI's own migration to
  * server-delegating execution is a later tier — the cell describes the contract,
  * and the command's execution mode is a separate property of L14.
+ *
+ * ## A cell states the CONTRACT, not the current build
+ *
+ * Two places where this release's code does not yet meet the declaration, both
+ * deliberate and both flagged rather than papered over by weakening the cell:
+ *
+ *   - `cli` — the `c4s` process still reads SQLite directly and renders these as
+ *     local commands. Converting it to a server-delegating HTTP client is a
+ *     later tier of this same brief.
+ *   - `search_pages` in `rest` — `GET /api/pages/:rootId/search` is NOT a
+ *     faithful rendering. It matches on page PATH as well as content
+ *     (`matchesPath`) and returns `{path, line, snippet, matchesPath}`, where
+ *     the core operation searches content only and answers with ranked
+ *     `{kind, anchor|path, line, fragment, score}` hits. Routing the existing
+ *     endpoint at the core would silently drop path matching from the UI's page
+ *     finder, so it was left alone; the release's claim that these three gain
+ *     paging "without losing anything" does not hold for this one. Raised as a
+ *     patch against the brief.
  */
 
 import { z } from 'zod';

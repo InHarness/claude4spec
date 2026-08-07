@@ -21,6 +21,12 @@
  * name from the project's `config.json`, so it is the field that goes missing
  * when that file cannot be read. Keeping them apart is what lets a project stay
  * addressable even when its config is broken.
+ *
+ * "Cannot be read" means MALFORMED, not absent. `readConfig` throws on invalid
+ * JSON but defaults a missing `config.json` to the directory's basename, and
+ * this operation keeps that default rather than suppressing it — a usable label
+ * beats a blank one, and it is the behaviour peer discovery
+ * (`listWorkspacePeers`) has always had for the same field.
  */
 
 import { readConfig } from '../config.js';

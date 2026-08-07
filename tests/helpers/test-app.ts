@@ -8,6 +8,10 @@ import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.j
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
+import { metaRouter } from '../../src/server/routes/meta.js';
+import { patchesRouter } from '../../src/server/routes/patches.js';
+import { tagsRouter } from '../../src/server/routes/tags.js';
+import { referencesRouter } from '../../src/server/routes/references.js';
 import { generatedCrudRouter } from '../../src/server/core/plugin-host/generated-crud-router.js';
 import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/manifest-adapter.js';
 import {
@@ -230,6 +234,22 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     packageVersion: '0.0.0-test',
   } as never);
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+  /**
+   * 0.2.13 — the catalog's new `rest` renderings, mirroring `project-context.ts`.
+   * `/_meta` carries only the four M39 operations here; the activation and
+   * plugin-diagnostic routes that share the prefix in production belong to
+   * `pluginHostRouter`, which this harness does not mount.
+   */
+  router.use('/_meta', metaRouter(discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/references', referencesRouter(host, referencesService, discovery));
+  router.use(
+    '/patches',
+    patchesRouter({
+      briefsDirAbs: path.join(cwd, 'briefs'),
+      patchesDirAbs: path.join(cwd, 'patches'),
+    }),
+  );
 
   /**
    * Host API 2.0.0 (item 31) — mirrors `project-context.ts`, INCLUDING the
