@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  __invalidateSurfaceCache,
   composeExternalSurface,
   EXTERNAL_MCP_ERROR_CODES,
   EXTERNAL_MCP_SERVER_NAME,
@@ -178,5 +179,52 @@ describe('composeExternalSurface', () => {
       'INDEX_NOT_MATERIALIZED',
       'SCHEMA_OUT_OF_DATE',
     ]);
+  });
+});
+
+/**
+ * Composition is memoized on the plugin host's identity.
+ *
+ * The mount recomposes before every request — that is what makes lazy rebuild
+ * work — and composing costs ~5.7 ms, which on every `tools/call` is waste when
+ * nothing changed. These pin that the cache does not buy speed by giving up the
+ * rebuild it exists alongside.
+ */
+describe('surface memoization', () => {
+  it('returns the same surface for the same host and profile', () => {
+    const deps = stubDeps();
+    // Fresh deps objects, same host — a caller builds a new deps record per
+    // request, so identity of THAT object must not be what the cache keys on.
+    expect(composeExternalSurface(deps)).toBe(composeExternalSurface({ ...deps }));
+  });
+
+  it('keeps profiles apart — the cache must not leak a wider surface into a narrower one', () => {
+    const host = pluginHostWith([{ name: 'spreadsheet-tools', tools: ['set_cell'] }], ['spreadsheet']);
+    const chat = composeExternalSurface(stubDeps({ profile: 'chat', pluginHost: host }));
+    const ask = composeExternalSurface(stubDeps({ profile: 'ask', pluginHost: host }));
+    expect(chat.toolNames).toContain('set_cell');
+    expect(ask.toolNames).not.toContain('set_cell');
+  });
+
+  it('recomposes for a NEW host — a rebuilt context is a changed pool', () => {
+    // A plugin activated or deactivated invalidates the ProjectContext, which
+    // builds a new host. That is the whole reason the host is the key.
+    const before = composeExternalSurface(
+      stubDeps({ pluginHost: pluginHostWith([{ name: 'a-tools', tools: ['get_overview'] }], ['a']) }),
+    );
+    const after = composeExternalSurface(
+      stubDeps({ pluginHost: pluginHostWith([], []) }),
+    );
+    expect(before.toolNames).toContain('get_overview');
+    expect(after.toolNames).not.toContain('get_overview');
+  });
+
+  it('is dropped by the test seam, so a recomposition can be exercised', () => {
+    const host = pluginHostWith([], []);
+    const first = composeExternalSurface(stubDeps({ pluginHost: host }));
+    __invalidateSurfaceCache(host);
+    const second = composeExternalSurface(stubDeps({ pluginHost: host }));
+    expect(second).not.toBe(first);
+    expect(second.toolNames).toEqual(first.toolNames);
   });
 });

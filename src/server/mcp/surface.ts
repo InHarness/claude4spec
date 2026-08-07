@@ -201,7 +201,43 @@ export interface ExternalSurface {
  * an open connection. Returning a built server would have fused the two and made
  * "the context is rebuilt lazily at `tools/call`" impossible to honour.
  */
+/**
+ * Composition memoized on the PLUGIN HOST's identity.
+ *
+ * The mount recomposes before every request, which is what makes "the context is
+ * rebuilt lazily at `tools/call`" true — but composing means building eight MCP
+ * servers and registering their zod schemas, measured at ~5.7 ms. Paying that on
+ * every tool invocation is pure waste when nothing has changed.
+ *
+ * The host object is the right key precisely because of how invalidation works
+ * here: a plugin activated or deactivated goes through a config change, which
+ * invalidates the `ProjectContext`, which builds a NEW `ProjectPluginHost`. So a
+ * changed pool is a changed key, and an unchanged pool is a cache hit — the
+ * lazy-rebuild semantics are preserved rather than traded away for the speed.
+ *
+ * A `WeakMap`, so a disposed context's entry goes with it.
+ */
+const SURFACE_CACHE = new WeakMap<ProjectPluginHost, Map<ChatContextType, ExternalSurface>>();
+
 export function composeExternalSurface(deps: ExternalSurfaceDeps): ExternalSurface {
+  const cached = SURFACE_CACHE.get(deps.pluginHost)?.get(deps.profile);
+  if (cached) return cached;
+  const surface = composeUncached(deps);
+  let byProfile = SURFACE_CACHE.get(deps.pluginHost);
+  if (!byProfile) {
+    byProfile = new Map();
+    SURFACE_CACHE.set(deps.pluginHost, byProfile);
+  }
+  byProfile.set(deps.profile, surface);
+  return surface;
+}
+
+/** Test seam: drop the memo for one host, to exercise a recomposition directly. */
+export function __invalidateSurfaceCache(host: ProjectPluginHost): void {
+  SURFACE_CACHE.delete(host);
+}
+
+function composeUncached(deps: ExternalSurfaceDeps): ExternalSurface {
   const pluginServers = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
 
   const tools: McpToolDeclaration[] = [];
