@@ -211,6 +211,9 @@ describe('a session cannot be re-pointed at another project', () => {
       const sid = init.headers.get('mcp-session-id');
       expect(sid).toBeTruthy();
 
+      // `proj-b` EXISTS here; the companion case below uses a project that does
+      // not, and both must be refused identically — otherwise the status code
+      // tells a caller bound elsewhere whether a name is in the workspace.
       const hijack = await fetch(`${url}?project=proj-b`, {
         method: 'POST',
         headers: {
@@ -224,6 +227,21 @@ describe('a session cannot be re-pointed at another project', () => {
       const body = (await hijack.json()) as { error: { data: { code: string }; message: string } };
       expect(body.error.data.code).toBe('VALIDATION');
       expect(body.error.message).toContain('proj-a');
+
+      // A project that is NOT in the workspace must give the SAME answer. If the
+      // binding were checked after resolution, this would be 404 and the pair
+      // would leak workspace membership one guess at a time.
+      const probe = await fetch(`${url}?project=does-not-exist`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': sid!,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: {} }),
+      });
+      expect(probe.status).toBe(400);
+      expect(((await probe.json()) as { error: { data: { code: string } } }).error.data.code).toBe('VALIDATION');
     } finally {
       __resetMcpSessions();
       await new Promise<void>((r) => srv.close(() => r()));

@@ -252,6 +252,26 @@ export function mcpRequestHandler(opts: McpMountOptions) {
     const existing = typeof sessionId === 'string' ? SESSIONS.get(sessionId) : undefined;
     if (existing) existing.lastSeen = Date.now();
 
+    /**
+     * The binding is checked BEFORE the project is resolved, deliberately.
+     *
+     * Resolving first would answer a mismatched request by whether the OTHER
+     * project happens to exist — 400 when it does, 404 when it does not — so a
+     * caller holding a session bound elsewhere could enumerate the workspace one
+     * guess at a time. Checking the pin first makes the refusal depend only on
+     * the session, which is the only thing this request is entitled to be told
+     * about.
+     */
+    if (existing && opts.binding(req) !== existing.binding) {
+      jsonRpcError(
+        res,
+        400,
+        'VALIDATION',
+        `this session is bound to '${existing.binding}'; open a new connection to reach a different project`,
+      );
+      return;
+    }
+
     let deps: ExternalSurfaceDeps | null;
     try {
       deps = await opts.resolve(req);
@@ -267,18 +287,8 @@ export function mcpRequestHandler(opts: McpMountOptions) {
     }
 
     if (existing) {
-      // Both the profile and the binding are pinned to the session, so a later
-      // request can neither widen the profile by passing a different
-      // `?profile=` nor re-point the connection at another project.
-      if (opts.binding(req) !== existing.binding) {
-        jsonRpcError(
-          res,
-          400,
-          'VALIDATION',
-          `this session is bound to '${existing.binding}'; open a new connection to reach a different project`,
-        );
-        return;
-      }
+      // The profile is pinned too: `deps.profile` is whatever the resolver
+      // produced from this request's query, and the session's own value wins.
       syncTools(existing, composeExternalSurface({ ...deps, profile: existing.profile }));
       await existing.transport.handleRequest(req, res, req.body);
       return;
