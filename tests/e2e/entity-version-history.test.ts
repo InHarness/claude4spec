@@ -95,6 +95,31 @@ async function endpointWithOneVersion(projectId: string): Promise<string> {
   return slug;
 }
 
+/**
+ * The same two-versions-minimum probe as `endpointWithHistory`, for the
+ * `database-table` type — the surface that used to hand-roll its own history
+ * pane. Returns `null` when this environment has no database table at all
+ * (a project's plugin whitelist can exclude the type), so the parity case skips
+ * for a seeding reason instead of failing.
+ */
+async function databaseTableWithHistory(projectId: string): Promise<string | null> {
+  const res = await fetch(`${BASE}/api/projects/${projectId}/database-tables`);
+  if (!res.ok) return null;
+  const body = (await res.json()) as { data?: { slug: string }[] };
+  const slug = body.data?.[0]?.slug;
+  if (!slug) return null;
+
+  while ((await listVersions(projectId, slug, 'database-table')).length < 2) {
+    const patched = await fetch(`${BASE}/api/projects/${projectId}/database-tables/${slug}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description: `e2e history probe ${Math.random().toString(36).slice(2)}` }),
+    });
+    if (!patched.ok) throw new Error(`could not capture a version: ${patched.status}`);
+  }
+  return slug;
+}
+
 /** An entity that has never been mutated — no version rows at all. */
 async function acWithNoVersions(projectId: string): Promise<string | null> {
   const res = await fetch(`${BASE}/api/projects/${projectId}/acs`);
@@ -110,7 +135,7 @@ async function openHistory(
   browser: Browser,
   projectId: string,
   slug: string,
-  type: 'endpoints' | 'acs' = 'endpoints',
+  type: 'endpoints' | 'acs' | 'database-tables' = 'endpoints',
 ) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const consoleErrors: string[] = [];
@@ -212,6 +237,45 @@ describe.skipIf(!BASE)('entity version history — EntityVersionHistoryView', ()
     );
 
     expect(await page.getByText('No versions yet').isVisible()).toBe(true);
+    expect(consoleErrors).toEqual([]);
+    expect(badResponses).toEqual([]);
+
+    await page.close();
+  });
+
+  it('[ac:ac-entityversionhistoryview-renderuje-kom] renders the SAME block for a plugin entity — database-table parity', async () => {
+    // The parity guarantee is the whole point of the block: a plugin's history
+    // tab is not a lookalike, it is literally the same component the host and
+    // `endpoint`/`dto` render. `database-table` used to hand-roll its own pane,
+    // so this case is what stops that regressing.
+    const table = await databaseTableWithHistory(project.id);
+    if (!table) {
+      // Seeding, not a defect: this project's plugin whitelist has no database tables.
+      console.warn('no database-table in this environment — skipping the parity case');
+      return;
+    }
+
+    const { page, consoleErrors, badResponses } = await openHistory(
+      browser,
+      project.id,
+      table,
+      'database-tables',
+    );
+
+    // Everything the endpoint case asserts, asserted here on the plugin surface.
+    await expect.poll(() => page.getByText(/^v\d+$/).first().isVisible()).toBe(true);
+    expect(await page.getByText(`database-table · ${table}`).isVisible()).toBe(true);
+    expect(await page.getByRole('button', { name: 'Compare to' }).count()).toBeGreaterThan(0);
+    expect(await page.getByRole('button', { name: 'Restore' }).count()).toBeGreaterThan(0);
+    expect(await page.getByRole('tab', { name: 'Diff' }).isVisible()).toBe(true);
+    expect(await page.getByRole('tab', { name: 'Snapshot' }).isVisible()).toBe(true);
+    // Release pill and changedBy badge — the two things the hand-rolled pane dropped.
+    expect(await page.getByText('(unreleased)').first().isVisible()).toBe(true);
+    expect(await page.getByText(/^(user|agent|filesystem)$/).first().isVisible()).toBe(true);
+    // The block picks a version AND a compare target on load, so the diff is
+    // already rendered — the old pane needed two clicks before showing anything.
+    expect(await page.getByText('Nothing to compare').count()).toBe(0);
+
     expect(consoleErrors).toEqual([]);
     expect(badResponses).toEqual([]);
 
