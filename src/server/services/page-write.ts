@@ -170,9 +170,24 @@ export async function deletePage(
   target: PageWriteTarget,
   input: { path: string },
   actor: WriteActor,
-): Promise<{ ok: true }> {
+): Promise<{ ok: true; deleted: boolean }> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
+  /**
+   * Deleting a page that is not there is a SUCCESS, and `deleted: false` says
+   * so.
+   *
+   * The catalog declares this operation idempotent, and it has to actually be:
+   * without this guard a repeat call reached `fs.unlink`, threw a raw ENOENT and
+   * came back 500 INTERNAL — the one status that tells a client "the server
+   * broke, retry" about the one situation where retrying can never help. A
+   * caller retrying after a timeout is exactly who hits it.
+   *
+   * Reported rather than swallowed, because "already gone" and "you typed the
+   * wrong path" produce the same answer here and a caller may want to tell them
+   * apart.
+   */
+  if (!(await target.pages.exists(relPath))) return { ok: true, deleted: false };
   /**
    * Deletes go through `markOrigin` + `flush` like every other server write,
    * and must NOT suppress. A suppress token issued here has no event of its own
@@ -183,7 +198,7 @@ export async function deletePage(
   target.writer?.markOrigin(relPath, actor);
   await target.pages.remove(relPath);
   await target.writer?.flush(relPath, 'unlink');
-  return { ok: true };
+  return { ok: true, deleted: true };
 }
 
 export interface SectionWriteDeps {

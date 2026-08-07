@@ -135,12 +135,30 @@ describe('the page write primitive', () => {
      */
     await createPage(target, { path: 'gone.md', content: 'x' }, 'user');
     target.writer.calls.length = 0;
-    await deletePage(target, { path: 'gone.md' }, 'agent');
+    expect(await deletePage(target, { path: 'gone.md' }, 'agent')).toEqual({ ok: true, deleted: true });
     expect(target.writer.calls).toEqual([
       { op: 'markOrigin', relPath: 'gone.md', actor: 'agent' },
       { op: 'flush:unlink', relPath: 'gone.md' },
     ]);
     expect(await pages.exists('gone.md')).toBe(false);
+  });
+
+  it('deleting an ALREADY-DELETED page succeeds — the catalog calls this operation idempotent', async () => {
+    /**
+     * Without the existence check this reached `fs.unlink`, threw a raw ENOENT
+     * and came back 500 INTERNAL — a server-fault status for the one case where
+     * retrying can never help, and the case a client hits precisely BY
+     * retrying after a timeout. `idempotent: true` in the catalog row has to be
+     * a fact about the code, not a hope.
+     */
+    await createPage(target, { path: 'twice.md', content: 'x' }, 'user');
+    await deletePage(target, { path: 'twice.md' }, 'user');
+    target.writer.calls.length = 0;
+
+    expect(await deletePage(target, { path: 'twice.md' }, 'user')).toEqual({ ok: true, deleted: false });
+    // …and it does not label a write that never happened: a `markOrigin` with no
+    // write behind it leaves the watcher expecting an event that never arrives.
+    expect(target.writer.calls).toEqual([]);
   });
 });
 
