@@ -107,11 +107,19 @@ export interface CliCommandContribution {
  * `get_entities`/`list_entities` and deliberately has no operation of its own,
  * because an expanded embed hands the consumer a payload where it had an edge.
  *
+ * `plugins` (0.2.13 item 25) is the third kind. Its subject is not
+ * specification content at all: it reports the LOADER state of the host process
+ * — which packages that host admitted, and why it turned the others away. The
+ * release keeps the whole plugin/trust surface out of the catalog on purpose,
+ * so there is no operation for it to name; what makes it `server-delegating` is
+ * that the answer must come from the host that actually mounted the types,
+ * which is the entire point of the item.
+ *
  * The list is short and has to stay that way. Its purpose is to make each
  * exception a decision someone wrote down, rather than the check quietly
  * admitting anything it does not recognise.
  */
-const NON_CATALOG_DELEGATING = new Set(['agent', 'ask', 'resolve']);
+const NON_CATALOG_DELEGATING = new Set(['agent', 'ask', 'resolve', 'plugins']);
 
 /**
  * Item 26 — the contribution invariant, in both directions.

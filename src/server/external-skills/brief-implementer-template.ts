@@ -1,4 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
+import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const BRIEF_IMPLEMENTER_FRONTMATTER = `---
 name: c4s-brief-implementer
@@ -15,7 +16,9 @@ export function briefImplementerBody(ctx: ExternalSkillContext): string {
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the \`c4s\` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s read-brief\` / \`c4s file-patch\` work from any directory, without a running server (they are filesystem-scoped). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the \`c4s\` CLI, with the spec project's identity baked into this skill (\`${identity}\`) — \`c4s list-briefs\` / \`c4s read-brief\` / \`c4s file-patch\` work from any directory, and each of them delegates to the server (see below). If \`c4s\` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+
+${SERVER_REQUIRED_BLOCK}
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 
@@ -45,7 +48,7 @@ The body contains everything you need — entity snapshots, section diffs, the n
 
 If the brief is unclear — a missing detail, an ambiguous wording, a decision you'd otherwise have to guess — you have two paths.
 
-**Synchronous (preferred when available).** Ask the specification agent in the same terminal and continue once you have an answer. Two distinct commands, by what context you need.
+**Ask the spec (the normal path).** Ask the specification agent in the same terminal and continue once you have an answer. Two distinct commands, by what context you need.
 
 Preferred — context of THIS brief plus its release diff (the agent sees only the change window of the brief you are implementing):
 
@@ -59,9 +62,9 @@ Alternative — read-only peer-consult of the CURRENT spec state (may be ahead o
 c4s ask "Jak dziala Y w aktualnej specce?" ${identity}
 \`\`\`
 
-Continue the brief thread with \`c4s agent "..." --thread <threadId> ${identity}\` (the \`threadId\` is printed with the answer). This path requires \`c4s\` installed *and* a running \`npx @inharness-ai/claude4spec\` server. When either is unavailable, skip it.
+Continue the brief thread with \`c4s agent "..." --thread <threadId> ${identity}\` (the \`threadId\` is printed with the answer).
 
-**Asynchronous (always available).** If you cannot ask synchronously, proceed with your best judgement and file a patch afterwards (step 4) so the spec-author can fold the clarification into the next brief.
+**Asynchronous.** If the agent cannot answer — an \`AGENT_UNAVAILABLE\`, or a question the spec genuinely does not settle — proceed with your best judgement and file a patch afterwards (step 4) so the spec-author can fold the clarification into the next brief. This is not the fallback for a server that is down: with no server you never read the brief in the first place, so there is nothing to proceed with. Stop and ask for the server instead.
 
 ### 3. Implement
 
@@ -94,7 +97,7 @@ When the implementation is genuinely finished — code committed, tests green, m
 c4s mark-brief-implemented <brief-path> ${identity}
 \`\`\`
 
-Unlike the filesystem-scoped \`c4s list-briefs\` / \`read-brief\` / \`file-patch\`, this command **requires a running \`npx @inharness-ai/claude4spec\` server** — if it isn't up, ask the user to start it. There is no by-hand file edit: this skill is CLI-only.
+Like every other command in this skill, this one goes through the server — see "Server required" above. There is no by-hand file edit: this skill is CLI-only.
 
 \`implemented: true\` is a **declaration**, not a computed fact derived from git. A revert on main does NOT roll the flag back. Set it ONLY when implementation is realistically done — never proactively or "just in case".
 

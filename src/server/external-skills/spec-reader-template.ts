@@ -1,4 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
+import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const SPEC_READER_FRONTMATTER = `---
 name: c4s-spec-reader
@@ -21,6 +22,8 @@ NOT \`cd\` into the spec repo; the identity is baked in, not derived from cwd.
 **CLI-only — no filesystem fallback.** Every command below goes through
 \`c4s\`. If \`c4s\` isn't installed, STOP and ask the user to install it —
 never read the spec repo's pages or entity files directly.
+
+${SERVER_REQUIRED_BLOCK}
 
 ## Resolving a tag
 
@@ -131,7 +134,7 @@ an exit code > 0, and an error is navigable rather than merely a refusal: a
 \`INVALID_ARGUMENT\` names the call that would have worked. Read the \`hint\`
 before guessing again.
 
-The database is opened **read-only** — \`c4s\` never mutates the project.
+None of these commands mutates the project: they render read operations of the specification, and \`c4s\` opens no database of its own.
 
 ## Asking the spec agent
 
@@ -142,8 +145,10 @@ synchronous agent turn against the specification:
 c4s ask "<question>" ${identity}
 \`\`\`
 
-Unlike the read-only commands above, \`c4s ask\` requires a running
-\`npx @inharness-ai/claude4spec\` server (it delegates the turn to the server's agent).
+It needs the same running server every other command here needs — see "Server
+required" above. What is different about it is the cost, not the requirement:
+it runs a full agent turn rather than answering from the index, so it can also
+come back \`AGENT_UNAVAILABLE\` or \`TIMEOUT\`.
 
 ## Errors
 

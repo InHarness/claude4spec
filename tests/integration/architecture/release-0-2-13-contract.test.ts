@@ -316,6 +316,147 @@ describe('the CLI holds no handle on the specification', () => {
     expect(help).toMatch(/SERVER_NOT_RUNNING/);
     expect(help).toMatch(/never starts one/);
   });
+
+  it('item 25: the CLI runs no plugin loader of its own', () => {
+    /**
+     * The last second locus in the process. `c4s plugins` used to bootstrap a
+     * whole registry — built-in envelopes, workspace packages, project overlay —
+     * and present the result as the project's plugin state. It was the state
+     * THIS process would have loaded, which after any install is not the state
+     * the running host is serving. Two loaders, two answers, and the question
+     * these subcommands exist for is precisely the one where the wrong process's
+     * answer is worse than no answer.
+     *
+     * `import type` stays allowed and is not an oversight: `plugins.ts` still
+     * names `PluginLoadRecord` to describe what the route hands back, and a type
+     * has no runtime existence — it cannot load anything.
+     */
+    const forbidden = /plugin-host\/loader\.js|plugin-host\/registry\.js|plugin-host\/overlay-loader\.js|serialization\/registerAll\.js|cli-plugins\.js/;
+    for (const { file, text } of cliSources()) {
+      for (const line of text.split('\n')) {
+        if (!forbidden.test(line)) continue;
+        // The only admissible form.
+        expect(line.trimStart(), `${file} value-imports the plugin loader`).toMatch(/^import type /);
+      }
+    }
+    // And the CLI-side loader is deleted, not merely unreferenced — a file left
+    // in place is an invitation to call it again.
+    expect(fs.existsSync(path.join(REPO_ROOT, 'src/server/core/plugin-host/cli-plugins.ts'))).toBe(false);
+  });
+
+  it('item 23: `fs-scoped` is down to its one legitimate member', () => {
+    /**
+     * The end state item 23 names. Asserting the CENSUS rather than the prose is
+     * what makes it a gate: a command that quietly opts out of the server by
+     * declaring `fs-scoped` fails here, and no other test would notice — it
+     * would still typecheck, still dispatch, still pass its own unit tests, and
+     * still be a second execution locus.
+     */
+    const dir = path.join(REPO_ROOT, 'src/bin/c4s/commands');
+    const fsScoped: string[] = [];
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.ts') || f.endsWith('.test.ts')) continue;
+      const text = fs.readFileSync(path.join(dir, f), 'utf8');
+      const decl = /name: '([^']+)',[\s\S]{0,400}?executionMode: 'fs-scoped'/.exec(text);
+      if (decl) fsScoped.push(decl[1]!);
+    }
+    expect(fsScoped).toEqual(['install-skills']);
+  });
+});
+
+/**
+ * Item 29 — the skills, which are the release's fourth channel in every sense
+ * that matters to an agent reading one.
+ *
+ * Item 22 deleted the server-free subset of the CLI. Three shipped skills still
+ * told their reader it existed, each in its own wording, and the wording was
+ * load-bearing: it told the agent which failures were worth stopping for. A
+ * skill that names a filesystem-scoped command instructs the agent to route
+ * around a `SERVER_NOT_RUNNING` it cannot route around — and the way an agent
+ * routes around a CLI it believes should have worked is by reading the spec
+ * repo's files by hand, which every one of these skills forbids in its opening
+ * paragraph.
+ *
+ * SIX files, not three. The generated copies under `.claude4spec/skills/` are
+ * refreshed from the templates on server start; the copies under a repo's
+ * `.claude/skills/` are hand-editable and deliberately never overwritten. This
+ * repo has its own, customized with a git/PR flow, and a template-only fix would
+ * leave THIS repo reading the stale contract — which is exactly how the two
+ * copies drifted apart in the first place.
+ */
+describe('no skill claims a command that works without a server', () => {
+  /**
+   * The templates are RENDERED, not read as source. What ships is the output of
+   * `briefImplementerBody(ctx)`, and the invariant reaches it through an
+   * interpolated constant — so a gate reading the source file would be looking
+   * at the one place the text is deliberately absent. The `.claude/skills/`
+   * copies have no build step, so those are read as written.
+   */
+  const skillTexts = async (): Promise<Array<{ file: string; text: string }>> => {
+    const ctx = { slug: 'demo', workspace: 'default' };
+    const { briefImplementerBody } = await import('../../../src/server/external-skills/brief-implementer-template.js');
+    const { refactorBody } = await import('../../../src/server/external-skills/refactor-template.js');
+    const { specReaderBody } = await import('../../../src/server/external-skills/spec-reader-template.js');
+    const out: Array<{ file: string; text: string }> = [
+      { file: 'brief-implementer-template.ts (rendered)', text: briefImplementerBody(ctx) },
+      { file: 'refactor-template.ts (rendered)', text: refactorBody(ctx) },
+      { file: 'spec-reader-template.ts (rendered)', text: specReaderBody(ctx) },
+    ];
+    for (const s of ['c4s-brief-implementer', 'c4s-refactor', 'c4s-spec-reader']) {
+      const rel = `.claude/skills/${s}/SKILL.md`;
+      out.push({ file: rel, text: read(rel) });
+    }
+    return out;
+  };
+
+  it('none of the six asserts a server-free command', async () => {
+    /**
+     * Each pattern is one of the affirmative claims that was actually there,
+     * phrased tightly enough that the shared block's own DENIAL of it ("there is
+     * no filesystem-scoped subset") does not trip the gate. A denial and an
+     * assertion are opposite statements; a grep that cannot tell them apart
+     * would force the fix to be written without naming what it fixes.
+     */
+    const claims: Array<[RegExp, string]> = [
+      [/without a running server/, 'says a command works without a server'],
+      [/do(?: not|n't) need a server/, 'says a command needs no server'],
+      [/[Uu]nlike the filesystem-scoped/, 'still divides the commands into scoped and delegating'],
+      [/[Uu]nlike the read-only commands above/, 'still divides the commands into scoped and delegating'],
+      [/database is opened \*\*read-only\*\*/, 'still describes a db handle the CLI no longer has'],
+    ];
+    for (const { file, text } of await skillTexts()) {
+      for (const [re, why] of claims) {
+        expect(re.exec(text)?.[0], `${file} ${why}`).toBeUndefined();
+      }
+    }
+  });
+
+  it('all six carry the invariant, and it says what to do', async () => {
+    for (const { file, text } of await skillTexts()) {
+      expect(text, `${file} has no "Server required" section`).toMatch(/## Server required — for every step/);
+      expect(text, `${file} does not name the code to stop on`).toMatch(/SERVER_NOT_RUNNING/);
+      // "Stop and ask" is the whole instruction. Without the second half a
+      // reader is told the CLI needs a server and left to solve that themselves,
+      // which is how a subagent ends up starting one.
+      expect(text, `${file} does not forbid starting a server`).toMatch(/[Dd]o not start one yourself/);
+    }
+  });
+
+  it('the templates say it once, not three times', () => {
+    /**
+     * Three wordings of one rule is how the previous three drifted apart. The
+     * templates interpolate a single constant; only the hand-editable
+     * `.claude/skills/` copies carry the text literally, because nothing
+     * regenerates those.
+     */
+    for (const f of ['brief-implementer', 'refactor', 'spec-reader']) {
+      const text = read(`src/server/external-skills/${f}-template.ts`);
+      expect(text, `${f}-template inlines the block instead of importing it`).toMatch(
+        /SERVER_REQUIRED_BLOCK/,
+      );
+      expect(text).not.toMatch(/## Server required — for every step/);
+    }
+  });
 });
 
 /**
