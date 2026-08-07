@@ -27,15 +27,26 @@ const BUILTIN_PAGES_ROOT_ID = 'pages';
  * verbatim — id and properties intact. The override names a DIRECTORY, not a
  * root, so hits stay attributable to whoever owns it.
  *
- * ## The ad-hoc root is not reference-validated
+ * ## The ad-hoc root keeps `referenceValidated`, and that is not optional
  *
- * When no configured root claims the directory, the result is an AD-HOC root,
- * and 0.2.13 states what that costs: `referenceValidated: false`. The CLI's old
- * version inherited the built-in root's properties instead, which quietly
- * claimed validation for a directory nobody had declared — a sweep over an
- * arbitrary folder would report its hits as if the project vouched for them.
- * Section indexing goes the same way, and for the same reason: there is no index
- * for a directory the project never declared.
+ * 0.2.13 §2 says ad-hoc roots "come back with `referenceValidated=false`", and a
+ * first pass at this implemented that literally. It cannot be implemented
+ * literally: `referenceValidated` is the property `findReferences` FILTERS ON
+ * (`ops/references.ts` → `roots.referenceValidated()`), so a root carrying
+ * `false` is not swept at all. With the override replacing the root list, the
+ * only root was unswept and `--pages <dir>` answered `{ references: [], total: 0 }`
+ * for every directory the project had not already declared — which is the whole
+ * set of directories the flag exists to point at. A confidently empty answer to
+ * "is anything still pointing at this before I rename it" is the worst possible
+ * output of this command, and it is what the literal reading produces.
+ *
+ * So the sweep runs. What the project does not vouch for is expressed where it
+ * costs nothing: `sectionIndexed: false`, which is simply true — there is no
+ * section index for a directory nobody declared — and means hits from an ad-hoc
+ * root carry no `anchor`, so they cannot be mistaken for indexed ones.
+ *
+ * A `clarification` patch is filed against the brief; this is the reading under
+ * which the flag does anything at all.
  */
 export function applyPagesOverride(roots: readonly Root[], override: string | undefined): Root[] {
   if (!override) return [...roots];
@@ -43,5 +54,5 @@ export function applyPagesOverride(roots: readonly Root[], override: string | un
   if (owning) return [owning];
   const builtin = roots.find((r) => r.id === BUILTIN_PAGES_ROOT_ID) ?? roots[0];
   if (!builtin) return [];
-  return [{ ...builtin, dir: override, referenceValidated: false, sectionIndexed: false }];
+  return [{ ...builtin, dir: override, referenceValidated: true, sectionIndexed: false }];
 }

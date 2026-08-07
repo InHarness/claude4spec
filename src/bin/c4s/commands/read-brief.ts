@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { delegateGet } from '../delegate.js';
-import { AgentError } from '../../../core/agent/http.js';
+import { AgentError, encodeArtifactPath } from '../../../core/agent/http.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
@@ -11,9 +11,7 @@ import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registr
  * `<brief-path>` is relative to `briefsDir` — parity with the `--brief` argument
  * elsewhere.
  *
- * 0.2.13 — `server-delegating`, over `GET /api/artifacts/brief/<path>`. Path
- * traversal is refused by the server rather than by a local guard, which is the
- * only place it can be refused now: this process cannot see `briefsDir`.
+ * 0.2.13 — `server-delegating`, over `GET /api/artifacts/brief/<path>`.
  */
 export async function runReadBrief(args: ParsedArgs): Promise<void> {
   const briefPath = args.positional[0];
@@ -24,7 +22,23 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
       'usage: c4s read-brief <brief-path>',
     );
   }
-  const encoded = briefPath.split('/').map(encodeURIComponent).join('/');
+  /**
+   * The traversal guard stays HERE, and cannot be delegated.
+   *
+   * `readBriefFs` used to refuse `../..` via `assertSafeRelPath` before reading
+   * anything. Moving the read to the server does not move that check with it,
+   * because the traversal never arrives at the server as a path:
+   * `encodeURIComponent` leaves `..` untouched (it is not a reserved character),
+   * and WHATWG URL resolution inside `fetch` collapses the dot segments before
+   * the request goes out. So `c4s read-brief ../../config` was rewritten into
+   * `GET /api/projects/<id>/config` — a different, existing endpoint, which
+   * answers 200 with the project config. The command then printed `{}` (none of
+   * `frontmatter`/`body`/`content` are on that payload) and exited 0.
+   *
+   * A confidently empty answer where the old code refused outright.
+   * `encodeArtifactPath` refuses it again, before the URL is built.
+   */
+  const encoded = encodeArtifactPath(briefPath);
 
   try {
     const brief = (await delegateGet(args, `/artifacts/brief/${encoded}`)) as {

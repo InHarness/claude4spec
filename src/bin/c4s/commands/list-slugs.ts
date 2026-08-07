@@ -23,13 +23,16 @@ import type { CliCommandContribution } from '../registry.js';
  */
 export async function runListSlugs(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
-  const { items } = await delegateGetAll(
+  const { items, exhausted } = await delegateGetAll(
     args,
     `/entities/${type}/list`,
     { view: 'inline_mention' },
     pickEntityPage,
   );
-  writeOutput({ type, slugs: items.map((i) => i.slug) }, args);
+  // Reported for the same reason as `tagged_list`: a slug list cut short by the
+  // runaway guard and presented as complete is what authorizes a rename or a
+  // delete against a set that was never fully seen.
+  writeOutput({ type, slugs: items.map((i) => i.slug), hasMore: !exhausted }, args);
 }
 
 export const listSlugsCommand: CliCommandContribution = {

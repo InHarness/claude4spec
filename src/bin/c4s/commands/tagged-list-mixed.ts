@@ -49,16 +49,21 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   const grouped: Record<string, unknown[]> = Object.fromEntries(
     seedTypes.map((t) => [`${t}s`, [] as unknown[]]),
   );
+  // One flag for the whole call: if ANY type's sweep was cut short, the payload
+  // as a whole is incomplete, and a per-bucket flag would invite a reader to
+  // trust the other buckets more than the answer deserves.
+  let complete = true;
   for (const type of activeTypes) {
-    const { items } = await delegateGetAll(
+    const { items, exhausted } = await delegateGetAll(
       args,
       `/entities/${type}/list`,
       { tags, filter: filterRaw, view: 'tagged_list_item' },
       pickEntityPage,
     );
+    if (!exhausted) complete = false;
     grouped[`${type}s`] = items.map(withMeta);
   }
-  writeOutput({ ...grouped, query: { tags, filter: filterRaw } }, args);
+  writeOutput({ ...grouped, hasMore: !complete, query: { tags, filter: filterRaw } }, args);
 }
 
 export const taggedListMixedCommand: CliCommandContribution = {

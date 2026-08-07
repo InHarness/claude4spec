@@ -209,7 +209,7 @@ function syncTools(session: Session, surface: ExternalSurface): void {
   // Belt and braces: `registerTool`/`remove` already notify a connected server,
   // but the diff above is the only thing that should ever trigger it, and the
   // equality check states that intent in a way a future refactor has to notice.
-  if (changed && before.join(' ') !== surface.toolNames.join(' ')) {
+  if (changed && before.join('\0') !== surface.toolNames.join('\0')) {
     session.server.sendToolListChanged();
   }
 }

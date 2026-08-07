@@ -282,6 +282,26 @@ describe('the CLI holds no handle on the specification', () => {
     expect(bin).not.toMatch(/case 'INDEX_NOT_MATERIALIZED':/);
   });
 
+  it('a bad argument still exits 4 after the refusal started coming from the server', () => {
+    /**
+     * `routes/errors.ts` deliberately renames the core's `INVALID_ARGS` to
+     * `VALIDATION` on the way out, and the CLI propagates the server's code
+     * verbatim rather than translating it back. So when `file-patch` moved onto
+     * `POST /api/patches`, the same refusal that exited 4 started exiting 1 —
+     * the generic bucket that also holds `PROJECT_NOT_IN_WORKSPACE` and agent
+     * failures, so a wrapper branching on `[ $? -eq 4 ]` reads a typo as an
+     * infrastructure problem. All four spellings of "you asked for something the
+     * contract does not allow" have to land on the same status.
+     */
+    const bin = read('src/bin/c4s.ts');
+    const four = /((?:\s*case '[A-Z_]+':(?:\s*(?:\/\/[^\n]*|\/\*[\s\S]*?\*\/))*)+\s*return 4;)/.exec(bin);
+    expect(four, 'no exit-4 group found in codeToExit').toBeTruthy();
+    const codes = [...four![1].matchAll(/case '([A-Z_]+)':/g)].map((m) => m[1]);
+    expect(codes).toEqual(
+      expect.arrayContaining(['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT', 'VALIDATION']),
+    );
+  });
+
   it('[ac:ac-kazda-komenda-modulowa-wchodzi-do-bin-c] the execution-mode enum no longer offers a way to read without a server', () => {
     const registry = read('src/bin/c4s/registry.ts');
     const union = /executionMode:\s*([^;]+);/.exec(registry)?.[1] ?? '';

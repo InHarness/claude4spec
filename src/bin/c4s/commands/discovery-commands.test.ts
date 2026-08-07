@@ -53,6 +53,7 @@ import { runCatalog } from './catalog.js';
 import { runDescribe } from './describe.js';
 import { runListTags } from './list-tags.js';
 import { runInlineMention } from './inline-mention.js';
+import { runElementList } from './element-list.js';
 
 /** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
 const CONFIG = {
@@ -260,7 +261,89 @@ describe('discovery commands on the CLI', () => {
       reply = { items: [{ slug: 'a', data: {} }, { slug: 'b', data: {} }], total: 2, hasMore: false };
       await runListSlugs(args('list-slugs', '--type', 'ac'));
       expect(called()).toBe('/entities/ac/list?view=inline_mention&offset=0');
-      expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'] });
+      expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'], hasMore: false });
+    });
+  });
+
+  /**
+   * `element_list` is the TAG RENDERER, and it promised two things the raw
+   * `get_entities` operation deliberately does not. Both were provided by the
+   * deleted `getEntitiesAll`, both were lost when the command started calling
+   * the route directly, and neither is visible in the response's shape — which
+   * is why they are asserted against the requests that were made.
+   */
+  describe('element_list keeps what the raw operation does not promise', () => {
+    const replyFor = (slugs: string[], truncate: string[] = []) => ({
+      type: 'ac',
+      view: 'element_list_item',
+      results: slugs.map((slug) =>
+        truncate.includes(slug)
+          ? { slug, entity: null, truncated: true }
+          : { slug, entity: { slug } },
+      ),
+    });
+
+    const serveByRequest = (fn: (slugs: string[]) => unknown): void => {
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        const url = req.url ?? '';
+        res.setHeader('content-type', 'application/json');
+        if (url.endsWith('/config')) return res.end(JSON.stringify(CONFIG));
+        seen.push({ method: req.method ?? 'GET', url });
+        const raw = new URL(url, 'http://x').searchParams.get('slugs') ?? '';
+        res.end(JSON.stringify(fn(raw.split(',').filter(Boolean))));
+      });
+    };
+
+    it('chunks a list past the 50-slug cap instead of being refused', async () => {
+      // `get_entities` throws INVALID_ARGUMENT past 50 — right for the raw
+      // operation, wrong for a tag naming 51 acceptance criteria, which is an
+      // ordinary page. The whole list must come back, in input order.
+      const slugs = Array.from({ length: 51 }, (_, i) => `ac-${i}`);
+      serveByRequest((chunk) => replyFor(chunk));
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', slugs.join(',')));
+      expect(seen).toHaveLength(2);
+      expect(new URL(seen[0]!.url, 'http://x').searchParams.get('slugs')!.split(',')).toHaveLength(50);
+      expect(new URL(seen[1]!.url, 'http://x').searchParams.get('slugs')).toBe('ac-50');
+      expect((printed().items as Array<{ slug: string }>).map((i) => i.slug)).toEqual(slugs);
+      expect(printed().missing).toEqual([]);
+    });
+
+    it('re-fetches a budget-degraded row instead of reporting it as a missing slug', async () => {
+      /**
+       * Past its response budget the operation demotes a row to
+       * `{ entity: null, truncated: true }` rather than dropping it. A renderer
+       * that does not know the flag reads that as "no such entity" and shows an
+       * EXISTING entity under `missing` — which a page author then acts on. The
+       * retry is single-slug, because a single-slug call cannot come back
+       * degraded, which is what makes it terminate.
+       */
+      let firstCall = true;
+      serveByRequest((chunk) => {
+        if (firstCall) {
+          firstCall = false;
+          return replyFor(chunk, ['b']);
+        }
+        return replyFor(chunk);
+      });
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', 'a,b,c'));
+      expect(seen).toHaveLength(2);
+      expect(new URL(seen[1]!.url, 'http://x').searchParams.get('slugs')).toBe('b');
+      expect((printed().items as Array<{ slug: string }>).map((i) => i.slug)).toEqual(['a', 'b', 'c']);
+      expect(printed().missing).toEqual([]);
+    });
+
+    it('a genuinely absent slug is still reported as missing', async () => {
+      // The retry must not turn "no such entity" into a row: a null WITHOUT
+      // `truncated` is the real answer, and it is what `missing` is for.
+      serveByRequest((chunk) => ({
+        type: 'ac',
+        view: 'element_list_item',
+        results: chunk.map((slug) => ({ slug, entity: slug === 'gone' ? null : { slug } })),
+      }));
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', 'a,gone'));
+      expect(seen).toHaveLength(1);
+      expect(printed().missing).toEqual(['gone']);
     });
   });
 
@@ -296,6 +379,30 @@ describe('discovery commands on the CLI', () => {
         'tags=x&filter=or&view=tagged_list_item&offset=2',
       ]);
       expect(printed().items).toEqual([1, 2, 3]);
+      // A sweep that ran to the end says so.
+      expect(printed().hasMore).toBe(false);
+    });
+
+    it('a sweep the guard cuts short is reported as incomplete, not printed as the answer', async () => {
+      /**
+       * `delegateGetAll` documents `exhausted: false` as "the caller must report
+       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`/`list-slugs`
+       * all swallowed it. A tag list cut at the runaway guard and presented as
+       * complete is what authorizes a rename or a delete against a set that was
+       * never fully seen. Simulated here with a server that never stops saying
+       * `hasMore`.
+       */
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        const url = req.url ?? '';
+        res.setHeader('content-type', 'application/json');
+        if (url.endsWith('/config')) return res.end(JSON.stringify(CONFIG));
+        seen.push({ method: req.method ?? 'GET', url });
+        res.end(JSON.stringify({ items: [{ slug: 'x', data: 1 }], total: 99999, hasMore: true }));
+      });
+      await runTaggedList(args('tagged_list', '--type', 'ac', '--tags', 'x'));
+      expect(printed().hasMore).toBe(true);
+      expect(seen.length).toBeGreaterThan(1);
     });
 
     it('a page that claims hasMore while returning nothing ends the sweep instead of spinning', async () => {

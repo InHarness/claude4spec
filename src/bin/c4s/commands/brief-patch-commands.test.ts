@@ -164,6 +164,22 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
       await expect(runReadBrief(args('read-brief'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       expect(seen).toEqual([]);
     });
+
+    it('refuses a traversal instead of addressing another endpoint with it', async () => {
+      /**
+       * The failure this pins is not a 404. `..` survives `encodeURIComponent`
+       * and `fetch` collapses it, so `read-brief ../../config` was SENT as
+       * `GET /api/projects/<id>/config` — an endpoint that answers 200 with the
+       * project config. The command then printed `{}` (none of frontmatter/
+       * body/content exist on that payload) and exited 0, where the filesystem
+       * reader had refused outright. So the assertion that matters is that
+       * NOTHING was requested.
+       */
+      await expect(runReadBrief(args('read-brief', '../../config'))).rejects.toMatchObject({
+        code: 'INVALID_ARGS',
+      });
+      expect(seen).toEqual([]);
+    });
   });
 
   describe('file-patch', () => {

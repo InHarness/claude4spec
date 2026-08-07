@@ -13,6 +13,7 @@ import path from 'node:path';
 import type Database from 'better-sqlite3';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createTestDb } from '../../../tests/helpers/test-db.js';
+import { applyPagesOverride } from './pages-override.js';
 import { applyProjection } from '../db/projection.js';
 import type { DataDeclaration } from '../../shared/plugin-host/data-schema.js';
 import {
@@ -1200,5 +1201,86 @@ describe('discovery core', () => {
 
     expect(result.items.find((h) => h.rootId === 'pages')).toMatchObject({ kind: 'section', anchor: 'abcdef12' });
     expect(result.items.find((h) => h.rootId === 'notes')).toMatchObject({ kind: 'line', path: 'n.md' });
+  });
+});
+
+/**
+ * 0.2.13 — `--pages <dir>` / `?pages=<dir>`, against the REAL core.
+ *
+ * The unit test for `applyPagesOverride` asserts the root it returns, and the
+ * route test stubs `findReferences` entirely. Between them they left the only
+ * question that matters unasked: does a sweep over the narrowed list actually
+ * read anything? It did not — the override set `referenceValidated: false`,
+ * which is the exact property `findReferences` filters roots on, so every
+ * `--pages` sweep answered `{ references: [], total: 0 }` and both tests stayed
+ * green. This is the test that fails on that.
+ */
+describe('applyPagesOverride, through the core that consumes it', () => {
+  let cwd: string;
+  let db: Database.Database;
+
+  beforeEach(async () => {
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-pages-override-'));
+    db = createTestDb();
+    applyProjection(db, [widgetModule()]);
+    db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD')`).run();
+  });
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const build = (roots: Root[]): DiscoveryCore => {
+    const pluginHost = host([widgetModule()]);
+    return createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost, sectionSerializer),
+      roots,
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  };
+
+  const write = async (dir: string, rel: string, body: string): Promise<void> => {
+    const abs = path.join(cwd, dir, rel);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, body, 'utf-8');
+  };
+
+  const CITES = '# Notes\n\n<inline_mention type="widget" slug="flow"/>\n';
+
+  it('an UNDECLARED directory is still swept — the flag is not a silent no-op', async () => {
+    await write('scratch', 'draft.md', CITES);
+    const configured = [pagesRoot()];
+
+    // The whole point of the flag: `scratch` is not a configured root.
+    const narrowed = build(applyPagesOverride(configured, 'scratch'));
+    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    expect(found.total).toBe(1);
+    expect(found.references[0]!.pagePath).toBe('draft.md');
+  });
+
+  it('and the narrowing is real — the configured roots are NOT swept alongside it', async () => {
+    await write('pages', 'configured.md', CITES);
+    await write('scratch', 'draft.md', CITES);
+
+    const wide = build([pagesRoot()]);
+    expect((await wide.findReferences({ target: 'entity', type: 'widget', slug: 'flow' })).total).toBe(1);
+
+    const narrowed = build(applyPagesOverride([pagesRoot()], 'scratch'));
+    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    // One hit, and it is the SCRATCH one — not the configured page, and not both.
+    expect(found.total).toBe(1);
+    expect(found.references[0]!.pagePath).toBe('draft.md');
+  });
+
+  it('a directory a configured root already claims is answered by that root, id intact', async () => {
+    await write('pages', 'configured.md', CITES);
+    const narrowed = build(applyPagesOverride([pagesRoot()], 'pages'));
+    const found = await narrowed.findReferences({ target: 'entity', type: 'widget', slug: 'flow' });
+    expect(found.total).toBe(1);
+    expect(found.references[0]!.rootId).toBe('pages');
   });
 });

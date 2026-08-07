@@ -592,6 +592,23 @@ export function validateRootDirs(
 }
 
 /**
+ * Root ids that would be shadowed by a route sharing their prefix.
+ *
+ * 0.2.13 mounts the cross-root `search_pages` rendering at `GET /api/pages/search`,
+ * ahead of `/api/pages/:rootId` — it has to be ahead, or `search` is captured as
+ * a root id and the operation answers `ROOT_NOT_FOUND`. That ordering creates the
+ * mirror-image trap: a project whose `config.json` declares a root called
+ * `search` loses `GET /api/pages/search` for its own tree, and loses it SILENTLY
+ * — the symptom is a root missing from the sidebar, not a 500.
+ *
+ * Refusing the id at config-validation time is the fix at the right depth. The
+ * alternative — disambiguating inside the handler — would leave the collision
+ * live and merely paper over it, and there is no reading under which one name can
+ * mean both things.
+ */
+const RESERVED_ROOT_IDS = new Set(['search']);
+
+/**
  * Structural validation of a raw `roots[]` value: each element well-typed +
  * path-safe, ids unique, linkTargets reference existing roots, and the built-in
  * `pages` root present with sidebar 'accordion'. Throws on any violation. Shared
@@ -603,6 +620,11 @@ export function parseRootsArray(raw: unknown): Root[] {
   const seen = new Set<string>();
   for (const root of roots) {
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
+    if (RESERVED_ROOT_IDS.has(root.id)) {
+      throw new Error(
+        `config.json: root id '${root.id}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable`,
+      );
+    }
     seen.add(root.id);
   }
   // linkTargets must reference existing root ids ("dangling link scope").

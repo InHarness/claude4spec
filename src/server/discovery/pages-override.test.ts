@@ -26,15 +26,23 @@ describe('applyPagesOverride', () => {
     expect(out[0]).toEqual(roots[2]);
   });
 
-  it('an ad-hoc directory is NOT reference-validated, and not section-indexed', () => {
-    // The regression this pins: the CLI's old copy inherited the built-in root's
-    // properties, which claimed validation for a directory nobody had declared —
-    // a sweep over an arbitrary folder reported its hits as if the project
-    // vouched for them.
+  it('an ad-hoc directory IS swept, and is not section-indexed', () => {
+    /**
+     * `referenceValidated` must stay TRUE, and this is the assertion that says
+     * why rather than leaving it to a comment: `findReferences` filters roots on
+     * exactly this property, so `false` here means the sweep walks nothing and
+     * `--pages <dir>` answers "nothing references this" for every directory the
+     * project has not already declared — the whole set the flag exists for. The
+     * empty answer is indistinguishable from a real one, and it is the answer
+     * that authorizes a rename or a delete.
+     *
+     * `sectionIndexed: false` is the honest half: there is no section index for
+     * an undeclared directory, so hits from one carry no `anchor`.
+     */
     const out = applyPagesOverride(roots, '/tmp/scratch');
     expect(out).toHaveLength(1);
     expect(out[0].dir).toBe('/tmp/scratch');
-    expect(out[0].referenceValidated).toBe(false);
+    expect(out[0].referenceValidated).toBe(true);
     expect(out[0].sectionIndexed).toBe(false);
   });
 

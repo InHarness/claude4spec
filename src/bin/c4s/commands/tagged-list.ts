@@ -26,13 +26,25 @@ export async function runTaggedList(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--filter must be 'and' or 'or', got '${filterRaw}'`);
   }
 
-  const { items } = await delegateGetAll(
+  const { items, exhausted } = await delegateGetAll(
     args,
     `/entities/${type}/list`,
     { tags, filter: filterRaw, view: 'tagged_list_item' },
     pickEntityPage,
   );
-  writeOutput({ items: items.map(withMeta), query: { type, tags, filter: filterRaw } }, args);
+  /**
+   * `hasMore` is REPORTED, not assumed false.
+   *
+   * The sweep normally runs to the end and answers false. But `delegateGetAll`
+   * has a runaway guard, and a command that discards `exhausted` prints a list
+   * cut at the guard as though it were the whole answer — which is the wrong
+   * answer that reads like a right one, and precisely what this command exists
+   * not to give. `find-references` has always reported it; these did not.
+   */
+  writeOutput(
+    { items: items.map(withMeta), hasMore: !exhausted, query: { type, tags, filter: filterRaw } },
+    args,
+  );
 }
 
 export const taggedListCommand: CliCommandContribution = {

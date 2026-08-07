@@ -271,6 +271,22 @@ function codeToExit(code: string): number {
     // does not allow" exit, since a caller scripting c4s branches on the class
     // of failure and these are the same class.
     case 'INVALID_ARGUMENT':
+    /**
+     * 0.2.13 — `VALIDATION` joins the same class, because the migration to
+     * `server-delegating` started routing CLI argument refusals through it.
+     *
+     * `c4s file-patch --brief ../foo.md` throws `BriefFsError('INVALID_ARGS')`
+     * in the core writer; `routes/errors.ts` deliberately renames that to
+     * `VALIDATION` on the way out ("`INVALID_ARGS` is the core's name for what
+     * REST calls `VALIDATION`"), and the CLI propagates the server's code
+     * verbatim rather than translating it back. Without this case the same
+     * refusal that exited 4 before the migration exits 1 — the generic bucket
+     * that also holds `PROJECT_NOT_IN_WORKSPACE` and agent failures, so a
+     * wrapper branching on `[ $? -eq 4 ]` reads a typo as an infrastructure
+     * problem. Renaming it back at the transport was the alternative, and that
+     * is exactly the fourth error vocabulary this release exists to remove.
+     */
+    case 'VALIDATION':
       return 4;
     case 'FILE_NOT_FOUND':
     // M39 — a page named by (rootId, path) that does not exist is the same

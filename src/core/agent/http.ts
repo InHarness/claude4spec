@@ -79,6 +79,42 @@ export class AgentError extends Error {
 }
 
 /**
+ * Encode an artifact path for a URL path segment, refusing traversal FIRST.
+ *
+ * ## Why this is one function rather than an encode at each call site
+ *
+ * A relative artifact path (a brief under `briefsDir`, a plan under `plansDir`)
+ * used to be read in this process, where `assertSafeRelPath` refused `..` before
+ * anything opened. Once the read moved to the server, the obvious translation —
+ * `p.split('/').map(encodeURIComponent).join('/')` — looks like it carries the
+ * path verbatim and does not:
+ *
+ *   - `encodeURIComponent` leaves `..` alone. It is not a reserved character,
+ *     so there is nothing for it to escape.
+ *   - WHATWG URL resolution, inside `fetch`, then COLLAPSES the dot segments
+ *     before the request goes out.
+ *
+ * So `../../config` appended to `/api/projects/<id>/artifacts/brief/` is sent as
+ * `/api/projects/<id>/config` — a different, existing endpoint that answers 200.
+ * The command prints an object with none of the fields it expected and exits 0.
+ * The traversal is not refused by the server because the server never sees it.
+ *
+ * An absolute path is refused for the same reason: a leading `/` resets the
+ * resolution to the origin.
+ */
+export function encodeArtifactPath(p: string): string {
+  const segments = p.split('/');
+  if (p.startsWith('/') || segments.some((s) => s === '..' || s === '.')) {
+    throw new AgentError(
+      'INVALID_ARGS',
+      `path '${p}' escapes the artifact directory`,
+      'give a path relative to the artifact directory, with no `..` segments',
+    );
+  }
+  return segments.map(encodeURIComponent).join('/');
+}
+
+/**
  * Resolve `baseUrl` + `projectId` from `--server`/`--project`/`--workspace`.
  *
  * M31: discovery goes through the workspace registry (`defaultPort`), not

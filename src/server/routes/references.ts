@@ -142,29 +142,34 @@ export function referencesRouter(
       }
 
       /**
-       * The entity target answers from the SERVICE, always, and the window is
-       * applied here.
+       * The entity target answers from the CORE. Only `section` still does not.
        *
-       * Handing `limit`/`offset` to the core instead looks equivalent and is not,
-       * in three ways a caller notices:
+       * Until this release the entity arm answered from `ReferencesService`
+       * unless `includeTagMatches` was set, for three stated reasons. Two of them
+       * have stopped being true, and keeping the shortcut for the third was
+       * costing the caller a field:
        *
-       *   - SHAPE. `ops/references.ts` maps its hits through a projection that
-       *     drops `raw` — the original tag text. The published `ReferenceHit`
-       *     declares `raw` as required and the reference chips render it, so a
-       *     request that merely added `&limit=` came back with empty chips and no
-       *     error to explain them.
-       *   - TYPE VOCABULARY. `assertType` admits the non-entity pseudo-type
-       *     `section`, which this route has accepted since long before the core
-       *     existed; `entityReferences` refuses anything `host.getEntity()` does
-       *     not know. So `?type=section&slug=x` answered 200, and
-       *     `?type=section&slug=x&limit=20` answered 404 INVALID_TYPE.
+       *   - SHAPE. The core's projection used to drop `raw`, the original tag
+       *     text the reference chips render. It stopped dropping it earlier in
+       *     0.2.13 (`ops/references.ts` forwards it now), so this reason expired
+       *     with that fix and the shortcut outlived it.
        *   - COMPLETENESS. The core paginates at `DEFAULT_LIMITS.findReferences`
-       *     (100). An entity cited on 150 pages answered with 150 references
-       *     plain and 100 with a flag set — the caller asking the BIGGER question
-       *     ("what breaks if I rename this") got the smaller answer.
+       *     (100), so a windowless request through it used to answer 100 of an
+       *     entity's 150 citations. `findReferencesAllPaged` is what closes that,
+       *     and it is used below whenever no window was asked for.
+       *   - TYPE VOCABULARY. This one still holds: `assertType` admits the
+       *     non-entity pseudo-type `section`, which `entityReferences` refuses.
+       *     So `section` — and nothing else — keeps the service.
        *
-       * `includeTagMatches` is the one thing the service cannot do, so it — and
-       * only it — goes to the core.
+       * What the shortcut cost: the SERVICE projects hits down to
+       * `{ rootId, pagePath, tagType, line, raw }` (`services/references.ts`),
+       * dropping the `anchor` the core attaches to every hit falling inside an
+       * indexed section. That anchor is the entire link from a reference to
+       * `get-sections` / `list-sections --by anchor` — the path the CLI help
+       * advertises — and `c4s find-references … | jq '.references[].anchor'`
+       * answered `null` for every hit while the operation reached over MCP
+       * answered correctly. One operation, two answers, which is the drift this
+       * release exists to remove.
        */
       /**
        * `section` never reaches the core, whatever the flags say.
@@ -194,7 +199,7 @@ export function referencesRouter(
           },
         });
       }
-      if ((!includeTagMatches && !pagesOverride) || type === 'section') {
+      if (type === 'section') {
         const hits = await references.findReferences(type, slug);
         if (limit === undefined && offset === undefined) return res.json({ references: hits });
         const start = offset ?? 0;
@@ -203,19 +208,24 @@ export function referencesRouter(
       }
 
       /**
-       * Tag matches: the core's phase 2, which no service method exposes.
+       * With no explicit window, the EXHAUSTIVE helper — not one
+       * `findReferences` call, which would stop at the core's default page of
+       * 100. `exhausted: false` means the runaway guard tripped, and is reported
+       * as `hasMore` rather than passed off as a complete answer.
        *
-       * With no explicit window the exhaustive helper is used rather than one
-       * `findReferences` call, so this path cannot silently stop at the core's
-       * default page. `exhausted: false` means the runaway guard tripped, which
-       * is reported as `hasMore` rather than passed off as a complete answer.
+       * `includeTagMatches` is FORWARDED, not asserted. It was hardcoded `true`
+       * here while this path was reachable only when the caller had asked for
+       * tag matches; once `?pages=` started routing through it too, a caller who
+       * passed `pages` alone silently got phase-2 tag matches on top of the
+       * direct citations — the same operation answering differently because of
+       * an unrelated flag.
        */
       if (limit === undefined && offset === undefined) {
         const { references: all, exhausted } = await findReferencesAllPaged(core(), {
           target: 'entity',
           type,
           slug,
-          includeTagMatches: true,
+          includeTagMatches,
         });
         return res.json({ references: all, total: all.length, hasMore: !exhausted });
       }
