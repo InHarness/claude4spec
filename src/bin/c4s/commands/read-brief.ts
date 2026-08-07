@@ -1,7 +1,7 @@
 import type { ParsedArgs } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { AgentError, encodeArtifactPath } from '../../../core/agent/http.js';
-import { CliError } from '../errors.js';
+import { CliError, type CliErrorCode } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { SERVER_DELEGATING_CODES, type CliCommandContribution } from '../registry.js';
 
@@ -38,9 +38,8 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
    * A confidently empty answer where the old code refused outright.
    * `encodeArtifactPath` refuses it again, before the URL is built.
    */
-  const encoded = encodeArtifactPath(briefPath);
-
   try {
+    const encoded = encodeArtifactPath(briefPath);
     const brief = (await delegateGet(args, `/artifacts/brief/${encoded}`)) as {
       frontmatter: unknown;
       body: string;
@@ -55,6 +54,18 @@ export async function runReadBrief(args: ParsedArgs): Promise<void> {
     // the same re-framing `mark-brief-implemented` has always done.
     if ((err instanceof CliError || err instanceof AgentError) && err.code === 'NOT_FOUND') {
       throw new CliError('BRIEF_NOT_FOUND', err.message, err.hint);
+    }
+    /**
+     * Any other `AgentError` becomes a `CliError` carrying the SAME code.
+     *
+     * `encodeArtifactPath` throws one, and it used to be thrown outside this
+     * block — so the traversal refusal reached the bin's generic fallback and
+     * was reported as `UNKNOWN_COMMAND`, exit 1. The refusal was correct and its
+     * exit status was not, which for a wrapper script is the same bug in a
+     * different place: `INVALID_ARGS` is exit 4, and only the mapping says so.
+     */
+    if (err instanceof AgentError) {
+      throw new CliError(err.code as CliErrorCode, err.message, err.hint);
     }
     throw err;
   }

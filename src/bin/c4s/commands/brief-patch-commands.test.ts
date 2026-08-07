@@ -15,6 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../args.js';
+import { CliError } from '../errors.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
 import { __resetDelegateTargets } from '../delegate.js';
 import { runListBriefs } from './list-briefs.js';
@@ -175,10 +176,19 @@ describe('[ac:ac-rodzina-brief-patch-list-briefs-read] the brief/patch family de
        * reader had refused outright. So the assertion that matters is that
        * NOTHING was requested.
        */
-      await expect(runReadBrief(args('read-brief', '../../config'))).rejects.toMatchObject({
-        code: 'INVALID_ARGS',
-      });
+      const err = await runReadBrief(args('read-brief', '../../config')).catch((e: unknown) => e);
       expect(seen).toEqual([]);
+      expect((err as { code?: string }).code).toBe('INVALID_ARGS');
+      /**
+       * The CLASS is asserted, not just the code, because the class is what
+       * decides the exit status. `encodeArtifactPath` throws an `AgentError`,
+       * and `src/bin/c4s.ts` only routes a `CliError` through `codeToExit` —
+       * everything else lands in the generic branch and is reported as
+       * `UNKNOWN_COMMAND`, exit 1. So the first version of this fix refused the
+       * traversal correctly and exited 1 anyway, and a test that matched only on
+       * `code` passed the whole time.
+       */
+      expect(err).toBeInstanceOf(CliError);
     });
   });
 
