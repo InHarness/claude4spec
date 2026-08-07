@@ -49,6 +49,18 @@ export interface ResolvedAgentPathScope {
    * the union with the user's `disallowedPaths` via `disallowedPaths` above.
    */
   artifactDenyDirs: string[];
+  /**
+   * 0.2.13 item 28: the page roots (absolute), for a WRITE-ONLY block.
+   *
+   * Deliberately NOT a subset of `disallowedPaths`, and that is the whole point of it
+   * being a separate field. `disallowedPaths` is handed to the sandbox as both `denyRead`
+   * and `denyWrite`, which is right for an artifact dir — an MCP tool serves every read of
+   * one — and wrong for a page: there is no operation that hands back raw page markdown for
+   * a `Grep`-style sweep, and the M05 prompt instructs exactly such a sweep. So the roots
+   * stay in the allow base, readable, and only the WRITE channel is closed, in
+   * `agent-execution-scope.ts`.
+   */
+  pageRootDirs: string[];
 }
 
 function toAbs(cwd: string, p: string): string {
@@ -81,6 +93,11 @@ export function resolveAgentPathScope(input: ResolveAgentPathScopeInput): Resolv
     ),
   );
 
+  // 0.2.13 item 28: EVERY page root, whether or not it falls inside cwd — unlike
+  // `baseExtras`, which only needs the ones outside. A root under cwd is the common case
+  // and is precisely the one the write block has to name, since cwd itself is writable.
+  const pageRootDirs = dedupe(input.roots.map((r) => toAbs(cwdAbs, r.dir)));
+
   const allowedPaths = dedupe([...baseExtras, ...input.allowedPaths.map((p) => toAbs(cwdAbs, p))]);
   // Deny = implicit artifact deny-set ∪ user disallowedPaths. Precedence (deny > allow) is
   // enforced downstream, so an artifact dir also present in `allowedPaths` still ends denied.
@@ -89,5 +106,5 @@ export function resolveAgentPathScope(input: ResolveAgentPathScopeInput): Resolv
     ...input.disallowedPaths.map((p) => toAbs(cwdAbs, p)),
   ]);
 
-  return { allowedPaths, disallowedPaths, artifactDenyDirs };
+  return { allowedPaths, disallowedPaths, artifactDenyDirs, pageRootDirs };
 }

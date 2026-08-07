@@ -349,8 +349,20 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     '/tmp/my-spec/.claude4spec/entities',
     '/tmp/my-spec/.claude4spec/releases',
   ];
-  const scope = { allowedPaths: ['/extra/lib'], disallowedPaths: ['/tmp/my-spec/src'], artifactDenyDirs: ARTIFACT };
-  const emptyUserScope = { allowedPaths: [], disallowedPaths: [], artifactDenyDirs: ARTIFACT };
+  // 0.2.13 item 28: the page roots ride along, on their own READ-ONLY line.
+  const PAGE_ROOTS = ['/tmp/my-spec/pages'];
+  const scope = {
+    allowedPaths: ['/extra/lib'],
+    disallowedPaths: ['/tmp/my-spec/src'],
+    artifactDenyDirs: ARTIFACT,
+    pageRootDirs: PAGE_ROOTS,
+  };
+  const emptyUserScope = {
+    allowedPaths: [],
+    disallowedPaths: [],
+    artifactDenyDirs: ARTIFACT,
+    pageRootDirs: PAGE_ROOTS,
+  };
 
   it('emits the block even when the user lists are empty (artifact deny-set is unconditional)', () => {
     const out = build({ contextType: 'chat', agentPathScope: emptyUserScope });
@@ -374,6 +386,36 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
     expect(out).toContain('use plan-tools / brief-tools / entity-tools / release-tools instead');
   });
 
+  it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] tells the agent the page roots are READ-only, on a line of their own', () => {
+    /**
+     * 0.2.13 item 28. Not folded into the ALWAYS-DISALLOWED line above, because
+     * the rule is the opposite for half of it: an artifact dir is closed to
+     * reads and writes, a page root stays open to reads. Collapsing them would
+     * contradict `<entity_discovery>`, which two blocks earlier instructs a
+     * prose-drift sweep by grep over exactly these directories.
+     *
+     * The line also has to NAME the four operations. On a host with no OS
+     * sandbox the hard half of the block is dropped by the adapter, and this
+     * sentence is the entire remaining gate.
+     */
+    const out = build({ contextType: 'chat', agentPathScope: scope });
+    expect(out).toContain('READ-ONLY to built-in tools — page roots (/tmp/my-spec/pages)');
+    for (const op of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+      expect(out, op).toContain(op);
+    }
+    // The artifact line keeps its own, stricter wording.
+    expect(out).toContain('ALWAYS DISALLOWED — C4S artifact dirs');
+  });
+
+  it('says nothing about page roots when a project has none', () => {
+    const out = build({
+      contextType: 'chat',
+      agentPathScope: { ...scope, pageRootDirs: [] },
+    });
+    expect(out).toContain('<agent_path_scope>');
+    expect(out).not.toContain('READ-ONLY to built-in tools');
+  });
+
   it('emits the block in the patch and ask frames', () => {
     expect(build({ contextType: 'patch', agentPathScope: scope })).toContain('<agent_path_scope>');
     expect(build({ contextType: 'ask', agentPathScope: scope })).toContain('<agent_path_scope>');
@@ -388,7 +430,12 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
   it('drops the DISALLOWED line when only allowedPaths is set (artifact line still present)', () => {
     const out = build({
       contextType: 'chat',
-      agentPathScope: { allowedPaths: ['/extra/lib'], disallowedPaths: [], artifactDenyDirs: ARTIFACT },
+      agentPathScope: {
+        allowedPaths: ['/extra/lib'],
+        disallowedPaths: [],
+        artifactDenyDirs: ARTIFACT,
+        pageRootDirs: PAGE_ROOTS,
+      },
     });
     expect(out).toContain('<agent_path_scope>');
     // The user DISALLOWED *list* line is dropped; the ALWAYS DISALLOWED line is unconditional.

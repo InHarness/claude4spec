@@ -174,7 +174,13 @@ export interface SystemPromptInput {
    * frame (still absent in brief) — it carries the unconditional ALWAYS-DISALLOWED line for
    * the C4S artifact dirs. The block renders cwd + every root dir itself for ALLOWED.
    */
-  agentPathScope?: { allowedPaths: string[]; disallowedPaths: string[]; artifactDenyDirs: string[] };
+  agentPathScope?: {
+    allowedPaths: string[];
+    disallowedPaths: string[];
+    artifactDenyDirs: string[];
+    /** 0.2.13 item 28 — read-allowed, write-denied. See `agent-path-scope.ts`. */
+    pageRootDirs: string[];
+  };
   /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
@@ -699,7 +705,12 @@ function buildConversationalLanguage(lang: string): string {
  * present; the caller now gates only on `agentPathScope` being set (still non-brief only).
  */
 function buildAgentPathScope(
-  scope: { allowedPaths: string[]; disallowedPaths: string[]; artifactDenyDirs: string[] },
+  scope: {
+    allowedPaths: string[];
+    disallowedPaths: string[];
+    artifactDenyDirs: string[];
+    pageRootDirs: string[];
+  },
   cwd: string,
   roots: Root[],
 ): string {
@@ -724,8 +735,22 @@ function buildAgentPathScope(
   lines.push(
     `  ALWAYS DISALLOWED — C4S artifact dirs (edit ONLY via MCP tools, never with built-in Read/Write/Edit/Bash): ${scope.artifactDenyDirs.join(', ')}`,
   );
+  /**
+   * 0.2.13 item 28. Stated as its own line rather than folded into the one above, because
+   * the rule is genuinely different: an artifact dir is closed to reads AND writes, a page
+   * root is READABLE and closed to writes only. Collapsing the two would tell the agent to
+   * stop grepping pages, which is the opposite of what `<entity_discovery>` asks of it two
+   * blocks earlier.
+   */
+  if (scope.pageRootDirs.length) {
+    lines.push(
+      `  READ-ONLY to built-in tools — page roots (${scope.pageRootDirs.join(', ')}): read and grep them freely, but NEVER write one with Write/Edit/Bash. ` +
+        `A page is written with create_page / update_page / delete_page, and one section with update_section. ` +
+        `That is not a style preference: those operations label the write for the file watcher and honour expectedHash, so the page is re-indexed and conflict-checked before you are told it succeeded. A built-in write skips both.`,
+    );
+  }
   lines.push(
-    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — use plan-tools / brief-tools / entity-tools / release-tools instead.`,
+    `Stay within ALLOWED minus DISALLOWED. Do not touch files outside this scope (e.g. other projects, source code next to the spec). If a task seems to require an out-of-scope path, say so instead of attempting it. Never hand-edit the C4S artifact dirs — use plan-tools / brief-tools / entity-tools / release-tools instead, and page-tools for the pages.`,
     `</agent_path_scope>`,
   );
   return lines.join('\n');

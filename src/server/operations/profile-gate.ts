@@ -15,9 +15,9 @@
  * happens to an UNDECLARED tool depends on whose server it is on, and the split
  * is the whole design:
  *
- * - **Host-owned servers** (`entity-tools`, `reference-tools`, `release-tools`,
- *   `plan-tools`, `brief-tools`, `c4s-tools`, `workspace-tools`,
- *   `transagent-tools`) — pass through, governed by the coarse per-server
+ * - **Host-owned servers** (`entity-tools`, `reference-tools`, `page-tools`,
+ *   `release-tools`, `plan-tools`, `brief-tools`, `c4s-tools`,
+ *   `workspace-tools`, `transagent-tools`) — pass through, governed by the coarse per-server
  *   dimensions (`McpServerSet`) exactly as before. Their surface ships in this
  *   repo and is reviewed with it, so "undeclared" means "nobody has written the
  *   catalog row yet", not "unknown". Withholding those would turn every future

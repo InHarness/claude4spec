@@ -583,6 +583,9 @@ export async function runAgentTurn(
         allowedPaths: resolvedPathScope.userAllowedPaths,
         disallowedPaths: resolvedPathScope.userDisallowedPaths,
         artifactDenyDirs: resolvedPathScope.artifactDenyDirs,
+        // 0.2.13 item 28: the soft half of the page write block. The hard half is
+        // `claude_sandbox.filesystem.denyWrite`, further down in the same scope object.
+        pageRootDirs: resolvedPathScope.pageRootDirs,
       },
       contextType: thread.contextType,
       brief: briefSnapshot,

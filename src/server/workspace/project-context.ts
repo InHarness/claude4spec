@@ -95,6 +95,8 @@ import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
+import { createPageToolsServer } from '../mcp/page-tools.js';
+import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
 import { chatRouter } from '../routes/chat.js';
@@ -774,6 +776,33 @@ async function buildInner(
     }),
   );
 
+  /**
+   * 0.2.13 item 28 — the page write path, owned by the host like reference-tools.
+   *
+   * Registered HERE rather than wired into the two channels by hand, and that is
+   * the whole trick: `buildMcpServers()` is what both `routes/agent-turn.ts` and
+   * `mcp/surface.ts` already read, so one registration reaches the internal turn
+   * and the external MCP mount with no edit to either. The gating then falls out
+   * of machinery that already exists — all four operations declare
+   * `opClass: 'write'`, so `gateServer` withholds them from `ask` and drops this
+   * server once it is left empty, while `brief`'s release-only plugin pool never
+   * offers it at all.
+   *
+   * `rootById` is captured rather than re-derived: the same map the REST router
+   * resolves through, so a root reachable from one channel is reachable from the
+   * other by construction.
+   */
+  const sectionWriteDeps: SectionWriteDeps = {
+    sections: sectionsService,
+    resolveRoot: (rootId) => {
+      const rt = rootById.get(rootId);
+      return rt ? { pages: rt.pages, writer: rt.writer } : undefined;
+    },
+  };
+  pluginHost.registerMcpServer('page-tools', () =>
+    createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),
+  );
+
   // M13: generic write-side CRUD server for every active entity type — the
   // single `entity-tools` server replacing the per-type CRUD servers. Owned by
   // the host (like reference-tools/release-tools), not a plugin: registered
@@ -1137,7 +1166,7 @@ async function buildInner(
   // router is already mounted under. See `routes/mcp.ts`.
   router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
   router.use('/threads', threadsRouter(agentDeps));
-  router.use('/sections', sectionsRouter(sectionsService, discovery));
+  router.use('/sections', sectionsRouter(sectionsService, discovery, sectionWriteDeps));
   router.use('/todos', todosRouter(todosIndexer));
   router.use('/page-links', pageLinksRouter(pagesLinkIndexer));
   router.use('/plans', plansRouter(planService));

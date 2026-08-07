@@ -1,10 +1,14 @@
 import express from 'express';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import request from 'supertest';
 import { crossRootPagesRouter, pagesRouter, type PageRootRuntime } from '../../../src/server/routes/pages.js';
 import { sectionsRouter } from '../../../src/server/routes/sections.js';
 import type { DiscoveryCore } from '../../../src/server/discovery/types.js';
 import type { SectionsService } from '../../../src/server/services/sections.js';
+import { PagesService } from '../../../src/server/services/pages.js';
 
 /**
  * 0.2.13 (tier C) — the page and section renderings, against a RECORDING core.
@@ -188,5 +192,105 @@ describe('GET /api/sections/list and /api/sections/get', () => {
     const { core } = recordingCore();
     const res = await request(appWithSections(core)).get('/api/sections/get').expect(400);
     expect(res.body.error.code).toBe('VALIDATION');
+  });
+});
+
+/**
+ * 0.2.13 (tier C-3) — `PUT /api/sections/:anchor`, the `rest` rendering of
+ * `update_section`.
+ *
+ * The one page-write operation that had no REST route at all before this tier,
+ * because it had no implementation at all. Asserted at the router level like its
+ * siblings above: what a thin write handler gets wrong is the mapping and the
+ * ordering, not the file I/O, which `page-write.test.ts` covers against a real
+ * filesystem.
+ */
+describe('PUT /api/sections/:anchor — the rest rendering of update_section', () => {
+  function appWithWrites() {
+    const { core } = recordingCore();
+    const app = express();
+    app.use(express.json());
+    const service = { list: () => [] } as unknown as SectionsService;
+    // A REAL PagesService over a temp dir. The stubbed alternative could not
+    // answer the one question this route exists to answer — whether the page
+    // came out spliced or replaced — because the splice happens against bytes.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-put-section-'));
+    const pages = new PagesService(dir, 'pages', 'mainspec');
+    const writeDeps = {
+      sections: {
+        getByAnchor: (a: string) =>
+          a === 'aaaa1111'
+            ? { anchor: a, rootId: 'mainspec', pagePath: 'a.md', lineStart: 1, lineEnd: 2 }
+            : null,
+      },
+      resolveRoot: (id: string) => (id === 'mainspec' ? { pages, writer: null } : undefined),
+    };
+    app.use('/api/sections', sectionsRouter(service, core, writeDeps as never));
+    return { app, pages, dir };
+  }
+
+  it('does not shadow the static GET routes declared above it', async () => {
+    // `PUT /:anchor` is method-scoped so it cannot, but the ordering claim is
+    // worth an assertion rather than an argument — `/list` and `/get` are the
+    // two segments a param route would swallow if the guarantee ever moved.
+    const { app, dir } = appWithWrites();
+    try {
+      await request(app).get('/api/sections/list?by=page&rootId=mainspec&path=a.md').expect(200);
+      await request(app).get('/api/sections/get?anchors=x').expect(200);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('an unknown anchor is SECTION_NOT_FOUND with the call that would have worked', async () => {
+    const { app, dir } = appWithWrites();
+    try {
+      const res = await request(app).put('/api/sections/nope').send({ content: 'x' }).expect(400);
+      expect(res.body.error.code).toBe('SECTION_NOT_FOUND');
+      expect(res.body.error.hint).toContain('list_sections');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes through the shared primitive, so the section body is spliced rather than replacing the page', async () => {
+    /**
+     * The failure this catches is a REST handler that "helpfully" writes
+     * `content` as the whole page — which reads as working (200, right shape)
+     * until someone notices the rest of the page is gone. The heading stays put
+     * because the primitive replaces only what is below it.
+     */
+    const { app, pages, dir } = appWithWrites();
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', { body: '# H\nold body\n\n# Next\nkeep me' });
+      const res = await request(app).put('/api/sections/aaaa1111').send({ content: 'new body' }).expect(200);
+      expect(res.body.anchor).toBe('aaaa1111');
+      const body = (await pages.read('a.md')).body;
+      expect(body).toContain('# H');
+      expect(body).toContain('new body');
+      expect(body).not.toContain('old body');
+      expect(body).toContain('keep me');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('forwards expectedHash rather than dropping it', async () => {
+    // Silently ignoring the guard is worse than not offering it: the caller
+    // believes its write was conflict-checked.
+    const { app, pages, dir } = appWithWrites();
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', { body: '# H\nold body' });
+      const res = await request(app)
+        .put('/api/sections/aaaa1111')
+        .send({ content: 'x', expectedHash: 'c'.repeat(64) })
+        .expect(409);
+      expect(res.body.error.code).toBe('PAGE_CONFLICT');
+      expect((await pages.read('a.md')).body).toContain('old body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

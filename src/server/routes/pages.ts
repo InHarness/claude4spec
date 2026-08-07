@@ -1,9 +1,7 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { Router, type Request, type Response } from 'express';
 import type { PagesService } from '../services/pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
+import { createPage, deletePage, updatePage } from '../services/page-write.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
@@ -207,26 +205,23 @@ export function pagesRouter(
 
   // 0.1.96: explicit create (CreatePageRequest { path, content? }). See the
   // `clarification` patch — the body shape was not enumerated in the brief.
+  //
+  // 0.2.13 (tier C-3): the contract itself moved to `services/page-write.ts`.
+  // This handler is now what the catalog says a channel is — an adapter that
+  // parses a wire format, calls the owning function and maps the result back.
+  // `PAGE_EXISTS` travels as a `DomainError` through the shared `errorHandler`,
+  // which is why the hand-rolled 409 is gone rather than merely moved.
   router.post('/', async (req, res, next) => {
     try {
       const rt = resolve(req, res);
       if (!rt) return;
       const body = (req.body ?? {}) as { path?: string; content?: string };
-      const relPath = typeof body.path === 'string' ? body.path : '';
-      if (!relPath) return res.status(400).json({ error: 'path required' });
-      if (await rt.pages.exists(relPath)) {
-        return res.status(409).json({ error: { code: 'PAGE_EXISTS', message: `page '${relPath}' already exists` } });
-      }
-      // M40: label the write, then drive its reactions to completion. `capture`
-      // (M17) is the sole author of `file_version`, so the version row must
-      // exist before we respond — that is what `flush` guarantees.
-      rt.writer?.markOrigin(relPath, 'user');
-      const result = await rt.pages.write(relPath, { body: body.content ?? '' });
-      await rt.writer?.flush(relPath);
-      const writtenAbs = path.join(rt.pages.root, relPath);
-      const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
-      const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
-      res.status(201).json({ ...result, hash: newHash });
+      const result = await createPage(
+        rt,
+        { path: typeof body.path === 'string' ? body.path : '', ...(body.content !== undefined ? { content: body.content } : {}) },
+        'user',
+      );
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }
@@ -272,29 +267,18 @@ export function pagesRouter(
         /** M02 m02octconc: optional sha256 hex of full file content known to client. Mismatch → 409 PAGE_CONFLICT. */
         expectedHash?: string;
       };
-      if (typeof body.body !== 'string') return res.status(400).json({ error: 'body required' });
-      const existed = await rt.pages.exists(relPath);
-
-      // Optimistic concurrency check — backward compatible.
-      if (typeof body.expectedHash === 'string' && existed) {
-        const abs = path.join(rt.pages.root, relPath);
-        const currentRaw = await fs.readFile(abs, 'utf-8');
-        const currentHash = crypto.createHash('sha256').update(currentRaw, 'utf-8').digest('hex');
-        if (currentHash !== body.expectedHash) {
-          return res.status(409).json({
-            error: { code: 'PAGE_CONFLICT', message: 'page changed since last read' },
-            currentHash,
-          });
-        }
-      }
-
-      rt.writer?.markOrigin(relPath, 'user');
-      const result = await rt.pages.write(relPath, { body: body.body, frontmatter: body.frontmatter });
-      await rt.writer?.flush(relPath);
-      const writtenAbs = path.join(rt.pages.root, relPath);
-      const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
-      const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
-      res.json({ ...result, hash: newHash });
+      res.json(
+        await updatePage(
+          rt,
+          {
+            path: relPath,
+            body: body.body as string,
+            ...(body.frontmatter !== undefined ? { frontmatter: body.frontmatter } : {}),
+            ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
+          },
+          'user',
+        ),
+      );
     } catch (err) {
       next(err);
     }
@@ -306,23 +290,7 @@ export function pagesRouter(
       if (!rt) return;
       const relPath = (req.params as Record<string, string>)[0];
       if (!relPath) return res.status(400).json({ error: 'missing path' });
-      let lastContent: string | undefined;
-      if (pageVersions && (await rt.pages.exists(relPath))) {
-        try {
-          lastContent = await fs.readFile(path.join(rt.pages.root, relPath), 'utf-8');
-        } catch {
-          /* ignore */
-        }
-      }
-      // Deletes go through the same markOrigin + flush path as every other server
-      // write. They must NOT suppress: a suppress token issued here has no event
-      // of its own to be consumed by if the file is re-created immediately, and
-      // would then swallow that re-create (no version row at all). `capture`
-      // authors the tombstone, synthesizing the content from the last version.
-      rt.writer?.markOrigin(relPath, 'user');
-      await rt.pages.remove(relPath);
-      await rt.writer?.flush(relPath, 'unlink');
-      res.json({ ok: true });
+      res.json(await deletePage(rt, { path: relPath }, 'user'));
     } catch (err) {
       next(err);
     }

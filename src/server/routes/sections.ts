@@ -4,8 +4,18 @@ import type { DiscoveryCore } from '../discovery/types.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 import { boolFlag, commaList, nonNegativeInt, positiveInt } from './query-params.js';
+import { updateSection, type SectionWriteDeps } from '../services/page-write.js';
 
-export function sectionsRouter(sections: SectionsService, discovery: DiscoveryCore): Router {
+export function sectionsRouter(
+  sections: SectionsService,
+  discovery: DiscoveryCore,
+  /**
+   * 0.2.13: the write side, absent in the hand-rolled test rigs that mount this
+   * router for its read routes alone. Optional rather than required so those
+   * rigs keep compiling; a real project always passes it.
+   */
+  writeDeps?: SectionWriteDeps,
+): Router {
   const router = Router();
 
   /**
@@ -90,6 +100,43 @@ export function sectionsRouter(sections: SectionsService, discovery: DiscoveryCo
       const search = typeof req.query.search === 'string' ? req.query.search : undefined;
       const list = sections.list({ pagePath, search });
       res.json({ sections: list });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C-3) — the `rest` rendering of `update_section`, M06's only
+   * write.
+   *
+   * The one operation of the page-write family that had no REST route at all,
+   * because it had no implementation at all: `SectionsService` wrote only to
+   * propagate anchor renames. It is an adapter over `services/page-write.ts`,
+   * the same function `page-tools` calls, so the two channels cannot disagree
+   * about what a section edit is.
+   *
+   * `PUT` on `/:anchor` cannot shadow the static `GET /list` and `GET /get`
+   * above — Express matches method first — but it is declared after them
+   * anyway. Registration order is a contract in this repo, and a reader
+   * checking it should not have to reason about which routes are method-scoped.
+   */
+  router.put('/:anchor', async (req, res, next) => {
+    try {
+      if (!writeDeps) {
+        throw new DomainError('NOT_IMPLEMENTED', 'this project mounts no writable page roots');
+      }
+      const body = (req.body ?? {}) as { content?: string; expectedHash?: string };
+      res.json(
+        await updateSection(
+          writeDeps,
+          {
+            anchor: req.params.anchor,
+            content: body.content as string,
+            ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
+          },
+          'user',
+        ),
+      );
     } catch (err) {
       next(err);
     }

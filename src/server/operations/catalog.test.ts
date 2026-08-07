@@ -268,6 +268,37 @@ describe('the profile gate', () => {
     expect(withheldTools('patch', releaseTools)).toEqual([]);
   });
 
+  it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] withholds the whole page write path from a read-only profile', () => {
+    /**
+     * 0.2.13 item 28. `page-tools` is host-owned, so without these four rows the
+     * gate's permissive default would hand a consulted peer — and, through the
+     * generated `mcp.json`, every editor the user opens — the ability to
+     * overwrite any page in the specification it was asked a question about.
+     *
+     * The whole server, not a subset: unlike `release-tools`, every operation on
+     * it writes, so `ask` and `brief` are left with nothing and the server is
+     * dropped rather than mounted empty.
+     */
+    const pageTools = ['create_page', 'update_page', 'delete_page', 'update_section'].map((name) => ({
+      name,
+      description: '',
+      inputSchema: {},
+      handler: async () => ({}),
+    }));
+
+    for (const profile of ['ask', 'brief'] as const) {
+      expect(withheldTools(profile, pageTools).sort(), profile).toEqual([
+        'create_page',
+        'delete_page',
+        'update_page',
+        'update_section',
+      ]);
+    }
+    // The profiles that author a specification keep all four.
+    expect(withheldTools('chat', pageTools)).toEqual([]);
+    expect(withheldTools('patch', pageTools)).toEqual([]);
+  });
+
   it('[ac:ac-operacja-spoza-profilu-polaczenia-nie] withholds a PLUGIN\'s declared write tools from `ask`', () => {
     // The real spreadsheet-tools surface. Six of these eight mutate a
     // specification, and before they were catalogued the gate waved all eight

@@ -559,3 +559,124 @@ describe('[ac:ac-kontrybucja-komendy-jest-niepoprawna] every shipped command con
     expect(problems).toEqual([]);
   });
 });
+
+/**
+ * 0.2.13 item 28 — the page write path, and the built-in channel it closes.
+ *
+ * Both halves are here because they only mean anything together. The operations
+ * without the lockdown are a second way to do the same thing; the lockdown
+ * without the operations is an agent that cannot edit the specification.
+ */
+describe('a page is written by an operation, not by a file tool', () => {
+  it('every page mutation in the server goes through the ONE primitive', () => {
+    /**
+     * The executable form of the catalog's "one function per operation".
+     *
+     * `PagesService.write`/`remove` are the raw file primitives. Before this
+     * tier the REST handlers called them directly with the write token, the
+     * `expectedHash` check and the re-hash inlined around each call — which is
+     * exactly the shape a second channel copies badly. `services/page-write.ts`
+     * and the section indexer's own anchor write-back are the only callers now,
+     * and a new one would be a new locus.
+     *
+     * Deliberately NOT a grep over all of `src/server`: the indexer, the release
+     * restore and the artifact mounts legitimately write markdown through the
+     * same class. The gate names the file that regressed, which is the route.
+     */
+    const routes = read('src/server/routes/pages.ts');
+    expect(/\.pages\.write\(|\.pages\.remove\(/.exec(routes)?.[0]).toBeUndefined();
+    expect(routes).toContain("from '../services/page-write.js'");
+
+    // …and the section route reaches the same module rather than growing its own.
+    expect(read('src/server/routes/sections.ts')).toContain("from '../services/page-write.js'");
+    expect(read('src/server/mcp/page-tools.ts')).toContain("from '../services/page-write.js'");
+  });
+
+  it('all four operations are declared, and declared as writes', async () => {
+    // The class is what the profile gate filters on. A page write catalogued as
+    // anything but `write` would be handed to `ask` by a gate doing its job.
+    const { CATALOG } = await import('../../../src/server/operations/catalog.js');
+    const { registerCoreOperations } = await import('../../../src/server/operations/core-operations.js');
+    registerCoreOperations();
+    for (const name of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+      const op = CATALOG.get(name);
+      expect(op, `${name} is not in the catalog`).toBeDefined();
+      expect(op!.opClass, name).toBe('write');
+      expect(op!.sideEffects, name).toContain('file');
+    }
+    // `create_page` is the one that must NOT claim idempotence: a second call
+    // with the same address is PAGE_EXISTS, and a caller retrying on a timeout
+    // has to know that in advance.
+    expect(CATALOG.get('create_page')!.idempotent).toBe(false);
+    expect(CATALOG.get('update_page')!.idempotent).toBe(true);
+  });
+
+  it('[ac:ac-crud-stron-dziala-przez-ui-i-wbudowane-n] page roots are denied for WRITE and left open for READ', async () => {
+    /**
+     * The distinction this whole tier turns on.
+     *
+     * The obvious implementation — fold the roots into the artifact deny-set —
+     * would pass a test that only checked "the roots are denied somewhere",
+     * while silently taking `Read`/`Grep`/`Glob` over the specification away
+     * from the agent. So the assertion is a THREE-way one: in `denyWrite`,
+     * absent from `denyRead`, absent from `disallowedPaths`. The artifact dirs
+     * are asserted in both lists in the same test, which is what makes it able
+     * to tell the two lists apart at all rather than passing on either.
+     */
+    const os = await import('node:os');
+    const { resolveAgentExecutionScope } = await import(
+      '../../../src/server/services/agent-execution-scope.js'
+    );
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-item28-'));
+    try {
+      fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+      fs.writeFileSync(
+        path.join(cwd, '.claude4spec/config.json'),
+        JSON.stringify({ $schemaVersion: 4, name: 'p', entities: [] }),
+      );
+      const scope = resolveAgentExecutionScope({
+        cwd,
+        roots: [
+          { id: 'pages', name: 'Pages', dir: 'pages', builtin: true },
+          { id: 'guides', name: 'Guides', dir: 'docs/guides', builtin: false },
+        ] as never,
+      });
+
+      const roots = [path.join(cwd, 'pages'), path.join(cwd, 'docs/guides')];
+      for (const root of roots) {
+        expect(scope.claudeSandbox.filesystem.denyWrite, root).toContain(root);
+        expect(scope.claudeSandbox.filesystem.denyRead, root).not.toContain(root);
+        // Not in `disallowedPaths` either — that list is what the vendor turns
+        // into symmetric Read+Edit+Write permission rules, and what the resume
+        // lock compares, so putting a root there would also relock every thread.
+        expect(scope.disallowedPaths, root).not.toContain(root);
+      }
+
+      // The artifact dirs stay symmetric — the control that gives the assertions
+      // above their meaning.
+      const entities = path.join(cwd, '.claude4spec/entities');
+      expect(scope.claudeSandbox.filesystem.denyWrite).toContain(entities);
+      expect(scope.claudeSandbox.filesystem.denyRead).toContain(entities);
+    } finally {
+      fs.rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('the prompt states the write rule where the agent will read it', () => {
+    /**
+     * The prompt line is not decoration — measured against a live turn, it is
+     * currently the WHOLE gate.
+     *
+     * `agent-adapters` bypasses permissions entirely when an OS sandbox is
+     * present and puts the deny lists in `options.sandbox.filesystem`, which the
+     * Agent SDK does not use for filesystem restriction. The pre-existing
+     * 0.1.130 artifact hard-lock is equally inert for the same reason. So this
+     * assertion guards the only thing that actually reaches the model today, and
+     * it has to name all four operations for the sentence to be actionable.
+     */
+    const ctx = read('src/server/services/chat-context.ts');
+    for (const op of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+      expect(ctx, `the path-scope block never names ${op}`).toContain(op);
+    }
+  });
+});

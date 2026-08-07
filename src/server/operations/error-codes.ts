@@ -57,6 +57,17 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   BRIEF_CONFLICT: 409,
   PAGE_CONFLICT: 409,
   /**
+   * 0.2.13 (M02) — the page WRITE operations' own two codes.
+   *
+   * Both were already produced by `routes/pages.ts`, hand-rolled into a literal
+   * `res.status(409)`, which is why neither was in this table: the route never
+   * consulted it. They are here now because the codes belong to the operation
+   * rather than to its REST rendering — `create_page` answers `PAGE_EXISTS` on
+   * every channel, and each channel maps it from this one declaration.
+   */
+  PAGE_EXISTS: 409,
+  ROOT_NOT_FOUND: 404,
+  /**
    * 0.2.13 — reached HTTP with `POST /api/patches`. It existed before only as a
    * CLI/core code (`core/briefs/types.ts`), because filing a patch was an
    * fs-scoped CLI operation with no server route; the route made the same

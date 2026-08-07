@@ -357,6 +357,100 @@ export function registerCoreOperations(): void {
   tagWrite('tag_entity', 'Attach tags to an entity. Idempotent — re-attaching is a no-op.', { type: z.string(), slug: z.string(), tagSlugs: z.array(z.string()) }, true);
   tagWrite('untag_entity', 'Detach tags from an entity. Idempotent.', { type: z.string(), slug: z.string(), tagSlugs: z.array(z.string()) }, true);
 
+  // ── M02 Pages / M06 Sections — the page WRITE path (item 28) ──────────────
+  //
+  // The operations the brief names as the sanctioned way to write a page, in
+  // place of the agent's built-in `Write`/`Edit`. Declared here for the same
+  // reason the entity writes are: a declaration is what the profile gate SEES,
+  // and without a row these four would pass through to every profile on the
+  // strength of living on a host-owned server.
+  //
+  // Addressing is `(rootId, relPath)` — a root is part of a page's identity,
+  // not a filter over one namespace — except `update_section`, which addresses
+  // by anchor because an anchor is globally unique and already carries its root.
+  //
+  // The `cli` cells say `direct` with no `c4s` command behind them, and that is
+  // the declared contract rather than an oversight: a cell states the mediation
+  // class of a channel, not a promise that a command exists. Fifteen other
+  // operations are in the same position, and 0.2.13's L14 command surface is
+  // read-only by design.
+
+  const pageWrite = (
+    name: string,
+    summary: string,
+    inputSchema: z.ZodRawShape,
+    idempotent: boolean,
+    extraCodes: readonly string[],
+  ): OperationDeclaration => ({
+    name,
+    summary,
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'write',
+    inputSchema,
+    errorCodes: ['VALIDATION', ...extraCodes],
+    // `ui-notify` is not decoration: the write is labelled through M40's write
+    // token and its reactions are driven to completion before the caller is
+    // answered, which is what re-indexes the page and pushes it to open editors.
+    sideEffects: ['file', 'db', 'ui-notify'],
+    idempotent,
+    channels: fullParity(),
+  });
+
+  /**
+   * `expectedHash` — optional in the schema, honoured identically by all four
+   * channels. Optional rather than required because the editor does not send
+   * one and requiring it would break page saving; the brief calls the guard
+   * "part of the operation contract", not mandatory. Filed as a patch.
+   */
+  const expectedHash = {
+    expectedHash: z
+      .string()
+      .optional()
+      .describe('sha256 of the file as last read. Mismatch → PAGE_CONFLICT carrying the current hash.'),
+  };
+
+  CATALOG.register(
+    pageWrite(
+      'create_page',
+      'Create a page that does not exist yet. Refuses PAGE_EXISTS rather than overwriting — the distinction update_page deliberately does not make.',
+      { rootId: z.string(), path: z.string(), content: z.string().optional() },
+      // A second call with the same address is PAGE_EXISTS, not a no-op.
+      false,
+      ['PAGE_EXISTS', 'ROOT_NOT_FOUND'],
+    ),
+  );
+
+  CATALOG.register(
+    pageWrite(
+      'update_page',
+      'Write a page in full — body plus optional frontmatter. Create-or-replace: absent pages are created, which is how the editor saves a new one.',
+      { rootId: z.string(), path: z.string(), body: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...expectedHash },
+      true,
+      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+    ),
+  );
+
+  CATALOG.register(
+    pageWrite(
+      'delete_page',
+      'Delete a page. The content stays recoverable through file_version — the delete authors a tombstone rather than dropping the history.',
+      { rootId: z.string(), path: z.string() },
+      true,
+      ['ROOT_NOT_FOUND'],
+    ),
+  );
+
+  CATALOG.register(
+    pageWrite(
+      'update_section',
+      'Replace one section\'s body, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model.',
+      { anchor: z.string(), content: z.string(), ...expectedHash },
+      true,
+      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+    ),
+  );
+
   // ── M10 Plans / M21 Briefs / M11 peer consult ─────────────────────────────
   //
   // Registered for the gate's sake; the classes match what the coarse server
