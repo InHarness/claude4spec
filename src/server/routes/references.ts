@@ -6,6 +6,7 @@ import type { DiscoveryCore } from '../discovery/types.js';
 import { findReferencesAllPaged } from '../discovery/index.js';
 import { invalidType } from '../discovery/errors.js';
 import { errorHandler } from './errors.js';
+import { boolFlag, nonNegativeInt, positiveInt } from './query-params.js';
 
 /**
  * Validate `type` against the plugin host registry; `section` is accepted as a
@@ -29,13 +30,6 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
     type,
     host.listEntities().map((m) => m.type),
   );
-}
-
-/** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined (core default wins). */
-function positiveInt(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
 export function referencesRouter(
@@ -74,13 +68,24 @@ export function referencesRouter(
     try {
       const target = typeof req.query.target === 'string' ? req.query.target : 'entity';
       const limit = positiveInt(req.query.limit);
-      const offset = positiveInt(req.query.offset);
+      /**
+       * `nonNegativeInt`, and the difference is not cosmetic.
+       *
+       * This route kept a private `positiveInt` for BOTH parameters while the
+       * rest of the release moved onto the shared readers, and `positiveInt('0')`
+       * is `undefined` — so `?offset=0`, the ordinary way to ask for the first
+       * page, read as "no window given" and dropped the request into the
+       * exhaustive-sweep branch below. A caller asking for 100 rows got every
+       * citation in the project, in one body, having asked for the opposite.
+       *
+       * That is exactly what `query-params.ts` was added for: zero is a
+       * legitimate offset and a meaningless limit, so the two parameters cannot
+       * share a reader.
+       */
+      const offset = nonNegativeInt(req.query.offset);
       // Accept the bare flag (`?includeTagMatches`) and the explicit `=true`,
       // mirroring how the CLI accepts `--include-tag-matches` either way.
-      const includeTagMatches =
-        req.query.includeTagMatches === '' ||
-        req.query.includeTagMatches === 'true' ||
-        req.query.includeTagMatches === '1';
+      const includeTagMatches = boolFlag(req.query.includeTagMatches);
       const paging = {
         ...(includeTagMatches ? { includeTagMatches } : {}),
         ...(limit !== undefined ? { limit } : {}),

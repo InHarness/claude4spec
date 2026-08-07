@@ -244,7 +244,17 @@ export class TagsService {
 }
 
 export class DomainError extends Error {
-  constructor(public code: string, message: string) {
+  /**
+   * `hint` — the half of the error that says which call would have worked.
+   *
+   * Optional, and added in 0.2.13 because the CLI's not-found errors lost theirs
+   * when the commands moved onto these services: the deleted filesystem readers
+   * listed what DID exist, the services answered a bare "not found", and the
+   * agent on the other end had nothing to correct itself with. The catalog's own
+   * contract says `NOT_FOUND` carries alternatives — this is where a service
+   * puts them. `routes/errors.ts` forwards it verbatim.
+   */
+  constructor(public code: string, message: string, public hint?: string) {
     super(message);
     this.name = 'DomainError';
   }

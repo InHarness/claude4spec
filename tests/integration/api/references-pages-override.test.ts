@@ -156,6 +156,35 @@ describe('GET /api/references — which implementation answers', () => {
     expect(c.calls[0]!.includeTagMatches).toBe(true);
   });
 
+  it('`?offset=0` is a window, not the unbounded sweep', async () => {
+    /**
+     * The distinguishing observable is WHICH branch ran, so it is asserted on
+     * the call the core received rather than on the row count — with a handful
+     * of references both branches return the same body, which is exactly why
+     * this went unnoticed.
+     *
+     * `limit` is the signal, not `offset`: the sweep
+     * (`findReferencesAllPaged`) drives its own loop and always asks for
+     * `MAX_LIMIT` rows, while the paged branch forwards only what the caller
+     * gave. Both pass `offset: 0` on their first call, which is precisely why
+     * that field cannot tell them apart.
+     *
+     * `?offset=0` used to be read as ABSENT: this route kept a private
+     * `positiveInt` for both parameters, and `positiveInt('0')` is `undefined`
+     * because zero is not greater than zero. A client asking for the first page
+     * got every citation in the project in one body.
+     */
+    const a = coreHarness();
+    await request(a.app).get('/api/references?type=ac&slug=x&offset=0').expect(200);
+    expect(a.calls[0]!.offset).toBe(0);
+    expect(a.calls[0]!.limit, 'a window request must not become a sweep').toBeUndefined();
+
+    // And no window at all still sweeps — the property `find-references` relies on.
+    const b = coreHarness();
+    await request(b.app).get('/api/references?type=ac&slug=x').expect(200);
+    expect(b.calls[0]!.limit).toBe(1000);
+  });
+
   it('`section` still goes to the service — the core refuses the pseudo-type', async () => {
     const { app, calls } = coreHarness();
     const res = await request(app).get('/api/references?type=section&slug=a1').expect(200);

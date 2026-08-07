@@ -226,9 +226,46 @@ describe('the profile gate', () => {
     // Declaring an operation must be what NARROWS access, never what accidentally
     // grants it — so an undeclared name on a surface this repo ships stays
     // governed by the coarse server gate.
-    expect(CATALOG.has('release_create')).toBe(false);
-    expect(toolAdmittedByProfile('ask', 'release_create')).toBe(true);
+    expect(CATALOG.has('runTransagent')).toBe(false);
     expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
+  });
+
+  it('withholds the release WRITES from every read-only profile', () => {
+    /**
+     * `release-tools` is host-owned, so the pass-through above applied to it —
+     * and it mounts on `ask` (`pluginServers: 'all'`) and on `brief`
+     * (`BRIEF_ALLOWED_PLUGIN_MCP`), the two profiles built to be unable to
+     * mutate the specification. `release_create` stamps every unreleased
+     * version row and makes a git commit; `release_update` renames the latest
+     * release and can sweep the queue into it. Both were reachable from a
+     * consulted peer and from a brief-authoring turn.
+     *
+     * That the gate's default was permissive here is not the bug — the reason
+     * for it is stated in `profile-gate.ts` and holds. The bug is that nobody
+     * had written the row, which is precisely the condition the default assumes
+     * is temporary.
+     *
+     * 0.2.13 makes it urgent rather than theoretical: the `mcp.json` this
+     * release generates for every project asks for `?profile=ask`, so that
+     * consulted peer is now every editor the user opens.
+     */
+    const releaseTools = [
+      'release_list',
+      'release_show',
+      'release_diff',
+      'release_create',
+      'release_update',
+    ].map((name) => ({ name, description: '', inputSchema: {}, handler: async () => ({}) }));
+
+    for (const profile of ['ask', 'brief'] as const) {
+      expect(withheldTools(profile, releaseTools).sort(), profile).toEqual([
+        'release_create',
+        'release_update',
+      ]);
+    }
+    // The readers survive — they are what these profiles mount release-tools for.
+    expect(withheldTools('chat', releaseTools)).toEqual([]);
+    expect(withheldTools('patch', releaseTools)).toEqual([]);
   });
 
   it('[ac:ac-operacja-spoza-profilu-polaczenia-nie] withholds a PLUGIN\'s declared write tools from `ask`', () => {

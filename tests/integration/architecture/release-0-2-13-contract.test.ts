@@ -363,6 +363,29 @@ describe('the CLI holds no handle on the specification', () => {
     expect(fsScoped).toEqual(['install-skills']);
   });
 
+  it('item 8: every path that registers a project also writes its mcp.json', () => {
+    /**
+     * There are two, and 0.2.13 covered one.
+     *
+     * `bootstrapProject` used to write the file and stopped, because it could
+     * only ever write `workspace.defaultPort` — wrong for a server started on
+     * any other port. The replacement runs once after `listen`, over the
+     * project list as it stood then. That leaves `activateProject` —
+     * `POST /api/workspace/projects`, a project added through the workspace UI
+     * — writing nothing at all: the directory gets no `mcp.json`, so the editor
+     * shows no `c4s-spec-reader` server and the spec-reader skill has no MCP
+     * surface until someone restarts.
+     *
+     * Asserted at the source, because the alternative is standing up a server
+     * and a second project to observe one file appearing. The claim is narrow
+     * and structural: the activation closure calls the writer.
+     */
+    const src = read('src/server/index.ts');
+    const activate = /const activateProject = async[\s\S]*?\n  };/.exec(src)?.[0] ?? '';
+    expect(activate, 'activateProject not found — the regex needs updating').toContain('bootstrapProject');
+    expect(activate, 'a project added at runtime gets no mcp.json').toContain('ensureMcpJson');
+  });
+
   it('item 22: the HELP text\'s exception list matches the actual non-delegating commands', () => {
     /**
      * The one place the release's central claim is stated to a HUMAN, and the

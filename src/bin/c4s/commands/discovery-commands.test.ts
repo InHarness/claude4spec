@@ -260,7 +260,11 @@ describe('discovery commands on the CLI', () => {
     it('list-slugs sweeps and projects down to the slugs', async () => {
       reply = { items: [{ slug: 'a', data: {} }, { slug: 'b', data: {} }], total: 2, hasMore: false };
       await runListSlugs(args('list-slugs', '--type', 'ac'));
-      expect(called()).toBe('/entities/ac/list?view=inline_mention&offset=0');
+      // `limit=1000` is the sweep's page size, asked for explicitly. The core
+      // helpers this replaced passed `MAX_LIMIT`; omitting it let the server
+      // apply the 50-row agent default, which cut the sweep's completeness
+      // ceiling ~40x and multiplied the round-trips for the same answer by 20.
+      expect(called()).toBe('/entities/ac/list?limit=1000&view=inline_mention&offset=0');
       expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'], hasMore: false });
     });
   });
@@ -374,9 +378,9 @@ describe('discovery commands on the CLI', () => {
       // The offset advances by what was actually returned, not by a page size
       // the transport assumed.
       expect(seen.map((s) => s.url.replace(/^.*\?/, ''))).toEqual([
-        'tags=x&filter=or&view=tagged_list_item&offset=0',
-        'tags=x&filter=or&view=tagged_list_item&offset=1',
-        'tags=x&filter=or&view=tagged_list_item&offset=2',
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=0',
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=1',
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=2',
       ]);
       expect(printed().items).toEqual([1, 2, 3]);
       // A sweep that ran to the end says so.
@@ -427,7 +431,9 @@ describe('discovery commands on the CLI', () => {
       await runFindReferences(
         args('find-references', '--type', 'ac', '--slug', 'x', '--include-tag-matches', '--pages', 'docs/guides'),
       );
-      expect(called()).toBe('/references?type=ac&slug=x&includeTagMatches=true&pages=docs%2Fguides&offset=0');
+      expect(called()).toBe(
+        '/references?limit=1000&type=ac&slug=x&includeTagMatches=true&pages=docs%2Fguides&offset=0',
+      );
     });
   });
 

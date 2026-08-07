@@ -214,7 +214,27 @@ export async function delegateGetEntities(
  * forever would spin here. 500 pages at the core's default page size is far past
  * any real specification; reaching it is reported, never hidden.
  */
-const MAX_SWEEP_PAGES = 500;
+const MAX_SWEEP_PAGES = 1000;
+
+/**
+ * The page size a sweep asks for — the core's `MAX_LIMIT`, duplicated as a
+ * number for the same reason `MAX_SLUGS_PER_CALL` is.
+ *
+ * Not passing it was a real regression, in both directions at once. The core
+ * helpers this replaced (`listEntitiesAll`, `listTagsAll`) asked for
+ * `limit: MAX_LIMIT` and looped up to `MAX_PAGES` (1000) — a ceiling around a
+ * million rows. Omitting the limit here let the server apply
+ * `DEFAULT_LIMITS.listEntities` (50), so with `MAX_SWEEP_PAGES` at 500 the
+ * ceiling fell to 25,000 while the number of HTTP round-trips for the same
+ * answer rose twentyfold: `c4s list-slugs --type ac` over 2,000 ACs went from
+ * one call to forty, each serializing 50 payloads.
+ *
+ * The ceiling is what makes it a correctness bug rather than a slow path. These
+ * are the sweeps whose whole contract is "everything", and past it they report
+ * `hasMore: true` — an honest signal, but one no caller of `tagged_list` is
+ * expecting to have to read.
+ */
+const SWEEP_PAGE_SIZE = 1000;
 
 export interface Sweep<T> {
   items: T[];
@@ -246,7 +266,7 @@ export async function delegateGetAll<T>(
   const items: T[] = [];
   let offset = 0;
   for (let page = 0; page < MAX_SWEEP_PAGES; page++) {
-    const payload = await delegateGet(args, path, { ...query, offset });
+    const payload = await delegateGet(args, path, { limit: SWEEP_PAGE_SIZE, ...query, offset });
     const { items: batch, hasMore } = pick(payload);
     items.push(...batch);
     if (!hasMore) return { items, exhausted: true };

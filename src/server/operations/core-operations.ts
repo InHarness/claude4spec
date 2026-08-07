@@ -567,4 +567,84 @@ export function registerCoreOperations(): void {
     idempotent: true,
     channels: fullParity(),
   });
+
+  // ── M17 Releases ──────────────────────────────────────────────────────────
+
+  /**
+   * Declared because of what "undeclared" costs on THIS server.
+   *
+   * `release-tools` is host-owned, so `toolAdmittedByProfile` takes the
+   * permissive branch for anything the catalog does not know — the branch whose
+   * stated reasoning is that an omission on this repo's own surface "means
+   * nobody has written the catalog row yet, not that it is unknown". True, and
+   * it is exactly why the row has to be written: until it is, the omission is
+   * indistinguishable from a decision.
+   *
+   * What it cost: `release-tools` mounts on `ask` (`pluginServers: 'all'`) AND
+   * on `brief` (`BRIEF_ALLOWED_PLUGIN_MCP`), the two profiles built to be unable
+   * to mutate the specification. `release_create` writes a release row, stamps
+   * every unreleased `entity_version`/`file_version` with its id, broadcasts,
+   * and makes a git commit; `release_update` renames the latest release and can
+   * sweep the unreleased queue into it. Both were reachable from a consulted
+   * peer and from a brief-authoring turn — and 0.2.13 put `?profile=ask` into
+   * the `mcp.json` claude4spec generates for every project, so that peer is now
+   * every editor the user opens.
+   *
+   * `read`/`write` here is the whole payload of these rows. The three readers
+   * stay reachable from every profile, which is what they were; the two writers
+   * become reachable only from a profile that admits `write` (`chat`, `patch`),
+   * which is what they always should have been.
+   */
+  const releaseOp = (
+    name: string,
+    summary: string,
+    opClass: 'read' | 'write',
+    inputSchema: Record<string, z.ZodTypeAny>,
+    sideEffects: Array<'none' | 'file' | 'db' | 'ui-notify'>,
+  ): void => {
+    CATALOG.register({
+      name,
+      summary,
+      scope: 'project',
+      mediation: 'direct',
+      opClass,
+      inputSchema,
+      errorCodes: ['VALIDATION', 'NOT_FOUND'],
+      sideEffects,
+      idempotent: opClass === 'read',
+      channels: {
+        internal: direct(),
+        // No `c4s release-*` command exists, and this release deliberately does
+        // not add one: M11 became a read client of the specification, and a
+        // shell-invocable release mutation is a different risk profile from one
+        // behind an agent turn or the UI's own button.
+        cli: na('bin `c4s` is a read and diagnostics client; release state is mutated through mcp/rest/internal'),
+        mcp: direct(),
+        rest: direct(),
+      },
+    });
+  };
+
+  releaseOp('release_list', 'Releases newest-first, paginated. Answers `{ releases, total }` where `total` precedes limit/offset.', 'read', { ...paging }, ['none']);
+  releaseOp('release_show', 'One release by numeric id or name, with its snapshot counts.', 'read', { idOrName: z.union([z.string(), z.number()]) }, ['none']);
+  releaseOp('release_diff', 'What changed between two releases, per entity type and page root.', 'read', { from: z.union([z.string(), z.number()]), to: z.union([z.string(), z.number()]) }, ['none']);
+  releaseOp(
+    'release_create',
+    'Create a named release: assigns every unreleased entity_version and file_version row to it in one transaction, then commits to git when git sync is on. Always manual.',
+    'write',
+    { name: z.string(), description: z.string() },
+    ['db', 'file', 'ui-notify'],
+  );
+  releaseOp(
+    'release_update',
+    'Rename or re-describe the LATEST release, optionally sweeping the unreleased queue into it. Older releases are frozen.',
+    'write',
+    {
+      idOrName: z.union([z.string(), z.number()]),
+      name: z.string().optional(),
+      description: z.string().optional(),
+      assignUnreleased: z.boolean().optional(),
+    },
+    ['db', 'ui-notify'],
+  );
 }

@@ -9,7 +9,7 @@ import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
-import { ensureMcpJsonForWorkspace } from './mcp/ensure-mcp-json.js';
+import { ensureMcpJson, ensureMcpJsonForWorkspace } from './mcp/ensure-mcp-json.js';
 import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
@@ -407,7 +407,27 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // Per-project activation — POST /api/workspace/projects runs the SAME full
   // bootstrap as a CLI start (M01/M12/M22 hooks + registration + db migration).
   const activateProject = async (projectCwd: string) => {
-    return bootstrapProject(registry, workspace, projectCwd).project;
+    const project = bootstrapProject(registry, workspace, projectCwd).project;
+    /**
+     * 0.2.13: the project added at RUNTIME needs its `mcp.json` too.
+     *
+     * `bootstrapProject` stopped writing it (it could only ever write
+     * `workspace.defaultPort`, which is wrong for a server started on any other
+     * port), and its replacement runs once after `listen` over the project list
+     * as it stood then. That left exactly this path uncovered: a project added
+     * through the workspace UI got no `mcp.json` at all, so the editor showed no
+     * `c4s-spec-reader` server and the spec-reader skill had no MCP surface —
+     * until the user happened to restart.
+     *
+     * `portRef.current` rather than the requested port: by the time a project
+     * can be added the server has bound, and `listenOrExit` may have moved.
+     */
+    try {
+      ensureMcpJson({ projectAbsPath: project.cwd, port: portRef.current, projectId: project.id });
+    } catch {
+      /* a read-only project directory must not fail activation */
+    }
+    return project;
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
@@ -450,7 +470,8 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
    * `ensureMcpJsonForWorkspace`. This is also the upgrade path that replaces the
    * pre-0.2.13 stdio entries the rewritten `c4s-mcp` can no longer start.
    */
-  ensureMcpJsonForWorkspace((registry.getWorkspace(workspace.name) ?? workspace).projects, port);
+  const liveWorkspace = registry.getWorkspace(workspace.name) ?? workspace;
+  ensureMcpJsonForWorkspace(liveWorkspace.projects, port, liveWorkspace.defaultPort);
   if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   const url = `http://localhost:${port}`;
 

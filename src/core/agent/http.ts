@@ -103,12 +103,39 @@ export class AgentError extends Error {
  * resolution to the origin.
  */
 export function encodeArtifactPath(p: string): string {
-  const segments = p.split('/');
-  if (p.startsWith('/') || segments.some((s) => s === '..' || s === '.')) {
+  /**
+   * `.` is NORMALIZED away; `..` is refused.
+   *
+   * Only the second one escapes. A `.` segment resolves to the directory it is
+   * already in, so `./x.md` and `x.md` name the same file — and `path.join`,
+   * shell completion and hand-typed paths all produce the first spelling
+   * routinely. Refusing it made `c4s read-brief ./0-2-12-to-0-2-13.md` exit 4
+   * with "escapes the artifact directory", which is both a refusal of something
+   * safe and a false description of it.
+   *
+   * It also split the channels. `assertSafeRelPath`, which guards the same
+   * paths server-side, runs `path.normalize` first — so `file-patch --brief
+   * ./x.md` (the path travels in a POST body) succeeded while `read-brief
+   * ./x.md` on the identical string failed. Two answers for one input is the
+   * drift this release exists to remove; normalizing here makes both channels
+   * agree, and agree with the filesystem.
+   *
+   * Empty segments go too: `a//b.md` is `a/b.md` everywhere except in a URL,
+   * where the empty segment survives and addresses nothing.
+   */
+  const segments = p.split('/').filter((s) => s !== '.' && s !== '');
+  if (p.startsWith('/') || segments.some((s) => s === '..')) {
     throw new AgentError(
       'INVALID_ARGS',
       `path '${p}' escapes the artifact directory`,
       'give a path relative to the artifact directory, with no `..` segments',
+    );
+  }
+  if (segments.length === 0) {
+    throw new AgentError(
+      'INVALID_ARGS',
+      `path '${p}' names no artifact`,
+      'give a path relative to the artifact directory',
     );
   }
   return segments.map(encodeURIComponent).join('/');

@@ -605,8 +605,28 @@ export function validateRootDirs(
  * alternative — disambiguating inside the handler — would leave the collision
  * live and merely paper over it, and there is no reading under which one name can
  * mean both things.
+ *
+ * ## Refused on WRITE, tolerated on READ
+ *
+ * The refusal has to be asymmetric, because the two directions have different
+ * stakes. Refusing a `PATCH /api/config` costs the user a 400 and a rename.
+ * Refusing at boot costs them the project: `readConfig` throws, the context
+ * build fails, and every request answers `500 PROJECT_BUILD_FAILED` — the UI
+ * will not open, the CLI health-check reports the same, and nothing anywhere
+ * says the word `search`. A project that worked on 0.2.12 would simply stop
+ * opening on upgrade, with the remedy discoverable only by reading this file.
+ *
+ * A validation rule introduced in release N cannot be allowed to condemn data
+ * written under release N-1. So an existing root keeps loading and gets a
+ * warning naming the exact remedy; only a NEW one is refused. What the surviving
+ * root loses is bounded and already true today: `GET /api/pages/search` resolves
+ * to the cross-root search, so that one path does not reach it. Everything else
+ * about the root works.
  */
 const RESERVED_ROOT_IDS = new Set(['search']);
+
+/** Reserved ids already warned about, so the read path says it once per process. */
+const WARNED_RESERVED_IDS = new Set<string>();
 
 /**
  * Structural validation of a raw `roots[]` value: each element well-typed +
@@ -614,16 +634,25 @@ const RESERVED_ROOT_IDS = new Set(['search']);
  * `pages` root present with sidebar 'accordion'. Throws on any violation. Shared
  * by `validate()` (boot/read) and the PATCH /api/config route (→ 400).
  */
-export function parseRootsArray(raw: unknown): Root[] {
+export function parseRootsArray(raw: unknown, opts: { reservedIds?: 'refuse' | 'warn' } = {}): Root[] {
   if (!Array.isArray(raw)) throw typeError('roots', 'Root[]', raw);
   const roots = raw.map((r, i) => validateRoot(r, i));
   const seen = new Set<string>();
   for (const root of roots) {
     if (seen.has(root.id)) throw new Error(`config.json: duplicate root id '${root.id}'`);
     if (RESERVED_ROOT_IDS.has(root.id)) {
-      throw new Error(
-        `config.json: root id '${root.id}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable`,
-      );
+      const why = `root id '${root.id}' is reserved — it names a route under /api/pages/, so a root using it would be unreachable there`;
+      if (opts.reservedIds !== 'warn') throw new Error(`config.json: ${why}`);
+      // Once per id per process. `readConfig` is a pure disk read that runs per
+      // agent turn (`resolveAgentExecutionScope` re-reads it deliberately, so
+      // config edits apply without a restart), so warning per call would bury
+      // the message in its own repetitions.
+      if (!WARNED_RESERVED_IDS.has(root.id)) {
+        WARNED_RESERVED_IDS.add(root.id);
+        console.warn(
+          `[config] ${why}. The project still loads and the root works everywhere else; rename it in config.json to clear this.`,
+        );
+      }
     }
     seen.add(root.id);
   }
@@ -710,7 +739,9 @@ function validate(raw: unknown): Partial<Config> {
   // 'port' / 'mode' (pre-v3) are intentionally NOT validated nor copied —
   // stale keys are silently ignored, physically removed by migrateConfigToV3.
   if ('roots' in r) {
-    out.roots = parseRootsArray(r.roots);
+    // Read path: an id written under an older release warns, it does not brick
+    // the project. `PATCH /api/config` still refuses — see RESERVED_ROOT_IDS.
+    out.roots = parseRootsArray(r.roots, { reservedIds: 'warn' });
   }
   if ('briefsDir' in r) {
     if (typeof r.briefsDir !== 'string') throw typeError('briefsDir', 'string', r.briefsDir);

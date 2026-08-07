@@ -135,6 +135,63 @@ describe('ensureMcpJsonForWorkspace', () => {
     }
   });
 
+  it('a NON-canonical server does not re-point a healthy config at itself', () => {
+    /**
+     * `--port 5050`, a second instance, or `listenOrExit` retrying past a busy
+     * port: none of those is the address an editor should be sent to. Writing
+     * the bound port into every project's config leaves them all addressing a
+     * dead port the moment that process exits, while the default-port server
+     * keeps running and answering nothing.
+     *
+     * The file the user has is healthy; the transient server leaves it alone.
+     */
+    const dir = tmp();
+    try {
+      ensureMcpJsonForWorkspace([{ id: 'p1', cwd: dir }], 4500, 4500);
+      ensureMcpJsonForWorkspace([{ id: 'p1', cwd: dir }], 5050, 4500);
+      expect(JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url).toContain(':4500');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('a non-canonical server still performs the upgrade repair, at the canonical address', () => {
+    // A missing or stdio config is time-critical — the rewritten bridge exits 2
+    // on every editor launch until it is replaced — so it is written even by a
+    // transient server. What it writes is the address that will work once the
+    // normal server is up, not the port this process happens to hold.
+    const dir = tmp();
+    try {
+      ensureMcpJsonForWorkspace([{ id: 'p1', cwd: dir }], 5050, 4500);
+      expect(JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url).toContain(':4500');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not steal a config that addresses a DIFFERENT project', () => {
+    /**
+     * One directory can be registered in two workspaces, and it has one
+     * `mcp.json`. Last writer wins would mean an editor open on workspace A
+     * silently starts talking to workspace B's copy — same repo, different
+     * database, different entities, no error anywhere. A stale address the user
+     * can see beats a live one pointing at the wrong specification.
+     */
+    const dir = tmp();
+    try {
+      ensureMcpJson({ projectAbsPath: dir, port: 4500, projectId: 'first-owner' });
+      ensureMcpJson({ projectAbsPath: dir, port: 4600, projectId: 'other-workspace' });
+      const url = JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url;
+      expect(url).toContain('/first-owner/');
+      expect(url).toContain(':4500');
+      // The owner may still refresh its own entry.
+      ensureMcpJson({ projectAbsPath: dir, port: 4700, projectId: 'first-owner' });
+      expect(JSON.parse(fs.readFileSync(mcpJsonPath(dir), 'utf8')).mcpServers['c4s-spec-reader'].url).toContain(':4700');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('a project directory that has gone away does not fail the start', () => {
     const ok = tmp();
     try {

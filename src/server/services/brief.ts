@@ -145,7 +145,22 @@ export class BriefService {
 
   async getBrief(path: string): Promise<Brief> {
     if (!(await this.deps.briefsPages.exists(path))) {
-      throw new DomainError('NOT_FOUND', `brief '${path}' not found`);
+      /**
+       * The hint is the repair path, and it used to exist.
+       *
+       * `assertBriefExists` — the filesystem reader `c4s read-brief` ran before
+       * item 23 — listed up to ten real brief filenames on every miss. Moving
+       * the command onto this service dropped that: the caller got a bare
+       * "brief 'x' not found", which is the least useful thing to say to
+       * someone who has just proved they do not know the filename. The usual
+       * miss is a nearly-right slug or a `briefsDir`-relative path written with
+       * a directory prefix, both of which the list answers instantly.
+       *
+       * It matters most for the agent that is not allowed to look. The
+       * brief-implementer skill forbids reading the spec repo by hand, so
+       * without alternatives its only correct move is to stop.
+       */
+      throw new DomainError('NOT_FOUND', `brief '${path}' not found`, this.availableBriefsHint());
     }
     const abs = this.absPath(path);
     const content = await fs.readFile(abs, 'utf-8');
@@ -167,6 +182,43 @@ export class BriefService {
       content,
       hash: hashContent(content),
     };
+  }
+
+  /** Up to ten real brief paths, for the `NOT_FOUND` repair hint. */
+  private availableBriefsHint(): string {
+    const paths = this.deps.frontmatterIndexer
+      .findByFrontmatterType('brief', { rootId: BRIEF_ROOT_MARKER })
+      .map((r) => r.path);
+    return paths.length > 0
+      ? `available briefs: ${paths.slice(0, 10).join(', ')}${paths.length > 10 ? `, … (${paths.length} total)` : ''}`
+      : 'no briefs found in briefsDir';
+  }
+
+  /**
+   * `to_release` DESCENDING, analysis briefs first, path as the tiebreak.
+   *
+   * The order is part of the operation, not a presentation choice, which is why
+   * it lives here rather than in a caller. The indexer answers in
+   * path-alphabetical order; for briefs named `<from>-to-<to>` that is
+   * ascending release order, so "the first row" was the OLDEST brief. Every
+   * consumer then had to re-sort or be wrong, and they diverged exactly that
+   * way: `BriefsList.tsx` ranks client-side and was right, and `c4s
+   * list-briefs` — whose first row is what the brief-implementer skill reads,
+   * and which pages with `--limit`/`--offset` over whatever order it is handed
+   * — silently became wrong when item 23 moved it onto this service.
+   *
+   * Numeric locale compare, so `0-2-9` sorts below `0-2-13` rather than above it.
+   */
+  private static compareBriefs(a: BriefListItem, b: BriefListItem): number {
+    const at = a.toRelease;
+    const bt = b.toRelease;
+    // An analysis brief has no target release; it describes the state as of HEAD,
+    // so it sorts ahead of every named release rather than below all of them.
+    if (at === null && bt === null) return a.path.localeCompare(b.path);
+    if (at === null) return -1;
+    if (bt === null) return 1;
+    const cmp = bt.localeCompare(at, undefined, { numeric: true });
+    return cmp !== 0 ? cmp : a.path.localeCompare(b.path);
   }
 
   listBriefs(opts: BriefListOpts = {}): BriefListItem[] {
@@ -193,7 +245,7 @@ export class BriefService {
         hash: lastVersion ? hashContent(lastVersion.data.content) : '',
       });
     }
-    return out;
+    return out.sort(BriefService.compareBriefs);
   }
 
   // ─── Mutations ──────────────────────────────────────────────────────────

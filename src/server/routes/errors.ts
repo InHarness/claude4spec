@@ -61,7 +61,9 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   }
   if (err instanceof DomainError) {
     const status = STATUS_FOR_CODE[err.code] ?? 400;
-    return res.status(status).json({ error: { code: err.code, message: err.message } });
+    return res
+      .status(status)
+      .json({ error: { code: err.code, message: err.message, ...(err.hint ? { hint: err.hint } : {}) } });
   }
   console.error(err);
   res.status(500).json({ error: { code: 'INTERNAL', message: (err as Error).message } });

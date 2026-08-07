@@ -28,12 +28,30 @@ describe('encodeArtifactPath', () => {
     }
   });
 
-  it('refuses a single-dot segment and an absolute path', () => {
-    // `.` is harmless on its own but is the other half of what URL resolution
-    // normalizes, and an absolute path resets resolution to the ORIGIN — so
-    // `/api/health` as a "brief path" would address the health endpoint.
-    expect(() => encodeArtifactPath('./x.md')).toThrow(AgentError);
+  it('normalizes a single-dot segment instead of refusing it', () => {
+    /**
+     * `.` resolves to the directory it is already in, so it escapes nothing —
+     * and `path.join`, shell completion and hand-typed paths all produce that
+     * spelling. Refusing it made `c4s read-brief ./x.md` exit 4 claiming the
+     * path "escapes the artifact directory", which was both a refusal of
+     * something safe and a false description of it.
+     *
+     * It also has to match the server: `assertSafeRelPath` normalizes first, so
+     * `file-patch --brief ./x.md` accepted the identical string this rejected.
+     */
+    expect(encodeArtifactPath('./x.md')).toBe('x.md');
+    expect(encodeArtifactPath('./a/./b.md')).toBe('a/b.md');
+    // An empty segment survives in a URL and addresses nothing.
+    expect(encodeArtifactPath('a//b.md')).toBe('a/b.md');
+  });
+
+  it('refuses an absolute path, and a path that names nothing', () => {
+    // A leading `/` resets URL resolution to the ORIGIN, so `/api/health` as a
+    // "brief path" would address the health endpoint and answer 200.
     expect(() => encodeArtifactPath('/api/health')).toThrow(AgentError);
+    // Normalization can empty a path; an empty suffix would address the
+    // collection endpoint rather than an artifact.
+    expect(() => encodeArtifactPath('./')).toThrow(/names no artifact/);
   });
 
   it('refuses with INVALID_ARGS, which the CLI maps to exit 4', () => {

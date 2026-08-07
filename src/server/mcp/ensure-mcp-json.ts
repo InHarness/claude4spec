@@ -96,6 +96,26 @@ export function mcpJsonPath(projectAbsPath: string): string {
   return path.join(projectAbsPath, '.claude4spec', 'mcp.json');
 }
 
+/**
+ * Which project the file on disk currently addresses, if it is one of ours.
+ *
+ * `null` for an absent, unreadable, or non-HTTP file — the last of which is the
+ * pre-0.2.13 stdio entry this release has to replace, so "not ours" and "ours,
+ * addressing project X" must be distinguishable rather than both falsy.
+ */
+function addressedProjectId(absPath: string): string | null {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(absPath, 'utf8')) as {
+      mcpServers?: Record<string, { type?: string; url?: string }>;
+    };
+    const url = parsed.mcpServers?.['c4s-spec-reader']?.url;
+    if (typeof url !== 'string') return null;
+    return /\/api\/projects\/([^/?#]+)\/mcp/.exec(url)?.[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function ensureMcpJson({
   projectAbsPath,
   port,
@@ -105,7 +125,21 @@ export function ensureMcpJson({
   port: number;
   projectId: string;
 }): void {
-  writeIfChanged(mcpJsonPath(projectAbsPath), renderMcpJson({ projectAbsPath, port, projectId }));
+  const target = mcpJsonPath(projectAbsPath);
+  /**
+   * A file already addressing a DIFFERENT project is left alone.
+   *
+   * One directory can be registered in two workspaces, and it has one
+   * `mcp.json`. Whichever server started last would otherwise own it, so an
+   * editor open on workspace A would silently start talking to workspace B's
+   * copy of the specification — the same repo, a different database, a
+   * different set of entities, and no error anywhere to say so. First writer
+   * wins is not obviously the right owner, but it is stable, and a stale
+   * address the user can see beats a live one pointing at the wrong project.
+   */
+  const existing = addressedProjectId(target);
+  if (existing !== null && existing !== projectId) return;
+  writeIfChanged(target, renderMcpJson({ projectAbsPath, port, projectId }));
 }
 
 /**
@@ -132,14 +166,38 @@ export function ensureMcpJson({
  * per project per start. A project directory that has gone away is skipped
  * rather than failing the boot: an unwritable config is not a reason to refuse
  * to serve the other projects.
+ *
+ * ## A transient server does not get to re-point the editor at itself
+ *
+ * The bound port is the right address only when this process is the workspace's
+ * CANONICAL server. `npx @inharness-ai/claude4spec --port 5050` — a one-off, a
+ * second instance, a debugging run — is not, and writing 5050 into every
+ * project's config leaves all of them addressing a dead port the moment it
+ * exits, while the default-port server keeps running and answering nothing.
+ * `listenOrExit` retries on a busy port, so this happens without a flag too.
+ *
+ * So a non-canonical process writes only what is MISSING or still stdio (the
+ * upgrade repair, which is time-critical: the rewritten `c4s-mcp` exits 2 on
+ * every editor launch until it is replaced), and it writes the CANONICAL
+ * address rather than its own — the address that works once the normal server
+ * is up. It never rewrites a healthy HTTP entry.
  */
 export function ensureMcpJsonForWorkspace(
   projects: readonly { id: string; cwd: string }[],
   port: number,
+  canonicalPort: number = port,
 ): void {
+  const canonical = port === canonicalPort;
   for (const project of projects) {
     try {
-      ensureMcpJson({ projectAbsPath: project.cwd, port, projectId: project.id });
+      const target = mcpJsonPath(project.cwd);
+      // Ours and healthy, written by a canonical start: a transient one leaves it.
+      if (!canonical && addressedProjectId(target) !== null) continue;
+      ensureMcpJson({
+        projectAbsPath: project.cwd,
+        port: canonical ? port : canonicalPort,
+        projectId: project.id,
+      });
     } catch {
       /* a removed or read-only project directory must not fail the start */
     }

@@ -99,8 +99,29 @@ export const STATUS_FOR_CODE: Record<string, number> = {
  * code appears in both tables (`SECTION_NOT_FOUND` does — 404 from the core's
  * addressing failure, 400 from a malformed domain write).
  */
+/**
+ * Codes that mean "the server failed", whatever produced them.
+ *
+ * The 400 default below is right for a code the tables do not carry: an
+ * unrecognised refusal from a handler that CHOSE to refuse is a refusal of the
+ * request. `INTERNAL` is the one code where that reasoning inverts — it is what
+ * `decodeToolFailure` yields when a plugin's handler crashed or answered with
+ * something unparseable, and reporting a crash as 400 tells the caller their
+ * request was malformed. A client branching on 4xx-versus-5xx then does the
+ * opposite of the right thing twice over: it does not retry, and it does not
+ * escalate.
+ *
+ * This is also the status a thrown non-`DomainError` already gets from
+ * `routes/errors.ts`, so the two paths out of the same failure now agree —
+ * which is what the tool-proxy route's own comment claims ("exactly as it would
+ * had the handler thrown").
+ */
+const SERVER_FAULT_CODES: ReadonlySet<string> = new Set(['INTERNAL']);
+
 export function httpStatusForCode(code: string): number {
   const discovery = STATUS_FOR_DISCOVERY_CODE[code as DiscoveryErrorCode];
   if (discovery !== undefined) return discovery;
-  return STATUS_FOR_CODE[code] ?? 400;
+  const known = STATUS_FOR_CODE[code];
+  if (known !== undefined) return known;
+  return SERVER_FAULT_CODES.has(code) ? 500 : 400;
 }
