@@ -4,16 +4,31 @@ import type { EntityType } from '../../shared/entities.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { findReferencesAllPaged } from '../discovery/index.js';
+import { invalidType } from '../discovery/errors.js';
 import { errorHandler } from './errors.js';
 
 /**
- * Validate `type` URL param against the plugin host registry; `section` is
- * accepted as a special non-entity case used by the references service.
+ * Validate `type` against the plugin host registry; `section` is accepted as a
+ * special non-entity case the references service has always supported.
+ *
+ * 0.2.13: this used to `throw new Error(...)`, which the error handler could
+ * only classify as `500 INTERNAL`. A caller who mistyped a type name — the most
+ * ordinary mistake there is on this route — got "internal server error" and no
+ * list of what would have worked. That contradicts the release's own contract
+ * for this channel: `INVALID_ARGUMENT` carries a repair path, and the repair
+ * path for a wrong type is the set of active ones.
+ *
+ * `invalidType` is the core's own constructor, so the message and the
+ * alternatives are phrased once, by the core, and re-framed by every transport
+ * rather than re-invented per route — the same call `entities-router` makes.
  */
 function assertType(host: ProjectPluginHost, type: string): EntityType {
   if (type === 'section') return type;
   if (host.getAvailable(type)) return type as EntityType;
-  throw new Error(`unsupported entity type '${type}'`);
+  throw invalidType(
+    type,
+    host.listEntities().map((m) => m.type),
+  );
 }
 
 /** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined (core default wins). */

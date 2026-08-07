@@ -350,3 +350,38 @@ describe('GET /api/tags — paging, added without moving the UI\'s cheese', () =
     expect(res.body.total).toBe(3);
   });
 });
+
+/**
+ * 0.2.13 §7 — `/api/references` and the release's own error contract.
+ *
+ * A caller who mistypes a type name is the most ordinary failure this route has,
+ * and it used to answer `500 INTERNAL` with no list of what would have worked.
+ * "REST is a full channel" is a claim about the error taxonomy as much as about
+ * the paths.
+ */
+describe('GET /api/references — a wrong type is a repairable error, not a 500', () => {
+  it('answers INVALID_TYPE and names the active types', async () => {
+    const app = await createTestApp();
+    try {
+      const res = await request(app.app).get('/api/references').query({ type: 'no-such-type', slug: 'x' });
+      expect(res.status).not.toBe(500);
+      expect(res.body.error.code).toBe('INVALID_TYPE');
+      // The repair path: what the caller could have said instead.
+      expect(res.body.error.hint ?? res.body.error.message).toMatch(/ac|endpoint|dto/);
+    } finally {
+      app.cleanup();
+    }
+  });
+
+  it('still accepts the non-entity pseudo-type `section`', async () => {
+    // Accepted here since long before the core existed; the stricter error must
+    // not quietly narrow the vocabulary this route has always had.
+    const app = await createTestApp();
+    try {
+      const res = await request(app.app).get('/api/references').query({ type: 'section', slug: 'x' });
+      expect(res.status).toBe(200);
+    } finally {
+      app.cleanup();
+    }
+  });
+});
