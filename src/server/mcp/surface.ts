@@ -128,15 +128,16 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
     { name: EXTERNAL_MCP_SERVER_NAME, server: createC4sReaderServer(deps.reader) },
   ];
 
-  for (const entry of deps.pluginHost.buildMcpServers()) {
-    if (set.pluginServers === 'release-only' && !BRIEF_ALLOWED_PLUGIN_MCP.has(entry.name)) continue;
-    // `buildMcpServers()` returns the host-owned `McpServerFactory` view. Every
-    // in-repo and plugin server is built through the facade, so `.tools` is
-    // present; a handle without it contributes nothing to enumerate and is
-    // dropped by the merge below rather than mounted blind.
-    servers.push({ name: entry.name, server: entry.server as CapturedMcpServer });
-  }
-
+  /**
+   * ORDER MATTERS, and every host-owned server is pushed before any plugin one.
+   *
+   * The merge is first-wins, so whoever declares a name first owns it on this
+   * flat namespace. Plugin servers used to be pushed before plan/brief/c4s/
+   * workspace-tools, which meant a plugin shipping a tool called `list_projects`
+   * or `update_brief` took the name and an external caller asking for the host
+   * operation got the plugin's handler instead. The host's own surface is the
+   * one this repo can vouch for, so it wins every collision.
+   */
   if (set.planTools) {
     servers.push({
       name: 'plan-tools',
@@ -172,6 +173,16 @@ function sourceServers(deps: ExternalSurfaceDeps): Array<{ name: string; server:
    * a gate that has nothing to do with it.
    */
   servers.push({ name: 'workspace-tools', server: buildWorkspaceToolsServer(deps.listProjects) });
+
+  // Plugin-contributed servers LAST — see the ordering note above.
+  for (const entry of deps.pluginHost.buildMcpServers()) {
+    if (set.pluginServers === 'release-only' && !BRIEF_ALLOWED_PLUGIN_MCP.has(entry.name)) continue;
+    // `buildMcpServers()` returns the host-owned `McpServerFactory` view. Every
+    // in-repo and plugin server is built through the facade, so `.tools` is
+    // present; a handle without it contributes nothing to enumerate and is
+    // dropped by the merge below rather than mounted blind.
+    servers.push({ name: entry.name, server: entry.server as CapturedMcpServer });
+  }
 
   /**
    * `transagent-tools` is absent BY CONSTRUCTION, not by policy — do not "add

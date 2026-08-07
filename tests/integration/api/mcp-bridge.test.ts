@@ -1,5 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import { execFile } from 'node:child_process';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { execFile, spawn } from 'node:child_process';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -29,13 +31,16 @@ describe('c4s-mcp against an unreachable server', () => {
     }
   };
 
-  it('exits 8 and names the mount point rather than hanging', async () => {
+  it('exits 8 and names both the server and the configured mount', async () => {
     // Port 59999 is closed; "reachable" must mean a TCP answer, not a lazy
     // transport reporting that it intends to connect later.
     const res = await run(['--url', 'http://127.0.0.1:59999/api/projects/x/mcp']);
     expect(res.code).toBe(8);
-    expect(res.stderr).toContain('http://127.0.0.1:59999/api/projects/x/mcp');
     expect(res.stderr).toMatch(/cannot reach/i);
+    // The ORIGIN is what was probed and what is absent...
+    expect(res.stderr).toContain('http://127.0.0.1:59999');
+    // ...and the configured mount, so a typo in the path is still visible.
+    expect(res.stderr).toContain('/api/projects/x/mcp');
   }, 30000);
 
   it('says it will not start a server, because it never does', async () => {
@@ -53,5 +58,73 @@ describe('c4s-mcp against an unreachable server', () => {
     const res = await run(['--url', 'not-a-url']);
     expect(res.code).toBe(2);
     expect(res.stderr).toMatch(/not a valid URL/i);
+  }, 30000);
+});
+
+/**
+ * Bridge lifecycle, against a REAL listening server.
+ *
+ * Both defects here were invisible in the source and only appear when the
+ * process actually runs: `close()` fires its own `onclose` synchronously, and
+ * stdin EOF is silent unless something is listening for it.
+ */
+describe('c4s-mcp lifecycle against a live server', () => {
+  let server: http.Server;
+  let mount: string;
+
+  beforeAll(async () => {
+    // A stub that answers /api/health and nothing else — reachability is all the
+    // bridge probes, and standing up a full project context here would test the
+    // server rather than the bridge.
+    server = http.createServer((req, res) => {
+      if (req.url?.startsWith('/api/health')) {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"ok":true}');
+        return;
+      }
+      res.writeHead(404).end();
+    });
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+    mount = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/projects/p/mcp`;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((r) => server.close(() => r()));
+  });
+
+  const spawnBridge = (after: (p: ReturnType<typeof spawn>) => void) =>
+    new Promise<{ code: number | null; stderr: string }>((resolve) => {
+      const p = spawn('node', [BRIDGE, '--url', mount], { stdio: ['pipe', 'pipe', 'pipe'] });
+      let stderr = '';
+      p.stderr.on('data', (d: Buffer) => (stderr += d.toString()));
+      p.on('exit', (code) => resolve({ code, stderr }));
+      setTimeout(() => after(p), 800);
+    });
+
+  it('exits 0 on SIGINT, without reporting a crash', async () => {
+    // `http.close()` fires `onclose` synchronously, which used to re-enter the
+    // shutdown path and exit 1 with "closed the connection" — so every Ctrl-C
+    // looked like a crash to a supervising client, which may restart in a loop.
+    const res = await spawnBridge((p) => p.kill('SIGINT'));
+    expect(res.code).toBe(0);
+    expect(res.stderr).not.toMatch(/closed the connection/);
+  }, 30000);
+
+  it('exits when its client goes away, instead of orphaning itself', async () => {
+    // stdin EOF is how every MCP client ends a stdio server. With nothing
+    // subscribed, the open HTTP transport kept the event loop alive and one
+    // process leaked per editor restart.
+    const res = await spawnBridge((p) => p.stdin?.end());
+    expect(res.code).toBe(0);
+  }, 30000);
+
+  it('accepts a server that answers health but not the mount', async () => {
+    // 404 on the mount means the SERVER is there; whether this mount exists is
+    // its answer to give at the protocol level, on a connection that stays open.
+    // Probing the mount itself forced a ProjectContext build, so a cold project
+    // was reported as "no server, start one" while the server was up.
+    const res = await spawnBridge((p) => p.kill('SIGINT'));
+    expect(res.code).toBe(0);
+    expect(res.stderr).toMatch(/bridging stdio to/);
   }, 30000);
 });

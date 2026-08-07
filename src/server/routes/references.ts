@@ -130,7 +130,22 @@ export function referencesRouter(
        * `includeTagMatches` is the one thing the service cannot do, so it — and
        * only it — goes to the core.
        */
-      if (!includeTagMatches) {
+      /**
+       * `section` never reaches the core, whatever the flags say.
+       *
+       * It is a pseudo-type this route has always accepted and `assertType`
+       * still admits, but `entityReferences` refuses anything `host.getEntity()`
+       * does not know. Routing it to the core on the `includeTagMatches` path
+       * meant `?type=section&slug=intro` answered 200 while the same request
+       * with `&includeTagMatches=true` answered 404 INVALID_TYPE — telling a
+       * caller who merely turned on tag matching that the type does not exist,
+       * and offering a list of entity types that will never contain a section.
+       *
+       * Tag matching is meaningless for it anyway: phase 2 matches an ENTITY
+       * against `<tagged_list/>` queries, and a section is not tagged. So the
+       * service answers, and the flag is a no-op rather than an error.
+       */
+      if (!includeTagMatches || type === 'section') {
         const hits = await references.findReferences(type, slug);
         if (limit === undefined && offset === undefined) return res.json({ references: hits });
         const start = offset ?? 0;

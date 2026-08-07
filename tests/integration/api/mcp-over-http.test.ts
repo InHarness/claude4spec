@@ -4,9 +4,12 @@ import type { AddressInfo } from 'node:net';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
+import express from 'express';
+import { projectMcpRouter } from '../../../src/server/routes/mcp.js';
 import {
   __resetMcpSessions,
   activeMcpSessionCount,
+  ageAllMcpSessions,
   MCP_SESSION_IDLE_MS,
   reapIdleMcpSessions,
 } from '../../../src/server/mcp/http-mount.js';
@@ -181,5 +184,95 @@ describe('MCP over HTTP', () => {
     });
     expect(res.status).toBe(404);
     expect(((await res.json()) as { error: { data: { code: string } } }).error.data.code).toBe('SESSION_NOT_FOUND');
+  });
+});
+
+/**
+ * The project mount's session binding.
+ *
+ * `SESSIONS` is module-global and keyed only by session id, so the binding pin
+ * is the ONLY thing stopping a session id issued on one project's mount from
+ * being replayed against another's. It originally returned the literal
+ * `'project-bound'` — reasoning that a router instance belongs to one project,
+ * which is true of the router and useless as a check, since the replay targets a
+ * DIFFERENT router instance whose constant compared equal.
+ */
+describe('a session cannot cross between project mounts', () => {
+  it('refuses a session id issued on another project', async () => {
+    const a = await createTestApp();
+    const b = await createTestApp();
+    const app = express();
+    app.use(express.json());
+    app.use('/api/projects/A/mcp', projectMcpRouter('0.0.0-test', 'A', a.mcpSurfaceDeps));
+    app.use('/api/projects/B/mcp', projectMcpRouter('0.0.0-test', 'B', b.mcpSurfaceDeps));
+    const srv = http.createServer(app);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/projects`;
+
+    try {
+      const init = await fetch(`${base}/A/mcp`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } },
+        }),
+      });
+      const sid = init.headers.get('mcp-session-id');
+      expect(sid).toBeTruthy();
+
+      const crossed = await fetch(`${base}/B/mcp`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': sid!,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      expect(crossed.status).toBe(400);
+      const body = (await crossed.json()) as { error: { data: { code: string }; message: string } };
+      expect(body.error.data.code).toBe('VALIDATION');
+      expect(body.error.message).toContain('project:A');
+    } finally {
+      __resetMcpSessions();
+      await new Promise<void>((r) => srv.close(() => r()));
+      a.cleanup();
+      b.cleanup();
+    }
+  });
+});
+
+/**
+ * The reaper must not eat the session it is serving.
+ *
+ * It swept before the arriving request refreshed `lastSeen`, so a client whose
+ * cadence is slower than the window — an editor with `c4s-spec-reader`
+ * configured, exactly the case the reaper exists for — had its session deleted
+ * by its own next call and answered SESSION_NOT_FOUND.
+ */
+describe('idle reaping vs. an arriving request', () => {
+  it('keeps a session that is being used right now, however stale it looked', async () => {
+    const app = await createTestApp();
+    const srv = http.createServer(app.app);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/mcp`;
+    const client = new Client({ name: 'idle', version: '0.0.0' });
+    try {
+      await client.connect(new StreamableHTTPClientTransport(new URL(url)));
+      // Age the session past the window, exactly as wall-clock idling would.
+      ageAllMcpSessions(MCP_SESSION_IDLE_MS + 1);
+      // A request IS activity: the session is not idle at the moment it is used.
+      const res = await client.callTool({ name: 'overview', arguments: {} });
+      expect(res.isError).toBeFalsy();
+      expect(activeMcpSessionCount()).toBe(1);
+    } finally {
+      await client.close().catch(() => {});
+      __resetMcpSessions();
+      await new Promise<void>((r) => srv.close(() => r()));
+      app.cleanup();
+    }
   });
 });

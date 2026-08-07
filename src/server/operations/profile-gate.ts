@@ -76,7 +76,19 @@ export function toolAdmittedByProfile(
   opts: { plugin?: boolean } = {},
 ): boolean {
   const op = CATALOG.get(toolName);
-  if (op) return profileAdmits(profile, op);
+  /**
+   * A declaration counts only if it describes the surface the tool came from.
+   *
+   * A catalog row for a HOST operation says nothing about a plugin's tool that
+   * happens to share its name — and the gate matches by name alone. So a plugin
+   * shipping `update_plan` would be classified `plan` and admitted to the
+   * read-only `ask` profile, running its own mutating handler on a connection
+   * built to be unable to mutate. Requiring `contributedBy: 'plugin'` here sends
+   * that case to the fail-closed default below instead, which is the whole point
+   * of treating a plugin's surface as unvouched-for.
+   */
+  const applies = op && (opts.plugin ? op.contributedBy === 'plugin' : op.contributedBy !== 'plugin');
+  if (op && applies) return profileAdmits(profile, op);
   /**
    * Undeclared, on a plugin's own server, for a profile that admits no writes:
    * DENY.

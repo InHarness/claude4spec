@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { loadOrCreateConfig, migrateConfigToV3, migrateConfigToV4, readConfig, type Config } from '../config.js';
-import { ensureMcpJson } from '../mcp/ensure-mcp-json.js';
 import { ensureGitignore } from '../../bin/gitignore.js';
 import { BOOTSTRAP_TEMPLATE } from '../../bin/bootstrap-template.js';
 import { migrateLegacyDbIfNeeded } from './db-migration.js';
@@ -53,8 +52,10 @@ export function ensureWelcomePage(cwd: string, pagesDir: string | undefined): vo
  *
  * Sequence: mkdir cwd → config (create or load) → config v3 migration (carry
  * port/mode to the registry, first-wins) → .gitignore → entitiesDir →
- * .claude4spec/mcp.json (M12) → registry registration (creates the DB slot) →
- * legacy DB relocation. (0.1.56: welcome page no longer created here —
+ * registry registration (creates the DB slot) → legacy DB relocation.
+ * (0.2.13: `.claude4spec/mcp.json` is no longer written here — it names a URL,
+ * so it belongs after `listen`, where the bound port is known. See the note
+ * below and `ensureMcpJsonForWorkspace`.) (0.1.56: welcome page no longer created here —
  * deferred to onboarding close. 0.1.104: external skills generation moved
  * off this bootstrap hook entirely — see `c4s install-skills` / M22's
  * `buildExternalSkillsBundle`, both on-demand.)
@@ -121,19 +122,17 @@ export function bootstrapProject(
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
 
   /**
-   * 0.2.13: written AFTER registration, because the file now names the project's
-   * mount point and `project.id` does not exist until `registerProject` returns.
-   * The previous call site was above this line, which was correct while the file
-   * only carried a path and a workspace name.
+   * `mcp.json` is NOT written here.
    *
-   * `writeIfChanged` keeps it idempotent, so re-activating an existing project
-   * rewrites nothing unless the port or the id actually moved.
+   * It was, briefly, and both halves of that were wrong. The file names a URL,
+   * so it needs the port the server actually bound — which this function cannot
+   * know, since it runs before `listen` and `--port` overrides the workspace
+   * default. And it needs to cover every project, not just one being created:
+   * an existing project never reaches this function on a plain start, so its
+   * pre-0.2.13 stdio entry would survive an upgrade that made it unstartable.
+   *
+   * `ensureMcpJsonForWorkspace` in `server/index.ts` does both, after `listen`.
    */
-  ensureMcpJson({
-    projectAbsPath: cwd,
-    port: workspace.defaultPort,
-    projectId: project.id,
-  });
 
   return {
     project,

@@ -473,6 +473,11 @@ export function registerCoreOperations(): void {
       scope: 'project',
       mediation: 'direct',
       opClass,
+      // These names belong to plugin `${type}-tools` servers, so the gate may
+      // honour them ONLY for a tool arriving from such a server. Without the
+      // marker, a plugin shipping a tool named after a host operation would
+      // inherit that operation's class — see `contributedBy` in `catalog.ts`.
+      contributedBy: 'plugin',
       inputSchema,
       errorCodes: opClass === 'write' ? ['NOT_FOUND', 'VALIDATION'] : ['NOT_FOUND'],
       sideEffects: opClass === 'write' ? ['file', 'db', 'ui-notify'] : ['none'],

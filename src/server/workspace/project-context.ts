@@ -1103,7 +1103,7 @@ async function buildInner(
   });
   // `project-bound`: the project parameter's default comes from the URL this
   // router is already mounted under. See `routes/mcp.ts`.
-  router.use('/mcp', projectMcpRouter(readPackageVersion(), mcpSurfaceDeps));
+  router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
   router.use('/threads', threadsRouter(agentDeps));
   router.use('/sections', sectionsRouter(sectionsService));
   router.use('/todos', todosRouter(todosIndexer));

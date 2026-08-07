@@ -51,6 +51,16 @@ interface CliArgs {
   version: boolean;
 }
 
+/**
+ * How long the liveness probe waits for the server to answer `/api/health`.
+ *
+ * Generous, because the only thing it decides is "is a server there at all",
+ * and being wrong about that costs the user a failed MCP entry with advice to
+ * start something that is already running. Project build time does not enter
+ * into it — `/api/health` is a workspace route that touches no project.
+ */
+const HEALTH_PROBE_MS = 10_000;
+
 const HELP = `Usage: c4s-mcp --url <mount-url>
 
 Bridges an MCP client that speaks stdio to a claude4spec server's MCP mount
@@ -137,11 +147,49 @@ async function main(): Promise<void> {
 
   stdio.onerror = (err) => process.stderr.write(`c4s-mcp: stdio error: ${describe(err)}\n`);
   http.onerror = (err) => process.stderr.write(`c4s-mcp: transport error: ${describe(err)}\n`);
+
+  /**
+   * One shutdown path, and a flag so a deliberate stop is not reported as a
+   * crash.
+   *
+   * `close()` on either transport fires its own `onclose` SYNCHRONOUSLY, so the
+   * signal handler calling `http.close()` used to re-enter the handler below,
+   * write "closed the connection" and `process.exit(1)` — before `stdio.close()`
+   * and before the intended `exit(0)`. Every Ctrl-C produced a spurious error
+   * line and a non-zero code, which a supervising client reads as a crash and
+   * may restart in a loop.
+   */
+  let stopping = false;
+  const stop = (code: number, reason?: string): never => {
+    if (reason) process.stderr.write(`c4s-mcp: ${reason}\n`);
+    stopping = true;
+    void http.close();
+    void stdio.close();
+    process.exit(code);
+  };
+
   // A closed HTTP side leaves the client talking into a bridge with no far end,
   // so the process ends rather than silently swallowing every later frame.
   http.onclose = () => {
-    process.stderr.write(`c4s-mcp: ${mount.href} closed the connection\n`);
-    process.exit(1);
+    if (stopping) return;
+    stop(1, `${mount.href} closed the connection`);
+  };
+
+  /**
+   * The other half of "never ends the connection": stdin EOF.
+   *
+   * This is how every MCP client ends a stdio server — quitting the editor,
+   * reloading the window. Without a handler the open HTTP transport keeps the
+   * event loop alive, so the process stays resident forever holding a server-side
+   * session, and one orphan accumulates per editor restart. Ending here is not
+   * the failure the header warns about: the client that needed the diagnosis is
+   * the one that just went away.
+   */
+  stdio.onclose = () => {
+    if (stopping) return;
+    stopping = true;
+    void http.close();
+    process.exit(0);
   };
 
   /**
@@ -153,21 +201,29 @@ async function main(): Promise<void> {
    * unanswered. From the client's side that is a hang, which is precisely the
    * diagnosis-shaped failure this bridge is supposed to avoid.
    *
-   * Any HTTP RESPONSE means reachable, including 404 or 405: the server is
-   * there, and whether this particular mount point exists is the server's
-   * answer to give at the protocol level. Only a transport-level failure —
-   * ECONNREFUSED, DNS, timeout — means "no server".
+   * The probe asks whether a SERVER is there, and nothing else:
+   *
+   *   - It hits `/api/health`, a workspace-level route, rather than the mount.
+   *     A POST to the mount runs `projectDispatchMiddleware` — plugin load,
+   *     migrations, index materialisation — so on a cold or large project a
+   *     running server routinely took longer than the timeout and was reported
+   *     as absent, telling the user to start something already running.
+   *   - Any HTTP RESPONSE means reachable, including 404 or 405. Whether this
+   *     particular mount exists is the server's answer to give at the protocol
+   *     level, on a connection that stays open.
+   *   - Only a transport-level failure — ECONNREFUSED, DNS, timeout — means
+   *     "no server", and that is the only case that exits.
    */
+  const health = new URL('/api/health', mount);
   try {
-    await fetch(mount.href, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'ping', params: {} }),
-      signal: AbortSignal.timeout(5000),
-    });
+    await fetch(health.href, { signal: AbortSignal.timeout(HEALTH_PROBE_MS) });
   } catch (err) {
+    // Names the ORIGIN, because that is what was probed and what is absent —
+    // and the configured mount too, so a typo in the path is still visible to
+    // whoever has to fix the config.
     process.stderr.write(
-      `c4s-mcp: cannot reach the MCP mount point at ${mount.href} (${describe(err)})\n` +
+      `c4s-mcp: cannot reach a claude4spec server at ${mount.origin} (${describe(err)})\n` +
+        `  configured mount: ${mount.href}\n` +
         `Start the claude4spec server first — this bridge never starts one.\n`,
     );
     process.exit(8);
@@ -176,13 +232,11 @@ async function main(): Promise<void> {
   await stdio.start();
   process.stderr.write(`c4s-mcp ${version} bridging stdio to ${mount.href}\n`);
 
-  const shutdown = (): void => {
-    void http.close();
-    void stdio.close();
-    process.exit(0);
-  };
-  process.on('SIGINT', shutdown);
-  process.on('SIGTERM', shutdown);
+  // Both signals go through the one shutdown path, which sets `stopping` first
+  // so the transports' own `onclose` callbacks do not re-enter it and turn a
+  // deliberate stop into exit 1.
+  process.on('SIGINT', () => stop(0));
+  process.on('SIGTERM', () => stop(0));
 }
 
 function describe(err: unknown): string {

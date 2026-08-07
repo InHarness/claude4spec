@@ -36,6 +36,7 @@ import type { WorkspaceRecord } from '../workspace/types.js';
 /** `/api/projects/:id/mcp` — mounted on the per-project router. */
 export function projectMcpRouter(
   packageVersion: string,
+  projectId: string,
   surfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps,
 ): Router {
   const router = Router();
@@ -48,10 +49,18 @@ export function projectMcpRouter(
       const chosen = profileFromRequest(req);
       return surfaceDeps(chosen.ok ? chosen.profile : 'chat');
     },
-    // This router instance belongs to exactly one project's context, so every
-    // request through it is bound to the same thing — the pin is a no-op here
-    // and exists for the workspace mount, where the selector is in the query.
-    binding: () => 'project-bound',
+    /**
+     * The PROJECT ID, not a constant.
+     *
+     * This originally returned the literal `'project-bound'`, reasoning that a
+     * router instance belongs to one project so every request through it is
+     * bound to the same thing. That is true of the router and false of the
+     * check: `SESSIONS` is module-global and keyed only by session id, so a
+     * session opened on project A's router could be replayed against project
+     * B's — a DIFFERENT router instance, whose constant compared equal. The
+     * whole pin was a no-op on this mount, which is the one most clients use.
+     */
+    binding: () => `project:${projectId}`,
   });
   router.post('/', handler);
   router.get('/', handler);
@@ -103,10 +112,13 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
       const chosen = profileFromRequest(req);
       return ctx.mcpSurfaceDeps(chosen.ok ? chosen.profile : 'chat');
     },
-    // The raw selector, not the resolved id: two spellings of the same project
-    // are the same binding only if the caller used the same one, and comparing
-    // what the caller actually sent is what makes the pin checkable.
-    binding: (req) => (typeof req.query.project === 'string' ? req.query.project.trim() : ''),
+    /**
+     * The raw selector, namespaced so it can never collide with the project
+     * mount's binding — the two mounts share one process-wide session registry,
+     * so a `?project=` value that happened to equal a project id must not let a
+     * session cross between them.
+     */
+    binding: (req) => `selector:${typeof req.query.project === 'string' ? req.query.project.trim() : ''}`,
   });
   router.post('/', handler);
   router.get('/', handler);

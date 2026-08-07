@@ -7,16 +7,22 @@ import { bootstrapProject } from './bootstrap.js';
 import { mcpJsonPath } from '../mcp/ensure-mcp-json.js';
 
 /**
- * 0.2.13 — `.claude4spec/mcp.json` names the project's MCP mount point, so it
- * cannot be written before the project HAS an id.
+ * 0.2.13 — `mcp.json` is deliberately NOT written by `bootstrapProject`.
  *
- * `ensureMcpJson` used to be called above `registry.registerProject`, which was
- * fine while the file carried only a path and a workspace name. Moving the call
- * is the kind of change that unit tests over `renderMcpJson` cannot catch — it
- * would render a perfectly valid entry pointing at `undefined`. This test is
- * over the real boot order, for that reason.
+ * It briefly was, and both halves of that were wrong:
+ *
+ *   - the file names a URL, so it needs the port the server actually BOUND, and
+ *     this function runs before `listen` (and `--port` overrides the workspace
+ *     default, so `workspace.defaultPort` is a guess);
+ *   - it must cover every project, and this function only runs for one being
+ *     created or re-activated — so an existing project's pre-0.2.13 stdio entry
+ *     would survive an upgrade that made it unstartable.
+ *
+ * `ensureMcpJsonForWorkspace`, called after `listen`, owns both. This file pins
+ * the boundary so the write does not drift back here, where neither fact is
+ * available.
  */
-describe('bootstrapProject writes mcp.json after the project is registered', () => {
+describe('bootstrapProject does not write mcp.json', () => {
   let dir: string;
   let cwd: string;
 
@@ -33,33 +39,22 @@ describe('bootstrapProject writes mcp.json after the project is registered', () 
     return { result: bootstrapProject(registry, ws, cwd), ws };
   };
 
-  const readEntry = () =>
-    JSON.parse(fs.readFileSync(mcpJsonPath(cwd), 'utf8')).mcpServers['c4s-spec-reader'] as {
-      type: string;
-      url: string;
-    };
-
-  it('points the URL at the id the registry actually assigned', () => {
-    const { result, ws } = boot();
-    const entry = readEntry();
-
-    expect(entry.type).toBe('http');
-    expect(entry.url).toBe(`http://127.0.0.1:${ws.defaultPort}/api/projects/${result.project.id}/mcp`);
-    // The failure mode of the old ordering, stated so it cannot come back:
-    expect(entry.url).not.toContain('undefined');
+  it('leaves no mcp.json behind — the port is not known yet', () => {
+    const { result } = boot();
+    // Bootstrap still does its own job.
+    expect(result.project.id).toBeTruthy();
+    expect(fs.existsSync(path.join(cwd, '.claude4spec'))).toBe(true);
+    // …but writing a URL here could only have guessed the port.
+    expect(fs.existsSync(mcpJsonPath(cwd))).toBe(false);
   });
 
-  it('takes the port from the workspace, not from a hardcoded default', () => {
-    const registry = new WorkspaceRegistry(dir);
-    const ws = registry.selectOrCreate({ name: 'default' });
-    // Deliberately a port the workspace would never land on by itself, so the
-    // assertion cannot pass by coincidence. (`carryDefaults` is first-wins and
-    // would have left `defaultPort` alone, making the check compare a value
-    // against itself.)
-    const moved = { ...ws, defaultPort: 4321 };
-    expect(moved.defaultPort).not.toBe(ws.defaultPort);
-
-    const project = bootstrapProject(registry, moved, cwd).project;
-    expect(readEntry().url).toBe(`http://127.0.0.1:4321/api/projects/${project.id}/mcp`);
+  it('does not disturb a config that is already there', () => {
+    // The upgrade path replaces a stale entry at startup, not here. If bootstrap
+    // rewrote it with a guessed port it would undo that repair on re-activation.
+    fs.mkdirSync(path.join(cwd, '.claude4spec'), { recursive: true });
+    const existing = '{"mcpServers":{"c4s-spec-reader":{"type":"http","url":"http://127.0.0.1:9999/x"}}}';
+    fs.writeFileSync(mcpJsonPath(cwd), existing);
+    boot();
+    expect(fs.readFileSync(mcpJsonPath(cwd), 'utf8')).toBe(existing);
   });
 });

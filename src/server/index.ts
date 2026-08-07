@@ -9,6 +9,7 @@ import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
+import { ensureMcpJsonForWorkspace } from './mcp/ensure-mcp-json.js';
 import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
@@ -443,6 +444,13 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
   const port = await listenOrExit(httpServer, portRef.current);
   portRef.current = port;
+  /**
+   * 0.2.13: refresh every project's `.claude4spec/mcp.json` with the port we
+   * actually bound. Here, not in `bootstrapProject` — see the note on
+   * `ensureMcpJsonForWorkspace`. This is also the upgrade path that replaces the
+   * pre-0.2.13 stdio entries the rewritten `c4s-mcp` can no longer start.
+   */
+  ensureMcpJsonForWorkspace((registry.getWorkspace(workspace.name) ?? workspace).projects, port);
   if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   const url = `http://localhost:${port}`;
 

@@ -374,7 +374,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
   });
-  router.use('/mcp', projectMcpRouter('0.0.0-test', mcpSurfaceDeps));
+  router.use('/mcp', projectMcpRouter('0.0.0-test', 'test-project', mcpSurfaceDeps));
   router.use(errorHandler);
 
   const app = express();

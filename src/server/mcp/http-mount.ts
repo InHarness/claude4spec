@@ -123,6 +123,14 @@ export function activeMcpSessionCount(): number {
 }
 
 /**
+ * Test seam: backdate every session's `lastSeen`, so a suite can reproduce a
+ * genuinely idle connection without waiting half an hour or stubbing the clock.
+ */
+export function ageAllMcpSessions(byMs: number): void {
+  for (const session of SESSIONS.values()) session.lastSeen -= byMs;
+}
+
+/**
  * Drop sessions idle past {@link MCP_SESSION_IDLE_MS}.
  *
  * Swept on each incoming request rather than on a timer: a process with no MCP
@@ -247,10 +255,20 @@ function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool
  */
 export function mcpRequestHandler(opts: McpMountOptions) {
   return async (req: Request, res: Response): Promise<void> => {
-    reapIdleMcpSessions();
     const sessionId = req.headers['mcp-session-id'];
     const existing = typeof sessionId === 'string' ? SESSIONS.get(sessionId) : undefined;
+    /**
+     * Touch BEFORE sweeping.
+     *
+     * The sweep used to run first, which meant a request arriving on a session
+     * idle past the window reaped the very session it was addressed to and then
+     * answered `SESSION_NOT_FOUND` — so a client whose request cadence is slower
+     * than the window could never reuse a session at all, and the editor case
+     * this reaper exists for was exactly the one it broke. A request IS activity;
+     * the session is not idle at the moment it is being used.
+     */
     if (existing) existing.lastSeen = Date.now();
+    reapIdleMcpSessions();
 
     /**
      * The binding is checked BEFORE the project is resolved, deliberately.

@@ -385,3 +385,32 @@ describe('GET /api/references — a wrong type is a repairable error, not a 500'
     }
   });
 });
+
+/**
+ * 0.2.13 §7 — `section` is a pseudo-type on this route, on BOTH branches.
+ *
+ * `assertType` admits it and always has, but the `includeTagMatches` branch went
+ * to the discovery core, which refuses anything `host.getEntity()` does not
+ * know. So the same target answered 200 plain and 404 INVALID_TYPE the moment a
+ * caller turned tag matching on — told the type does not exist, with a hint
+ * listing entity types that will never contain a section.
+ */
+describe('GET /api/references — type=section survives includeTagMatches', () => {
+  it('answers the same way with the flag as without it', async () => {
+    const app = await createTestApp();
+    try {
+      const plain = await request(app.app).get('/api/references').query({ type: 'section', slug: 'intro' });
+      const tagged = await request(app.app)
+        .get('/api/references')
+        .query({ type: 'section', slug: 'intro', includeTagMatches: 'true' });
+
+      expect(plain.status).toBe(200);
+      expect(tagged.status).toBe(200);
+      // Tag matching is meaningless for a section — phase 2 matches an ENTITY
+      // against `<tagged_list/>` queries — so the flag is a no-op, not an error.
+      expect(tagged.body.references).toEqual(plain.body.references);
+    } finally {
+      app.cleanup();
+    }
+  });
+});

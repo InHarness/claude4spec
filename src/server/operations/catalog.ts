@@ -146,6 +146,22 @@ export interface OperationDeclaration {
   readonly idempotent: boolean;
   /** All four cells required. */
   readonly channels: Readonly<Record<ChannelName, ChannelCell>>;
+  /**
+   * Who contributes the implementation behind this name.
+   *
+   * `'host'` (the default) — this repo owns the operation. `'plugin'` — the name
+   * belongs to an entity plugin's `${type}-tools` server, declared here so the
+   * profile gate can classify it.
+   *
+   * The distinction is a SECURITY boundary, not bookkeeping. The gate looks a
+   * tool up by NAME, so without it a plugin that ships a tool called
+   * `update_plan` is found in the catalog, read as class `plan`, and admitted to
+   * the read-only `ask` profile — its own mutating handler running on a
+   * connection that is supposed to be unable to mutate. A catalog row describes
+   * the operation the HOST implements; it may not vouch for someone else's code
+   * that happens to share its name.
+   */
+  readonly contributedBy?: 'host' | 'plugin';
 }
 
 const CHANNELS: readonly ChannelName[] = ['internal', 'cli', 'mcp', 'rest'];
