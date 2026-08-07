@@ -164,3 +164,70 @@ describe('workspace-bound MCP mount', () => {
     });
   });
 });
+
+/**
+ * The binding is pinned to the session, like the profile.
+ *
+ * A client holding a session id controls the query string of every later
+ * request. Without the pin, one could carry an established session's header with
+ * a different `?project=` and have the tool set swapped underneath it — the
+ * connection would be reading one specification while its handshake said
+ * another.
+ */
+describe('a session cannot be re-pointed at another project', () => {
+  it('rejects a request whose ?project= differs from the session it claims', async () => {
+    const app = await createTestApp();
+    const registry = { getWorkspace: () => workspace } as unknown as WorkspaceRegistry;
+    const workspace = {
+      name: 'default',
+      projects: [
+        { id: 'proj-a', cwd: app.cwd, name: 'A' },
+        { id: 'proj-b', cwd: app.cwd, name: 'B' },
+      ],
+    } as unknown as WorkspaceRecord;
+    const cache = {
+      get: async () =>
+        ({ mcpSurfaceDeps: app.mcpSurfaceDeps, hasInFlightTurn: () => false, dispose: async () => {} }) as unknown as ProjectContext,
+    } as unknown as ProjectContextCache;
+
+    const expressApp = express();
+    expressApp.use(express.json());
+    expressApp.use('/api/workspace/mcp', workspaceMcpRouter({ registry, workspace, cache, packageVersion: '0.0.0-test' }));
+    const srv = http.createServer(expressApp);
+    await new Promise<void>((r) => srv.listen(0, '127.0.0.1', r));
+    const url = `http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/workspace/mcp`;
+
+    try {
+      const init = await fetch(`${url}?project=proj-a`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 't', version: '0' } },
+        }),
+      });
+      const sid = init.headers.get('mcp-session-id');
+      expect(sid).toBeTruthy();
+
+      const hijack = await fetch(`${url}?project=proj-b`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          'mcp-session-id': sid!,
+        },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+      });
+      expect(hijack.status).toBe(400);
+      const body = (await hijack.json()) as { error: { data: { code: string }; message: string } };
+      expect(body.error.data.code).toBe('VALIDATION');
+      expect(body.error.message).toContain('proj-a');
+    } finally {
+      __resetMcpSessions();
+      await new Promise<void>((r) => srv.close(() => r()));
+      app.cleanup();
+    }
+  });
+});

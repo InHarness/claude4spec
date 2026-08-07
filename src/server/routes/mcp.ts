@@ -48,6 +48,10 @@ export function projectMcpRouter(
       const chosen = profileFromRequest(req);
       return surfaceDeps(chosen.ok ? chosen.profile : 'chat');
     },
+    // This router instance belongs to exactly one project's context, so every
+    // request through it is bound to the same thing — the pin is a no-op here
+    // and exists for the workspace mount, where the selector is in the query.
+    binding: () => 'project-bound',
   });
   router.post('/', handler);
   router.get('/', handler);
@@ -99,6 +103,10 @@ export function workspaceMcpRouter(deps: WorkspaceMcpDeps): Router {
       const chosen = profileFromRequest(req);
       return ctx.mcpSurfaceDeps(chosen.ok ? chosen.profile : 'chat');
     },
+    // The raw selector, not the resolved id: two spellings of the same project
+    // are the same binding only if the caller used the same one, and comparing
+    // what the caller actually sent is what makes the pin checkable.
+    binding: (req) => (typeof req.query.project === 'string' ? req.query.project.trim() : ''),
   });
   router.post('/', handler);
   router.get('/', handler);
