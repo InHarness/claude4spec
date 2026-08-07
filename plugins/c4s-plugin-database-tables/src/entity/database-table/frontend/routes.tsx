@@ -249,8 +249,10 @@ function DatabaseTableHistoryRoute(): JSX.Element {
   return (
     <Pane>
       <DatabaseTableHistory
-        // `key={slug}` resets `selectedVersion` when navigating directly between
-        // two entities' history URLs.
+        // `key={slug}` remounts when navigating directly between two entities'
+        // history URLs. `EntityVersionHistoryView` also DERIVES its active
+        // version rather than storing it, so a carried-over selection could not
+        // survive the switch either way — the key is belt and braces.
         key={slug}
         slug={slug}
         onBackToList={() => navigate({ to: DATABASE_TABLE_PATH_PREFIX })}

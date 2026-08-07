@@ -38,8 +38,12 @@
  * `onBackToList`/`onSwitchView` are NOT host props — they are plugin-internal
  * wiring supplied by the route wrapper, the one layer that holds `useNavigate`.
  *
- * Back-links come from the host's `useReferences`; history from
- * `useVersions`/`useVersionDiff`/`useRestoreVersion` + `VersionHistory`/`DiffView`.
+ * Back-links come from the host's `useReferences`. History is NOT composed here:
+ * it is the host's shared `EntityVersionHistoryView` block — the same one
+ * `endpoint`/`dto` and the host's own built-in routes render — given nothing but
+ * `type` + `slug`. That is the point of the parity guarantee (M13 / M34): one
+ * component for host and plugins, so the view cannot drift per entity type. This
+ * panel only supplies the surrounding frame.
  * Tags are host-owned: read through `useEntityTags`, written through the host's
  * own routes, picked with the kit's `TagPicker`.
  *
@@ -53,25 +57,18 @@ import {
   useEntityTags,
   useReferences,
   useRemoveEntityTag,
-  useRestoreVersion,
   useTags,
-  useVersionDiff,
-  useVersions,
-  type VersionDiff,
 } from '@c4s/plugin-runtime';
 import {
   ActionButton,
   Dialog,
   DetailPanelShell,
-  DiffView,
-  type DiffViewLine,
   DocEditor,
   EmptyState,
+  EntityVersionHistoryView,
   LoadingState,
   SegmentedControlTabs,
   TagPicker,
-  VersionHistory,
-  type VersionHistoryItem,
 } from '@c4s/plugin-runtime/ui';
 import { DATABASE_TABLE_LABEL_PLURAL, DATABASE_TABLE_TYPE, slugify } from '../../../identity.js';
 import type {
@@ -518,95 +515,6 @@ function formatTimestamp(iso: string): string {
 }
 
 /**
- * `useVersionDiff` returns a semantic delta (`raw.{added,removed,changed}`), not
- * before/after documents — `DiffView` has no such prop, so this adapts `raw` into
- * the `hunks` it does take. `raw.changed[key]` is `{ from, to }`, which becomes a
- * `del`/`add` pair.
- *
- * Emits L11's PUBLIC vocabulary — `{ op: 'add' | 'del' | 'ctx'; line }` — not the
- * host-internal `{ op: 'added' | 'removed'; content }` shape. `DiffView` still maps
- * the latter through a pre-0.1.143 compat shim, but it is deprecated (it warns) and
- * does not typecheck against the published `DiffViewLine`.
- *
- * Not `lineDiffHunks()` from `@c4s/plugin-runtime`: that maps version SNAPSHOTS into
- * this shape, whereas `raw` is already a semantic delta — there is no text to diff.
- */
-function toHunks(diff: VersionDiff): DiffViewLine[] {
-  const raw = diff.raw;
-  if (!raw) return [];
-  const lines: DiffViewLine[] = [];
-  for (const [key, value] of Object.entries(raw.removed ?? {})) {
-    lines.push({ op: 'del', line: `${key}: ${JSON.stringify(value)}` });
-  }
-  for (const [key, value] of Object.entries(raw.added ?? {})) {
-    lines.push({ op: 'add', line: `${key}: ${JSON.stringify(value)}` });
-  }
-  for (const [key, value] of Object.entries(raw.changed ?? {})) {
-    const { from, to } = value as { from: unknown; to: unknown };
-    lines.push({ op: 'del', line: `${key}: ${JSON.stringify(from)}` });
-    lines.push({ op: 'add', line: `${key}: ${JSON.stringify(to)}` });
-  }
-  return lines;
-}
-
-/**
- * History pane — read-only list of `VersionListItem`s adapted to the kit's
- * `VersionHistoryItem` shape, rendered as a `timeline` with a "Compare to"
- * action; picking a compare target renders the `useVersionDiff` result through
- * `DiffView`. Feeds entirely off the published version hooks.
- */
-const HistoryPane: FC<{
-  slug: string;
-  selectedVersion: number | null;
-  onSelectVersion: (version: number | null) => void;
-  onRestored: () => void;
-}> = ({ slug, selectedVersion, onSelectVersion, onRestored }) => {
-  const versions = useVersions(DATABASE_TABLE_TYPE, slug);
-  const restoreVersion = useRestoreVersion();
-  const [compareVersion, setCompareVersion] = useState<number | null>(null);
-  const diffQuery = useVersionDiff(DATABASE_TABLE_TYPE, slug, selectedVersion, compareVersion);
-
-  const items: VersionHistoryItem[] = (versions.data ?? []).map((v) => ({
-    id: String(v.version),
-    label: v.changeSummary || `v${v.version} · ${v.op ?? 'update'}`,
-    createdAt: formatTimestamp(v.createdAt),
-    author: v.changedBy,
-  }));
-
-  const handleRestore = (id: string) => {
-    restoreVersion
-      .mutateAsync({ type: DATABASE_TABLE_TYPE, slug, version: Number(id) })
-      .then(() => onRestored())
-      .catch(() => undefined); // surfaced via `restoreVersion.error` below
-  };
-
-  return (
-    <div style={CONTENT_WRAP_STYLE}>
-      <VersionHistory
-        versions={items}
-        activeVersion={selectedVersion != null ? String(selectedVersion) : undefined}
-        onSelect={(id) => onSelectVersion(Number(id))}
-        onRestore={handleRestore}
-        variant="timeline"
-        compareVersion={compareVersion != null ? String(compareVersion) : undefined}
-        onCompare={(id) => setCompareVersion(Number(id))}
-      />
-      {mutationErrorMessage(restoreVersion.error) ? (
-        <p role="alert" style={ERROR_STYLE}>
-          {mutationErrorMessage(restoreVersion.error)}
-        </p>
-      ) : null}
-      {selectedVersion != null && compareVersion != null && diffQuery.data ? (
-        <DiffView
-          hunks={toHunks(diffQuery.data)}
-          title={`v${selectedVersion} → v${compareVersion}`}
-        />
-      ) : null}
-    </div>
-  );
-};
-
-/**
  * Shared frame between the Details and History routes — `DetailPanelShell` plus
  * the `SegmentedControlTabs` toggle. `onSwitchView` is real router navigation, so
  * clicking the already-active tab is a guarded no-op.
@@ -677,25 +585,27 @@ export const DatabaseTableHistory: FC<{
   slug: string;
   onBackToList?: () => void;
   onSwitchView?: SwitchView;
-}> = ({ slug, onBackToList, onSwitchView }) => {
-  const [selectedVersion, setSelectedVersion] = useState<number | null>(null);
-
-  return (
-    <DatabaseTableDetailShell
+}> = ({ slug, onBackToList, onSwitchView }) => (
+  // The shell is the plugin's outer chrome (breadcrumb + Details/History tabs) —
+  // the counterpart of `EntityBreadcrumbBar` in `c4s-plugin-api-contracts`. What
+  // it wraps is NOT plugin code: `EntityVersionHistoryView` fetches the versions,
+  // the snapshots and the release labels itself and renders the whole view from
+  // `type` + `slug` alone. Selection, compare target, diff, restore and the
+  // loading/empty states all live in the block, so there is deliberately no local
+  // state here — a hand-rolled pane is exactly the drift this replaced.
+  <DatabaseTableDetailShell
+    slug={slug}
+    activeView="history"
+    onBackToList={onBackToList}
+    onSwitchView={onSwitchView}
+  >
+    <EntityVersionHistoryView
+      type={DATABASE_TABLE_TYPE}
       slug={slug}
-      activeView="history"
-      onBackToList={onBackToList}
-      onSwitchView={onSwitchView}
-    >
-      <HistoryPane
-        slug={slug}
-        selectedVersion={selectedVersion}
-        onSelectVersion={setSelectedVersion}
-        onRestored={() => onSwitchView?.('details', { replace: true })}
-      />
-    </DatabaseTableDetailShell>
-  );
-};
+      onRestored={() => onSwitchView?.('details', { replace: true })}
+    />
+  </DatabaseTableDetailShell>
+);
 
 const Flag: FC<{ label: string; checked?: boolean; onChange: (next: boolean) => void }> = ({
   label,
