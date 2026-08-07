@@ -163,7 +163,7 @@ Pagination (every list command above):
                                     nor by resolve-identity / check-consistency, whose output is
                                     bounded by its own nature (a top-N ranking; a counted report).
 
-Plugins (M33 — reads this package's loader state; no server):
+Plugins (M33 — server-delegating: reports the SERVER host's loader, not a second one):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
   plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
@@ -198,7 +198,9 @@ Server required — for every step:
   specification files. It resolves an ADDRESS locally (.claude4spec/config.json,
   ~/.claude4spec/workspaces.json, defaultPort) and every command above delegates
   to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
-  create-plugin, plugins.
+  create-plugin. Those three address the machine rather than a specification —
+  a code repo's skills directory, the workspace registry, a new directory — so
+  there is no specification for them to ask a server about.
   No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
 
 Global flags:

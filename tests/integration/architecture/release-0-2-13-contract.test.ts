@@ -362,6 +362,32 @@ describe('the CLI holds no handle on the specification', () => {
     }
     expect(fsScoped).toEqual(['install-skills']);
   });
+
+  it('item 22: the HELP text\'s exception list matches the actual non-delegating commands', () => {
+    /**
+     * The one place the release's central claim is stated to a HUMAN, and the
+     * one that no other test reads. Item 22 rewrote this block and left
+     * `plugins` in the exception list, where it stayed correct for exactly as
+     * long as it took item 25 to move the command onto the server — after which
+     * `c4s --help` told the reader that `plugins` works without a server while
+     * the command exited 8 saying otherwise. Help text that contradicts the
+     * binary is worse than no help text: it is the thing a user consults
+     * BECAUSE the command failed.
+     */
+    const bin = read('src/bin/c4s.ts');
+    const claimed = /Exceptions: ([^.]+)\./.exec(bin)?.[1] ?? '';
+    const named = claimed.split(/,\s*|\s+and\s+/).map((s) => s.trim().replace(/`/g, '')).filter(Boolean);
+
+    const dir = path.join(REPO_ROOT, 'src/bin/c4s/commands');
+    const nonDelegating: string[] = [];
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.endsWith('.ts') || f.endsWith('.test.ts')) continue;
+      const text = fs.readFileSync(path.join(dir, f), 'utf8');
+      const decl = /name: '([^']+)',[\s\S]{0,400}?executionMode: '([^']+)'/.exec(text);
+      if (decl && decl[2] !== 'server-delegating') nonDelegating.push(decl[1]!);
+    }
+    expect([...named].sort()).toEqual([...nonDelegating].sort());
+  });
 });
 
 /**
