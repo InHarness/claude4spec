@@ -42,6 +42,13 @@ export function referencesRouter(
   host: ProjectPluginHost,
   references: ReferencesService,
   discovery: DiscoveryCore,
+  /**
+   * 0.2.13 (tier C) — build a one-off core over a narrowed root list, for
+   * `?pages=<dir>`. A factory rather than a second core built up front: the
+   * override is per-request, and a project serves far more requests without it
+   * than with it. See `discovery/pages-override.ts` for what "narrowed" means.
+   */
+  discoveryForRoots: (pagesOverride: string) => DiscoveryCore,
 ): Router {
   const router = Router();
 
@@ -80,12 +87,41 @@ export function referencesRouter(
         ...(offset !== undefined ? { offset } : {}),
       };
 
+      /**
+       * 0.2.13 (tier C) — `?pages=<dir>` narrows the sweep to one directory.
+       *
+       * Every arm below runs against `core` rather than `discovery`, so the
+       * narrowing applies to sections and pages as well as entities — the
+       * override names the ROOT LIST the sweep walks, not a target kind.
+       *
+       * It also forces the entity arm off the `ReferencesService` shortcut and
+       * onto the core, which is the whole reason the shortcut is conditional:
+       * the service reads the project's CONFIGURED roots and has no notion of a
+       * narrowed list, so answering from it would silently ignore the parameter
+       * and hand back a project-wide sweep labelled as a narrowed one.
+       */
+      const pagesOverride =
+        typeof req.query.pages === 'string' && req.query.pages.trim() !== ''
+          ? req.query.pages.trim()
+          : undefined;
+      /**
+       * LAZY, and memoized within the request. Building the narrowed core eagerly
+       * would build one for a request this handler is about to refuse — cheap,
+       * but the request that gets refused is exactly the one where "we built a
+       * core over your directory" is untrue.
+       */
+      let narrowed: DiscoveryCore | undefined;
+      const core = (): DiscoveryCore => {
+        if (!pagesOverride) return discovery;
+        return (narrowed ??= discoveryForRoots(pagesOverride));
+      };
+
       if (target === 'section') {
         const anchor = typeof req.query.anchor === 'string' ? req.query.anchor : null;
         if (!anchor) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'anchor query param required for target=section' } });
         }
-        const result = await discovery.findReferences({ target: 'section', anchor, ...paging });
+        const result = await core().findReferences({ target: 'section', anchor, ...paging });
         return res.json({ references: result.references, total: result.total, hasMore: result.hasMore });
       }
 
@@ -95,7 +131,7 @@ export function referencesRouter(
         if (!rootId || !pagePath) {
           return res.status(400).json({ error: { code: 'VALIDATION', message: 'rootId and path query params required for target=page' } });
         }
-        const result = await discovery.findReferences({ target: 'page', rootId, path: pagePath, ...paging });
+        const result = await core().findReferences({ target: 'page', rootId, path: pagePath, ...paging });
         return res.json({ references: result.references, total: result.total, hasMore: result.hasMore });
       }
 
@@ -144,8 +180,21 @@ export function referencesRouter(
        * Tag matching is meaningless for it anyway: phase 2 matches an ENTITY
        * against `<tagged_list/>` queries, and a section is not tagged. So the
        * service answers, and the flag is a no-op rather than an error.
+       *
+       * `?pages=` is a different matter and IS refused here. A no-op flag is
+       * fine when turning it on cannot change the answer; a narrowing that is
+       * quietly dropped hands back a project-wide sweep labelled as a narrowed
+       * one, which is the failure this parameter exists to avoid.
        */
-      if (!includeTagMatches || type === 'section') {
+      if (type === 'section' && pagesOverride) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION',
+            message: "pages cannot be combined with type=section — the section pseudo-type is answered by the references service, which walks the project's configured roots",
+          },
+        });
+      }
+      if ((!includeTagMatches && !pagesOverride) || type === 'section') {
         const hits = await references.findReferences(type, slug);
         if (limit === undefined && offset === undefined) return res.json({ references: hits });
         const start = offset ?? 0;
@@ -162,7 +211,7 @@ export function referencesRouter(
        * is reported as `hasMore` rather than passed off as a complete answer.
        */
       if (limit === undefined && offset === undefined) {
-        const { references: all, exhausted } = await findReferencesAllPaged(discovery, {
+        const { references: all, exhausted } = await findReferencesAllPaged(core(), {
           target: 'entity',
           type,
           slug,
@@ -170,7 +219,7 @@ export function referencesRouter(
         });
         return res.json({ references: all, total: all.length, hasMore: !exhausted });
       }
-      const result = await discovery.findReferences({ target: 'entity', type, slug, ...paging });
+      const result = await core().findReferences({ target: 'entity', type, slug, ...paging });
       res.json({ references: result.references, total: result.total, hasMore: result.hasMore });
     } catch (err) {
       next(err);

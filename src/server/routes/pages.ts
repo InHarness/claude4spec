@@ -6,6 +6,9 @@ import type { PagesService } from '../services/pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import { errorHandler } from './errors.js';
+import { nonNegativeInt, positiveInt } from './query-params.js';
 
 /** 0.1.96: per-root runtime resolved from the `:rootId` path segment. */
 export interface PageRootRuntime {
@@ -20,9 +23,58 @@ export interface PageRootRuntime {
  * 404 ROOT_NOT_FOUND (no fallback). The `file_version` store is shared across
  * roots and keyed by (rootId, path).
  */
+/**
+ * 0.2.13 (tier C) — `search_pages`, the CROSS-ROOT one.
+ *
+ * It gets a router of its own because the operation's scope is the project, not
+ * a root: `rootId` is an optional NARROWING, and there is no root id to put in
+ * the path when the caller omits it. Mounted at `/pages`, **ahead of**
+ * `/pages/:rootId`, so `/api/pages/search` matches here; anything else falls
+ * through to the per-root router. Register it the other way round and `search`
+ * is read as a root id and answers `ROOT_NOT_FOUND` — the same trap
+ * `/pages/:rootId/search` already carries inside its own router.
+ *
+ * Distinct from that per-root `/search`, which stays what it is: a `q`-only file
+ * scan shaped for the UI. This one is the catalog operation — `regex`,
+ * `hits`/`pages`/`count` modes, paging, and an anchor on every hit that falls
+ * inside an indexed section.
+ */
+export function crossRootPagesRouter(discovery: DiscoveryCore): Router {
+  const router = Router();
+
+  router.get('/search', async (req, res, next) => {
+    try {
+      const query = typeof req.query.q === 'string' && req.query.q !== '' ? req.query.q : undefined;
+      const regex =
+        typeof req.query.regex === 'string' && req.query.regex !== '' ? req.query.regex : undefined;
+      const rootId = typeof req.query.rootId === 'string' && req.query.rootId !== '' ? req.query.rootId : undefined;
+      const mode =
+        req.query.mode === 'hits' || req.query.mode === 'pages' || req.query.mode === 'count'
+          ? req.query.mode
+          : undefined;
+      res.json(
+        await discovery.searchPages({
+          ...(query !== undefined ? { query } : {}),
+          ...(regex !== undefined ? { regex } : {}),
+          ...(rootId !== undefined ? { rootId } : {}),
+          ...(mode !== undefined ? { mode } : {}),
+          ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
+          ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.use(errorHandler);
+  return router;
+}
+
 export function pagesRouter(
   resolveRoot: (rootId: string) => PageRootRuntime | undefined,
-  pageVersions: FileVersionService | null = null,
+  pageVersions: FileVersionService | null,
+  discovery: DiscoveryCore,
 ): Router {
   // mergeParams so the mount-level `:rootId` is visible inside this router.
   const router = Router({ mergeParams: true });
@@ -42,6 +94,38 @@ export function pagesRouter(
       const rt = resolve(req, res);
       if (!rt) return;
       res.json({ tree: await rt.pages.listTree() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `list_pages`.
+   *
+   * Sibling of `GET /` rather than a replacement for it: that one answers the
+   * TREE the sidebar renders, this one the core's flat, paged listing with
+   * `prefix`/`sort` and a `total`/`hasMore` envelope. Both are `list_pages`
+   * projections; the difference is a `view`, and giving it its own segment keeps
+   * the UI's shape frozen while the catalog operation gets its own.
+   *
+   * Static segment, declared ahead of the read wildcard — a page literally named
+   * `list` must not be able to shadow it.
+   */
+  router.get('/list', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const prefix = typeof req.query.prefix === 'string' && req.query.prefix !== '' ? req.query.prefix : undefined;
+      const sort = req.query.sort === 'modified' ? 'modified' : req.query.sort === 'path' ? 'path' : undefined;
+      res.json(
+        await discovery.listPages({
+          rootId: rt.root.id,
+          ...(prefix !== undefined ? { prefix } : {}),
+          ...(sort !== undefined ? { sort } : {}),
+          ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
+          ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
+        }),
+      );
     } catch (err) {
       next(err);
     }

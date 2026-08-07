@@ -93,6 +93,161 @@ describe('GET /api/entities/:type/search', () => {
   });
 });
 
+/**
+ * 0.2.13 (tier C) — the renderings the CLI migration needed and the release did
+ * not have. Every one of these is the CATALOG operation, not the UI's route for
+ * the same noun; the pairs that coexist are asserted to coexist.
+ */
+describe('GET /api/entities/:type/list and /:type/get', () => {
+  let t: TestApp;
+  let alpha: string;
+  let beta: string;
+  beforeEach(async () => {
+    t = await createTestApp();
+    alpha = (await request(t.app).post('/api/acs').send({ text: 'alpha' }).expect(201)).body.data.slug;
+    beta = (await request(t.app).post('/api/acs').send({ text: 'beta' }).expect(201)).body.data.slug;
+  });
+  afterEach(() => t.cleanup());
+
+  it('list answers with the core envelope, not the UI list projection', async () => {
+    const res = await request(t.app).get('/api/entities/ac/list').expect(200);
+    // `{ items, total, hasMore }` — the core's page. The UI route answers
+    // `{ data, total }` and is asserted below to keep doing so.
+    expect(res.body).toHaveProperty('items');
+    expect(res.body).toHaveProperty('total');
+    expect(res.body).toHaveProperty('hasMore');
+    expect(res.body.total).toBe(2);
+  });
+
+  it('list carries the tag filter and the window through to the core', async () => {
+    // The filter is asserted by its EFFECT rather than by a fixture: an
+    // unfiltered list answers 2, and one filtered by a tag nothing carries
+    // answers 0. A parameter parsed and then dropped would answer 2 twice.
+    const tagged = await request(t.app).get('/api/entities/ac/list?tags=no-such-tag').expect(200);
+    expect(tagged.body.total).toBe(0);
+
+    const paged = await request(t.app).get('/api/entities/ac/list?limit=1&offset=0').expect(200);
+    expect(paged.body.items).toHaveLength(1);
+    // `total` counts the query, not the window — otherwise `hasMore` is
+    // unreadable and a caller cannot tell a short page from a last page.
+    expect(paged.body.total).toBe(2);
+    expect(paged.body.hasMore).toBe(true);
+  });
+
+  it('`?mode=count` answers a count, and `?offset=0` is honoured as zero rather than dropped', async () => {
+    const counted = await request(t.app).get('/api/entities/ac/list?mode=count').expect(200);
+    expect(counted.body.total).toBe(2);
+
+    // The regression this guards: reading an offset with the LIMIT parser turns
+    // `?offset=0` into undefined. Harmless only while the core's default offset
+    // happens to be 0 — so it is asserted, not assumed.
+    const zero = await request(t.app).get('/api/entities/ac/list?limit=1&offset=0').expect(200);
+    const one = await request(t.app).get('/api/entities/ac/list?limit=1&offset=1').expect(200);
+    expect(zero.body.items[0].slug).not.toBe(one.body.items[0].slug);
+  });
+
+  it('get fetches several slugs by key, and reports an unknown one as a null row rather than an error', async () => {
+    const res = await request(t.app)
+      .get(`/api/entities/ac/get?slugs=${alpha},no-such-ac,${beta}`)
+      .expect(200);
+    expect(res.body.results).toHaveLength(3);
+    expect(res.body.results[1].entity).toBeNull();
+    // The real slugs in the same call are still answers.
+    expect(res.body.results[0].entity).not.toBeNull();
+    expect(res.body.results[2].entity).not.toBeNull();
+  });
+
+  it('get without slugs is VALIDATION — it is fetch-by-key, so an absent key is not "everything"', async () => {
+    const res = await request(t.app).get('/api/entities/ac/get').expect(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+
+  it('both refuse an inactive type with INVALID_TYPE, like every other catalog route', async () => {
+    const list = await request(t.app).get('/api/entities/no-such-type/list').expect(404);
+    expect(list.body.error.code).toBe('INVALID_TYPE');
+    const get = await request(t.app).get('/api/entities/no-such-type/get?slugs=x').expect(404);
+    expect(get.body.error.code).toBe('INVALID_TYPE');
+  });
+
+  it('neither shadows the entity LIST route the UI calls, nor is shadowed by `/:type/:slug/...`', async () => {
+    const ui = await request(t.app).get('/api/acs').expect(200);
+    expect(ui.body).toHaveProperty('data');
+    // `/ac/list` must not be captured as `:type/:slug`; the two-segment
+    // `/ac/<slug>/tags` must still reach its own handler. Registration order is
+    // what makes both true. The second is asserted by the CODE its handler
+    // produced — the point is that the route matched, not what it found there.
+    const listed = await request(t.app).get('/api/entities/ac/list').expect(200);
+    expect(listed.body).toHaveProperty('items');
+    const perSlug = await request(t.app).get(`/api/entities/ac/${alpha}/tags`);
+    expect(perSlug.body.error?.code ?? 'matched').not.toBe('INVALID_TYPE');
+  });
+});
+
+describe('GET /api/tags/list', () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('answers the CORE projection, leaving the UI DTO on `GET /api/tags` untouched', async () => {
+    await request(t.app).post('/api/tags').send({ slug: 'red', name: 'Red' }).expect(201);
+
+    const ui = await request(t.app).get('/api/tags').expect(200);
+    // The published DTO: `counts` REQUIRED, ordered by name — `TagsList.tsx`
+    // reads `tag.counts[type]` unguarded.
+    expect(ui.body.tags[0]).toHaveProperty('counts');
+    expect(ui.body.tags[0]).toHaveProperty('createdAt');
+
+    const core = await request(t.app).get('/api/tags/list').expect(200);
+    expect(core.body).toHaveProperty('items');
+    expect(core.body).toHaveProperty('total');
+    // Counts are OPT-IN here: a caller listing names does not pay for a product
+    // over tags × types.
+    expect(core.body.items[0].counts).toBeUndefined();
+
+    const withCounts = await request(t.app).get('/api/tags/list?withCounts=true').expect(200);
+    expect(withCounts.body.items[0]).toHaveProperty('counts');
+  });
+
+  it('is not shadowed by `/:slug` — a tag named `list` does not capture the route', async () => {
+    await request(t.app).post('/api/tags').send({ slug: 'list', name: 'List' }).expect(201);
+    const res = await request(t.app).get('/api/tags/list').expect(200);
+    // The operation's envelope, not the single-tag DTO.
+    expect(res.body).toHaveProperty('items');
+    expect(res.body).not.toHaveProperty('slug');
+  });
+});
+
+describe('POST /api/_meta/resolve-page', () => {
+  let t: TestApp;
+  let alphaSlug: string;
+  beforeEach(async () => {
+    t = await createTestApp();
+    alphaSlug = (await request(t.app).post('/api/acs').send({ text: 'alpha' }).expect(201)).body.data.slug;
+  });
+  afterEach(() => t.cleanup());
+
+  it('resolves the tags in a markdown body the caller sent, and hands back the sidecar', async () => {
+    const content = `Intro\n\n<inline_mention type="ac" slug="${alphaSlug}"/>\n`;
+    const res = await request(t.app)
+      .post('/api/_meta/resolve-page')
+      .send({ content })
+      .expect(200);
+    expect(res.body.content).toBe(content);
+    expect(Array.isArray(res.body.resolved)).toBe(true);
+    expect(res.body.resolved[0].tag).toBe('inline_mention');
+    // The inline rendering is what `c4s resolve` prints in its default format.
+    expect(typeof res.body.inlineContent).toBe('string');
+    expect(res.body.inlineContent).not.toContain('<inline_mention');
+  });
+
+  it('refuses a body with no content — the markdown is the whole input', async () => {
+    const res = await request(t.app).post('/api/_meta/resolve-page').send({}).expect(400);
+    expect(res.body.error.code).toBe('VALIDATION');
+  });
+});
+
 describe('the plugin-tool proxy', () => {
   let t: TestApp;
   beforeEach(async () => {

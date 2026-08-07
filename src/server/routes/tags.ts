@@ -1,17 +1,57 @@
 import { Router } from 'express';
 import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
+import type { DiscoveryCore } from '../discovery/types.js';
 import { errorHandler } from './errors.js';
+import { boolFlag, nonNegativeInt, positiveInt } from './query-params.js';
 
-/** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined. */
-function positiveInt(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
-}
-
-export function tagsRouter(tags: TagsService, references: ReferencesService): Router {
+export function tagsRouter(
+  tags: TagsService,
+  references: ReferencesService,
+  discovery: DiscoveryCore,
+): Router {
   const router = Router();
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `list_tags`, the CORE projection.
+   *
+   * The route below deliberately does not answer this. Its own comment already
+   * settled why: the core's `TagListItem` is narrower (`slug`, `name`, `color`,
+   * `description`, OPTIONAL `counts`) than the `Tag` DTO the UI is typed
+   * against (`counts` required, plus `createdAt`/`updatedAt`), and the two order
+   * differently — by slug here, by name there. Serving both shapes from one path
+   * would make `TagsList.tsx` throw the moment anything paged. So the core's
+   * projection is a separate segment, exactly as that comment predicted it would
+   * have to be.
+   *
+   * `withCounts` is OPT-IN here, as it is in every other channel: per-type counts
+   * are a product over tags × types, and a caller listing tag names should not
+   * pay for them.
+   *
+   * Static segment, ahead of `/:slug` — a tag literally named `list` must not be
+   * able to shadow it.
+   */
+  router.get('/list', (req, res, next) => {
+    try {
+      const minCount = positiveInt(req.query.minCount);
+      const coOccurringWith =
+        typeof req.query.coOccurringWith === 'string' && req.query.coOccurringWith !== ''
+          ? req.query.coOccurringWith
+          : undefined;
+      const withCounts = boolFlag(req.query.withCounts);
+      res.json(
+        discovery.listTags({
+          ...(withCounts ? { withCounts } : {}),
+          ...(minCount !== undefined ? { minCount } : {}),
+          ...(coOccurringWith !== undefined ? { coOccurringWith } : {}),
+          ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
+          ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
 
   /**
    * 0.2.13 — the `rest` rendering of `list_tags` gains paging, which the core

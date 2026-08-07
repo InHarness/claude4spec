@@ -10,6 +10,7 @@ import { DomainError } from '../../services/tags.js';
 import { invalidType } from '../../discovery/errors.js';
 import { httpStatusForCode } from '../../operations/error-codes.js';
 import { errorHandler } from '../../routes/errors.js';
+import { commaList, nonNegativeInt, positiveInt } from '../../routes/query-params.js';
 import type { ProjectPluginHost } from './types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import { payloadVersionOfCapture, samePayloadVersion } from '../../serialization/payload-version.js';
@@ -59,12 +60,6 @@ function assertActiveType(host: ProjectPluginHost, type: string): EntityType {
   );
 }
 
-/** `?limit=12` → 12; absent, empty, non-numeric or non-positive → undefined (core default wins). */
-function positiveInt(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' || raw.trim() === '') return undefined;
-  const n = Number(raw);
-  return Number.isInteger(n) && n > 0 ? n : undefined;
-}
 
 /**
  * Project a zod RAW SHAPE into JSON Schema for the tool listing.
@@ -177,6 +172,68 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
         ...(offset !== undefined ? { offset } : {}),
       });
       res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `list_entities`.
+   *
+   * NOT the entity list route the UI calls. `generatedCrudRouter` answers
+   * `GET /api/<type>` with the projection a list page renders and a page size
+   * chosen for it; this is the CATALOG operation, with the core's own `view`,
+   * `mode`, paging and sort determinism, identical in all four channels.
+   *
+   * `filters`/`applyDefaultPredicate` are deliberately NOT on the wire here.
+   * The first is a nested object with no settled query-string spelling, and the
+   * second is opt-in precisely so that "who is asking" stays visible at the call
+   * site — a transport that turned it on by URL would erase that. Neither is
+   * reachable from the `cli` channel either, so the two stay in step.
+   */
+  router.get('/:type/list', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const tags = commaList(req.query.tags);
+      const filter = req.query.filter === 'and' ? 'and' : req.query.filter === 'or' ? 'or' : undefined;
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'items' ? 'items' : undefined;
+      const limit = positiveInt(req.query.limit);
+      const offset = nonNegativeInt(req.query.offset);
+      res.json(
+        discovery.listEntities({
+          type,
+          ...(tags ? { tags } : {}),
+          ...(filter ? { filter } : {}),
+          ...(view ? { view: view as never } : {}),
+          ...(mode ? { mode } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(offset !== undefined ? { offset } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `get_entities`: fetch by key, any
+   * view, several slugs in one call.
+   *
+   * Takes no `limit`/`offset` — the caller already named the rows, so the valve
+   * is the input length plus the core's response budget, not a window. A slug
+   * that names nothing comes back as a null row inside the result rather than as
+   * an error, because the other slugs in the call are real answers.
+   */
+  router.get('/:type/get', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const slugs = commaList(req.query.slugs);
+      if (!slugs || slugs.length === 0) {
+        throw new DomainError('VALIDATION', 'slugs query param required (comma-separated)');
+      }
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      res.json(discovery.getEntities({ type, slugs, ...(view ? { view: view as never } : {}) }));
     } catch (err) {
       next(err);
     }

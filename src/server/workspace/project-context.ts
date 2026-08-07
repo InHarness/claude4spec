@@ -8,7 +8,7 @@ import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
 import { applyProjection } from '../db/projection.js';
 import { PagesService } from '../services/pages.js';
-import { pagesRouter } from '../routes/pages.js';
+import { crossRootPagesRouter, pagesRouter } from '../routes/pages.js';
 import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
@@ -59,6 +59,8 @@ import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { createDiscoveryCore } from '../discovery/index.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import { applyPagesOverride } from '../discovery/pages-override.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
 import { projectMcpRouter } from '../routes/mcp.js';
 import type { ExternalSurfaceDeps } from '../mcp/surface.js';
@@ -795,6 +797,29 @@ async function buildInner(
     projectDir: cwd,
     packageVersion: readPackageVersion(),
   });
+  /**
+   * 0.2.13 (tier C) — the same core over a NARROWED root list, for `?pages=`.
+   *
+   * The CLI used to build this itself: `--pages <dir>` was applied while
+   * `src/bin/c4s/context.ts` assembled its own discovery core. With execution
+   * moved into the server process the override has to be applied where the roots
+   * are assembled, which is here.
+   *
+   * Cheap enough to do per request. `createDiscoveryCore` is a factory over
+   * pieces that already exist — the reader, the db handle, the plugin host, the
+   * serialization engine are all shared with the project's own core; only the
+   * root list differs. Nothing is loaded, migrated or indexed by this call.
+   */
+  const discoveryForRoots = (pagesOverride: string): DiscoveryCore =>
+    createDiscoveryCore({
+      reader: rawReader,
+      db: db.handle,
+      host: pluginHost,
+      serialization: serializationEngine,
+      roots: applyPagesOverride(effectiveRoots, pagesOverride),
+      projectDir: cwd,
+      packageVersion: readPackageVersion(),
+    });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
@@ -969,7 +994,7 @@ async function buildInner(
    * `/_meta` prefix with `pluginHostRouter` above, which owns activation and
    * plugin diagnostics; the paths are disjoint, so both mount.
    */
-  router.use('/_meta', metaRouter(discovery));
+  router.use('/_meta', metaRouter(discovery, pluginHost));
   /**
    * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
    * the generic `/api/artifacts/:kind/*` family: a patch's provenance is DRIFT
@@ -989,10 +1014,17 @@ async function buildInner(
       patchesDirAbs: path.resolve(cwd, patchesDir),
     }),
   );
-  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
+  /**
+   * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
+   * it), so it mounts at `/pages` with no root segment. **Order is the
+   * contract**: registered before `/pages/:rootId`, or `search` is captured as a
+   * root id and the operation answers `ROOT_NOT_FOUND`.
+   */
+  router.use('/pages', crossRootPagesRouter(discovery));
+  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions, discovery));
   router.use('/static/:rootId', staticRouter(resolveStatic));
-  router.use('/tags', tagsRouter(tagsService, referencesService));
-  router.use('/references', referencesRouter(pluginHost, referencesService, discovery));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
 
   /**
@@ -1105,7 +1137,7 @@ async function buildInner(
   // router is already mounted under. See `routes/mcp.ts`.
   router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
   router.use('/threads', threadsRouter(agentDeps));
-  router.use('/sections', sectionsRouter(sectionsService));
+  router.use('/sections', sectionsRouter(sectionsService, discovery));
   router.use('/todos', todosRouter(todosIndexer));
   router.use('/page-links', pageLinksRouter(pagesLinkIndexer));
   router.use('/plans', plansRouter(planService));

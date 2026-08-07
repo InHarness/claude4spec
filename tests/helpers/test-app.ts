@@ -273,9 +273,12 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    * plugin-diagnostic routes that share the prefix in production belong to
    * `pluginHostRouter`, which this harness does not mount.
    */
-  router.use('/_meta', metaRouter(discovery));
-  router.use('/tags', tagsRouter(tagsService, referencesService));
-  router.use('/references', referencesRouter(host, referencesService, discovery));
+  router.use('/_meta', metaRouter(discovery, host));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  // The harness has no page roots (`roots: []`), so a narrowed root list is the
+  // same empty list — the factory is here so the route's shape matches
+  // production, not so the override can be exercised without page fixtures.
+  router.use('/references', referencesRouter(host, referencesService, discovery, () => discovery));
   router.use(
     '/patches',
     patchesRouter({
