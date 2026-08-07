@@ -144,8 +144,27 @@ async function main(): Promise<void> {
     process.exit(1);
   };
 
+  /**
+   * Reachability is probed explicitly, before any relaying.
+   *
+   * `StreamableHTTPClientTransport.start()` is lazy — it does not open a
+   * connection, so wrapping it in a try/catch reports success against a dead
+   * port and the failure only surfaces when the client's `initialize` goes
+   * unanswered. From the client's side that is a hang, which is precisely the
+   * diagnosis-shaped failure this bridge is supposed to avoid.
+   *
+   * Any HTTP RESPONSE means reachable, including 404 or 405: the server is
+   * there, and whether this particular mount point exists is the server's
+   * answer to give at the protocol level. Only a transport-level failure —
+   * ECONNREFUSED, DNS, timeout — means "no server".
+   */
   try {
-    await http.start();
+    await fetch(mount.href, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 0, method: 'ping', params: {} }),
+      signal: AbortSignal.timeout(5000),
+    });
   } catch (err) {
     process.stderr.write(
       `c4s-mcp: cannot reach the MCP mount point at ${mount.href} (${describe(err)})\n` +
@@ -153,6 +172,7 @@ async function main(): Promise<void> {
     );
     process.exit(8);
   }
+  await http.start();
   await stdio.start();
   process.stderr.write(`c4s-mcp ${version} bridging stdio to ${mount.href}\n`);
 
