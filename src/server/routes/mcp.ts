@@ -32,7 +32,6 @@ import type { ExternalSurfaceDeps } from '../mcp/surface.js';
 import type { ProjectContextCache } from '../workspace/context-cache.js';
 import type { WorkspaceRegistry } from '../workspace/registry.js';
 import type { WorkspaceRecord } from '../workspace/types.js';
-import { readConfig } from '../config.js';
 
 /** `/api/projects/:id/mcp` — mounted on the per-project router. */
 export function projectMcpRouter(
@@ -64,24 +63,22 @@ export interface WorkspaceMcpDeps {
 }
 
 /**
- * Resolve `?project=` against the workspace: by registry id first, then by the
- * slug `--project` accepts, which is what `list_projects` reports and therefore
- * what a caller is most likely to hold.
+ * Resolve `?project=` against the workspace: by registry id first, then by slug.
+ *
+ * "Slug" means the REGISTRY's name for the project (`ProjectRecord.name`) — the
+ * same string `c4s --project <slug>` matches and the same one `list_projects`
+ * reports as `slug`. That round-trip is the point: a caller discovers projects
+ * with `list_projects` and connects with what it was handed.
+ *
+ * Explicitly NOT the display name from `config.json`. That is `list_projects`'
+ * separate `name` field, it goes missing when the config is unreadable, and
+ * matching on it would leave a project with a broken config addressable by an
+ * id the caller was never told.
  */
 function findProject(deps: WorkspaceMcpDeps, selector: string) {
   const fresh = deps.registry.getWorkspace(deps.workspace.name) ?? deps.workspace;
-  const byId = fresh.projects.find((p) => p.id === selector);
-  if (byId) return byId;
   return (
-    fresh.projects.find((p) => {
-      try {
-        return readConfig(p.cwd).name === selector;
-      } catch {
-        // An unreadable config.json costs the project its slug, not its
-        // existence — it stays addressable by id.
-        return false;
-      }
-    }) ?? null
+    fresh.projects.find((p) => p.id === selector) ?? fresh.projects.find((p) => p.name === selector) ?? null
   );
 }
 

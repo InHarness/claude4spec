@@ -162,3 +162,59 @@ describe('the plugin-runtime facade is the only MCP builder', () => {
     expect(offenders.map((f) => path.relative(REPO_ROOT, f))).toEqual([]);
   });
 });
+
+/**
+ * Tier B — §3. These pin the things the move made TRUE BY ABSENCE, which is the
+ * category no behavioural test can watch: a file that stopped opening a db, a
+ * flag that stopped existing, a fallback that must not come back.
+ */
+describe('the external MCP surface has no second execution locus', () => {
+  const bridge = () => read('src/bin/c4s-mcp.ts');
+
+  it('the bridge opens no database and builds no core', () => {
+    // Its whole former job. If any of these reappear, `c4s-mcp` is once again a
+    // second implementation of operations the server already owns — the drift
+    // this release exists to remove.
+    for (const forbidden of [
+      'openDbReadonly',
+      'resolveWorkspaceProject',
+      'RawEntityReader',
+      'createDiscoveryCore',
+      'createC4sReaderServer',
+      'better-sqlite3',
+    ]) {
+      expect(bridge(), forbidden).not.toContain(forbidden);
+    }
+  });
+
+  it('the bridge has no project selector — the project lives in the address', () => {
+    // Asserted over what the ARG PARSER accepts, not over the file's text: the
+    // header comment names both retired flags to explain why they are gone, and
+    // a check that forbade the strings would forbid documenting the change.
+    const parsed = [...bridge().matchAll(/a === '(--[a-z-]+)'/g)].map((m) => m[1]);
+    expect(parsed).toContain('--url');
+    expect(parsed).not.toContain('--project');
+    expect(parsed).not.toContain('--workspace');
+  });
+
+  it('the bridge never starts a server', () => {
+    // "Helpfully" spawning one would put an unsupervised second server on the
+    // machine; falling back to local execution would restore the second locus.
+    expect(bridge()).not.toMatch(/\bspawn\b|\bexecFile\b|child_process/);
+  });
+
+  it('mcp.json declares an HTTP mount, not a command to run', () => {
+    const src = read('src/server/mcp/ensure-mcp-json.ts');
+    expect(src).toContain("type: 'http'");
+    expect(src).not.toContain("command: 'npx'");
+  });
+
+  it('the composed surface is reached only through the facade builder', () => {
+    // Same rule as the gate above, stated for the file that composes N servers
+    // into one: a tool that bypassed the facade would carry no declarations and
+    // would therefore be invisible to the profile gate — failing OPEN.
+    const src = read('src/server/mcp/surface.ts');
+    expect(src).toContain("from '../plugin-runtime/index.js'");
+    expect(src).toContain('gateServer');
+  });
+});

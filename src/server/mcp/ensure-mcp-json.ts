@@ -2,34 +2,52 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 
+/** The mount-point path for a project's MCP surface — one source for the URL shape. */
+export function mcpMountPath(projectId: string): string {
+  return `/api/projects/${projectId}/mcp`;
+}
+
 /**
- * M31/M12: working form — scoped package via `-p` exposing the `c4s-mcp` bin,
- * plus `--workspace` so the readonly server resolves the right DB slot when
- * the same cwd is registered in more than one workspace.
+ * 0.2.13: an HTTP entry pointing at the server's mount point.
+ *
+ * It used to be a stdio entry — `npx -p @inharness-ai/claude4spec c4s-mcp
+ * --project <abs> --workspace <name>` — which spawned a second process holding
+ * its own read-only handle on the project's SQLite slot. The MCP surface now
+ * lives in the server, so the config declares where to reach it instead of how
+ * to start a copy of it.
+ *
+ * Two things dropped out of the file, and their absence is the point:
+ *
+ *   - **No absolute path.** Moving the spec repo used to invalidate this file;
+ *     nothing in it names a location on disk any more, so the next activation
+ *     refreshes only the URL.
+ *   - **No workspace selector.** Workspace resolution belongs to M31 inside the
+ *     server process. The project is addressed by the `:id` segment, and an id
+ *     that is not in the workspace answers `PROJECT_NOT_IN_WORKSPACE` at the
+ *     protocol level rather than failing a handshake.
+ *
+ * The file stays fully managed and gitignored. The server name `c4s-spec-reader`
+ * is kept for continuity with existing client configs even though the surface it
+ * names is no longer read-only — see the note in `mcp/surface.ts`.
  */
 export function renderMcpJson({
-  projectAbsPath,
-  workspace,
+  port,
+  projectId,
 }: {
   projectAbsPath: string;
-  workspace: string;
+  port: number;
+  projectId: string;
 }): string {
   return (
     JSON.stringify(
       {
         mcpServers: {
           'c4s-spec-reader': {
-            command: 'npx',
-            args: [
-              '-y',
-              '-p',
-              '@inharness-ai/claude4spec',
-              'c4s-mcp',
-              '--project',
-              projectAbsPath,
-              '--workspace',
-              workspace,
-            ],
+            type: 'http',
+            // Loopback, not a hostname: the server is a local process, and a
+            // config that resolved to anything else would be pointing a client
+            // at someone else's specification.
+            url: `http://127.0.0.1:${port}${mcpMountPath(projectId)}`,
           },
         },
       },
@@ -59,10 +77,12 @@ export function mcpJsonPath(projectAbsPath: string): string {
 
 export function ensureMcpJson({
   projectAbsPath,
-  workspace,
+  port,
+  projectId,
 }: {
   projectAbsPath: string;
-  workspace: string;
+  port: number;
+  projectId: string;
 }): void {
-  writeIfChanged(mcpJsonPath(projectAbsPath), renderMcpJson({ projectAbsPath, workspace }));
+  writeIfChanged(mcpJsonPath(projectAbsPath), renderMcpJson({ projectAbsPath, port, projectId }));
 }

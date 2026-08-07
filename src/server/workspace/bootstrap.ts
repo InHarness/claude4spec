@@ -117,10 +117,23 @@ export function bootstrapProject(
   fs.mkdirSync(path.resolve(cwd, config.releasesDir), {
     recursive: true,
   });
-  ensureMcpJson({ projectAbsPath: cwd, workspace: workspace.name });
-
   const project = registry.registerProject(workspace, cwd);
   migrateLegacyDbIfNeeded(registry, workspace, cwd, project.id);
+
+  /**
+   * 0.2.13: written AFTER registration, because the file now names the project's
+   * mount point and `project.id` does not exist until `registerProject` returns.
+   * The previous call site was above this line, which was correct while the file
+   * only carried a path and a workspace name.
+   *
+   * `writeIfChanged` keeps it idempotent, so re-activating an existing project
+   * rewrites nothing unless the port or the id actually moved.
+   */
+  ensureMcpJson({
+    projectAbsPath: cwd,
+    port: workspace.defaultPort,
+    projectId: project.id,
+  });
 
   return {
     project,

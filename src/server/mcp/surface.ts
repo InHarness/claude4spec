@@ -73,6 +73,44 @@ export interface ExternalSurfaceDeps {
 export const EXTERNAL_MCP_SERVER_NAME = 'c4s-reader';
 
 /**
+ * The error codes this surface can produce, declared rather than discovered.
+ *
+ * 0.2.13 changed the set, and the changes follow from the move rather than from
+ * taste:
+ *
+ * **Arrived.** `PROJECT_NOT_IN_WORKSPACE` and `PROJECT_BUILD_FAILED`. Both are
+ * produced by `projectDispatchMiddleware`, which the mount now sits behind —
+ * they were already reachable, just undeclared, which is the state this list
+ * exists to end.
+ *
+ * **Left.** `AMBIGUOUS_WORKSPACE`, `INDEX_NOT_MATERIALIZED` and
+ * `SCHEMA_OUT_OF_DATE`. All three described the internal state of a SEPARATE
+ * process holding its own handle on a db slot: which workspace it resolved,
+ * whether that slot had been materialized, whether it had been migrated. There
+ * is no such process any more. A caller who used to get `INDEX_NOT_MATERIALIZED`
+ * — meaning "nothing has served this project yet" — now gets `SERVER_NOT_RUNNING`
+ * from the bridge, which is the same fact stated where it is actionable.
+ *
+ * Everything else is the discovery core's own taxonomy, re-framed by the
+ * transport and never re-invented (`DiscoveryErrorCode`).
+ */
+export const EXTERNAL_MCP_ERROR_CODES: readonly string[] = [
+  'PROJECT_NOT_FOUND',
+  'PROJECT_NOT_IN_WORKSPACE',
+  'PROJECT_BUILD_FAILED',
+  'VALIDATION',
+  'NOT_FOUND',
+  'INTERNAL',
+];
+
+/** Codes 0.2.13 removed from this surface — asserted absent, so they cannot creep back. */
+export const RETIRED_EXTERNAL_MCP_ERROR_CODES: readonly string[] = [
+  'AMBIGUOUS_WORKSPACE',
+  'INDEX_NOT_MATERIALIZED',
+  'SCHEMA_OUT_OF_DATE',
+];
+
+/**
  * The named servers this profile contributes, BEFORE the per-tool gate.
  *
  * Coarse selection only: which servers exist at all on this channel. The fine

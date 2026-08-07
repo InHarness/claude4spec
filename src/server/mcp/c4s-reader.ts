@@ -100,7 +100,11 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
         response: fail(
           'PROJECT_NOT_FOUND',
           'no claude4spec project loaded',
-          'pass --project <path> when starting c4s-mcp',
+          // 0.2.13: the old hint said "pass --project <path> when starting
+          // c4s-mcp". That flag no longer exists — the project is written into
+          // the mount address, so an unaddressed connection is not a state this
+          // surface can be in. The mount point is what a caller can actually fix.
+          'address a project in the mount URL: /api/projects/<projectId>/mcp',
         ),
       };
     }
@@ -112,11 +116,18 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
    * and its navigation — the transport RE-FRAMES it, it does not re-invent it,
    * and it never drops the hint.
    *
-   * `no such table` / `no such column` is the shape a pending migration takes
-   * when it reaches a readonly reader. This server deliberately does NOT
-   * migrate, so the hint names the process that does. Sync and async operations
-   * share this path: they used to differ, and the async half reported a pending
-   * migration as a bare `INTERNAL`.
+   * 0.2.13 dropped the `SCHEMA_OUT_OF_DATE` special case that used to sit here.
+   * It existed because this server ran in a SEPARATE process holding a readonly
+   * handle on a slot the main process might not have migrated yet, and its hint
+   * told the caller to start the server. Both halves of that are now false: the
+   * surface runs inside the server, which migrates before it serves, so a
+   * pending migration cannot reach this line — and advising someone to start a
+   * server that is demonstrably running is worse than no advice. `SCHEMA_OUT_OF_DATE`
+   * and `INDEX_NOT_MATERIALIZED` left this surface's error catalog with it; they
+   * describe internal state of the server process, which is not this channel's
+   * business. What arrived instead — `PROJECT_NOT_IN_WORKSPACE` and
+   * `PROJECT_BUILD_FAILED` — is produced by `projectDispatchMiddleware`, above
+   * this file.
    */
   const wrapCall = async <T>(
     fn: () => T | Promise<T>,
@@ -126,12 +137,6 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     } catch (err) {
       if (isDiscoveryError(err)) return { ok: false, response: fail(err.code, err.message, err.hint) };
       const message = err instanceof Error ? err.message : String(err);
-      if (/no such table|no such column/i.test(message)) {
-        return {
-          ok: false,
-          response: fail('SCHEMA_OUT_OF_DATE', message, 'run `npx @inharness-ai/claude4spec` to migrate'),
-        };
-      }
       return { ok: false, response: fail('INTERNAL', message) };
     }
   };
