@@ -14,10 +14,11 @@
 import {
   createMcpServer,
   mcpTool,
-  type McpServerInstance,
+  type CapturedMcpServer,
   type McpToolDefinition,
-} from '@inharness-ai/agent-adapters';
+} from '../plugin-runtime/index.js';
 import { z } from 'zod';
+import { toolError } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { EntityType } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
@@ -77,10 +78,10 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
   });
-  const fail = (code: string, message: string): FailResponse => ({
-    content: [{ type: 'text' as const, text: JSON.stringify({ error: { code, message } }) }],
-    isError: true,
-  });
+  // The shared envelope — flat `{ error, code }`, per item 3. This file emitted
+  // the nested shape while `page-tools` and `reference-tools`, on the same
+  // connection, emitted the flat one.
+  const fail = (code: string, message: string): FailResponse => toolError(code, message) as FailResponse;
 
   /** Per-item error envelope. `VALIDATION` (bare DomainError code) normalizes to the brief's `VALIDATION_ERROR`. */
   const itemError = (err: unknown): { error: string; code: string } => {
@@ -594,6 +595,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   ];
 }
 
-export function createEntityToolsServer(deps: EntityToolsDeps): McpServerInstance {
+export function createEntityToolsServer(deps: EntityToolsDeps): CapturedMcpServer {
   return createMcpServer({ name: 'entity-tools', tools: buildEntityTools(deps) });
 }

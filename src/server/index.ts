@@ -9,6 +9,7 @@ import { PLUGINS_BASE_SOURCE } from './fs/sources.js';
 import { WorkspaceRegistry } from './workspace/registry.js';
 import { migrateLegacyDbIfNeeded } from './workspace/db-migration.js';
 import { bootstrapProject } from './workspace/bootstrap.js';
+import { ensureMcpJson, ensureMcpJsonForWorkspace } from './mcp/ensure-mcp-json.js';
 import { buildProjectContext } from './workspace/project-context.js';
 import { ProjectContextCache } from './workspace/context-cache.js';
 import { projectDispatchMiddleware } from './workspace/middleware.js';
@@ -406,7 +407,44 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
   // Per-project activation — POST /api/workspace/projects runs the SAME full
   // bootstrap as a CLI start (M01/M12/M22 hooks + registration + db migration).
   const activateProject = async (projectCwd: string) => {
-    return bootstrapProject(registry, workspace, projectCwd).project;
+    const project = bootstrapProject(registry, workspace, projectCwd).project;
+    /**
+     * 0.2.13: the project added at RUNTIME needs its `mcp.json` too.
+     *
+     * `bootstrapProject` stopped writing it (it could only ever write
+     * `workspace.defaultPort`, which is wrong for a server started on any other
+     * port), and its replacement runs once after `listen` over the project list
+     * as it stood then. That left exactly this path uncovered: a project added
+     * through the workspace UI got no `mcp.json` at all, so the editor showed no
+     * `c4s-spec-reader` server and the spec-reader skill had no MCP surface —
+     * until the user happened to restart.
+     *
+     * The CANONICAL port, not `portRef.current`.
+     *
+     * This wrote the bound port, which is the same mistake
+     * `ensureMcpJsonForWorkspace` was rewritten to stop making one call site
+     * over: a one-off `--port 5050`, a second instance, or `listenOrExit`
+     * retrying past a busy port is not the address an editor should be sent to.
+     * A project added through the UI of such a process got a config pointing at
+     * a port that dies with it, while the canonical server keeps serving that
+     * project and answering nothing — until some later canonical start happens
+     * to rewrite the file.
+     *
+     * The workspace default IS the canonical port; falling back to the bound one
+     * only when there is no default keeps a workspace-less start working.
+     */
+    try {
+      const liveWs = registry.getWorkspace(workspace.name) ?? workspace;
+      ensureMcpJson({
+        projectAbsPath: project.cwd,
+        port: liveWs.defaultPort ?? portRef.current,
+        projectId: project.id,
+        workspace: liveWs.name,
+      });
+    } catch {
+      /* a read-only project directory must not fail activation */
+    }
+    return project;
   };
 
   app.use('/api', workspaceRouter({ registry, workspace, cache, mode, activateProject }));
@@ -443,6 +481,14 @@ export async function startServer(opts: StartOptions): Promise<ServerHandle> {
 
   const port = await listenOrExit(httpServer, portRef.current);
   portRef.current = port;
+  /**
+   * 0.2.13: refresh every project's `.claude4spec/mcp.json` with the port we
+   * actually bound. Here, not in `bootstrapProject` — see the note on
+   * `ensureMcpJsonForWorkspace`. This is also the upgrade path that replaces the
+   * pre-0.2.13 stdio entries the rewritten `c4s-mcp` can no longer start.
+   */
+  const liveWorkspace = registry.getWorkspace(workspace.name) ?? workspace;
+  ensureMcpJsonForWorkspace(liveWorkspace.projects, port, liveWorkspace.defaultPort, liveWorkspace.name);
   if (initialProject) registry.touchLastOpened(workspace.name, initialProject.id);
   const url = `http://localhost:${port}`;
 

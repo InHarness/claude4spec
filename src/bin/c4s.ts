@@ -109,17 +109,18 @@ Graph reader (no XML counterpart):
 Utility:
   resolve <file.md> [--format inline|json]
 
-Agent (requires a running \`npx @inharness-ai/claude4spec\` server):
+Agent:
   agent "<msg>" --ct <chat|brief|patch|ask>   generic turn; verbose (all messages + reasoning)
   agent "<msg>" --ct brief --brief <path>
   agent "<msg>" --thread <id>                 continue any thread (--ct not needed)
   ask "<msg>"                                 read-only peer-consult shorthand (--ct=ask, terse)
   ask "<msg>" --thread <id>                   continue an existing ask thread
     --server <url>                                    override server discovery (remote / one-off --port)
+                                                      accepted by every server-delegating command, not just these
     --effort <low|medium|high>                        reasoning level for the turn (default medium)
     --model <fable-5|sonnet-4.6|opus-5|opus-4.8|haiku-4.5>  model for the turn (default opus-4.8)
 
-Discovery:
+Discovery (through the server's operations — see "Server required" below):
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
   describe --type <t> [--view <v>] JSON Schema per view for one type, plus the paths a
                                     search would cover. Since 0.2.6 the payload is the core's
@@ -162,7 +163,7 @@ Pagination (every list command above):
                                     nor by resolve-identity / check-consistency, whose output is
                                     bounded by its own nature (a top-N ranking; a counted report).
 
-Plugins (M33 — reads loader state, no running server):
+Plugins (M33 — server-delegating: reports the SERVER host's loader, not a second one):
   plugins list                     pool packages: tier, version, contributed types (exit 0)
   plugins status                   per-package load state + reason + hostApiVersion + overlay trust (exit 0)
   plugins doctor                   migration path per incompatible package (exit HOST_API_INCOMPATIBLE if any)
@@ -171,25 +172,36 @@ Plugins (M33 — reads loader state, no running server):
                                     workspaces.json, creating the project record if absent — for
                                     non-interactive Docker plugin smoke-testing (see DOCKER.md)
 
-Brief/patch (M11 — filesystem-only, no server, no sqlite; works under INDEX_NOT_MATERIALIZED):
+Brief/patch (M11 — server-delegating, like every read above):
   list-briefs [--limit N] [--offset M] [--status implemented|pending]
   read-brief <brief-path>           <brief-path> relative to briefsDir
   file-patch --brief <brief-path> --desc <s> [--kind drift|missing|incorrect|clarification]
-             [--body-file <f>]      body from --body-file or stdin; writes to patchesDir
+             [--body-file <f>]      body from --body-file or stdin; the SERVER writes the
+                                    file under patchesDir and mints its slug
   mark-brief-implemented <brief-path> --project <slug> --workspace <name>
-                                     server-delegating (unlike the three above) — wraps
-                                     PATCH /api/briefs/:path/frontmatter; requires a running server
+                                     wraps PATCH /api/artifacts/brief/:path/frontmatter
+                                     ('implemented' is the only mutable frontmatter key)
 
-Skills (M22 — filesystem-only, no server, no sqlite; on-demand, no bootstrap side-effect):
+Skills (M22 — filesystem-only, no server; on-demand, no bootstrap side-effect):
   install-skills [--project <slug>] [--dir <path>] [--skills <s1,s2>]
                   writes <dir|.claude/skills>/<name>/SKILL.md under process cwd (the
                   CODE repo), not the --project spec repo; --skills default: all three
 
-Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server, no sqlite):
+Plugin scaffolding (M38 — mode \`scaffold\`: no project, no workspace, no server):
   create-plugin <target-dir> [--template <git-url>] [--branch <name>] [--force] [--no-install]
                   creates <target-dir> under the current working directory and fills it from
                   the scaffold repo (default: github.com/InHarness/c4s-plugin-scaffold), git
                   history NOT carried over, then runs npm install unless --no-install
+
+Server required — for every step:
+  Since 0.2.13 the \`c4s\` process holds no database handle and reads no
+  specification files. It resolves an ADDRESS locally (.claude4spec/config.json,
+  ~/.claude4spec/workspaces.json, defaultPort) and every command above delegates
+  to \`npx @inharness-ai/claude4spec\`. Exceptions: install-skills, trust-plugins,
+  create-plugin. Those three address the machine rather than a specification —
+  a code repo's skills directory, the workspace registry, a new directory — so
+  there is no specification for them to ask a server about.
+  No server → SERVER_NOT_RUNNING, exit 8. \`c4s\` never starts one for you.
 
 Global flags:
   --project <path|name>  override project (path tried first, else matched by registered name)
@@ -257,10 +269,36 @@ function codeToExit(code: string): number {
     case 'INVALID_TYPE':
     case 'INVALID_VIEW':
     case 'INVALID_ARGS':
+    /**
+     * 0.2.13 — a `--root-id` that names nothing is the same CLASS of mistake as
+     * a bad `--type`: the caller asked for something the contract does not
+     * offer. It reached this table only after the read commands became
+     * server-delegating (the core used to answer `INVALID_ARGUMENT`, already in
+     * this group); unmapped, it fell to the `default: 1` bucket that also holds
+     * UNKNOWN_COMMAND, so a wrapper branching on exit 4 for "you typed the flags
+     * wrong" read a typo'd root id as an infrastructure failure.
+     */
+    case 'ROOT_NOT_FOUND':
     // M39 — the core's refusal shares the "you asked for something the contract
     // does not allow" exit, since a caller scripting c4s branches on the class
     // of failure and these are the same class.
     case 'INVALID_ARGUMENT':
+    /**
+     * 0.2.13 — `VALIDATION` joins the same class, because the migration to
+     * `server-delegating` started routing CLI argument refusals through it.
+     *
+     * `c4s file-patch --brief ../foo.md` throws `BriefFsError('INVALID_ARGS')`
+     * in the core writer; `routes/errors.ts` deliberately renames that to
+     * `VALIDATION` on the way out ("`INVALID_ARGS` is the core's name for what
+     * REST calls `VALIDATION`"), and the CLI propagates the server's code
+     * verbatim rather than translating it back. Without this case the same
+     * refusal that exited 4 before the migration exits 1 — the generic bucket
+     * that also holds `PROJECT_NOT_IN_WORKSPACE` and agent failures, so a
+     * wrapper branching on `[ $? -eq 4 ]` reads a typo as an infrastructure
+     * problem. Renaming it back at the transport was the alternative, and that
+     * is exactly the fourth error vocabulary this release exists to remove.
+     */
+    case 'VALIDATION':
       return 4;
     case 'FILE_NOT_FOUND':
     // M39 — a page named by (rootId, path) that does not exist is the same
@@ -271,7 +309,19 @@ function codeToExit(code: string): number {
       return 6;
     case 'AMBIGUOUS_WORKSPACE':
       return 7;
-    case 'INDEX_NOT_MATERIALIZED':
+    /**
+     * 0.2.13 item 24 — exit 8 changed hands.
+     *
+     * It used to be `INDEX_NOT_MATERIALIZED`: this process opened the db slot,
+     * so "the index has not been built" was a condition it could observe and the
+     * caller could act on. It no longer opens one, so it cannot observe that at
+     * all — and the condition an external caller now hits in its place is that
+     * nothing is listening. Reusing the number rather than adding one is
+     * deliberate: a script's `if [ $? -eq 8 ]` branch means "the specification is
+     * not readable yet, deal with the environment", and that is still exactly
+     * what it means. `INDEX_NOT_MATERIALIZED` survives only on internal paths.
+     */
+    case 'SERVER_NOT_RUNNING':
       return 8;
     case 'HOST_API_INCOMPATIBLE':
       return 9;

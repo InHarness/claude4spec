@@ -1,15 +1,20 @@
 import type { ParsedArgs } from '../args.js';
 import { refuseFlags, requireString } from '../args.js';
-import { createContext } from '../context.js';
+import { optionalString } from '../args.js';
+import { delegateGetAll } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
-import { findReferencesAllPaged } from '../../../server/discovery/index.js';
+import type { ReferenceHit } from '../../../server/discovery/index.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
- * Graph reader (M11 owns the command, M19 owns the logic). Readonly: opens
- * SQLite `readonly: true, fileMustExist: true` — no running
- * `npx @inharness-ai/claude4spec` server required.
+ * Graph reader (M11 owns the command, M19 owns the logic).
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/references`. It used to open
+ * SQLite `readonly: true` and needed no server; it now needs one, like every
+ * other read. `--pages <dir>` travels as `?pages=` and is applied where the
+ * roots are assembled, which is the server process — an ad-hoc directory comes
+ * back `referenceValidated=false`.
  *
  *   c4s find-references --type <t> --slug <s> [--include-tag-matches] [--pages <dir>]
  *
@@ -49,27 +54,31 @@ export async function runFindReferences(args: ParsedArgs): Promise<void> {
   const includeTagMatches = itm === true || itm === 'true';
   refuseFlags(args, ['limit', 'offset'], 'find-references is an exhaustive sweep and returns every hit');
 
-  const ctx = await createContext(args);
-  try {
-    const { references, exhausted } = await findReferencesAllPaged(ctx.discovery, {
-      target: 'entity',
+  const { items: references, exhausted } = await delegateGetAll<ReferenceHit>(
+    args,
+    '/references',
+    {
       type,
       slug,
-      includeTagMatches,
-    });
-    // `hasMore` is REPORTED, not asserted. The sweep normally runs to the end and
-    // answers false — but the helper's runaway guard can stop it short, and a
-    // command that claims "that was all of them" on a truncated sweep is exactly
-    // the wrong answer that reads like a right one.
-    writeOutput({ references, total: references.length, hasMore: !exhausted }, args);
-  } finally {
-    ctx.close();
-  }
+      ...(includeTagMatches ? { includeTagMatches: true } : {}),
+      ...(optionalString(args, 'pages') ? { pages: optionalString(args, 'pages') } : {}),
+    },
+    (payload) => {
+      const p = (payload ?? {}) as { references?: ReferenceHit[]; hasMore?: boolean };
+      return { items: Array.isArray(p.references) ? p.references : [], hasMore: p.hasMore === true };
+    },
+  );
+  // `hasMore` is REPORTED, not asserted. The sweep normally runs to the end and
+  // answers false — but the guard can stop it short, and a command that claims
+  // "that was all of them" on a truncated sweep is exactly the wrong answer that
+  // reads like a right one.
+  writeOutput({ references, total: references.length, hasMore: !exhausted }, args);
 }
 
 export const findReferencesCommand: CliCommandContribution = {
   name: 'find-references',
-  executionMode: 'readonly-reader',
+  operation: 'find_references',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runFindReferences,
 };

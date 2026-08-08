@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalInt, optionalString, refuseFlags } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -27,24 +27,16 @@ export async function runCheckConsistency(args: ParsedArgs): Promise<void> {
 
   refuseFlags(args, ['offset'], 'check-consistency is a report, not a collection: summary always carries the full counts');
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(
-      await ctx.discovery.checkConsistency({
-        ...(rawSeverity ? { severity: rawSeverity } : {}),
-        ...(rule ? { rule } : {}),
-        ...(limit === undefined ? {} : { limit }),
-      }),
-      args,
-    );
-  } finally {
-    ctx.close();
-  }
+  writeOutput(
+    await delegateGet(args, '/_meta/consistency', { severity: rawSeverity, rule, limit }),
+    args,
+  );
 }
 
 export const checkConsistencyCommand: CliCommandContribution = {
   name: 'check-consistency',
-  executionMode: 'readonly-reader',
+  operation: 'check_consistency',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runCheckConsistency,
 };

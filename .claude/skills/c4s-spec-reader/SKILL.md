@@ -14,6 +14,14 @@ NOT `cd` into the spec repo; the identity is baked in, not derived from cwd.
 `c4s`. If `c4s` isn't installed, STOP and ask the user to install it —
 never read the spec repo's pages or entity files directly.
 
+## Server required — for every step
+
+Every `c4s` command in this skill talks to a running `npx @inharness-ai/claude4spec` server. There is no filesystem-scoped subset: since 0.2.13 the CLI opens no database and reads no specification file, so reading a brief, listing entities and running an agent turn all fail the same way when the server is down.
+
+**`SERVER_NOT_RUNNING` (exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
+
+Two neighbouring codes mean something else, and starting a server will not fix either: `SERVER_NOT_RECOGNIZED` (something is listening, but it is not claude4spec) and `PROJECT_NOT_IN_WORKSPACE` (the server is fine; this project is not registered in the workspace you named). Report those as they are.
+
 ## Resolving a tag
 
 Install `claude4spec` (Node 20+) and use the `c4s` CLI. Subcommand names match
@@ -123,7 +131,7 @@ an exit code > 0, and an error is navigable rather than merely a refusal: a
 `INVALID_ARGUMENT` names the call that would have worked. Read the `hint`
 before guessing again.
 
-The database is opened **read-only** — `c4s` never mutates the project.
+None of these commands mutates the project: they render read operations of the specification, and `c4s` opens no database of its own.
 
 ## Asking the spec agent
 
@@ -134,8 +142,10 @@ synchronous agent turn against the specification:
 c4s ask "<question>" --project 'app-spec' --workspace 'default'
 ```
 
-Unlike the read-only commands above, `c4s ask` requires a running
-`npx @inharness-ai/claude4spec` server (it delegates the turn to the server's agent).
+It needs the same running server every other command here needs — see "Server
+required" above. What is different about it is the cost, not the requirement:
+it runs a full agent turn rather than answering from the index, so it can also
+come back `AGENT_UNAVAILABLE` or `TIMEOUT`.
 
 ## Errors
 

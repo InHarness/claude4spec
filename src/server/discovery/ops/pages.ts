@@ -9,6 +9,7 @@
  * page roots.
  */
 
+import crypto from 'node:crypto';
 import type { Database } from 'better-sqlite3';
 import { truncateText } from '../budget.js';
 import { invalidArgument } from '../errors.js';
@@ -59,6 +60,11 @@ function sectionCounts(db: Database, rootId: string): Map<string, number> {
   return new Map(rows.map((r) => [r.path, r.c]));
 }
 
+/** The same digest `services/page-write.ts` compares `expectedHash` against. */
+function sha256(text: string): string {
+  return crypto.createHash('sha256').update(text, 'utf-8').digest('hex');
+}
+
 export async function getPage(
   pages: PageSource,
   roots: RootSet,
@@ -100,6 +106,13 @@ export async function getPage(
   }
 
   let content = await pages.read(root.id, input.path);
+  /**
+   * Hashed HERE — before `range` narrows it and before the budget truncates it.
+   * `expectedHash` is compared against the whole file on disk, so a hash of a
+   * window would fail every write that used it, and a caller cannot tell from
+   * the value which of the two it holds.
+   */
+  const hash = sha256(content);
 
   if (input.range) {
     const { start, end } = input.range;
@@ -123,6 +136,7 @@ export async function getPage(
     rootId: root.id,
     path: input.path,
     content: budgeted.text,
+    hash,
     ...(budgeted.truncated ? { truncated: true, truncationHint: budgeted.truncationHint } : {}),
   };
 }

@@ -2,11 +2,26 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ParsedArgs } from '../args.js';
 import { optionalString } from '../args.js';
-import { createContext } from '../context.js';
+import { delegatePost } from '../delegate.js';
 import { CliError } from '../errors.js';
-import { resolvePageContent } from '../../../server/serialization/resolve-page.js';
+import type { ResolvedEntry } from '../../../server/serialization/resolve-page.js';
 import type { CliCommandContribution } from '../registry.js';
 
+/**
+ * `c4s resolve <file.md>` — expand the XML tags in a local markdown file.
+ *
+ * A TRANSPORT-SIDE COMPOSITION, not a core operation, and deliberately so: a tag
+ * is an EDGE to another entity, and an agent reading the specification wants the
+ * edge, not a payload written over it. There is no MCP tool for this and there
+ * must not be one.
+ *
+ * 0.2.13 — `server-delegating`, over `POST /api/_meta/resolve-page`. The file
+ * still comes off the CALLER'S disk — that is why the content travels in the
+ * body rather than a path in a query string, which would resolve against the
+ * server's filesystem whenever the two differ. What moved is the expansion: the
+ * CLI used to build a discovery core to look the entities up, and that was the
+ * last operation it executed locally.
+ */
 export async function runResolve(args: ParsedArgs): Promise<void> {
   const filePath = args.positional[0];
   if (!filePath) {
@@ -23,34 +38,25 @@ export async function runResolve(args: ParsedArgs): Promise<void> {
   }
 
   const md = fs.readFileSync(abs, 'utf8');
-  const ctx = await createContext(args);
-  try {
-    // `c4s resolve` stays a TRANSPORT-SIDE COMPOSITION, not a core operation:
-    // it reads a file, asks the core for the entities behind the tags, and does
-    // its own CLI formatting. There is no equivalent in the external MCP, where
-    // an agent gets structured tool calls and wants the edge, not the payload.
-    const { resolved, inlineContent } = resolvePageContent(md, {
-      discovery: ctx.discovery,
-      activeTypes: ctx.reader.listTypes(),
-      availableTypes: ctx.reader.host.listAvailable().map((m) => m.type),
-    });
+  const result = (await delegatePost(args, '/_meta/resolve-page', { content: md })) as {
+    content: string;
+    inlineContent: string;
+    resolved: ResolvedEntry[];
+  };
 
-    if (format === 'json') {
-      const sidecar = resolved.map(({ inline: _inline, ...rest }) => rest);
-      process.stdout.write(JSON.stringify({ content: md, resolved: sidecar }, null, 2) + '\n');
-      return;
-    }
-
-    process.stdout.write(inlineContent);
-    if (!inlineContent.endsWith('\n')) process.stdout.write('\n');
-  } finally {
-    ctx.close();
+  if (format === 'json') {
+    const sidecar = result.resolved.map(({ inline: _inline, ...rest }) => rest);
+    process.stdout.write(JSON.stringify({ content: result.content, resolved: sidecar }, null, 2) + '\n');
+    return;
   }
+
+  process.stdout.write(result.inlineContent);
+  if (!result.inlineContent.endsWith('\n')) process.stdout.write('\n');
 }
 
 export const resolveCommand: CliCommandContribution = {
   name: 'resolve',
-  executionMode: 'readonly-reader',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_ARGS', 'FILE_NOT_FOUND'],
   handler: runResolve,
 };

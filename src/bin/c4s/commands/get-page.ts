@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, requireString } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -17,21 +17,23 @@ import type { CliCommandContribution } from '../registry.js';
  * lives in the core (which owns root properties) and this command inherits it
  * rather than re-deciding it: on an indexed root a section is a better window in
  * every way, and two guards could disagree.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/pages/:rootId/get?path=`. The
+ * path travels as a QUERY parameter: it contains slashes, and the operation's
+ * route must not be shadowable by a page whose name matches a static segment.
  */
 export async function runGetPage(args: ParsedArgs): Promise<void> {
   const rootId = requireString(args, 'root-id');
   const pagePath = requireString(args, 'path');
   const range = parseRange(optionalString(args, 'range'));
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(
-      await ctx.discovery.getPage({ rootId, path: pagePath, ...(range ? { range } : {}) }),
-      args,
-    );
-  } finally {
-    ctx.close();
-  }
+  writeOutput(
+    await delegateGet(args, `/pages/${encodeURIComponent(rootId)}/get`, {
+      path: pagePath,
+      ...(range ? { range: `${range.start}:${range.end}` } : {}),
+    }),
+    args,
+  );
 }
 
 /** `--range 1:200` → `{ start: 1, end: 200 }`. 1-based and inclusive, like the core's. */
@@ -50,7 +52,8 @@ function parseRange(raw: string | undefined): { start: number; end: number } | u
 
 export const getPageCommand: CliCommandContribution = {
   name: 'get-page',
-  executionMode: 'readonly-reader',
-  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
+  operation: 'get_page',
+  executionMode: 'server-delegating',
+  errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND', 'ROOT_NOT_FOUND'],
   handler: runGetPage,
 };

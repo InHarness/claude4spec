@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { refuseFlags } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -10,21 +10,20 @@ import type { CliCommandContribution } from '../registry.js';
  * calls one operation and prints it. The payload gains the project's page roots
  * with their properties and a tag count; it still carries no schemas, so it
  * stays the cheap smoke test it was (`c4s describe` remains the way to schemas).
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/_meta/overview`. The type set it
+ * reports is now the SERVER host's, by construction: there is no second plugin
+ * loader left in this process to disagree with it.
  */
 export async function runCatalog(args: ParsedArgs): Promise<void> {
   refuseFlags(args, ['limit', 'offset'], 'catalog is a projection, bounded by construction');
-
-  const ctx = await createContext(args);
-  try {
-    writeOutput(await ctx.discovery.overview(), args);
-  } finally {
-    ctx.close();
-  }
+  writeOutput(await delegateGet(args, '/_meta/overview'), args);
 }
 
 export const catalogCommand: CliCommandContribution = {
   name: 'catalog',
-  executionMode: 'readonly-reader',
+  operation: 'overview',
+  executionMode: 'server-delegating',
   errorCodes: [],
   handler: runCatalog,
 };

@@ -15,7 +15,27 @@ import { fileURLToPath } from 'node:url';
  * Never throws: a version string is decoration on every one of its callers, and
  * failing a discovery operation because a `package.json` moved would be absurd.
  */
+/**
+ * Memoized: the answer cannot change while the process runs, and the lookup is
+ * not free — up to five `existsSync` + `readFileSync` + `JSON.parse` rounds, all
+ * synchronous.
+ *
+ * It reached a hot path in 0.2.13. `mcpSurfaceDeps` calls this, and the MCP
+ * mounts resolve their deps once per HTTP frame, so an editor's connection was
+ * doing filesystem I/O on the event loop for every `tools/call` and every SSE
+ * poll. Memoizing here rather than at the one call site fixes it for the others
+ * too, and `'unknown'` is cached along with the rest — a package.json that could
+ * not be read on the first try will not become readable on the hundredth.
+ */
+let cached: string | undefined;
+
 export function readPackageVersion(): string {
+  if (cached !== undefined) return cached;
+  cached = computePackageVersion();
+  return cached;
+}
+
+function computePackageVersion(): string {
   try {
     const here = path.dirname(fileURLToPath(import.meta.url));
     for (let up = 1; up <= 5; up++) {

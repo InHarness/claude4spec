@@ -28,10 +28,48 @@ export interface AgentExecutionScope {
   userAllowedPaths: string[];
   /** Raw `agent.disallowedPaths` from config — same. */
   userDisallowedPaths: string[];
+  /** 0.2.13 item 28: the page roots, denied for WRITE only. Rendered in the prompt block too. */
+  pageRootDirs: string[];
   /**
-   * The hard layer: `architectureConfig.claude_sandbox`. `denyRead` and `denyWrite` are
-   * deliberately the same list — an artifact dir the agent may not hand-edit is also one
-   * it should not read around the MCP tools.
+   * The hard layer: `architectureConfig.claude_sandbox`.
+   *
+   * `denyRead` and `denyWrite` were the same list until 0.2.13, and for the artifact dirs
+   * they still are: an artifact dir the agent may not hand-edit is also one it should not
+   * read around the MCP tools, because those tools serve every read of it.
+   *
+   * Item 28 is what splits them. A page must stay READABLE by the built-in tools — no
+   * operation hands back raw page markdown for a `Grep`-style prose sweep, and the M05
+   * prompt tells the agent to run exactly that sweep — while its WRITE channel has to
+   * close, so `create_page` / `update_page` / `delete_page` / `update_section` become the
+   * only path. Symmetric denial would have bought the block at the cost of the agent's
+   * ability to find anything.
+   *
+   * ## MEASURED, 0.2.13: on a host WITH an OS sandbox this list is not enforced at all
+   *
+   * Do not read the field names as a guarantee. `agent-adapters` branches on
+   * `pathScope.strength`, and the two arms are the opposite way round from what one would
+   * assume:
+   *
+   *   - `strength === 'soft'` (no seatbelt/bubblewrap) → `permissionMode: 'dontAsk'` plus
+   *     real `settings.permissions.deny` rules built from `disallowedPaths`. This works.
+   *   - `strength === 'hard'` → `permissionMode: 'bypassPermissions'`,
+   *     `allowDangerouslySkipPermissions: true`, NO deny rules, and the lists handed to
+   *     `options.sandbox.filesystem` instead — which the Agent SDK documents as NOT the
+   *     filesystem restriction mechanism ("Filesystem access: use Read and Edit permission
+   *     rules"; the sandbox settings control sandbox BEHAVIOUR). So nothing gates the
+   *     filesystem.
+   *
+   * Verified by running it: on macOS (seatbelt present) a chat turn wrote both
+   * `pages/probe.md` AND `.claude4spec/entities/probe-artifact.md` with the built-in
+   * `Write`, unrefused. The second one is the 0.1.130 artifact hard-lock, which predates
+   * this release by a long way — so this is a pre-existing gap that item 28 inherits, not
+   * one it introduces, and it cannot be closed from this module: expressing "deny write,
+   * allow read" needs an API `disallowedPaths` does not have (it renders as a symmetric
+   * Read+Edit+Write triple).
+   *
+   * Until the vendor side is fixed, the effective gate on a developer machine is the
+   * `<agent_path_scope>` prompt block. Filed as a patch against the brief; keep this list
+   * correct so the block starts working the moment that lands.
    */
   claudeSandbox: {
     enabled: true;
@@ -74,7 +112,7 @@ export function resolveAgentExecutionScope(
       enabled: true,
       filesystem: {
         denyRead: scope.disallowedPaths,
-        denyWrite: scope.disallowedPaths,
+        denyWrite: [...scope.disallowedPaths, ...scope.pageRootDirs],
         allowWrite: scope.allowedPaths,
       },
     },

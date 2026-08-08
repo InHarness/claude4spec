@@ -8,6 +8,10 @@ import { PluginRegistryImpl } from '../../src/server/core/plugin-host/registry.j
 import { registerAllPlugins } from '../../src/server/serialization/registerAll.js';
 import { loadBuiltinEnvelopes } from '../../src/server/core/plugin-host/loader.js';
 import { entitiesRouter } from '../../src/server/core/plugin-host/entities-router.js';
+import { metaRouter } from '../../src/server/routes/meta.js';
+import { patchesRouter } from '../../src/server/routes/patches.js';
+import { tagsRouter } from '../../src/server/routes/tags.js';
+import { referencesRouter } from '../../src/server/routes/references.js';
 import { generatedCrudRouter } from '../../src/server/core/plugin-host/generated-crud-router.js';
 import { registerRefRewriteListeners } from '../../src/server/core/plugin-host/manifest-adapter.js';
 import {
@@ -45,6 +49,11 @@ import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
 import type Database from 'better-sqlite3';
+import { projectMcpRouter } from '../../src/server/routes/mcp.js';
+import { createReferenceToolsServer } from '../../src/server/mcp/reference-tools.js';
+import { createEntityToolsServer } from '../../src/server/mcp/entity-tools.js';
+import type { ExternalSurfaceDeps } from '../../src/server/mcp/surface.js';
+import type { ChatContextType } from '../../src/shared/entities.js';
 
 /** One synthetic context scope for the whole harness — production uses `context:<projectId>`. */
 const TEST_SCOPE: WatchScope = 'context:test';
@@ -70,6 +79,8 @@ export interface TestApp {
   plansSerializer: FileSerializer;
   pageVersions: FileVersionService;
   frontmatterIndexer: PagesFrontmatterIndexer;
+  /** 0.2.13: the external MCP surface's deps, for tests that compose it directly. */
+  mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
   cleanup: () => void;
 }
 
@@ -229,7 +240,52 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     projectDir: cwd,
     packageVersion: '0.0.0-test',
   } as never);
+  /**
+   * 0.2.13: the two host-owned MCP servers `project-context.ts` registers, which
+   * this harness previously left out because nothing read `buildMcpServers()`.
+   * The external MCP surface does, and without these it composed the read half
+   * of the catalog and silently none of the write half — so a gating test would
+   * have passed by having nothing to withhold.
+   *
+   * `release-tools` is deliberately absent: it needs a `ReleaseService`, which
+   * this harness does not build.
+   */
+  host.registerMcpServer('reference-tools', () =>
+    createReferenceToolsServer({ pluginHost: host, tagsService, referencesService, discovery, ws, entityStore }),
+  );
+  host.registerMcpServer('entity-tools', () =>
+    createEntityToolsServer({
+      host,
+      reader: rawReader,
+      discovery,
+      db,
+      ws,
+      referencesService,
+      tagsService,
+      entityStore,
+      versionService,
+    }),
+  );
   router.use('/entities', entitiesRouter(host, tagsService, versionService, entityStore, rawReader, discovery));
+  /**
+   * 0.2.13 — the catalog's new `rest` renderings, mirroring `project-context.ts`.
+   * `/_meta` carries only the four M39 operations here; the activation and
+   * plugin-diagnostic routes that share the prefix in production belong to
+   * `pluginHostRouter`, which this harness does not mount.
+   */
+  router.use('/_meta', metaRouter(discovery, host));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  // The harness has no page roots (`roots: []`), so a narrowed root list is the
+  // same empty list — the factory is here so the route's shape matches
+  // production, not so the override can be exercised without page fixtures.
+  router.use('/references', referencesRouter(host, referencesService, discovery, () => discovery));
+  router.use(
+    '/patches',
+    patchesRouter({
+      briefsDirAbs: path.join(cwd, 'briefs'),
+      patchesDirAbs: path.join(cwd, 'patches'),
+    }),
+  );
 
   /**
    * Host API 2.0.0 (item 31) — mirrors `project-context.ts`, INCLUDING the
@@ -304,6 +360,24 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   });
   router.use('/plans', plansRouter(planService));
   router.use('/artifacts', artifactsRouter({ brief: briefService, patch: patchService, plan: planService, pageVersions, chat: chatService }));
+
+  /**
+   * 0.2.13 external MCP surface, composed from the same locals the routers
+   * above use — the harness mirrors production's `mcpSurfaceDeps`, so a test
+   * that reaches an operation over MCP is reaching the same code path a test
+   * reaching it over REST does.
+   */
+  const mcpSurfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
+    profile,
+    reader: { reader: rawReader, discovery, db, projectDir: cwd, packageVersion: '0.0.0-test' },
+    pluginHost: host,
+    planService,
+    pageVersions,
+    briefService,
+    listProjects: () => ({ projects: [] }),
+    workspaceName: 'default',
+  });
+  router.use('/mcp', projectMcpRouter('0.0.0-test', 'test-project', mcpSurfaceDeps));
   router.use(errorHandler);
 
   const app = express();
@@ -327,6 +401,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     plansSerializer,
     pageVersions,
     frontmatterIndexer,
+    mcpSurfaceDeps,
     cleanup: () => {
       db.close();
       fs.rmSync(cwd, { recursive: true, force: true });

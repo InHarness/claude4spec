@@ -364,7 +364,7 @@ function computeCoverage(
   for (const anchor of anchors) {
     const section = rows.get(anchor);
     if (!section) continue;
-    const key = `${section.rootId} ${section.pagePath}`;
+    const key = `${section.rootId}\0${section.pagePath}`;
     if (!byPage.has(key)) {
       byPage.set(key, selectSections(db, 'WHERE rootId = ? AND page_path = ?', [section.rootId, section.pagePath]));
     }
@@ -374,7 +374,7 @@ function computeCoverage(
   for (const anchor of anchors) {
     const covering = rows.get(anchor);
     if (!covering || covered.has(anchor)) continue;
-    const page = byPage.get(`${covering.rootId} ${covering.pagePath}`) ?? [];
+    const page = byPage.get(`${covering.rootId}\0${covering.pagePath}`) ?? [];
     const start = page.findIndex((s) => s.anchor === covering.anchor);
     if (start === -1) continue;
     for (let i = start + 1; i < page.length; i++) {

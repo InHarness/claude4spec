@@ -107,11 +107,23 @@ async function entityReferences(
     input.slug,
     { includeTagMatches: input.includeTagMatches === true },
   );
+  /**
+   * `raw` — the originating tag's own text — is FORWARDED where the scan
+   * produced it (0.2.13). It used to be dropped here, which made this operation
+   * answer with a strictly narrower hit than the REST route's other path for the
+   * same question, and left the reference chips that render it blank.
+   *
+   * It is optional rather than required because not every hit has one: a
+   * tag-MATCH hit (phase 2, carrying `via`) is inferred from an entity's tags
+   * rather than read off a tag in the page, so there is no original text to
+   * quote. Absent-and-honest beats present-and-invented.
+   */
   return hits.map((h) => ({
     rootId: h.rootId,
     pagePath: h.pagePath,
     tagType: h.tagType,
     line: h.line,
+    ...(h.raw !== undefined ? { raw: h.raw } : {}),
     ...(h.via ? { via: h.via } : {}),
   }));
 }

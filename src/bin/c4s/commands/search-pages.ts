@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, paginationFrom } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -16,6 +16,10 @@ import type { CliCommandContribution } from '../registry.js';
  * `list-sections --by anchor` and `get-sections` reachable from a phrase. On a
  * root without a section index it degrades to `(rootId, path, line)` — a
  * DISCRIMINATED union, so the two are never confused for one another.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/pages/search`. Cross-root, so it
+ * mounts WITHOUT a root segment (`--root-id` only narrows it) — and ahead of
+ * `/pages/:rootId`, or `search` would be read as a root id.
  */
 export async function runSearchPages(args: ParsedArgs): Promise<void> {
   const query = optionalString(args, 'query');
@@ -37,26 +41,22 @@ export async function runSearchPages(args: ParsedArgs): Promise<void> {
   }
   const rootId = optionalString(args, 'root-id');
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(
-      await ctx.discovery.searchPages({
-        ...(query ? { query } : {}),
-        ...(regex ? { regex } : {}),
-        ...(rootId ? { rootId } : {}),
-        ...(rawMode ? { mode: rawMode } : {}),
-        ...paginationFrom(args),
-      }),
-      args,
-    );
-  } finally {
-    ctx.close();
-  }
+  writeOutput(
+    await delegateGet(args, '/pages/search', {
+      q: query,
+      regex,
+      rootId,
+      mode: rawMode,
+      ...paginationFrom(args),
+    }),
+    args,
+  );
 }
 
 export const searchPagesCommand: CliCommandContribution = {
   name: 'search-pages',
-  executionMode: 'readonly-reader',
+  operation: 'search_pages',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runSearchPages,
 };

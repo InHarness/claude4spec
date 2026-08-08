@@ -12,7 +12,7 @@
  * consuming the raw L2 shape for render-time `line_diff`.
  */
 
-import { createMcpServer, mcpTool, type McpServerInstance } from '@inharness-ai/agent-adapters';
+import { createMcpServer, mcpTool, type CapturedMcpServer } from '../../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { ReleaseService } from '../../services/release.js';
 import type { GitService } from '../../services/git.js';
@@ -44,7 +44,7 @@ const INCLUDE_VALUES = ['pages', 'entities'] as const;
  */
 const DEFAULT_INCLUDE: IncludeFilter[] = ['pages', 'entities'];
 
-export function createReleaseToolsServer(deps: ReleaseToolsDeps): McpServerInstance {
+export function createReleaseToolsServer(deps: ReleaseToolsDeps): CapturedMcpServer {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
   });

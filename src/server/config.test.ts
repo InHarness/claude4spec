@@ -482,6 +482,27 @@ describe('config — roots[] / v4 migration (0.1.96)', () => {
     );
   });
 
+  it('parseRootsArray rejects a root id that a route already claims', () => {
+    /**
+     * 0.2.13 mounts the cross-root `search_pages` rendering at
+     * `GET /api/pages/search`, ahead of `/api/pages/:rootId` — it has to be
+     * ahead, or `search` is captured as a root id and the operation answers
+     * ROOT_NOT_FOUND. That creates the mirror-image trap: a project declaring a
+     * root called `search` loses `GET /api/pages/search` for its own tree, and
+     * loses it SILENTLY — the symptom is a root missing from the sidebar, not a
+     * 500. Refused at config validation, where the collision is visible.
+     */
+    const search = {
+      id: 'search', name: 'Search', dir: 'search', builtin: false,
+      releasable: false, sectionIndexed: false, referenceValidated: false,
+      linkTargets: [], sidebar: 'accordion', briefTarget: false,
+    };
+    expect(() => parseRootsArray([builtinPagesRoot(), search])).toThrow(/reserved/);
+    // Only the ids a route actually claims — this is a reserved LIST, not a
+    // blanket restriction on what a root may be called.
+    expect(() => parseRootsArray([builtinPagesRoot(), { ...search, id: 'searches', dir: 'searches' }])).not.toThrow();
+  });
+
   it('parseRootsArray requires the built-in pages root', () => {
     const userRoot = {
       id: 'skills', name: 'Skills', dir: 'skills', builtin: false,

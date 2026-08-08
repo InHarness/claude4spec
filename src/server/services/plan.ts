@@ -73,7 +73,24 @@ export interface PlanServiceDeps {
 }
 
 export interface PlanUpdateInput {
+  /**
+   * The thread whose plan this is — the `internal` channel's DEFAULT way to
+   * address a plan, not part of the operation's contract (0.2.13 §7: "a plan is
+   * addressed explicitly by `path`; the `chat_thread.plan_path` binding is a
+   * default of the internal channel").
+   *
+   * A channel with no thread passes `planPath` instead. Passing a synthetic id
+   * here does not work and must not be attempted: it resolves to no plan, so
+   * every call takes the create branch, writes a file, and then throws
+   * NOT_FOUND attaching it to a thread that does not exist — leaving an orphan
+   * plan behind on each attempt.
+   */
   threadId: string;
+  /**
+   * 0.2.13: address the plan directly, for a channel that has no thread. When
+   * given, the thread binding is neither read nor written.
+   */
+  planPath?: string;
   action: PlanAction;
   content: string;
   anchor?: string;
@@ -264,13 +281,20 @@ export class PlanService {
    * would otherwise silently clobber each other.
    */
   async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
-    const { threadId, action, content, anchor, heading, title, changeSummary, changedBy } = input;
-    const lockKey = this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
+    const { threadId, planPath: addressed, action, content, anchor, heading, title, changeSummary, changedBy } =
+      input;
+    /**
+     * An explicitly addressed plan must EXIST — this path does not create one.
+     * Creation is thread-bound by design (§7: "a plan is born only from a
+     * thread"), so a channel with no thread can edit plans and not mint them.
+     */
+    if (addressed !== undefined) await this.getByPath(addressed);
+    const lockKey = addressed ?? this.deps.chatService.getThreadPlanPath(threadId) ?? `thread:${threadId}`;
 
     return this.withLock(lockKey, async () => {
       // Re-resolve inside the lock: another call for the same thread may have
       // created the plan while this call was waiting its turn.
-      const existingPath = this.deps.chatService.getThreadPlanPath(threadId);
+      const existingPath = addressed ?? this.deps.chatService.getThreadPlanPath(threadId);
 
       if (!existingPath) {
         const trimmedTitle = title?.trim();

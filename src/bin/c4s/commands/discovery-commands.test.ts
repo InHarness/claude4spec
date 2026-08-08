@@ -1,22 +1,41 @@
 /**
- * 0.2.6 — the ten commands that close the CLI's gap with the discovery core.
+ * The discovery commands, as TRANSPORTS.
  *
- * What is asserted here is exactly what the CLI OWNS: flag mapping and the
- * guards that belong to the transport. The behaviour of each operation —
- * pagination, budget, sort order, what an error suggests — is the core's, and is
- * asserted in `src/server/discovery/discovery.test.ts`; re-asserting it here
- * would be a second definition of the same contract.
+ * ## Why this test changed shape in 0.2.13
+ *
+ * It used to build a real db slot, insert rows, and assert what came back —
+ * because the commands opened that slot themselves. Item 22 took the slot away:
+ * a command now resolves an address, health-checks it, calls the operation's
+ * route, and prints what it was handed. So there is nothing left here that the
+ * core's own tests do not already own, and everything left that a wire contract
+ * owns.
+ *
+ * What is asserted, against a real HTTP server on an ephemeral port:
+ *
+ *   1. WHICH request. Method, path and query string — the mapping from flags to
+ *      the operation's route. This is the only place that mapping exists, and
+ *      the only way to catch a parameter that is parsed and then dropped.
+ *   2. That the payload is printed AS RECEIVED. The CLI does not serialize,
+ *      re-shape or re-order; where it does project (the tag commands' buckets,
+ *      `list-slugs`), the projection is asserted.
+ *   3. That the CLI's OWN guards still refuse before a request is made — a flag
+ *      the command does not accept must not reach the server at all.
+ *
+ * Guards that used to be asserted here and are not any more — `--range` on a
+ * section-indexed root, an empty `--anchors`, an unknown `--root-id` — belong to
+ * the core, which raises them with the repair path attached. They are asserted
+ * in `src/server/discovery/discovery.test.ts`; asserting them again through a
+ * stub would only prove the stub.
  */
 
-import Database from 'better-sqlite3';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseArgs } from '../args.js';
 import { WorkspaceRegistry } from '../../../server/workspace/registry.js';
-import { runMigrations } from '../../../server/db/migrate.js';
-import { applyCoreEntityMigrations } from '../../../../tests/helpers/test-db.js';
+import { __resetDelegateTargets } from '../delegate.js';
 import { runGetPage } from './get-page.js';
 import { runGetSections } from './get-sections.js';
 import { runListPages } from './list-pages.js';
@@ -27,52 +46,61 @@ import { runResolveIdentity } from './resolve-identity.js';
 import { runCheckConsistency } from './check-consistency.js';
 import { runListEntities } from './list-entities.js';
 import { runGetEntities } from './get-entities.js';
+import { runListSlugs } from './list-slugs.js';
 import { runFindReferences } from './find-references.js';
+import { runTaggedList } from './tagged-list.js';
+import { runCatalog } from './catalog.js';
+import { runDescribe } from './describe.js';
+import { runListTags } from './list-tags.js';
+import { runInlineMention } from './inline-mention.js';
+import { runElementList } from './element-list.js';
+
+/** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
+const CONFIG = {
+  name: 'test-project',
+  roots: [{ id: 'pages', dir: 'pages' }],
+  entitiesDir: 'entities',
+  writingStyle: null,
+  onboarding: {},
+};
 
 describe('discovery commands on the CLI', () => {
   let registryDir: string;
   let projectDir: string;
   let prevHome: string | undefined;
   let stdout: string;
+  let server: http.Server;
+  let seen: Array<{ method: string; url: string }>;
+  /** What the next non-config request answers with. */
+  let reply: unknown;
 
-  const PAGE = [
-    '# Top',
-    '',
-    '## Budget rules',
-    '<!-- anchor: aaaaaa11 -->',
-    '',
-    'The response budget is not a page.',
-    '',
-  ].join('\n');
-
-  beforeEach(() => {
+  beforeEach(async () => {
     registryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-disc-cmd-registry-'));
     projectDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-disc-cmd-project-'));
     prevHome = process.env.C4S_HOME;
     process.env.C4S_HOME = registryDir;
 
+    seen = [];
+    reply = { ok: true };
+    server = http.createServer((req, res) => {
+      const url = req.url ?? '';
+      if (url.endsWith('/config')) {
+        res.setHeader('content-type', 'application/json');
+        return res.end(JSON.stringify(CONFIG));
+      }
+      seen.push({ method: req.method ?? 'GET', url });
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(reply));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    // The registry is how the CLI finds the address: `defaultPort` is the only
+    // thing it reads to know where to call.
     const registry = new WorkspaceRegistry(registryDir);
-    const ws = registry.selectOrCreate({ name: 'default' });
-    const project = registry.registerProject(ws, projectDir);
-
-    fs.mkdirSync(path.join(projectDir, 'pages'), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, 'pages', 'budget.md'), PAGE, 'utf-8');
-
-    // The db slot the resolver will point `createContext` at.
-    const slot = registry.slotDir(ws, project.id);
-    fs.mkdirSync(slot, { recursive: true });
-    const db = new Database(path.join(slot, 'db.sqlite'));
-    db.pragma('foreign_keys = ON');
-    runMigrations(db);
-    applyCoreEntityMigrations(db);
-    db.prepare(
-      `INSERT INTO section_index
-         (rootId, anchor, page_path, heading_path, heading_slug, heading_level, heading_text,
-          content_hash, line_start, line_end, paragraph_count)
-       VALUES ('pages', 'aaaaaa11', 'budget.md', 'Budget rules', 'budget-rules', 2, 'Budget rules',
-               'hash', 3, 7, 1)`,
-    ).run();
-    db.close();
+    const ws = registry.selectOrCreate({ name: 'default', port });
+    registry.registerProject(ws, projectDir);
+    __resetDelegateTargets();
 
     stdout = '';
     vi.spyOn(process.stdout, 'write').mockImplementation((chunk: unknown) => {
@@ -81,8 +109,10 @@ describe('discovery commands on the CLI', () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    __resetDelegateTargets();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     if (prevHome === undefined) delete process.env.C4S_HOME;
     else process.env.C4S_HOME = prevHome;
     fs.rmSync(registryDir, { recursive: true, force: true });
@@ -92,52 +122,322 @@ describe('discovery commands on the CLI', () => {
   const identity = () => ['--project', path.basename(projectDir), '--workspace', 'default'];
   const args = (...argv: string[]) => parseArgs([...argv, ...identity()]);
   const printed = () => JSON.parse(stdout) as Record<string, unknown>;
+  /** The path+query of the one operation request, with the project prefix stripped. */
+  const called = () => {
+    expect(seen).toHaveLength(1);
+    return seen[0]!.url.replace(/^\/api\/projects\/[^/]+/, '');
+  };
 
-  describe('the phrase → text path works with no server', () => {
-    it('search-pages hands back an anchor that get-sections then resolves to a body', async () => {
-      await runSearchPages(args('search-pages', '--query', 'response budget'));
-      const hits = printed().items as Array<Record<string, unknown>>;
-      expect(hits.length).toBeGreaterThan(0);
-      expect(hits[0]).toMatchObject({ kind: 'section', anchor: 'aaaaaa11' });
+  describe('each command calls its operation, and prints what came back', () => {
+    it('[ac:ac-komendy-discovery-c4s-catalog-c4s] catalog → overview; describe → types; list-tags → the CORE tag projection', async () => {
+      reply = { types: {}, roots: [], tagCount: 0, claude4spec: '0.0.0' };
+      await runCatalog(args('catalog'));
+      expect(called()).toBe('/_meta/overview');
+      expect(printed()).toEqual(reply);
 
+      seen = [];
       stdout = '';
-      await runGetSections(args('get-sections', '--anchors', 'aaaaaa11'));
-      const results = printed().results as Array<Record<string, unknown>>;
-      expect(results[0]!.body).toContain('The response budget is not a page.');
-      // 0.2.6 breaking change — the response carries the content, not a version of it.
-      expect(results[0]).not.toHaveProperty('content_hash');
+      reply = { types: [{ type: 'ac' }] };
+      await runDescribe(args('describe', '--type', 'ac', '--view', 'detail'));
+      expect(called()).toBe('/_meta/types?type=ac&view=detail');
+
+      seen = [];
+      stdout = '';
+      reply = { items: [], total: 0, hasMore: false };
+      await runListTags(args('list-tags', '--with-counts', '--min-count', '2'));
+      // `/tags/list`, NOT `/tags` — the UI's route answers a different shape and
+      // orders differently, and serving both from one path would break it.
+      expect(called()).toBe('/tags/list?withCounts=true&minCount=2');
     });
 
-    it('list-sections --by anchor measures the subtree before anything is pulled', async () => {
+    it('the entity operations carry every flag they accept', async () => {
+      reply = { items: [], total: 0, hasMore: false };
+      await runListEntities(
+        args('list-entities', '--type', 'ac', '--tags', 'a,b', '--filter', 'and', '--view', 'detail', '--mode', 'items', '--limit', '5', '--offset', '10'),
+      );
+      expect(called()).toBe('/entities/ac/list?tags=a%2Cb&filter=and&view=detail&mode=items&limit=5&offset=10');
+
+      seen = [];
+      stdout = '';
+      reply = { type: 'ac', view: 'detail', results: [] };
+      await runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'beta,alpha', '--view', 'detail'));
+      // Input ORDER is preserved on the wire — the core answers in the order the
+      // caller named, and a transport that sorted would lose that.
+      expect(called()).toBe('/entities/ac/get?slugs=beta%2Calpha&view=detail');
+
+      seen = [];
+      stdout = '';
+      reply = { searchedFields: ['title'], items: [], total: 0, hasMore: false };
+      await runSearchEntities(
+        args('search-entities', '--type', 'ac', '--query', 'x', '--fields', 'title,body', '--mode', 'count'),
+      );
+      // `fields` and `mode` are on the wire: the route took neither before this
+      // release, so `--mode count` would have paid for a full listing.
+      expect(called()).toBe('/entities/ac/search?q=x&fields=title%2Cbody&mode=count');
+      expect(printed().searchedFields).toEqual(['title']);
+    });
+
+    it('the page and section operations address their own routes', async () => {
+      reply = { items: [], total: 0, hasMore: false };
+      await runListPages(args('list-pages', '--root-id', 'pages', '--prefix', 'g/', '--sort', 'modified'));
+      expect(called()).toBe('/pages/pages/list?prefix=g%2F&sort=modified');
+
+      seen = [];
+      stdout = '';
+      reply = { content: '# Top' };
+      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md'));
+      // The path is a QUERY parameter: it contains slashes, and no page name can
+      // shadow the operation's route.
+      expect(called()).toBe('/pages/pages/get?path=budget.md');
+
+      seen = [];
+      stdout = '';
+      reply = { items: [], total: 0, hasMore: false };
+      await runSearchPages(args('search-pages', '--query', 'budget', '--root-id', 'pages', '--mode', 'pages'));
+      // CROSS-ROOT: no root segment, `--root-id` only narrows.
+      expect(called()).toBe('/pages/search?q=budget&rootId=pages&mode=pages');
+
+      seen = [];
+      stdout = '';
+      reply = { items: [], total: 0, hasMore: false, is_known: true };
       await runListSections(args('list-sections', '--by', 'anchor', '--anchor', 'aaaaaa11'));
-      expect(printed()).toMatchObject({ is_known: true, total: 1 });
-      expect((printed().items as Array<Record<string, unknown>>)[0]).toMatchObject({
-        anchor: 'aaaaaa11',
-        heading: 'Budget rules',
+      expect(called()).toBe('/sections/list?by=anchor&anchor=aaaaaa11');
+
+      seen = [];
+      stdout = '';
+      reply = { results: [{ anchor: 'aaaaaa11', body: 'text' }] };
+      await runGetSections(args('get-sections', '--anchors', 'aaaaaa11,bbbbbb22', '--include-subtree'));
+      expect(called()).toBe('/sections/get?anchors=aaaaaa11%2Cbbbbbb22&includeSubtree=true');
+      expect(printed().results).toEqual(reply.results);
+    });
+
+    it('resolve-identity carries --types, which the route used to drop', async () => {
+      reply = { candidates: [] };
+      await runResolveIdentity(args('resolve-identity', '--query', 'alph', '--types', 'ac,dto', '--limit', '3'));
+      expect(called()).toBe('/_meta/identities?q=alph&types=ac%2Cdto&limit=3');
+    });
+
+    it('check-consistency prints the report as received, envelope and all', async () => {
+      reply = { summary: { total: 2 }, findings: [{ rule: 1 }] };
+      await runCheckConsistency(args('check-consistency', '--severity', 'error', '--limit', '1'));
+      expect(called()).toBe('/_meta/consistency?severity=error&limit=1');
+      expect(printed()).toEqual(reply);
+      // A report, not a collection: nothing here invents a pagination envelope.
+      expect(printed()).not.toHaveProperty('hasMore');
+    });
+
+    it('an unknown anchor still errors inside its own item, and the call succeeds', async () => {
+      // The batch is the reason the operation exists; one bad anchor must not
+      // make the CLI throw away the good rows.
+      reply = {
+        results: [
+          { anchor: 'aaaaaa11', body: 'text' },
+          { anchor: 'zzzzzz99', code: 'SECTION_NOT_FOUND' },
+        ],
+      };
+      await expect(
+        runGetSections(args('get-sections', '--anchors', 'aaaaaa11,zzzzzz99')),
+      ).resolves.toBeUndefined();
+      expect((printed().results as unknown[])).toHaveLength(2);
+    });
+  });
+
+  describe('the aliases and the projections', () => {
+    it('inline_mention is get_entities with a fixed view, unwrapped to the one row', async () => {
+      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: { title: 'A' } }] };
+      await runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'));
+      expect(called()).toBe('/entities/ac/get?slugs=a&view=inline_mention');
+      expect(printed()).toEqual({ title: 'A' });
+    });
+
+    it('a missing entity becomes ENTITY_NOT_FOUND — the null row the list operation reports', async () => {
+      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: null }] };
+      await expect(runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'))).rejects.toMatchObject({
+        code: 'ENTITY_NOT_FOUND',
       });
     });
 
-    it('get-page returns the page as authored', async () => {
-      await runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md'));
-      expect(printed().content).toBe(PAGE);
+    it('list-slugs sweeps and projects down to the slugs', async () => {
+      reply = { items: [{ slug: 'a', data: {} }, { slug: 'b', data: {} }], total: 2, hasMore: false };
+      await runListSlugs(args('list-slugs', '--type', 'ac'));
+      // `limit=1000` is the sweep's page size, asked for explicitly. The core
+      // helpers this replaced passed `MAX_LIMIT`; omitting it let the server
+      // apply the 50-row agent default, which cut the sweep's completeness
+      // ceiling ~40x and multiplied the round-trips for the same answer by 20.
+      expect(called()).toBe('/entities/ac/list?limit=1000&view=inline_mention&offset=0');
+      expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'], hasMore: false });
     });
   });
 
   /**
-   * An unknown anchor is an item-level answer, not a call-level failure: the
-   * handler must RESOLVE. If it threw, every shell caller would lose the good
-   * sections in the same batch — which is the entire reason the operation is
-   * batched.
+   * `element_list` is the TAG RENDERER, and it promised two things the raw
+   * `get_entities` operation deliberately does not. Both were provided by the
+   * deleted `getEntitiesAll`, both were lost when the command started calling
+   * the route directly, and neither is visible in the response's shape — which
+   * is why they are asserted against the requests that were made.
    */
-  it('get-sections: an unknown anchor errors inside its own item, and the call succeeds', async () => {
-    await expect(runGetSections(args('get-sections', '--anchors', 'aaaaaa11,zzzzzz99'))).resolves.toBeUndefined();
-    const results = printed().results as Array<Record<string, unknown>>;
-    expect(results).toHaveLength(2);
-    expect(results[0]!.body).toBeTruthy();
-    expect(results[1]).toMatchObject({ anchor: 'zzzzzz99', code: 'SECTION_NOT_FOUND' });
+  describe('element_list keeps what the raw operation does not promise', () => {
+    const replyFor = (slugs: string[], truncate: string[] = []) => ({
+      type: 'ac',
+      view: 'element_list_item',
+      results: slugs.map((slug) =>
+        truncate.includes(slug)
+          ? { slug, entity: null, truncated: true }
+          : { slug, entity: { slug } },
+      ),
+    });
+
+    const serveByRequest = (fn: (slugs: string[]) => unknown): void => {
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        const url = req.url ?? '';
+        res.setHeader('content-type', 'application/json');
+        if (url.endsWith('/config')) return res.end(JSON.stringify(CONFIG));
+        seen.push({ method: req.method ?? 'GET', url });
+        const raw = new URL(url, 'http://x').searchParams.get('slugs') ?? '';
+        res.end(JSON.stringify(fn(raw.split(',').filter(Boolean))));
+      });
+    };
+
+    it('chunks a list past the 50-slug cap instead of being refused', async () => {
+      // `get_entities` throws INVALID_ARGUMENT past 50 — right for the raw
+      // operation, wrong for a tag naming 51 acceptance criteria, which is an
+      // ordinary page. The whole list must come back, in input order.
+      const slugs = Array.from({ length: 51 }, (_, i) => `ac-${i}`);
+      serveByRequest((chunk) => replyFor(chunk));
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', slugs.join(',')));
+      expect(seen).toHaveLength(2);
+      expect(new URL(seen[0]!.url, 'http://x').searchParams.get('slugs')!.split(',')).toHaveLength(50);
+      expect(new URL(seen[1]!.url, 'http://x').searchParams.get('slugs')).toBe('ac-50');
+      expect((printed().items as Array<{ slug: string }>).map((i) => i.slug)).toEqual(slugs);
+      expect(printed().missing).toEqual([]);
+    });
+
+    it('re-fetches a budget-degraded row instead of reporting it as a missing slug', async () => {
+      /**
+       * Past its response budget the operation demotes a row to
+       * `{ entity: null, truncated: true }` rather than dropping it. A renderer
+       * that does not know the flag reads that as "no such entity" and shows an
+       * EXISTING entity under `missing` — which a page author then acts on. The
+       * retry is single-slug, because a single-slug call cannot come back
+       * degraded, which is what makes it terminate.
+       */
+      let firstCall = true;
+      serveByRequest((chunk) => {
+        if (firstCall) {
+          firstCall = false;
+          return replyFor(chunk, ['b']);
+        }
+        return replyFor(chunk);
+      });
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', 'a,b,c'));
+      expect(seen).toHaveLength(2);
+      expect(new URL(seen[1]!.url, 'http://x').searchParams.get('slugs')).toBe('b');
+      expect((printed().items as Array<{ slug: string }>).map((i) => i.slug)).toEqual(['a', 'b', 'c']);
+      expect(printed().missing).toEqual([]);
+    });
+
+    it('a genuinely absent slug is still reported as missing', async () => {
+      // The retry must not turn "no such entity" into a row: a null WITHOUT
+      // `truncated` is the real answer, and it is what `missing` is for.
+      serveByRequest((chunk) => ({
+        type: 'ac',
+        view: 'element_list_item',
+        results: chunk.map((slug) => ({ slug, entity: slug === 'gone' ? null : { slug } })),
+      }));
+      await runElementList(args('element_list', '--type', 'ac', '--slugs', 'a,gone'));
+      expect(seen).toHaveLength(1);
+      expect(printed().missing).toEqual(['gone']);
+    });
   });
 
-  describe('the guards the transport owns', () => {
+  /**
+   * The sweeps are the one place the transport carries a LOOP, so the loop is
+   * what gets asserted: it must not stop at the first page, and it must not spin
+   * on a server that reports `hasMore` while returning nothing.
+   */
+  describe('the exhaustive sweeps page to the end', () => {
+    it('tagged_list follows hasMore across pages and returns every row', async () => {
+      const pages = [
+        { items: [{ slug: 'a', data: 1 }], total: 3, hasMore: true },
+        { items: [{ slug: 'b', data: 2 }], total: 3, hasMore: true },
+        { items: [{ slug: 'c', data: 3 }], total: 3, hasMore: false },
+      ];
+      let n = 0;
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        const url = req.url ?? '';
+        res.setHeader('content-type', 'application/json');
+        if (url.endsWith('/config')) return res.end(JSON.stringify(CONFIG));
+        seen.push({ method: req.method ?? 'GET', url });
+        res.end(JSON.stringify(pages[Math.min(n++, pages.length - 1)]));
+      });
+
+      await runTaggedList(args('tagged_list', '--type', 'ac', '--tags', 'x'));
+      expect(seen).toHaveLength(3);
+      // The offset advances by what was actually returned, not by a page size
+      // the transport assumed.
+      expect(seen.map((s) => s.url.replace(/^.*\?/, ''))).toEqual([
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=0',
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=1',
+        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=2',
+      ]);
+      expect(printed().items).toEqual([1, 2, 3]);
+      // A sweep that ran to the end says so.
+      expect(printed().hasMore).toBe(false);
+    });
+
+    it('a sweep the guard cuts short is reported as incomplete, not printed as the answer', async () => {
+      /**
+       * `delegateGetAll` documents `exhausted: false` as "the caller must report
+       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`/`list-slugs`
+       * all swallowed it. A tag list cut at the runaway guard and presented as
+       * complete is what authorizes a rename or a delete against a set that was
+       * never fully seen. Simulated here with a server that never stops saying
+       * `hasMore`.
+       */
+      server.removeAllListeners('request');
+      server.on('request', (req, res) => {
+        const url = req.url ?? '';
+        res.setHeader('content-type', 'application/json');
+        if (url.endsWith('/config')) return res.end(JSON.stringify(CONFIG));
+        seen.push({ method: req.method ?? 'GET', url });
+        res.end(JSON.stringify({ items: [{ slug: 'x', data: 1 }], total: 99999, hasMore: true }));
+      });
+      await runTaggedList(args('tagged_list', '--type', 'ac', '--tags', 'x'));
+      expect(printed().hasMore).toBe(true);
+      expect(seen.length).toBeGreaterThan(1);
+    });
+
+    it('a page that claims hasMore while returning nothing ends the sweep instead of spinning', async () => {
+      reply = { items: [], total: 99, hasMore: true };
+      await runTaggedList(args('tagged_list', '--type', 'ac', '--tags', 'x'));
+      expect(seen).toHaveLength(1);
+      expect(printed().items).toEqual([]);
+    });
+
+    it('find-references reports a sweep that did NOT finish rather than claiming completeness', async () => {
+      // `hasMore: true` forever with rows: the guard stops it, and the command
+      // must say so. A command that answered `hasMore: false` here would be the
+      // wrong answer that reads like a right one.
+      reply = { references: [{ rootId: 'pages', pagePath: 'a.md' }], total: 1, hasMore: true };
+      await runFindReferences(args('find-references', '--type', 'ac', '--slug', 'x'));
+      expect(printed().hasMore).toBe(true);
+      expect(seen.length).toBeGreaterThan(1);
+    });
+
+    it('[ac:m11-find-references-command] find-references carries --include-tag-matches and --pages onto the wire', async () => {
+      reply = { references: [], total: 0, hasMore: false };
+      await runFindReferences(
+        args('find-references', '--type', 'ac', '--slug', 'x', '--include-tag-matches', '--pages', 'docs/guides'),
+      );
+      expect(called()).toBe(
+        '/references?limit=1000&type=ac&slug=x&includeTagMatches=true&pages=docs%2Fguides&offset=0',
+      );
+    });
+  });
+
+  describe('the guards the transport owns — refused before any request', () => {
     it('page commands require --root-id and do not fall back to the built-in root', async () => {
       await expect(runListPages(args('list-pages'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
       await expect(runGetPage(args('get-page', '--path', 'budget.md'))).rejects.toMatchObject({
@@ -146,13 +446,7 @@ describe('discovery commands on the CLI', () => {
       await expect(
         runListSections(args('list-sections', '--by', 'page', '--path', 'budget.md')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGS' });
-    });
-
-    it('an unknown --root-id names the roots that exist rather than reporting a missing page', async () => {
-      await expect(runListPages(args('list-pages', '--root-id', 'nope'))).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-        hint: expect.stringContaining('pages'),
-      });
+      expect(seen).toEqual([]);
     });
 
     /**
@@ -166,6 +460,7 @@ describe('discovery commands on the CLI', () => {
       await expect(
         runListSections(args('list-sections', '--by', 'anchor', '--anchor', 'aaaaaa11', '--root-id', 'pages')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(seen).toEqual([]);
     });
 
     it('list-sections requires the --by discriminator, and there is no query mode', async () => {
@@ -182,70 +477,13 @@ describe('discovery commands on the CLI', () => {
         runSearchPages(args('search-pages', '--query', 'budget', '--regex', 'bud.*')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       await expect(runSearchPages(args('search-pages'))).rejects.toMatchObject({ code: 'INVALID_ARGS' });
-    });
-
-    it('--range is refused on a section-indexed root, with the alternative in the hint', async () => {
-      await expect(
-        runGetPage(args('get-page', '--root-id', 'pages', '--path', 'budget.md', '--range', '1:3')),
-      ).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-        hint: expect.stringMatching(/list_sections.*get_sections/),
-      });
-    });
-
-    it('an empty --anchors list is refused by the core, so the message carries the limit', async () => {
-      await expect(runGetSections(args('get-sections', '--anchors', ',,'))).rejects.toMatchObject({
-        code: 'INVALID_ARGUMENT',
-        message: expect.stringContaining('50'),
-      });
+      expect(seen).toEqual([]);
     });
 
     it('search-entities requires --type: it is the one command that is not cross-type', async () => {
       await expect(runSearchEntities(args('search-entities', '--query', 'x'))).rejects.toMatchObject({
         code: 'INVALID_ARGS',
       });
-    });
-
-    /**
-     * Listing a root must not CREATE it. This command is declared
-     * `readonly-reader`, and the core's page walk used to `mkdir` the root it
-     * was about to list — so a reader wrote to the user's working tree, and
-     * failed outright on a read-only checkout. `--pages` names a directory that
-     * does not exist; the honest answer is "no pages there", not a new folder.
-     */
-    it('find-references does not create the page root it was pointed at', async () => {
-      const absent = path.join(projectDir, 'no-such-root');
-      await expect(
-        runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'x', '--pages', 'no-such-root')),
-      ).resolves.toBeUndefined();
-      // 0.2.7 — the CORE'S envelope, not a bare array and not a transport
-      // projection of it. Still exhaustive: `hasMore` is false because the sweep
-      // ran to the end, not because the first page was taken.
-      expect(JSON.parse(stdout)).toEqual({ references: [], total: 0, hasMore: false });
-      expect(fs.existsSync(absent)).toBe(false);
-    });
-
-    /**
-     * 0.2.7 — the CLI consumes the core directly, so a hit is ADDRESSABLE: a
-     * page is keyed by `(rootId, pagePath)`, and the projection that used to sit
-     * between the two dropped `rootId`, making two hits from different roots
-     * indistinguishable.
-     */
-    it('find-references returns the core envelope, and each hit carries its rootId', async () => {
-      fs.writeFileSync(
-        path.join(projectDir, 'pages', 'refs.md'),
-        '# Refs\n\n<inline_mention type="diagram" slug="alpha"/>\n',
-        'utf-8',
-      );
-      await runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'alpha'));
-      const out = printed() as {
-        references: Array<{ rootId: string; pagePath: string }>;
-        total: number;
-        hasMore: boolean;
-      };
-      expect(out.total).toBe(1);
-      expect(out.hasMore).toBe(false);
-      expect(out.references[0]).toMatchObject({ rootId: 'pages', pagePath: 'refs.md' });
     });
 
     /**
@@ -258,7 +496,7 @@ describe('discovery commands on the CLI', () => {
         runGetSections(args('get-sections', '--anchors', 'aaaaaa11', '--limit', '1')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       await expect(
-        runGetEntities(args('get-entities', '--type', 'diagram', '--slugs', 'a,b', '--offset', '1')),
+        runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'a,b', '--offset', '1')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       await expect(runCheckConsistency(args('check-consistency', '--offset', '5'))).rejects.toMatchObject({
         code: 'INVALID_ARGUMENT',
@@ -267,51 +505,29 @@ describe('discovery commands on the CLI', () => {
         runResolveIdentity(args('resolve-identity', '--query', 'x', '--offset', '5')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
       await expect(
-        runFindReferences(args('find-references', '--type', 'diagram', '--slug', 'x', '--limit', '5')),
+        runFindReferences(args('find-references', '--type', 'ac', '--slug', 'x', '--limit', '5')),
       ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+      expect(seen).toEqual([]);
     });
-
   });
 
-  describe('entity commands map their flags onto the core', () => {
-    beforeEach(() => {
-      // Written through the same slot the commands read.
-      const registry = new WorkspaceRegistry(registryDir);
-      const ws = registry.selectOrCreate({ name: 'default' });
-      const project = registry.registerProject(ws, projectDir);
-      const db = new Database(path.join(registry.slotDir(ws, project.id), 'db.sqlite'));
-      const insert = db.prepare(`INSERT INTO diagram (slug, format, source) VALUES (?, 'mermaid', 'graph TD')`);
-      for (const slug of ['alpha', 'beta']) insert.run(slug);
-      db.close();
-    });
-
-    it('list-entities --mode count answers "how many" without listing', async () => {
-      await runListEntities(args('list-entities', '--type', 'diagram', '--mode', 'count'));
-      expect(printed()).toMatchObject({ mode: 'count', total: 2 });
-    });
-
-    it('get-entities returns the named slugs in input order and echoes the view', async () => {
-      await runGetEntities(args('get-entities', '--type', 'diagram', '--slugs', 'beta,alpha', '--view', 'detail'));
-      expect(printed().view).toBe('detail');
-      expect((printed().results as Array<{ slug: string }>).map((r) => r.slug)).toEqual(['beta', 'alpha']);
-    });
-
-    it('search-entities always declares searchedFields, so an empty result is readable', async () => {
-      await runSearchEntities(args('search-entities', '--type', 'diagram', '--query', 'nothing-matches-this'));
-      expect(printed().searchedFields).toBeDefined();
-      expect(printed().total).toBe(0);
-    });
-
-    it('resolve-identity is the only cross-type command', async () => {
-      await runResolveIdentity(args('resolve-identity', '--query', 'alph'));
-      expect((printed().candidates as Array<{ slug: string }>).map((c) => c.slug)).toContain('alpha');
-    });
-
-    it('check-consistency reports a summary rather than a page', async () => {
-      await runCheckConsistency(args('check-consistency'));
-      expect(printed().summary).toMatchObject({ total: expect.any(Number) });
-      // A report, not a collection: no pagination envelope to mistake it for one.
-      expect(printed()).not.toHaveProperty('hasMore');
+  /**
+   * Item 24 and the exit-code remap, at the level the CLI owns them: a command
+   * that cannot reach a server says so with the code that maps to exit 8, and it
+   * says it BEFORE trying the operation.
+   */
+  describe('no server', () => {
+    it('[ac:ac-przed-tura-runagent-wykonuje-health-ch] answers SERVER_NOT_RUNNING from the health-check, not from the operation', async () => {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      __resetDelegateTargets();
+      await expect(runCatalog(args('catalog'))).rejects.toMatchObject({
+        code: 'SERVER_NOT_RUNNING',
+        hint: expect.stringContaining('npx @inharness-ai/claude4spec'),
+      });
+      // Nothing was attempted against the operation's route.
+      expect(seen).toEqual([]);
+      // Reopened so the shared afterEach close is a no-op rather than a hang.
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     });
   });
 });

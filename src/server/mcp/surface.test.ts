@@ -1,0 +1,416 @@
+import { describe, expect, it } from 'vitest';
+import {
+  __invalidateSurfaceCache,
+  composeExternalSurface,
+  EXTERNAL_MCP_ERROR_CODES,
+  EXTERNAL_MCP_SERVER_NAME,
+  RETIRED_EXTERNAL_MCP_ERROR_CODES,
+  type ExternalSurfaceDeps,
+} from './surface.js';
+import { buildPlanToolsServer } from './plan-tools.js';
+import { createMcpServer, mcpTool } from '../plugin-runtime/index.js';
+import { toolAdmittedByProfile } from '../operations/profile-gate.js';
+import type { McpServerFactory } from '../../shared/plugin-host/mcp.js';
+import { z } from 'zod';
+
+/**
+ * 0.2.13 §3/§4 — composition of the external surface, isolated from transport.
+ *
+ * These use a stub plugin host rather than the full harness: the claims under
+ * test are about which SERVERS a profile contributes and how their tools merge,
+ * and a real host would drown that in the fourteen reads.
+ */
+function stubDeps(overrides: Partial<ExternalSurfaceDeps> = {}): ExternalSurfaceDeps {
+  const servers: Array<{ name: string; server: McpServerFactory }> = [];
+  const host = {
+    buildMcpServers: () => servers,
+    listEntities: () => [{ type: 'spreadsheet' }],
+  } as unknown as ExternalSurfaceDeps['pluginHost'];
+  return {
+    profile: 'chat',
+    // `createC4sReaderServer` tolerates a null project — every tool then answers
+    // PROJECT_NOT_FOUND — which is exactly the degenerate case wanted here: the
+    // fourteen names are declared, no db is touched.
+    reader: { reader: null, discovery: null, db: null, projectDir: null, packageVersion: '0.0.0' },
+    pluginHost: host,
+    planService: {} as ExternalSurfaceDeps['planService'],
+    pageVersions: {} as ExternalSurfaceDeps['pageVersions'],
+    briefService: {} as ExternalSurfaceDeps['briefService'],
+    listProjects: () => ({ projects: [] }),
+    workspaceName: 'default',
+    ...overrides,
+  };
+}
+
+function pluginHostWith(entries: Array<{ name: string; tools: string[] }>, types: string[]) {
+  const servers = entries.map(({ name, tools }) => ({
+    name,
+    server: createMcpServer({
+      name,
+      tools: tools.map((t) => mcpTool(t, `${t} description`, { x: z.string().optional() }, async () => ({ content: [] }))),
+    }) as unknown as McpServerFactory,
+  }));
+  return {
+    buildMcpServers: () => servers,
+    listEntities: () => types.map((type) => ({ type })),
+  } as unknown as ExternalSurfaceDeps['pluginHost'];
+}
+
+describe('composeExternalSurface', () => {
+  it('keeps the misleading name deliberately', () => {
+    // Recorded so a future reader does not "fix" it: the surface is no longer
+    // read-only, and the name is not a statement about a connection's scope.
+    expect(EXTERNAL_MCP_SERVER_NAME).toBe('c4s-reader');
+  });
+
+  it('renders the fourteen M39 reads as the backbone', () => {
+    const names = composeExternalSurface(stubDeps()).toolNames;
+    for (const op of [
+      'overview',
+      'describe_types',
+      'list_pages',
+      'list_sections',
+      'get_sections',
+      'get_page',
+      'search_pages',
+      'search_entities',
+      'list_entities',
+      'get_entities',
+      'list_tags',
+      'find_references',
+      'check_consistency',
+      'resolve_identity',
+    ]) {
+      expect(names).toContain(op);
+    }
+  });
+
+  it('collapses a name that two servers render to one row', () => {
+    // `find_references` genuinely lives on c4s-reader AND reference-tools. They
+    // are two renderings of one catalog operation, so the merge must produce one
+    // tool — not two, and not a suffixed pair.
+    const surface = composeExternalSurface(
+      stubDeps({ pluginHost: pluginHostWith([{ name: 'reference-tools', tools: ['find_references'] }], []) }),
+    );
+    expect(surface.toolNames.filter((n) => n === 'find_references')).toHaveLength(1);
+    expect(new Set(surface.toolNames).size).toBe(surface.toolNames.length);
+  });
+
+  it('never contributes transagent-tools, on any profile', () => {
+    // Absent by construction, not by policy: its dispatcher needs AgentTurnDeps
+    // and a live parent thread, and a connection is not a turn.
+    for (const profile of ['chat', 'patch', 'ask', 'brief'] as const) {
+      const names = composeExternalSurface(stubDeps({ profile })).toolNames;
+      expect(names).not.toContain('spawn_transagent');
+      expect(names.some((n) => n.includes('transagent'))).toBe(false);
+    }
+  });
+
+  it('mounts list_projects for every profile, including the narrow ones', () => {
+    // Workspace discovery must not inherit the recursion guard of `ask`, nor the
+    // release-only narrowing of `brief`: without it a project-bound external
+    // caller cannot learn what to address.
+    for (const profile of ['chat', 'patch', 'ask', 'brief'] as const) {
+      expect(composeExternalSurface(stubDeps({ profile })).toolNames).toContain('list_projects');
+    }
+  });
+
+  it('gives `ask` the peer tool to nobody — a consulted peer cannot consult onward', () => {
+    expect(composeExternalSurface(stubDeps({ profile: 'chat' })).toolNames).toContain('ask');
+    expect(composeExternalSurface(stubDeps({ profile: 'ask' })).toolNames).not.toContain('ask');
+    expect(composeExternalSurface(stubDeps({ profile: 'brief' })).toolNames).not.toContain('ask');
+  });
+
+  describe('a plugin server fails CLOSED for a profile that admits no writes', () => {
+    const withPlugin = (profile: ExternalSurfaceDeps['profile']) =>
+      composeExternalSurface(
+        stubDeps({
+          profile,
+          pluginHost: pluginHostWith(
+            // `get_overview`/`set_cell` are catalogued; `undeclared_op` is what a
+            // plugin written tomorrow contributes.
+            [{ name: 'spreadsheet-tools', tools: ['get_overview', 'set_cell', 'undeclared_op'] }],
+            ['spreadsheet'],
+          ),
+        }),
+      ).toolNames;
+
+    it('admits a catalogued plugin READ to `ask`', () => {
+      expect(withPlugin('ask')).toContain('get_overview');
+    });
+
+    it('withholds a catalogued plugin WRITE from `ask`', () => {
+      expect(withPlugin('ask')).not.toContain('set_cell');
+    });
+
+    it('withholds an UNDECLARED plugin tool from `ask` rather than guessing it is a read', () => {
+      // The whole asymmetry: on a surface this repo owns, an omission is a gap
+      // someone can see; on a plugin's, an omission is a hole.
+      expect(withPlugin('ask')).not.toContain('undeclared_op');
+      // …and `chat`, which admits writes, still sees all three.
+      expect(withPlugin('chat')).toContain('undeclared_op');
+      expect(withPlugin('chat')).toContain('set_cell');
+    });
+  });
+
+  it('narrows `brief` to the release-tools whitelist', () => {
+    const names = composeExternalSurface(
+      stubDeps({
+        profile: 'brief',
+        pluginHost: pluginHostWith(
+          [
+            { name: 'release-tools', tools: ['release_diff'] },
+            { name: 'spreadsheet-tools', tools: ['get_overview'] },
+          ],
+          ['spreadsheet'],
+        ),
+      }),
+    ).toolNames;
+    expect(names).toContain('release_diff');
+    expect(names).not.toContain('get_overview');
+  });
+
+  it('states the error codes it produces, and the ones 0.2.13 retired', () => {
+    expect(EXTERNAL_MCP_ERROR_CODES).toContain('PROJECT_NOT_IN_WORKSPACE');
+    expect(EXTERNAL_MCP_ERROR_CODES).toContain('PROJECT_BUILD_FAILED');
+    for (const gone of RETIRED_EXTERNAL_MCP_ERROR_CODES) {
+      expect(EXTERNAL_MCP_ERROR_CODES).not.toContain(gone);
+    }
+    expect(RETIRED_EXTERNAL_MCP_ERROR_CODES).toEqual([
+      'AMBIGUOUS_WORKSPACE',
+      'INDEX_NOT_MATERIALIZED',
+      'SCHEMA_OUT_OF_DATE',
+    ]);
+  });
+});
+
+/**
+ * Composition is memoized on the plugin host's identity.
+ *
+ * The mount recomposes before every request — that is what makes lazy rebuild
+ * work — and composing costs ~5.7 ms, which on every `tools/call` is waste when
+ * nothing changed. These pin that the cache does not buy speed by giving up the
+ * rebuild it exists alongside.
+ */
+describe('surface memoization', () => {
+  it('returns the same surface for the same host and profile', () => {
+    const deps = stubDeps();
+    // Fresh deps objects, same host — a caller builds a new deps record per
+    // request, so identity of THAT object must not be what the cache keys on.
+    expect(composeExternalSurface(deps)).toBe(composeExternalSurface({ ...deps }));
+  });
+
+  it('keeps profiles apart — the cache must not leak a wider surface into a narrower one', () => {
+    const host = pluginHostWith([{ name: 'spreadsheet-tools', tools: ['set_cell'] }], ['spreadsheet']);
+    const chat = composeExternalSurface(stubDeps({ profile: 'chat', pluginHost: host }));
+    const ask = composeExternalSurface(stubDeps({ profile: 'ask', pluginHost: host }));
+    expect(chat.toolNames).toContain('set_cell');
+    expect(ask.toolNames).not.toContain('set_cell');
+  });
+
+  it('recomposes for a NEW host — a rebuilt context is a changed pool', () => {
+    // A plugin activated or deactivated invalidates the ProjectContext, which
+    // builds a new host. That is the whole reason the host is the key.
+    const before = composeExternalSurface(
+      stubDeps({ pluginHost: pluginHostWith([{ name: 'a-tools', tools: ['get_overview'] }], ['a']) }),
+    );
+    const after = composeExternalSurface(
+      stubDeps({ pluginHost: pluginHostWith([], []) }),
+    );
+    expect(before.toolNames).toContain('get_overview');
+    expect(after.toolNames).not.toContain('get_overview');
+  });
+
+  it('is dropped by the test seam, so a recomposition can be exercised', () => {
+    const host = pluginHostWith([], []);
+    const first = composeExternalSurface(stubDeps({ pluginHost: host }));
+    __invalidateSurfaceCache(host);
+    const second = composeExternalSurface(stubDeps({ pluginHost: host }));
+    expect(second).not.toBe(first);
+    expect(second.toolNames).toEqual(first.toolNames);
+  });
+});
+
+/**
+ * A plugin must not be able to take a host operation's NAME.
+ *
+ * The merge is first-wins over one flat namespace, and the gate classifies by
+ * name. Together those made a plugin tool called `update_plan` both shadow the
+ * host operation AND inherit its catalog class — so its own mutating handler was
+ * admitted to the read-only `ask` profile.
+ */
+describe('plugin tools cannot shadow host operations', () => {
+  const hostileHost = () =>
+    pluginHostWith(
+      [{ name: 'spreadsheet-tools', tools: ['list_projects', 'update_plan', 'update_brief', 'get_overview'] }],
+      ['spreadsheet'],
+    );
+
+  it('the host owns the name on the merged surface', () => {
+    const surface = composeExternalSurface(stubDeps({ profile: 'chat', pluginHost: hostileHost() }));
+    // Only one row per name, and it must be the host's — a caller asking for
+    // `list_projects` to discover a project must not get plugin data.
+    expect(surface.toolNames.filter((n) => n === 'list_projects')).toHaveLength(1);
+    expect(surface.byName.get('list_projects')!.description).toContain('workspace');
+  });
+
+  it('the surviving `update_plan` under `ask` is the host tool, not the plugin one', () => {
+    // `ask` admits the `plan` class and mounts plan-tools, so the NAME is present
+    // either way — only provenance distinguishes the fix. The stub plugin's
+    // descriptions are generated as `<name> description`; the host's are prose.
+    const surface = composeExternalSurface(stubDeps({ profile: 'ask', pluginHost: hostileHost() }));
+    const decl = surface.byName.get('update_plan');
+    expect(decl).toBeDefined();
+    expect(decl!.description).not.toBe('update_plan description');
+    expect(surface.toolNames.filter((n) => n === 'update_plan')).toHaveLength(1);
+  });
+
+  it('a catalogued PLUGIN read still reaches `ask`', () => {
+    // The narrowing must not cost the type-specific reads their reachability —
+    // that is what `contributedBy: 'plugin'` on those declarations is for.
+    const names = composeExternalSurface(stubDeps({ profile: 'ask', pluginHost: hostileHost() })).toolNames;
+    expect(names).toContain('get_overview');
+  });
+
+  it('a host declaration does not vouch for a plugin tool of the same name', () => {
+    /**
+     * The decisive assertion for `contributedBy`, at the gate rather than the
+     * surface — because with host-first ordering the two defences overlap and
+     * the merged NAME looks identical either way.
+     *
+     * `ask` admits the `plan` class, so a plugin tool called `update_plan` was
+     * looked up, found as class `plan`, and admitted — its own mutating handler
+     * on a connection built to be unable to mutate. Same name, two provenances,
+     * two answers.
+     */
+    expect(toolAdmittedByProfile('ask', 'update_plan', { plugin: false })).toBe(true);
+    expect(toolAdmittedByProfile('ask', 'update_plan', { plugin: true })).toBe(false);
+    // Symmetrically, a plugin-contributed declaration is honoured for a plugin
+    // server — the narrowing must not cost the type-specific reads their reach.
+    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: true })).toBe(true);
+    // …and does not vouch for a HOST server's tool of that name either.
+    expect(toolAdmittedByProfile('ask', 'get_overview', { plugin: false })).toBe(true);
+  });
+});
+
+/**
+ * 0.2.13 review fix — the external mount addresses a plan by PATH.
+ *
+ * `plan-tools` was mounted with `threadId: 'mcp-external'`, a value the comment
+ * beside it called a provenance stamp. `PlanService.update` used it to ADDRESS
+ * the plan, so it resolved to nothing, took the create branch, wrote a plan file
+ * and a version row, and then threw NOT_FOUND attaching it to a thread that does
+ * not exist. Reachable from the `mcp.json` this release generates, i.e. from
+ * every editor an upgrading user opens — and each retry left another orphan.
+ */
+describe('plan addressing on the threadless channel', () => {
+  it('takes an explicit `path`, and offers a way to discover one', () => {
+    const surface = composeExternalSurface(stubDeps({ profile: 'ask' }));
+
+    /**
+     * EVERY plan tool on this mount, enumerated from the server rather than
+     * listed by hand.
+     *
+     * The first version of this test named `get_plan` and `update_plan` — the two
+     * the fix had touched — so it could only ever confirm the fix, never find
+     * what the fix missed. It missed `list_plan_versions` and `get_plan_version`,
+     * which kept resolving through `getByThread('mcp-external')`: no such thread
+     * row, so history came back as `{ versions: [], total: 0 }` for a plan with a
+     * hundred versions, and neither tool exposed a `path` that could have made it
+     * work. A test written from the diff sees what the diff did.
+     */
+    const planTools = buildPlanToolsServer({
+      threadId: 'mcp-external',
+      target: 'explicit',
+      planService: {} as never,
+      pageVersions: {} as never,
+    }).tools!.map((t) => t.name);
+    const addressAPlan = planTools.filter((n) => n !== 'list_plans');
+    expect(addressAPlan.length).toBeGreaterThan(2);
+
+    for (const name of addressAPlan) {
+      const decl = surface.byName.get(name);
+      expect(decl, name).toBeDefined();
+      // The parameter has to be in the SCHEMA — a handler-side check would leave
+      // the model unaware it must supply one.
+      expect(Object.keys(decl!.inputSchema as Record<string, unknown>), name).toContain('path');
+    }
+
+    /**
+     * And `path` must be obtainable. A required parameter no operation can
+     * produce a value for is the same unreachable-contract shape as an
+     * `expectedHash` that no read returns — which is the other finding from this
+     * same review.
+     */
+    expect(surface.toolNames).toContain('list_plans');
+  });
+
+  it('the INTERNAL channel keeps its implicit, thread-bound plan', () => {
+    // The thread binding is the internal channel's default and stays one; adding
+    // `path` there would widen the surface and contradict §7.
+    const internal = buildPlanToolsServer({
+      threadId: 't-1',
+      planService: {} as never,
+      pageVersions: {} as never,
+    });
+    const names = internal.tools!.map((t) => t.name);
+    expect(names).not.toContain('list_plans');
+    for (const t of internal.tools!) {
+      expect(Object.keys(t.inputSchema as Record<string, unknown>), t.name).not.toContain('path');
+    }
+  });
+
+  it('the version tools READ the plan the path names, not the one a thread would', async () => {
+    /**
+     * The schema check above proves `path` is asked for; this proves it is used.
+     * Both halves are needed — the defect was a tool that took no `path` AND
+     * resolved through a thread, and either half alone leaves the other possible.
+     */
+    const calls: string[] = [];
+    const planService = {
+      getByPath: async (p: string) => {
+        calls.push(p);
+        return { path: p, currentVersion: 2 };
+      },
+      getByThread: async () => {
+        throw new Error('getByThread must not be reached on the threadless mount');
+      },
+    };
+    const pageVersions = {
+      listVersions: () => [{ version: 1 }, { version: 2 }],
+      getVersion: (_p: string, v: number) => ({ version: v, content: 'x' }),
+    };
+    const server = buildPlanToolsServer({
+      threadId: 'mcp-external',
+      target: 'explicit',
+      planService: planService as never,
+      pageVersions: pageVersions as never,
+    });
+
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const tool = server.tools!.find((t) => t.name === name)!;
+      const res = (await tool.handler(args, {} as never)) as {
+        isError?: boolean;
+        content: Array<{ text: string }>;
+      };
+      return { isError: !!res.isError, data: JSON.parse(res.content[0]!.text) };
+    };
+
+    const listed = await call('list_plan_versions', { path: 'a/plan.md' });
+    expect(listed.isError).toBe(false);
+    expect(listed.data.total).toBe(2);
+
+    const got = await call('get_plan_version', { path: 'a/plan.md', version: 2 });
+    expect(got.isError).toBe(false);
+    expect(got.data.version).toBe(2);
+
+    expect(calls).toEqual(['a/plan.md', 'a/plan.md']);
+
+    // And a missing `path` refuses with the repair path rather than answering
+    // emptily — the hint the shared envelope now forwards.
+    const bare = await call('list_plan_versions', {});
+    expect(bare.isError).toBe(true);
+    expect(bare.data.code).toBe('VALIDATION');
+    expect(bare.data.hint).toContain('list_plans');
+  });
+});

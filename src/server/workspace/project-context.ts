@@ -8,7 +8,7 @@ import type { SectionIndexRoot } from '../services/section-indexer.js';
 import { openDb, type Db } from '../db/index.js';
 import { applyProjection } from '../db/projection.js';
 import { PagesService } from '../services/pages.js';
-import { pagesRouter } from '../routes/pages.js';
+import { crossRootPagesRouter, pagesRouter } from '../routes/pages.js';
 import { StaticHtmlService } from '../services/static-html.js';
 import { staticRouter } from '../routes/static.js';
 import { tagsRouter } from '../routes/tags.js';
@@ -40,6 +40,9 @@ import { backfillPlansToFilesystem } from './plan-migration.js';
 import { backfillEntityTimestamps } from './entity-timestamp-backfill.js';
 import { BriefService } from '../services/brief.js';
 import { briefsRouter } from '../routes/briefs.js';
+import { patchesRouter } from '../routes/patches.js';
+import { metaRouter } from '../routes/meta.js';
+import { listProjects } from './list-projects.js';
 import { PatchService } from '../services/patch.js';
 import { artifactsRouter } from '../routes/artifacts.js';
 import { RemoteAuthService } from '../services/remote-auth.js';
@@ -56,7 +59,12 @@ import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { createDiscoveryCore } from '../discovery/index.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import { applyPagesOverride } from '../discovery/pages-override.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
+import { projectMcpRouter } from '../routes/mcp.js';
+import type { ExternalSurfaceDeps } from '../mcp/surface.js';
+import type { ChatContextType } from '../../shared/entities.js';
 import { ReleaseService } from '../services/release.js';
 import { releasesRouter } from '../routes/releases.js';
 import { ReleasePushService } from '../services/release-push.js';
@@ -87,6 +95,8 @@ import { EntityIndexerService } from '../services/entity-indexer.js';
 import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.js';
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
+import { createPageToolsServer } from '../mcp/page-tools.js';
+import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
 import { chatRouter } from '../routes/chat.js';
@@ -218,6 +228,19 @@ export interface ProjectContext {
   writingStyle: { slug: string; title: string } | null;
   /** True while any agent turn runs in this project (LRU dispose guard). */
   hasInFlightTurn: () => boolean;
+  /**
+   * 0.2.13: everything the external MCP surface needs, for one profile.
+   *
+   * Exposed on the context rather than assembled by the caller because the
+   * services it names (`planService`, `briefService`, the discovery core…) are
+   * locals of `buildInner` and belong to THIS context's lifetime. The workspace
+   * mount reaches a project through the cache and calls this; the project-bound
+   * mount uses the same function through the per-context router.
+   *
+   * Calling it does not make the connection a turn: it hands back services, it
+   * does not touch `hasInFlightTurn` or pin the context.
+   */
+  mcpSurfaceDeps: (profile: ChatContextType) => ExternalSurfaceDeps;
   dispose: () => Promise<void>;
 }
 
@@ -753,6 +776,33 @@ async function buildInner(
     }),
   );
 
+  /**
+   * 0.2.13 item 28 — the page write path, owned by the host like reference-tools.
+   *
+   * Registered HERE rather than wired into the two channels by hand, and that is
+   * the whole trick: `buildMcpServers()` is what both `routes/agent-turn.ts` and
+   * `mcp/surface.ts` already read, so one registration reaches the internal turn
+   * and the external MCP mount with no edit to either. The gating then falls out
+   * of machinery that already exists — all four operations declare
+   * `opClass: 'write'`, so `gateServer` withholds them from `ask` and drops this
+   * server once it is left empty, while `brief`'s release-only plugin pool never
+   * offers it at all.
+   *
+   * `rootById` is captured rather than re-derived: the same map the REST router
+   * resolves through, so a root reachable from one channel is reachable from the
+   * other by construction.
+   */
+  const sectionWriteDeps: SectionWriteDeps = {
+    sections: sectionsService,
+    resolveRoot: (rootId) => {
+      const rt = rootById.get(rootId);
+      return rt ? { pages: rt.pages, writer: rt.writer } : undefined;
+    },
+  };
+  pluginHost.registerMcpServer('page-tools', () =>
+    createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),
+  );
+
   // M13: generic write-side CRUD server for every active entity type — the
   // single `entity-tools` server replacing the per-type CRUD servers. Owned by
   // the host (like reference-tools/release-tools), not a plugin: registered
@@ -776,6 +826,29 @@ async function buildInner(
     projectDir: cwd,
     packageVersion: readPackageVersion(),
   });
+  /**
+   * 0.2.13 (tier C) — the same core over a NARROWED root list, for `?pages=`.
+   *
+   * The CLI used to build this itself: `--pages <dir>` was applied while
+   * `src/bin/c4s/context.ts` assembled its own discovery core. With execution
+   * moved into the server process the override has to be applied where the roots
+   * are assembled, which is here.
+   *
+   * Cheap enough to do per request. `createDiscoveryCore` is a factory over
+   * pieces that already exist — the reader, the db handle, the plugin host, the
+   * serialization engine are all shared with the project's own core; only the
+   * root list differs. Nothing is loaded, migrated or indexed by this call.
+   */
+  const discoveryForRoots = (pagesOverride: string): DiscoveryCore =>
+    createDiscoveryCore({
+      reader: rawReader,
+      db: db.handle,
+      host: pluginHost,
+      serialization: serializationEngine,
+      roots: applyPagesOverride(effectiveRoots, pagesOverride, cwd),
+      projectDir: cwd,
+      packageVersion: readPackageVersion(),
+    });
   pluginHost.registerMcpServer('entity-tools', () =>
     createEntityToolsServer({
       host: pluginHost,
@@ -944,10 +1017,43 @@ async function buildInner(
     return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer } : undefined;
   };
   const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
-  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions));
+  /**
+   * 0.2.13 — the `rest` rendering of four M39 core operations (`overview`,
+   * `describe_types`, `resolve_identity`, `check_consistency`). Shares the
+   * `/_meta` prefix with `pluginHostRouter` above, which owns activation and
+   * plugin diagnostics; the paths are disjoint, so both mount.
+   */
+  router.use('/_meta', metaRouter(discovery, pluginHost));
+  /**
+   * 0.2.13 — `POST /api/patches`. A slice-specific route, deliberately outside
+   * the generic `/api/artifacts/:kind/*` family: a patch's provenance is DRIFT
+   * AGAINST A BRIEF, so the route takes the intention (which brief, what class of
+   * deviation, what drifted) rather than a finished file. The server writes the
+   * file; the caller never composes one.
+   *
+   * This is the hard prerequisite for taking `fs-scoped` away from
+   * `c4s file-patch` — until there was a route, the CLI had to write the file in
+   * its own process, which is the last reason it needed a filesystem handle to
+   * the specification.
+   */
+  router.use(
+    '/patches',
+    patchesRouter({
+      briefsDirAbs: path.resolve(cwd, briefsDir),
+      patchesDirAbs: path.resolve(cwd, patchesDir),
+    }),
+  );
+  /**
+   * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
+   * it), so it mounts at `/pages` with no root segment. **Order is the
+   * contract**: registered before `/pages/:rootId`, or `search` is captured as a
+   * root id and the operation answers `ROOT_NOT_FOUND`.
+   */
+  router.use('/pages', crossRootPagesRouter(discovery));
+  router.use('/pages/:rootId', pagesRouter(resolveRoot, pageVersions, discovery, () => [...rootById.keys()]));
   router.use('/static/:rootId', staticRouter(resolveStatic));
-  router.use('/tags', tagsRouter(tagsService, referencesService));
-  router.use('/references', referencesRouter(pluginHost, referencesService));
+  router.use('/tags', tagsRouter(tagsService, referencesService, discovery));
+  router.use('/references', referencesRouter(pluginHost, referencesService, discovery, discoveryForRoots));
   router.use('/entities', entitiesRouter(pluginHost, tagsService, versionService, entityStore, rawReader, discovery));
 
   /**
@@ -1021,9 +1127,46 @@ async function buildInner(
     db,
     workspaceName: workspace.name,
     listWorkspacePeers,
+    /**
+     * 0.2.13 — M31's `list_projects`, rendered into the tool channel by
+     * `workspace-tools`. Re-reads the registry per call rather than closing over
+     * a snapshot: the whole reason this operation exists is that the
+     * `<workspace_projects>` prompt block is rendered once per thread and goes
+     * stale, and a captured record would have gone stale the same way.
+     */
+    listWorkspaceProjects: () => listProjects(registry.getWorkspace(workspace.name) ?? workspace),
   };
+
+  /**
+   * 0.2.13: the same services, handed to the EXTERNAL channel.
+   *
+   * Deliberately built from the identical locals `agentDeps` closes over — one
+   * discovery core, one plugin host, one brief service. The whole point of the
+   * release is that an external caller and the built-in agent reach the same
+   * operations; two dependency sets here would have re-created the drift by
+   * construction.
+   */
+  const mcpSurfaceDeps = (profile: ChatContextType): ExternalSurfaceDeps => ({
+    profile,
+    reader: {
+      reader: rawReader,
+      discovery,
+      db: db.handle,
+      projectDir: cwd,
+      packageVersion: readPackageVersion(),
+    },
+    pluginHost,
+    planService,
+    pageVersions,
+    briefService,
+    listProjects: agentDeps.listWorkspaceProjects,
+    workspaceName: workspace.name,
+  });
+  // `project-bound`: the project parameter's default comes from the URL this
+  // router is already mounted under. See `routes/mcp.ts`.
+  router.use('/mcp', projectMcpRouter(readPackageVersion(), projectId, mcpSurfaceDeps));
   router.use('/threads', threadsRouter(agentDeps));
-  router.use('/sections', sectionsRouter(sectionsService));
+  router.use('/sections', sectionsRouter(sectionsService, discovery, sectionWriteDeps));
   router.use('/todos', todosRouter(todosIndexer));
   router.use('/page-links', pageLinksRouter(pagesLinkIndexer));
   router.use('/plans', plansRouter(planService));
@@ -1456,6 +1599,7 @@ async function buildInner(
     pendingInputs,
     writingStyle,
     hasInFlightTurn: () => activeAdapters.size > 0,
+    mcpSurfaceDeps,
     // M31 dispose sequence: this scope's mounts → MCP factories → room → db handle.
     dispose: async () => {
       // One call retires every mount and subscription of THIS context —

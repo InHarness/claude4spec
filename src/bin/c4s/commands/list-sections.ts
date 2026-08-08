@@ -1,9 +1,8 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, paginationFrom, requireString } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { CliError } from '../errors.js';
-import type { ListSectionsInput } from '../../../server/discovery/types.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -21,6 +20,10 @@ import type { CliCommandContribution } from '../registry.js';
  * The two modes key DIFFERENTLY, and that is the point. A page is `(rootId,
  * path)`; an anchor is globally unique, so the anchor mode takes no root at all
  * — accepting one would invite the belief that anchors are scoped.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/sections/list`. The discriminant
+ * travels as `by=`, so the wire carries the same union the core takes rather
+ * than a flattened bag of optional fields the server would have to re-discriminate.
  */
 export async function runListSections(args: ParsedArgs): Promise<void> {
   const by = optionalString(args, 'by');
@@ -32,17 +35,12 @@ export async function runListSections(args: ParsedArgs): Promise<void> {
     );
   }
 
-  const input: ListSectionsInput =
+  const key =
     by === 'anchor'
-      ? { by: 'anchor', anchor: requireSectionKey(args, 'anchor') }
-      : { by: 'page', rootId: requireString(args, 'root-id'), path: requireString(args, 'path') };
+      ? { by, anchor: requireSectionKey(args, 'anchor') }
+      : { by, rootId: requireString(args, 'root-id'), path: requireString(args, 'path') };
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(await ctx.discovery.listSections({ ...input, ...paginationFrom(args) }), args);
-  } finally {
-    ctx.close();
-  }
+  writeOutput(await delegateGet(args, '/sections/list', { ...key, ...paginationFrom(args) }), args);
 }
 
 /**
@@ -65,7 +63,8 @@ export function requireSectionKey(args: ParsedArgs, flag: string): string {
 
 export const listSectionsCommand: CliCommandContribution = {
   name: 'list-sections',
-  executionMode: 'readonly-reader',
+  operation: 'list_sections',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_ARGS', 'INVALID_ARGUMENT', 'PAGE_NOT_FOUND'],
   handler: runListSections,
 };

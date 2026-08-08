@@ -1,4 +1,5 @@
 import type { ExternalSkillContext } from './types.js';
+import { SERVER_REQUIRED_BLOCK } from './server-required.js';
 
 export const REFACTOR_FRONTMATTER = `---
 name: c4s-refactor
@@ -136,12 +137,12 @@ Print and **finish** (no execution):
 - next step: a human continues the spec plan thread;
   \`c4s-brief-implementer\` implements the brief.
 
+${SERVER_REQUIRED_BLOCK}
+
+Reading the spec and analyzing the code are not an exception to it: \`resolve\`, the \`list-*\` readers and \`single_element\` delegate to the server exactly as \`c4s ask\` / \`c4s agent\` do. With the server down this skill cannot detect drift, let alone route it.
+
 ## Hard dependency & gotchas
 
-- **Both routing paths require the \`c4s\` CLI AND a running server.** Without a server
-  the skill can still read the spec and analyze the code, but it **cannot route the
-  fix** (\`c4s ask\` / \`c4s agent\` delegate the turn to the server). The read-only
-  \`resolve\` / \`list-*\` / \`single_element\` commands do not need a server.
 - **The identity is baked in — never \`cd\`.** \`${identity}\` is injected into every
   command above; \`cd\`-ing into the spec repo is unnecessary and, if it's reached
   through a symlink, can even break resolution.

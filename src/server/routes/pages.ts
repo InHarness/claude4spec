@@ -1,11 +1,13 @@
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import crypto from 'node:crypto';
-import fs from 'node:fs/promises';
-import path from 'node:path';
+import { Router, type Request, type Response } from 'express';
 import type { PagesService } from '../services/pages.js';
 import type { SelfWriteMarker } from '../fs/sources.js';
+import { createPage, deletePage, updatePage } from '../services/page-write.js';
 import type { FileVersionService } from '../services/file-version.js';
 import type { Root } from '../../shared/types.js';
+import type { DiscoveryCore } from '../discovery/types.js';
+import { DomainError } from '../services/tags.js';
+import { errorHandler } from './errors.js';
+import { nonNegativeInt, positiveInt } from './query-params.js';
 
 /** 0.1.96: per-root runtime resolved from the `:rootId` path segment. */
 export interface PageRootRuntime {
@@ -20,9 +22,77 @@ export interface PageRootRuntime {
  * 404 ROOT_NOT_FOUND (no fallback). The `file_version` store is shared across
  * roots and keyed by (rootId, path).
  */
+/**
+ * 0.2.13 (tier C) — `search_pages`, the CROSS-ROOT one.
+ *
+ * It gets a router of its own because the operation's scope is the project, not
+ * a root: `rootId` is an optional NARROWING, and there is no root id to put in
+ * the path when the caller omits it. Mounted at `/pages`, **ahead of**
+ * `/pages/:rootId`, so `/api/pages/search` matches here; anything else falls
+ * through to the per-root router. Register it the other way round and `search`
+ * is read as a root id and answers `ROOT_NOT_FOUND` — the same trap
+ * `/pages/:rootId/search` already carries inside its own router.
+ *
+ * Distinct from that per-root `/search`, which stays what it is: a `q`-only file
+ * scan shaped for the UI. This one is the catalog operation — `regex`,
+ * `hits`/`pages`/`count` modes, paging, and an anchor on every hit that falls
+ * inside an indexed section.
+ */
+/**
+ * `?range=1:200` → `{ start: 1, end: 200 }`, 1-based and inclusive.
+ *
+ * A malformed value is REFUSED rather than dropped. `range` narrows what comes
+ * back, and a narrowing quietly ignored answers with the whole page while the
+ * caller believes it asked for twenty lines.
+ */
+function parseRange(raw: unknown): { start: number; end: number } | undefined {
+  if (typeof raw !== 'string' || raw === '') return undefined;
+  const m = /^(\d+):(\d+)$/.exec(raw);
+  if (!m) throw new DomainError('VALIDATION', `range must be '<from>:<to>', got '${raw}'`);
+  return { start: Number(m[1]), end: Number(m[2]) };
+}
+
+export function crossRootPagesRouter(discovery: DiscoveryCore): Router {
+  const router = Router();
+
+  router.get('/search', async (req, res, next) => {
+    try {
+      const query = typeof req.query.q === 'string' && req.query.q !== '' ? req.query.q : undefined;
+      const regex =
+        typeof req.query.regex === 'string' && req.query.regex !== '' ? req.query.regex : undefined;
+      const rootId = typeof req.query.rootId === 'string' && req.query.rootId !== '' ? req.query.rootId : undefined;
+      const mode =
+        req.query.mode === 'hits' || req.query.mode === 'pages' || req.query.mode === 'count'
+          ? req.query.mode
+          : undefined;
+      res.json(
+        await discovery.searchPages({
+          ...(query !== undefined ? { query } : {}),
+          ...(regex !== undefined ? { regex } : {}),
+          ...(rootId !== undefined ? { rootId } : {}),
+          ...(mode !== undefined ? { mode } : {}),
+          ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
+          ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  router.use(errorHandler);
+  return router;
+}
+
 export function pagesRouter(
   resolveRoot: (rootId: string) => PageRootRuntime | undefined,
-  pageVersions: FileVersionService | null = null,
+  pageVersions: FileVersionService | null,
+  discovery: DiscoveryCore,
+  /**
+   * 0.2.13 review fix: the ids that DO exist, for the refusal below. Optional so
+   * the hand-rolled test rigs keep compiling; a real project always passes it.
+   */
+  rootIds: () => string[] = () => [],
 ): Router {
   // mergeParams so the mount-level `:rootId` is visible inside this router.
   const router = Router({ mergeParams: true });
@@ -31,7 +101,25 @@ export function pagesRouter(
     const rootId = (req.params as Record<string, string>).rootId ?? '';
     const rt = resolveRoot(rootId);
     if (!rt) {
-      res.status(404).json({ error: { code: 'ROOT_NOT_FOUND', message: `root '${rootId}' not found` } });
+      /**
+       * The refusal carries the roots that DO exist.
+       *
+       * Before the CLI moved server-side this refusal came from the core
+       * (`PageSource.service()` → `invalidArgument('unknown rootId …', 'roots in
+       * this project: …')`), so `c4s list-pages --root-id typo` printed the
+       * list. This short-circuits ahead of the core, and the first version of it
+       * answered a bare message — turning a one-keystroke mistake into a dead
+       * end on the surface whose whole job is to be navigable. The catalog's own
+       * contract says a NOT_FOUND carries its alternatives.
+       */
+      const known = rootIds();
+      res.status(404).json({
+        error: {
+          code: 'ROOT_NOT_FOUND',
+          message: `root '${rootId}' not found`,
+          ...(known.length ? { hint: `roots in this project: ${known.join(', ')}` } : {}),
+        },
+      });
       return null;
     }
     return rt;
@@ -42,6 +130,69 @@ export function pagesRouter(
       const rt = resolve(req, res);
       if (!rt) return;
       res.json({ tree: await rt.pages.listTree() });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `list_pages`.
+   *
+   * Sibling of `GET /` rather than a replacement for it: that one answers the
+   * TREE the sidebar renders, this one the core's flat, paged listing with
+   * `prefix`/`sort` and a `total`/`hasMore` envelope. Both are `list_pages`
+   * projections; the difference is a `view`, and giving it its own segment keeps
+   * the UI's shape frozen while the catalog operation gets its own.
+   *
+   * Static segment, declared ahead of the read wildcard — a page literally named
+   * `list` must not be able to shadow it.
+   */
+  router.get('/list', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const prefix = typeof req.query.prefix === 'string' && req.query.prefix !== '' ? req.query.prefix : undefined;
+      const sort = req.query.sort === 'modified' ? 'modified' : req.query.sort === 'path' ? 'path' : undefined;
+      res.json(
+        await discovery.listPages({
+          rootId: rt.root.id,
+          ...(prefix !== undefined ? { prefix } : {}),
+          ...(sort !== undefined ? { sort } : {}),
+          ...(positiveInt(req.query.limit) !== undefined ? { limit: positiveInt(req.query.limit) } : {}),
+          ...(nonNegativeInt(req.query.offset) !== undefined ? { offset: nonNegativeInt(req.query.offset) } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `get_page`.
+   *
+   * The read wildcard below is not it, and the difference is not cosmetic. That
+   * one answers `PagesService.read` — the editor's payload — with a bare
+   * `{ error: 'not found' }` for a missing page and no notion of `range`. This
+   * answers the core: the page AS AUTHORED with its XML tags untouched, a
+   * `PAGE_NOT_FOUND` carrying the repair path, and `range` — which the core
+   * accepts only on a root WITHOUT a section index, a refusal it owns because it
+   * owns root properties.
+   *
+   * The path is a QUERY parameter, not a wildcard segment. A page path contains
+   * slashes and may collide with any static segment this router adds later; put
+   * it in the query and the operation's route can never be shadowed by a page
+   * whose name happens to match.
+   */
+  router.get('/get', async (req, res, next) => {
+    try {
+      const rt = resolve(req, res);
+      if (!rt) return;
+      const pagePath = typeof req.query.path === 'string' ? req.query.path : '';
+      if (!pagePath) throw new DomainError('VALIDATION', 'path query param required');
+      const range = parseRange(req.query.range);
+      res.json(
+        await discovery.getPage({ rootId: rt.root.id, path: pagePath, ...(range ? { range } : {}) }),
+      );
     } catch (err) {
       next(err);
     }
@@ -77,26 +228,23 @@ export function pagesRouter(
 
   // 0.1.96: explicit create (CreatePageRequest { path, content? }). See the
   // `clarification` patch — the body shape was not enumerated in the brief.
+  //
+  // 0.2.13 (tier C-3): the contract itself moved to `services/page-write.ts`.
+  // This handler is now what the catalog says a channel is — an adapter that
+  // parses a wire format, calls the owning function and maps the result back.
+  // `PAGE_EXISTS` travels as a `DomainError` through the shared `errorHandler`,
+  // which is why the hand-rolled 409 is gone rather than merely moved.
   router.post('/', async (req, res, next) => {
     try {
       const rt = resolve(req, res);
       if (!rt) return;
       const body = (req.body ?? {}) as { path?: string; content?: string };
-      const relPath = typeof body.path === 'string' ? body.path : '';
-      if (!relPath) return res.status(400).json({ error: 'path required' });
-      if (await rt.pages.exists(relPath)) {
-        return res.status(409).json({ error: { code: 'PAGE_EXISTS', message: `page '${relPath}' already exists` } });
-      }
-      // M40: label the write, then drive its reactions to completion. `capture`
-      // (M17) is the sole author of `file_version`, so the version row must
-      // exist before we respond — that is what `flush` guarantees.
-      rt.writer?.markOrigin(relPath, 'user');
-      const result = await rt.pages.write(relPath, { body: body.content ?? '' });
-      await rt.writer?.flush(relPath);
-      const writtenAbs = path.join(rt.pages.root, relPath);
-      const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
-      const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
-      res.status(201).json({ ...result, hash: newHash });
+      const result = await createPage(
+        rt,
+        { path: typeof body.path === 'string' ? body.path : '', ...(body.content !== undefined ? { content: body.content } : {}) },
+        'user',
+      );
+      res.status(201).json(result);
     } catch (err) {
       next(err);
     }
@@ -142,29 +290,18 @@ export function pagesRouter(
         /** M02 m02octconc: optional sha256 hex of full file content known to client. Mismatch → 409 PAGE_CONFLICT. */
         expectedHash?: string;
       };
-      if (typeof body.body !== 'string') return res.status(400).json({ error: 'body required' });
-      const existed = await rt.pages.exists(relPath);
-
-      // Optimistic concurrency check — backward compatible.
-      if (typeof body.expectedHash === 'string' && existed) {
-        const abs = path.join(rt.pages.root, relPath);
-        const currentRaw = await fs.readFile(abs, 'utf-8');
-        const currentHash = crypto.createHash('sha256').update(currentRaw, 'utf-8').digest('hex');
-        if (currentHash !== body.expectedHash) {
-          return res.status(409).json({
-            error: { code: 'PAGE_CONFLICT', message: 'page changed since last read' },
-            currentHash,
-          });
-        }
-      }
-
-      rt.writer?.markOrigin(relPath, 'user');
-      const result = await rt.pages.write(relPath, { body: body.body, frontmatter: body.frontmatter });
-      await rt.writer?.flush(relPath);
-      const writtenAbs = path.join(rt.pages.root, relPath);
-      const writtenRaw = await fs.readFile(writtenAbs, 'utf-8');
-      const newHash = crypto.createHash('sha256').update(writtenRaw, 'utf-8').digest('hex');
-      res.json({ ...result, hash: newHash });
+      res.json(
+        await updatePage(
+          rt,
+          {
+            path: relPath,
+            body: body.body as string,
+            ...(body.frontmatter !== undefined ? { frontmatter: body.frontmatter } : {}),
+            ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
+          },
+          'user',
+        ),
+      );
     } catch (err) {
       next(err);
     }
@@ -176,31 +313,28 @@ export function pagesRouter(
       if (!rt) return;
       const relPath = (req.params as Record<string, string>)[0];
       if (!relPath) return res.status(400).json({ error: 'missing path' });
-      let lastContent: string | undefined;
-      if (pageVersions && (await rt.pages.exists(relPath))) {
-        try {
-          lastContent = await fs.readFile(path.join(rt.pages.root, relPath), 'utf-8');
-        } catch {
-          /* ignore */
-        }
-      }
-      // Deletes go through the same markOrigin + flush path as every other server
-      // write. They must NOT suppress: a suppress token issued here has no event
-      // of its own to be consumed by if the file is re-created immediately, and
-      // would then swallow that re-create (no version row at all). `capture`
-      // authors the tombstone, synthesizing the content from the last version.
-      rt.writer?.markOrigin(relPath, 'user');
-      await rt.pages.remove(relPath);
-      await rt.writer?.flush(relPath, 'unlink');
-      res.json({ ok: true });
+      res.json(await deletePage(rt, { path: relPath }, 'user'));
     } catch (err) {
       next(err);
     }
   });
 
-  router.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    res.status(500).json({ error: err.message });
-  });
+  /**
+   * 0.2.13 (tier C) — the shared handler, replacing a local catch-all that
+   * answered `500 { error: <string> }` for everything.
+   *
+   * The catch-all had to go for the new routes to work at all: `/get` refuses a
+   * malformed `range` with `DomainError('VALIDATION')`, and the catch-all turned
+   * that into a 500 — a caller's typo reported as a server fault, with the
+   * repair path dropped.
+   *
+   * It is a REPLACEMENT rather than a layer above it, because the shape it
+   * produced was already unreadable to the only client there is: `api-core.ts`
+   * reads `body.error.message` and `body.error.code`, so a bare string yielded
+   * `HTTP_ERROR` plus the status text and the real message was thrown away. Every
+   * other router in the process uses this handler; this one was the exception.
+   */
+  router.use(errorHandler);
 
   return router;
 }

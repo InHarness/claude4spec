@@ -11,6 +11,16 @@ const ARTIFACT_ABS = [
   '.claude4spec/releases',
 ].map((d) => path.resolve(process.cwd(), d));
 
+/**
+ * 0.2.13 item 28: the page roots, denied for WRITE only.
+ *
+ * The rig's project has the built-in `pages` root and no others. Kept as its own
+ * constant rather than appended to `ARTIFACT_ABS`, because the two lists are now
+ * governed by different rules and the tests below have to be able to say so: an
+ * artifact dir is denied symmetrically, a page root is readable.
+ */
+const PAGE_ROOTS_ABS = [path.resolve(process.cwd(), 'pages')];
+
 // 0.1.58: `answer` = the LAST assistant text block of the turn (final summary
 // after the terminal `result`), not a concatenation of intermediate texts
 // between tool calls. We drive the real runAgentTurn with a scripted event
@@ -392,7 +402,11 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103 / 0.
     expect(fs.enabled).toBe(true);
     // 0.1.130: deny lists carry the implicit artifact deny-set + the user's disallowedPaths.
     expect(fs.filesystem.denyRead).toEqual([...ARTIFACT_ABS, '/deny/dir']);
-    expect(fs.filesystem.denyWrite).toEqual([...ARTIFACT_ABS, '/deny/dir']);
+    // 0.2.13 item 28: and denyWrite carries the page roots ON TOP of that — the
+    // asymmetry is the point. A page must stay greppable (`denyRead` above is
+    // unchanged) while `create_page` / `update_page` / `delete_page` /
+    // `update_section` become the only way to write one.
+    expect(fs.filesystem.denyWrite).toEqual([...ARTIFACT_ABS, '/deny/dir', ...PAGE_ROOTS_ABS]);
     expect(fs.filesystem.allowWrite).toEqual(['/allowed/dir']);
   });
 
@@ -431,11 +445,19 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103 / 0.
     );
     expect(fs.enabled).toBe(true);
     expect(fs.filesystem.denyRead).toEqual(ARTIFACT_ABS);
-    expect(fs.filesystem.denyWrite).toEqual(ARTIFACT_ABS);
+    expect(fs.filesystem.denyWrite).toEqual([...ARTIFACT_ABS, ...PAGE_ROOTS_ABS]);
     // Empty allow-list ⇒ cwd stays writable via the library's implicit base.
     expect(fs.filesystem.allowWrite).toEqual([]);
     // The resolved scope is always spread onto execute (library's own gate is non-empty deny).
     expect(hoisted.lastExecute?.allowedPaths).toEqual([]);
+    /**
+     * `disallowedPaths` deliberately does NOT gain the page roots.
+     *
+     * The vendor turns this list into symmetric Read+Edit+Write permission
+     * rules, and the resume lock compares it turn over turn. A page root here
+     * would have cost the agent every `Grep` over the specification AND relocked
+     * every thread opened before this release.
+     */
     expect(hoisted.lastExecute?.disallowedPaths).toEqual(ARTIFACT_ABS);
   });
 });

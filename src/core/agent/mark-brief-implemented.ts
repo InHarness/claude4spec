@@ -1,4 +1,4 @@
-import { AgentError, healthCheck, patchJson, resolveServer } from './run-agent.js';
+import { AgentError, encodeArtifactPath, healthCheck, patchJson, resolveServer } from './http.js';
 
 /**
  * `c4s mark-brief-implemented` (0.1.106 M11) — server-delegating, unlike its
@@ -19,7 +19,12 @@ export async function markBriefImplemented(params: {
   });
   await healthCheck(baseUrl, apiBase);
 
-  const encoded = params.briefPath.split('/').map(encodeURIComponent).join('/');
+  // Same guard as `read-brief`, and for the same reason: `..` survives
+  // `encodeURIComponent` and is collapsed by URL resolution, so a traversal
+  // here would PATCH some other endpoint's frontmatter rather than being
+  // refused. Pre-dates 0.2.13; closed with the shared helper rather than left
+  // as the one call site that still hand-rolls the encoding.
+  const encoded = encodeArtifactPath(params.briefPath);
   try {
     return await patchJson(`${apiBase}/artifacts/brief/${encoded}/frontmatter`, {
       frontmatter: { implemented: true },

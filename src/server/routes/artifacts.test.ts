@@ -167,6 +167,61 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(pendingOnly.body.data).toHaveLength(1);
     });
 
+    it('lists newest release first, analysis briefs ahead of them — not path-alphabetical', async () => {
+      /**
+       * The order is part of the operation, and it has exactly one consumer for
+       * whom it is load-bearing in a way nobody sees: `c4s list-briefs` prints
+       * whatever it is handed and pages `--limit`/`--offset` over it, and the
+       * first row is what the brief-implementer skill reads to decide what to
+       * build. The indexer answers path-alphabetically, which for
+       * `<from>-to-<to>.md` names is ASCENDING release order — so "the first
+       * brief" was the oldest one in the repo.
+       *
+       * `0-2-9` versus `0-2-13` is the case a plain string compare gets wrong,
+       * so it is in the fixture on purpose.
+       */
+      const fm = (to: string | null, source = 'release-diff') => ({
+        type: 'brief',
+        source,
+        from_release: 'x',
+        to_release: to,
+        generated_at: '2026-01-01T00:00:00.000Z',
+        generator_version: 'test',
+        implemented: false,
+      });
+      await writeArtifact('brief', '0-1-90-to-0-1-91.md', fm('0.1.91'), '# old\n');
+      await writeArtifact('brief', '0-2-9-to-0-2-10.md', fm('0.2.10'), '# mid\n');
+      await writeArtifact('brief', '0-2-12-to-0-2-13.md', fm('0.2.13'), '# new\n');
+      await writeArtifact('brief', 'aaa-analysis.md', fm(null, 'analysis'), '# analysis\n');
+
+      const res = await request(app).get('/api/artifacts/brief');
+      expect(res.body.data.map((r: { path: string }) => r.path)).toEqual([
+        // No target release — describes the state as of HEAD, so it leads.
+        'aaa-analysis.md',
+        // A release NAME is an opaque string, not semver: `v2` sorts above every
+        // numeric one because letters follow digits. That is the honest answer
+        // for a vocabulary the sort cannot interpret, and it is why this is a
+        // descending sort over names rather than a version comparison.
+        'v1-to-v2.md',
+        '0-2-12-to-0-2-13.md',
+        // The case a plain string compare gets wrong: `0.2.9` must sort BELOW
+        // `0.2.13`, which only a numeric-aware compare gets right.
+        '0-2-9-to-0-2-10.md',
+        '0-1-90-to-0-1-91.md',
+      ]);
+    });
+
+    it('404 on an unknown brief carries the list of real ones', async () => {
+      // `assertBriefExists`, the filesystem reader this replaced, put up to ten
+      // real filenames in the hint. Losing it left the caller a bare "not
+      // found" — the least useful thing to say to someone who has just proved
+      // they do not know the filename — and the agent reading it is forbidden
+      // from looking in the repo itself.
+      const res = await request(app).get('/api/artifacts/brief/no-such-brief.md');
+      expect(res.status).toBe(404);
+      expect(res.body.error.hint).toContain('v1-to-v2.md');
+    });
+
     it('GET /api/artifacts/brief/:path returns detail WITHOUT a threads payload', async () => {
       // 0.1.139: threads left the detail response — they have their own paged
       // endpoint, and merging them here cost a second chat_thread scan per

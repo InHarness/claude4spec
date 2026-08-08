@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, optionalStringList, paginationFrom, requireString } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
 import { CliError } from '../errors.js';
@@ -18,6 +18,10 @@ import type { CliCommandContribution } from '../registry.js';
  * fetching is the contract, not a nicety.
  *
  * `c4s list-slugs` remains as the shorthand for the minimal view.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/entities/:type/list`. Flag
+ * validation stays here (`--filter`, `--mode`) because "you typed the flags
+ * wrong" is the CLI's own refusal, thrown before the server is addressed at all.
  */
 export async function runListEntities(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -34,27 +38,22 @@ export async function runListEntities(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--mode must be 'items' or 'count', got '${rawMode}'`);
   }
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(
-      ctx.discovery.listEntities({
-        type,
-        ...(tags ? { tags } : {}),
-        ...(rawFilter ? { filter: rawFilter } : {}),
-        ...(view ? { view } : {}),
-        ...(rawMode ? { mode: rawMode } : {}),
-        ...paginationFrom(args),
-      }),
-      args,
-    );
-  } finally {
-    ctx.close();
-  }
+  writeOutput(
+    await delegateGet(args, `/entities/${type}/list`, {
+      tags,
+      filter: rawFilter,
+      view,
+      mode: rawMode,
+      ...paginationFrom(args),
+    }),
+    args,
+  );
 }
 
 export const listEntitiesCommand: CliCommandContribution = {
   name: 'list-entities',
-  executionMode: 'readonly-reader',
+  operation: 'list_entities',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runListEntities,
 };

@@ -62,7 +62,19 @@ export { HOST_API_VERSION } from '../../shared/plugin-host/manifest.js';
  */
 export { DomainError } from '../services/tags.js';
 // MCP builder facade (0.1.133) — VALUES re-exported from the internal vendor.
-export { createMcpServer, mcpTool } from '@inharness-ai/agent-adapters';
+export { mcpTool } from '@inharness-ai/agent-adapters';
+/**
+ * 0.2.13 — `createMcpServer` is now the facade's OWN wrapper rather than a bare
+ * vendor re-export: it keeps the declared tool list on the handle so the host can
+ * render a plugin's operations into REST as well as MCP. See
+ * `create-mcp-server.ts` for why a second list was not an option.
+ *
+ * `CapturedMcpServer` is what it returns — the vendor handle widened with those
+ * declarations. In-repo servers annotate their `build*Server()` return with it;
+ * it is assignable to the opaque `McpServerFactory` below, which stays the type
+ * the host's own contract surface speaks.
+ */
+export { createMcpServer, type CapturedMcpServer } from './create-mcp-server.js';
 // zod facade (0.1.134→next) — the host's OWN `z` re-exported as a VALUE. A plugin's
 // backend schema code (the `backend.crud` create/update schemas, a custom
 // `backend.mcpServer`'s `mcpTool` shapes) must build with THIS `z`, not a bundled

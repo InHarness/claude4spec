@@ -7,11 +7,19 @@ description: Implement features described in claude4spec briefs. Briefs are self
 
 This skill describes how to implement a release brief in **your code repository** (not the spec repo). A brief is a self-contained markdown file that captures everything you need to ship the change: entity snapshots, section diffs, narrative, acceptance criteria. Briefs live in the **spec** repository, a different repo from the one you are working in — you never touch it directly; the `c4s` CLI reaches everything for you.
 
-**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'default'`) — `c4s list-briefs` / `c4s read-brief` / `c4s file-patch` work from any directory, without a running server (they are filesystem-scoped). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+**Reaching the briefs.** This skill is **CLI-only**: it reaches the briefs and writes patches solely through the `c4s` CLI, with the spec project's identity baked into this skill (`--project 'app-spec' --workspace 'default'`) — `c4s list-briefs` / `c4s read-brief` / `c4s file-patch` work from any directory, and each of them delegates to the server (see below). If `c4s` is not installed, **stop** and ask the user to install it — do not read or write the spec repo's files by hand.
+
+## Server required — for every step
+
+Every `c4s` command in this skill talks to a running `npx @inharness-ai/claude4spec` server. There is no filesystem-scoped subset: since 0.2.13 the CLI opens no database and reads no specification file, so reading a brief, listing entities and running an agent turn all fail the same way when the server is down.
+
+**`SERVER_NOT_RUNNING` (exit 8) from any command — stop.** Ask the user to start the server, and wait. Do not start one yourself (a CLI-spawned server is an unsupervised second process on the user's machine), and do not work around the failure by reading or writing the spec repo's files by hand — that is the thing this skill exists to prevent, and the reason it is CLI-only.
+
+Two neighbouring codes mean something else, and starting a server will not fix either: `SERVER_NOT_RECOGNIZED` (something is listening, but it is not claude4spec) and `PROJECT_NOT_IN_WORKSPACE` (the server is fine; this project is not registered in the workspace you named). Report those as they are.
 
 **The brief is self-contained.** You do not need to read the main specification or query the entity database — everything is in the brief body. If the brief references something you cannot find in its body, treat that as drift and file a patch (step 4 below).
 
-**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. `c4s agent`/`c4s ask` calls in this skill (the optional spec-check in step 2, the env-runner order in step 5) and `c4s mark-brief-implemented` (step 9) all talk to it — `c4s read-brief`/`list-briefs`/`file-patch` do not (see filesystem-scoped note above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8) — its mechanics live in the shared **`c4s-env-runner` skill**, not in this file. The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
+**Don't conflate the claude4spec server with the env-runner sandbox.** The **claude4spec server** is one always-on local process hosting every registered spec project, including `app-spec` (this brief) and `env-runner`; it is never created or destroyed as part of a brief's workflow. Every `c4s` command in this skill talks to it, `read-brief`/`list-briefs`/`file-patch` included (see "Server required" above). The **env-runner sandbox** is a different thing entirely: an ephemeral, per-brief Docker environment that `env-runner`'s operator agent stands up on order (step 5) and tears down on request (step 8) — its mechanics live in the shared **`c4s-env-runner` skill**, not in this file. The operator only manages that sandbox's lifecycle per your order text — it does not run tests and knows nothing about your branch, PR, or the brief's `implemented` status beyond what you put in the order. **You** exercise the change at the URL it hands back; marking the brief `implemented: true` (step 9) is a separate `app-spec` call that has nothing to do with env-runner.
 
 ## Workflow
 
@@ -53,9 +61,9 @@ Alternative — read-only peer-consult of the CURRENT spec state (may be ahead o
 c4s ask "Jak dziala Y w aktualnej specce?" --project 'app-spec' --workspace 'default'
 ```
 
-Continue the brief thread with `c4s agent "..." --thread <threadId> --project 'app-spec' --workspace 'default'` (the `threadId` is printed with the answer). This path requires `c4s` installed *and* a running `npx @inharness-ai/claude4spec` server. Only skip it when one of those is genuinely unavailable.
+Continue the brief thread with `c4s agent "..." --thread <threadId> --project 'app-spec' --workspace 'default'` (the `threadId` is printed with the answer).
 
-**2. Fall back to best judgment (self-contained — still not a question to the user).** When the spec channel is unavailable, proceed with your best judgement and file a patch afterwards (step 6) so the spec-author can fold the clarification into the next brief. Do not ask the user instead — this path resolves the ambiguity on its own.
+**2. Fall back to best judgment (self-contained — still not a question to the user).** When the agent cannot settle it — an `AGENT_UNAVAILABLE`, or a question the spec genuinely does not answer — proceed with your best judgement and file a patch afterwards (step 6) so the spec-author can fold the clarification into the next brief. Do not ask the user instead — this path resolves the ambiguity on its own. This is **not** the fallback for a server that is down: with no server you never read the brief, so there is nothing to proceed with — stop and ask for the server.
 
 **3. Surface the resolution, don't ask it.** Once resolved — whether the spec answered it or you used best judgment — state the resolution to the user as a one-line FYI while you keep working, e.g. "Brief doesn't specify X — spec says Y, proceeding with that" or "Brief doesn't specify X — no spec answer available, proceeding with Y, will file a patch." This never blocks on a reply.
 
@@ -218,7 +226,7 @@ If the `envr destroy` request above didn't go through for some reason, follow up
 c4s mark-brief-implemented <brief-path> --project 'app-spec' --workspace 'default'
 ```
 
-Unlike the filesystem-scoped `c4s list-briefs` / `read-brief` / `file-patch`, this command **requires the claude4spec server** (see terminology note above — not the env-runner sandbox you may have just destroyed in step 8). If the server isn't up, ask the user to start it. There is no by-hand file edit: this skill is CLI-only.
+Like every other command in this skill, this one goes through the claude4spec server (see "Server required" above — and note it is not the env-runner sandbox you may have just destroyed in step 8). There is no by-hand file edit: this skill is CLI-only.
 
 ### 10. Hand-off
 

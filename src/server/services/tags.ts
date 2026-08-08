@@ -19,6 +19,39 @@ interface TagRow {
   updated_at: string;
 }
 
+/**
+ * Slugs a tag may not take, because a route already answers to them.
+ *
+ * 0.2.13 added `GET /api/tags/list` — the `rest` rendering of `list_tags` —
+ * ahead of the long-standing `GET /api/tags/:slug`. Static-before-param is the
+ * correct registration order and the route comment says so, but ordering only
+ * decides who WINS the collision; nothing stopped the collision from being
+ * created. A tag named "List" slugs to `list`, and its detail read then returns
+ * the tag LIST envelope with a 200: `createTagIdempotent` (client, on a 409)
+ * falls through to `getBySlug`, gets `{ items, total, hasMore }` back with no
+ * error, and returns it typed as `Tag` — so the caller attaches a tag whose
+ * `slug` and `name` are `undefined` and the first `tag.counts[type]` throws.
+ *
+ * The release already recognised this collision class for root ids
+ * (`RESERVED_ROOT_IDS`, guarding `/api/pages/search`) and guarded exactly one
+ * side of it. This is the other side.
+ *
+ * Write-path only, deliberately: per the same rule this release applied to root
+ * ids, a validation introduced in release N does not condemn data written under
+ * N-1. A tag already slugged `list` keeps loading and listing, and PATCH is
+ * method-scoped so it stays renameable — which is the repair.
+ */
+const RESERVED_TAG_SLUGS = new Set(['list']);
+
+function assertSlugAvailable(slug: string): void {
+  if (!RESERVED_TAG_SLUGS.has(slug)) return;
+  throw new DomainError(
+    'VALIDATION',
+    `tag slug '${slug}' is reserved by the /api/tags/${slug} route`,
+    'pick a different name — a tag with this slug could never be read back by slug',
+  );
+}
+
 export class TagsService {
   constructor(private db: Database.Database) {}
 
@@ -59,6 +92,22 @@ export class TagsService {
   create(input: TagCreateInput): Tag {
     const slug = tagSlug(input.name);
     if (!slug) throw new Error('tag name produces empty slug');
+    assertSlugAvailable(slug);
+    return this.insert(slug, input);
+  }
+
+  /**
+   * The insert, without the reserved-slug check — for {@link ensure} only.
+   *
+   * `ensure` is not a user creating a tag; it is `assignTags` materializing the
+   * `tags[]` an entity FILE already declares, and it runs during indexing. If it
+   * refused, an entity written under 0.2.12 with a tag named "List" would fail to
+   * index on a rebuild — a validation added in this release condemning data
+   * written before it, which is the exact failure the same release fixed for a
+   * root id named `search`. The refusal belongs on the path where a human is
+   * choosing a name, and nowhere else.
+   */
+  private insert(slug: string, input: TagCreateInput): Tag {
     const existing = this.db.prepare(`SELECT 1 FROM tag WHERE slug = ?`).get(slug);
     if (existing) throw new DomainError('SLUG_CONFLICT', `tag slug '${slug}' already exists`);
     const color = input.color ?? this.pickColor(slug);
@@ -92,7 +141,7 @@ export class TagsService {
     if (!slug) throw new Error('tag name produces empty slug');
     const existing = this.getBySlug(slug);
     if (existing) return existing;
-    return this.create({ name });
+    return this.insert(slug, { name });
   }
 
   update(slug: string, input: TagUpdateInput): Tag {
@@ -102,6 +151,9 @@ export class TagsService {
     const newName = input.name ?? existing.name;
     const newSlug = tagSlug(newName);
     if (newSlug !== slug) {
+      // Only on a RENAME: a tag already sitting on a reserved slug must stay
+      // editable, or the one action that repairs it would be the one refused.
+      assertSlugAvailable(newSlug);
       const conflict = this.db.prepare(`SELECT 1 FROM tag WHERE slug = ?`).get(newSlug);
       if (conflict) throw new DomainError('SLUG_CONFLICT', `tag slug '${newSlug}' already exists`);
     }
@@ -244,7 +296,17 @@ export class TagsService {
 }
 
 export class DomainError extends Error {
-  constructor(public code: string, message: string) {
+  /**
+   * `hint` — the half of the error that says which call would have worked.
+   *
+   * Optional, and added in 0.2.13 because the CLI's not-found errors lost theirs
+   * when the commands moved onto these services: the deleted filesystem readers
+   * listed what DID exist, the services answered a bare "not found", and the
+   * agent on the other end had nothing to correct itself with. The catalog's own
+   * contract says `NOT_FOUND` carries alternatives — this is where a service
+   * puts them. `routes/errors.ts` forwards it verbatim.
+   */
+  constructor(public code: string, message: string, public hint?: string) {
     super(message);
     this.name = 'DomainError';
   }

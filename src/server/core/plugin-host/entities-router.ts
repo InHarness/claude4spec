@@ -1,12 +1,16 @@
-import { Router } from 'express';
+import { Router, type RequestHandler } from 'express';
 import type { TagsService } from '../../services/tags.js';
 import type { VersionService } from '../../services/versions.js';
 import type { EntityStore } from '../../services/entity-store.js';
 import { type RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import type { EntityCountsResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
+import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
+import { invalidType } from '../../discovery/errors.js';
+import { httpStatusForCode } from '../../operations/error-codes.js';
 import { errorHandler } from '../../routes/errors.js';
+import { commaList, nonNegativeInt, positiveInt } from '../../routes/query-params.js';
 import type { ProjectPluginHost } from './types.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
 import { payloadVersionOfCapture, samePayloadVersion } from '../../serialization/payload-version.js';
@@ -31,6 +35,83 @@ function assertType(host: ProjectPluginHost, type: string): EntityType {
   if (type === 'section') return type;
   if (host.getAvailable(type)) return type as EntityType;
   throw new DomainError('VALIDATION', `unsupported entity type '${type}'`);
+}
+
+/**
+ * 0.2.13 — the type guard for the CATALOG routes below (`/:type/search`,
+ * `/:type/tools`), distinct from `assertType` above on two counts that matter.
+ *
+ * It demands an ACTIVE type, not merely an available one: a type switched off
+ * for this project has no operations, and answering as if it did would make it
+ * look half-alive. And it refuses with `INVALID_TYPE` carrying the active list,
+ * which is the code the same refusal already uses in the MCP and CLI channels —
+ * a catalog operation must not answer differently depending on how it was
+ * reached.
+ *
+ * `assertType` keeps its own contract: the version/tag/collection routes it
+ * guards accept the non-entity `section` pseudo-type and have answered
+ * `VALIDATION` since before the catalog existed.
+ */
+function assertActiveType(host: ProjectPluginHost, type: string): EntityType {
+  if (host.isActive(type)) return type as EntityType;
+  throw invalidType(
+    type,
+    host.listEntities().map((m) => m.type),
+  );
+}
+
+
+/**
+ * Project a zod RAW SHAPE into JSON Schema for the tool listing.
+ *
+ * `z.toJSONSchema` is a zod v4 walker over each node's internal `.def`, so it
+ * only works on schemas built with the HOST's zod — which is exactly what the
+ * `@c4s/plugin-runtime` facade's re-exported `z` guarantees. A plugin that
+ * bundled its own zod throws here instead of walking; that is a real
+ * misconfiguration, but it must not turn a request for a NAME LIST into a 500.
+ * The tool still lists, with its schema reported as absent.
+ */
+function toJsonSchema(shape: unknown): unknown {
+  try {
+    return z.toJSONSchema(z.object(shape as z.ZodRawShape), { io: 'input' });
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Pull `{ code, message }` out of a failed MCP tool envelope.
+ *
+ * The payload is a JSON string inside a text block, and the shape of what tools
+ * put there is not uniform — `entity-tools` writes `{error:{code,message}}`
+ * while the `operations/envelope.ts` helper writes `{error,code}`. Both are read
+ * here rather than one being declared correct, because a transport that lost the
+ * code on the spelling it did not expect would answer 500 for a refusal that
+ * named itself perfectly well.
+ */
+function decodeToolFailure(result: unknown): { code: string; message: string } {
+  const text = (result as { content?: Array<{ text?: unknown }> } | null)?.content?.[0]?.text;
+  if (typeof text === 'string') {
+    try {
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      const nested = parsed.error as { code?: unknown; message?: unknown } | undefined;
+      if (nested && typeof nested === 'object') {
+        return {
+          code: typeof nested.code === 'string' ? nested.code : 'INTERNAL',
+          message: typeof nested.message === 'string' ? nested.message : text,
+        };
+      }
+      if (typeof parsed.code === 'string') {
+        return { code: parsed.code, message: typeof parsed.error === 'string' ? parsed.error : text };
+      }
+    } catch {
+      /* not JSON — fall through to the opaque form below */
+    }
+  }
+  // The tool said it failed but not why in any shape we recognise. Reporting
+  // INTERNAL is honest: the caller learns the operation failed, which is the part
+  // that was being lost.
+  return { code: 'INTERNAL', message: typeof text === 'string' ? text : 'tool reported an error' };
 }
 
 /**
@@ -59,6 +140,230 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       next(err);
     }
   });
+
+  /**
+   * 0.2.13 — the `rest` rendering of the `search_entities` core operation.
+   *
+   * NOT a duplicate of `?search=` on the entity list route. That one stays what
+   * it is: a filter on a UI list, defaulting to a page size chosen for list
+   * pages and returning the projection those pages render. This is the CATALOG
+   * operation — the core's own paging, response budget and sort determinism,
+   * reachable identically from all four channels.
+   *
+   * `searchedFields` is part of the answer, not a debugging extra: without it an
+   * empty result cannot be told apart from a field that was never searched, and
+   * those two call for opposite next moves by the caller.
+   *
+   * Registered above `/:type/:slug/...` — `/:type/search` is two segments and
+   * cannot be captured by them — and after the static `/counts`.
+   */
+  router.get('/:type/search', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const q = typeof req.query.q === 'string' ? req.query.q : '';
+      const limit = positiveInt(req.query.limit);
+      // `offset` is read with the non-negative parser: 0 is a legitimate offset
+      // and a meaningless limit, and the exhaustive sweeps page from 0.
+      const offset = nonNegativeInt(req.query.offset);
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      /**
+       * 0.2.13 (tier C) — `fields` and `mode` joined the wire.
+       *
+       * The core has taken both since M39 and this route took neither, which
+       * only stopped mattering when `c4s search-entities` started delegating
+       * here: it has spelled them `--fields` and `--mode` since 0.2.6, so the
+       * two channels would have answered differently for the same call —
+       * `--mode count` paying for a full listing, `--fields` searching
+       * everything. Dropping a narrowing silently is the failure this release
+       * exists to end.
+       */
+      const fields = commaList(req.query.fields);
+      const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'hits' ? 'hits' : undefined;
+      const result = discovery.searchEntities({
+        type,
+        query: q,
+        ...(view ? { view: view as never } : {}),
+        ...(fields ? { fields } : {}),
+        ...(mode ? { mode } : {}),
+        ...(limit !== undefined ? { limit } : {}),
+        ...(offset !== undefined ? { offset } : {}),
+      });
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `list_entities`.
+   *
+   * NOT the entity list route the UI calls. `generatedCrudRouter` answers
+   * `GET /api/<type>` with the projection a list page renders and a page size
+   * chosen for it; this is the CATALOG operation, with the core's own `view`,
+   * `mode`, paging and sort determinism, identical in all four channels.
+   *
+   * `filters`/`applyDefaultPredicate` are deliberately NOT on the wire here.
+   * The first is a nested object with no settled query-string spelling, and the
+   * second is opt-in precisely so that "who is asking" stays visible at the call
+   * site — a transport that turned it on by URL would erase that. Neither is
+   * reachable from the `cli` channel either, so the two stay in step.
+   */
+  router.get('/:type/list', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const tags = commaList(req.query.tags);
+      const filter = req.query.filter === 'and' ? 'and' : req.query.filter === 'or' ? 'or' : undefined;
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'items' ? 'items' : undefined;
+      const limit = positiveInt(req.query.limit);
+      const offset = nonNegativeInt(req.query.offset);
+      res.json(
+        discovery.listEntities({
+          type,
+          ...(tags ? { tags } : {}),
+          ...(filter ? { filter } : {}),
+          ...(view ? { view: view as never } : {}),
+          ...(mode ? { mode } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+          ...(offset !== undefined ? { offset } : {}),
+        }),
+      );
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 (tier C) — the `rest` rendering of `get_entities`: fetch by key, any
+   * view, several slugs in one call.
+   *
+   * Takes no `limit`/`offset` — the caller already named the rows, so the valve
+   * is the input length plus the core's response budget, not a window. A slug
+   * that names nothing comes back as a null row inside the result rather than as
+   * an error, because the other slugs in the call are real answers.
+   */
+  router.get('/:type/get', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const slugs = commaList(req.query.slugs);
+      if (!slugs || slugs.length === 0) {
+        throw new DomainError('VALIDATION', 'slugs query param required (comma-separated)');
+      }
+      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      res.json(discovery.getEntities({ type, slugs, ...(view ? { view: view as never } : {}) }));
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * 0.2.13 — the generic host proxy (M13), giving a type's non-CRUD operations a
+   * `rest` rendering without the plugin contributing a router.
+   *
+   * ONE DECLARATION, THREE RENDERINGS. A plugin declares a type-specific
+   * operation once, as a tool in its `backend.mcpServer` slot. The host is
+   * responsible for exposing it in every channel — so these two routes read the
+   * SAME registry the MCP servers are mounted from (`host.listTypeTools`, over
+   * the very map `buildMcpServers()` iterates). They cannot drift from it, and
+   * deactivating a type removes its operations from all renderings at once.
+   *
+   * Read-only listing. Names, LLM-facing descriptions and input schemas, in the
+   * same form the agent sees them in the tool channel.
+   *
+   * A type with no custom operations answers with an EMPTY LIST, not an error:
+   * `dto`, `ui-view` and `design-system` all legitimately declare none.
+   */
+  router.get('/:type/tools', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      const tools = host.listTypeTools(type).map((t) => ({
+        name: t.name,
+        description: t.description,
+        // The zod RAW SHAPE is not JSON — project it the same way the host
+        // introspects plugin schemas elsewhere. A shape that cannot be walked
+        // (a plugin bundling its own zod, the failure the runtime facade exists
+        // to prevent) degrades to an absent schema rather than a 500 on a route
+        // that is only trying to list names.
+        inputSchema: toJsonSchema(t.inputSchema),
+      }));
+      res.json({ tools });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  /**
+   * Execute one type-specific operation.
+   *
+   * The body IS the operation's arguments, validated by the SAME schema the tool
+   * channel validates against, and the response has the SAME shape the tool
+   * channel returns. This is a packing layer, not a second semantics: it calls
+   * the owning core's function and forwards what comes back.
+   *
+   * Side effects and idempotency therefore belong to the invoked operation, not
+   * to this route — `set_cell` is idempotent here because `set_cell` is
+   * idempotent, and `insert_row` is not because it reindexes.
+   *
+   * Operations with a natural URL shape keep their own resource routes —
+   * `link_dto`/`unlink_dto` live at `POST /api/endpoints/:slug/dtos` and its
+   * symmetric unlink. This proxy is the fallback for the ones that have none.
+   */
+  const invokeTypeTool: RequestHandler = async (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type!);
+      const declared = host.listTypeTools(type);
+      const tool = declared.find((t) => t.name === req.params.tool);
+      if (!tool) {
+        throw new DomainError(
+          'NOT_FOUND',
+          `type '${type}' declares no operation '${req.params.tool}' — available: ${
+            declared.length > 0 ? declared.map((t) => t.name).join(', ') : '(none)'
+          }`,
+        );
+      }
+      const parsed = z.object(tool.inputSchema as z.ZodRawShape).safeParse(req.body ?? {});
+      if (!parsed.success) {
+        // The repair path, not just the refusal: which field, and what it wanted.
+        throw new DomainError('VALIDATION', parsed.error.message);
+      }
+      /**
+       * The handler off the declaration this route ALREADY resolved, rather than
+       * `host.callTypeTool(type, name, …)`.
+       *
+       * Not a shortcut around the host: `tool` came out of `host.listTypeTools`,
+       * so this is the same registry object and the same handler the MCP channel
+       * invokes. What it avoids is the second lookup — `callTypeTool` calls
+       * `listTypeTools` again, and `listTypeTools` runs the plugin's registered
+       * factory, i.e. a full `createMcpServer` with every tool's zod shape
+       * registered. Two of those were constructed and discarded per request, so
+       * a spreadsheet driven through `POST /tools/set_cell` in a cell-write loop
+       * paid for two throwaway `spreadsheet-tools` servers per cell.
+       */
+      const result = await tool.handler(parsed.data as Record<string, unknown>, {});
+      /**
+       * A tool that FAILED must not arrive as `200 OK`.
+       *
+       * An MCP handler reports failure in-band: `{ content: [...], isError: true }`,
+       * with the code inside the text payload. Forwarding that verbatim made every
+       * refusal — `NOT_FOUND`, `VALIDATION`, a plugin's `INTERNAL` — a 200, so a
+       * REST client branching on `response.ok` recorded a failed operation as a
+       * success and carried on with an empty result. The tool channel surfaces the
+       * same failure as an error; the two channels must agree.
+       *
+       * So the envelope is unwrapped here and re-rendered through the SHARED
+       * taxonomy: the code the tool chose picks the status, exactly as it would
+       * had the handler thrown. A success is still forwarded untouched.
+       */
+      const failed = (result as { isError?: unknown } | null)?.isError === true;
+      if (failed) {
+        const { code, message } = decodeToolFailure(result);
+        return res.status(httpStatusForCode(code)).json({ error: { code, message } });
+      }
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  };
 
   /**
    * M39 L2 over HTTP (item 18) — the generic read surface for a keyed
@@ -257,5 +562,21 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
   });
 
   router.use(errorHandler);
+  /**
+   * Registered HERE, below every pre-existing `/:type/:slug/...` route, and not
+   * up beside its `GET` sibling.
+   *
+   * `POST /:type/tools/:tool` and `POST /:type/:slug/tags` are both three
+   * segments, so Express decides between them purely by registration order.
+   * Declared first, the proxy swallowed `POST /api/entities/ui-view/tools/tags`
+   * — tagging the entity whose slug is literally `tools` — and answered "type
+   * 'ui-view' declares no operation 'tags'", which is both wrong and confusing.
+   * Declared last, the tag route claims the requests that end in `/tags` and the
+   * proxy claims everything else, which is the right split: `tags` is a real
+   * resource on every type, while an operation NAMED `tags` on a type whose
+   * entity is SLUGGED `tools` is a collision no ordering can resolve.
+   */
+  router.post('/:type/tools/:tool', invokeTypeTool);
+
   return router;
 }

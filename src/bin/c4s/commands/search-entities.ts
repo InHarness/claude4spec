@@ -1,6 +1,6 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalString, optionalStringList, paginationFrom, requireString } from '../args.js';
-import { createContext } from '../context.js';
+import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
 import { CliError } from '../errors.js';
@@ -18,6 +18,8 @@ import type { CliCommandContribution } from '../registry.js';
  *
  * The output always declares `searchedFields`, so an empty result is
  * distinguishable from a field that was never searched.
+ *
+ * 0.2.13 — `server-delegating`, over `GET /api/entities/:type/search`.
  */
 export async function runSearchEntities(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
@@ -31,27 +33,22 @@ export async function runSearchEntities(args: ParsedArgs): Promise<void> {
     throw new CliError('INVALID_ARGS', `--mode must be 'hits' or 'count', got '${rawMode}'`);
   }
 
-  const ctx = await createContext(args);
-  try {
-    writeOutput(
-      ctx.discovery.searchEntities({
-        type,
-        query,
-        ...(fields ? { fields } : {}),
-        ...(view ? { view } : {}),
-        ...(rawMode ? { mode: rawMode } : {}),
-        ...paginationFrom(args),
-      }),
-      args,
-    );
-  } finally {
-    ctx.close();
-  }
+  writeOutput(
+    await delegateGet(args, `/entities/${type}/search`, {
+      q: query,
+      fields,
+      view,
+      mode: rawMode,
+      ...paginationFrom(args),
+    }),
+    args,
+  );
 }
 
 export const searchEntitiesCommand: CliCommandContribution = {
   name: 'search-entities',
-  executionMode: 'readonly-reader',
+  operation: 'search_entities',
+  executionMode: 'server-delegating',
   errorCodes: ['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runSearchEntities,
 };
