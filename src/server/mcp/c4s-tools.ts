@@ -1,5 +1,6 @@
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
+import { toolError } from '../operations/envelope.js';
 import { runAgent, AgentError } from '../../core/agent/run-agent.js';
 import { ALLOWED_MODELS } from '../routes/models.js';
 
@@ -83,18 +84,13 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
           content: [{ type: 'text' as const, text: JSON.stringify(result) }],
         };
       } catch (err) {
+        // The shared envelope — flat `{ error, code, hint }`, per item 3. The
+        // default code stays `AGENT_ERROR` rather than `INTERNAL`: a peer turn
+        // that failed is not this server faulting.
         const code = err instanceof AgentError ? err.code : 'AGENT_ERROR';
         const message = err instanceof Error ? err.message : String(err);
         const hint = err instanceof AgentError ? err.hint : undefined;
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ error: { code, message, ...(hint ? { hint } : {}) } }),
-            },
-          ],
-          isError: true,
-        };
+        return toolError(code, message, hint);
       }
     },
   );

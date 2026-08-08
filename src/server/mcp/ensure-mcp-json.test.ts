@@ -255,4 +255,26 @@ describe('ensureMcpJsonForWorkspace', () => {
       fs.rmSync(ok, { recursive: true, force: true });
     }
   });
+
+  it('does not RE-CREATE a project directory the user deleted', () => {
+    /**
+     * The test above asserted only that boot survives a missing directory, and
+     * it passed for the wrong reason: nothing threw because nothing failed —
+     * `writeIfChanged` calls `mkdirSync(recursive)`, so the directory was
+     * recreated and the config written into it.
+     *
+     * That was harmless while `ensureMcpJson` only ran inside `bootstrapProject`.
+     * This release made it run over EVERY registered project on EVERY start, so
+     * a repo deleted without unregistering it (`rm -rf ~/specs/old-product`)
+     * came back — with a `.claude4spec/mcp.json` in it — after every server
+     * start, and deleting it again never stuck.
+     */
+    const gone = path.join(os.tmpdir(), `c4s-deleted-project-${process.pid}`);
+    fs.rmSync(gone, { recursive: true, force: true });
+
+    ensureMcpJsonForWorkspace([{ id: 'gone', cwd: gone }], 4500);
+
+    expect(fs.existsSync(gone)).toBe(false);
+    expect(fs.existsSync(mcpJsonPath(gone))).toBe(false);
+  });
 });

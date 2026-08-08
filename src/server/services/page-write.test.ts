@@ -344,4 +344,89 @@ describe('update_section over a real section index', () => {
     expect(err.code).toBe('PAGE_CONFLICT');
     expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
   });
+
+  it('edits the right section when the INDEX is behind the file and no hash was given', async () => {
+    /**
+     * The corruption case, and the reason the range is recomputed from the bytes
+     * rather than trusted from the row.
+     *
+     * `section_index` is watcher-maintained, so it always trails the file by
+     * however long a reaction takes; a `git checkout`, a hand edit or an
+     * in-flight editor save moves every boundary below it. Two lines are
+     * prepended here WITHOUT re-indexing, which shifts both sections down by two
+     * while leaving the stale range comfortably in bounds — so a bounds check
+     * passes and the splice lands two lines high, eating the tail of what
+     * precedes it and the heading of what follows.
+     *
+     * `expectedHash` would catch it, and is optional in all three channels by
+     * deliberate decision, so it cannot be the thing this rests on. No hash is
+     * passed here on purpose.
+     */
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    const before = db.prepare('SELECT line_start, line_end FROM section_index WHERE anchor = ?').get(alpha) as {
+      line_start: number;
+      line_end: number;
+    };
+
+    const shifted = ['PREAMBLE', '', (await pages.read('doc.md')).body].join('\n');
+    await pages.write('doc.md', { body: shifted });
+    // The row still describes the pre-shift file — that is the whole premise.
+    const after = db.prepare('SELECT line_start, line_end FROM section_index WHERE anchor = ?').get(alpha) as {
+      line_start: number;
+      line_end: number;
+    };
+    expect(after).toEqual(before);
+
+    await updateSection(deps(), { anchor: alpha, content: 'REWRITTEN' }, 'agent');
+
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('REWRITTEN');
+    expect(body).not.toContain('ALPHA BODY');
+    // Everything the stale range would have swallowed is still there.
+    expect(body).toContain('PREAMBLE');
+    expect(body).toContain('# Top');
+    expect(body).toContain('## Alpha');
+    expect(body).toContain('## Beta');
+    expect(body).toContain('BETA BODY');
+  });
+
+  it('refuses PAGE_CONFLICT when the anchor is gone from the file entirely', async () => {
+    // The other direction of staleness: the row survives, its anchor does not.
+    // Nothing in the file identifies the section any more, so there is no
+    // defensible place to splice.
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    await pages.write('doc.md', { body: '# Top\n\nrewritten by hand, anchors dropped\n' });
+    const err = await updateSection(deps(), { anchor: alpha, content: 'x' }, 'agent').catch((e) => e);
+    expect(err.code).toBe('PAGE_CONFLICT');
+    expect((await pages.read('doc.md')).body).toContain('rewritten by hand');
+  });
+
+  it('a section indexed on a DELETED page is SECTION_NOT_FOUND, not a 500', async () => {
+    /**
+     * `assertUnchanged` reads an unreadable file as "no conflict" — correct for
+     * `update_page`, which doubles as create — and this operation then read the
+     * page unconditionally. A caller that passed `expectedHash`, i.e. did
+     * everything right, sailed past the guard into a raw ENOENT, which is not a
+     * `DomainError` and so rendered as 500 INTERNAL: the server reporting its own
+     * fault for a request that can never succeed, to a client whose 5xx branch
+     * says retry.
+     */
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    const hash = await (async () => {
+      const { createHash } = await import('node:crypto');
+      return createHash('sha256')
+        .update(await fs.readFile(path.join(cwd, 'pages', 'doc.md'), 'utf-8'), 'utf-8')
+        .digest('hex');
+    })();
+    await fs.rm(path.join(cwd, 'pages', 'doc.md'));
+
+    for (const input of [{ anchor: alpha, content: 'x' }, { anchor: alpha, content: 'x', expectedHash: hash }]) {
+      const err = await updateSection(deps(), input, 'agent').catch((e) => e);
+      expect(err.code).toBe('SECTION_NOT_FOUND');
+      expect(err.hint).toContain('list_sections');
+    }
+  });
 });

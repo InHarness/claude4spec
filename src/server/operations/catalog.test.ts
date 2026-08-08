@@ -374,4 +374,48 @@ describe('envelope and error taxonomy', () => {
     // Unknown ⇒ client error, never a 500 the caller cannot act on.
     expect(httpStatusForCode('SOMETHING_NOBODY_DECLARED')).toBe(400);
   });
+
+  it('a thrown DomainError gets the same status as the tool proxy gives the same code', async () => {
+    /**
+     * The shared table's own comment claims "the two paths out of the same
+     * failure now agree". They did not: `routes/errors.ts` read only
+     * `STATUS_FOR_CODE`, so a `DomainError` carrying a code that lives ONLY in
+     * the discovery table flattened to 400 while the identical code raised
+     * through `entities-router`'s proxy — which does call `httpStatusForCode` —
+     * answered 404/409/503. And `DomainError('INTERNAL')`, what
+     * `decodeToolFailure` yields for a crashed plugin handler, reported a server
+     * fault as a malformed request, so a client's 4xx/5xx branch did the wrong
+     * thing twice: no retry, no escalation.
+     */
+    const express = (await import('express')).default;
+    const request = (await import('supertest')).default;
+    const { errorHandler } = await import('../routes/errors.js');
+    const { DomainError } = await import('../services/tags.js');
+
+    const app = express();
+    app.get('/boom/:code', (req, _res, next) => next(new DomainError(req.params.code!, 'x')));
+    app.use(errorHandler);
+
+    for (const [code, status] of [
+      ['ENTITY_NOT_FOUND', 404],
+      ['PAGE_NOT_FOUND', 404],
+      ['INVALID_TYPE', 404],
+      ['INTERNAL', 500],
+      ['VALIDATION', 400],
+    ] as const) {
+      const res = await request(app).get(`/boom/${code}`);
+      expect(res.status, code).toBe(status);
+      expect(res.status, code).toBe(httpStatusForCode(code));
+    }
+
+    /**
+     * The one code the shared resolver must NOT decide here. Dispatch in
+     * `routes/errors.ts` is by error CLASS on purpose: `SECTION_NOT_FOUND` is 404
+     * when the discovery core cannot ADDRESS a section and 400 when a domain
+     * write is malformed about one. `httpStatusForCode` prefers the discovery
+     * table, so handing this branch to it wholesale would collapse the two.
+     */
+    expect((await request(app).get('/boom/SECTION_NOT_FOUND')).status).toBe(400);
+    expect(httpStatusForCode('SECTION_NOT_FOUND')).toBe(404);
+  });
 });

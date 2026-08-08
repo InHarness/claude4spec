@@ -1,5 +1,6 @@
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
+import { toolFailure } from '../operations/envelope.js';
 import type { TagsService } from '../services/tags.js';
 import type { ReferencesService } from '../services/references.js';
 import type { WsEmitter } from '../ws/project-emitter.js';
@@ -55,20 +56,10 @@ export function createReferenceToolsServer(deps: ReferenceToolsDeps): CapturedMc
      * throw away the half that tells the agent what to do next, which is the
      * whole point of the core's error catalogue.
      */
-    if (isDiscoveryError(err)) {
-      return {
-        content: [
-          { type: 'text' as const, text: JSON.stringify({ error: err.message, code: err.code, hint: err.hint }) },
-        ],
-        isError: true,
-      };
-    }
-    const code = err instanceof DomainError ? err.code : 'INTERNAL';
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, code }) }],
-      isError: true,
-    };
+    // The shared envelope. `toolFailure` reads `code`/`hint` structurally, so a
+    // discovery error and a domain error come out the same shape — which is what
+    // the branch below used to spell twice, differently.
+    return toolFailure(err);
   };
 
   // entityType is open-ended now — runtime validation against the host's

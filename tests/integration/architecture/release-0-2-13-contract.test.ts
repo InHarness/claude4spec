@@ -161,6 +161,35 @@ describe('the plugin-runtime facade is the only MCP builder', () => {
     });
     expect(offenders.map((f) => path.relative(REPO_ROOT, f))).toEqual([]);
   });
+
+  it('and no tool server hand-rolls the envelope the catalog declares', () => {
+    /**
+     * `operations/envelope.ts` was added by this release to end exactly this,
+     * and its header says so: "Every MCP tool in the repo hand-rolled these two
+     * shapes before 0.2.13, which is how `{error:{code,message}}` and
+     * `{error,code}` both ended up on the wire." Then three tool servers written
+     * or rewritten in this same release went on hand-rolling them, each
+     * differently — `page-tools` forwarded `hint` and `currentHash`, `plan-tools`
+     * forwarded neither, `brief-tools` forwarded only the message. So
+     * `DomainError.hint`, the field this release added to carry the repair path,
+     * was silently dropped on every plan and brief refusal, and
+     * `decodeToolFailure` had to sniff two shapes coming back.
+     *
+     * A module documenting a problem is not the same as fixing it, and only a
+     * gate keeps the next tool server from re-opening it.
+     */
+    const dir = path.join(REPO_ROOT, 'src/server/mcp');
+    const offenders: string[] = [];
+    for (const name of fs.readdirSync(dir)) {
+      if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
+      const src = fs.readFileSync(path.join(dir, name), 'utf8');
+      // A refusal envelope, spelled by hand: an isError result built inline.
+      if (!/isError:\s*true/.test(src)) continue;
+      if (/from '\.\.\/operations\/envelope\.js'/.test(src)) continue;
+      offenders.push(name);
+    }
+    expect(offenders).toEqual([]);
+  });
 });
 
 /**

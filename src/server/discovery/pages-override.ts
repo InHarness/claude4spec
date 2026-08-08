@@ -98,6 +98,34 @@ export function applyPagesOverride(
   const projectAbs = path.resolve(projectDir);
   const overrideAbs = path.resolve(projectAbs, override);
   const rel = path.relative(projectAbs, overrideAbs);
+  /**
+   * `rel === ''` — the override IS the project directory (`--pages .`, `./`,
+   * `"$PWD"`) — is refused with the escape cases rather than accepted with them.
+   *
+   * It passes the containment test below on a technicality: `''` neither starts
+   * with `..` nor is absolute. But no configured root resolves to the project
+   * root either, so it fell through to the ad-hoc branch and built a root with
+   * `dir: ''`, which `PageSource` joins into the project directory itself. The
+   * sweep then walked every markdown file in the repository — `releases/`, a
+   * non-dot briefs or patches dir, plugin READMEs, a vendored `node_modules` —
+   * and reported them as page hits under `pages-override`, an id no other
+   * operation accepts, so `get-page` refuses every hit the same command just
+   * printed.
+   *
+   * That is the opposite of what the parameter is for. `--pages` NARROWS a
+   * sweep; the one spelling that silently widens it to everything has to be the
+   * loudest refusal here, not the quietest acceptance.
+   */
+  if (rel === '') {
+    throw invalidArgument(
+      `pages override '${override}' is the project directory itself, not a page directory`,
+      roots.length > 0
+        ? `--pages narrows a sweep to one directory — name one, e.g. ${roots
+            .map((r) => r.dir)
+            .join(' or ')}; omit the flag to sweep every configured root`
+        : 'name a page directory inside the project; omit the flag to sweep every configured root',
+    );
+  }
   if (rel.startsWith('..') || path.isAbsolute(rel)) {
     throw invalidArgument(
       `pages override '${override}' resolves outside the project`,

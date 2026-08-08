@@ -240,6 +240,25 @@ export function ensureMcpJsonForWorkspace(
   const canonical = port === canonicalPort;
   for (const project of projects) {
     try {
+      /**
+       * A registered project whose directory is gone is SKIPPED, and this check
+       * is what makes the sentence above true.
+       *
+       * The `try/catch` was written as if a missing directory would throw. It
+       * does not: `writeIfChanged` calls `fs.mkdirSync(dirname, { recursive: true })`,
+       * which happily creates the whole path. Combined with this function's new
+       * reach — every registered project, on every start, where the old call site
+       * only ran for a project being created — that turned boot into a step that
+       * re-materializes directories the user deleted. `rm -rf ~/specs/old-product`
+       * without unregistering it, and it comes back as
+       * `~/specs/old-product/.claude4spec/mcp.json` on the next start, and the
+       * one after that.
+       *
+       * The registry entry is stale, not the directory: writing a config into a
+       * path the user removed cannot help any editor, because there is no project
+       * there to serve.
+       */
+      if (!fs.existsSync(project.cwd)) continue;
       const target = mcpJsonPath(project.cwd);
       // Ours and healthy, written by a canonical start: a transient one leaves it.
       if (!canonical && addressedProjectId(target) !== null) continue;

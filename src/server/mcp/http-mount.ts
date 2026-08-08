@@ -43,6 +43,7 @@ import type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ZodRawShape } from 'zod';
 import type { ChatContextType } from '../../shared/entities.js';
 import { KNOWN_PROFILES } from '../operations/profiles.js';
+import { toolError } from '../operations/envelope.js';
 import type { McpToolDeclaration } from '../../shared/plugin-host/mcp.js';
 import { composeExternalSurface, EXTERNAL_MCP_SERVER_NAME, type ExternalSurface, type ExternalSurfaceDeps } from './surface.js';
 
@@ -215,33 +216,38 @@ function syncTools(session: Session, surface: ExternalSurface): void {
 }
 
 function registerOne(session: Session, decl: McpToolDeclaration): RegisteredTool {
+  /**
+   * Read off `decl` HERE, so the handler closes over a string and not over the
+   * declaration.
+   *
+   * The dispatch below was already written to avoid calling `decl.handler` — the
+   * comment says why — but capturing `decl` to read `decl.name` kept the whole
+   * declaration alive for the session's lifetime, and `decl.handler` closes over
+   * the `ProjectContext` that was live at first registration: its db handle, its
+   * plugin host, its indexes. So the context could be evicted and disposed and
+   * still never be collected, and a long-lived editor connection leaked one whole
+   * context per eviction — defeating the LRU budget this mount's own header
+   * claims a connection does not consume. Reaching for one field of an object is
+   * enough to retain all of it.
+   */
+  const name = decl.name;
+  const description = decl.description;
+  const inputSchema = decl.inputSchema as ZodRawShape;
+
   return session.server.registerTool(
-    decl.name,
-    {
-      description: decl.description,
-      inputSchema: decl.inputSchema as ZodRawShape,
-    },
+    name,
+    { description, inputSchema },
     // Dispatches through `session.current`, NOT through `decl` — `decl`'s handler
     // closes over the context that was live when this tool was first registered,
     // and that context may since have been disposed.
     (async (args: Record<string, unknown>, extra: unknown) => {
-      const live = session.current.byName.get(decl.name);
+      const live = session.current.byName.get(name);
       if (!live) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({
-                error: {
-                  code: 'NOT_FOUND',
-                  message: `tool '${decl.name}' is no longer available on this connection`,
-                  hint: 'the plugin pool changed; call tools/list again',
-                },
-              }),
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'NOT_FOUND',
+          `tool '${name}' is no longer available on this connection`,
+          'the plugin pool changed; call tools/list again',
+        );
       }
       return live.handler(args, extra);
     }) as never,

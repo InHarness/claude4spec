@@ -217,14 +217,14 @@ describe('entity-tools: type validation', () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'list_entities').handler({ type: 'nonexistent' });
     expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_TYPE' } });
+    expect(parse(result)).toMatchObject({ code: 'INVALID_TYPE' });
   });
 
   it('INACTIVE_TYPE for a registered-but-inactive type', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'list_entities').handler({ type: 'inactive' });
     expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'INACTIVE_TYPE' } });
+    expect(parse(result)).toMatchObject({ code: 'INACTIVE_TYPE' });
   });
 
   /**
@@ -351,7 +351,7 @@ describe('entity-tools: search_entities requires one type', () => {
     // that nothing here treats an absent type as "all types" any more.
     const result = await tool(deps, 'search_entities').handler({ query: 'a' });
     expect(result.isError).toBe(true);
-    expect(parse(result)).toMatchObject({ error: { code: 'INVALID_TYPE' } });
+    expect(parse(result)).toMatchObject({ code: 'INVALID_TYPE' });
   });
 
   it('the schema declares `type` required', () => {

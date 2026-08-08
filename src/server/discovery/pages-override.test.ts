@@ -111,6 +111,33 @@ describe('applyPagesOverride', () => {
     }
   });
 
+  it('REFUSES the project directory itself — the one spelling that WIDENS the sweep', () => {
+    /**
+     * `path.relative(p, p)` is `''`, which is neither `..`-prefixed nor
+     * absolute, so this walked straight through the containment check above and
+     * out the ad-hoc branch with `dir: ''` — a root at the project directory.
+     * The sweep then covered `releases/`, a non-dot briefs or patches dir,
+     * plugin READMEs, any vendored `node_modules`, and reported them all as page
+     * hits under `pages-override`, an id no other operation accepts.
+     *
+     * A flag whose entire job is to NARROW a sweep must not have a spelling that
+     * quietly turns it into everything.
+     */
+    for (const whole of ['.', './', PROJECT, `${PROJECT}/`, 'docs/..']) {
+      const err = (() => {
+        try {
+          applyPagesOverride(roots, whole, PROJECT);
+          return null;
+        } catch (e) {
+          return e as { code?: string; hint?: string };
+        }
+      })();
+      expect(err, whole).not.toBeNull();
+      expect(err!.code, whole).toBe('INVALID_ARGUMENT');
+      expect(err!.hint, whole).toContain('narrows');
+    }
+  });
+
   it('falls back to the first root when there is no built-in `pages` one, and to nothing when there are none', () => {
     const noBuiltin = [root('guides', 'docs/guides')];
     expect(applyPagesOverride(noBuiltin, 'x', PROJECT)[0].id).toBe(OVERRIDE_ROOT_ID);

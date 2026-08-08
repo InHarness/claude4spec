@@ -247,9 +247,21 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
     const pages = new PagesService(dir, 'pages', 'mainspec');
     const writeDeps = {
       sections: {
+        /**
+         * `lineStart`/`lineEnd` are DELIBERATELY wrong — they address the whole
+         * page, heading included.
+         *
+         * The primitive recomputes the range from the file by anchor, so a row
+         * that has drifted from the bytes cannot steer the splice. Feeding it a
+         * stale row here is the mutation check: revert that and this fixture
+         * replaces the entire page, which is exactly the corruption the review
+         * found (a watcher-maintained index is always a little behind, and
+         * `expectedHash` is optional in every channel, so it cannot be what
+         * catches it).
+         */
         getByAnchor: (a: string) =>
           a === 'aaaa1111'
-            ? { anchor: a, rootId: 'mainspec', pagePath: 'a.md', lineStart: 1, lineEnd: 2 }
+            ? { anchor: a, rootId: 'mainspec', pagePath: 'a.md', lineStart: 1, lineEnd: 6 }
             : null,
       },
       resolveRoot: (id: string) => (id === 'mainspec' ? { pages, writer: null } : undefined),
@@ -292,7 +304,12 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
     const { app, pages, dir } = appWithWrites();
     try {
       await pages.ensureRoot();
-      await pages.write('a.md', { body: '# H\nold body\n\n# Next\nkeep me' });
+      // With the anchor comments the indexer injects — they are how the section
+      // is located in the bytes, and a fixture without them is not a page the
+      // section index could ever have been built from.
+      await pages.write('a.md', {
+        body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
+      });
       const res = await request(app).put('/api/sections/aaaa1111').send({ content: 'new body' }).expect(200);
       expect(res.body.anchor).toBe('aaaa1111');
       const body = (await pages.read('a.md')).body;

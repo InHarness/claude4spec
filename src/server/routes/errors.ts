@@ -3,7 +3,30 @@ import { DomainError } from '../services/tags.js';
 import { ConflictError } from '../services/brief.js';
 import { BriefFsError } from '../../core/briefs/types.js';
 import { isDiscoveryError } from '../discovery/errors.js';
-import { STATUS_FOR_CODE, STATUS_FOR_DISCOVERY_CODE } from '../operations/error-codes.js';
+import { STATUS_FOR_CODE, STATUS_FOR_DISCOVERY_CODE, httpStatusForCode } from '../operations/error-codes.js';
+
+/**
+ * The status for a `DomainError`'s code: this channel's own table first, the
+ * shared resolver second.
+ *
+ * Not simply `httpStatusForCode`, and the difference is the class dispatch this
+ * file documents above. That function prefers the DISCOVERY table, which is
+ * right for a code arriving from the core and wrong here: `SECTION_NOT_FOUND` is
+ * 404 when the core cannot address a section and 400 when a domain write is
+ * malformed about one, and handing this branch to the shared resolver would
+ * collapse the two into 404.
+ *
+ * The bug it does fix: `STATUS_FOR_CODE[code] ?? 400` alone flattened every code
+ * that lives ONLY in the discovery table — `ENTITY_NOT_FOUND`, `PAGE_NOT_FOUND`,
+ * `INVALID_TYPE`, `AMBIGUOUS_ENTITY`, `INDEX_NOT_MATERIALIZED` — to 400, while
+ * the same code raised through `entities-router`'s tool proxy answered 404/409/503.
+ * Two renderings of one code is what the shared table exists to prevent. And a
+ * `DomainError('INTERNAL')` — what `decodeToolFailure` yields for a crashed plugin
+ * handler — reported a server fault as a malformed request.
+ */
+function statusForDomainCode(code: string): number {
+  return STATUS_FOR_CODE[code] ?? httpStatusForCode(code);
+}
 
 /**
  * The `rest` rendering of the operation catalog's error taxonomy.
@@ -56,11 +79,11 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   if (err instanceof BriefFsError) {
     const code = err.code === 'INVALID_ARGS' ? 'VALIDATION' : err.code;
     return res
-      .status(STATUS_FOR_CODE[code] ?? 400)
+      .status(statusForDomainCode(code))
       .json({ error: { code, message: err.message, ...(err.hint ? { hint: err.hint } : {}) } });
   }
   if (err instanceof DomainError) {
-    const status = STATUS_FOR_CODE[err.code] ?? 400;
+    const status = statusForDomainCode(err.code);
     return res
       .status(status)
       .json({ error: { code: err.code, message: err.message, ...(err.hint ? { hint: err.hint } : {}) } });

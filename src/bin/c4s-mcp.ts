@@ -49,6 +49,8 @@ interface CliArgs {
   url?: string;
   help: boolean;
   version: boolean;
+  /** Pre-0.2.13 flags seen on the command line — see {@link RETIRED_FLAGS}. */
+  retired: string[];
 }
 
 /**
@@ -81,14 +83,37 @@ Prefer a native HTTP entry if your client supports one — that is what
 not. The server must already be running: this command never starts one.
 `;
 
+/**
+ * Flags this command took before 0.2.13, kept only to be NAMED in the refusal.
+ *
+ * The upgrade rewrites `<project>/.claude4spec/mcp.json`, and that is the only
+ * copy it can reach. Anyone who followed the old `--help` into their editor's own
+ * config — `~/.claude/mcp.json`, a repo-root `.mcp.json`, a Cursor or VS Code
+ * settings entry — still launches the bridge with `--project <abs> --workspace
+ * <name>` after upgrading. Dropping those silently produced a refusal that named
+ * `--url` and nothing else: true, and useless, because it does not say the flags
+ * were retired, what replaced them, or how to build the URL. The editor reports
+ * only "failed to start", and the user's spec-reader is gone for the session.
+ */
+const RETIRED_FLAGS = ['--project', '--workspace'];
+
 function parseArgs(argv: string[]): CliArgs {
-  const args: CliArgs = { help: false, version: false };
+  const args: CliArgs = { help: false, version: false, retired: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--help' || a === '-h') args.help = true;
     else if (a === '--version' || a === '-v') args.version = true;
     else if (a === '--url' && argv[i + 1]) args.url = argv[++i];
     else if (a?.startsWith('--url=')) args.url = a.slice('--url='.length);
+    else {
+      const retired = RETIRED_FLAGS.find((f) => a === f || a?.startsWith(`${f}=`));
+      if (retired) {
+        args.retired.push(retired);
+        // Consume the value of a space-separated form so it is not re-read as
+        // another flag.
+        if (a === retired && argv[i + 1] && !argv[i + 1]!.startsWith('--')) i++;
+      }
+    }
   }
   return args;
 }
@@ -109,6 +134,19 @@ async function main(): Promise<void> {
   if (!args.url) {
     // The old `--project`/`--workspace` pair is gone: a bridge with no address
     // has nothing to bridge to, so this is fatal rather than a degraded start.
+    // When those flags are what we were given, say so — that is the diagnosis,
+    // and it is not derivable from "--url is required".
+    if (args.retired.length > 0) {
+      process.stderr.write(
+        `c4s-mcp: ${args.retired.join(' and ')} ${args.retired.length > 1 ? 'were' : 'was'} removed in 0.2.13 — this is a stdio MCP entry from an older version.\n\n` +
+          'The MCP surface now lives in the server process, so the bridge takes the mount URL instead of a project to open:\n\n' +
+          '  c4s-mcp --url http://127.0.0.1:<port>/api/projects/<projectId>/mcp?profile=ask\n\n' +
+          "Your project's current entry — URL included — is regenerated at every server start in\n" +
+          '<project>/.claude4spec/mcp.json; copy the `url` from there, or point your client at that file.\n' +
+          'Better still, use a native HTTP entry if your client supports one; this bridge is only for clients that do not.\n',
+      );
+      process.exit(2);
+    }
     process.stderr.write(`c4s-mcp: --url is required (mount point to bridge to)\n\n${HELP}`);
     process.exit(2);
   }

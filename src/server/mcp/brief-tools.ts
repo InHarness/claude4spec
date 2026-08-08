@@ -23,7 +23,7 @@
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
 import type { BriefService } from '../services/brief.js';
-import { ConflictError } from '../services/brief.js';
+import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 
@@ -66,19 +66,13 @@ export function buildBriefToolsServer(
    */
   const ambientBriefPath = explicit ? null : ctx.briefPath;
 
-  const ok = (payload: unknown) => ({
-    content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
-  });
-  const fail = (err: unknown) => {
-    let code = 'INTERNAL';
-    let message = err instanceof Error ? err.message : String(err);
-    if (err instanceof DomainError) code = err.code;
-    else if (err instanceof ConflictError) code = err.code;
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, code }) }],
-      isError: true,
-    };
-  };
+  /**
+   * The shared envelope — see `operations/envelope.ts`. The local pair this
+   * replaces dropped `hint` and `ConflictError.currentHash`, which on a brief
+   * write is the same remedy it is on a page write.
+   */
+  const ok = toolSuccess;
+  const fail = toolFailure;
 
   /**
    * The one place the two addressing modes differ at runtime.

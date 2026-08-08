@@ -4,6 +4,7 @@ import type { PlanAction } from '../../shared/entities.js';
 import type { PlanService } from '../services/plan.js';
 import type { FileVersionService } from '../services/file-version.js';
 import { PLAN_ROOT_MARKER } from '../../shared/types.js';
+import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 
 export interface PlanToolsContext {
@@ -55,17 +56,14 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     );
   };
 
-  const ok = (payload: unknown) => ({
-    content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
-  });
-  const fail = (err: unknown) => {
-    const code = err instanceof DomainError ? err.code : 'INTERNAL';
-    const message = err instanceof Error ? err.message : String(err);
-    return {
-      content: [{ type: 'text' as const, text: JSON.stringify({ error: message, code }) }],
-      isError: true,
-    };
-  };
+  /**
+   * The shared envelope. The local `fail` this replaces dropped `hint` — so
+   * every refusal from here answered with a code and no repair path, including
+   * the `VALIDATION` above whose hint is the only thing that tells a caller to
+   * run `list_plans` first.
+   */
+  const ok = toolSuccess;
+  const fail = toolFailure;
 
   const getPlan = mcpTool(
     'get_plan',
@@ -159,16 +157,34 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     },
   );
 
+  /**
+   * The plan these tools act on, by whichever means this mount addresses one.
+   *
+   * Factored out because the first pass at `target: 'explicit'` gave `path` to
+   * `get_plan`/`update_plan` and left the two version tools calling
+   * `getByThread` — on a mount whose `threadId` is the literal `'mcp-external'`,
+   * which matches no `chat_thread` row. They did not fail loudly: `list_plan_versions`
+   * answered `{ versions: [], total: 0 }` for a plan with a hundred versions, and
+   * neither tool exposed a `path`, so no input could make them work. A half-applied
+   * addressing mode is worse than none, because the half that still compiles is the
+   * half that answers confidently.
+   */
+  const resolvePlan = async (raw: unknown) =>
+    explicit ? planService.getByPath(requirePath(raw)) : planService.getByThread(threadId);
+
   const listPlanVersions = mcpTool(
     'list_plan_versions',
-    "List all versions of this thread's plan (metadata only, no full content), oldest first — offset 0 is version 1. Use for audit / timeline rendering or before calling get_plan_version.",
+    explicit
+      ? 'List all versions of a plan (metadata only, no full content), oldest first — offset 0 is version 1. Use for audit / timeline rendering or before calling get_plan_version.'
+      : "List all versions of this thread's plan (metadata only, no full content), oldest first — offset 0 is version 1. Use for audit / timeline rendering or before calling get_plan_version.",
     {
+      ...pathParam,
       limit: z.number().int().positive().optional(),
       offset: z.number().int().nonnegative().optional(),
     },
     async (args) => {
       try {
-        const plan = await planService.getByThread(threadId);
+        const plan = await resolvePlan(args.path);
         if (!plan) return ok({ versions: [], total: 0 });
         // FileVersionService.listVersions returns newest-first (shared with
         // brief/patch/the client's version-history view) — reverse to
@@ -189,11 +205,15 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     'get_plan_version',
     'Get a specific version snapshot with full content. Use to inspect historical plan state or prepare a diff locally.',
     {
+      ...pathParam,
       version: z.number().int().positive(),
     },
     async (args) => {
       try {
-        const plan = await planService.getByThread(threadId);
+        // Only reachable in `thread` mode: `getByPath` throws NOT_FOUND for an
+        // unknown path rather than answering null, which is the better refusal
+        // and already carries the path the caller got wrong.
+        const plan = await resolvePlan(args.path);
         if (!plan) {
           return fail(new DomainError('VERSION_NOT_FOUND', 'thread has no plan'));
         }

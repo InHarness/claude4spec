@@ -1,5 +1,6 @@
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
+import { toolError } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
@@ -81,15 +82,14 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
   const ok = (payload: unknown) => ({
     content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
   });
-  const fail = (code: string, message: string, hint?: string) => ({
-    content: [
-      {
-        type: 'text' as const,
-        text: JSON.stringify({ error: { code, message, ...(hint ? { hint } : {}) } }, null, 2),
-      },
-    ],
-    isError: true,
-  });
+  /**
+   * The shared envelope. This file emitted the NESTED `{ error: { code, message } }`
+   * shape while `reference-tools` — mounted on the same connection — emitted the
+   * flat `{ error, code }`, which is precisely the divergence
+   * `operations/envelope.ts` was written to end and item 3 of the brief
+   * specifies away: the error envelope is `{ error, code }`, declared once.
+   */
+  const fail = toolError;
 
   const requireProject = ():
     | { ok: true; discovery: DiscoveryCore }

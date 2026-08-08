@@ -307,7 +307,28 @@ describe('plan addressing on the threadless channel', () => {
   it('takes an explicit `path`, and offers a way to discover one', () => {
     const surface = composeExternalSurface(stubDeps({ profile: 'ask' }));
 
-    for (const name of ['get_plan', 'update_plan']) {
+    /**
+     * EVERY plan tool on this mount, enumerated from the server rather than
+     * listed by hand.
+     *
+     * The first version of this test named `get_plan` and `update_plan` — the two
+     * the fix had touched — so it could only ever confirm the fix, never find
+     * what the fix missed. It missed `list_plan_versions` and `get_plan_version`,
+     * which kept resolving through `getByThread('mcp-external')`: no such thread
+     * row, so history came back as `{ versions: [], total: 0 }` for a plan with a
+     * hundred versions, and neither tool exposed a `path` that could have made it
+     * work. A test written from the diff sees what the diff did.
+     */
+    const planTools = buildPlanToolsServer({
+      threadId: 'mcp-external',
+      target: 'explicit',
+      planService: {} as never,
+      pageVersions: {} as never,
+    }).tools!.map((t) => t.name);
+    const addressAPlan = planTools.filter((n) => n !== 'list_plans');
+    expect(addressAPlan.length).toBeGreaterThan(2);
+
+    for (const name of addressAPlan) {
       const decl = surface.byName.get(name);
       expect(decl, name).toBeDefined();
       // The parameter has to be in the SCHEMA — a handler-side check would leave
@@ -334,7 +355,62 @@ describe('plan addressing on the threadless channel', () => {
     });
     const names = internal.tools!.map((t) => t.name);
     expect(names).not.toContain('list_plans');
-    const update = internal.tools!.find((t) => t.name === 'update_plan')!;
-    expect(Object.keys(update.inputSchema as Record<string, unknown>)).not.toContain('path');
+    for (const t of internal.tools!) {
+      expect(Object.keys(t.inputSchema as Record<string, unknown>), t.name).not.toContain('path');
+    }
+  });
+
+  it('the version tools READ the plan the path names, not the one a thread would', async () => {
+    /**
+     * The schema check above proves `path` is asked for; this proves it is used.
+     * Both halves are needed — the defect was a tool that took no `path` AND
+     * resolved through a thread, and either half alone leaves the other possible.
+     */
+    const calls: string[] = [];
+    const planService = {
+      getByPath: async (p: string) => {
+        calls.push(p);
+        return { path: p, currentVersion: 2 };
+      },
+      getByThread: async () => {
+        throw new Error('getByThread must not be reached on the threadless mount');
+      },
+    };
+    const pageVersions = {
+      listVersions: () => [{ version: 1 }, { version: 2 }],
+      getVersion: (_p: string, v: number) => ({ version: v, content: 'x' }),
+    };
+    const server = buildPlanToolsServer({
+      threadId: 'mcp-external',
+      target: 'explicit',
+      planService: planService as never,
+      pageVersions: pageVersions as never,
+    });
+
+    const call = async (name: string, args: Record<string, unknown>) => {
+      const tool = server.tools!.find((t) => t.name === name)!;
+      const res = (await tool.handler(args, {} as never)) as {
+        isError?: boolean;
+        content: Array<{ text: string }>;
+      };
+      return { isError: !!res.isError, data: JSON.parse(res.content[0]!.text) };
+    };
+
+    const listed = await call('list_plan_versions', { path: 'a/plan.md' });
+    expect(listed.isError).toBe(false);
+    expect(listed.data.total).toBe(2);
+
+    const got = await call('get_plan_version', { path: 'a/plan.md', version: 2 });
+    expect(got.isError).toBe(false);
+    expect(got.data.version).toBe(2);
+
+    expect(calls).toEqual(['a/plan.md', 'a/plan.md']);
+
+    // And a missing `path` refuses with the repair path rather than answering
+    // emptily — the hint the shared envelope now forwards.
+    const bare = await call('list_plan_versions', {});
+    expect(bare.isError).toBe(true);
+    expect(bare.data.code).toBe('VALIDATION');
+    expect(bare.data.hint).toContain('list_plans');
   });
 });

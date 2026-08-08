@@ -17,6 +17,7 @@
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import { z } from 'zod';
+import { toolError } from '../operations/envelope.js';
 import type { TransagentDispatcher } from '../services/transagent-dispatcher.js';
 import { DomainError } from '../services/tags.js';
 
@@ -72,12 +73,11 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
         // Non-abort child failure collapses upward as the parent's tool_result
         // isError { code, message }. The last good summary remains readable via
         // runTransagent({ threadId }).
+        // The shared envelope — flat `{ error, code }`, per item 3. `AGENT_ERROR`
+        // stays the default: a child turn that failed is not this server faulting.
         const code = err instanceof DomainError ? err.code : 'AGENT_ERROR';
         const message = err instanceof Error ? err.message : String(err);
-        return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ error: { code, message } }) }],
-          isError: true,
-        };
+        return toolError(code, message);
       }
     },
   );

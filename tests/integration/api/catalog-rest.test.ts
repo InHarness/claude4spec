@@ -210,12 +210,47 @@ describe('GET /api/tags/list', () => {
     expect(withCounts.body.items[0]).toHaveProperty('counts');
   });
 
-  it('is not shadowed by `/:slug` — a tag named `list` does not capture the route', async () => {
-    await request(t.app).post('/api/tags').send({ slug: 'list', name: 'List' }).expect(201);
+  /**
+   * Registration order decides who WINS this collision; it does not stop the
+   * collision from being created, and the original version of this test asserted
+   * only the first half.
+   *
+   * A tag named "List" slugs to `list` and used to be accepted. Its detail read
+   * then answered the LIST envelope with a 200 — and `createTagIdempotent` treats
+   * a 409 by falling through to `getBySlug`, so the client took `{ items, total,
+   * hasMore }` as a `Tag` with no error anywhere, attached a tag whose `slug` and
+   * `name` were `undefined`, and threw on the first `tag.counts[type]`. The tag
+   * was also unreadable from its own detail view, permanently.
+   *
+   * So the slug is reserved on the write path, the same way `RESERVED_ROOT_IDS`
+   * guards `/api/pages/search` — and the route still answers the operation.
+   */
+  it('reserves the `list` slug rather than letting a tag shadow the route', async () => {
+    const refused = await request(t.app).post('/api/tags').send({ slug: 'list', name: 'List' }).expect(400);
+    expect(refused.body.error.code).toBe('VALIDATION');
+    expect(refused.body.error.message).toContain('reserved');
+
     const res = await request(t.app).get('/api/tags/list').expect(200);
     // The operation's envelope, not the single-tag DTO.
     expect(res.body).toHaveProperty('items');
     expect(res.body).not.toHaveProperty('slug');
+  });
+
+  /**
+   * The other half of the reservation rule: it is a WRITE-path check.
+   *
+   * `ensure()` materializes the tags an entity file already declares, during
+   * indexing. If it refused, an entity written under 0.2.12 carrying a tag named
+   * "List" would fail to index on a rebuild — a validation added in release N
+   * condemning data written under N-1, which is the exact failure this release
+   * fixed for a root id named `search`.
+   */
+  it('still indexes an entity whose file already carries a `list` tag', async () => {
+    const created = await request(t.app)
+      .post('/api/acs')
+      .send({ text: 'tagged with a reserved slug', tags: ['List'] })
+      .expect(201);
+    expect(created.body.data.tags).toContain('list');
   });
 });
 

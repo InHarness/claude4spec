@@ -5,6 +5,7 @@ import type { PageContent } from '../../shared/types.js';
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
+import { parseHeadings } from './section-indexer.js';
 import { ConflictError } from './brief.js';
 import { DomainError } from './tags.js';
 
@@ -208,6 +209,34 @@ export interface SectionWriteDeps {
 }
 
 /**
+ * Where the anchored section lives in THESE lines: `[lineStart, lineEnd)`,
+ * 1-based start (the heading line), exclusive end — the same pair
+ * `section_index` stores, recomputed from the file.
+ *
+ * The end rule is the indexer's, not an approximation of it: a section runs to
+ * the next heading of equal or higher level, and stops at that heading's ANCHOR
+ * comment when it has one, so the neighbour's anchor is never inside the range.
+ * Duplicating five lines from `section-indexer.ts` would be exactly the drift
+ * this release exists to remove, so the parser is imported and only the walk
+ * lives here.
+ */
+function liveRangeOf(lines: string[], anchor: string): { lineStart: number; lineEnd: number } | null {
+  const headings = parseHeadings(lines);
+  const idx = headings.findIndex((h) => h.anchor === anchor);
+  if (idx === -1) return null;
+  const self = headings[idx]!;
+  let lineEnd = lines.length;
+  for (let j = idx + 1; j < headings.length; j++) {
+    const next = headings[j]!;
+    if (next.level <= self.level) {
+      lineEnd = next.anchorLineIndex ?? next.lineIndex;
+      break;
+    }
+  }
+  return { lineStart: self.lineIndex + 1, lineEnd };
+}
+
+/**
  * M06 `update_section` — a convenience over `update_page`, not a second store.
  *
  * The brief is explicit that a section is not a structural gap in the data
@@ -238,6 +267,30 @@ export interface SectionWriteDeps {
  * The section's own `<!-- anchor: … -->` comment sits ABOVE `lineStart` and is
  * likewise untouched, so the anchor survives the write and the caller can edit
  * the same section twice.
+ *
+ * ## The line range comes from the FILE, not from the index
+ *
+ * The index row is used to answer "which page, on which root" and for the
+ * not-found refusal. The range that gets spliced is recomputed from the bytes
+ * about to be written, with `parseHeadings` — the indexer's own parser — and the
+ * indexer's own end rule.
+ *
+ * A first version trusted `row.lineStart`/`row.lineEnd` and only bounds-checked
+ * them, which is a guard against the loud failure and none at all against the
+ * quiet one. `section_index` is maintained by a watcher, so it trails the file
+ * by however long a reaction takes, and any edit outside this operation — a
+ * `git checkout`, a hand edit, an editor save still in flight — moves the
+ * boundaries. When the file stays long enough for the stale range to remain in
+ * bounds, the splice lands on whatever now occupies those lines: it eats the tail
+ * of the previous section, or the heading and anchor comment of the next one, and
+ * answers 200 with a fresh hash. The caller has no way to know, and the destroyed
+ * anchor takes every reference to it down with it. `expectedHash` would catch it,
+ * but it is optional in all three channels by deliberate decision, so it cannot be
+ * the thing this rests on.
+ *
+ * Recomputing removes the failure class instead of detecting it, and costs one
+ * pass over lines we have already read. If the anchor is not in the file at all,
+ * the index is ahead of reality in the other direction and the write is refused.
  */
 export async function updateSection(
   deps: SectionWriteDeps,
@@ -262,30 +315,45 @@ export async function updateSection(
     );
   }
 
+  /**
+   * Before the hash guard, because the hash guard cannot express this.
+   *
+   * `assertUnchanged` reads an unreadable file as "nothing to have changed
+   * underneath you" — correct for `update_page`, which doubles as create — and
+   * then this function reads the page unconditionally. So a caller who did
+   * everything right, `expectedHash` included, sailed past the guard and hit a
+   * raw ENOENT from `read()`, which is not a `DomainError` and therefore rendered
+   * as `500 INTERNAL`: the server telling a client to retry the one situation
+   * where retrying can never work. A section indexed on a page that is gone is a
+   * stale index, and says so.
+   */
+  if (!(await target.pages.exists(section.pagePath))) {
+    throw new DomainError(
+      'SECTION_NOT_FOUND',
+      `section '${input.anchor}' is indexed on '${section.pagePath}', which no longer exists`,
+      'the section index is behind the filesystem — re-list the page with list_sections({ by: "page", rootId, path })',
+    );
+  }
+
   await assertUnchanged(target, section.pagePath, input.expectedHash);
   const page = await target.pages.read(section.pagePath);
   const lines = page.body.split('\n');
 
-  /**
-   * The index is built over the page BODY (frontmatter stripped), which is what
-   * `read()` returns — so the 1-based line numbers map onto this array
-   * directly. A range that no longer fits the file means the index is behind
-   * the bytes; splicing anyway would overwrite whatever now occupies those
-   * lines, so it is refused as the staleness it is. A caller who passed
-   * `expectedHash` never gets here — that guard fires first, with a better
-   * message.
-   */
-  if (section.lineStart < 1 || section.lineEnd > lines.length || section.lineEnd < section.lineStart) {
+  // The index is built over the page BODY (frontmatter stripped), which is what
+  // `read()` returns — so `parseHeadings` here sees the same lines the indexer
+  // saw, and 1-based `lineStart` is `lineIndex + 1` on both sides.
+  const range = liveRangeOf(lines, section.anchor);
+  if (!range) {
     throw new ConflictError(
       'PAGE_CONFLICT',
-      `section '${input.anchor}' spans lines ${section.lineStart}-${section.lineEnd}, but '${section.pagePath}' has ${lines.length} — the section index is behind the file`,
+      `anchor '${input.anchor}' is not in '${section.pagePath}' any more — the section index is behind the file`,
       (await hashOf(target.pages, section.pagePath)) ?? '',
     );
   }
 
   // Below the heading: 0-based [lineStart, lineEnd) — `lineStart - 1` is the
   // heading itself and stays put.
-  lines.splice(section.lineStart, section.lineEnd - section.lineStart, ...input.content.split('\n'));
+  lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...input.content.split('\n'));
 
   const written = await commit(target, section.pagePath, actor, {
     body: lines.join('\n'),

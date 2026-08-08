@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
-import { ConflictError } from '../services/brief.js';
+import { toolFailure, toolSuccess } from '../operations/envelope.js';
 import { DomainError } from '../services/tags.js';
 import {
   createPage,
@@ -49,27 +49,17 @@ export interface PageToolsDeps extends SectionWriteDeps {
 }
 
 export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
-  const ok = (payload: unknown) => ({
-    content: [{ type: 'text' as const, text: JSON.stringify(payload) }],
-  });
-
   /**
-   * `ConflictError` carries `currentHash`, and it is the entire remedy: the
-   * caller re-reads, re-applies, and passes that hash back. Dropping it — which
-   * a generic `err.message` mapping does — turns a recoverable conflict into a
-   * dead end, so it is forwarded into the envelope beside the code.
+   * The shared envelope, not a local pair.
+   *
+   * `toolFailure` forwards `hint` and `ConflictError.currentHash` — the latter is
+   * the entire remedy for a `PAGE_CONFLICT` (re-read, re-apply, pass it back), so
+   * a generic `err.message` mapping turns a recoverable conflict into a dead end.
+   * That is why this file had its own `fail` to begin with; it now lives in
+   * `operations/envelope.ts`, where every tool server gets it.
    */
-  const fail = (err: unknown) => {
-    const payload =
-      err instanceof ConflictError
-        ? { error: err.message, code: err.code, currentHash: err.currentHash }
-        : {
-            error: err instanceof Error ? err.message : String(err),
-            code: err instanceof DomainError ? err.code : 'INTERNAL',
-            ...(err instanceof DomainError && err.hint ? { hint: err.hint } : {}),
-          };
-    return { content: [{ type: 'text' as const, text: JSON.stringify(payload) }], isError: true };
-  };
+  const ok = toolSuccess;
+  const fail = toolFailure;
 
   const target = (rootId: string): PageWriteTarget => {
     const rt = deps.resolveRoot(rootId);

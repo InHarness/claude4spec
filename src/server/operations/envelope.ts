@@ -38,12 +38,52 @@ export function toolSuccess(data: unknown): ToolEnvelope {
  * `internal` / `mcp` error. `hint` is carried alongside rather than folded into
  * `error`: it is the half that says which call WOULD have worked, and a caller
  * that wants to act on it has to be able to tell the two apart.
+ *
+ * `extra` is for the fields a specific refusal carries as its REMEDY, not as
+ * decoration — `currentHash` on a `PAGE_CONFLICT` is the whole recovery path (the
+ * caller re-reads, re-applies, passes it back), so dropping it turns a
+ * recoverable conflict into a dead end. It stays a narrow door on purpose: a
+ * refusal that needs a field the taxonomy does not have is usually a refusal
+ * that needs a better code.
  */
-export function toolError(code: string, message: string, hint?: string): ToolEnvelope {
+export function toolError(
+  code: string,
+  message: string,
+  hint?: string,
+  extra?: Record<string, unknown>,
+): ToolEnvelope {
   return {
-    content: [{ type: 'text', text: JSON.stringify({ error: message, code, ...(hint ? { hint } : {}) }) }],
+    content: [
+      { type: 'text', text: JSON.stringify({ error: message, code, ...(hint ? { hint } : {}), ...extra }) },
+    ],
     isError: true,
   };
+}
+
+/**
+ * The refusal envelope for a thrown error — the shape every MCP tool server in
+ * this repo had its own copy of.
+ *
+ * Three of them were written or rewritten in 0.2.13 alone, each subtly different:
+ * `page-tools` forwarded `hint` and `currentHash`, `plan-tools` forwarded neither,
+ * `brief-tools` forwarded only the message. So `DomainError.hint` — the field this
+ * release added expressly to carry the repair path — was silently dropped on every
+ * plan refusal, and `entities-router.decodeToolFailure` had to sniff two shapes on
+ * the way back. A module whose header says "every tool hand-rolled these" while
+ * every new tool goes on hand-rolling them has documented the problem rather than
+ * fixed it.
+ *
+ * Structural typing, not `instanceof`: `DomainError` and `ConflictError` live in
+ * two service modules that this one must not depend on (the dependency runs the
+ * other way), and both are plain classes carrying `code`/`hint`/`currentHash`.
+ */
+export function toolFailure(err: unknown): ToolEnvelope {
+  const e = err as { code?: unknown; hint?: unknown; currentHash?: unknown; message?: unknown };
+  const code = typeof e?.code === 'string' ? e.code : 'INTERNAL';
+  const message = err instanceof Error ? err.message : String(err);
+  const hint = typeof e?.hint === 'string' ? e.hint : undefined;
+  const extra = typeof e?.currentHash === 'string' ? { currentHash: e.currentHash } : undefined;
+  return toolError(code, message, hint, extra);
 }
 
 /**
