@@ -77,11 +77,11 @@ When you (or a delegated `diff-explore`) read a heavy slice, interpret its entri
 
 Triggered when `get_brief` returns a brief with non-trivial body content.
 
-1. Always start with `get_brief` to refresh `expectedHash` (another thread or the user may have edited since).
+1. Always start with `get_brief` to obtain `expectedHash`. It is REQUIRED on every `update_brief` — omitting it is `VALIDATION`, not an unguarded write — and it must be refreshed each time, since another thread or the user may have edited since.
 2. Read the user's request carefully. Common patterns:
    - **"Make it shorter"** → favour `replace` with a tightened version, but **never** drop inlined diff fragments / file paths / signatures (those are what makes the brief usable to the second audience). Tighten prose, not facts.
-   - **"Add a section about X"** → use `insert_after_section({ anchor: '<8char>', content })` — extract the anchor from the body (the `<!-- anchor: ... -->` comment immediately preceding the target heading). Prefer `anchor` over `heading` (anchors are stable across renames).
-   - **"Append an FAQ"** → `update_brief({ action: 'append', content })`.
+   - **"Add a section about X"** → use `insert_after_section({ anchor: '<8char>', content, expectedHash })` — extract the anchor from the body (the `<!-- anchor: ... -->` comment immediately preceding the target heading). Prefer `anchor` over `heading` (anchors are stable across renames).
+   - **"Append an FAQ"** → `update_brief({ action: 'append', content, expectedHash })`.
 3. Never wholesale-replace if a smaller surgical edit would do. `replace` discards section anchors; `insert_after_section` preserves them.
 4. If you receive `BRIEF_CONFLICT`, the brief was edited by another writer. Call `get_brief` again, reconcile your intended change against the new content, then retry.
 5. If a target anchor is missing, the tool falls back to append-at-end with a warning — re-evaluate whether that is what the user wanted before continuing.

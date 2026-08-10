@@ -119,6 +119,27 @@ describe('the page write primitive', () => {
     expect(JSON.stringify(res)).not.toContain('order');
   });
 
+  it('a duplicated hand-authored anchor is counted once, the way the index counts it', async () => {
+    /**
+     * Anchors written by hand are unpoliced, so the same value can appear twice.
+     * `buildSections` settles it as "first occurrence owns it"; if this side
+     * disagreed, the reported delta would name a section the index does not own
+     * and the splice never touches — `liveRangeOf` takes the first match.
+     */
+    const dup = [
+      '<!-- anchor: dupe1234 -->',
+      '# One',
+      'first',
+      '',
+      '<!-- anchor: dupe1234 -->',
+      '# Two',
+      'second',
+      '',
+    ].join('\n');
+    const res = await createPage(target, { path: 'dup-anchor.md', content: dup }, 'user');
+    expect(res.anchors).toEqual(['dupe1234']);
+  });
+
   it('reports version 0 rather than failing when there is no capture to read', async () => {
     // The hand-rolled rigs have no db, and in production a capture failure is
     // warned and swallowed. A write must not fail because its bookkeeping did.

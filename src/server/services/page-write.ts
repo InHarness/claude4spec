@@ -350,8 +350,18 @@ function liveRangeOf(lines: string[], anchor: string): { lineStart: number; line
  */
 function sectionRanges(lines: string[]): Array<{ anchor: string; lineStart: number; lineEnd: number }> {
   const headings = parseHeadings(lines);
+  /**
+   * Hand-authored anchors are unpoliced, so the same value can appear twice on
+   * one page. `buildSections` in the indexer settles that the same way — first
+   * occurrence owns the anchor, the rest get no row — and this has to agree with
+   * it, not merely resemble it: `liveRangeOf` takes the first match, so a delta
+   * keyed on the last one would report a section the splice never touched and
+   * the index does not own.
+   */
+  const claimed = new Set<string>();
   return headings.flatMap((self, idx) => {
-    if (!self.anchor) return [];
+    if (!self.anchor || claimed.has(self.anchor)) return [];
+    claimed.add(self.anchor);
     let lineEnd = lines.length;
     for (let j = idx + 1; j < headings.length; j++) {
       const next = headings[j]!;
