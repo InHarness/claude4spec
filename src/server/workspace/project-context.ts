@@ -96,7 +96,6 @@ import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.j
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createPageToolsServer } from '../mcp/page-tools.js';
-import { createPatchToolsServer } from '../mcp/patch-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
@@ -803,19 +802,6 @@ async function buildInner(
   pluginHost.registerMcpServer('page-tools', () =>
     createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),
   );
-  /**
-   * M23 — the `mcp` rendering of `file_patch`, which the catalog declared and
-   * nobody had built. Registered on the plugin host like `page-tools`, so both
-   * the internal turn and the external MCP mount pick it up from the same
-   * `buildMcpServers()` they already read, and the profile gate withholds it by
-   * `opClass` with no edit to either channel.
-   */
-  pluginHost.registerMcpServer('patch-tools', () =>
-    createPatchToolsServer({
-      briefsDirAbs: path.resolve(cwd, briefsDir),
-      patchesDirAbs: path.resolve(cwd, patchesDir),
-    }),
-  );
 
   // M13: generic write-side CRUD server for every active entity type — the
   // single `entity-tools` server replacing the per-type CRUD servers. Owned by
@@ -1050,13 +1036,11 @@ async function buildInner(
    * its own process, which is the last reason it needed a filesystem handle to
    * the specification.
    */
-  router.use(
-    '/patches',
-    patchesRouter({
-      briefsDirAbs: path.resolve(cwd, briefsDir),
-      patchesDirAbs: path.resolve(cwd, patchesDir),
-    }),
-  );
+  const patchWriteDeps = {
+    briefsDirAbs: path.resolve(cwd, briefsDir),
+    patchesDirAbs: path.resolve(cwd, patchesDir),
+  };
+  router.use('/patches', patchesRouter(patchWriteDeps));
   /**
    * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
    * it), so it mounts at `/pages` with no root segment. **Order is the
@@ -1130,6 +1114,9 @@ async function buildInner(
     planService,
     briefService,
     patchService,
+    // M23: `file_patch` over MCP resolves the same two directories the REST
+    // route does — one operation, one pair of paths, both channels.
+    patchWrite: patchWriteDeps,
     releaseService,
     pageVersions,
     skillResolver,
@@ -1173,6 +1160,7 @@ async function buildInner(
     planService,
     pageVersions,
     briefService,
+    patchWrite: patchWriteDeps,
     listProjects: agentDeps.listWorkspaceProjects,
     workspaceName: workspace.name,
   });
