@@ -2,12 +2,13 @@ import { useState } from 'react';
 import { SegmentedControl } from './SegmentedControl.js';
 import { Link } from '@tanstack/react-router';
 import { FileWarning, Settings, Check, Circle } from 'lucide-react';
-import { usePatch, useCreatePatchThread, useUpdatePatchStatus } from '../hooks/usePatches.js';
+import { usePatch, useCreatePatchThread, useSetPatchApplied } from '../hooks/usePatches.js';
 import { encodeBriefPath } from '../lib/briefs-api.js';
 import { useChatStore } from '../state/chat.js';
 import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PatchEditor } from './PatchEditor.js';
 import { ArtifactThreadsPanel } from './ArtifactThreadsPanel.js';
+import { AppliedBadge } from './AppliedBadge.js';
 
 interface Props {
   patchPath: string;
@@ -27,7 +28,7 @@ export function PatchDetail({ patchPath }: Props) {
   // 0.1.139: the panel owns its list (generic GET /api/artifacts/patch/:path/threads)
   // instead of reading `.threads` off the detail response.
   const threadsQuery = useArtifactThreads('patch', patchPath);
-  const setStatus = useUpdatePatchStatus(patchPath);
+  const setApplied = useSetPatchApplied(patchPath);
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const [view, setView] = useState<ViewTab>('artifact');
@@ -44,7 +45,8 @@ export function PatchDetail({ patchPath }: Props) {
   }
 
   const fm = patch.frontmatter;
-  const completed = fm.status === 'completed';
+  // 0.2.14: a legacy `status: completed` key does not count — it reads as pending.
+  const applied = fm.applied === true;
   const briefPath = typeof fm.brief === 'string' && fm.brief.length > 0 ? fm.brief : null;
 
   const handleNewThread = async () => {
@@ -73,23 +75,7 @@ export function PatchDetail({ patchPath }: Props) {
             {patch.title}
           </span>
           <Badge>{String(fm.patch_kind ?? 'patch')}</Badge>
-          {completed ? (
-            <span
-              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-              style={{ background: 'var(--c-green-soft)', color: 'var(--c-green)' }}
-              title="Patch resolved — the spec reflects its findings."
-            >
-              completed
-            </span>
-          ) : (
-            <span
-              className="font-mono text-[10.5px] px-1.5 py-0.5 rounded inline-flex items-center"
-              style={{ background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }}
-              title="Patch awaiting resolution."
-            >
-              awaiting
-            </span>
-          )}
+          <AppliedBadge applied={applied} />
         </div>
         <span className="flex-1" />
         {briefPath && (
@@ -132,12 +118,13 @@ export function PatchDetail({ patchPath }: Props) {
               Patch settings
             </div>
             <button
-              onClick={() => void setStatus.mutateAsync(completed ? 'awaiting' : 'completed')}
+              onClick={() => void setApplied.mutateAsync(!applied)}
               className="w-full text-left text-[12px] px-2 py-1 rounded btn-ghost flex items-center gap-2"
               style={{ color: 'var(--c-ink)' }}
+              title="Toggle the 'applied' declaration. Nothing verifies it against the spec — and nothing but this toggle can set it."
             >
-              {completed ? <Circle size={12} /> : <Check size={12} />}
-              {completed ? 'Mark as awaiting' : 'Mark as completed'}
+              {applied ? <Circle size={12} /> : <Check size={12} />}
+              {applied ? 'Mark as pending' : 'Mark as applied'}
             </button>
             <div className="mt-3 pt-2" style={{ borderTop: '1px solid var(--c-hair)' }}>
               <div

@@ -116,8 +116,16 @@ export interface PlanUpdateContentOpts {
 
 export interface PlanUpdateFrontmatterOpts {
   path: string;
-  patch: { title?: string };
+  patch: { title?: string; applied?: boolean };
   changedBy: PlanChangedBy;
+}
+
+/** Input of {@link PlanService.setAppliedByThread} — the `mark_plan_applied` operation. */
+export interface PlanSetAppliedInput {
+  /** Plan path relative to plansDir. Defaulted from the thread in the `internal` channel. */
+  path?: string;
+  /** Required. Only `true` passes through the agent channel — see the method. */
+  applied: boolean;
 }
 
 export class PlanService {
@@ -223,7 +231,7 @@ export class PlanService {
    * run on every list call — 2N wasted queries for N plans on every page load
    * / search keystroke. Pass `true` for a caller that actually needs them.
    */
-  listPlans(opts: { search?: string; includeThreadInfo?: boolean } = {}): PlanListItem[] {
+  listPlans(opts: { search?: string; applied?: boolean; includeThreadInfo?: boolean } = {}): PlanListItem[] {
     const records = this.deps.frontmatterIndexer.findByFrontmatterType('plan', { rootId: PLAN_ROOT_MARKER });
     const search = opts.search?.trim().toLowerCase();
     const out: PlanListItem[] = [];
@@ -233,6 +241,9 @@ export class PlanService {
       if (search && !(title?.toLowerCase().includes(search) ?? false) && !rec.path.toLowerCase().includes(search)) {
         continue;
       }
+      // A plan with no `applied` key counts as `false` — the filter reads the
+      // indexer's frontmatter, so no file is opened per row.
+      if (opts.applied !== undefined && opts.applied !== (fm.applied === true)) continue;
       const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, PLAN_ROOT_MARKER);
       out.push({
         path: rec.path,
@@ -320,6 +331,10 @@ export class PlanService {
             title: trimmedTitle,
             created_at: new Date().toISOString(),
             created_by: changedBy,
+            // 0.2.14: written EXPLICITLY at create time rather than left to the
+            // read-side default, so a plan file states its own flag from the
+            // first byte. Pre-0.2.14 files without the key still read `false`.
+            applied: false,
           };
           const fullContent = matter.stringify(finalContent, frontmatter as Record<string, unknown>);
           const abs = this.absPath(allocated);
@@ -408,31 +423,94 @@ export class PlanService {
     });
   }
 
+  /**
+   * Write the mutable frontmatter keys (`title`, `applied`) of a plan.
+   *
+   * 0.2.14 — two rules local to kind `plan`, both deliberate:
+   *
+   *  - **No `recordVersion`.** A frontmatter-only write does NOT capture a
+   *    `file_version` row, so `currentVersion`, `list_plan_versions` and the
+   *    Version history panel are unchanged by flipping `applied` or renaming
+   *    the plan. Brief and patch still capture every frontmatter write — this
+   *    is not a family-wide rule.
+   *  - **`plan:updated` is still emitted**, so the `/plans` list and the detail
+   *    header refresh their badge without a reload. `version` carries the
+   *    SAME value as before the write, which follows from the rule above.
+   *    `threadId` is best-effort: this write arrives over REST, which has no
+   *    thread, so the plan's most recent attached thread stands in (`''` when
+   *    the plan has none) — consumers key off `planPath`.
+   */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
     return this.withLock(opts.path, async () => {
       const current = await this.getByPath(opts.path);
       const next: PlanFrontmatter = { ...current.frontmatter };
-      const summaries: string[] = [];
       if (opts.patch.title !== undefined && opts.patch.title !== current.frontmatter.title) {
         next.title = opts.patch.title;
-        summaries.push(`set title=${opts.patch.title}`);
+      }
+      if (opts.patch.applied !== undefined && opts.patch.applied !== (current.frontmatter.applied === true)) {
+        next.applied = opts.patch.applied;
       }
       const newContent = matter.stringify(current.body, next as Record<string, unknown>);
       const abs = this.absPath(opts.path);
       this.deps.plansWatcher.suppress(opts.path);
       await fs.writeFile(abs, newContent, 'utf-8');
-      await this.deps.pageVersions.recordVersion(
-        opts.path,
-        'update',
-        toFileChangedBy(opts.changedBy),
-        undefined,
-        this.deps.plansSerializer,
-        PLAN_ROOT_MARKER,
-        summaries.length > 0 ? summaries.join('; ') : null,
-      );
       await this.deps.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, opts.path);
-      return this.getByPath(opts.path);
+      const updated = await this.getByPath(opts.path);
+      this.deps.ws.broadcast({
+        kind: 'plan:updated',
+        planPath: opts.path,
+        threadId: this.deps.chatService.findLastThreadIdForPlan(opts.path) ?? '',
+        version: updated.currentVersion,
+        changedBy: opts.changedBy,
+      });
+      return updated;
     });
+  }
+
+  /**
+   * `mark_plan_applied` — declare the plan of `threadId` applied to the spec.
+   *
+   * Deliberately a separate operation rather than a parameter of `update_plan`:
+   * declaring a plan applied is a different act from writing its content, and
+   * the two undo in opposite directions (content is edited by whoever, the flag
+   * is unset only by the user).
+   *
+   * ONE-WAY from this channel. `applied: false` is refused — the agent that
+   * just executed a plan is the right party to say "done", and nobody in that
+   * position is the right party to say "actually, not done"; that is the user's
+   * call in the header of `/plans/:slug`.
+   *
+   * Idempotent: a repeat at the same value writes no file and emits no event.
+   */
+  async setAppliedByThread(
+    threadId: string,
+    input: PlanSetAppliedInput,
+  ): Promise<{ path: string; applied: boolean }> {
+    if (typeof input.applied !== 'boolean') {
+      throw new DomainError('VALIDATION', 'applied is required and must be a boolean');
+    }
+    if (input.applied === false) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        'this tool only marks a plan applied; it cannot unmark one',
+        'unset it in the UI — the toggle in the header of the plan page',
+      );
+    }
+    const planPath = input.path ?? this.deps.chatService.getThreadPlanPath(threadId);
+    if (!planPath) {
+      throw new DomainError(
+        'NOT_FOUND',
+        'this thread has no plan to mark applied',
+        'create one with update_plan (title required on the first call), or pass an explicit path',
+      );
+    }
+    const current = await this.getByPath(planPath);
+    // No-op on a repeat: no write, no version, no event.
+    if ((current.frontmatter.applied === true) === input.applied) {
+      return { path: planPath, applied: input.applied };
+    }
+    await this.updateFrontmatter({ path: planPath, patch: { applied: input.applied }, changedBy: 'agent' });
+    return { path: planPath, applied: input.applied };
   }
 
   // 0.1.138: `execute(planPath, mode)` is GONE. PlanService carries only plan

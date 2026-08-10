@@ -29,6 +29,7 @@ interface Harness {
   db: Database.Database;
   service: PlanService;
   plansPages: PagesService;
+  frontmatterIndexer: PagesFrontmatterIndexer;
   watch: ReturnType<FileWatchRuntime['scoped']>;
 }
 
@@ -59,7 +60,7 @@ async function setup(ws: WsEmitter = noopWs): Promise<Harness> {
     frontmatterIndexer,
     ws,
   });
-  return { cwd, db, service, plansPages, watch };
+  return { cwd, db, service, plansPages, frontmatterIndexer, watch };
 }
 
 /** Reads one named plan file's raw content. */
@@ -527,5 +528,169 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await injection.onChange('context:test', artifactSource('plan'), rel, 'external');
 
     expect(await readPlanFile(h, rel)).toMatch(new RegExp(ANCHOR_PATTERN_SOURCE));
+  });
+});
+
+// 0.2.14 — the plan's execution flag. Everything here is about ONE claim:
+// `applied` is a declaration, so nothing computes it and nothing about the
+// plan's version history moves when it changes.
+describe('PlanService — the `applied` flag (0.2.14)', () => {
+  it('writes `applied: false` explicitly into a newly created plan file', async () => {
+    const h = await setup();
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Fresh plan',
+        action: 'replace',
+        content: 'body',
+        changedBy: 'agent',
+      });
+      const plan = (await h.service.getByThread('thread-1'))!;
+      expect(plan.frontmatter.applied).toBe(false);
+      // Explicit in the FILE, not merely defaulted on read.
+      expect(await readPlanFile(h, plan.path)).toMatch(/applied: false/);
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('reads a pre-0.2.14 plan (no `applied` key) as false, and the first write adds the key', async () => {
+    const h = await setup();
+    try {
+      await fs.writeFile(
+        path.join(h.plansPages.root, 'legacy.md'),
+        `---\ntype: plan\ntitle: Legacy plan\ncreated_at: 2026-01-01T00:00:00.000Z\ncreated_by: user\n---\n\nbody\n`,
+        'utf-8',
+      );
+      await h.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, 'legacy.md');
+
+      const before = await h.service.getByPath('legacy.md');
+      expect(before.frontmatter.applied).toBeUndefined();
+      expect(h.service.listPlans({ applied: false }).map((p) => p.path)).toContain('legacy.md');
+      expect(h.service.listPlans({ applied: true })).toHaveLength(0);
+
+      await h.service.setAppliedByThread('no-such-thread', { path: 'legacy.md', applied: true });
+      expect(await readPlanFile(h, 'legacy.md')).toMatch(/applied: true/);
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('setAppliedByThread resolves the plan from the thread and refuses to unset it', async () => {
+    const h = await setup();
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Marked plan',
+        action: 'replace',
+        content: 'body',
+        changedBy: 'agent',
+      });
+
+      const res = await h.service.setAppliedByThread('thread-1', { applied: true });
+      expect(res.applied).toBe(true);
+      expect((await h.service.getByPath(res.path)).frontmatter.applied).toBe(true);
+
+      // One-way from this channel: unsetting is the user's call in the UI.
+      await expect(h.service.setAppliedByThread('thread-1', { applied: false })).rejects.toMatchObject({
+        code: 'INVALID_ARGUMENT',
+      });
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('NOT_FOUND when the thread has no plan and no explicit path was given', async () => {
+    const h = await setup();
+    try {
+      seedThread(h.db, 'thread-1');
+      await expect(h.service.setAppliedByThread('thread-1', { applied: true })).rejects.toMatchObject({
+        code: 'NOT_FOUND',
+      });
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('is idempotent — a repeat at the same value writes no file and emits no event', async () => {
+    const broadcast = vi.fn();
+    const h = await setup({ broadcast });
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Idempotent plan',
+        action: 'replace',
+        content: 'body',
+        changedBy: 'agent',
+      });
+      await h.service.setAppliedByThread('thread-1', { applied: true });
+      const contentAfterFirst = await readPlanFile(h, (await h.service.getByThread('thread-1'))!.path);
+      broadcast.mockClear();
+
+      await h.service.setAppliedByThread('thread-1', { applied: true });
+
+      expect(broadcast).not.toHaveBeenCalled();
+      expect(await readPlanFile(h, (await h.service.getByThread('thread-1'))!.path)).toBe(contentAfterFirst);
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('a frontmatter write records NO new version, but still broadcasts plan:updated', async () => {
+    const broadcast = vi.fn();
+    const h = await setup({ broadcast });
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Versionless plan',
+        action: 'replace',
+        content: 'body',
+        changedBy: 'agent',
+      });
+      const before = (await h.service.getByThread('thread-1'))!;
+      broadcast.mockClear();
+
+      await h.service.setAppliedByThread('thread-1', { applied: true });
+
+      const after = await h.service.getByPath(before.path);
+      // The whole point: history is untouched by a declaration.
+      expect(after.currentVersion).toBe(before.currentVersion);
+      expect(broadcast).toHaveBeenCalledWith({
+        kind: 'plan:updated',
+        planPath: before.path,
+        threadId: 'thread-1',
+        version: before.currentVersion,
+        changedBy: 'agent',
+      });
+    } finally {
+      await teardown(h);
+    }
+  });
+
+  it('a title rename likewise records no version (same frontmatter rule)', async () => {
+    const h = await setup();
+    try {
+      seedThread(h.db, 'thread-1');
+      await h.service.update({
+        threadId: 'thread-1',
+        title: 'Old title',
+        action: 'replace',
+        content: 'body',
+        changedBy: 'agent',
+      });
+      const before = (await h.service.getByThread('thread-1'))!;
+
+      await h.service.updateFrontmatter({ path: before.path, patch: { title: 'New title' }, changedBy: 'user' });
+
+      const after = await h.service.getByPath(before.path);
+      expect(after.frontmatter.title).toBe('New title');
+      expect(after.currentVersion).toBe(before.currentVersion);
+    } finally {
+      await teardown(h);
+    }
   });
 });

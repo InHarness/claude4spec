@@ -511,3 +511,34 @@ describe('buildSystemPrompt — plan-tools exemption single-source regression (0
     expect(out).not.toContain('NOT subject to plan_mode');
   });
 });
+
+/**
+ * 0.2.14 — `<current_patch>` carries `applied="true|false"`, not the retired
+ * `status="awaiting|completed"` enum.
+ */
+describe('buildSystemPrompt — <current_patch applied=…>', () => {
+  const patchWith = (frontmatter: Record<string, unknown>) =>
+    build({
+      contextType: 'patch',
+      patch: {
+        path: 'p1.md',
+        title: 'p1',
+        frontmatter: { type: 'patch', patch_kind: 'drift', brief: 'b1.md', ...frontmatter },
+        body: 'body',
+        content: 'body',
+        hash: 'deadbeef',
+      },
+    } as Partial<SystemPromptInput>);
+
+  it('renders the boolean, defaulting a missing key to false', () => {
+    expect(patchWith({ applied: true })).toContain('applied="true"');
+    expect(patchWith({ applied: false })).toContain('applied="false"');
+    expect(patchWith({})).toContain('applied="false"');
+    expect(patchWith({ applied: true })).not.toContain('status=');
+  });
+
+  // A pre-0.2.14 patch is not silently promoted: `status` is an unknown field.
+  it('reads a legacy `status: completed` as applied="false"', () => {
+    expect(patchWith({ status: 'completed' })).toContain('applied="false"');
+  });
+});

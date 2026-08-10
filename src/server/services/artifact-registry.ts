@@ -77,7 +77,9 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     frontmatterType: 'patch',
     frontmatterContract: {
       immutable: PATCH_IMMUTABLE_FRONTMATTER_KEYS,
-      mutable: ['status'],
+      // 0.2.14: `status` (awaiting|completed) -> `applied` (boolean), the same
+      // flag and semantics the plan carries.
+      mutable: ['applied'],
     },
     binding: { mode: 'anchor', contextType: 'patch', threadColumn: 'patch_path' },
     danglingPolicy: 'invariant-banner',
@@ -103,7 +105,7 @@ export const artifactRegistry: Record<ArtifactKind, ArtifactRegistryEntry> = {
     frontmatterType: 'plan',
     frontmatterContract: {
       immutable: PLAN_IMMUTABLE_FRONTMATTER_KEYS,
-      mutable: ['title'],
+      mutable: ['title', 'applied'],
     },
     binding: { mode: 'attach', threadColumn: 'plan_path' },
     danglingPolicy: 'graceful-degrade',

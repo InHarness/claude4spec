@@ -45,7 +45,7 @@ describe('writePatchFs', () => {
       brief: 'v0-1-to-v0-2.md',
       patch_kind: 'missing',
       created_by: 'claude-code',
-      status: 'awaiting',
+      applied: false,
     });
     expect(typeof parsed.data.created_at).toBe('string');
     expect(parsed.content).toContain('# Patch — Missing X detail');

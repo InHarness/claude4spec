@@ -10,6 +10,7 @@ import {
   useSavePlan,
   useCreateThreadFromPlan,
   useUpdatePlanTitle,
+  useSetPlanApplied,
 } from '../hooks/usePlan.js';
 import { useArtifactThreads } from '../hooks/useArtifactThreads.js';
 import { PlanEditor } from './PlanEditor.js';
@@ -21,6 +22,7 @@ import { OutlineButton } from './OutlineButton.js';
 import { useOutlineStore } from '../state/outline.js';
 import { stem } from '../lib/artifact-path.js';
 import { withFrontmatterOf } from '../lib/artifact-frontmatter.js';
+import { AppliedBadge } from './AppliedBadge.js';
 
 interface Props {
   planPath: string;
@@ -53,6 +55,7 @@ export function PlanPage({ planPath }: Props) {
   const savePlan = useSavePlan();
   const createThread = useCreateThreadFromPlan();
   const updateTitle = useUpdatePlanTitle();
+  const setApplied = useSetPlanApplied();
   // 0.1.139: the generic artifact listing — one query shared with the brief and
   // patch panels, not a plan-specific projection.
   const threadsQuery = useArtifactThreads('plan', planPath);
@@ -194,6 +197,7 @@ export function PlanPage({ planPath }: Props) {
     );
   }
 
+  const applied = plan.frontmatter.applied === true;
   const isDirty = dirtyContent !== null && dirtyContent !== plan.body;
   const displayContent = dirtyContent ?? plan.body;
   const canExecute = plan.body.trim().length > 0;
@@ -250,6 +254,22 @@ export function PlanPage({ planPath }: Props) {
           >
             Plan v{currentVersion}
           </span>
+          {/* 0.2.14: the plan's execution flag. The agent that ran the plan sets
+              it through `mark_plan_applied`; this toggle is the ONLY way back to
+              `pending`, which is why it lives here and not in the tiptap. */}
+          <button
+            onClick={() => void setApplied.mutateAsync({ planPath, applied: !applied })}
+            disabled={setApplied.isPending}
+            className="btn-ghost rounded px-0.5 py-0.5 inline-flex items-center"
+            style={{ opacity: setApplied.isPending ? 0.5 : 1 }}
+            title={
+              applied
+                ? 'Applied to the specification — click to mark pending again.'
+                : 'Not applied yet — click to declare it applied. Nothing verifies this against the spec.'
+            }
+          >
+            <AppliedBadge applied={applied} />
+          </button>
         </div>
         <span className="flex-1" />
         <SegmentedControl

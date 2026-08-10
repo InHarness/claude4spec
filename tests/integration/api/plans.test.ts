@@ -4,10 +4,22 @@ import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { PLAN_ROOT_MARKER } from '../../../src/shared/types.js';
 
 /** Writes a plan `.md` file + captures its file_version + indexes it — mirrors artifacts.test.ts's writeArtifact. */
-async function seedPlan(t: TestApp, slug: string, title: string, body: string): Promise<string> {
+async function seedPlan(
+  t: TestApp,
+  slug: string,
+  title: string,
+  body: string,
+  extraFrontmatter: Record<string, unknown> = {},
+): Promise<string> {
   const relPath = `${slug}.md`;
   await t.plansPages.write(relPath, {
-    frontmatter: { type: 'plan', title, created_at: new Date().toISOString(), created_by: 'user' },
+    frontmatter: {
+      type: 'plan',
+      title,
+      created_at: new Date().toISOString(),
+      created_by: 'user',
+      ...extraFrontmatter,
+    },
     body,
   });
   await t.frontmatterIndexer.indexPage(PLAN_ROOT_MARKER, relPath);
@@ -50,6 +62,73 @@ describe('GET /api/artifacts/plan', () => {
     const searched = await request(t.app).get('/api/artifacts/plan').query({ search: 'beta' });
     expect(searched.body.data).toHaveLength(1);
     expect(searched.body.data[0].frontmatter.title).toBe('Beta migration plan');
+  });
+
+  // 0.2.14 — three states on the wire: omit / true / false. `all` is the
+  // ABSENCE of the parameter, never a literal value of it.
+  it('filters by ?applied=, counting a plan with no `applied` key as false', async () => {
+    await seedPlan(t, 'done-plan', 'Done plan', 'body', { applied: true });
+    await seedPlan(t, 'todo-plan', 'Todo plan', 'body', { applied: false });
+    await seedPlan(t, 'legacy-plan', 'Legacy plan', 'body'); // pre-0.2.14: no key at all
+
+    const all = await request(t.app).get('/api/artifacts/plan');
+    expect(all.body.data).toHaveLength(3);
+
+    const applied = await request(t.app).get('/api/artifacts/plan').query({ applied: 'true' });
+    expect(applied.body.data.map((d: { path: string }) => d.path)).toEqual(['done-plan.md']);
+
+    const pending = await request(t.app).get('/api/artifacts/plan').query({ applied: 'false' });
+    expect(pending.body.data.map((d: { path: string }) => d.path).sort()).toEqual([
+      'legacy-plan.md',
+      'todo-plan.md',
+    ]);
+
+    const bogus = await request(t.app).get('/api/artifacts/plan').query({ applied: 'all' });
+    expect(bogus.status).toBe(400);
+    expect(bogus.body.error.code).toBe('VALIDATION');
+  });
+});
+
+// 0.2.14 — the plan's frontmatter endpoint, and the two rules that are local
+// to kind `plan`: `applied` joins `title` as mutable, and a frontmatter-only
+// write captures no `file_version` row.
+describe('PATCH /api/artifacts/plan/:path/frontmatter', () => {
+  let t: TestApp;
+
+  beforeEach(async () => {
+    t = await createTestApp();
+  });
+  afterEach(() => t.cleanup());
+
+  it('toggles `applied` both ways without moving the plan version', async () => {
+    const relPath = await seedPlan(t, 'toggle-plan', 'Toggle plan', 'body');
+    const before = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions`);
+    const versionCountBefore = before.body.data.length;
+
+    const on = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { applied: true } });
+    expect(on.status).toBe(200);
+    expect(on.body.data.frontmatter.applied).toBe(true);
+
+    // The user's undo path — the only one there is.
+    const off = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { applied: false } });
+    expect(off.status).toBe(200);
+    expect(off.body.data.frontmatter.applied).toBe(false);
+
+    const after = await request(t.app).get(`/api/artifacts/plan/${relPath}/versions`);
+    expect(after.body.data).toHaveLength(versionCountBefore);
+  });
+
+  it('400s IMMUTABLE_FIELD on a key outside {title, applied}', async () => {
+    const relPath = await seedPlan(t, 'guarded-plan', 'Guarded plan', 'body');
+    const res = await request(t.app)
+      .patch(`/api/artifacts/plan/${relPath}/frontmatter`)
+      .send({ frontmatter: { created_by: 'someone-else' } });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('IMMUTABLE_FIELD');
   });
 });
 

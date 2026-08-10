@@ -1,17 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PatchStatus } from '../../shared/entities.js';
 import { patchesApi } from '../lib/patches-api.js';
 import { artifactThreadsKey } from './useArtifactThreads.js';
 
 const keys = {
-  list: (brief?: string, status?: string) =>
-    ['patches', 'list', brief ?? null, status ?? null] as const,
+  list: (brief?: string, applied?: boolean) =>
+    ['patches', 'list', brief ?? null, applied ?? null] as const,
   detail: (path: string) => ['patches', 'detail', path] as const,
 };
 
-export function usePatches(opts: { brief?: string; status?: string } = {}) {
+export function usePatches(opts: { brief?: string; applied?: boolean } = {}) {
   return useQuery({
-    queryKey: keys.list(opts.brief, opts.status),
+    queryKey: keys.list(opts.brief, opts.applied),
     queryFn: () => patchesApi.list(opts),
   });
 }
@@ -36,13 +35,15 @@ export function useUpdatePatchContent(patchPath: string) {
   });
 }
 
-export function useUpdatePatchStatus(patchPath: string) {
+/**
+ * 0.2.14 — the patch's execution flag is 100% user-driven: no MCP tool and no
+ * `c4s` command can move it in either direction, so this hook is its only
+ * writer.
+ */
+export function useSetPatchApplied(patchPath: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (status: PatchStatus) => patchesApi.updateFrontmatter(patchPath, { status }),
-    // ^ patchesApi.updateFrontmatter now takes a raw frontmatter bag
-    //   (Record<string, unknown>) matching ArtifactFrontmatterUpdateRequest —
-    //   `{ status }` still satisfies that shape structurally, no change needed.
+    mutationFn: (applied: boolean) => patchesApi.updateFrontmatter(patchPath, { applied }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.detail(patchPath) });
       qc.invalidateQueries({ queryKey: ['patches', 'list'] });
