@@ -39,7 +39,7 @@ export interface ToolEnvelope {
  * reaches `content`.
  */
 export interface ToolCallContext {
-  /** Catalog name of the operation, e.g. `update_section`. */
+  /** Catalog name of the operation, e.g. `update_sections`. */
   operation: string;
   /** The rendering channel — `mcp` and `internal` both land here. */
   channel: string;
@@ -55,7 +55,7 @@ export interface ToolCallContext {
  *
  * Without this the budget contract (`DEFAULT_BUDGET_CHARS`, `MAX_ANCHORS_PER_CALL`)
  * is unfalsifiable at runtime: nothing in the server ever knew how wide a
- * response actually was, so "we made update_section echo-free" was a claim with
+ * response actually was, so "we made update_sections echo-free" was a claim with
  * no instrument behind it.
  *
  * Gated on `C4S_RESPONSE_SIZE=1`, like the `[timing]` middleware in `index.ts` —

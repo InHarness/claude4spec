@@ -748,7 +748,7 @@ function buildAgentPathScope(
   if (scope.pageRootDirs.length) {
     lines.push(
       `  READ-ONLY to built-in tools — page roots (${scope.pageRootDirs.join(', ')}): read and grep them freely, but NEVER write one with Write/Edit/Bash. ` +
-        `A page is written with create_page / update_page / delete_page, and one section with update_section. ` +
+        `A page is written with create_page / update_page / delete_page, and a batch of sections with update_sections. ` +
         `That is not a style preference: those operations label the write for the file watcher and honour expectedHash, so the page is re-indexed and conflict-checked before you are told it succeeded. A built-in write skips both.`,
     );
   }

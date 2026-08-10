@@ -366,7 +366,7 @@ export function registerCoreOperations(): void {
   // strength of living on a host-owned server.
   //
   // Addressing is `(rootId, relPath)` — a root is part of a page's identity,
-  // not a filter over one namespace — except `update_section`, which addresses
+  // not a filter over one namespace — except `update_sections`, which addresses
   // by anchor because an anchor is globally unique and already carries its root.
   //
   // The `cli` cells say `direct` with no `c4s` command behind them, and that is
@@ -398,16 +398,22 @@ export function registerCoreOperations(): void {
   });
 
   /**
-   * `expectedHash` — optional in the schema, honoured identically by all four
-   * channels. Optional rather than required because the editor does not send
-   * one and requiring it would break page saving; the brief calls the guard
-   * "part of the operation contract", not mandatory. Filed as a patch.
+   * `expectedHash` — REQUIRED as of 0.2.15, honoured identically by all four
+   * channels.
+   *
+   * It was optional here, with a note that requiring it would break page saving
+   * because the editor did not send one. That was true and is no longer: the
+   * editor could not send one because `GET /api/pages/:rootId/*` did not return
+   * a hash at all. It does now, so the reason the guard was optional is gone
+   * and the guard is mandatory — enforced in `services/page-write.ts` rather
+   * than per channel, since a guard only some doors apply is not a guard.
    */
   const expectedHash = {
     expectedHash: z
       .string()
-      .optional()
-      .describe('sha256 of the file as last read. Mismatch → PAGE_CONFLICT carrying the current hash.'),
+      .describe(
+        'REQUIRED. sha256 of the file as last read. Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
+      ),
   };
 
   CATALOG.register(
@@ -427,7 +433,7 @@ export function registerCoreOperations(): void {
       'Write a page in full — body plus optional frontmatter. Create-or-replace: absent pages are created, which is how the editor saves a new one.',
       { rootId: z.string(), path: z.string(), body: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...expectedHash },
       true,
-      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
     ),
   );
 
@@ -443,11 +449,22 @@ export function registerCoreOperations(): void {
 
   CATALOG.register(
     pageWrite(
-      'update_section',
-      'Replace one section\'s body, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model.',
-      { anchor: z.string(), content: z.string(), ...expectedHash },
-      true,
-      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+      'update_sections',
+      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
+      {
+        ...expectedHash,
+        edits: z.array(
+          z.object({
+            anchor: z.string(),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete']),
+            content: z.string().optional(),
+          }),
+        ).min(1),
+      },
+      // `replace` and `delete` are idempotent; `append` and `insert_after` are
+      // not, so the operation as a whole cannot claim to be.
+      false,
+      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
     ),
   );
 
@@ -478,10 +495,21 @@ export function registerCoreOperations(): void {
     inputSchema: {
       path: z.string().optional(),
       title: z.string().optional().describe('Required when the thread has no plan yet — this call creates it.'),
-      mode: z.enum(['replace', 'append', 'insert_after_section']).optional(),
+      // 0.2.15: named `action`, matching every rendering. The row said `mode`,
+      // which no channel ever accepted.
+      action: z.enum(['replace', 'append', 'insert_after_section']),
       content: z.string(),
+      /**
+       * 0.2.15 — required by the operation on every call EXCEPT the first one in
+       * a thread, which creates the plan and has nothing to be stale against.
+       * A zod shape cannot say "required unless", so the enforcement lives in
+       * `PlanService.update`; `.optional()` here would otherwise read as the
+       * guard being optional, which it is not.
+       */
+      expectedHash: z.string().optional().describe('REQUIRED except on the call that creates the plan.'),
+      changeSummary: z.string(),
     },
-    errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION'],
+    errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'db', 'ui-notify'],
     idempotent: false,
     channels: fullParity(),

@@ -139,6 +139,7 @@ describe('PlanService anchor injection', () => {
     await h.service.update({
       threadId: 'thread-1',
       action: 'replace',
+      expectedHash: await currentHash(h, 'thread-1'),
       content: saved,
       changedBy: 'user',
     });
@@ -171,6 +172,17 @@ describe('PlanService anchor injection', () => {
     expect(new Set(anchors).size).toBe(40);
   });
 });
+
+/**
+ * 0.2.15 — `update_plan` requires `expectedHash` on every call but the one that
+ * creates the plan. These tests are about anchors and insertion, not about the
+ * guard, so they read the current hash rather than asserting on it.
+ */
+async function currentHash(harness: Harness, threadId: string): Promise<string> {
+  const plan = await harness.service.getByThread(threadId);
+  if (!plan) throw new Error(`no plan attached to ${threadId}`);
+  return plan.hash;
+}
 
 describe('PlanService.update — insert_after_section against a duplicated anchor', () => {
   let h: Harness;
@@ -211,6 +223,7 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
       h.service.update({
         threadId: 'thread-amb',
         action: 'insert_after_section',
+        expectedHash: await currentHash(h, 'thread-amb'),
         anchor: dup,
         content: 'injected fragment',
         changedBy: 'agent',
@@ -232,6 +245,7 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
     await h.service.update({
       threadId: 'thread-one',
       action: 'insert_after_section',
+      expectedHash: await currentHash(h, 'thread-one'),
       anchor: 'aaaa1111',
       content: 'injected fragment',
       changedBy: 'agent',
@@ -257,6 +271,7 @@ describe('PlanService.update — insert_after_section against a duplicated ancho
       h.service.update({
         threadId: 'thread-none',
         action: 'insert_after_section',
+        expectedHash: await currentHash(h, 'thread-none'),
         anchor: 'zzzz9999',
         content: 'injected fragment',
         changedBy: 'agent',
@@ -510,11 +525,79 @@ describe('M40 — plan anchor injection has one implementation and two triggers'
     await h.service.update({
       threadId: 't-sync',
       action: 'insert_after_section',
+      expectedHash: await currentHash(h, 't-sync'),
       anchor,
       content: 'inserted body\n',
       changedBy: 'agent',
     });
     expect(await soleStoredBody(h)).toContain('inserted body');
+  });
+
+  /**
+   * 0.2.15 — the guard that makes a plan safe to have several writers.
+   *
+   * The rationale is specific to plans: an agent turn, a `user_edit` from the
+   * UI and an N:1 model attach all write the same file, so last-write-wins here
+   * loses authored content rather than merely reordering it.
+   */
+  it('requires expectedHash on an existing plan, and refuses a stale one with PLAN_CONFLICT', async () => {
+    seedThread(h.db, 't-guard');
+    await h.service.update({
+      threadId: 't-guard',
+      title: 'Guarded plan',
+      action: 'replace',
+      content: 'original body\n',
+      changedBy: 'agent',
+    });
+    const original = await soleStoredBody(h);
+
+    // Missing → INVALID_ARGUMENT. Not PLAN_CONFLICT: retrying this exact call
+    // can never work, so the caller needs "go read first", not a fresh hash.
+    await expect(
+      h.service.update({
+        threadId: 't-guard',
+        action: 'replace',
+        content: 'unguarded overwrite\n',
+        changedBy: 'agent',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_ARGUMENT' });
+
+    // Stale → PLAN_CONFLICT, carrying the current hash so the retry can arm.
+    const conflict = await h.service
+      .update({
+        threadId: 't-guard',
+        action: 'replace',
+        expectedHash: 'b'.repeat(64),
+        content: 'stale overwrite\n',
+        changedBy: 'agent',
+      })
+      .catch((e) => e);
+    expect(conflict.code).toBe('PLAN_CONFLICT');
+    expect(conflict.currentHash).toHaveLength(64);
+
+    // Neither refusal wrote anything.
+    expect(await soleStoredBody(h)).toBe(original);
+
+    // The current hash is accepted, and the result carries the NEXT one — so a
+    // caller can chain writes without a read between them.
+    const ok = await h.service.update({
+      threadId: 't-guard',
+      action: 'replace',
+      expectedHash: await currentHash(h, 't-guard'),
+      content: 'guarded overwrite\n',
+      changedBy: 'agent',
+    });
+    expect(ok.hash).toHaveLength(64);
+    expect(await soleStoredBody(h)).toContain('guarded overwrite');
+    await expect(
+      h.service.update({
+        threadId: 't-guard',
+        action: 'replace',
+        expectedHash: ok.hash,
+        content: 'chained\n',
+        changedBy: 'agent',
+      }),
+    ).resolves.toBeTruthy();
   });
 
   it('[ac:ac-zewnetrzny-zapis-pliku-planu-poza-plan] a plan written straight to disk gets its anchors from the M06 write-back on artifacts:plan', async () => {

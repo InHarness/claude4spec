@@ -6,9 +6,10 @@ import {
   createPage,
   deletePage,
   updatePage,
-  updateSection,
+  updateSections,
   type PageWriteTarget,
   type SectionWriteDeps,
+  type UpdateSectionsInput,
 } from '../services/page-write.js';
 
 /**
@@ -19,7 +20,7 @@ import {
  * The brief blocks the agent's built-in `Write`/`Edit` from writing a page and
  * names four operations as the replacement. Three of them (`create_page`,
  * `update_page`, `delete_page`) had a REST rendering and no other; the fourth
- * (`update_section`) had no write path at all. So the lockdown could not come
+ * (`update_sections`, then singular) had no write path at all. So the lockdown could not come
  * first: closing the built-in channel before opening this one would have left
  * the chat agent unable to edit the specification it exists to edit.
  *
@@ -77,12 +78,17 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     .string()
     .describe('Page root id. Part of a page\'s identity — `(rootId, path)` — not a filter.');
   const pathParam = z.string().describe('Page path relative to the root, e.g. "guides/auth.md".');
+  /**
+   * 0.2.15 — REQUIRED, not optional. A page has several writers (an agent turn,
+   * the editor, a hand edit picked up by the watcher) and a punctual write
+   * touches lines the caller never saw in full, so last-write-wins here loses
+   * work silently.
+   */
   const expectedHashParam = z
     .string()
-    .optional()
     .describe(
-      'sha256 of the full file as you last read it (the `hash` from get_page/a previous write). ' +
-        'Mismatch → PAGE_CONFLICT carrying the current hash. Omit only when overwriting deliberately.',
+      'REQUIRED. sha256 of the full file as you last read it (the `hash` from get_page or a previous write). ' +
+        'Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
     );
 
   const createPageTool = mcpTool(
@@ -114,7 +120,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
 
   const updatePageTool = mcpTool(
     'update_page',
-    'Write a page in full — body and optional frontmatter. Creates it if absent, so this is the create-or-replace primitive; `update_section` is the punctual variant.',
+    'Write a page in full — body and optional frontmatter. Creates it if absent, so this is the create-or-replace primitive; `update_sections` is the punctual variant.',
     {
       rootId: rootIdParam,
       path: pathParam,
@@ -161,32 +167,47 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     },
   );
 
-  const updateSectionTool = mcpTool(
-    'update_section',
-    'Replace one section\'s body, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
+  const updateSectionsTool = mcpTool(
+    'update_sections',
+    [
+      'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
+      'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body). `content` is required for all but `delete`.',
+      'All anchors must be on the SAME page (else INVALID_ARGUMENT), and no anchor may appear twice (INVALID_ARGUMENT).',
+      'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
+      '`expectedHash` is the PAGE hash and guards the whole batch — which is the point of batching: editing sections one call at a time makes your own hash stale after the first one.',
+      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors }] }, results in the order you gave the edits.',
+    ].join('\n'),
     {
-      anchor: z.string().describe('The section anchor, from get_sections / list_sections.'),
-      content: z
-        .string()
-        .describe(
-          'The replacement body, heading line EXCLUDED — exactly the shape get_sections returns. ' +
-            'The heading and the anchor comment are preserved; rewrite a heading with update_page.',
-        ),
       expectedHash: expectedHashParam,
+      edits: z
+        .array(
+          z.object({
+            anchor: z.string().describe('The section anchor, from get_sections / list_sections.'),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete']),
+            content: z
+              .string()
+              .optional()
+              .describe(
+                'The text this edit contributes, heading line EXCLUDED — exactly the shape get_sections returns. ' +
+                  'Required for replace / append / insert_after; omitted for delete.',
+              ),
+          }),
+        )
+        .min(1)
+        .describe('The edits to apply, all addressing sections of one page.'),
     },
     async (args) => {
       try {
         return ok(
-          await updateSection(
+          await updateSections(
             deps,
             {
-              anchor: String(args.anchor),
-              content: String(args.content),
-              ...(args.expectedHash !== undefined ? { expectedHash: String(args.expectedHash) } : {}),
+              expectedHash: String(args.expectedHash ?? ''),
+              edits: (args.edits ?? []) as UpdateSectionsInput['edits'],
             },
             'agent',
           ),
-          'update_section',
+          'update_sections',
         );
       } catch (err) {
         return fail(err);
@@ -196,6 +217,6 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
 
   return createMcpServer({
     name: 'page-tools',
-    tools: [createPageTool, updatePageTool, deletePageTool, updateSectionTool],
+    tools: [createPageTool, updatePageTool, deletePageTool, updateSectionsTool],
   });
 }

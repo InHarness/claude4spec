@@ -7,7 +7,15 @@ import { createTestDb } from '../../../tests/helpers/test-db.js';
 import { PagesService } from './pages.js';
 import { SectionsService } from './sections.js';
 import { SectionIndexerService } from './section-indexer.js';
-import { createPage, deletePage, updatePage, updateSection, type PageWriteTarget } from './page-write.js';
+import { createPage, deletePage, updatePage, updateSections, type PageWriteTarget } from './page-write.js';
+
+/**
+ * 0.2.15 — `expectedHash` is REQUIRED, including on the create-through-update
+ * path. A page that does not exist has nothing to be stale against, so the
+ * guard accepts any value there; this constant makes those call sites read as
+ * "deliberately arbitrary" rather than as a hash someone computed.
+ */
+const NO_PRIOR_STATE = 'a'.repeat(64);
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
@@ -87,7 +95,11 @@ describe('the page write primitive', () => {
     // are not the bytes handed in. A caller hashing its own input would fail its
     // very next `expectedHash`, which is the sort of bug that only shows up
     // under concurrency.
-    const written = await updatePage(target, { path: 'fm.md', body: '# Hi', frontmatter: { order: 2 } }, 'user');
+    const written = await updatePage(
+      target,
+      { path: 'fm.md', body: '# Hi', frontmatter: { order: 2 }, expectedHash: NO_PRIOR_STATE },
+      'user',
+    );
     const onDisk = await fs.readFile(path.join(pages.root, 'fm.md'), 'utf-8');
     expect(onDisk).toContain('order: 2');
     const { createHash } = await import('node:crypto');
@@ -109,7 +121,7 @@ describe('the page write primitive', () => {
   it('update_page answers with the delta, and echoes neither body nor frontmatter', async () => {
     const res = await updatePage(
       target,
-      { path: 'u.md', body: '# A\n\nSECRET CONTENT\n', frontmatter: { order: 1 } },
+      { path: 'u.md', body: '# A\n\nSECRET CONTENT\n', frontmatter: { order: 1 }, expectedHash: NO_PRIOR_STATE },
       'user',
     );
     expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'hash', 'version']);
@@ -143,12 +155,12 @@ describe('the page write primitive', () => {
   it('reports version 0 rather than failing when there is no capture to read', async () => {
     // The hand-rolled rigs have no db, and in production a capture failure is
     // warned and swallowed. A write must not fail because its bookkeeping did.
-    const res = await updatePage(target, { path: 'v.md', body: 'x' }, 'user');
+    const res = await updatePage(target, { path: 'v.md', body: 'x', expectedHash: NO_PRIOR_STATE }, 'user');
     expect(res.version).toBe(0);
   });
 
   it('refuses PAGE_CONFLICT when the file moved under the caller, and hands back the current hash', async () => {
-    const first = await updatePage(target, { path: 'c.md', body: 'one' }, 'user');
+    const first = await updatePage(target, { path: 'c.md', body: 'one', expectedHash: NO_PRIOR_STATE }, 'user');
     await fs.writeFile(path.join(pages.root, 'c.md'), 'someone else', 'utf-8');
     const err = await updatePage(target, { path: 'c.md', body: 'two', expectedHash: first.hash }, 'user').catch(
       (e) => e,
@@ -178,7 +190,7 @@ describe('the page write primitive', () => {
       const pagesSvc = new PagesService(dir, 'pages', 'pages');
       await pagesSvc.ensureRoot();
       const t = { pages: pagesSvc, writer: null };
-      await updatePage(t, { path: 'h.md', body: '# Hello', frontmatter: { order: 1 } }, 'user');
+      await updatePage(t, { path: 'h.md', body: '# Hello', frontmatter: { order: 1 }, expectedHash: NO_PRIOR_STATE }, 'user');
 
       const core = createDiscoveryCore({
         reader: new RawEntityReader(db, host),
@@ -265,7 +277,7 @@ describe('the page write primitive', () => {
   });
 });
 
-describe('update_section over a real section index', () => {
+describe('update_sections over a real section index', () => {
   let cwd: string;
   let db: Database.Database;
   let pages: PagesService;
@@ -306,6 +318,31 @@ describe('update_section over a real section index', () => {
 
   const deps = () => ({ sections, resolveRoot: (id: string) => (id === 'pages' ? target : undefined) });
 
+  /**
+   * 0.2.15 — `update_sections` takes a batch and a mandatory page hash. Most of
+   * the cases below are about the SPLICE, not about the guard or the batching,
+   * so this reads the current hash for them; the cases that are about the guard
+   * pass their own value explicitly.
+   */
+  async function hashOfPage(relPath = 'doc.md'): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const raw = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  /** One `replace` edit, the shape the singular `update_section` used to take. */
+  async function replaceOne(
+    anchor: string,
+    content: string,
+    relPath = 'doc.md',
+  ): Promise<Awaited<ReturnType<typeof updateSections>>> {
+    return updateSections(
+      deps(),
+      { expectedHash: await hashOfPage(relPath), edits: [{ anchor, action: 'replace', content }] },
+      'agent',
+    );
+  }
+
   async function index(relPath: string, content: string): Promise<void> {
     await pages.write(relPath, { body: content });
     indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
@@ -329,7 +366,7 @@ describe('update_section over a real section index', () => {
 
   it('replaces one section body and leaves its siblings byte-identical', async () => {
     await index('doc.md', page);
-    await updateSection(deps(), { anchor: anchorOf('Alpha'), content: 'REWRITTEN\n' }, 'agent');
+    await replaceOne(anchorOf('Alpha'), 'REWRITTEN\n');
     const body = (await pages.read('doc.md')).body;
     expect(body).toContain('REWRITTEN');
     expect(body).not.toContain('ALPHA BODY');
@@ -344,15 +381,16 @@ describe('update_section over a real section index', () => {
      */
     await index('doc.md', page);
     const anchor = anchorOf('Alpha');
-    const res = await updateSection(deps(), { anchor, content: 'REWRITTEN\n' }, 'agent');
+    const res = await replaceOne(anchor, 'REWRITTEN\n');
 
-    expect(Object.keys(res).sort()).toEqual(['affectedAnchors', 'anchor', 'hash', 'version']);
+    expect(Object.keys(res).sort()).toEqual(['hash', 'path', 'results', 'version']);
     expect(res).not.toHaveProperty('body');
     expect(res).not.toHaveProperty('frontmatter');
-    // `rootId` and `pagePath` are gone too: the caller addressed the section by
-    // anchor and already knows where it sent the edit.
+    // `path` IS here, and is the one addressing fact the caller did not state:
+    // it named anchors, not a page. `rootId` is not — an anchor carries its own.
+    expect(res.path).toBe('doc.md');
     expect(res).not.toHaveProperty('rootId');
-    expect(res).not.toHaveProperty('pagePath');
+    expect(Object.keys(res.results[0]!).sort()).toEqual(['action', 'affectedAnchors', 'anchor']);
     expect(JSON.stringify(res)).not.toContain('REWRITTEN');
     expect(JSON.stringify(res)).not.toContain('BETA BODY');
   });
@@ -362,9 +400,10 @@ describe('update_section over a real section index', () => {
     const alpha = anchorOf('Alpha');
     // Editing Alpha's body leaves Beta's own text untouched, so nothing else
     // moved: an anchor list is a delta, not "every anchor on the page".
-    const quiet = await updateSection(deps(), { anchor: alpha, content: 'REWRITTEN\n' }, 'agent');
-    expect(quiet.affectedAnchors).toEqual([]);
-    expect(quiet.anchor).toBe(alpha);
+    const quiet = await replaceOne(alpha, 'REWRITTEN\n');
+    expect(quiet.results[0]!.affectedAnchors).toEqual([]);
+    expect(quiet.results[0]!.anchor).toBe(alpha);
+    expect(quiet.results[0]!.action).toBe('replace');
 
     // An edit that swallows a nested section DOES change the anchor set, and a
     // disappearing anchor is the change a caller is least able to infer: every
@@ -374,9 +413,9 @@ describe('update_section over a real section index', () => {
     await index('nested.md', ['# Root', '', '## Outer', '', 'A', '', '### Inner', '', 'I', ''].join('\n'));
     const outer = anchorOf('Outer');
     const inner = anchorOf('Inner');
-    const shrunk = await updateSection(deps(), { anchor: outer, content: 'JUST A\n' }, 'agent');
-    expect(shrunk.affectedAnchors).toContain(inner);
-    expect(shrunk.affectedAnchors).not.toContain(outer);
+    const shrunk = await replaceOne(outer, 'JUST A\n', 'nested.md');
+    expect(shrunk.results[0]!.affectedAnchors).toContain(inner);
+    expect(shrunk.results[0]!.affectedAnchors).not.toContain(outer);
   });
 
   it('keeps the heading AND the anchor comment, so the same section is addressable twice', async () => {
@@ -390,12 +429,12 @@ describe('update_section over a real section index', () => {
      */
     await index('doc.md', page);
     const anchor = anchorOf('Alpha');
-    await updateSection(deps(), { anchor, content: 'ONE' }, 'agent');
+    await replaceOne(anchor, 'ONE');
     const afterFirst = (await pages.read('doc.md')).body;
     expect(afterFirst).toContain('## Alpha');
     expect(afterFirst).toContain(`<!-- anchor: ${anchor} -->`);
 
-    await updateSection(deps(), { anchor, content: 'TWO' }, 'agent');
+    await replaceOne(anchor, 'TWO');
     const afterSecond = (await pages.read('doc.md')).body;
     expect(afterSecond).toContain('TWO');
     expect(afterSecond).not.toContain('ONE');
@@ -421,29 +460,29 @@ describe('update_section over a real section index', () => {
     expect(read.body).not.toContain('## Alpha');
 
     const before = (await pages.read('doc.md')).body;
-    await updateSection(deps(), { anchor, content: read.body! }, 'agent');
+    await replaceOne(anchor, read.body!);
     expect((await pages.read('doc.md')).body).toBe(before);
   });
 
   it('an unknown anchor is SECTION_NOT_FOUND, with the call that would have worked', async () => {
     await index('doc.md', page);
-    const err = await updateSection(deps(), { anchor: 'deadbeef', content: 'x' }, 'agent').catch((e) => e);
+    const err = await replaceOne('deadbeef', 'x').catch((e) => e);
     expect(err.code).toBe('SECTION_NOT_FOUND');
     expect(err.hint).toContain('list_sections');
   });
 
   it('honours expectedHash against the PAGE, because a section has no version of its own', async () => {
     await index('doc.md', page);
-    const err = await updateSection(
+    const err = await updateSections(
       deps(),
-      { anchor: anchorOf('Alpha'), content: 'x', expectedHash: 'b'.repeat(64) },
+      { expectedHash: 'b'.repeat(64), edits: [{ anchor: anchorOf('Alpha'), action: 'replace', content: 'x' }] },
       'agent',
     ).catch((e) => e);
     expect(err.code).toBe('PAGE_CONFLICT');
     expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
   });
 
-  it('edits the right section when the INDEX is behind the file and no hash was given', async () => {
+  it('edits the right section when the INDEX is behind the file', async () => {
     /**
      * The corruption case, and the reason the range is recomputed from the bytes
      * rather than trusted from the row.
@@ -456,9 +495,11 @@ describe('update_section over a real section index', () => {
      * passes and the splice lands two lines high, eating the tail of what
      * precedes it and the heading of what follows.
      *
-     * `expectedHash` would catch it, and is optional in all three channels by
-     * deliberate decision, so it cannot be the thing this rests on. No hash is
-     * passed here on purpose.
+     * `expectedHash` would catch this too — it is mandatory as of 0.2.15 — but
+     * the guard and the recomputation answer different questions: the guard
+     * refuses a stale CALLER, this handles a stale INDEX under a caller whose
+     * hash is perfectly current. The hash passed below is deliberately the live
+     * one, so the guard cannot be what saves the splice.
      */
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
@@ -476,7 +517,7 @@ describe('update_section over a real section index', () => {
     };
     expect(after).toEqual(before);
 
-    await updateSection(deps(), { anchor: alpha, content: 'REWRITTEN' }, 'agent');
+    await replaceOne(alpha, 'REWRITTEN');
 
     const body = (await pages.read('doc.md')).body;
     expect(body).toContain('REWRITTEN');
@@ -496,7 +537,7 @@ describe('update_section over a real section index', () => {
     await index('doc.md', page);
     const alpha = anchorOf('Alpha');
     await pages.write('doc.md', { body: '# Top\n\nrewritten by hand, anchors dropped\n' });
-    const err = await updateSection(deps(), { anchor: alpha, content: 'x' }, 'agent').catch((e) => e);
+    const err = await replaceOne(alpha, 'x').catch((e) => e);
     expect(err.code).toBe('PAGE_CONFLICT');
     expect((await pages.read('doc.md')).body).toContain('rewritten by hand');
   });
@@ -521,10 +562,244 @@ describe('update_section over a real section index', () => {
     })();
     await fs.rm(path.join(cwd, 'pages', 'doc.md'));
 
-    for (const input of [{ anchor: alpha, content: 'x' }, { anchor: alpha, content: 'x', expectedHash: hash }]) {
-      const err = await updateSection(deps(), input, 'agent').catch((e) => e);
+    // Both a stale hash and the live one: the refusal is about the FILE being
+    // gone, so the guard's verdict must not change it either way.
+    for (const expectedHash of ['b'.repeat(64), hash]) {
+      const err = await updateSections(
+        deps(),
+        { expectedHash, edits: [{ anchor: alpha, action: 'replace', content: 'x' }] },
+        'agent',
+      ).catch((e) => e);
       expect(err.code).toBe('SECTION_NOT_FOUND');
       expect(err.hint).toContain('list_sections');
     }
+  });
+});
+
+/**
+ * 0.2.15 — the properties that only exist because the operation became plural.
+ */
+describe('update_sections — the batch contract', () => {
+  let cwd: string;
+  let db: Database.Database;
+  let pages: PagesService;
+  let sections: SectionsService;
+  let indexer: SectionIndexerService | undefined;
+  let injection: WatchSubscriber | undefined;
+  let target: PageWriteTarget;
+
+  beforeEach(async () => {
+    indexer = undefined;
+    injection = undefined;
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-section-batch-'));
+    db = createTestDb();
+    pages = new PagesService(cwd, 'pages', 'pages');
+    await pages.ensureRoot();
+    sections = new SectionsService(db);
+    target = { pages, writer: null };
+  });
+
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const deps = () => ({ sections, resolveRoot: (id: string) => (id === 'pages' ? target : undefined) });
+
+  async function index(relPath: string, content: string): Promise<void> {
+    await pages.write(relPath, { body: content });
+    indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
+    injection ??= indexer.anchorInjectionSubscriber(() => {});
+    await indexer.indexPage('pages', relPath);
+    await injection!.onChange('context:test', 'pages:pages', relPath, 'external');
+    await indexer.indexPage('pages', relPath);
+  }
+
+  function anchorOf(heading: string): string {
+    const row = db.prepare('SELECT anchor FROM section_index WHERE heading_text = ?').get(heading) as
+      | { anchor: string }
+      | undefined;
+    if (!row) throw new Error(`no indexed section titled ${heading}`);
+    return row.anchor;
+  }
+
+  async function hashOfPage(relPath: string): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const raw = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  const page = ['# Top', '', '## Alpha', '', 'ALPHA BODY', '', '## Beta', '', 'BETA BODY', ''].join('\n');
+
+  it('applies several edits to one page under ONE hash', async () => {
+    /**
+     * The reason the operation is plural at all. Done as two singular calls,
+     * the caller's hash is stale after the first — so it either re-read between
+     * every edit or skipped the guard. One hash covering the set removes the
+     * choice.
+     */
+    await index('doc.md', page);
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: anchorOf('Alpha'), action: 'replace', content: 'NEW ALPHA\n' },
+          { anchor: anchorOf('Beta'), action: 'replace', content: 'NEW BETA\n' },
+        ],
+      },
+      'agent',
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('NEW ALPHA');
+    expect(body).toContain('NEW BETA');
+    expect(body).not.toContain('ALPHA BODY');
+    expect(body).not.toContain('BETA BODY');
+    expect(res.results.map((r) => r.anchor)).toEqual([anchorOf('Alpha'), anchorOf('Beta')]);
+  });
+
+  it('applies bottom-up, so an edit that changes the line count never shifts a later one', async () => {
+    /**
+     * The failure this prevents is silent, not loud: applying top-down, the
+     * first splice moves every section below it and the second lands on
+     * coordinates the first invalidated — eating a heading, or a neighbour's
+     * body. The edits are listed TOP-DOWN here on purpose; the order they are
+     * applied in is not the order they arrive in.
+     */
+    await index('doc.md', page);
+    await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          // Grows by several lines — under top-down application this is what
+          // would push Beta's range out from under the second edit.
+          { anchor: anchorOf('Alpha'), action: 'replace', content: 'L1\nL2\nL3\nL4\nL5\n' },
+          { anchor: anchorOf('Beta'), action: 'replace', content: 'BETA REWRITTEN\n' },
+        ],
+      },
+      'agent',
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('## Alpha');
+    expect(body).toContain('## Beta');
+    expect(body).toContain('L5');
+    expect(body).toContain('BETA REWRITTEN');
+    expect(body).not.toContain('BETA BODY');
+  });
+
+  it('refuses INVALID_ARGUMENT when the anchors are not all on one page, and writes nothing', async () => {
+    await index('doc.md', page);
+    await index('other.md', ['# Other', '', '## Gamma', '', 'GAMMA BODY', ''].join('\n'));
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: anchorOf('Alpha'), action: 'replace', content: 'x' },
+          { anchor: anchorOf('Gamma'), action: 'replace', content: 'y' },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    // The message names BOTH pages: one hash cannot guard two files, and a bare
+    // code leaves the caller guessing which anchor was the stray one.
+    expect(err.message).toContain('doc.md');
+    expect(err.message).toContain('other.md');
+    expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
+    expect((await pages.read('other.md')).body).toContain('GAMMA BODY');
+  });
+
+  it('refuses INVALID_ARGUMENT on a duplicated anchor rather than folding the two edits', async () => {
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: alpha, action: 'replace', content: 'first' },
+          { anchor: alpha, action: 'append', content: 'second' },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toContain(alpha);
+    expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
+  });
+
+  it('is transactional — one bad edit in the set leaves the page untouched', async () => {
+    /**
+     * The single exception to M13's partial-success rule, and the reason for it:
+     * the edits all rewrite the same file, so a "successful" subset is a page in
+     * a state nobody asked for, described by a `hash` that would come back as if
+     * it were what the caller wanted.
+     */
+    await index('doc.md', page);
+    const before = (await pages.read('doc.md')).body;
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: anchorOf('Alpha'), action: 'replace', content: 'WOULD HAVE LANDED' },
+          { anchor: 'deadbeef', action: 'replace', content: 'never' },
+        ],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('SECTION_NOT_FOUND');
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
+  it('refuses INVALID_ARGUMENT when expectedHash is absent, which is not the same as a mismatch', async () => {
+    await index('doc.md', page);
+    const err = await updateSections(
+      deps(),
+      { expectedHash: '', edits: [{ anchor: anchorOf('Alpha'), action: 'replace', content: 'x' }] },
+      'agent',
+    ).catch((e) => e);
+    // Not PAGE_CONFLICT: retrying this exact call can never work, so the caller
+    // needs "go read first", not "here is the current hash".
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect((await pages.read('doc.md')).body).toContain('ALPHA BODY');
+  });
+
+  it('append adds to the section body; delete removes the heading and its anchor', async () => {
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    const beta = anchorOf('Beta');
+    await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: alpha, action: 'append', content: 'APPENDED\n' },
+          // `delete` carries no content — the one action for which it is absent.
+          { anchor: beta, action: 'delete' },
+        ],
+      },
+      'agent',
+    );
+    const body = (await pages.read('doc.md')).body;
+    expect(body).toContain('ALPHA BODY');
+    expect(body).toContain('APPENDED');
+    // A section whose heading survived would not have been deleted, so the
+    // heading AND the anchor comment go with the body.
+    expect(body).not.toContain('## Beta');
+    expect(body).not.toContain('BETA BODY');
+    expect(body).not.toContain(`<!-- anchor: ${beta} -->`);
+  });
+
+  it('refuses VALIDATION when a content-bearing action carries none', async () => {
+    await index('doc.md', page);
+    const err = await updateSections(
+      deps(),
+      { expectedHash: await hashOfPage('doc.md'), edits: [{ anchor: anchorOf('Alpha'), action: 'replace' }] },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('VALIDATION');
   });
 });

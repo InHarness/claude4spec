@@ -400,7 +400,7 @@ describe('buildSystemPrompt — <agent_path_scope> (0.1.90 / 0.1.130)', () => {
      */
     const out = build({ contextType: 'chat', agentPathScope: scope });
     expect(out).toContain('READ-ONLY to built-in tools — page roots (/tmp/my-spec/pages)');
-    for (const op of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+    for (const op of ['create_page', 'update_page', 'delete_page', 'update_sections']) {
       expect(out, op).toContain(op);
     }
     // The artifact line keeps its own, stricter wording.

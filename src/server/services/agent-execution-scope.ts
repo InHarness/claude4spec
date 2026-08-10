@@ -40,7 +40,7 @@ export interface AgentExecutionScope {
    * Item 28 is what splits them. A page must stay READABLE by the built-in tools — no
    * operation hands back raw page markdown for a `Grep`-style prose sweep, and the M05
    * prompt tells the agent to run exactly that sweep — while its WRITE channel has to
-   * close, so `create_page` / `update_page` / `delete_page` / `update_section` become the
+   * close, so `create_page` / `update_page` / `delete_page` / `update_sections` become the
    * only path. Symmetric denial would have bought the block at the cost of the agent's
    * ability to find anything.
    *

@@ -16,6 +16,15 @@ export interface PageContent {
   path: string;
   frontmatter: Record<string, unknown>;
   body: string;
+  /**
+   * 0.2.15 — sha256 of the FULL file (frontmatter included) as read.
+   *
+   * Added because `expectedHash` became mandatory on `update_page`: a reader
+   * that cannot obtain a hash has no legal way to write. The editor is the
+   * caller this is for — it reads through this shape and had, until now, nothing
+   * to arm the guard with, which is why the guard had been left optional.
+   */
+  hash: string;
 }
 
 /**

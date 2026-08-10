@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
@@ -60,6 +61,11 @@ export class PagesService {
       path: relPath,
       frontmatter: (parsed.data ?? {}) as Record<string, unknown>,
       body: parsed.content,
+      // 0.2.15 — over the RAW bytes, not the parsed body: this is the value
+      // `update_page` compares `expectedHash` against, and that comparison is
+      // against the file. Hashing `parsed.content` would make every page with
+      // frontmatter fail its own guard.
+      hash: crypto.createHash('sha256').update(raw, 'utf-8').digest('hex'),
     };
   }
 
@@ -94,6 +100,11 @@ export class PagesService {
       path: relPath,
       frontmatter: input.frontmatter ?? {},
       body: input.body,
+      // Of `serialized`, the bytes actually written — same basis as `read`.
+      // Note this is NOT the hash callers should hold: `page-write.commit`
+      // re-reads after the write-back phase, which injects anchors this string
+      // predates. See its own comment.
+      hash: crypto.createHash('sha256').update(serialized, 'utf-8').digest('hex'),
     };
   }
 

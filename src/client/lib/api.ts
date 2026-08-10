@@ -87,12 +87,18 @@ export const api = {
     rootId: string,
     path: string,
     body: string,
-    frontmatter?: Record<string, unknown>,
+    frontmatter: Record<string, unknown> | undefined,
+    /**
+     * 0.2.15 — REQUIRED by the server. The hash of the file as this client last
+     * saw it: from `read()`, or from the previous write's ack (see
+     * `applyPageWriteToCache`, which keeps it current without a re-read).
+     */
+    expectedHash: string,
   ): Promise<PageWriteAck> {
     const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body, frontmatter }),
+      body: JSON.stringify({ body, frontmatter, expectedHash }),
     });
     return handle<PageWriteAck>(res);
   },

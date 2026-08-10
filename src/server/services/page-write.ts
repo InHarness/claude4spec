@@ -53,7 +53,7 @@ import { DomainError } from './tags.js';
  * ## Nothing here answers with the page it just wrote
  *
  * Every operation used to answer `PageContent & { hash }`, so a write echoed the
- * full `body` back at whoever sent it. On `update_section` that was at its worst:
+ * full `body` back at whoever sent it. On `update_sections` that was at its worst:
  * the caller replaced one paragraph and got the whole page back — text it had in
  * context a moment earlier, returned at its own expense.
  *
@@ -95,16 +95,48 @@ export interface UpdatePageInput {
   expectedHash?: string;
 }
 
-export interface UpdateSectionInput {
+/**
+ * What one edit in an `update_sections` batch does.
+ *
+ *  - `replace`      — swap the section's body. Idempotent.
+ *  - `append`       — add to the end of the section's body. NOT idempotent.
+ *  - `insert_after` — add after the section, before the next heading of equal or
+ *                     higher level. NOT idempotent.
+ *  - `delete`       — remove the section: heading, anchor comment and body.
+ *                     Idempotent, and the ONLY action that takes no `content`.
+ */
+export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete';
+
+export const SECTION_EDIT_ACTIONS: readonly SectionEditAction[] = [
+  'replace',
+  'append',
+  'insert_after',
+  'delete',
+];
+
+export interface SectionEdit {
   anchor: string;
+  action: SectionEditAction;
   /**
-   * The section's replacement BODY — everything under the heading, heading line
+   * The text this edit contributes — everything under the heading, heading line
    * excluded. Exactly what `get_sections` hands back, so a read → edit → write
-   * round-trip is lossless. See {@link updateSection} for why the heading is not
-   * part of it.
+   * round-trip is lossless. See {@link updateSections} for why the heading is
+   * not part of it.
+   *
+   * Required for every action but `delete`, which addresses a section and
+   * carries nothing.
    */
-  content: string;
-  expectedHash?: string;
+  content?: string;
+}
+
+export interface UpdateSectionsInput {
+  /**
+   * 0.2.15 — REQUIRED. The hash of the PAGE, not of a section: this operation is
+   * a read-modify-write of the whole page, so there is no separate section
+   * version to be stale against.
+   */
+  expectedHash: string;
+  edits: SectionEdit[];
 }
 
 /**
@@ -130,16 +162,31 @@ export interface UpdatePageResult {
   changedAnchors: string[];
 }
 
-/** `update_section` — a punctual write. Neither the new section nor the page comes back. */
-export interface UpdateSectionResult {
+/** One edit's outcome inside an {@link UpdateSectionsResult}. */
+export interface SectionEditResult {
   anchor: string;
-  hash: string;
-  version: number;
+  action: SectionEditAction;
   /**
-   * Anchors OTHER than the edited one that moved or changed under the edit. The
+   * Anchors OTHER than the edited one that moved or changed under this edit. The
    * edited anchor is already `anchor` above and is not repeated here.
    */
   affectedAnchors: string[];
+}
+
+/**
+ * `update_sections` — a batch of punctual writes to ONE page. Neither the new
+ * sections nor the page comes back.
+ *
+ * `path` identifies the page every edit landed on — the caller addressed
+ * anchors, not a page, so this is the one part of its own request it did not
+ * state. `hash` arms the next call's `expectedHash`.
+ */
+export interface UpdateSectionsResult {
+  path: string;
+  hash: string;
+  version: number;
+  /** In the order the edits were GIVEN, not the order they were applied. */
+  results: SectionEditResult[];
 }
 
 /** What `commit` hands its three callers to build their own, narrower answers from. */
@@ -266,18 +313,35 @@ async function bodyOnDisk(pages: PagesService, relPath: string): Promise<string>
 }
 
 /**
- * The guard, factored out because `update_section` needs the SAME one.
+ * The guard, shared by `update_page` and `update_sections`.
  *
- * A missing file is not a conflict: `update_page` doubles as create-or-replace
- * (the editor saves a new page this way), and there is nothing to have changed
- * underneath the caller. Only an EXISTING file whose hash disagrees is one.
+ * 0.2.15 — `expectedHash` is REQUIRED, on every channel, and this is where that
+ * is enforced rather than in each channel's schema: a guard only some doors
+ * apply is not a guard. Two distinct refusals:
+ *
+ *  - MISSING → `INVALID_ARGUMENT`. Retrying the same call can never work; the
+ *    caller has to go read the page first.
+ *  - MISMATCHED → `PAGE_CONFLICT` (409) carrying the current hash, which is
+ *    what the retry needs.
+ *
+ * A missing FILE is still not a conflict: `update_page` doubles as
+ * create-or-replace, and there is nothing to have changed underneath the caller.
+ * The hash is still demanded in that case — a caller that believes it is
+ * editing an existing page and is actually creating one has made a mistake
+ * worth surfacing, and one it cannot detect from a silent success.
  */
 async function assertUnchanged(
   target: PageWriteTarget,
   relPath: string,
   expectedHash: string | undefined,
 ): Promise<void> {
-  if (typeof expectedHash !== 'string') return;
+  if (typeof expectedHash !== 'string' || expectedHash.length === 0) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      'expectedHash is required',
+      `read the page first (get_page) and pass back its \`hash\`; for a page that does not exist yet, create it with create_page({ rootId: "${target.pages.rootId}", path: "${relPath}" })`,
+    );
+  }
   const currentHash = await hashOf(target.pages, relPath);
   if (currentHash === null || currentHash === expectedHash) return;
   throw new ConflictError('PAGE_CONFLICT', 'page changed since last read', currentHash);
@@ -418,22 +482,59 @@ function anchorDelta(before: Map<string, string>, after: Map<string, string>): s
 }
 
 /**
- * M06 `update_section` — a convenience over `update_page`, not a second store.
+ * M06 `update_sections` — a BATCH of punctual writes to one page. A convenience
+ * over `update_page`, not a second store.
  *
  * The brief is explicit that a section is not a structural gap in the data
- * model: this reads the whole page, splices the new text over the addressed
+ * model: this reads the whole page, splices each edit over its addressed
  * section's line range, and writes the whole page back with the SAME primitive.
  * Which is why the `expectedHash` it takes is the PAGE's hash — there is no
  * separate section version to be stale against, and inventing one would be the
  * second store the brief rules out.
  *
+ * ## Why a batch, and why the name changed
+ *
+ * 0.2.15: the singular `update_section` was called repeatedly against different
+ * anchors of the same page, and every one of those calls was a whole
+ * read-modify-write. Worse, each one invalidated the next: after call 1 the
+ * caller's `expectedHash` is stale, so it either re-read between every edit or
+ * skipped the guard. Batching is therefore a correctness fix, not an
+ * ergonomics one — one hash guards the whole set.
+ *
+ * Renaming to the plural changes the operation's identifier, which is the cost
+ * paid here deliberately rather than discovered later.
+ *
+ * There is NO batch across pages. `create_page` / `update_page` / `delete_page`
+ * stay single-target; batching happens strictly inside one page, which is what
+ * makes one `expectedHash` meaningful.
+ *
+ * ## Transactional, which is the ONE exception to M13's partial-success rule
+ *
+ * Every other batch in this system reports per-item results and lets the good
+ * items through (`entity-tools` is the model). This one does not, because the
+ * items are not independent: they all rewrite the same file, so a "successful"
+ * subset is a page in a state no caller asked for, and the `hash` that comes
+ * back would describe it. Either the whole set lands or none of it does — and
+ * since nothing is written until every edit has been spliced in memory, a
+ * failure leaves the file untouched rather than needing a rollback.
+ *
+ * ## Applied bottom-up, whatever order they arrive in
+ *
+ * An edit changes the line count, which moves every section BELOW it. Applying
+ * in the caller's order would mean each splice landing on coordinates the
+ * previous splice invalidated. Descending by `lineStart` avoids recomputing
+ * anything: an edit never moves a section that has not been spliced yet.
+ *
+ * `results` is nevertheless returned in the order the edits were GIVEN — the
+ * application order is an implementation detail the caller did not choose.
+ *
  * ## The heading is not replaceable through here, on purpose
  *
  * `section_index` stores a section as `[lineStart .. lineEnd]`, 1-based
  * inclusive, where `lineStart` IS the heading line and `lineEnd` is the last
- * line before the next sibling's `<!-- anchor -->` comment. This operation
- * replaces everything strictly BELOW the heading, for two reasons that point
- * the same way:
+ * line before the next sibling's `<!-- anchor -->` comment. `replace` / `append`
+ * / `insert_after` touch only what is strictly BELOW the heading, for two
+ * reasons that point the same way:
  *
  *  - `get_sections` returns the body without the heading (`rawBody =
  *    sectionLines.slice(1)`), so read → edit → write only round-trips if this
@@ -445,16 +546,16 @@ function anchorDelta(before: Map<string, string>, after: Map<string, string>): s
  *    convenience. Rewriting a heading is an `update_page` call, where it is
  *    visible.
  *
- * The section's own `<!-- anchor: … -->` comment sits ABOVE `lineStart` and is
- * likewise untouched, so the anchor survives the write and the caller can edit
- * the same section twice.
+ * `delete` is the deliberate exception: it removes the heading and the anchor
+ * comment along with the body, because a section whose heading survived would
+ * not have been deleted. That is visible in the verb, which is the difference.
  *
- * ## The line range comes from the FILE, not from the index
+ * ## The line ranges come from the FILE, not from the index
  *
- * The index row is used to answer "which page, on which root" and for the
- * not-found refusal. The range that gets spliced is recomputed from the bytes
- * about to be written, with `parseHeadings` — the indexer's own parser — and the
- * indexer's own end rule.
+ * The index rows answer "which page, on which root" and drive the not-found
+ * refusal. The ranges that get spliced are recomputed from the bytes about to be
+ * written, with `parseHeadings` — the indexer's own parser — and the indexer's
+ * own end rule.
  *
  * A first version trusted `row.lineStart`/`row.lineEnd` and only bounds-checked
  * them, which is a guard against the loud failure and none at all against the
@@ -462,37 +563,81 @@ function anchorDelta(before: Map<string, string>, after: Map<string, string>): s
  * by however long a reaction takes, and any edit outside this operation — a
  * `git checkout`, a hand edit, an editor save still in flight — moves the
  * boundaries. When the file stays long enough for the stale range to remain in
- * bounds, the splice lands on whatever now occupies those lines: it eats the tail
- * of the previous section, or the heading and anchor comment of the next one, and
- * answers 200 with a fresh hash. The caller has no way to know, and the destroyed
- * anchor takes every reference to it down with it. `expectedHash` would catch it,
- * but it is optional in all three channels by deliberate decision, so it cannot be
- * the thing this rests on.
- *
- * Recomputing removes the failure class instead of detecting it, and costs one
- * pass over lines we have already read. If the anchor is not in the file at all,
- * the index is ahead of reality in the other direction and the write is refused.
+ * bounds, the splice lands on whatever now occupies those lines: it eats the
+ * tail of the previous section, or the heading and anchor comment of the next
+ * one, and answers 200 with a fresh hash. The caller has no way to know, and the
+ * destroyed anchor takes every reference to it down with it.
  */
-export async function updateSection(
+export async function updateSections(
   deps: SectionWriteDeps,
-  input: UpdateSectionInput,
+  input: UpdateSectionsInput,
   actor: WriteActor,
-): Promise<UpdateSectionResult> {
-  if (!input.anchor) throw new DomainError('VALIDATION', 'anchor required');
-  if (typeof input.content !== 'string') throw new DomainError('VALIDATION', 'content required');
-  const section = deps.sections.getByAnchor(input.anchor);
-  if (!section) {
+): Promise<UpdateSectionsResult> {
+  const edits = input.edits;
+  if (!Array.isArray(edits) || edits.length === 0) {
+    throw new DomainError('INVALID_ARGUMENT', 'edits must be a non-empty array');
+  }
+
+  const seen = new Set<string>();
+  for (const edit of edits) {
+    if (!edit?.anchor) throw new DomainError('VALIDATION', 'each edit requires an anchor');
+    if (!SECTION_EDIT_ACTIONS.includes(edit.action)) {
+      throw new DomainError(
+        'INVALID_ARGUMENT',
+        `unknown action '${edit.action}' — expected one of ${SECTION_EDIT_ACTIONS.join(' | ')}`,
+      );
+    }
+    if (edit.action !== 'delete' && typeof edit.content !== 'string') {
+      throw new DomainError('VALIDATION', `edit for '${edit.anchor}' requires content for action '${edit.action}'`);
+    }
+    /**
+     * Two edits to one anchor in one batch is refused rather than folded.
+     * Bottom-up application makes their combined effect depend on an ordering
+     * the caller did not choose, and there is no reading of "replace it, then
+     * append to it" that is not the caller having meant one call.
+     */
+    if (seen.has(edit.anchor)) {
+      throw new DomainError('INVALID_ARGUMENT', `anchor '${edit.anchor}' appears more than once in edits`);
+    }
+    seen.add(edit.anchor);
+  }
+
+  const located = edits.map((edit) => {
+    const section = deps.sections.getByAnchor(edit.anchor);
+    if (!section) {
+      throw new DomainError(
+        'SECTION_NOT_FOUND',
+        `section '${edit.anchor}' not found`,
+        'list the anchors of a page with list_sections({ by: "page", rootId, path })',
+      );
+    }
+    return { edit, section };
+  });
+
+  /**
+   * One page per batch. Anchors are globally unique, so a caller CAN name two
+   * anchors from two pages and would have no reason to expect the refusal —
+   * hence a message that names both pages rather than a bare code. One
+   * `expectedHash` cannot guard two files, which is the whole reason for the
+   * restriction.
+   */
+  const first = located[0]!.section;
+  const stray = located.find(
+    (l) => l.section.pagePath !== first.pagePath || l.section.rootId !== first.rootId,
+  );
+  if (stray) {
     throw new DomainError(
-      'SECTION_NOT_FOUND',
-      `section '${input.anchor}' not found`,
-      'list the anchors of a page with list_sections({ by: "page", rootId, path })',
+      'INVALID_ARGUMENT',
+      `all anchors must be on one page: '${first.anchor}' is on '${first.pagePath}' but '${stray.section.anchor}' is on '${stray.section.pagePath}'`,
+      'split the batch into one update_sections call per page',
     );
   }
-  const target = deps.resolveRoot(section.rootId);
+
+  const target = deps.resolveRoot(first.rootId);
   if (!target) {
     throw new DomainError(
       'ROOT_NOT_FOUND',
-      `section '${input.anchor}' is indexed on root '${section.rootId}', which is not mounted`,
+      `section '${first.anchor}' is indexed on root '${first.rootId}', which is not mounted`,
     );
   }
 
@@ -503,50 +648,117 @@ export async function updateSection(
    * underneath you" — correct for `update_page`, which doubles as create — and
    * then this function reads the page unconditionally. So a caller who did
    * everything right, `expectedHash` included, sailed past the guard and hit a
-   * raw ENOENT from `read()`, which is not a `DomainError` and therefore rendered
-   * as `500 INTERNAL`: the server telling a client to retry the one situation
-   * where retrying can never work. A section indexed on a page that is gone is a
-   * stale index, and says so.
+   * raw ENOENT from `read()`, which is not a `DomainError` and therefore
+   * rendered as `500 INTERNAL`: the server telling a client to retry the one
+   * situation where retrying can never work. A section indexed on a page that is
+   * gone is a stale index, and says so.
    */
-  if (!(await target.pages.exists(section.pagePath))) {
+  if (!(await target.pages.exists(first.pagePath))) {
     throw new DomainError(
       'SECTION_NOT_FOUND',
-      `section '${input.anchor}' is indexed on '${section.pagePath}', which no longer exists`,
+      `section '${first.anchor}' is indexed on '${first.pagePath}', which no longer exists`,
       'the section index is behind the filesystem — re-list the page with list_sections({ by: "page", rootId, path })',
     );
   }
 
-  await assertUnchanged(target, section.pagePath, input.expectedHash);
-  const page = await target.pages.read(section.pagePath);
+  await assertUnchanged(target, first.pagePath, input.expectedHash);
+  const page = await target.pages.read(first.pagePath);
   const lines = page.body.split('\n');
 
   // The index is built over the page BODY (frontmatter stripped), which is what
   // `read()` returns — so `parseHeadings` here sees the same lines the indexer
   // saw, and 1-based `lineStart` is `lineIndex + 1` on both sides.
-  const range = liveRangeOf(lines, section.anchor);
-  if (!range) {
-    throw new ConflictError(
-      'PAGE_CONFLICT',
-      `anchor '${input.anchor}' is not in '${section.pagePath}' any more — the section index is behind the file`,
-      (await hashOf(target.pages, section.pagePath)) ?? '',
-    );
+  const planned = located.map(({ edit, section }) => {
+    const range = liveRangeOf(lines, section.anchor);
+    if (!range) {
+      throw new ConflictError(
+        'PAGE_CONFLICT',
+        `anchor '${edit.anchor}' is not in '${first.pagePath}' any more — the section index is behind the file`,
+        '',
+      );
+    }
+    return { edit, range };
+  });
+
+  // Descending by start line: see "Applied bottom-up" above.
+  for (const { edit, range } of [...planned].sort((a, b) => b.range.lineStart - a.range.lineStart)) {
+    applySectionEdit(lines, edit, range);
   }
 
-  // Below the heading: 0-based [lineStart, lineEnd) — `lineStart - 1` is the
-  // heading itself and stays put.
-  lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...input.content.split('\n'));
-
   const before = sectionDigests(page.body);
-  const written = await commit(target, section.pagePath, actor, {
+  const written = await commit(target, first.pagePath, actor, {
     body: lines.join('\n'),
     ...(Object.keys(page.frontmatter).length > 0 ? { frontmatter: page.frontmatter } : {}),
   });
+
+  /**
+   * One delta for the whole batch, filtered per edit.
+   *
+   * Attributing a change to the individual edit that caused it is not possible
+   * after the fact — the edits share a file and their effects overlap — and
+   * pretending otherwise would be a more confident answer than the data
+   * supports. What each row can honestly say is "these anchors moved, and yours
+   * is not among them".
+   */
+  const affected = anchorDelta(before, written.digests);
   return {
-    anchor: input.anchor,
+    path: first.pagePath,
     hash: written.hash,
     version: written.version,
-    // The edited anchor is `anchor` above; repeating it in the list would be the
-    // one thing in this answer the caller already knew.
-    affectedAnchors: anchorDelta(before, written.digests).filter((a) => a !== input.anchor),
+    results: edits.map((edit) => ({
+      anchor: edit.anchor,
+      action: edit.action,
+      affectedAnchors: affected.filter((a) => a !== edit.anchor),
+    })),
   };
+}
+
+/**
+ * Splice ONE edit into `lines`, in place.
+ *
+ * `range.lineStart` is the heading line 1-based, so `lineStart` as a 0-based
+ * index is the first line BELOW the heading — which is why `replace` starts
+ * there and leaves the heading and its anchor comment (which sits above
+ * `lineStart`) untouched.
+ */
+function applySectionEdit(
+  lines: string[],
+  edit: SectionEdit,
+  range: { lineStart: number; lineEnd: number },
+): void {
+  const body = (edit.content ?? '').split('\n');
+  switch (edit.action) {
+    case 'replace':
+      lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...body);
+      return;
+    case 'append':
+      lines.splice(range.lineEnd, 0, ...body);
+      return;
+    case 'insert_after':
+      /**
+       * Identical splice position to `append`, different meaning, and the
+       * difference is real rather than cosmetic: a section's indexed range runs
+       * to the next heading of equal-or-higher level, so it CONTAINS its
+       * subsections. `append` adds to the end of the section INCLUDING its
+       * descendants; `insert_after` adds after the whole subtree. For a leaf
+       * section they coincide.
+       */
+      lines.splice(range.lineEnd, 0, ...body);
+      return;
+    case 'delete': {
+      /**
+       * The heading and the anchor comment go too — a section whose heading
+       * survived would not have been deleted. The anchor comment sits on the
+       * line above the heading when there is one, so the cut starts one line
+       * earlier in that case.
+       */
+      const headingIdx = range.lineStart - 1;
+      const anchorIdx =
+        headingIdx > 0 && /^\s*<!--\s*anchor:/.test(lines[headingIdx - 1] ?? '')
+          ? headingIdx - 1
+          : headingIdx;
+      lines.splice(anchorIdx, range.lineEnd - anchorIdx);
+      return;
+    }
+  }
 }

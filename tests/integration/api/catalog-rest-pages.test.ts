@@ -225,16 +225,19 @@ describe('GET /api/sections/list and /api/sections/get', () => {
 });
 
 /**
- * 0.2.13 (tier C-3) — `PUT /api/sections/:anchor`, the `rest` rendering of
- * `update_section`.
+ * 0.2.13 (tier C-3) — the `rest` rendering of M06's write, `PUT /api/sections`.
  *
- * The one page-write operation that had no REST route at all before this tier,
- * because it had no implementation at all. Asserted at the router level like its
- * siblings above: what a thin write handler gets wrong is the mapping and the
- * ordering, not the file I/O, which `page-write.test.ts` covers against a real
- * filesystem.
+ * The one page-write operation that had no REST route at all before that tier,
+ * because it had no implementation at all. 0.2.15 moved it from `PUT /:anchor`
+ * to `PUT /`: the operation takes a batch, so the anchor lives inside the
+ * payload once per edit and a URL naming one of them would be naming an
+ * arbitrary member of the set.
+ *
+ * Asserted at the router level like its siblings above: what a thin write
+ * handler gets wrong is the mapping and the ordering, not the file I/O, which
+ * `page-write.test.ts` covers against a real filesystem.
  */
-describe('PUT /api/sections/:anchor — the rest rendering of update_section', () => {
+describe('PUT /api/sections — the rest rendering of update_sections', () => {
   function appWithWrites() {
     const { core } = recordingCore();
     const app = express();
@@ -255,9 +258,9 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
          * that has drifted from the bytes cannot steer the splice. Feeding it a
          * stale row here is the mutation check: revert that and this fixture
          * replaces the entire page, which is exactly the corruption the review
-         * found (a watcher-maintained index is always a little behind, and
-         * `expectedHash` is optional in every channel, so it cannot be what
-         * catches it).
+         * found. `expectedHash` is mandatory as of 0.2.15 and would catch a
+         * stale CALLER, but not this — the caller's hash here is perfectly
+         * current and it is the INDEX that drifted.
          */
         getByAnchor: (a: string) =>
           a === 'aaaa1111'
@@ -271,9 +274,9 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
   }
 
   it('does not shadow the static GET routes declared above it', async () => {
-    // `PUT /:anchor` is method-scoped so it cannot, but the ordering claim is
-    // worth an assertion rather than an argument — `/list` and `/get` are the
-    // two segments a param route would swallow if the guarantee ever moved.
+    // `PUT /` is method-scoped so it cannot, but the ordering claim is worth an
+    // assertion rather than an argument — `/list` and `/get` are the two
+    // segments a route declared before them would swallow.
     const { app, dir } = appWithWrites();
     try {
       await request(app).get('/api/sections/list?by=page&rootId=mainspec&path=a.md').expect(200);
@@ -286,7 +289,10 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
   it('an unknown anchor is SECTION_NOT_FOUND with the call that would have worked', async () => {
     const { app, dir } = appWithWrites();
     try {
-      const res = await request(app).put('/api/sections/nope').send({ content: 'x' }).expect(400);
+      const res = await request(app)
+        .put('/api/sections')
+        .send({ expectedHash: 'a'.repeat(64), edits: [{ anchor: 'nope', action: 'replace', content: 'x' }] })
+        .expect(400);
       expect(res.body.error.code).toBe('SECTION_NOT_FOUND');
       expect(res.body.error.hint).toContain('list_sections');
     } finally {
@@ -310,8 +316,14 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
       await pages.write('a.md', {
         body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
       });
-      const res = await request(app).put('/api/sections/aaaa1111').send({ content: 'new body' }).expect(200);
-      expect(res.body.anchor).toBe('aaaa1111');
+      const res = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: (await pages.read('a.md')).hash,
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+        })
+        .expect(200);
+      expect(res.body.results[0].anchor).toBe('aaaa1111');
       const body = (await pages.read('a.md')).body;
       expect(body).toContain('# H');
       expect(body).toContain('new body');
@@ -338,8 +350,14 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
       await pages.write('a.md', {
         body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
       });
-      const res = await request(app).put('/api/sections/aaaa1111').send({ content: 'new body' }).expect(200);
-      expect(Object.keys(res.body).sort()).toEqual(['affectedAnchors', 'anchor', 'hash', 'version']);
+      const res = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: (await pages.read('a.md')).hash,
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+        })
+        .expect(200);
+      expect(Object.keys(res.body).sort()).toEqual(['hash', 'path', 'results', 'version']);
       expect(res.body).not.toHaveProperty('body');
       expect(res.body).not.toHaveProperty('frontmatter');
       expect(JSON.stringify(res.body)).not.toContain('keep me');
@@ -356,8 +374,11 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
       await pages.ensureRoot();
       await pages.write('a.md', { body: '# H\nold body' });
       const res = await request(app)
-        .put('/api/sections/aaaa1111')
-        .send({ content: 'x', expectedHash: 'c'.repeat(64) })
+        .put('/api/sections')
+        .send({
+          expectedHash: 'c'.repeat(64),
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'x' }],
+        })
         .expect(409);
       expect(res.body.error.code).toBe('PAGE_CONFLICT');
       expect((await pages.read('a.md')).body).toContain('old body');

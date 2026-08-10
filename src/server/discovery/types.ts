@@ -249,7 +249,7 @@ export interface GetPageResult {
   content: string;
   /**
    * 0.2.13 (item 28): sha256 of the WHOLE file as read, to hand back as
-   * `expectedHash` on `update_page` / `update_section`.
+   * `expectedHash` on `update_page` / `update_sections`.
    *
    * Present even when `content` was truncated or narrowed by `range`, and it
    * describes the file rather than what was returned — which is the only way it

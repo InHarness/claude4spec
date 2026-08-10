@@ -279,7 +279,7 @@ describe('the profile gate', () => {
      * it writes, so `ask` and `brief` are left with nothing and the server is
      * dropped rather than mounted empty.
      */
-    const pageTools = ['create_page', 'update_page', 'delete_page', 'update_section'].map((name) => ({
+    const pageTools = ['create_page', 'update_page', 'delete_page', 'update_sections'].map((name) => ({
       name,
       description: '',
       inputSchema: {},
@@ -291,7 +291,7 @@ describe('the profile gate', () => {
         'create_page',
         'delete_page',
         'update_page',
-        'update_section',
+        'update_sections',
       ]);
     }
     // The profiles that author a specification keep all four.

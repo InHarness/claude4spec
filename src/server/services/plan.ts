@@ -97,6 +97,22 @@ export interface PlanUpdateInput {
   heading?: string;
   /** Required on the first call in a thread (creates the file) — MISSING_TITLE otherwise. */
   title?: string;
+  /**
+   * 0.2.15 — the optimistic-concurrency guard, REQUIRED by the operation on
+   * every call except the first one in a thread (which creates the file and has
+   * nothing to be stale against).
+   *
+   * Optional in this TYPE rather than required, because the create branch is the
+   * documented exemption and a required field would have to be faked there. The
+   * enforcement that matters — refusing a call that omits it against an existing
+   * plan — lives in {@link PlanService.update}, so it applies to every channel
+   * rather than to whichever one remembered to check.
+   *
+   * A plan has SEVERAL concurrent writers (an agent turn, a `user_edit` from the
+   * UI, an N:1 model attach), which is precisely why last-write-wins was losing
+   * content quietly here and is tolerated for, say, a tag assignment.
+   */
+  expectedHash?: string;
   changeSummary?: string;
   changedBy: PlanChangedBy;
 }
@@ -104,6 +120,13 @@ export interface PlanUpdateInput {
 export interface PlanUpdateResult {
   plan: Plan;
   version: number;
+  /**
+   * 0.2.15 — sha256 of the content just written. The caller needs it to arm the
+   * NEXT call's `expectedHash`; without it every write would have to be followed
+   * by a read, and the window between the two is exactly the race the guard
+   * exists to close.
+   */
+  hash: string;
 }
 
 export interface PlanUpdateContentOpts {
@@ -292,8 +315,18 @@ export class PlanService {
    * would otherwise silently clobber each other.
    */
   async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
-    const { threadId, planPath: addressed, action, content, anchor, heading, title, changeSummary, changedBy } =
-      input;
+    const {
+      threadId,
+      planPath: addressed,
+      action,
+      content,
+      anchor,
+      heading,
+      title,
+      expectedHash,
+      changeSummary,
+      changedBy,
+    } = input;
     /**
      * An explicitly addressed plan must EXIST — this path does not create one.
      * Creation is thread-bound by design (§7: "a plan is born only from a
@@ -359,10 +392,35 @@ export class PlanService {
         });
         this.deps.chatService.attachPlanToThread(threadId, planPath);
         this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
-        return { plan, version };
+        return { plan, version, hash: plan.hash };
       }
 
       const current = await this.getByPath(existingPath);
+      /**
+       * 0.2.15 — the guard, enforced HERE rather than in each channel's schema.
+       *
+       * Two refusals, and they mean different things. A MISSING hash is a caller
+       * that never armed the guard at all: `INVALID_ARGUMENT`, because no retry
+       * of the same call can succeed — it has to go read the plan first. A
+       * MISMATCHED hash is a caller that armed it correctly and lost the race:
+       * `PLAN_CONFLICT` (409) carrying the current hash, which is exactly what
+       * the retry needs.
+       *
+       * Note what this does NOT accept: a hash the implementation read for the
+       * caller a moment ago. Substituting `current.hash` here would satisfy every
+       * schema and every test while guarding nothing at all — the value has to
+       * come from the caller's own earlier read to mean anything.
+       */
+      if (typeof expectedHash !== 'string' || expectedHash.length === 0) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'expectedHash is required when updating an existing plan',
+          'read the plan first with get_plan and pass back its `hash`',
+        );
+      }
+      if (expectedHash !== current.hash) {
+        throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash);
+      }
       const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
       const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
       const abs = this.absPath(existingPath);
@@ -382,7 +440,7 @@ export class PlanService {
       const version = this.currentVersionFor(existingPath);
       const plan = await this.getByPath(existingPath);
       this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
-      return { plan, version };
+      return { plan, version, hash: plan.hash };
     });
   }
 
