@@ -325,7 +325,7 @@ function PatchRow({ patch }: { patch: PatchListItemView }) {
           >
             {patch.path}
           </Link>
-          <PatchStatusBadge status={patch.status} />
+          <PatchAppliedBadge applied={patch.applied} />
         </div>
         <div
           className="flex items-center gap-2.5 mt-0.5 text-[10.5px]"
@@ -352,19 +352,23 @@ function PatchRow({ patch }: { patch: PatchListItemView }) {
   );
 }
 
-function PatchStatusBadge({ status }: { status: string }) {
-  const completed = status === 'completed';
+/**
+ * 0.2.14: `applied` boolean, was the `status: awaiting | completed` enum. A
+ * denser variant of the shared `AppliedBadge` — these rows nest under a brief,
+ * so they run one step smaller than the badge on a detail header.
+ */
+function PatchAppliedBadge({ applied }: { applied: boolean }) {
   return (
     <span
       className="font-mono text-[9.5px] px-1.5 py-0.5 rounded"
       style={
-        completed
+        applied
           ? { background: 'var(--c-green-soft)', color: 'var(--c-green)' }
           : { background: 'var(--c-yellow)', color: 'var(--c-yellow-ink)' }
       }
-      title={completed ? 'Patch resolved' : 'Patch awaiting resolution'}
+      title={applied ? 'Applied to the specification' : 'Not applied yet'}
     >
-      {completed ? 'completed' : 'awaiting'}
+      {applied ? 'applied ✅' : 'pending ⏳'}
     </span>
   );
 }

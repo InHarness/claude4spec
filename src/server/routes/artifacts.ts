@@ -9,7 +9,6 @@ import type {
   ArtifactListItem,
   ArtifactResponse,
   ArtifactThreadListItem,
-  PatchStatus,
 } from '../../shared/entities.js';
 import { DomainError } from '../services/tags.js';
 
@@ -53,6 +52,18 @@ export interface ArtifactsRouterDeps {
   chat: ChatService;
 }
 
+
+/**
+ * `?applied=true|false` — the plan/patch execution-flag filter (0.2.14), the
+ * same shape as brief's `?implemented=`. Omitting the parameter means "all";
+ * per L4's Optional filters convention there is no `any`/`all` literal.
+ */
+function parseAppliedFilter(raw: unknown): boolean | undefined {
+  if (raw === undefined) return undefined;
+  if (raw === 'true') return true;
+  if (raw === 'false') return false;
+  throw new DomainError('VALIDATION', `?applied must be 'true' or 'false' (omit for all)`);
+}
 
 function buildBriefAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   const { brief: briefs } = deps;
@@ -103,17 +114,10 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   return {
     list(query) {
       const brief = typeof query.brief === 'string' ? query.brief : undefined;
-      let status: PatchStatus | undefined;
-      if (query.status === undefined) {
-        status = undefined;
-      } else if (query.status === 'awaiting' || query.status === 'completed') {
-        status = query.status;
-      } else {
-        throw new DomainError('VALIDATION', `?status must be 'awaiting' or 'completed' (omit for all)`);
-      }
+      const applied = parseAppliedFilter(query.applied);
       // Maps listPatches()'s already-fetched frontmatter/hash directly — no
       // second frontmatter-indexer lookup or file_version query per row.
-      return patches.listPatches({ brief, status }).map((item) => ({
+      return patches.listPatches({ brief, applied }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         hash: item.hash,
@@ -129,10 +133,10 @@ function buildPatchAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
     async updateFrontmatter(path, frontmatter) {
-      if (frontmatter.status !== 'awaiting' && frontmatter.status !== 'completed') {
-        throw new DomainError('VALIDATION', "status must be 'awaiting' or 'completed'");
+      if (typeof frontmatter.applied !== 'boolean') {
+        throw new DomainError('VALIDATION', 'applied must be a boolean');
       }
-      const p = await patches.updateFrontmatter({ path, status: frontmatter.status });
+      const p = await patches.updateFrontmatter({ path, applied: frontmatter.applied });
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
     createThread(path, name) {
@@ -146,9 +150,10 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
   return {
     list(query) {
       const search = typeof query.search === 'string' ? query.search : undefined;
+      const applied = parseAppliedFilter(query.applied);
       // Maps listPlans()'s already-fetched frontmatter/hash directly — no
       // second frontmatter-indexer lookup or file_version query per row.
-      return plans.listPlans({ search }).map((item) => ({
+      return plans.listPlans({ search, applied }).map((item) => ({
         path: item.path,
         frontmatter: item.frontmatter,
         hash: item.hash,
@@ -166,7 +171,11 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
     },
     async updateFrontmatter(path, frontmatter) {
       const title = typeof frontmatter.title === 'string' ? frontmatter.title : undefined;
-      const p = await plans.updateFrontmatter({ path, patch: { title }, changedBy: 'user' });
+      const applied = typeof frontmatter.applied === 'boolean' ? frontmatter.applied : undefined;
+      if (frontmatter.applied !== undefined && applied === undefined) {
+        throw new DomainError('VALIDATION', 'applied must be a boolean');
+      }
+      const p = await plans.updateFrontmatter({ path, patch: { title, applied }, changedBy: 'user' });
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
     // Not the client's actual creation path (see file header) — delegates to

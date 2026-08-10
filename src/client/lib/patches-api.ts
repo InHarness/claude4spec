@@ -16,7 +16,6 @@ import type {
   ArtifactResponse,
   ArtifactThreadCreateRequest,
   PatchKind,
-  PatchStatus,
 } from '../../shared/entities.js';
 import { handle, apiFetch } from './api-core.js';
 import { encodeArtifactPath, stem } from './artifact-path.js';
@@ -40,7 +39,8 @@ export interface PatchListItemView {
   path: string;
   briefRef: string | undefined;
   patchKind: PatchKind;
-  status: PatchStatus;
+  /** 0.2.14: replaced `status: awaiting | completed`. Absent frontmatter key = `false`. */
+  applied: boolean;
   createdAt: string;
   createdBy: string;
   lastModified: string;
@@ -70,7 +70,7 @@ function toPatchListItemView(item: ArtifactListItem): PatchListItemView {
   const fm = item.frontmatter as {
     brief?: string;
     patch_kind?: unknown;
-    status?: unknown;
+    applied?: unknown;
     created_at?: unknown;
     created_by?: unknown;
   };
@@ -79,7 +79,7 @@ function toPatchListItemView(item: ArtifactListItem): PatchListItemView {
     path: item.path,
     briefRef: typeof fm.brief === 'string' && fm.brief.length > 0 ? fm.brief : undefined,
     patchKind: VALID_PATCH_KINDS.has(String(fm.patch_kind)) ? (fm.patch_kind as PatchKind) : 'clarification',
-    status: fm.status === 'completed' ? 'completed' : 'awaiting',
+    applied: fm.applied === true,
     createdAt,
     createdBy: String(fm.created_by ?? ''),
     lastModified: item.updatedAt ?? createdAt,
@@ -91,10 +91,10 @@ function toPatchArtifactView(data: ArtifactResponse): PatchArtifactView {
 }
 
 export const patchesApi = {
-  async list(opts: { brief?: string; status?: string } = {}): Promise<PatchListItemView[]> {
+  async list(opts: { brief?: string; applied?: boolean } = {}): Promise<PatchListItemView[]> {
     const qs = new URLSearchParams();
     if (opts.brief !== undefined) qs.set('brief', opts.brief);
-    if (opts.status !== undefined) qs.set('status', opts.status);
+    if (opts.applied !== undefined) qs.set('applied', String(opts.applied));
     const url = qs.toString() ? `/api/artifacts/patch?${qs.toString()}` : '/api/artifacts/patch';
     const env = await handle<Envelope<ArtifactListItem[]>>(await apiFetch(url));
     return env.data.map(toPatchListItemView);

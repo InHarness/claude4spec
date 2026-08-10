@@ -391,7 +391,7 @@ describe('POST /api/patches', () => {
     expect(written).toMatch(/type: patch/);
     expect(written).toMatch(/brief: b1\.md/);
     expect(written).toMatch(/patch_kind: drift/);
-    expect(written).toMatch(/status: awaiting/);
+    expect(written).toMatch(/applied: false/);
     expect(written).toMatch(/# Patch — route drifted/);
   });
 

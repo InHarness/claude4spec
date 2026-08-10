@@ -414,3 +414,57 @@ describe('plan addressing on the threadless channel', () => {
     expect(bare.data.hint).toContain('list_plans');
   });
 });
+
+/**
+ * 0.2.14 — `mark_plan_applied` is a FIFTH tool, not a parameter of `update_plan`.
+ *
+ * The separation is the contract: writing a plan's content and declaring it
+ * applied are different acts, and an agent editing a plan must not be able to
+ * flip the flag as a side effect of the edit.
+ */
+describe('mark_plan_applied', () => {
+  const build = (target?: 'explicit') =>
+    buildPlanToolsServer({
+      threadId: target ? 'mcp-external' : 't-1',
+      target,
+      planService: {} as never,
+      pageVersions: {} as never,
+    });
+
+  it('is mounted on both channels, and `applied` is absent from update_plan', () => {
+    for (const server of [build(), build('explicit')]) {
+      const names = server.tools!.map((t) => t.name);
+      expect(names).toContain('mark_plan_applied');
+
+      const updatePlan = server.tools!.find((t) => t.name === 'update_plan')!;
+      expect(Object.keys(updatePlan.inputSchema as Record<string, unknown>)).not.toContain('applied');
+      // ...and the tool says so, so the model doesn't go looking for the field.
+      expect(updatePlan.description).toContain('mark_plan_applied');
+    }
+  });
+
+  it('delegates to PlanService.setAppliedByThread, thread-addressed on the internal mount', async () => {
+    const calls: Array<[string, unknown]> = [];
+    const server = buildPlanToolsServer({
+      threadId: 't-1',
+      planService: {
+        setAppliedByThread: async (threadId: string, input: unknown) => {
+          calls.push([threadId, input]);
+          return { path: 'some-plan.md', applied: true };
+        },
+      } as never,
+      pageVersions: {} as never,
+    });
+    const tool = server.tools!.find((t) => t.name === 'mark_plan_applied')!;
+
+    const res = (await tool.handler({ applied: true }, {} as never)) as {
+      isError?: boolean;
+      content: Array<{ text: string }>;
+    };
+
+    expect(res.isError).toBeFalsy();
+    // The answer carries the path and the flag — no plan content, no version.
+    expect(JSON.parse(res.content[0]!.text)).toEqual({ path: 'some-plan.md', applied: true });
+    expect(calls).toEqual([['t-1', { path: undefined, applied: true }]]);
+  });
+});

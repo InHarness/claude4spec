@@ -842,7 +842,7 @@ export type PlanAction =
   | 'system_duplicate';
 export type PlanChangedBy = 'agent' | 'user' | 'system';
 
-/** Reserved frontmatter keys set at file-creation time, immutable from the claude4spec side. Only `title` is mutable. */
+/** Reserved frontmatter keys set at file-creation time, immutable from the claude4spec side. `title` and `applied` are mutable. */
 export const PLAN_IMMUTABLE_FRONTMATTER_KEYS = ['type', 'created_at', 'created_by'] as const;
 
 export interface PlanFrontmatter {
@@ -851,6 +851,15 @@ export interface PlanFrontmatter {
   title: string;
   created_at: string;
   created_by: string;
+  /**
+   * 0.2.14 — "this plan has been applied to the specification". A DECLARATION,
+   * not a computed fact: nothing verifies it against the spec's content or
+   * version history. Written explicitly as `false` at create time; a plan
+   * authored before 0.2.14 has no key at all and reads as `false` (no file
+   * migration). Set to `true` only by the thread's agent through
+   * `mark_plan_applied`; unset only by the user in the UI.
+   */
+  applied?: boolean;
   [key: string]: unknown;
 }
 
@@ -1013,12 +1022,9 @@ export interface BriefCreateResult {
 /** Why a coding agent filed the patch (frontmatter `patch_kind`). */
 export type PatchKind = 'drift' | 'missing' | 'incorrect' | 'clarification';
 
-/** Resolution state — `awaiting` until the spec author resolves the patch. */
-export type PatchStatus = 'awaiting' | 'completed';
-
 /**
  * Reserved frontmatter keys — set by the terminal agent that authored the
- * patch, immutable from the claude4spec side. Only `status` is mutable.
+ * patch, immutable from the claude4spec side. Only `applied` is mutable.
  */
 export const PATCH_IMMUTABLE_FRONTMATTER_KEYS = [
   'type',
@@ -1035,8 +1041,16 @@ export interface PatchFrontmatter {
   patch_kind: PatchKind;
   created_at: string;
   created_by: string;
-  /** Absent is treated as `'awaiting'`. */
-  status?: PatchStatus;
+  /**
+   * 0.2.14 — replaces the `status: awaiting | completed` enum with the same
+   * boolean the plan carries: "is the deviation this patch describes already
+   * applied to the specification". Absent reads as `false`.
+   *
+   * A legacy `status` key is an UNKNOWN field from here on: ignored on read
+   * (even `status: completed` reads as `applied: false`) but left in the file
+   * by gray-matter pass-through. Files on disk are not migrated.
+   */
+  applied?: boolean;
   [key: string]: unknown;
 }
 

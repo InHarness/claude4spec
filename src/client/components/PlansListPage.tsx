@@ -3,10 +3,20 @@ import { Link } from '@tanstack/react-router';
 import { ClipboardList, MessageSquarePlus, Search } from 'lucide-react';
 import { useChatStore } from '../state/chat.js';
 import { useCreateThreadFromPlan, usePlans } from '../hooks/usePlan.js';
+import { SegmentedControl } from './SegmentedControl.js';
+import { AppliedBadge } from './AppliedBadge.js';
+
+/** 0.2.14: three states, `all` by default. `all` is the ABSENCE of the wire
+ *  parameter, not a value of it — see `usePlans`. */
+type AppliedFilter = 'all' | 'applied' | 'pending';
 
 export function PlansListPage() {
   const [search, setSearch] = useState('');
-  const { data: plans = [], isLoading } = usePlans({ search: search.trim() || undefined });
+  const [filter, setFilter] = useState<AppliedFilter>('all');
+  const { data: plans = [], isLoading } = usePlans({
+    search: search.trim() || undefined,
+    applied: filter === 'all' ? undefined : filter === 'applied',
+  });
   const setChatThreadId = useChatStore((s) => s.setChatThreadId);
   const setChatOpen = useChatStore((s) => s.setChatOpen);
   const createThread = useCreateThreadFromPlan();
@@ -40,6 +50,15 @@ export function PlansListPage() {
           {plans.length} {plans.length === 1 ? 'plan' : 'plans'}
         </span>
         <span className="flex-1" />
+        <SegmentedControl
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'applied', label: 'Applied' },
+            { value: 'pending', label: 'Pending' },
+          ]}
+        />
         <div
           className="flex items-center gap-1.5 px-2 py-1 rounded-md"
           style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
@@ -72,11 +91,19 @@ export function PlansListPage() {
                 color: 'var(--c-subtle)',
               }}
             >
-              <div className="text-[14px]">No plans yet.</div>
-              <div className="text-[12px] mt-1">
-                Plans are created automatically when an agent calls{' '}
-                <code style={{ color: 'var(--c-accent)' }}>update_plan</code> in a thread.
+              <div className="text-[14px]">
+                {filter === 'applied'
+                  ? 'No applied plans yet.'
+                  : filter === 'pending'
+                  ? 'No pending plans — everything is applied.'
+                  : 'No plans yet.'}
               </div>
+              {filter !== 'applied' && (
+                <div className="text-[12px] mt-1">
+                  Plans are created automatically when an agent calls{' '}
+                  <code style={{ color: 'var(--c-accent)' }}>update_plan</code> in a thread.
+                </div>
+              )}
             </div>
           )}
           <div className="space-y-2">
@@ -102,6 +129,7 @@ export function PlansListPage() {
                       >
                         {title}
                       </Link>
+                      <AppliedBadge applied={p.applied} />
                       {p.updatedAt ? (
                         <span
                           className="text-[11px]"

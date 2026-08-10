@@ -80,7 +80,9 @@ export function writePatchFs(opts: WritePatchOpts): WritePatchResult {
     patch_kind: opts.kind,
     created_at: new Date().toISOString(),
     created_by: opts.createdBy,
-    status: 'awaiting' as const,
+    // 0.2.14: was `status: 'awaiting'`. Same question, same answer shape as the
+    // plan's flag — "is this already applied to the specification".
+    applied: false,
   };
   const content = matter.stringify(`# Patch — ${opts.desc}\n\n${opts.body}\n`, frontmatter);
 

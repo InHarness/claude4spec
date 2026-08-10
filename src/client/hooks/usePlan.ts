@@ -30,7 +30,7 @@ interface PlanArtifactResponse {
 export type { FileVersionListItem };
 
 const keys = {
-  list: (opts: { search?: string } | undefined) => ['plans-list', opts ?? {}] as const,
+  list: (opts: { search?: string; applied?: boolean } | undefined) => ['plans-list', opts ?? {}] as const,
   byThread: (threadId: string) => ['plan', 'by-thread', threadId] as const,
   threads: (planPath: string) => artifactThreadsKey('plan', planPath),
   lastThread: (planPath: string) => ['plan', 'last-thread', planPath] as const,
@@ -44,6 +44,8 @@ export interface PlanListEntry {
   path: string;
   title: string | null;
   updatedAt: string | null;
+  /** 0.2.14: "applied to the specification". Missing frontmatter key = `false`. */
+  applied: boolean;
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -59,12 +61,14 @@ async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 /** 0.1.127: plan listing moved to the generic M36 family (`GET /api/plans` is gone). */
-export function usePlans(opts: { search?: string } = {}) {
+export function usePlans(opts: { search?: string; applied?: boolean } = {}) {
   return useQuery({
     queryKey: keys.list(opts),
     queryFn: async (): Promise<PlanListEntry[]> => {
       const params = new URLSearchParams();
       if (opts.search) params.set('search', opts.search);
+      // Omitting the parameter means "all" — there is no `any`/`all` literal.
+      if (opts.applied !== undefined) params.set('applied', String(opts.applied));
       const qs = params.toString();
       const url = qs ? `/api/artifacts/plan?${qs}` : `/api/artifacts/plan`;
       const body = await fetchJson<Envelope<ArtifactListItem[]>>(url);
@@ -72,6 +76,7 @@ export function usePlans(opts: { search?: string } = {}) {
         path: item.path,
         title: typeof item.frontmatter.title === 'string' ? item.frontmatter.title : null,
         updatedAt: item.updatedAt,
+        applied: item.frontmatter.applied === true,
       }));
     },
   });
@@ -189,12 +194,37 @@ export function useUpdatePlanTitle() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: keys.detail(data.path) });
-      // A rename records a `file_version` row server-side, so the History panel
-      // and `currentVersion` both go stale without this. Skipping it also armed
-      // a live edit-wipe: PlanPage clears `dirtyContent` when `currentVersion`
-      // changes, so a background refetch delivering the missed version mid-edit
-      // discarded whatever the user had typed.
-      qc.invalidateQueries({ queryKey: keys.versions(data.path) });
+      qc.invalidateQueries({ queryKey: ['plans-list'] });
+    },
+  });
+}
+
+/**
+ * 0.2.14 — the plan's `applied` flag from the UI side. The agent sets it to
+ * `true` through `mark_plan_applied`; THIS is the only path that can set it
+ * back to `false`, which is why the toggle lives in the plan header.
+ *
+ * Deliberately does not invalidate `keys.versions`: a frontmatter-only write on
+ * a plan records no `file_version` row, so history and `currentVersion` are
+ * unchanged by it. (Same now goes for `useUpdatePlanTitle` above — before
+ * 0.2.14 a rename did capture a version.)
+ */
+export function useSetPlanApplied() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { planPath: string; applied: boolean }) => {
+      const body = await fetchJson<Envelope<PlanArtifactResponse>>(
+        `/api/artifacts/plan/${encodeArtifactPath(input.planPath)}/frontmatter`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ frontmatter: { applied: input.applied } }),
+        },
+      );
+      return body.data;
+    },
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: keys.detail(data.path) });
       qc.invalidateQueries({ queryKey: ['plans-list'] });
     },
   });

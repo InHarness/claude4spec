@@ -957,14 +957,18 @@ function buildCurrentPatch(patch: PatchDetail): string {
     `<current_patch ${attrs({
       path: patch.path,
       patch_kind: String(fm.patch_kind ?? ''),
-      status: fm.status ?? 'awaiting',
+      // 0.2.14: was `status="awaiting|completed"`. A missing key reads `false`,
+      // and so does a legacy `status: completed` — that key is unknown now.
+      applied: String(fm.applied === true),
       brief: typeof fm.brief === 'string' ? fm.brief : undefined,
       hash: patch.hash,
     })}>`,
     `This thread exists to resolve the patch below — a coding agent in another`,
     `terminal filed it as feedback while implementing a brief. Read it, then`,
     `apply its findings to the specification (edit the relevant pages/entities).`,
-    `Once the spec reflects the patch, the agent marks it \`status: completed\`.`,
+    `\`applied\` says whether this patch was already folded into the spec once —`,
+    `it is a signal to read, not a flag you set: nothing in this thread can`,
+    `change it, and only the user flips it from the patch page.`,
     ``,
     patch.content,
     `</current_patch>`,
@@ -1086,7 +1090,7 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
   // M23: patch-resolution thread. The patch file (a coding agent's feedback
   // about a spec problem found during implementation) is injected verbatim;
   // this thread's job is to fold its findings into the spec, then the author
-  // marks the patch `completed`.
+  // marks the patch `applied` from the UI.
   if (contextType === 'patch' && patch) {
     parts.push(buildCurrentPatch(patch));
   }

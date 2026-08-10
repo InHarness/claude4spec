@@ -359,20 +359,27 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
           patch_kind: 'drift',
           created_at: '2026-01-02T00:00:00.000Z',
           created_by: 'agent',
-          status: 'awaiting',
+          applied: false,
         },
         '# Patch — drift\n',
       );
     });
 
-    it('GET /api/artifacts/patch lists, filterable by ?status=', async () => {
+    it('GET /api/artifacts/patch lists, filterable by ?applied=', async () => {
       const all = await request(app).get('/api/artifacts/patch');
       expect(all.status).toBe(200);
       expect(all.body.data).toHaveLength(1);
       expect(all.body.data[0].frontmatter.patch_kind).toBe('drift');
 
-      const completedOnly = await request(app).get('/api/artifacts/patch?status=completed');
-      expect(completedOnly.body.data).toHaveLength(0);
+      const appliedOnly = await request(app).get('/api/artifacts/patch?applied=true');
+      expect(appliedOnly.body.data).toHaveLength(0);
+
+      const pendingOnly = await request(app).get('/api/artifacts/patch?applied=false');
+      expect(pendingOnly.body.data).toHaveLength(1);
+
+      const bogus = await request(app).get('/api/artifacts/patch?applied=any');
+      expect(bogus.status).toBe(400);
+      expect(bogus.body.error.code).toBe('VALIDATION');
     });
 
     it('GET /api/artifacts/patch/:path returns detail (no top-level title)', async () => {
@@ -382,18 +389,47 @@ describe('artifactsRouter — /api/artifacts/:kind/*', () => {
       expect(res.body.data.title).toBeUndefined();
     });
 
-    it('PATCH .../frontmatter accepts `status` and rejects an invalid value', async () => {
+    it('PATCH .../frontmatter accepts `applied` and rejects a non-boolean', async () => {
       const ok = await request(app)
         .patch('/api/artifacts/patch/v1-to-v2-drift.md/frontmatter')
-        .send({ frontmatter: { status: 'completed' } });
+        .send({ frontmatter: { applied: true } });
       expect(ok.status).toBe(200);
-      expect(ok.body.data.frontmatter.status).toBe('completed');
+      expect(ok.body.data.frontmatter.applied).toBe(true);
 
       const badValue = await request(app)
         .patch('/api/artifacts/patch/v1-to-v2-drift.md/frontmatter')
-        .send({ frontmatter: { status: 'bogus' } });
+        .send({ frontmatter: { applied: 'completed' } });
       expect(badValue.status).toBe(400);
       expect(badValue.body.error.code).toBe('VALIDATION');
+    });
+
+    // 0.2.14: `status` is an UNKNOWN field now — a pre-0.2.14 patch reads as
+    // pending even when it says `completed`, and the key survives in the file.
+    it('reads a legacy `status: completed` patch as pending, without dropping the key', async () => {
+      await writeArtifact(
+        'patch',
+        'legacy.md',
+        {
+          type: 'patch',
+          brief: 'v1-to-v2.md',
+          patch_kind: 'drift',
+          created_at: '2026-01-02T00:00:00.000Z',
+          created_by: 'agent',
+          status: 'completed',
+        },
+        '# Patch — legacy\n',
+      );
+
+      const pending = await request(app).get('/api/artifacts/patch?applied=false');
+      expect(pending.body.data.map((d: { path: string }) => d.path)).toContain('legacy.md');
+
+      const flipped = await request(app)
+        .patch('/api/artifacts/patch/legacy.md/frontmatter')
+        .send({ frontmatter: { applied: true } });
+      expect(flipped.status).toBe(200);
+      // gray-matter pass-through: the unknown key is not migrated away.
+      expect(flipped.body.data.frontmatter.status).toBe('completed');
+      expect(flipped.body.data.frontmatter.applied).toBe(true);
     });
 
     it('PATCH .../frontmatter 400s IMMUTABLE_FIELD on an immutable key', async () => {

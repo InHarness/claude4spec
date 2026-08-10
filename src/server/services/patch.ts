@@ -2,16 +2,18 @@
  * M23 PatchService — thin wrapper over the third `PagesService` instance
  * mounted on `patchesDir`. Patches are markdown files with mandatory YAML
  * frontmatter (`type: patch`, `brief`, `patch_kind`, `created_at`,
- * `created_by`, `status`). They are authored by coding agents in *other*
+ * `created_by`, `applied`). They are authored by coding agents in *other*
  * terminals during brief implementation — claude4spec only reads them, lets
- * the spec author flip `status`, and spins up a chat thread to fold the
+ * the spec author flip `applied`, and spins up a chat thread to fold the
  * patch's findings back into the spec.
  *
  * Design notes (parallel to BriefService):
  *   - **Zero new tables**. Listing comes from PagesFrontmatterIndexer.
  *   - **Optimistic concurrency** by sha256 hash of full content.
  *   - **Immutable frontmatter** keys protected (PATCH_IMMUTABLE_FRONTMATTER_KEYS);
- *     only `status` is mutable from the claude4spec side.
+ *     only `applied` is mutable from the claude4spec side (0.2.14 — it
+ *     replaced the `status: awaiting | completed` enum with the same boolean
+ *     the plan carries).
  *   - A patch links to a brief via the `brief` frontmatter field, or — when
  *     absent — by filename prefix. Unresolvable ⇒ orphan (`briefPath: null`).
  */
@@ -19,11 +21,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import matter from 'gray-matter';
-import type {
-  PatchFrontmatter,
-  PatchKind,
-  PatchStatus,
-} from '../../shared/entities.js';
+import type { PatchFrontmatter, PatchKind } from '../../shared/entities.js';
 import { PATCH_IMMUTABLE_FRONTMATTER_KEYS } from '../../shared/entities.js';
 import { BRIEF_ROOT_MARKER, PATCH_ROOT_MARKER } from '../../shared/types.js';
 import type { PagesService } from './pages.js';
@@ -48,7 +46,8 @@ export interface PatchServiceDeps {
 export interface PatchListOpts {
   /** Filter to a single brief (its briefsDir-relative path). */
   brief?: string;
-  status?: PatchStatus;
+  /** 0.2.14: narrow to applied (`true`) or pending (`false`). Omit for all. */
+  applied?: boolean;
   /**
    * v0.1.129 fix: `threadCount` costs one extra `chatService` query per row —
    * the generic `/api/artifacts/patch` REST route never reads it off
@@ -67,7 +66,7 @@ export interface PatchUpdateContentOpts {
 
 export interface PatchUpdateFrontmatterOpts {
   path: string;
-  status: PatchStatus;
+  applied: boolean;
 }
 
 /**
@@ -100,7 +99,7 @@ export interface PatchListItem {
   /** `null` = orphan (no resolvable brief). */
   briefPath: string | null;
   patchKind: PatchKind;
-  status: PatchStatus;
+  applied: boolean;
   createdAt: string;
   createdBy: string;
   /** `created_at` of the latest file_version row with kind='patch'. */
@@ -160,10 +159,12 @@ export class PatchService {
     const out: PatchListItem[] = [];
     for (const rec of records) {
       const fm = rec.frontmatter as PatchFrontmatter;
-      const status: PatchStatus = fm.status === 'completed' ? 'completed' : 'awaiting';
+      // 0.2.14: a legacy `status` key is an unknown field — even
+      // `status: completed` reads as `applied: false`. Files are not migrated.
+      const applied = fm.applied === true;
       const briefPath = this.resolveBriefPath(rec.path, fm, briefPaths);
       if (opts.brief !== undefined && opts.brief !== briefPath) continue;
-      if (opts.status !== undefined && opts.status !== status) continue;
+      if (opts.applied !== undefined && opts.applied !== applied) continue;
       const lastVersion = this.deps.pageVersions.getLatestForPath(rec.path, undefined, 'patch');
       const createdAt = toIso(fm.created_at);
       out.push({
@@ -171,7 +172,7 @@ export class PatchService {
         title: extractTitleFromFrontmatter(fm, rec.path),
         briefPath,
         patchKind: normalizeKind(fm.patch_kind),
-        status,
+        applied,
         createdAt,
         createdBy: String(fm.created_by ?? ''),
         lastModified: lastVersion?.createdAt ?? createdAt,
@@ -218,7 +219,9 @@ export class PatchService {
 
   async updateFrontmatter(opts: PatchUpdateFrontmatterOpts): Promise<PatchDetail> {
     const current = await this.getPatch(opts.path);
-    const next: PatchFrontmatter = { ...current.frontmatter, status: opts.status };
+    // Spread-then-set: a legacy `status` key already in the file survives the
+    // write untouched (gray-matter pass-through), it is simply never read.
+    const next: PatchFrontmatter = { ...current.frontmatter, applied: opts.applied };
     const newContent = matter.stringify(current.body, next as Record<string, unknown>);
     const abs = this.absPath(opts.path);
     this.deps.patchesWatcher.suppress(opts.path);
@@ -230,7 +233,7 @@ export class PatchService {
       undefined,
       this.deps.patchesSerializer,
       'patch',
-      `set status=${opts.status}`,
+      `set applied=${opts.applied}`,
     );
     await this.deps.frontmatterIndexer.indexPage(PATCH_ROOT_MARKER, opts.path);
     return this.getPatch(opts.path);

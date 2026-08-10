@@ -105,6 +105,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` on the first call fails with MISSING_TITLE.',
       'Each call captures a new version in the shared file_version log and bumps `currentVersion`. Versions are linear, last-write-wins.',
       'Available in plan_mode=true (preferred) and plan_mode=false.',
+      'This tool cannot change `applied` — use `mark_plan_applied`.',
     ].join('\n'),
     {
       ...pathParam,
@@ -226,6 +227,48 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     }
   );
 
+  /**
+   * 0.2.14 — the plan's agent channel for its execution flag.
+   *
+   * Separate from `update_plan` on purpose: writing a plan's content and
+   * declaring it applied are different acts with different undo directions,
+   * so `applied` is deliberately absent from `update_plan`'s shape and editing
+   * a plan can never flip the flag as a side effect.
+   *
+   * Not gated by posture. `plan-tools` is outside the READONLY_BUILTINS /
+   * MUTATING_BUILTINS filter and the plan has no `contextType` of its own, so
+   * this is reachable regardless of `chat_thread.plan_mode` — a recorded
+   * decision, not an oversight. The contrast is `mark-brief-implemented`, which
+   * declares a fact about CODE that a C4S thread cannot see; a plan declares a
+   * fact about the SPECIFICATION, and the agent that just ran the plan is the
+   * only party in a position to state it.
+   */
+  const markPlanApplied = mcpTool(
+    'mark_plan_applied',
+    [
+      "Mark this thread's plan as applied to the specification. Call it as the LAST step after you have finished executing the plan.",
+      'One-way from here: `applied: false` is refused (INVALID_ARGUMENT) — only the user unsets the flag, from the plan page.',
+      'Idempotent: calling it again with the same value changes nothing.',
+    ].join('\n'),
+    {
+      ...pathParam,
+      applied: z.boolean().describe('Must be true — this tool marks a plan applied, it does not unmark one.'),
+    },
+    async (args) => {
+      try {
+        const explicitPath = explicit ? requirePath(args.path) : (args.path as string | undefined);
+        return ok(
+          await planService.setAppliedByThread(threadId, {
+            path: explicitPath,
+            applied: args.applied as boolean,
+          }),
+        );
+      } catch (err) {
+        return fail(err);
+      }
+    }
+  );
+
   return createMcpServer({
     name: 'plan-tools',
     tools: [
@@ -233,6 +276,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       updatePlan,
       listPlanVersions,
       getPlanVersion,
+      markPlanApplied,
       /**
        * Only on the threadless mount, and not for symmetry: without it `path`
        * is a required parameter with no operation that can produce a value for

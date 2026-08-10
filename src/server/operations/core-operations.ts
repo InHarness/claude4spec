@@ -488,6 +488,44 @@ export function registerCoreOperations(): void {
   });
 
   /**
+   * 0.2.14 — the plan's execution flag, declared because it is an operation the
+   * catalog would otherwise not classify (`toolAdmittedByProfile` takes the
+   * permissive branch for anything unknown on the host's own surface, which
+   * makes an omission indistinguishable from a decision).
+   *
+   * `opClass: 'plan'` matches `get_plan`/`update_plan`, so no profile's reach
+   * changes: every profile that already mounts `plan-tools` gets this tool too.
+   * That is the intent — the posture gate deliberately does not cover it.
+   */
+  CATALOG.register({
+    name: 'mark_plan_applied',
+    summary:
+      "Declare a plan applied to the specification. One-way from the agent channel — `applied: false` is INVALID_ARGUMENT; only the user unsets it. Idempotent: a repeat at the same value writes nothing.",
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'plan',
+    inputSchema: {
+      path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
+      applied: z.boolean().describe('Must be true from a non-user channel.'),
+    },
+    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'IMMUTABLE_FIELD', 'VALIDATION'],
+    // No `db`: a frontmatter-only plan write deliberately records no
+    // `file_version` row, so the plan's version history is untouched.
+    sideEffects: ['file', 'ui-notify'],
+    idempotent: true,
+    channels: {
+      internal: direct(),
+      // Deliberately no `c4s` command — M10 has no CLI section, and the flag is
+      // declared by the agent that ran the plan, which is never the terminal.
+      cli: na('no c4s command: the declarant is the in-thread agent, not a terminal'),
+      mcp: direct(),
+      // Rendered by the generic artifact family rather than a route of its own:
+      // PATCH /api/artifacts/plan/:path/frontmatter with { applied }.
+      rest: via('update_artifact_frontmatter', 'generic artifact-family endpoint — M10 adds no dedicated route'),
+    },
+  });
+
+  /**
    * 0.2.13 (tier C) — `list_briefs` was missing from the catalog.
    *
    * It is reachable in three channels and has been for releases: `c4s

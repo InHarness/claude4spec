@@ -100,7 +100,7 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
        * so two briefs sharing a filename in different subdirectories cannot
        * collide, creates `patchesDir` lazily, and writes the frontmatter
        * (`type: patch`, `brief`, `patch_kind`, `created_at`, `created_by`,
-       * `status: awaiting`) under a `# Patch — <desc>` heading.
+       * `applied: false`) under a `# Patch — <desc>` heading.
        *
        * Calling it rather than reimplementing it is the "one function per
        * operation" rule: REST and CLI must not be able to write two different
