@@ -7,7 +7,6 @@ import {
   TaggedListMixedNode,
   TodoNode,
 } from './extensions/xmlNodes.js';
-import { DiagramNode } from './extensions/DiagramNode.js';
 import { RawJsxInlineNode, RawJsxBlockNode } from './extensions/RawJsxNode.js';
 import { AnchorMarker } from './extensions/AnchorMarker.js';
 import { AnnotationHighlight } from './extensions/AnnotationHighlight.js';
@@ -152,40 +151,20 @@ registerEditorExtension({
   markdownIt: { kind: 'inline', pattern: /^<todo(\s[^>]*?)?\/?\s*>/ },
 });
 
-// v0.1.64 — `<diagram/>` 7th XML reference type via the M19 extension slot.
-// `slug` identifies the diagram entity (source of truth); `caption` is per-
-// reference prose.
+// 0.2.15 — `<diagram/>` and its `DiagramNode` are gone from here entirely, on
+// both counts: the tag no longer exists (a diagram is embedded as
+// `<single_element type="diagram" …/>`, dispatched by `SingleElementNode`) and
+// the entity contributes no node of its own. What survives is the AUTHORING
+// half — the `/diagram` slash command and its create/edit popover — which the
+// diagram entity module registers itself as `diagramAuthoringExtension`
+// (see `client/entities/diagram/plugin.tsx`).
 //
-// v0.1.129: the server side moved this registration onto
-// diagramBackendModule.frontend.referenceType (M19 Slot B), since diagram is
-// registered there through the normal registerEntityModule call anyway. This
-// client-side call stays a standalone registration, deliberately — diagram is
-// the only built-in entity whose client-side rendering (chip/row/card) still
-// goes through the legacy `registerEntity` (entities/registry.tsx) instead of
-// `clientPluginHost.registerFrontendModule`/`FrontendModule`, so there is no
-// Slot B-equivalent entry point on the client to attach this to without a
-// separate migration of diagram's client registration. Each XML-tag
-// registration (this one) is independent of Tiptap-node registration
-// (`registerEditorExtension` below) — parseXmlTags/serializeXmlTag need this
-// one regardless of whether the entity has a FrontendModule.
-registerExtensionReferenceType({
-  tag: 'diagram',
-  attrOrder: ['slug', 'caption'],
-});
-
-registerEditorExtension({
-  name: 'diagram',
-  extension: DiagramNode,
-  priority: 670,
-  availableIn: ['page', 'plan'],
-  slashCommand: {
-    id: 'diagram',
-    label: '/diagram',
-    description: 'Insert a Mermaid diagram',
-    hint: 'mermaid DSL',
-  },
-  markdownIt: { kind: 'block', pattern: /^<diagram(\s[^>]*?)?\/?\s*>\s*$/ },
-});
+// The `<section_ref/>` registration above is therefore the ONLY caller of
+// `registerExtensionReferenceType` left on the client, matching the server.
+//
+// Note what the name column means now: every name registered here belongs to an
+// INFRA module (`inline_mention`, `section_ref`, `todo`, the raw-JSX nodes, …).
+// None of them is an entity type, and none ever will be again.
 
 // M20 — unknown `.mdx` JSX component tags (name ∉ dispatch allowlist) → raw code
 // node, preserved byte-perfect and serialized verbatim (no fence). Reactivates the

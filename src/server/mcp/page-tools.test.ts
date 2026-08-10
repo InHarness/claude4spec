@@ -74,13 +74,13 @@ describe('page-tools', () => {
       'create_page',
       'delete_page',
       'update_page',
-      'update_section',
+      'update_sections',
     ]);
   });
 
   it('stamps its writes as `agent` — the axis on which this channel differs from REST', async () => {
-    await call('create_page', { rootId: 'pages', path: 'a.md', content: '# A' });
-    await call('update_page', { rootId: 'pages', path: 'a.md', body: '# A2' });
+    const created = await call('create_page', { rootId: 'pages', path: 'a.md', content: '# A' });
+    await call('update_page', { rootId: 'pages', path: 'a.md', body: '# A2', expectedHash: created.body.hash });
     await call('delete_page', { rootId: 'pages', path: 'a.md' });
     expect(origins).toEqual([
       { relPath: 'a.md', actor: 'agent' },
@@ -90,7 +90,12 @@ describe('page-tools', () => {
   });
 
   it('an unknown root lists the ones that exist rather than answering "not found"', async () => {
-    const res = await call('update_page', { rootId: 'typo', path: 'a.md', body: 'x' });
+    const res = await call('update_page', {
+      rootId: 'typo',
+      path: 'a.md',
+      body: 'x',
+      expectedHash: 'a'.repeat(64),
+    });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('ROOT_NOT_FOUND');
     expect(res.body.hint).toContain('pages');
@@ -127,10 +132,27 @@ describe('page-tools', () => {
     expect(await fs.readFile(path.join(pages.root, 'dup.md'), 'utf-8')).toBe('original');
   });
 
-  it('update_section on an unindexed anchor is SECTION_NOT_FOUND, not a crash', async () => {
-    const res = await call('update_section', { anchor: 'deadbeef', content: 'x' });
+  it('update_sections on an unindexed anchor is SECTION_NOT_FOUND, not a crash', async () => {
+    const res = await call('update_sections', {
+      expectedHash: 'a'.repeat(64),
+      edits: [{ anchor: 'deadbeef', action: 'replace', content: 'x' }],
+    });
     expect(res.isError).toBe(true);
     expect(res.body.code).toBe('SECTION_NOT_FOUND');
     expect(res.body.hint).toContain('list_sections');
+  });
+
+  it('update_page without expectedHash is INVALID_ARGUMENT — the guard is not optional', async () => {
+    /**
+     * 0.2.15. The schema marks the field required, so a compliant client is
+     * refused by the transport before the handler runs; this asserts the
+     * OPERATION refuses it too, which is what covers the channels that do not
+     * validate against a zod shape.
+     */
+    await call('create_page', { rootId: 'pages', path: 'guard.md', content: 'x' });
+    const res = await call('update_page', { rootId: 'pages', path: 'guard.md', body: 'y', expectedHash: '' });
+    expect(res.isError).toBe(true);
+    expect(res.body.code).toBe('INVALID_ARGUMENT');
+    expect(await fs.readFile(path.join(pages.root, 'guard.md'), 'utf-8')).toBe('x');
   });
 });

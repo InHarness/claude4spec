@@ -1,13 +1,16 @@
-import { Node, mergeAttributes } from '@tiptap/core';
 import { createElement, useEffect, useMemo, useState, type FC } from 'react';
-import { createRoot, type Root } from 'react-dom/client';
 import { fetchShape, fetchWindow, useEntityChanged, type SpreadsheetShape } from './hooks.js';
 import { renderInlineMarkdown } from './inline-markdown.js';
-import { MAX_WINDOW_CELLS, SPREADSHEET_ATTR_ORDER, SPREADSHEET_TYPE } from '../../../identity.js';
+import { MAX_WINDOW_CELLS } from '../../../identity.js';
 
 /**
- * `<spreadsheet slug caption/>` — the type's primary surface, and one of only
- * three it has.
+ * The grid — the type's primary surface.
+ *
+ * 0.2.15: it used to hang off a `<spreadsheet slug caption/>` node the type
+ * contributed. That tag is gone; the grid is now the entity's `renderCard`
+ * slot, reached through `<single_element type="spreadsheet" …/>` and dispatched
+ * generically on `type=`. Nothing about what it draws changed — only what
+ * addresses it.
  *
  * READ-ONLY, and that is a design decision rather than an unfinished edge. The
  * window read is bounded and cheap precisely because it makes no promise about
@@ -34,7 +37,7 @@ function rowsPerWindow(nCols: number): number {
   return Math.max(1, Math.min(ROW_WINDOW, Math.floor(MAX_WINDOW_CELLS / nCols)));
 }
 
-const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption }) => {
+export const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption }) => {
   // `undefined` = still loading, `null` = no such sheet. Two different renders,
   // so they cannot share one falsy state.
   const [shape, setShape] = useState<SpreadsheetShape | null | undefined>(undefined);
@@ -208,99 +211,185 @@ const SpreadsheetGrid: FC<{ slug: string; caption?: string }> = ({ slug, caption
 };
 
 /**
- * `<spreadsheet slug="…" caption="…"/>` — the self-closing form, attributes in
- * the order `frontend.referenceType.attrOrder` declares, empty ones omitted.
+ * 0.2.15 — `renderCard`: what `<single_element type="spreadsheet" …/>` draws.
  *
- * Mirrors the host's `serializeXmlTag`; see the note on `addStorage` below.
+ * The `entity` prop is the OVERVIEW (`useGetBySlug` → `fetchShape`), deliberately
+ * not the cells; the grid fetches its own windows. The card only uses it to tell
+ * a missing sheet from a loading one, which the grid would otherwise render
+ * identically.
  */
-export function serializeSpreadsheetTag(attrs: Record<string, unknown>): string {
-  const parts: string[] = [];
-  for (const key of SPREADSHEET_ATTR_ORDER) {
-    const value = attrs[key];
-    if (value == null || value === '') continue;
-    parts.push(`${key}="${String(value).replace(/"/g, '&quot;')}"`);
+export const SpreadsheetCard: FC<{
+  slug: string;
+  entity: unknown;
+  caption?: string;
+  onOpen?: () => void;
+}> = ({ slug, entity, caption, onOpen }) => {
+  if (entity === null) {
+    return createElement(
+      'div',
+      { className: 'c4s-spreadsheet c4s-spreadsheet--broken', 'data-broken-ref': slug },
+      `⚠ Spreadsheet "${slug}" is missing or inactive.`,
+    );
   }
-  return `<${SPREADSHEET_TYPE} ${parts.join(' ')}/>`;
-}
+  return createElement(
+    'div',
+    { className: 'c4s-spreadsheet-card', style: { position: 'relative' } },
+    onOpen
+      ? createElement(
+          'button',
+          {
+            type: 'button',
+            title: 'Open fullscreen',
+            'aria-label': `Expand spreadsheet ${slug}`,
+            onClick: (e: React.MouseEvent) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onOpen();
+            },
+            style: {
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              zIndex: 2,
+              fontSize: 11,
+              padding: '2px 6px',
+              cursor: 'pointer',
+              background: 'var(--c-card)',
+              border: '1px solid var(--c-hair)',
+              borderRadius: 3,
+              color: 'var(--c-muted)',
+            },
+          },
+          '⤢',
+        )
+      : null,
+    createElement(SpreadsheetGrid, { slug, caption }),
+  );
+};
 
-export const spreadsheetNode = Node.create({
-  name: SPREADSHEET_TYPE,
-  group: 'block',
-  atom: true,
-  selectable: true,
-  draggable: true,
-  addAttributes() {
-    return { slug: { default: null }, caption: { default: null } };
-  },
-  parseHTML() {
-    return [{ tag: SPREADSHEET_TYPE }];
-  },
-  renderHTML({ HTMLAttributes }) {
-    return [SPREADSHEET_TYPE, mergeAttributes(HTMLAttributes)];
-  },
-  /**
-   * How this node goes BACK to markdown.
-   *
-   * Without it tiptap-markdown has no serializer for the node and falls back to
-   * its generic HTML writer, which emits the PAIRED form — `<spreadsheet …>` on
-   * one line and a stray `</spreadsheet>` on the next. Every save of every page
-   * carrying an embed would then rewrite the tag into a shape that is not the
-   * `<spreadsheet slug caption/>` syntax the type documents, producing a
-   * two-line diff in the spec repo that nobody authored.
-   *
-   * `serializeXmlTag` is mirrored rather than imported: it lives in the host's
-   * `shared/xml-tags.ts` and is not exported through `@c4s/plugin-runtime`, the
-   * same host gap `frontend-kit/slash-create.tsx` records for the embed node
-   * name and the command event. The attribute ORDER here must stay in step with
-   * the `attrOrder` declared in `entity/spreadsheet/index.ts`; a test pins it.
-   */
-  addStorage() {
-    return {
-      markdown: {
-        serialize(state: { write: (s: string) => void; closeBlock: (n: unknown) => void }, node: { attrs: Record<string, unknown> }) {
-          state.write(serializeSpreadsheetTag(node.attrs));
-          state.closeBlock(node);
+/**
+ * 0.2.15 — `renderChip`: the inline form. A real chip rather than the
+ * `NullRender` stub the type used to ship, which existed only to satisfy a slot
+ * check that no longer demands a row or a detail panel from a hidden type.
+ *
+ * Clicking it opens the fullscreen overlay — the host routes that, because a
+ * hidden type has no detail route to navigate to.
+ */
+export const SpreadsheetChip: FC<{ slug: string; entity: unknown; onOpen?: () => void }> = ({
+  slug,
+  entity,
+  onOpen,
+}) => {
+  if (entity === null) {
+    return createElement(
+      'span',
+      {
+        className: 'c4s-spreadsheet-chip c4s-spreadsheet-chip--broken',
+        title: `broken reference: spreadsheet '${slug}'`,
+        style: {
+          fontSize: 11,
+          fontFamily: 'var(--font-mono)',
+          padding: '1px 6px',
+          borderRadius: 3,
+          background: 'var(--c-red-soft, rgba(196,90,59,0.14))',
+          color: 'var(--c-red, #c45a3b)',
+          border: '1px solid var(--c-red, #c45a3b)',
         },
       },
-    };
-  },
-  addNodeView() {
-    return (props) => {
-      const dom = document.createElement('div');
-      dom.className = 'c4s-spreadsheet-nodeview';
-      dom.setAttribute('data-type', SPREADSHEET_TYPE);
-      const slug = String(props.node.attrs.slug ?? '');
-      const caption = props.node.attrs.caption != null ? String(props.node.attrs.caption) : undefined;
+      `⚠ ${slug}`,
+    );
+  }
+  const shape = entity as SpreadsheetShape | undefined;
+  const dims = shape ? ` ${shape.nRows}×${shape.nCols}` : '';
+  return createElement(
+    'button',
+    {
+      type: 'button',
+      onClick: onOpen,
+      title: `spreadsheet: ${slug}`,
+      className: 'c4s-spreadsheet-chip',
+      style: {
+        fontSize: 12,
+        fontFamily: 'var(--font-mono)',
+        padding: '1px 6px',
+        borderRadius: 3,
+        background: 'var(--c-card)',
+        border: '1px solid var(--c-hair)',
+        color: 'var(--c-ink)',
+        cursor: onOpen ? 'pointer' : 'default',
+      },
+    },
+    `▦ ${slug}${dims}`,
+  );
+};
 
-      /*
-       * `createRoot` by hand rather than `@tiptap/react`: this envelope's only
-       * Tiptap dependency is `@tiptap/core`, and pulling the React bindings in
-       * for one node view would add a second reconciler entry point beside the
-       * host's.
-       */
-      let root: Root | null = null;
-      if (slug) {
-        root = createRoot(dom);
-        root.render(createElement(SpreadsheetGrid, { slug, caption }));
-      } else {
-        dom.textContent = '⚠ <spreadsheet/> is missing a slug.';
+/**
+ * 0.2.15 — `renderOverlay`: the read-only fullscreen surface a chip or card
+ * opens, mounted by the host's `EntityOverlayHost`.
+ *
+ * The same grid, given the whole viewport and its own scroll box. Escape closes,
+ * as does a click on the scrim — matching `DiagramFullscreen`, the host's other
+ * hidden-entity overlay, so the two hidden types behave identically.
+ */
+export const SpreadsheetFullscreen: FC<{
+  slug: string;
+  caption?: string;
+  onClose: () => void;
+}> = ({ slug, caption, onClose }) => {
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
       }
+    }
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
-      return {
-        dom,
-        ignoreMutation: () => true,
-        // Unmount on a later tick: React refuses to unmount a root from inside
-        // a render/commit, and ProseMirror can destroy a node view during one.
-        destroy: () => {
-          const r = root;
-          if (r) setTimeout(() => r.unmount(), 0);
+  return createElement(
+    'div',
+    {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-label': `Spreadsheet ${slug}`,
+      className: 'c4s-spreadsheet-fullscreen',
+      style: {
+        position: 'fixed',
+        inset: 0,
+        zIndex: 1300,
+        background: 'rgba(47, 42, 37, 0.55)',
+        display: 'flex',
+        flexDirection: 'column',
+        padding: 24,
+      },
+      onClick: (e: React.MouseEvent) => {
+        if (e.target === e.currentTarget) onClose();
+      },
+    },
+    createElement(
+      'div',
+      {
+        style: {
+          flex: 1,
+          overflow: 'auto',
+          background: 'var(--c-card)',
+          border: '1px solid var(--c-hair-strong)',
+          borderRadius: 4,
+          padding: 16,
         },
-      };
-    };
-  },
-});
-
-export const spreadsheetNodeExtension = {
-  name: `${SPREADSHEET_TYPE}-node`,
-  extension: spreadsheetNode,
+      },
+      createElement(
+        'button',
+        {
+          type: 'button',
+          onClick: onClose,
+          title: 'Close (Esc)',
+          style: { float: 'right', cursor: 'pointer', fontSize: 13, padding: '2px 8px' },
+        },
+        '✕',
+      ),
+      createElement(SpreadsheetGrid, { slug, caption }),
+    ),
+  );
 };

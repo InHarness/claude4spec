@@ -18,12 +18,19 @@ import { sectionSerializer } from '../serialization/serializers/section.js';
 import { builtinPagesRoot } from '../config.js';
 
 /**
- * Regression for the rule-12 generalization (brief 0-1-128-to-0-1-129): a
- * `<diagram/>` tag has no `type` attribute (the tag name IS the type), so
- * before this change `check_consistency` silently skipped it entirely —
- * neither flagging a broken reference nor marking a referenced diagram as
- * used. Widening the main loop's `tagType` resolution to fall back to the
- * registered extension's `entityType` fixes both.
+ * Rule 12 — broken-reference detection for a HIDDEN entity type.
+ *
+ * History worth keeping: this began (0-1-128-to-0-1-129) as a fix for
+ * `<diagram/>`, a tag with no `type` attribute whose NAME was the type, which
+ * `check_consistency` skipped entirely — neither flagging a broken reference nor
+ * marking a referenced diagram as used. The fix was to fall back to the
+ * registered extension's `entityType`.
+ *
+ * 0.2.15 removed the cause instead: there is no tag whose name is a type any
+ * more, so the fallback went with it and `tag.attrs.type` is the sole source.
+ * These cases stay, rewritten onto `<single_element type="diagram" …/>`, because
+ * the property under test never was about the tag's spelling — it is that a
+ * hidden type gets the same reference checking as a visible one.
  */
 
 function diagramModule(): BackendModule {
@@ -78,14 +85,14 @@ async function connectClient(deps: ReferenceToolsDeps): Promise<Client> {
   return client;
 }
 
-async function checkConsistency(client: Client): Promise<any> {
-  const res = await client.callTool({ name: 'check_consistency', arguments: {} });
+async function checkConsistency(client: Client, args: Record<string, unknown> = {}): Promise<any> {
+  const res = await client.callTool({ name: 'check_consistency', arguments: args });
   expect(res.isError).toBeFalsy();
   const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
   return JSON.parse(text);
 }
 
-describe('check_consistency — rule 12 (extension tags with entityType)', () => {
+describe('check_consistency — rule 12 (hidden entity types)', () => {
   let cwd: string;
   let db: Database.Database;
   let pagesService: PagesService;
@@ -96,7 +103,6 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
     pagesService = new PagesService(cwd, 'pages', 'pages');
     await pagesService.ensureRoot();
     clearExtensionReferenceTypes();
-    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'], entityType: 'diagram' });
   });
 
   afterEach(async () => {
@@ -127,8 +133,10 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
     };
   }
 
-  it('flags a broken <diagram/> reference (slug does not exist)', async () => {
-    await pagesService.write('page.md', { body: '# Page\n\n<diagram slug="nonexistent" caption="x"/>\n' });
+  it('flags a broken diagram reference (slug does not exist)', async () => {
+    await pagesService.write('page.md', {
+      body: '# Page\n\n<single_element type="diagram" slug="nonexistent" caption="x"/>\n',
+    });
     const client = await connectClient(deps());
 
     const result = await checkConsistency(client);
@@ -138,9 +146,11 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
     );
   });
 
-  it('does not flag a valid <diagram/> reference, and marks the diagram as referenced', async () => {
+  it('does not flag a valid diagram reference, and marks the diagram as referenced', async () => {
     db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD; A-->B')`).run();
-    await pagesService.write('page.md', { body: '# Page\n\n<diagram slug="flow" caption="x"/>\n' });
+    await pagesService.write('page.md', {
+      body: '# Page\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
+    });
     const client = await connectClient(deps());
 
     const result = await checkConsistency(client);
@@ -151,6 +161,38 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
     expect(result.unreferencedEntities).not.toContainEqual(
       expect.objectContaining({ type: 'diagram', slug: 'flow' }),
     );
+  });
+
+  /**
+   * 0.2.15 — the priority defect of the M39 budget item.
+   *
+   * `limit` is a PER-BUCKET cap and `summary` counts the whole project BEFORE
+   * any filter, so a cut report and a clean one looked identical unless the
+   * caller thought to compare the counter against each array's length. Most did
+   * not: a short report reads as a healthy project.
+   */
+  it('sets truncated when `limit` actually cut a bucket, and leaves it false when it did not', async () => {
+    for (const slug of ['ghost-a', 'ghost-b', 'ghost-c']) {
+      await pagesService.write(`${slug}.md`, {
+        body: `# Page\n\n<single_element type="diagram" slug="${slug}" caption="x"/>\n`,
+      });
+    }
+    const client = await connectClient(deps());
+
+    const cut = await checkConsistency(client, { limit: 1 });
+    expect(cut.brokenReferences).toHaveLength(1);
+    expect(cut.truncated).toBe(true);
+    // `summary` keeps counting the project, not the slice — which is exactly why
+    // the flag has to exist rather than be inferred from it.
+    expect(cut.summary.errors).toBeGreaterThanOrEqual(3);
+
+    const whole = await checkConsistency(client);
+    expect(whole.brokenReferences).toHaveLength(3);
+    expect(whole.truncated).toBe(false);
+
+    // A limit no bucket reaches is not a cut.
+    const roomy = await checkConsistency(client, { limit: 50 });
+    expect(roomy.truncated).toBe(false);
   });
 
   it('an unreferenced diagram entity is reported as unreferenced', async () => {
@@ -333,18 +375,20 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
     });
 
     it('get_page returns the page AS AUTHORED — an embed stays an embed', async () => {
-      await pagesService.write('page.md', { body: '# Alpha\n\n<diagram slug="flow" caption="x"/>\n' });
+      await pagesService.write('page.md', {
+        body: '# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
+      });
       const client = await connectClient(deps());
 
       const { isError, body } = await call(client, 'get_page', { rootId: 'pages', path: 'page.md' });
 
       expect(isError).toBe(false);
-      expect(body.content).toContain('<diagram slug="flow" caption="x"/>');
+      expect(body.content).toContain('<single_element type="diagram" slug="flow" caption="x"/>');
     });
 
     it('get_sections returns each body with its tag intact AND that tag as a parsed edge', async () => {
       await pagesService.write('page.md', {
-        body: '# Alpha\n\n<diagram slug="flow" caption="x"/>\n',
+        body: '# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
       });
       // The heading is line 1 of the body; the section runs to the end.
       indexSection('bbbbbb22', 'page.md', 'Alpha', 1, 4);
@@ -354,7 +398,7 @@ describe('check_consistency — rule 12 (extension tags with entityType)', () =>
 
       expect(isError).toBe(false);
       expect(body.results).toHaveLength(1);
-      expect(body.results[0].body).toContain('<diagram slug="flow"');
+      expect(body.results[0].body).toContain('<single_element type="diagram" slug="flow"');
       expect(body.results[0].edges).toBeDefined();
     });
 

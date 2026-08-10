@@ -77,7 +77,12 @@ export function TaggedListMixedView(props: NodeViewProps) {
           {activeModules.map((mod) => {
             const list = safe[mod.type] ?? [];
             if (list.length === 0) return null;
+            // 0.2.15 — an embed-only type has no row. In the MIXED list this is
+            // a per-group skip rather than a whole-list notice: the other
+            // groups are perfectly listable, and `tagged_list_mixed` names no
+            // type of its own to complain about.
             const RowComp = mod.renderRow;
+            if (!RowComp) return null;
             return (
               <div key={mod.type}>
                 <div

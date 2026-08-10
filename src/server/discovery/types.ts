@@ -249,7 +249,7 @@ export interface GetPageResult {
   content: string;
   /**
    * 0.2.13 (item 28): sha256 of the WHOLE file as read, to hand back as
-   * `expectedHash` on `update_page` / `update_section`.
+   * `expectedHash` on `update_page` / `update_sections`.
    *
    * Present even when `content` was truncated or narrowed by `range`, and it
    * describes the file rather than what was returned — which is the only way it
@@ -318,6 +318,15 @@ export interface ResolveIdentityInput {
 
 export interface ResolveIdentityResult {
   candidates: Array<{ type: string; slug: string; label: string; score: number }>;
+  /**
+   * 0.2.15 — true when the ranking was cut to `limit`.
+   *
+   * This operation carries no `total`/`hasMore` on purpose (paging deeper into a
+   * similarity ranking asks for the answers the ranking already judged worse),
+   * but "there were more candidates than you saw" is still a fact the caller
+   * cannot deduce from a list whose length equals a limit it may have defaulted.
+   */
+  truncated: boolean;
 }
 
 // ── Graph ───────────────────────────────────────────────────────────────────
@@ -450,6 +459,8 @@ export interface FindReferencesResult {
   references: ReferenceHit[];
   total: number;
   hasMore: boolean;
+  /** 0.2.15 — see {@link Page.truncated}: the window was cut by the budget. */
+  truncated: boolean;
 }
 
 // ── Keyed collections (M39 L2) ──────────────────────────────────────────────
@@ -521,6 +532,18 @@ export interface CheckConsistencyInput {
 
 export interface ConsistencyReport extends Record<string, unknown> {
   summary: { total: number; errors: number; warnings: number };
+  /**
+   * 0.2.15 — TRUE when `limit` cut at least one bucket, so the arrays below are
+   * a slice rather than the whole answer.
+   *
+   * Explicit because the cut was previously detectable ONLY by comparing
+   * `summary` against the array lengths — `summary` counts before the filter and
+   * the arrays are sliced after it — which is a deduction, not a signal, and one
+   * every consumer had to know to make. The other budgeted operations
+   * (`get_sections`, `get_entities`, `get_page`) have carried an explicit flag
+   * since M39; this brings the collection operations into line with them.
+   */
+  truncated: boolean;
 }
 
 // ── The core ────────────────────────────────────────────────────────────────

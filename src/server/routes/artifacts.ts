@@ -175,7 +175,21 @@ function buildPlanAdapter(deps: ArtifactsRouterDeps): ArtifactKindAdapter {
       if (frontmatter.applied !== undefined && applied === undefined) {
         throw new DomainError('VALIDATION', 'applied must be a boolean');
       }
-      const p = await plans.updateFrontmatter({ path, patch: { title, applied }, changedBy: 'user' });
+      /**
+       * 0.2.15 — `threadId: null`, and deliberately not the plan's most recently
+       * attached thread.
+       *
+       * This route is outside any thread's scope; there IS no author thread to
+       * name. Substituting the last attach would publish a `plan:updated` whose
+       * `threadId` is a guess that reads exactly like a fact, and consumers key
+       * cache invalidation off `planPath` anyway.
+       */
+      const p = await plans.updateFrontmatter({
+        path,
+        patch: { title, applied },
+        changedBy: 'user',
+        threadId: null,
+      });
       return { path: p.path, frontmatter: p.frontmatter, body: p.body, content: p.content, hash: p.hash };
     },
     // Not the client's actual creation path (see file header) — delegates to

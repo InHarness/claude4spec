@@ -16,7 +16,14 @@ export interface EntityChipProps<T> {
   onOpen?: () => void;
 }
 
-export interface EntityCardProps<T> extends EntityChipProps<T> {}
+export interface EntityCardProps<T> extends EntityChipProps<T> {
+  /**
+   * 0.2.15 — the `caption` written on THIS `<single_element/>` reference.
+   * Advisory prose belonging to the reference, not to the entity, so it is
+   * never synced back and is absent whenever the tag omitted it.
+   */
+  caption?: string;
+}
 
 export interface EntityDetailProps {
   slug: string;
@@ -29,10 +36,16 @@ export interface EntityDef<T = unknown> {
   type: EntityType;
   label: string;
   labelPlural: string;
-  renderRow: ComponentType<EntityRowProps<T>>;
+  /** 0.2.15 — optional: an `embedOnly` type has no list row. */
+  renderRow?: ComponentType<EntityRowProps<T>>;
   renderChip: ComponentType<EntityChipProps<T>>;
   renderCard: ComponentType<EntityCardProps<T>>;
-  detailPanel: ComponentType<EntityDetailProps>;
+  /** 0.2.15 — optional: an `embedOnly` type has no detail route. */
+  detailPanel?: ComponentType<EntityDetailProps>;
+  /** 0.2.15 — see `FrontendModule.embedOnly`. */
+  embedOnly?: boolean;
+  /** 0.2.15 — required when `embedOnly`; read-only fullscreen surface. */
+  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
   useGetBySlug: (slug: string | null) => { data: T | null | undefined; isLoading: boolean };
 }
 

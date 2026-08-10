@@ -62,19 +62,12 @@ export const spreadsheetEntity: EntityContribution = {
   backend: {
     mcpServer: (_service: unknown, ctx: MountContext) => createSpreadsheetMcpServer(ctx),
   },
-  frontend: {
-    /**
-     * M19 Slot B — `<spreadsheet slug caption/>` in a page. `entityType` is
-     * injected from `module.type` by the registry, so the tag gets broken-
-     * reference detection in `check_consistency` for free.
-     */
-    referenceType: {
-      tag: SPREADSHEET_TYPE,
-      attrOrder: [...SPREADSHEET_ATTR_ORDER],
-      validate: (attrs: Record<string, string>) => {
-        const ok = typeof attrs.slug === 'string' && attrs.slug.trim().length > 0;
-        return { ok, category: ok ? 'ok' : 'missing-slug' };
-      },
-    },
-  },
+  /*
+   * 0.2.15 — the `frontend.referenceType` slot is gone from the host, and with
+   * it `<spreadsheet slug caption/>`. A sheet is embedded like any other entity:
+   * `<single_element type="spreadsheet" slug="…" caption="…"/>` for the grid,
+   * `<inline_mention type="spreadsheet" slug="…"/>` for the chip. Broken-
+   * reference detection comes from the generic `type=` path instead of a
+   * per-tag `validate`, so it is not lost by the removal.
+   */
 } as EntityContribution;

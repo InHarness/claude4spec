@@ -19,7 +19,12 @@ export function ChipResolver({
 }: {
   type: string;
   slug: string;
-  onOpen: () => void;
+  /**
+   * 0.2.15 — optional, matching `EntityChipProps.onOpen`. `undefined` is the
+   * "clicking does nothing" case: a broken reference, or an embed-only type
+   * rendered where no overlay host is mounted.
+   */
+  onOpen?: () => void;
 }) {
   const def = getEntityDef(type)!;
   const { data, isLoading } = def.useGetBySlug(slug);

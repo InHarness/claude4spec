@@ -119,7 +119,7 @@ If after filtering nothing substantive remains in a release, say so explicitly: 
 | Error code | Action |
 |------------|--------|
 | `BRIEF_CONFLICT` | Re-`get_brief`, reconcile, retry once. If conflict persists, ask the user to reconcile manually. |
-| `BRIEF_FRONTMATTER_IMMUTABLE` | Your `content` accidentally altered frontmatter. Strip the YAML header — `update_brief` always preserves the existing frontmatter. |
+| `IMMUTABLE_FIELD` | Your `content` accidentally altered frontmatter. Strip the YAML header — `update_brief` always preserves the existing frontmatter. |
 | `BRIEF_ARCHIVED` | The user archived this brief. Inform the user and stop editing until they unarchive. |
 | `MISSING_TARGET` | `insert_after_section` requires `anchor` or `heading`. Re-issue with one of them. |
 | `AMBIGUOUS_HEADING` | Two sections share the same heading text — switch to `anchor`. |

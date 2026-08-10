@@ -97,6 +97,22 @@ export interface PlanUpdateInput {
   heading?: string;
   /** Required on the first call in a thread (creates the file) — MISSING_TITLE otherwise. */
   title?: string;
+  /**
+   * 0.2.15 — the optimistic-concurrency guard, REQUIRED by the operation on
+   * every call except the first one in a thread (which creates the file and has
+   * nothing to be stale against).
+   *
+   * Optional in this TYPE rather than required, because the create branch is the
+   * documented exemption and a required field would have to be faked there. The
+   * enforcement that matters — refusing a call that omits it against an existing
+   * plan — lives in {@link PlanService.update}, so it applies to every channel
+   * rather than to whichever one remembered to check.
+   *
+   * A plan has SEVERAL concurrent writers (an agent turn, a `user_edit` from the
+   * UI, an N:1 model attach), which is precisely why last-write-wins was losing
+   * content quietly here and is tolerated for, say, a tag assignment.
+   */
+  expectedHash?: string;
   changeSummary?: string;
   changedBy: PlanChangedBy;
 }
@@ -104,6 +120,13 @@ export interface PlanUpdateInput {
 export interface PlanUpdateResult {
   plan: Plan;
   version: number;
+  /**
+   * 0.2.15 — sha256 of the content just written. The caller needs it to arm the
+   * NEXT call's `expectedHash`; without it every write would have to be followed
+   * by a read, and the window between the two is exactly the race the guard
+   * exists to close.
+   */
+  hash: string;
 }
 
 export interface PlanUpdateContentOpts {
@@ -118,6 +141,17 @@ export interface PlanUpdateFrontmatterOpts {
   path: string;
   patch: { title?: string; applied?: boolean };
   changedBy: PlanChangedBy;
+  /**
+   * 0.2.15 — the thread that CAUSED this write, or `null` when the caller has
+   * none (the generic `PATCH …/frontmatter` route).
+   *
+   * Required rather than optional so every caller states it. It used to be
+   * derived here, via `findLastThreadIdForPlan`, which meant a REST write with
+   * no thread behind it was published as having been made by whichever thread
+   * happened to attach last — a plausible-looking attribution that was simply
+   * false, and indistinguishable from a true one downstream.
+   */
+  threadId: string | null;
 }
 
 /** Input of {@link PlanService.setAppliedByThread} — the `mark_plan_applied` operation. */
@@ -292,8 +326,18 @@ export class PlanService {
    * would otherwise silently clobber each other.
    */
   async update(input: PlanUpdateInput): Promise<PlanUpdateResult> {
-    const { threadId, planPath: addressed, action, content, anchor, heading, title, changeSummary, changedBy } =
-      input;
+    const {
+      threadId,
+      planPath: addressed,
+      action,
+      content,
+      anchor,
+      heading,
+      title,
+      expectedHash,
+      changeSummary,
+      changedBy,
+    } = input;
     /**
      * An explicitly addressed plan must EXIST — this path does not create one.
      * Creation is thread-bound by design (§7: "a plan is born only from a
@@ -359,10 +403,35 @@ export class PlanService {
         });
         this.deps.chatService.attachPlanToThread(threadId, planPath);
         this.deps.ws.broadcast({ kind: 'plan:updated', planPath, threadId, version, changedBy });
-        return { plan, version };
+        return { plan, version, hash: plan.hash };
       }
 
       const current = await this.getByPath(existingPath);
+      /**
+       * 0.2.15 — the guard, enforced HERE rather than in each channel's schema.
+       *
+       * Two refusals, and they mean different things. A MISSING hash is a caller
+       * that never armed the guard at all: `INVALID_ARGUMENT`, because no retry
+       * of the same call can succeed — it has to go read the plan first. A
+       * MISMATCHED hash is a caller that armed it correctly and lost the race:
+       * `PLAN_CONFLICT` (409) carrying the current hash, which is exactly what
+       * the retry needs.
+       *
+       * Note what this does NOT accept: a hash the implementation read for the
+       * caller a moment ago. Substituting `current.hash` here would satisfy every
+       * schema and every test while guarding nothing at all — the value has to
+       * come from the caller's own earlier read to mean anything.
+       */
+      if (typeof expectedHash !== 'string' || expectedHash.length === 0) {
+        throw new DomainError(
+          'INVALID_ARGUMENT',
+          'expectedHash is required when updating an existing plan',
+          'read the plan first with get_plan and pass back its `hash`',
+        );
+      }
+      if (expectedHash !== current.hash) {
+        throw new ConflictError('PLAN_CONFLICT', 'plan changed since last read', current.hash);
+      }
       const finalContent = injectAnchors(composeContent(current.body, action, content, anchor, heading));
       const fullContent = matter.stringify(finalContent, current.frontmatter as Record<string, unknown>);
       const abs = this.absPath(existingPath);
@@ -382,7 +451,7 @@ export class PlanService {
       const version = this.currentVersionFor(existingPath);
       const plan = await this.getByPath(existingPath);
       this.deps.ws.broadcast({ kind: 'plan:updated', planPath: existingPath, threadId, version, changedBy });
-      return { plan, version };
+      return { plan, version, hash: plan.hash };
     });
   }
 
@@ -435,10 +504,13 @@ export class PlanService {
    *    is not a family-wide rule.
    *  - **`plan:updated` is still emitted**, so the `/plans` list and the detail
    *    header refresh their badge without a reload. `version` carries the
-   *    SAME value as before the write, which follows from the rule above.
-   *    `threadId` is best-effort: this write arrives over REST, which has no
-   *    thread, so the plan's most recent attached thread stands in (`''` when
-   *    the plan has none) — consumers key off `planPath`.
+   *    SAME value as before the write, which follows from the rule above — a
+   *    consumer must not infer a new version from having received the event.
+   *
+   * 0.2.15 — `threadId` is passed IN, never derived here. See
+   * {@link PlanUpdateFrontmatterOpts.threadId}: `mark_plan_applied` supplies the
+   * calling thread, the generic REST frontmatter route supplies `null`.
+   * Consumers key cache invalidation off `planPath` regardless.
    */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
     return this.withLock(opts.path, async () => {
@@ -459,7 +531,7 @@ export class PlanService {
       this.deps.ws.broadcast({
         kind: 'plan:updated',
         planPath: opts.path,
-        threadId: this.deps.chatService.findLastThreadIdForPlan(opts.path) ?? '',
+        threadId: opts.threadId,
         version: updated.currentVersion,
         changedBy: opts.changedBy,
       });
@@ -509,7 +581,13 @@ export class PlanService {
     if ((current.frontmatter.applied === true) === input.applied) {
       return { path: planPath, applied: input.applied };
     }
-    await this.updateFrontmatter({ path: planPath, patch: { applied: input.applied }, changedBy: 'agent' });
+    // The caller's own thread: `mark_plan_applied` is always made from one.
+    await this.updateFrontmatter({
+      path: planPath,
+      patch: { applied: input.applied },
+      changedBy: 'agent',
+      threadId,
+    });
     return { path: planPath, applied: input.applied };
   }
 

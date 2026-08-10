@@ -54,8 +54,13 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
     pathPrefix: `/${def.type}s`,
     renderChip: def.renderChip,
     renderCard: def.renderCard,
-    renderRow: def.renderRow,
-    detailPanel: def.detailPanel,
+    // 0.2.15 — spread rather than assign: an `embedOnly` def supplies neither
+    // slot, and writing `renderRow: undefined` would make the key present with
+    // an undefined value, which is not the same as absent to `assertSlotShapes`.
+    ...(def.renderRow ? { renderRow: def.renderRow } : {}),
+    ...(def.detailPanel ? { detailPanel: def.detailPanel } : {}),
+    ...(def.embedOnly ? { embedOnly: true as const } : {}),
+    ...(def.renderOverlay ? { renderOverlay: def.renderOverlay } : {}),
     useGetBySlug: def.useGetBySlug,
     // Legacy registerEntity() callers don't supply tag-list APIs; return empty.
     listByTags: async () => [],

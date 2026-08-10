@@ -72,11 +72,34 @@ export interface FrontendModule extends EntityModuleManifest {
   /** L8 — full card rendered by SingleElementView. */
   renderCard: ComponentType<EntityCardProps<unknown>>;
 
-  /** L8 — list row rendered by ElementListView / TaggedListView. */
-  renderRow: ComponentType<EntityRowProps<unknown>>;
+  /**
+   * L8 — list row rendered by ElementListView / TaggedListView.
+   *
+   * 0.2.15 — OPTIONAL, and absent on an `embedOnly` type. A hidden entity has
+   * no row, so `<element_list/>` and `<tagged_list/>` of that type are
+   * unsupported BY CONTRACT rather than by accident: the list views say so
+   * inline instead of rendering an empty slot.
+   */
+  renderRow?: ComponentType<EntityRowProps<unknown>>;
 
-  /** L5 — entity detail panel (sidebar). */
-  detailPanel: ComponentType<EntityDetailProps>;
+  /** L5 — entity detail panel (sidebar). Absent on an `embedOnly` type, which
+   *  has no detail route to open. */
+  detailPanel?: ComponentType<EntityDetailProps>;
+
+  /**
+   * 0.2.15 — a HIDDEN entity: no `sidebarTab`, no detail route. It exists only
+   * as something a page embeds (`diagram`, `spreadsheet`). It must supply
+   * `renderCard`, `renderChip` and `renderOverlay`, and must NOT supply
+   * `renderRow` / `detailPanel`. Clicking its chip opens the overlay rather
+   * than navigating, because there is nowhere to navigate to.
+   */
+  embedOnly?: boolean;
+
+  /**
+   * 0.2.15 — read-only fullscreen surface opened from a chip or card of an
+   * `embedOnly` type. Required when `embedOnly` is set, meaningless otherwise.
+   */
+  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
 
   /** TanStack Query hook for resolving an entity by slug. */
   useGetBySlug: (

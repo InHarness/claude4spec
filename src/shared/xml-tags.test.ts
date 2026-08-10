@@ -103,29 +103,76 @@ describe('extension reference types', () => {
   });
 });
 
-describe('diagram reference (v0.1.64 — 7th extension type)', () => {
-  it('parses and roundtrip-serializes a self-closing <diagram/> reference', () => {
-    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'] });
-
-    const md = 'see <diagram slug="auth-flow" caption="Auth flow"/> below';
+/**
+ * 0.2.15 — a hidden entity (`diagram`, `spreadsheet`) is referenced through the
+ * SAME generic tags as every other type. What used to be `<diagram slug caption/>`
+ * is `<single_element type="diagram" slug caption/>`, and nothing about the tag's
+ * handling is special-cased on the type any more.
+ */
+describe('hidden entity types carry no tag of their own', () => {
+  it('parses and roundtrip-serializes a captioned single_element for a hidden type', () => {
+    const md = 'see <single_element type="diagram" slug="auth-flow" caption="Auth flow"/> below';
     const tags = parseXmlTags(md);
     expect(tags).toHaveLength(1);
-    expect(tags[0]!.kind).toBe('diagram');
-    expect(tags[0]!.source).toBe('extension');
-    expect(tags[0]!.attrs).toEqual({ slug: 'auth-flow', caption: 'Auth flow' });
+    expect(tags[0]!.kind).toBe('single_element');
+    expect(tags[0]!.source).toBe('core');
+    expect(tags[0]!.attrs).toEqual({ type: 'diagram', slug: 'auth-flow', caption: 'Auth flow' });
 
-    expect(serializeXmlTag('diagram', { slug: 'auth-flow', caption: 'Auth flow' })).toBe(
-      '<diagram slug="auth-flow" caption="Auth flow"/>',
-    );
+    expect(
+      serializeXmlTag('single_element', { type: 'diagram', slug: 'auth-flow', caption: 'Auth flow' }),
+    ).toBe('<single_element type="diagram" slug="auth-flow" caption="Auth flow"/>');
   });
 
-  it('matches the diagram entity by slug (type encoded in the tag name, no type attr)', () => {
-    registerExtensionReferenceType({ tag: 'diagram', attrOrder: ['slug', 'caption'] });
-    const [tag] = parseXmlTags('<diagram slug="auth-flow" caption="x"/>');
+  it('matches the entity by the type attribute, like any other reference', () => {
+    const [tag] = parseXmlTags('<single_element type="diagram" slug="auth-flow" caption="x"/>');
     expect(tagMatchesEntity(tag!, 'diagram', 'auth-flow')).toBe(true);
     expect(tagMatchesEntity(tag!, 'diagram', 'other')).toBe(false);
     expect(tagMatchesEntity(tag!, 'dto', 'auth-flow')).toBe(false);
     expect(extractSlugs(tag!)).toEqual(['auth-flow']);
+  });
+
+  it('a bare <diagram/> is no longer a reference at all — it parses to nothing', () => {
+    // The tag is not registered and never will be; it survives in a page as
+    // literal text rather than being silently reinterpreted.
+    expect(parseXmlTags('<diagram slug="auth-flow" caption="x"/>')).toEqual([]);
+  });
+});
+
+describe('single_element caption', () => {
+  /**
+   * The round-trip invariant the caption attribute is subject to: a tag written
+   * WITHOUT a caption must not acquire `caption=""` on the way back out. The
+   * serializer skips empty values; the matching half is the tiptap attribute's
+   * `default: null` (see `xmlNodes.ts`), since `mergeAttributes` keeps an empty
+   * string but drops a null.
+   */
+  it('is omitted entirely when absent or empty', () => {
+    expect(serializeXmlTag('single_element', { type: 'dto', slug: 'user' })).toBe(
+      '<single_element type="dto" slug="user"/>',
+    );
+    expect(serializeXmlTag('single_element', { type: 'dto', slug: 'user', caption: '' })).toBe(
+      '<single_element type="dto" slug="user"/>',
+    );
+    expect(
+      serializeXmlTag('single_element', { type: 'dto', slug: 'user', caption: null }),
+    ).toBe('<single_element type="dto" slug="user"/>');
+  });
+
+  it('serializes after the slug, and escapes a quote', () => {
+    expect(
+      serializeXmlTag('single_element', { type: 'dto', slug: 'user', caption: 'the "user" shape' }),
+    ).toBe('<single_element type="dto" slug="user" caption="the &quot;user&quot; shape"/>');
+  });
+
+  it('applies to ANY type, not only the hidden ones', () => {
+    const [tag] = parseXmlTags('<single_element type="endpoint" slug="get-user" caption="Read path"/>');
+    expect(tag!.attrs.caption).toBe('Read path');
+  });
+
+  it('is NOT an attribute of inline_mention — a chip has no room for prose', () => {
+    expect(
+      serializeXmlTag('inline_mention', { type: 'dto', slug: 'user', caption: 'ignored' }),
+    ).toBe('<inline_mention type="dto" slug="user"/>');
   });
 });
 

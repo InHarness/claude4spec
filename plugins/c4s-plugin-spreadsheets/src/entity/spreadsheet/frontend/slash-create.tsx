@@ -26,15 +26,21 @@ import { SPREADSHEET_POPOVER_KIND, SPREADSHEET_TYPE } from '../../../identity.js
 export { SPREADSHEET_POPOVER_KIND };
 
 /**
- * Insert the type's OWN node, not the generic `single_element` embed.
+ * 0.2.15 — insert the GENERIC block embed.
  *
- * `insertEmbed` in the kit inserts the entity-chip node, which is right for a
- * type whose embed is a card. A spreadsheet's embed is a grid with its own
- * attributes (`slug`, `caption`) and its own node view, so it goes in as
- * `<spreadsheet/>`.
+ * This used to insert the type's own `<spreadsheet/>` node, on the grounds that
+ * a spreadsheet's embed is a grid rather than a card. That distinction is gone:
+ * the grid IS the card now (`renderCard`), reached through
+ * `<single_element type="spreadsheet" slug="…"/>` like every other entity. The
+ * `caption` attribute is omitted rather than set to null, so a freshly inserted
+ * tag never carries an empty one.
  */
 function insertSpreadsheet(editor: EmbedEditor, slug: string): void {
-  editor.chain().focus().insertContent({ type: SPREADSHEET_TYPE, attrs: { slug, caption: null } }).run();
+  editor
+    .chain()
+    .focus()
+    .insertContent({ type: 'single_element', attrs: { type: SPREADSHEET_TYPE, slug } })
+    .run();
 }
 
 const DEFAULT_ROWS = 5;

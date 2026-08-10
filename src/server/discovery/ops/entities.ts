@@ -311,5 +311,6 @@ export function resolveIdentity(deps: DiscoveryDeps, input: ResolveIdentityInput
   const limit = input.limit ?? DEFAULT_LIMITS.resolveIdentity;
   return {
     candidates: candidates.slice(0, limit).map(({ type, slug, label, score }) => ({ type, slug, label, score })),
+    truncated: candidates.length > limit,
   };
 }

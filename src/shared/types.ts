@@ -16,6 +16,15 @@ export interface PageContent {
   path: string;
   frontmatter: Record<string, unknown>;
   body: string;
+  /**
+   * 0.2.15 — sha256 of the FULL file (frontmatter included) as read.
+   *
+   * Added because `expectedHash` became mandatory on `update_page`: a reader
+   * that cannot obtain a hash has no legal way to write. The editor is the
+   * caller this is for — it reads through this shape and had, until now, nothing
+   * to arm the guard with, which is why the guard had been left optional.
+   */
+  hash: string;
 }
 
 /**
@@ -54,10 +63,25 @@ export type WsEvent =
   | { kind: 'todos:changed'; rootId?: string; pagePath?: string }
   | { kind: 'pageLinks:changed'; rootId?: string; sourcePath?: string }
   | { kind: 'page:renamed'; from: string; to: string }
+  /**
+   * A plan changed. `planPath` is the routing key AND the only cache-invalidation
+   * key — `threadId` never is, and must not be used as one.
+   *
+   * 0.2.15 — `threadId` is NULLABLE, and means the AUTHOR of this write, not the
+   * owner of the plan. A plan has no owning thread: several can attach to one
+   * (N:1), and the generic `PATCH /api/artifacts/plan/…/frontmatter` route has
+   * no thread at all. `null` is the single representation of "no thread" — an
+   * empty string is forbidden, and substituting the most-recently-attached
+   * thread is forbidden too, because a consumer cannot tell a real author from
+   * a guess and will attribute the write to someone who did not make it.
+   *
+   * Also emitted for a frontmatter-only write, which does NOT bump `version` —
+   * so a consumer cannot infer a new version from having received the event.
+   */
   | {
       kind: 'plan:updated';
       planPath: string;
-      threadId: string;
+      threadId: string | null;
       version: number;
       changedBy: 'agent' | 'user' | 'system';
     }

@@ -6,6 +6,7 @@ import { useEditorBridge } from '../../EditorContext.js';
 import type { EntityType } from '../../../../shared/entities.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
+import { NotListable } from './NotListable.js';
 
 type Listed = { slug: string };
 
@@ -38,6 +39,16 @@ export function TaggedListView(props: NodeViewProps) {
       </NodeViewWrapper>
     );
   }
+
+  // 0.2.15 — an embed-only type has no row (see NotListable).
+  if (!def.renderRow) {
+    return (
+      <NodeViewWrapper className="my-3" contentEditable={false} onClickCapture={altCapture}>
+        <NotListable type={type} label={def.labelPlural} />
+      </NodeViewWrapper>
+    );
+  }
+  const RowComp = def.renderRow;
 
   return (
     <NodeViewWrapper className="my-3" contentEditable={false} onClickCapture={altCapture}>
@@ -83,7 +94,6 @@ export function TaggedListView(props: NodeViewProps) {
           )}
           {results.map((entity: Listed) => {
             const slug = entity.slug;
-            const RowComp = def.renderRow;
             return (
               <li key={slug}>
                 <RowComp

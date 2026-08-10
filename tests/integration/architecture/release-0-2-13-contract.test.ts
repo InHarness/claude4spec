@@ -642,7 +642,7 @@ describe('a page is written by an operation, not by a file tool', () => {
     const { CATALOG } = await import('../../../src/server/operations/catalog.js');
     const { registerCoreOperations } = await import('../../../src/server/operations/core-operations.js');
     registerCoreOperations();
-    for (const name of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+    for (const name of ['create_page', 'update_page', 'delete_page', 'update_sections']) {
       const op = CATALOG.get(name);
       expect(op, `${name} is not in the catalog`).toBeDefined();
       expect(op!.opClass, name).toBe('write');
@@ -719,7 +719,7 @@ describe('a page is written by an operation, not by a file tool', () => {
      * it has to name all four operations for the sentence to be actionable.
      */
     const ctx = read('src/server/services/chat-context.ts');
-    for (const op of ['create_page', 'update_page', 'delete_page', 'update_section']) {
+    for (const op of ['create_page', 'update_page', 'delete_page', 'update_sections']) {
       expect(ctx, `the path-scope block never names ${op}`).toContain(op);
     }
   });

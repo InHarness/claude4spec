@@ -41,9 +41,19 @@ export function DiagramFullscreen({ svg, caption, onClose }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  /**
+   * Re-fit when the SVG ARRIVES, not only on mount.
+   *
+   * 0.2.15: the overlay is opened from an event carrying `{ slug, caption }` —
+   * so a chip in chat, which never rendered an SVG, can open it too — and the
+   * markup is rendered afterwards. Fitting on mount alone therefore measured an
+   * empty stage and silently did nothing, leaving the diagram at 100% in the top
+   * left of a full-screen surface. `fitToScreen` already returns early when
+   * there is no `<svg>` yet, so this is the run that does the work.
+   */
   useLayoutEffect(() => {
     fitToScreen();
-  }, []);
+  }, [svg]);
 
   function fitToScreen() {
     const stage = stageRef.current;

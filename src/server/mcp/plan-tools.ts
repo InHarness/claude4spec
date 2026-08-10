@@ -82,7 +82,15 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
             path: plan.path,
             title: plan.frontmatter.title,
             content: plan.body,
+            applied: plan.frontmatter.applied ?? false,
             currentVersion: plan.currentVersion,
+            /**
+             * 0.2.15 — `hash` is here because `update_plan` now REQUIRES it, and
+             * this is the only way to obtain one before the first edit of a
+             * session. A read operation that cannot arm the write operation's
+             * guard leaves the caller no legal first move.
+             */
+            hash: plan.hash,
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
           },
@@ -103,7 +111,9 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       '- insert_after_section: insert a fragment after a target section (body of that section ends before the next heading of equal/higher level). Requires `anchor` or `heading`. Fails with SECTION_NOT_FOUND when the target matches nothing, AMBIGUOUS_HEADING when a `heading` matches several sections, and AMBIGUOUS_ANCHOR when an `anchor` does — an anchor names exactly one section, so a duplicate is a defect to fix in the plan, not a target to guess at.',
       'Section anchors (nanoid-8 HTML comments) are auto-injected into new headings before persisting, unique within THIS plan file — a plan anchor equal to some page section anchor is not a collision, because the two live in separate stores and are resolved separately. A duplicate anchor pasted in by hand does not block the write; it only makes insert_after_section against it ambiguous.',
       'On the FIRST call in a thread (no plan attached yet), `title` is REQUIRED — it creates the plan file (slug = slugify(title), immutable — a later title change edits frontmatter only, it never renames the file). Omitting `title` on the first call fails with MISSING_TITLE.',
-      'Each call captures a new version in the shared file_version log and bumps `currentVersion`. Versions are linear, last-write-wins.',
+      '`expectedHash` is REQUIRED on every call EXCEPT that first, creating one: pass the `hash` from get_plan or from your previous update_plan. Omitting it fails INVALID_ARGUMENT; a stale value fails PLAN_CONFLICT (409) carrying the current hash. A plan has several concurrent writers (this thread, the UI, an attach), so a write without the guard silently drops someone else\'s edit.',
+      'Returns { path, version, hash } — the hash to arm your next call. The plan content does not come back; you already have it.',
+      'Each call captures a new version in the shared file_version log.',
       'Available in plan_mode=true (preferred) and plan_mode=false.',
       'This tool cannot change `applied` — use `mark_plan_applied`.',
     ].join('\n'),
@@ -114,6 +124,19 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
       anchor: z.string().optional(),
       heading: z.string().optional(),
       title: z.string().optional(),
+      /**
+       * Optional in the SCHEMA, required by the OPERATION on every call but the
+       * first. The exemption is real (a plan being created has nothing to be
+       * stale against) and cannot be expressed in a zod shape, so the check
+       * lives in `PlanService.update` where it applies to every channel.
+       */
+      expectedHash: z
+        .string()
+        .optional()
+        .describe(
+          'sha256 of the plan as you last read it (`hash` from get_plan or a previous update_plan). ' +
+            'REQUIRED except on the first call in a thread, which creates the plan.',
+        ),
       changeSummary: z.string(),
     },
     async (args) => {
@@ -127,13 +150,22 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
           anchor: typeof args.anchor === 'string' ? args.anchor : undefined,
           heading: typeof args.heading === 'string' ? args.heading : undefined,
           title: typeof args.title === 'string' ? args.title : undefined,
+          expectedHash: typeof args.expectedHash === 'string' ? args.expectedHash : undefined,
           changeSummary: String(args.changeSummary ?? ''),
           changedBy: 'agent',
         });
+        /**
+         * 0.2.15 (echo-free) — the address of the effect, the timeline, and the
+         * one unpredictable delta.
+         *
+         * `planPath` became `path` (every other operation calls it that),
+         * `currentVersion` went (it duplicated `version`), and `hash` arrived
+         * because the caller cannot arm its next `expectedHash` without it.
+         */
         return ok({
-          planPath: result.plan.path,
+          path: result.plan.path,
           version: result.version,
-          currentVersion: result.plan.currentVersion,
+          hash: result.hash,
         }, 'update_plan');
       } catch (err) {
         return fail(err);

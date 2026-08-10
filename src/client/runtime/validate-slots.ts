@@ -20,14 +20,13 @@ export interface SlotValidation {
 }
 
 function structurallyValid(m: FrontendModule): SlotValidation {
-  const slots: Array<keyof FrontendModule> = [
-    'renderChip',
-    'renderCard',
-    'renderRow',
-    'detailPanel',
-    'useGetBySlug',
-    'listByTags',
-  ];
+  // 0.2.15 — mirrors `assertSlotShapes` in the client plugin host: an
+  // `embedOnly` type has no row and no detail panel to require, and owes a
+  // `renderOverlay` instead. The two lists must stay in step; a plugin that
+  // passes one door and fails the other is the drift this comment guards.
+  const slots: Array<keyof FrontendModule> = m.embedOnly
+    ? ['renderChip', 'renderCard', 'renderOverlay', 'useGetBySlug', 'listByTags']
+    : ['renderChip', 'renderCard', 'renderRow', 'detailPanel', 'useGetBySlug', 'listByTags'];
   for (const slot of slots) {
     if (typeof m[slot] !== 'function') {
       return { ok: false, reason: `slot "${String(slot)}" is not a function` };

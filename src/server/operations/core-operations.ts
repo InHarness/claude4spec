@@ -366,7 +366,7 @@ export function registerCoreOperations(): void {
   // strength of living on a host-owned server.
   //
   // Addressing is `(rootId, relPath)` — a root is part of a page's identity,
-  // not a filter over one namespace — except `update_section`, which addresses
+  // not a filter over one namespace — except `update_sections`, which addresses
   // by anchor because an anchor is globally unique and already carries its root.
   //
   // The `cli` cells say `direct` with no `c4s` command behind them, and that is
@@ -398,16 +398,22 @@ export function registerCoreOperations(): void {
   });
 
   /**
-   * `expectedHash` — optional in the schema, honoured identically by all four
-   * channels. Optional rather than required because the editor does not send
-   * one and requiring it would break page saving; the brief calls the guard
-   * "part of the operation contract", not mandatory. Filed as a patch.
+   * `expectedHash` — REQUIRED as of 0.2.15, honoured identically by all four
+   * channels.
+   *
+   * It was optional here, with a note that requiring it would break page saving
+   * because the editor did not send one. That was true and is no longer: the
+   * editor could not send one because `GET /api/pages/:rootId/*` did not return
+   * a hash at all. It does now, so the reason the guard was optional is gone
+   * and the guard is mandatory — enforced in `services/page-write.ts` rather
+   * than per channel, since a guard only some doors apply is not a guard.
    */
   const expectedHash = {
     expectedHash: z
       .string()
-      .optional()
-      .describe('sha256 of the file as last read. Mismatch → PAGE_CONFLICT carrying the current hash.'),
+      .describe(
+        'REQUIRED. sha256 of the file as last read. Missing → INVALID_ARGUMENT; mismatch → PAGE_CONFLICT carrying the current hash.',
+      ),
   };
 
   CATALOG.register(
@@ -427,7 +433,7 @@ export function registerCoreOperations(): void {
       'Write a page in full — body plus optional frontmatter. Create-or-replace: absent pages are created, which is how the editor saves a new one.',
       { rootId: z.string(), path: z.string(), body: z.string(), frontmatter: z.record(z.string(), z.unknown()).optional(), ...expectedHash },
       true,
-      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+      ['PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
     ),
   );
 
@@ -443,11 +449,22 @@ export function registerCoreOperations(): void {
 
   CATALOG.register(
     pageWrite(
-      'update_section',
-      'Replace one section\'s body, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model.',
-      { anchor: z.string(), content: z.string(), ...expectedHash },
-      true,
-      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND'],
+      'update_sections',
+      'Edit one or more sections of ONE page, addressed by anchor. A convenience over update_page — read-modify-write of the whole page with the same primitive — not a separate store, and not a structural gap in the model. TRANSACTIONAL: the single exception to the partial-success rule, because every edit rewrites the same file. Applied bottom-up whatever order they arrive in.',
+      {
+        ...expectedHash,
+        edits: z.array(
+          z.object({
+            anchor: z.string(),
+            action: z.enum(['replace', 'append', 'insert_after', 'delete']),
+            content: z.string().optional(),
+          }),
+        ).min(1),
+      },
+      // `replace` and `delete` are idempotent; `append` and `insert_after` are
+      // not, so the operation as a whole cannot claim to be.
+      false,
+      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
     ),
   );
 
@@ -478,10 +495,21 @@ export function registerCoreOperations(): void {
     inputSchema: {
       path: z.string().optional(),
       title: z.string().optional().describe('Required when the thread has no plan yet — this call creates it.'),
-      mode: z.enum(['replace', 'append', 'insert_after_section']).optional(),
+      // 0.2.15: named `action`, matching every rendering. The row said `mode`,
+      // which no channel ever accepted.
+      action: z.enum(['replace', 'append', 'insert_after_section']),
       content: z.string(),
+      /**
+       * 0.2.15 — required by the operation on every call EXCEPT the first one in
+       * a thread, which creates the plan and has nothing to be stale against.
+       * A zod shape cannot say "required unless", so the enforcement lives in
+       * `PlanService.update`; `.optional()` here would otherwise read as the
+       * guard being optional, which it is not.
+       */
+      expectedHash: z.string().optional().describe('REQUIRED except on the call that creates the plan.'),
+      changeSummary: z.string(),
     },
-    errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION'],
+    errorCodes: ['NOT_FOUND', 'MISSING_TITLE', 'PLAN_CONFLICT', 'VALIDATION', 'INVALID_ARGUMENT'],
     sideEffects: ['file', 'db', 'ui-notify'],
     idempotent: false,
     channels: fullParity(),
@@ -508,7 +536,16 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'IMMUTABLE_FIELD', 'VALIDATION'],
+    /**
+     * 0.2.15 — `IMMUTABLE_FIELD` is GONE from this row: it was unreachable.
+     * The shape accepts only `path` and `applied`, and `updateFrontmatter`
+     * copies only `title`/`applied` forward, so no argument to this operation
+     * can reach the immutability guard. A code no parameter can provoke is a
+     * code to delete or a missing parameter to add — here it is the former; the
+     * guard stays reachable through the generic REST frontmatter route, which
+     * has its own row.
+     */
+    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
@@ -688,9 +725,54 @@ export function registerCoreOperations(): void {
 
   // ── M05 Agent turn ────────────────────────────────────────────────────────
 
+  /**
+   * 0.2.15 — `run_turn` is declared, and its MCP rendering is `runTransagent`.
+   *
+   * The spec has always named this operation `run_turn`; the code has always
+   * called its one rendering `runTransagent`, and the catalog knew neither — so
+   * `toolAdmittedByProfile` took the permissive branch for it, which makes an
+   * omission indistinguishable from a decision. The row closes that, and the
+   * `via` cell records the naming gap explicitly instead of leaving two names
+   * for one thing scattered across two repositories.
+   *
+   * `{ threadId, summary }` is the whole answer, on purpose: the child turn's
+   * full transcript stays in the child's own context. Echoing it upward would
+   * spend the parent's context on text the parent never asked to read, which is
+   * the entire reason the child is a separate turn.
+   *
+   * The concurrency guard is STATEFUL, not hash-based: at most ONE child per
+   * turn, because the tool call blocks until the child finishes, and a second
+   * turn on a live thread is refused with `STREAM_IN_PROGRESS` rather than
+   * queued. Batch spawn is unsupported.
+   */
+  CATALOG.register({
+    name: 'run_turn',
+    summary:
+      'Delegate a unit of work to a hidden CHILD turn of this specification, in a chosen contextType. Returns { threadId, summary } — a concise summary, never the transcript. At most one child per turn; the call blocks until the child finishes.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'turn',
+    inputSchema: {
+      contextType: z.enum(['brief', 'chat', 'patch']),
+      message: z.string(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      threadId: z.string().optional().describe('Continue an existing child rather than spawning one.'),
+    },
+    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    idempotent: false,
+    channels: {
+      internal: via('runTransagent', 'the tool of the M05 `transagent-tools` server — the spec names the operation `run_turn`, the code names its rendering `runTransagent`'),
+      mcp: via('runTransagent', 'same server, mounted for context_type ∈ {chat, patch} and stripped inside a child turn (recursion depth 1)'),
+      cli: na('no CLI surface — a child turn is spawned from within a turn'),
+      rest: na('no REST surface — the parent turn is the only caller'),
+    },
+  });
+
   CATALOG.register({
     name: 'abort_turn',
-    summary: 'Abort the running turn of a thread, addressed BY THREAD. Idempotent: aborting a thread with no live turn is a no-op, not an error. An unknown thread is THREAD_NOT_FOUND.',
+    summary:
+      'Abort the running turn of a thread, addressed BY THREAD. Answers a CONFIRMATION of the interruption — { aborted } — not the thread\'s state, which the caller can read if it wants it. Idempotent: aborting a thread with no live turn is a no-op, not an error. An unknown thread is THREAD_NOT_FOUND.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'turn',

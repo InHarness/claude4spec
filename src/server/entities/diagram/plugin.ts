@@ -38,14 +38,11 @@ export const diagramBackendModule: BackendModule = {
   backend: {
     mcpServer: () => createDiagramToolsServer(),
   },
-  // v0.1.129 (M19 Slot B) — <diagram/> as the 7th XML reference type, via the
-  // entity's own module instead of a standalone bootstrap side-effect call
-  // (see project-context.ts). `caption` is a per-reference attribute (not
-  // stored on the entity); `slug` identifies the diagram entity. `entityType`
-  // is auto-injected by `registerEntityModule` as `module.type` ('diagram').
-  frontend: {
-    referenceType: { tag: 'diagram', attrOrder: ['slug', 'caption'] },
-  },
+  // 0.2.15 — `<diagram/>` is gone. A diagram is embedded like every other
+  // entity: `<single_element type="diagram" slug="…" caption="…"/>` for the
+  // block, `<inline_mention type="diagram" slug="…"/>` for the chip. The
+  // entity brings its appearance through the client-side render slots
+  // (`renderCard` / `renderChip`), not through a tag of its own.
 };
 
 export function onRegister(registry: PluginRegistry): void {

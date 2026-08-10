@@ -4,7 +4,7 @@ import { categoriseBrokenChip } from '../core/plugin-host/host.js';
 import { SectionRefChipWithData } from '../components/SectionRefChipWithData.js';
 import { InlineBrokenChip } from '../tiptap/extensions/views/BrokenChip.js';
 import { useEditorBridge } from '../tiptap/EditorContext.js';
-import type { EntityType } from '../../shared/entities.js';
+import { openEntityHandler } from '../entities/openEntity.js';
 import type { SanitizedChip } from './xml-chip-preprocess.js';
 
 /**
@@ -66,9 +66,14 @@ export function XmlChipDispatcher({ chip }: { chip: SanitizedChip }) {
 function EntityRefChip({ type, slug }: { type: string; slug: string }) {
   const def = getEntityDef(type);
   const bridge = useEditorBridge();
+  // 0.2.15 — the same routing as in the editor: a hidden type opens its
+  // fullscreen overlay, a normal one navigates. This is the call site that
+  // motivated an EVENT rather than a bridge method — in chat there is often no
+  // `EditorBridge` at all, and a diagram chip still has to open.
+  const open = openEntityHandler(type, slug, bridge);
   if (!def) {
     const category = categoriseBrokenChip(type) ?? 'unknown-type';
     return <InlineBrokenChip category={category} type={type} slug={slug} />;
   }
-  return <ChipResolver type={type} slug={slug} onOpen={() => bridge?.openEntity(type as EntityType, slug)} />;
+  return <ChipResolver type={type} slug={slug} onOpen={open} />;
 }

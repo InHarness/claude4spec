@@ -4,7 +4,7 @@ import type { DiscoveryCore } from '../discovery/types.js';
 import { DomainError } from '../services/tags.js';
 import { errorHandler } from './errors.js';
 import { boolFlag, commaList, nonNegativeInt, positiveInt } from './query-params.js';
-import { updateSection, type SectionWriteDeps } from '../services/page-write.js';
+import { updateSections, type SectionEdit, type SectionWriteDeps } from '../services/page-write.js';
 
 export function sectionsRouter(
   sections: SectionsService,
@@ -106,8 +106,7 @@ export function sectionsRouter(
   });
 
   /**
-   * 0.2.13 (tier C-3) — the `rest` rendering of `update_section`, M06's only
-   * write.
+   * 0.2.13 (tier C-3) — the `rest` rendering of M06's only write.
    *
    * The one operation of the page-write family that had no REST route at all,
    * because it had no implementation at all: `SectionsService` wrote only to
@@ -115,24 +114,29 @@ export function sectionsRouter(
    * the same function `page-tools` calls, so the two channels cannot disagree
    * about what a section edit is.
    *
-   * `PUT` on `/:anchor` cannot shadow the static `GET /list` and `GET /get`
-   * above — Express matches method first — but it is declared after them
-   * anyway. Registration order is a contract in this repo, and a reader
-   * checking it should not have to reason about which routes are method-scoped.
+   * 0.2.15 — the operation is `update_sections` and takes a BATCH, so its REST
+   * rendering can no longer be `PUT /:anchor`: the anchor is inside the payload
+   * now, once per edit, and a URL naming one of them would be naming an
+   * arbitrary member of the set. `PUT /` addresses "the sections", which is what
+   * the batch is.
+   *
+   * Declared before the `GET /:anchor` below. `PUT` on `/` could not shadow it
+   * in any case — Express matches method first — but registration order is a
+   * contract in this repo, and a reader checking it should not have to reason
+   * about which routes are method-scoped.
    */
-  router.put('/:anchor', async (req, res, next) => {
+  router.put('/', async (req, res, next) => {
     try {
       if (!writeDeps) {
         throw new DomainError('NOT_IMPLEMENTED', 'this project mounts no writable page roots');
       }
-      const body = (req.body ?? {}) as { content?: string; expectedHash?: string };
+      const body = (req.body ?? {}) as { expectedHash?: string; edits?: SectionEdit[] };
       res.json(
-        await updateSection(
+        await updateSections(
           writeDeps,
           {
-            anchor: req.params.anchor,
-            content: body.content as string,
-            ...(body.expectedHash !== undefined ? { expectedHash: body.expectedHash } : {}),
+            expectedHash: body.expectedHash as string,
+            edits: (body.edits ?? []) as SectionEdit[],
           },
           'user',
         ),

@@ -23,7 +23,6 @@ import type {
   PluginCommandContribution,
   PluginManifest,
   PluginSettingsModule,
-  ReferenceTypeContribution,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
@@ -35,12 +34,6 @@ import {
   assertSerializationContribution,
 } from './manifest-adapter.js';
 import { attachComposition } from './composition-validation.js';
-import {
-  registerExtensionReferenceType,
-  sameExtensionReferenceSpec,
-  wouldConflictExtensionReferenceType,
-  type ExtensionReferenceType,
-} from '../../../shared/reference-extensions.js';
 
 /** Internal record: the public one plus the styles + the registered module
  *  instances, so unregister can drop styles and delete ONLY the modules this
@@ -48,7 +41,6 @@ import {
 interface InternalPluginRecord extends RegisteredPluginRecord {
   styles: WritingStyleContribution[];
   entityModules: BackendModule[];
-  referenceTypes: ReferenceTypeContribution[];
 }
 
 /** Outcome of validating + lowering a manifest, ready to commit to the registry. */
@@ -66,17 +58,6 @@ export class PluginRegistryImpl implements PluginRegistry {
   registerEntityModule(module: BackendModule): void {
     if (!module.type) {
       throw new Error('plugin-registry: module.type is required');
-    }
-    // v0.1.129 fix: validate the Slot B reference type BEFORE committing the
-    // module to `this.modules` — a caller invoking this directly (a built-in's
-    // `onRegister`, not routed through `registerPlugin`) must not end up with
-    // a live-but-half-registered module if the M19 registration would fail.
-    const slotB = module.frontend?.referenceType
-      ? { ...module.frontend.referenceType, entityType: module.type }
-      : null;
-    if (slotB) {
-      const conflict = wouldConflictExtensionReferenceType(slotB);
-      if (conflict) throw new Error(conflict);
     }
     // M13: lower declarative backend slots (service/crud/routes/mcpServer) into
     // an equivalent `mount` for every module — in-repo entities build a
@@ -99,12 +80,9 @@ export class PluginRegistryImpl implements PluginRegistry {
       module.payloadVersion,
     );
     this.modules.set(module.type, attachComposition(synthesizeMount(module), this.modules.values()));
-    // v0.1.129 (M19 Slot B) — a module owning its own XML reference tag (e.g.
-    // diagram) declares it here instead of a standalone bootstrap side-effect
-    // call; entityType is always the module's own type, never author-supplied.
-    if (slotB) {
-      registerExtensionReferenceType(slotB);
-    }
+    // 0.2.15 — nothing is forwarded to the M19 reference registry from here any
+    // more. An entity module no longer owns an XML tag; it is embedded through
+    // the generic tags, dispatched on `type=`.
   }
 
   /**
@@ -165,7 +143,6 @@ export class PluginRegistryImpl implements PluginRegistry {
 
     const settings: PluginSettingsModule = manifest.contributes.settings ?? [];
     const commands: PluginCommandContribution[] = manifest.contributes.commands ?? [];
-    const referenceTypes: ReferenceTypeContribution[] = manifest.contributes.referenceTypes ?? [];
     return {
       record: {
         name: manifest.name,
@@ -175,7 +152,6 @@ export class PluginRegistryImpl implements PluginRegistry {
         commands,
         styles,
         entityModules,
-        referenceTypes,
         onUnregister,
       },
     };
@@ -187,41 +163,14 @@ export class PluginRegistryImpl implements PluginRegistry {
 
   registerPlugin(manifest: PluginManifest): void {
     const { record } = this.validateAndLower(manifest);
-    // v0.1.129 fix: pre-validate EVERY reference-type contribution in this
-    // manifest — Slot A (record.referenceTypes) AND each entity module's own
-    // Slot B — against the live M19 registry AND against each other within
-    // this same batch, BEFORE committing anything below. Previously entity-
-    // module registration and M19 registration interleaved with no rollback:
-    // a conflict partway through a multi-entity/multi-tag manifest left
-    // earlier entity types/tags live in `this.modules`/the M19 registry with
-    // no owning `this.plugins` record — `unregisterPlugin` became a permanent
-    // no-op for them despite the whole package being reported "failed" by the
-    // loader's per-package try/catch (loader.ts / overlay-loader.ts).
-    const slotBReferenceTypes: ExtensionReferenceType[] = record.entityModules.flatMap((m) =>
-      m.frontend?.referenceType ? [{ ...m.frontend.referenceType, entityType: m.type }] : [],
-    );
-    const allReferenceTypes = [...record.referenceTypes, ...slotBReferenceTypes];
-    const batchTags = new Map<string, ExtensionReferenceType>();
-    for (const refType of allReferenceTypes) {
-      const batchDup = batchTags.get(refType.tag);
-      if (batchDup && !sameExtensionReferenceSpec(batchDup, refType)) {
-        throw new PluginManifestError(
-          `plugin "${manifest.name}" — extension reference tag "${refType.tag}" is declared twice with different definitions in the same manifest`,
-        );
-      }
-      const conflict = wouldConflictExtensionReferenceType(refType);
-      if (conflict) throw new PluginManifestError(`plugin "${manifest.name}" — ${conflict}`);
-      batchTags.set(refType.tag, refType);
-    }
-
+    // 0.2.15 — the fan-out is exactly four branches, and none of them reaches
+    // the M19 reference registry: entities → registerEntityModule (here),
+    // writingStyles → SkillRegistry, settings → the settings registry, and
+    // commands → registerEditorExtension (the last three read off the record by
+    // their own consumers). The reference-type pre-validation pass that used to
+    // guard Slot A + Slot B atomically is gone with the slots themselves.
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
-    }
-    // v0.1.129 (M19 Slot A) — external/entity-less reference tags. Committed
-    // here (not in validateAndLower) so a manifest that fails validation
-    // elsewhere never partially registers into the M19 process-global registry.
-    for (const refType of record.referenceTypes) {
-      registerExtensionReferenceType(refType);
     }
     // Re-registration (hot-reload) overwrites the prior record; Map keeps the
     // first-seen insertion order, which is what we want for stable section order.
@@ -245,12 +194,6 @@ export class PluginRegistryImpl implements PluginRegistry {
         this.modules.delete(module.type);
       }
     }
-    // NOTE: `record.referenceTypes` (M19 Slot A) are intentionally NOT dropped
-    // here — the M19 registry (`shared/reference-extensions.ts`) is a single
-    // process-global Map with no per-owner tracking or unregister primitive
-    // (unlike `this.modules`, which is keyed and drop-checked by identity
-    // above). A plugin that changes its own reference-type definition across a
-    // hot-reload will hit the fail-fast duplicate-tag guard on re-registration.
     this.plugins.delete(name);
   }
 

@@ -17,11 +17,12 @@ import type { CodeRange } from './code-ranges.js';
 /**
  * The set of tag names dispatched to dedicated NodeViews by `xml_inline` /
  * `xml_block` — DERIVED from the registries (the 6 core kinds + every
- * registered extension reference type), never a hardcoded count. Today: 8
+ * registered extension reference type), never a hardcoded count. Today: 7
  * (`inline_mention`, `single_element`, `element_list`, `tagged_list`,
- * `tagged_list_mixed`, `todo`, `section_ref`, `diagram`). Evaluated lazily so
- * extension types registered after import (e.g. `section_ref`, `diagram`) are
- * always seen.
+ * `tagged_list_mixed`, `todo`, `section_ref`). It was 8 until 0.2.15, when
+ * `diagram` stopped being a tag of its own — no entity contributes a tag any
+ * more, so every name here beyond the 6 core kinds comes from an infra module.
+ * Evaluated lazily so `section_ref`, registered after import, is always seen.
  */
 export function getDispatchAllowlist(): Set<string> {
   return new Set<string>([

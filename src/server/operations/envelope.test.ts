@@ -21,9 +21,9 @@ describe('response-size telemetry', () => {
     process.env.C4S_RESPONSE_SIZE = '1';
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const payload = { anchor: 'aaaa1111', hash: 'f'.repeat(64), version: 3, affectedAnchors: [] };
-    toolSuccess(payload, { operation: 'update_section', channel: 'mcp' });
+    toolSuccess(payload, { operation: 'update_sections', channel: 'mcp' });
     expect(log).toHaveBeenCalledWith(
-      `[response-size] update_section mcp ${JSON.stringify(payload).length}`,
+      `[response-size] update_sections mcp ${JSON.stringify(payload).length}`,
     );
   });
 

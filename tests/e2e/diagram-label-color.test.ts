@@ -78,20 +78,44 @@ async function firstProject(): Promise<WorkspaceProject> {
   return project;
 }
 
-/** A page that actually EMBEDS a diagram — the only kind that renders the NodeView. */
+const PROBE_PAGE = 'e2e-diagram-label-color.md';
+const PROBE_DIAGRAM = 'e2e-label-color-flow';
+
+/**
+ * A page that actually EMBEDS a diagram — the only kind that renders the card.
+ *
+ * 0.2.15: SEEDS one rather than hunting the corpus for a page that happens to
+ * carry an embed. Two reasons, and the second is the one that bit:
+ *
+ *  - the tag changed. `<diagram/>` no longer exists; a diagram is embedded as
+ *    `<single_element type="diagram" …/>`, so a scan for the old tag finds
+ *    nothing in a corpus that has been migrated;
+ *  - a scan finds nothing in an EMPTY environment either, which is the state an
+ *    env-runner smoke environment starts in. A test that depends on somebody
+ *    having seeded the right shape of page reports "seed one first" instead of
+ *    an answer, and reads as a failure of the code under test.
+ */
 async function pageWithEmbeddedDiagram(projectId: string): Promise<string> {
-  const api = `${BASE}/api/projects/${projectId}/pages/pages`;
-  const res = await fetch(api);
-  if (!res.ok) throw new Error(`GET ${api} → ${res.status}`);
-  const tree = (await res.json()) as { tree: Array<{ type: string; path: string }> };
-  for (const node of tree.tree) {
-    if (node.type !== 'file') continue;
-    const page = await fetch(`${api}/${node.path}`);
-    if (!page.ok) continue;
-    const { body } = (await page.json()) as { body: string };
-    if (/<diagram\s/.test(body)) return node.path;
-  }
-  throw new Error('no page embeds a <diagram/> in this environment — seed one first');
+  await fetch(`${BASE}/api/projects/${projectId}/diagrams`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      slug: PROBE_DIAGRAM,
+      format: 'mermaid',
+      source: 'graph TD; Alpha-->Beta; Beta-->Gamma;',
+    }),
+  }).catch(() => {});
+  await fetch(`${BASE}/api/projects/${projectId}/pages/pages/${PROBE_PAGE}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      // The page may not exist; any hash passes the guard when there is nothing
+      // to be stale against.
+      expectedHash: 'a'.repeat(64),
+      body: `# Label colour probe\n\n<single_element type="diagram" slug="${PROBE_DIAGRAM}" caption="Probe"/>\n`,
+    }),
+  });
+  return PROBE_PAGE;
 }
 
 /**
@@ -188,10 +212,13 @@ describe.skipIf(!BASE)('diagram labels keep mermaid’s styling, not the app’s
   /**
    * The REAL diagram, both surfaces, both themes.
    *
-   * The fullscreen overlay is a separate container — it is NOT portalled (it renders
-   * inside the NodeView's <figure>, so it stays under `.prose-spec`), which is exactly
-   * why it needs a `c4s-diagram-svg` hook of its own rather than inheriting anything.
-   * A build that drops that hook shows up here as a label diverging from its container.
+   * The fullscreen overlay needs a `c4s-diagram-svg` hook of ITS OWN rather than
+   * inheriting one, and 0.2.15 made that more true rather than less: the overlay
+   * used to render inside the card's `<figure>`, i.e. under `.prose-spec`, and
+   * now renders from `EntityOverlayHost` at the app root, outside it entirely.
+   * Either way the hook is what makes mermaid's theme authoritative over its own
+   * labels, and a build that drops it shows up here as a label diverging from
+   * its container.
    */
   for (const theme of ['dark', 'light'] as const) {
     it(`${theme} mode: embedded diagram AND fullscreen overlay both follow mermaid’s theme`, async () => {

@@ -405,7 +405,7 @@ describe('runAgentTurn — architectureConfig.claude_sandbox merge (0.1.103 / 0.
     // 0.2.13 item 28: and denyWrite carries the page roots ON TOP of that — the
     // asymmetry is the point. A page must stay greppable (`denyRead` above is
     // unchanged) while `create_page` / `update_page` / `delete_page` /
-    // `update_section` become the only way to write one.
+    // `update_sections` become the only way to write one.
     expect(fs.filesystem.denyWrite).toEqual([...ARTIFACT_ABS, '/deny/dir', ...PAGE_ROOTS_ABS]);
     expect(fs.filesystem.allowWrite).toEqual(['/allowed/dir']);
   });

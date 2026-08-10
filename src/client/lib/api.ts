@@ -83,16 +83,41 @@ export const api = {
    * rule in `services/page-write.ts`. Whoever needs the page after a save reads
    * it back; `useWritePage` does exactly that by invalidating the page query.
    */
+  /**
+   * Explicit creation — `POST /api/pages/:rootId`, the channel's rendering of
+   * `create_page`.
+   *
+   * 0.2.15: `update_page` REQUIRES `expectedHash`, and a page that does not
+   * exist yet has no hash to send. Creation is therefore its own call rather
+   * than a write with the guard left blank — which is also what makes
+   * "create a page that already exists" a refusal (`PAGE_EXISTS`) instead of a
+   * silent overwrite.
+   */
+  async create(rootId: string, path: string, content: string): Promise<{ path: string; hash: string }> {
+    const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    });
+    return handle<{ path: string; hash: string }>(res);
+  },
+
   async write(
     rootId: string,
     path: string,
     body: string,
-    frontmatter?: Record<string, unknown>,
+    frontmatter: Record<string, unknown> | undefined,
+    /**
+     * 0.2.15 — REQUIRED by the server. The hash of the file as this client last
+     * saw it: from `read()`, or from the previous write's ack (see
+     * `applyPageWriteToCache`, which keeps it current without a re-read).
+     */
+    expectedHash: string,
   ): Promise<PageWriteAck> {
     const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body, frontmatter }),
+      body: JSON.stringify({ body, frontmatter, expectedHash }),
     });
     return handle<PageWriteAck>(res);
   },

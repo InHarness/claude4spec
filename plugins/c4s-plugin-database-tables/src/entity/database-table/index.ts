@@ -53,19 +53,11 @@ export const databaseTableEntity: EntityContribution = {
   pathPrefix: DATABASE_TABLE_PATH_PREFIX,
   serializer: databaseTableSerializer,
   systemPrompt: databaseTableSystemPrompt,
-  frontend: {
-    /**
-     * `<database-table slug/>` in a page. `entityType` is injected from
-     * `module.type` by the registry, so the tag gets broken-reference detection
-     * in `check_consistency` for free.
-     */
-    referenceType: {
-      tag: DATABASE_TABLE_TYPE,
-      attrOrder: [...DATABASE_TABLE_ATTR_ORDER],
-      validate: (attrs: Record<string, string>) => {
-        const ok = typeof attrs.slug === 'string' && attrs.slug.trim().length > 0;
-        return { ok, category: ok ? 'ok' : 'missing-slug' };
-      },
-    },
-  },
+  /*
+   * 0.2.15 — no `frontend.referenceType`: the slot is gone from the host and
+   * `<database-table slug/>` with it. A table is embedded as
+   * `<single_element type="database-table" slug="…"/>`. Unlike `spreadsheet`
+   * this type is NOT embed-only — it keeps its list row and detail panel, and
+   * simply loses the tag of its own.
+   */
 } as EntityContribution;

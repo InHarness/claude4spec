@@ -136,13 +136,11 @@ registerExtensionReferenceType({
   attrOrder: ['anchor'],
 });
 
-// v0.1.64 originally registered <diagram/> as the 7th XML reference type here
-// too, as a standalone bootstrap side-effect call. v0.1.129 (M19 Slot B)
-// moved that registration onto diagramBackendModule.frontend.referenceType
-// (src/server/entities/diagram/plugin.ts) — it now happens automatically as
-// part of the existing registerEntityModule(diagramBackendModule) call in
-// registerAllPlugins, with `entityType` auto-injected as the module's own
-// type. No standalone call needed here anymore.
+// 0.2.15 — `<section_ref/>` above is now the ONLY extension reference type in
+// the process, and this direct call is the registry's only caller. `<diagram/>`
+// used to be the second one (registered here in v0.1.64, then via the entity's
+// Slot B in v0.1.129); it is gone, along with both declarative slots. An entity
+// contributes no tag: the tags in the registry name no entity at all.
 
 /**
  * M29: one-time best-effort backup of the derived SQLite before a DB→text

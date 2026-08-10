@@ -93,6 +93,17 @@ export const STATUS_FOR_CODE: Record<string, number> = {
    * conflating them made an abort against a typo'd id look like a success.
    */
   THREAD_NOT_FOUND: 404,
+  /**
+   * 0.2.15 — a second turn on a thread that is already streaming is REJECTED,
+   * not queued, and 409 is the status that says so.
+   *
+   * This is the turn family's concurrency guard, and it is STATEFUL where the
+   * page and plan families are hash-based: there is no `expectedHash` for "a
+   * turn is in flight". It was raised in two routes as a hand-rolled literal,
+   * which meant the one code the CLI and the agent client both branch on was
+   * absent from the single table that is supposed to define it.
+   */
+  STREAM_IN_PROGRESS: 409,
   // M24 Remote Account
   NO_ACTIVE_FLOW: 400,
   REMOTE_UNAUTHORIZED: 401,

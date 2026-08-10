@@ -154,10 +154,8 @@ export class ReferencesService {
     const key = (rootId: string, relPath: string) => `${rootId} ${relPath}`;
 
     const mutate = (tag: XmlTag): Record<string, string> | null => {
-      if (tag.kind === 'diagram') {
-        if (type !== 'diagram' || tag.attrs.slug !== oldSlug) return null;
-        return { ...tag.attrs, slug: newSlug };
-      }
+      // 0.2.15 — every entity reference spells its type out in `type=`, so the
+      // rewriter needs one gate, not one gate plus a per-tag special case.
       if (tag.attrs.type !== type) return null;
       if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
         if (tag.attrs.slug !== oldSlug) return null;

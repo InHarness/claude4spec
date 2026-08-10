@@ -1,8 +1,8 @@
 import { NodeViewWrapper, type NodeViewProps } from '@tiptap/react';
 import { getEntityDef } from '../../../entities/registry.js';
+import { openEntityHandler } from '../../../entities/openEntity.js';
 import { categoriseBrokenChip } from '../../../core/plugin-host/host.js';
 import { useEditorBridge } from '../../EditorContext.js';
-import type { EntityType } from '../../../../shared/entities.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
 
@@ -10,9 +10,11 @@ export function SingleElementView(props: NodeViewProps) {
   const { node } = props;
   const type = String(node.attrs.type ?? '');
   const slug = String(node.attrs.slug ?? '');
+  // 0.2.15 — per-reference prose, absent unless the tag carried it.
+  const caption = node.attrs.caption ? String(node.attrs.caption) : undefined;
   const def = getEntityDef(type);
   const bridge = useEditorBridge();
-  const open = () => bridge?.openEntity(type as EntityType, slug);
+  const open = openEntityHandler(type, slug, bridge, caption);
   const onAltClick = useEditChipOnAltClick(props);
   const altCapture = (e: React.MouseEvent) => {
     if (e.altKey) void onAltClick(e);
@@ -29,7 +31,7 @@ export function SingleElementView(props: NodeViewProps) {
 
   return (
     <NodeViewWrapper className="my-3 not-prose" contentEditable={false} onClickCapture={altCapture}>
-      <CardResolver type={type} slug={slug} onOpen={open} />
+      <CardResolver type={type} slug={slug} caption={caption} onOpen={open} />
     </NodeViewWrapper>
   );
 }
@@ -37,11 +39,13 @@ export function SingleElementView(props: NodeViewProps) {
 function CardResolver({
   type,
   slug,
+  caption,
   onOpen,
 }: {
   type: string;
   slug: string;
-  onOpen: () => void;
+  caption?: string;
+  onOpen?: () => void;
 }) {
   const def = getEntityDef(type)!;
   const { data, isLoading } = def.useGetBySlug(slug);
@@ -56,5 +60,7 @@ function CardResolver({
     );
   }
   const Card = def.renderCard;
-  return <Card slug={slug} entity={data ?? null} onOpen={onOpen} />;
+  return (
+    <Card slug={slug} entity={data ?? null} {...(caption ? { caption } : {})} onOpen={onOpen} />
+  );
 }

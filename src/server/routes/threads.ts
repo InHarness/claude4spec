@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { restError } from '../operations/envelope.js';
+import { httpStatusForCode } from '../operations/error-codes.js';
 import { nanoid } from 'nanoid';
 import { resolveModel, ADAPTIVE_THINKING_ONLY } from '@inharness-ai/agent-adapters';
 import { readConfig } from '../config.js';
@@ -179,9 +181,19 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
 
       // Gating one-stream-per-thread — wspoldzielony rejestr z `POST /api/chat`.
       if (activeAdapters.has(thread.id)) {
-        return res.status(409).json({
-          error: { code: 'STREAM_IN_PROGRESS', message: 'Thread already streaming' },
-        });
+        // 0.2.15: status and shape from the shared table, not a literal here.
+        // `STREAM_IN_PROGRESS` is the turn family's concurrency guard — stateful
+        // where page/plan writes are hash-based — and a second turn on a live
+        // thread is REJECTED rather than queued.
+        return res
+          .status(httpStatusForCode('STREAM_IN_PROGRESS'))
+          .json(
+            restError(
+              'STREAM_IN_PROGRESS',
+              'Thread already streaming',
+              'join the running turn over the resume stream, or abort it first with POST /api/chat/abort/:threadId',
+            ),
+          );
       }
 
       const result = await runAgentTurn(deps, {

@@ -11,6 +11,7 @@
  * one.
  */
 
+import { DEFAULT_BUDGET_CHARS } from './budget.js';
 import { invalidArgument } from './errors.js';
 
 /** Applied when a caller passes no `limit`. Per-operation, never global-∞. */
@@ -45,7 +46,19 @@ export interface PageRequest {
 export interface Page<T> {
   items: T[];
   total: number;
+  /** More rows exist past this window — a fact about PAGING. */
   hasMore: boolean;
+  /**
+   * 0.2.15 — the window was cut SHORT of the requested `limit` because the
+   * response budget ran out.
+   *
+   * Distinct from `hasMore`, and both can be true at once. `hasMore` answers
+   * "did you ask for a window of a larger set", which the caller usually knows;
+   * `truncated` answers "did you get less than you asked for", which it cannot
+   * know without being told — the alternative is a caller comparing
+   * `items.length` against a `limit` it may have left defaulted.
+   */
+  truncated: boolean;
 }
 
 export function resolvePageRequest(
@@ -74,9 +87,38 @@ export function resolvePageRequest(
  * a stable order is what makes `offset` meaningful — paginating an unsorted
  * list silently drops and repeats rows, so the sort cannot be an afterthought
  * hidden in here.
+ *
+ * 0.2.15 — the response BUDGET applies here too, not only to the fetch-by-key
+ * operations.
+ *
+ * `limit` bounds the row COUNT, which is not the same as bounding the response:
+ * 50 entities is a different size depending on what an entity carries, and the
+ * budget is stated in characters precisely because the count does not predict
+ * it. So the window is additionally cut at `DEFAULT_BUDGET_CHARS` of serialized
+ * items, and `truncated` says so.
+ *
+ * The FIRST item is never dropped, matching `applyItemBudget`: answering with an
+ * empty list because one row is enormous tells the caller nothing and gives it
+ * nowhere to go. One oversized row plus `truncated: true` at least identifies
+ * the row.
  */
 export function paginate<T>(sorted: readonly T[], req: PageRequest, defaultLimit: number): Page<T> {
   const { limit, offset } = resolvePageRequest(req, defaultLimit);
-  const items = sorted.slice(offset, offset + limit);
-  return { items, total: sorted.length, hasMore: offset + items.length < sorted.length };
+  const requested = sorted.slice(offset, offset + limit);
+
+  const items: T[] = [];
+  let chars = 0;
+  for (const item of requested) {
+    const size = JSON.stringify(item)?.length ?? 0;
+    if (items.length > 0 && chars + size > DEFAULT_BUDGET_CHARS) break;
+    items.push(item);
+    chars += size;
+  }
+
+  return {
+    items,
+    total: sorted.length,
+    hasMore: offset + items.length < sorted.length,
+    truncated: items.length < requested.length,
+  };
 }

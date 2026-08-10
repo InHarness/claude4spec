@@ -1,4 +1,6 @@
 import { Router, type Response } from 'express';
+import { restError } from '../operations/envelope.js';
+import { httpStatusForCode } from '../operations/error-codes.js';
 import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
@@ -154,9 +156,19 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       // One-stream-per-thread guard. Klient powinien dolaczyc przez GET /api/chat/stream/:threadId
       // albo abortowac poprzedni stream przez POST /api/chat/abort.
       if (activeAdapters.has(thread.id)) {
-        return res.status(409).json({
-          error: { code: 'STREAM_IN_PROGRESS', message: 'Thread already streaming' },
-        });
+        // 0.2.15: status and shape from the shared table, not a literal here.
+        // `STREAM_IN_PROGRESS` is the turn family's concurrency guard — stateful
+        // where page/plan writes are hash-based — and a second turn on a live
+        // thread is REJECTED rather than queued.
+        return res
+          .status(httpStatusForCode('STREAM_IN_PROGRESS'))
+          .json(
+            restError(
+              'STREAM_IN_PROGRESS',
+              'Thread already streaming',
+              'join the running turn over the resume stream, or abort it first with POST /api/chat/abort/:threadId',
+            ),
+          );
       }
 
       setupSse(res);
