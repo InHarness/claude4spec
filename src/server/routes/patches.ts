@@ -29,17 +29,11 @@
  */
 
 import { Router } from 'express';
-import { writePatchFs } from '../../core/briefs/file-patch.js';
 import type { PatchKind } from '../../core/briefs/types.js';
-import { DomainError } from '../services/tags.js';
+import { filePatch, type PatchWriteDeps } from '../services/patch-write.js';
 import { errorHandler } from './errors.js';
 
-const PATCH_KINDS: readonly PatchKind[] = ['drift', 'missing', 'incorrect', 'clarification'];
-
-export interface PatchesRouterDeps {
-  briefsDirAbs: string;
-  patchesDirAbs: string;
-}
+export type PatchesRouterDeps = PatchWriteDeps;
 
 /**
  * The wire shape of `POST /api/patches`.
@@ -67,64 +61,19 @@ export function patchesRouter(deps: PatchesRouterDeps): Router {
     try {
       const body = (req.body ?? {}) as Partial<PatchCreateRequest>;
 
-      // Validation is the route's own job — `writePatchFs` assumes a well-formed
-      // request and answers only for the filesystem. Everything below is a
-      // client bug, reported as such rather than as a write failure.
-      if (typeof body.brief !== 'string' || body.brief.trim() === '') {
-        throw new DomainError('VALIDATION', 'brief is required (path relative to briefsDir)');
-      }
-      if (typeof body.desc !== 'string' || body.desc.trim() === '') {
-        throw new DomainError('VALIDATION', 'desc is required and must not be empty');
-      }
-      if (typeof body.body !== 'string' || body.body === '') {
-        throw new DomainError('VALIDATION', 'body is required');
-      }
-      // Validated like every other field rather than trusted because it is
-      // optional: `body.createdBy?.trim()` on a non-string threw a TypeError the
-      // handler could not attribute, so a client bug surfaced as 500 INTERNAL
-      // with a stack in the server log and no indication of which field was wrong.
-      if (body.createdBy !== undefined && typeof body.createdBy !== 'string') {
-        throw new DomainError('VALIDATION', 'createdBy must be a string when present');
-      }
-      const kind = body.patchKind ?? 'drift';
-      if (!PATCH_KINDS.includes(kind)) {
-        throw new DomainError(
-          'VALIDATION',
-          `patchKind must be one of ${PATCH_KINDS.join(' | ')} — got '${String(body.patchKind)}'`,
-        );
-      }
-
       /**
-       * The same core writer the CLI has always used, unchanged: it asserts the
-       * brief exists (→ BRIEF_NOT_FOUND), slugifies the WHOLE relative brief path
-       * so two briefs sharing a filename in different subdirectories cannot
-       * collide, creates `patchesDir` lazily, and writes the frontmatter
-       * (`type: patch`, `brief`, `patch_kind`, `created_at`, `created_by`,
-       * `applied: false`) under a `# Patch — <desc>` heading.
+       * Validation and the write both live in `services/patch-write.ts`, so this
+       * handler is an adapter and nothing more. When the checks lived here, the
+       * MCP rendering added below would have had to either copy them or be a
+       * laxer door onto the same writer — REST and MCP must not be able to write
+       * two different patch files from the same intent.
        *
-       * Calling it rather than reimplementing it is the "one function per
-       * operation" rule: REST and CLI must not be able to write two different
-       * patch files from the same intent. Its `BriefFsError`s are mapped to HTTP
-       * in `routes/errors.ts`.
+       * The channel is the identity of last resort: a caller that does not say
+       * who it is still leaves a truthful record of HOW it arrived.
        */
-      const result = writePatchFs({
-        briefsDirAbs: deps.briefsDirAbs,
-        patchesDirAbs: deps.patchesDirAbs,
-        briefRelPath: body.brief,
-        desc: body.desc,
-        kind,
-        body: body.body,
-        // The channel is the identity of last resort: a REST caller that does not
-        // say who it is still leaves a truthful record of HOW it arrived.
-        createdBy: body.createdBy?.trim() || 'rest',
-      });
+      const result = filePatch(deps, body, 'rest');
 
-      /**
-       * 201 with the path relative to `patchesDir`. No explicit indexing call:
-       * `patchesDir` is already mounted as an `artifacts:patch` filesystem
-       * source, so the watcher indexes the new file and captures it in
-       * `file_version` by the same reaction that handles a hand-written one.
-       */
+      /** 201 with the path relative to `patchesDir` — never the patch's own text. */
       res.status(201).json({ data: { path: result.path } });
     } catch (err) {
       next(err);

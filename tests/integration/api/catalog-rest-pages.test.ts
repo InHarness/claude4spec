@@ -322,6 +322,32 @@ describe('PUT /api/sections/:anchor — the rest rendering of update_section', (
     }
   });
 
+  it('answers a section write with the delta, not with the page — REST is bound by echo-free too', async () => {
+    /**
+     * The rule is the operation's, not the agent channel's: "the output shape is
+     * the operation's, the channel adapter does not widen it". A REST handler
+     * that appends the body because its own front-end finds it convenient has
+     * authored a second semantics for the same operation.
+     *
+     * There was no test on this response shape at all before — which is how the
+     * whole serialized page went out of here unnoticed.
+     */
+    const { app, pages, dir } = appWithWrites();
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', {
+        body: '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n<!-- anchor: bbbb2222 -->\n# Next\nkeep me',
+      });
+      const res = await request(app).put('/api/sections/aaaa1111').send({ content: 'new body' }).expect(200);
+      expect(Object.keys(res.body).sort()).toEqual(['affectedAnchors', 'anchor', 'hash', 'version']);
+      expect(res.body).not.toHaveProperty('body');
+      expect(res.body).not.toHaveProperty('frontmatter');
+      expect(JSON.stringify(res.body)).not.toContain('keep me');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('forwards expectedHash rather than dropping it', async () => {
     // Silently ignoring the guard is worse than not offering it: the caller
     // believes its write was conflict-checked.

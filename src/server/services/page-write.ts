@@ -1,8 +1,9 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { PageContent } from '../../shared/types.js';
+import matter from 'gray-matter';
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
+import type { FileVersionService } from './file-version.js';
 import type { PagesService } from './pages.js';
 import type { SectionsService } from './sections.js';
 import { parseHeadings } from './section-indexer.js';
@@ -46,7 +47,27 @@ import { DomainError } from './tags.js';
  * brief calls the guard "part of the operation contract" rather than mandatory.
  * So it is declared in every channel's schema and honoured identically in all of
  * them — but a caller who omits it still gets last-write-wins. Raised as a patch
- * against the brief.
+ * against the brief. (`update_brief` is deliberately stricter — it has no legacy
+ * caller to protect, so there the hash is mandatory.)
+ *
+ * ## Nothing here answers with the page it just wrote
+ *
+ * Every operation used to answer `PageContent & { hash }`, so a write echoed the
+ * full `body` back at whoever sent it. On `update_section` that was at its worst:
+ * the caller replaced one paragraph and got the whole page back — text it had in
+ * context a moment earlier, returned at its own expense.
+ *
+ * The shapes below are per operation, on purpose. A shared result type is how
+ * the echo got in: the widest consumer's needs became every operation's output.
+ * What a write reports now is only what the caller could NOT have predicted —
+ * the hash of what landed, the version the capture recorded, and which anchors
+ * moved under it.
+ *
+ * This binds every channel, not just the agent-facing ones. L3: "the output
+ * shape is the operation's, the channel adapter does not widen it" — a REST
+ * handler that appends the body because it is convenient for its own front-end
+ * has authored a second semantics for the same operation. A caller who needs the
+ * page reads it; that is its decision and its budget.
  */
 
 /** Everything a page write needs about the root it targets. */
@@ -54,6 +75,12 @@ export interface PageWriteTarget {
   pages: PagesService;
   /** Null only in the hand-rolled test rigs; a mounted root always has one. */
   writer: SelfWriteMarker | null;
+  /**
+   * The `file_version` axis this root writes to — where the reported `version`
+   * is read back from. Optional for the hand-rolled test rigs, which have no db;
+   * absent means the write reports version `0`, as `PlanService` already does.
+   */
+  versions?: FileVersionService | null;
 }
 
 export interface CreatePageInput {
@@ -80,8 +107,50 @@ export interface UpdateSectionInput {
   expectedHash?: string;
 }
 
-/** What every write answers with: the page, plus the hash of what actually landed. */
-export type PageWriteResult = PageContent & { hash: string };
+/**
+ * `create_page` — the page did not exist, so every anchor on it is new to the
+ * caller: it sent markdown without any, and the indexer minted the lot.
+ *
+ * `rootId` and `path` are here and nowhere else because creation is the one
+ * moment the caller learns the page's identity as the server records it.
+ */
+export interface CreatePageResult {
+  rootId: string;
+  path: string;
+  hash: string;
+  /** Every anchor the page now carries, in document order. */
+  anchors: string[];
+}
+
+/** `update_page` — a whole-page write. Identity was already known; only the delta is news. */
+export interface UpdatePageResult {
+  hash: string;
+  version: number;
+  /** Anchors added, removed, or whose section text changed. See {@link anchorDelta}. */
+  changedAnchors: string[];
+}
+
+/** `update_section` — a punctual write. Neither the new section nor the page comes back. */
+export interface UpdateSectionResult {
+  anchor: string;
+  hash: string;
+  version: number;
+  /**
+   * Anchors OTHER than the edited one that moved or changed under the edit. The
+   * edited anchor is already `anchor` above and is not repeated here.
+   */
+  affectedAnchors: string[];
+}
+
+/** What `commit` hands its three callers to build their own, narrower answers from. */
+interface CommitResult {
+  hash: string;
+  version: number;
+  /** Anchors as they stand AFTER the write, in document order. */
+  anchors: string[];
+  /** Per-anchor digest of the section text after the write, for the delta. */
+  digests: Map<string, string>;
+}
 
 /** sha256 of a file's bytes, or null when it does not exist. */
 async function hashOf(pages: PagesService, relPath: string): Promise<string | null> {
@@ -109,19 +178,48 @@ async function commit(
   relPath: string,
   actor: WriteActor,
   input: { body: string; frontmatter?: Record<string, unknown> },
-): Promise<PageWriteResult> {
+): Promise<CommitResult> {
   target.writer?.markOrigin(relPath, actor);
-  const result = await target.pages.write(relPath, input);
+  await target.pages.write(relPath, input);
   await target.writer?.flush(relPath);
   const written = await fs.readFile(path.join(target.pages.root, relPath), 'utf-8');
-  return { ...result, hash: sha256(written) };
+  /**
+   * The body is re-parsed rather than taken from the input because `flush` has
+   * already run the `write-back` phase, which INJECTS anchors the indexer minted
+   * for new headings. Those are the anchors the caller could not predict, so
+   * they must be read off what landed, not off what was sent.
+   */
+  const body = matter(written).content;
+  return {
+    hash: sha256(written),
+    version: currentVersionOf(target, relPath),
+    anchors: [...sectionRanges(body.split('\n'))].map((r) => r.anchor),
+    digests: sectionDigests(body),
+  };
+}
+
+/**
+ * The version the capture just recorded — read back, not guessed.
+ *
+ * Safe to read synchronously here because `commit` awaits `writer.flush()`,
+ * which drives the reaction chain (`projection → notification → reload →
+ * write-back → capture`) to completion, bypassing the watcher's debounce. By the
+ * time this runs the `file_version` row exists. Same read `PlanService`
+ * already does for a plan's current version.
+ *
+ * `0` when there is no row: capture failures are warned and swallowed
+ * (`file-version-capture.ts`), and the hand-rolled test rigs have no db at all.
+ * A write must not fail because its bookkeeping did.
+ */
+function currentVersionOf(target: PageWriteTarget, relPath: string): number {
+  return target.versions?.getLatestForPath(relPath, undefined, target.pages.rootId)?.version ?? 0;
 }
 
 export async function createPage(
   target: PageWriteTarget,
   input: CreatePageInput,
   actor: WriteActor,
-): Promise<PageWriteResult> {
+): Promise<CreatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
   if (await target.pages.exists(relPath)) {
@@ -131,22 +229,40 @@ export async function createPage(
       `update it with update_page({ rootId: "${target.pages.rootId}", path: "${relPath}", body }) instead`,
     );
   }
-  return commit(target, relPath, actor, { body: input.content ?? '' });
+  const written = await commit(target, relPath, actor, { body: input.content ?? '' });
+  return { rootId: target.pages.rootId, path: relPath, hash: written.hash, anchors: written.anchors };
 }
 
 export async function updatePage(
   target: PageWriteTarget,
   input: UpdatePageInput,
   actor: WriteActor,
-): Promise<PageWriteResult> {
+): Promise<UpdatePageResult> {
   const relPath = input.path;
   if (!relPath) throw new DomainError('VALIDATION', 'path required');
   if (typeof input.body !== 'string') throw new DomainError('VALIDATION', 'body required');
   await assertUnchanged(target, relPath, input.expectedHash);
-  return commit(target, relPath, actor, {
+  // Read BEFORE writing: the delta is against what was on disk, and this doubles
+  // as create-or-replace, so "no page yet" means every anchor is an addition.
+  const before = sectionDigests(await bodyOnDisk(target.pages, relPath));
+  const written = await commit(target, relPath, actor, {
     body: input.body,
     ...(input.frontmatter !== undefined ? { frontmatter: input.frontmatter } : {}),
   });
+  return {
+    hash: written.hash,
+    version: written.version,
+    changedAnchors: anchorDelta(before, written.digests),
+  };
+}
+
+/** A page's body as it currently stands, or empty when it is not there yet. */
+async function bodyOnDisk(pages: PagesService, relPath: string): Promise<string> {
+  try {
+    return (await pages.read(relPath)).body;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -221,19 +337,74 @@ export interface SectionWriteDeps {
  * lives here.
  */
 function liveRangeOf(lines: string[], anchor: string): { lineStart: number; lineEnd: number } | null {
+  return sectionRanges(lines).find((r) => r.anchor === anchor) ?? null;
+}
+
+/**
+ * Every anchored section's line range in THESE lines, in document order — the
+ * walk `liveRangeOf` used to do for one anchor, done once for all of them.
+ *
+ * Factored out because the anchor delta needs the ranges of every section, not
+ * of one; running the same walk twice with two slightly different end rules is
+ * how the section index and the write path would drift apart again.
+ */
+function sectionRanges(lines: string[]): Array<{ anchor: string; lineStart: number; lineEnd: number }> {
   const headings = parseHeadings(lines);
-  const idx = headings.findIndex((h) => h.anchor === anchor);
-  if (idx === -1) return null;
-  const self = headings[idx]!;
-  let lineEnd = lines.length;
-  for (let j = idx + 1; j < headings.length; j++) {
-    const next = headings[j]!;
-    if (next.level <= self.level) {
-      lineEnd = next.anchorLineIndex ?? next.lineIndex;
-      break;
+  return headings.flatMap((self, idx) => {
+    if (!self.anchor) return [];
+    let lineEnd = lines.length;
+    for (let j = idx + 1; j < headings.length; j++) {
+      const next = headings[j]!;
+      if (next.level <= self.level) {
+        lineEnd = next.anchorLineIndex ?? next.lineIndex;
+        break;
+      }
     }
+    return [{ anchor: self.anchor, lineStart: self.lineIndex + 1, lineEnd }];
+  });
+}
+
+/**
+ * Digest of each section's OWN text — its lines down to the next heading of any
+ * level, descendants excluded.
+ *
+ * Not the index's range rule, and deliberately so. A section's indexed range
+ * runs to the next heading of equal-or-higher level, so it CONTAINS its
+ * subsections: under that rule, editing a paragraph three levels down also
+ * "changes" every ancestor up to the page's title, and a caller asking which
+ * anchors moved would be handed its own ancestry every time. An ancestor
+ * containing your edit is the one thing you could have predicted, which is
+ * exactly what this answer is not for.
+ */
+function sectionDigests(body: string): Map<string, string> {
+  const lines = body.split('\n');
+  const starts = parseHeadings(lines).map((h) => h.anchorLineIndex ?? h.lineIndex);
+  const out = new Map<string, string>();
+  for (const r of sectionRanges(lines)) {
+    const nextHeading = starts.find((s) => s >= r.lineStart);
+    const ownEnd = Math.min(r.lineEnd, nextHeading ?? r.lineEnd);
+    out.set(r.anchor, sha256(lines.slice(r.lineStart, ownEnd).join('\n')));
   }
-  return { lineStart: self.lineIndex + 1, lineEnd };
+  return out;
+}
+
+/**
+ * Which anchors a write actually moved: added, removed, or textually changed.
+ *
+ * The specification declares the FIELDS (`changedAnchors`, `affectedAnchors`)
+ * without defining what belongs in them, so this is the reading the echo-free
+ * rule implies — a write reports "what the caller could not have predicted" —
+ * filed back as a clarification patch.
+ *
+ * Order is the after-state's document order, with anchors that disappeared
+ * appended in their old document order: a removed anchor has no position in a
+ * page it is no longer on, and dropping it entirely would hide the one change a
+ * caller is least able to infer.
+ */
+function anchorDelta(before: Map<string, string>, after: Map<string, string>): string[] {
+  const changed = [...after.keys()].filter((a) => before.get(a) !== after.get(a));
+  const removed = [...before.keys()].filter((a) => !after.has(a));
+  return [...changed, ...removed];
 }
 
 /**
@@ -296,7 +467,7 @@ export async function updateSection(
   deps: SectionWriteDeps,
   input: UpdateSectionInput,
   actor: WriteActor,
-): Promise<PageWriteResult & { anchor: string; rootId: string; pagePath: string }> {
+): Promise<UpdateSectionResult> {
   if (!input.anchor) throw new DomainError('VALIDATION', 'anchor required');
   if (typeof input.content !== 'string') throw new DomainError('VALIDATION', 'content required');
   const section = deps.sections.getByAnchor(input.anchor);
@@ -355,9 +526,17 @@ export async function updateSection(
   // heading itself and stays put.
   lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...input.content.split('\n'));
 
+  const before = sectionDigests(page.body);
   const written = await commit(target, section.pagePath, actor, {
     body: lines.join('\n'),
     ...(Object.keys(page.frontmatter).length > 0 ? { frontmatter: page.frontmatter } : {}),
   });
-  return { ...written, anchor: input.anchor, rootId: section.rootId, pagePath: section.pagePath };
+  return {
+    anchor: input.anchor,
+    hash: written.hash,
+    version: written.version,
+    // The edited anchor is `anchor` above; repeating it in the list would be the
+    // one thing in this answer the caller already knew.
+    affectedAnchors: anchorDelta(before, written.digests).filter((a) => a !== input.anchor),
+  };
 }

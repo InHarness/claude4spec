@@ -62,7 +62,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
    * the `VALIDATION` above whose hint is the only thing that tells a caller to
    * run `list_plans` first.
    */
-  const ok = toolSuccess;
+  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
   const fail = toolFailure;
 
   const getPlan = mcpTool(
@@ -76,7 +76,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         const plan = explicit
           ? await planService.getByPath(requirePath(args.path))
           : await planService.getByThread(threadId);
-        if (!plan) return ok({ plan: null });
+        if (!plan) return ok({ plan: null }, 'get_plan');
         return ok({
           plan: {
             path: plan.path,
@@ -86,7 +86,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
             createdAt: plan.createdAt,
             updatedAt: plan.updatedAt,
           },
-        });
+        }, 'get_plan');
       } catch (err) {
         return fail(err);
       }
@@ -134,7 +134,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
           planPath: result.plan.path,
           version: result.version,
           currentVersion: result.plan.currentVersion,
-        });
+        }, 'update_plan');
       } catch (err) {
         return fail(err);
       }
@@ -151,7 +151,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
           plans: planService
             .listPlans(typeof args.search === 'string' ? { search: args.search } : {})
             .map((p) => ({ path: p.path, title: p.title, updatedAt: p.updatedAt })),
-        });
+        }, 'list_plans');
       } catch (err) {
         return fail(err);
       }
@@ -186,7 +186,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
     async (args) => {
       try {
         const plan = await resolvePlan(args.path);
-        if (!plan) return ok({ versions: [], total: 0 });
+        if (!plan) return ok({ versions: [], total: 0 }, 'list_plan_versions');
         // FileVersionService.listVersions returns newest-first (shared with
         // brief/patch/the client's version-history view) — reverse to
         // oldest-first here so this tool's offset/limit contract (offset 0 =
@@ -195,7 +195,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         const all = [...pageVersions.listVersions(plan.path, PLAN_ROOT_MARKER)].reverse();
         const offset = typeof args.offset === 'number' ? args.offset : 0;
         const limit = typeof args.limit === 'number' ? args.limit : all.length;
-        return ok({ versions: all.slice(offset, offset + limit), total: all.length });
+        return ok({ versions: all.slice(offset, offset + limit), total: all.length }, 'list_plan_versions');
       } catch (err) {
         return fail(err);
       }
@@ -220,7 +220,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
         }
         const v = pageVersions.getVersion(plan.path, Number(args.version), PLAN_ROOT_MARKER);
         if (!v) return fail(new DomainError('VERSION_NOT_FOUND', `version ${args.version} not found`));
-        return ok(v);
+        return ok(v, 'get_plan_version');
       } catch (err) {
         return fail(err);
       }
@@ -262,6 +262,7 @@ export function buildPlanToolsServer(ctx: PlanToolsContext): CapturedMcpServer {
             path: explicitPath,
             applied: args.applied as boolean,
           }),
+          'mark_plan_applied',
         );
       } catch (err) {
         return fail(err);

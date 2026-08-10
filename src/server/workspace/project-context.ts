@@ -96,6 +96,7 @@ import { ReleaseFileStore, toReleaseFileData } from '../services/release-store.j
 import { ReleaseIndexerService } from '../services/release-indexer.js';
 import { createReferenceToolsServer } from '../mcp/reference-tools.js';
 import { createPageToolsServer } from '../mcp/page-tools.js';
+import { createPatchToolsServer } from '../mcp/patch-tools.js';
 import type { SectionWriteDeps } from '../services/page-write.js';
 import { createEntityToolsServer } from '../mcp/entity-tools.js';
 import { SkillRegistry, SkillResolver, findSkillsRoots } from '../services/skill-registry.js';
@@ -796,11 +797,24 @@ async function buildInner(
     sections: sectionsService,
     resolveRoot: (rootId) => {
       const rt = rootById.get(rootId);
-      return rt ? { pages: rt.pages, writer: rt.writer } : undefined;
+      return rt ? { pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
     },
   };
   pluginHost.registerMcpServer('page-tools', () =>
     createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),
+  );
+  /**
+   * M23 — the `mcp` rendering of `file_patch`, which the catalog declared and
+   * nobody had built. Registered on the plugin host like `page-tools`, so both
+   * the internal turn and the external MCP mount pick it up from the same
+   * `buildMcpServers()` they already read, and the profile gate withholds it by
+   * `opClass` with no edit to either channel.
+   */
+  pluginHost.registerMcpServer('patch-tools', () =>
+    createPatchToolsServer({
+      briefsDirAbs: path.resolve(cwd, briefsDir),
+      patchesDirAbs: path.resolve(cwd, patchesDir),
+    }),
   );
 
   // M13: generic write-side CRUD server for every active entity type — the
@@ -1014,7 +1028,7 @@ async function buildInner(
   // segment; unknown id → 404 ROOT_NOT_FOUND.
   const resolveRoot = (rootId: string): PageRootRuntime | undefined => {
     const rt = rootById.get(rootId);
-    return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer } : undefined;
+    return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
   };
   const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
   /**

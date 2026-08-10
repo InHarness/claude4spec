@@ -18,6 +18,17 @@ export interface PageContent {
   body: string;
 }
 
+/**
+ * What `PUT /api/pages/:rootId/<path>` answers with: what the caller could not
+ * have predicted, and nothing it already had. Deliberately NOT `PageContent` —
+ * see the echo-free rule in `server/services/page-write.ts`.
+ */
+export interface PageWriteAck {
+  hash: string;
+  version: number;
+  changedAnchors: string[];
+}
+
 export interface PageWriteInput {
   frontmatter?: Record<string, unknown>;
   body: string;

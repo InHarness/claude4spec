@@ -58,7 +58,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
    * That is why this file had its own `fail` to begin with; it now lives in
    * `operations/envelope.ts`, where every tool server gets it.
    */
-  const ok = toolSuccess;
+  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
   const fail = toolFailure;
 
   const target = (rootId: string): PageWriteTarget => {
@@ -104,6 +104,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
             },
             'agent',
           ),
+          'create_page',
         );
       } catch (err) {
         return fail(err);
@@ -139,6 +140,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
             },
             'agent',
           ),
+          'update_page',
         );
       } catch (err) {
         return fail(err);
@@ -152,7 +154,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     { rootId: rootIdParam, path: pathParam },
     async (args) => {
       try {
-        return ok(await deletePage(target(String(args.rootId)), { path: String(args.path) }, 'agent'));
+        return ok(await deletePage(target(String(args.rootId)), { path: String(args.path) }, 'agent'), 'delete_page');
       } catch (err) {
         return fail(err);
       }
@@ -184,6 +186,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
             },
             'agent',
           ),
+          'update_section',
         );
       } catch (err) {
         return fail(err);
