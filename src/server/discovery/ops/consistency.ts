@@ -168,8 +168,11 @@ export async function checkConsistency(
       allPagePaths.push({ rootId: root.id, path: page.path });
       if (sectionIndexedIds.has(root.id)) collectAnchors(anchorOccurrences, root.id, page);
       for (const tag of parseXmlTagsExcludingCode(page.body)) {
-        const extType = tag.source === 'extension' ? getExtensionReferenceType(tag.kind) : undefined;
-        const tagType = tag.attrs.type ?? extType?.entityType;
+        // 0.2.15 — the entity type comes from `type=` and nowhere else. The
+        // branch that derived it from a registered extension tag's name is
+        // gone with the tags that needed it; an extension tag now names no
+        // entity, so it can never enter this arm.
+        const tagType = tag.attrs.type;
         if (tag.kind !== 'tagged_list_mixed' && tagType) {
           const category = categorise(tagType);
           const slugs =
@@ -243,7 +246,9 @@ export async function checkConsistency(
                 category: 'unknown-anchor',
               });
             }
-          } else if (!extType?.entityType && extType?.validate) {
+          } else {
+            const extType = getExtensionReferenceType(tag.kind);
+            if (!extType?.validate) continue;
             const result = extType.validate(tag.attrs);
             if (!result.ok) {
               brokenExtensionReferences.push({

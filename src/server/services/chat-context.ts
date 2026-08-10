@@ -370,11 +370,14 @@ Lightweight inline TODO marker. Lives only in markdown — never persisted as an
 </todo_markers>
 
 <diagram_references>
-  <diagram slug="..." caption="..."/>
-Self-closing reference to a \`diagram\` entity (the 7th entity type). The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries only \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Manage diagrams with the \`diagram-tools\` MCP server (create_diagram / update_diagram / delete_diagram); \`create_diagram\` takes an optional transient \`caption\` used only to seed the slug. Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in page and plan editors.
+  <single_element type="diagram" slug="..." caption="..."/>
+  <inline_mention type="diagram" slug="..."/>
+A \`diagram\` is embedded with the GENERIC reference tags, like every other entity type — there is no \`<diagram/>\` tag (removed in 0.2.15). The Mermaid DSL \`source\` is the entity's truth (stored in \`.claude4spec/entities/diagram/<slug>.json\`), NOT inline in the page. The page tag carries \`type\`, \`slug\` (which diagram) and an optional \`caption\` — caption is per-reference prose, so the same diagram can show different captions in different places. Tiptap fetches the source by slug and renders it live, with a fallback \`<pre>\` on parse error. Create and edit diagrams through the generic \`entity-tools\` CRUD; \`diagram-tools\` keeps only \`validate_diagram\` (DSL pre-flight). Insertable via slash command \`/diagram\` (authors the source, creates the entity, inserts the reference) in page and plan editors.
+
+\`diagram\` is a HIDDEN type: it has no sidebar tab and no detail page, so \`<element_list type="diagram" .../>\` and \`<tagged_list type="diagram" .../>\` are NOT supported — embed diagrams one at a time.
 
 Example:
-  <diagram slug="auth-flow" caption="Auth flow"/>
+  <single_element type="diagram" slug="auth-flow" caption="Auth flow"/>
 </diagram_references>
 
 <sections_and_anchors>

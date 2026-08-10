@@ -1,17 +1,34 @@
-import { Share2, ChevronRight } from 'lucide-react';
+import { Share2 } from 'lucide-react';
 import type { Diagram } from '../../../shared/entities.js';
 import { useDiagram } from '../../hooks/useDiagrams.js';
-import {
-  registerEntity,
-  type EntityCardProps,
-  type EntityChipProps,
-  type EntityRowProps,
-} from '../registry.js';
-import { DiagramDetail } from './detail-panel.js';
+import { registerEntity, type EntityChipProps } from '../registry.js';
+import { registerEditorExtension } from '../../tiptap/registry.js';
+import { DiagramCard, DiagramOverlay } from './DiagramCard.js';
 
-function sourceLines(d: Diagram): number {
-  return d.source ? d.source.split('\n').length : 0;
-}
+/**
+ * 0.2.15 — what is left of the diagram's editor presence after `DiagramNode`
+ * was deleted: the AUTHORING affordance and nothing else.
+ *
+ * No `extension` (no ProseMirror node) and no `markdownIt` rule — a diagram
+ * parses and serialises as `<single_element type="diagram" …/>` through the
+ * generic node. This registration exists purely so `/diagram` still appears in
+ * the slash menu; `slashInvoke` opens the create popover, writes the entity,
+ * and inserts the generic tag.
+ *
+ * The rename from the old `diagram` registration is the point: an entity
+ * contributes authoring UI, never a tag.
+ */
+export const diagramAuthoringExtension = {
+  name: 'diagram_authoring',
+  priority: 670,
+  availableIn: ['page', 'plan'] as const,
+  slashCommand: {
+    id: 'diagram',
+    label: '/diagram',
+    description: 'Insert a Mermaid diagram',
+    hint: 'mermaid DSL',
+  },
+};
 
 function BrokenChip({ slug }: { slug: string }) {
   return (
@@ -26,32 +43,6 @@ function BrokenChip({ slug }: { slug: string }) {
     >
       ⚠ {slug}
     </span>
-  );
-}
-
-function DiagramRow({ entity, active, onOpen }: EntityRowProps<Diagram>) {
-  return (
-    <button
-      onClick={onOpen}
-      className="w-full text-left px-2 py-1.5 rounded-md flex items-center gap-2 transition"
-      style={{ background: active ? 'var(--c-accent-soft)' : 'transparent' }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = 'var(--c-panel)';
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = 'transparent';
-      }}
-    >
-      <Share2 size={14} style={{ color: 'var(--c-accent)' }} />
-      <span className="flex-1 min-w-0">
-        <span className="block text-[13px] font-mono truncate" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {entity.slug}
-        </span>
-        <span className="block text-[10.5px] font-mono uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
-          {entity.format} · {sourceLines(entity)} lines
-        </span>
-      </span>
-    </button>
   );
 }
 
@@ -72,50 +63,31 @@ function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
   );
 }
 
-function DiagramCard({ slug, entity, onOpen }: EntityCardProps<Diagram>) {
-  if (!entity) {
-    return (
-      <div
-        className="rounded-md p-3"
-        style={{
-          background: 'var(--c-red-soft, rgba(196,90,59,0.08))',
-          border: '1px dashed var(--c-red, #c45a3b)',
-          color: 'var(--c-red, #c45a3b)',
-        }}
-      >
-        <div className="text-[12px] font-mono">⚠ broken: diagram "{slug}"</div>
-      </div>
-    );
-  }
-  return (
-    <button
-      onClick={onOpen}
-      className="w-full text-left rounded-md p-3 transition"
-      style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-      onMouseEnter={(e) => (e.currentTarget.style.borderColor = 'var(--c-accent)')}
-      onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
-    >
-      <div className="flex items-start gap-2">
-        <Share2 size={14} style={{ color: 'var(--c-accent)', marginTop: 2 }} />
-        <span className="flex-1 text-[14px] font-mono" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {entity.slug}
-        </span>
-        <ChevronRight size={14} style={{ color: 'var(--c-subtle)', marginTop: 2 }} />
-      </div>
-      <div className="mt-1.5 text-[10.5px] font-mono uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
-        {entity.format} · {sourceLines(entity)} lines
-      </div>
-    </button>
-  );
-}
-
+/**
+ * 0.2.15 — `diagram` is a HIDDEN entity: no sidebar tab, no detail route, so
+ * `embedOnly: true` and neither `renderRow` nor `detailPanel`.
+ *
+ * That is not a demotion, it is the shape being stated. Diagram never had a
+ * sidebar tab or a `/diagrams/$slug` route — `bridge.openEntity('diagram', …)`
+ * pointed at a route that does not exist, so the row and the detail panel were
+ * unreachable surfaces satisfying a slot check. Now the check knows they are
+ * absent, and the chip opens the fullscreen overlay instead of navigating.
+ *
+ * `element_list` / `tagged_list` with `type="diagram"` are unsupported by that
+ * same contract; the list views say so inline rather than rendering blanks.
+ */
 registerEntity<Diagram>({
   type: 'diagram',
   label: 'Diagram',
   labelPlural: 'Diagrams',
-  renderRow: DiagramRow,
   renderChip: DiagramChip,
   renderCard: DiagramCard,
-  detailPanel: DiagramDetail,
+  embedOnly: true,
+  renderOverlay: DiagramOverlay,
   useGetBySlug: (slug) => useDiagram(slug),
+});
+
+registerEditorExtension({
+  ...diagramAuthoringExtension,
+  availableIn: [...diagramAuthoringExtension.availableIn],
 });

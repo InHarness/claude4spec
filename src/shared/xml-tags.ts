@@ -22,9 +22,15 @@ export const XML_TAG_REGEX =
 
 const ATTR_REGEX = /(\w+)="([^"]*)"/g;
 
+/**
+ * `single_element` carries an optional `caption` (0.2.15) — advisory prose that
+ * belongs to THIS reference, not to the entity, and is therefore never synced
+ * back. It applies to any `type`. `serializeXmlTag` skips empty values, so a tag
+ * written without a caption never gains a `caption=""` on the way back out.
+ */
 const ATTR_ORDER: Record<XmlTagKind, readonly string[]> = {
   inline_mention: ['type', 'slug'],
-  single_element: ['type', 'slug'],
+  single_element: ['type', 'slug', 'caption'],
   element_list: ['type', 'slugs'],
   tagged_list: ['type', 'tags', 'filter'],
   tagged_list_mixed: ['tags', 'filter'],
@@ -121,28 +127,14 @@ function escapeAttr(v: string | null | undefined): string {
   return v.replace(/"/g, '&quot;');
 }
 
+/**
+ * 0.2.15 — only the generic M19 tags carry entity slugs. There is no longer a
+ * tag whose NAME is the entity type, so neither the `diagram` literal nor the
+ * registry lookup that generalised it survives: an extension tag names no
+ * entity, and an entity reference always spells its type out in `type=`.
+ */
 export function extractSlugs(tag: XmlTag): string[] {
-  /**
-   * A self-closing entity reference whose TAG NAME is the type, and whose `slug`
-   * attr points at the entity (`caption`, where present, is per-reference prose).
-   *
-   * `diagram` stays a literal AND the registry is consulted, which is belt and
-   * braces on purpose. The registry is the general answer — it is what lets a
-   * tag contributed through `frontend.referenceType` (M19 Slot B) work at all —
-   * but it is populated by module registration, and this function is reachable
-   * from parsing paths that run before any module has registered. Dropping the
-   * literal would make `diagram`'s slug depend on that ordering; keeping it
-   * costs one comparison.
-   *
-   * Before the registry branch existed, a plugin-contributed tag parsed into an
-   * `entityEmbeds` edge carrying no slug at all: callers were told a section
-   * embeds something, but not which one, and every where-used walk that follows
-   * `entityEmbeds[].slug` reported zero pages.
-   */
-  if (tag.kind === 'inline_mention' || tag.kind === 'single_element' || tag.kind === 'diagram') {
-    return tag.attrs.slug ? [tag.attrs.slug] : [];
-  }
-  if (getExtensionReferenceType(tag.kind)?.entityType) {
+  if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
     return tag.attrs.slug ? [tag.attrs.slug] : [];
   }
   if (tag.kind === 'element_list') {
@@ -165,18 +157,17 @@ export function extractTags(tag: XmlTag): string[] {
 }
 
 /**
- * True when a static XML tag (inline_mention / single_element / element_list / diagram)
+ * True when a static XML tag (inline_mention / single_element / element_list)
  * explicitly references the entity `(entityType, slug)`. tagged_list / tagged_list_mixed
  * never match here — those are dynamic, tag-driven refs resolved via `taggedListVia`.
  * Single source of truth for static reference matching — used by the references core
  * (M19) and ReferencesService.
+ *
+ * 0.2.15 — the entity type comes from `type=` and nowhere else. There is no
+ * longer a tag that encodes its type in the tag name.
  */
 export function tagMatchesEntity(tag: XmlTag, entityType: string, slug: string): boolean {
   if (tag.kind === 'tagged_list_mixed') return false;
-  // `diagram` encodes the type as the tag name (no `type` attr) — match by slug.
-  if (tag.kind === 'diagram') {
-    return entityType === 'diagram' && tag.attrs.slug === slug;
-  }
   if (tag.attrs.type !== entityType) return false;
   if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
     return tag.attrs.slug === slug;

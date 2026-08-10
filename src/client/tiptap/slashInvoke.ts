@@ -133,8 +133,12 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
   if ('__action' in result) return;
   try {
     // v0.1.64: the DSL `source` is the truth — create the diagram entity, then
-    // insert a self-closing `<diagram slug caption/>` reference on the page.
-    // `caption` seeds the slug (slugify) but is NOT persisted on the entity.
+    // insert a reference to it on the page. `caption` seeds the slug (slugify)
+    // but is NOT persisted on the entity.
+    //
+    // 0.2.15: that reference is now the GENERIC block tag, not a `<diagram/>`
+    // of its own — `<single_element type="diagram" slug caption/>`. `caption` is
+    // omitted entirely when empty, so the tag never round-trips a `caption=""`.
     const diagram = await diagramsApi.create({
       source: result.source,
       format: result.format as DiagramFormat,
@@ -144,7 +148,14 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
     editor
       .chain()
       .focus()
-      .insertContent({ type: 'diagram', attrs: { slug: diagram.slug, caption: result.caption } })
+      .insertContent({
+        type: 'single_element',
+        attrs: {
+          type: 'diagram',
+          slug: diagram.slug,
+          caption: result.caption ? result.caption : null,
+        },
+      })
       .run();
   } catch (err) {
     toast.error((err as Error).message);

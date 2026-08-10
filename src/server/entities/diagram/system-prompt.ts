@@ -7,6 +7,7 @@ export const diagramSystemPrompt: SystemPromptContribution = {
   mcpToolsLine: 'diagram-tools: validate_diagram',
   narrativeBlock:
     'Diagrams are hoisted out to entities — the DSL body (Mermaid) lives in the entity file, not the page. ' +
-    'Embed only via the self-closing reference `<diagram slug="…" caption="…"/>` — do NOT paste the DSL into ' +
-    'the page; full referencing instructions live in the `<diagram_references>` block.',
+    'Embed only via the generic reference `<single_element type="diagram" slug="…" caption="…"/>` (block) or ' +
+    '`<inline_mention type="diagram" slug="…"/>` (chip) — do NOT paste the DSL into the page; full referencing ' +
+    'instructions live in the `<diagram_references>` block.',
 };

@@ -5,6 +5,7 @@ import { useEditorBridge } from '../../EditorContext.js';
 import type { EntityType } from '../../../../shared/entities.js';
 import { useEditChipOnAltClick } from './useEditChipOnAltClick.js';
 import { BlockBrokenChip } from './BrokenChip.js';
+import { NotListable } from './NotListable.js';
 
 export function ElementListView(props: NodeViewProps) {
   const { node } = props;
@@ -23,6 +24,16 @@ export function ElementListView(props: NodeViewProps) {
     return (
       <NodeViewWrapper className="my-3" contentEditable={false} onClickCapture={altCapture}>
         <BlockBrokenChip category={category} type={type} />
+      </NodeViewWrapper>
+    );
+  }
+
+  // 0.2.15 — an embed-only type has no row; say so instead of drawing an empty
+  // frame that reads as "no results".
+  if (!def.renderRow) {
+    return (
+      <NodeViewWrapper className="my-3" contentEditable={false} onClickCapture={altCapture}>
+        <NotListable type={type} label={def.labelPlural} />
       </NodeViewWrapper>
     );
   }
@@ -82,6 +93,8 @@ function Row({ type, slug, onOpen }: { type: string; slug: string; onOpen: () =>
       </div>
     );
   }
-  const RowComp = def.renderRow;
+  // Non-null by the guard in ElementListView above, which never renders a Row
+  // for a type without one.
+  const RowComp = def.renderRow!;
   return <RowComp slug={slug} entity={data} onOpen={onOpen} />;
 }

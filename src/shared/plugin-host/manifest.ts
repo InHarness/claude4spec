@@ -13,17 +13,6 @@
  */
 
 import type { EntityModuleManifest, SystemPromptContribution } from './types.js';
-import type { ExtensionReferenceType } from '../reference-extensions.js';
-
-/**
- * v0.1.129 (M19 Slot A) — a self-closing XML reference tag contributed at the
- * plugin-manifest level (external / entity-less tags, e.g. a plugin's own
- * `<section_ref/>`-like tag with no backing entity). Identical shape to
- * {@link ExtensionReferenceType} — unlike Slot B (`EntityModule.frontend.referenceType`),
- * `entityType` is author-supplied here since there's no entity module for the
- * host to infer it from.
- */
-export type ReferenceTypeContribution = ExtensionReferenceType;
 
 /**
  * The Host API version this build advertises. Bumped on a breaking change to
@@ -305,12 +294,15 @@ export interface PluginManifest {
     /** M33 — declarative editor slash-commands (entity-less plugins). */
     commands?: PluginCommandContribution[];
     /**
-     * v0.1.129 (M19 Slot A) — self-closing XML reference tags this plugin
-     * contributes, dispatched to `M19.registerExtensionReferenceType`. Additive
-     * to the `1.0.0` baseline (see `HOST_API_VERSION` above) — same precedent
-     * as M13's declarative backend slots, no version bump.
+     * 0.2.15 — `referenceTypes` is GONE. A plugin envelope no longer contributes
+     * XML reference tags at all; the enumeration of envelope capabilities is
+     * `entities` plus the three above. An entity is embedded through the generic
+     * M19 tags dispatched on `type=`, and brings its appearance through the
+     * `renderChip` / `renderCard` / `renderRow` render slots instead.
+     *
+     * Deliberately NOT a `HOST_API_VERSION` bump: a 2.x plugin that still
+     * declares the field keeps loading, and the declaration is simply inert.
      */
-    referenceTypes?: ReferenceTypeContribution[];
   };
 }
 

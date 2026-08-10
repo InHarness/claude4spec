@@ -7,7 +7,6 @@ import { ElementListView } from './views/ElementListView.js';
 import { TaggedListView } from './views/TaggedListView.js';
 import { TaggedListMixedView } from './views/TaggedListMixedView.js';
 import { TodoView } from './views/TodoView.js';
-import { DiagramNode } from './DiagramNode.js';
 
 // markdown-it's default HTML rules only accept tag names matching
 // [A-Za-z][A-Za-z0-9\-]* — which rejects our underscore-containing names
@@ -17,11 +16,11 @@ import { DiagramNode } from './DiagramNode.js';
 // recognise our 5 XML tag kinds explicitly AND emit them as PAIRED tags
 // (`<foo attr="…"></foo>`) so the DOM parser treats them as empty elements.
 
-// `diagram` is a self-closing block reference (v0.1.64) — it joins the block
-// tags here. The former content-bearing `<diagram>…DSL…</diagram>` rule
-// (`xml_block_content`) was removed: the DSL body now lives in the diagram entity.
+// 0.2.15 — `diagram` is gone from this list, and no entity type will ever join
+// it again. A diagram is a `<single_element type="diagram" …/>` like anything
+// else; the only names here are the core block kinds.
 const BLOCK_TAGS_RE =
-  /^<(single_element|element_list|tagged_list|tagged_list_mixed|todo|diagram)(\s[^>]*?)?\/?\s*>\s*$/;
+  /^<(single_element|element_list|tagged_list|tagged_list_mixed|todo)(\s[^>]*?)?\/?\s*>\s*$/;
 
 const INLINE_TAG_RE =
   /^<(inline_mention|single_element|element_list|tagged_list|tagged_list_mixed|todo)(\s[^>]*?)?\/?\s*>/;
@@ -162,13 +161,24 @@ export const SingleElementNode = Node.create({
     return {
       type: { default: '' },
       slug: { default: '' },
+      /**
+       * 0.2.15 — optional per-reference prose, for any `type`.
+       *
+       * `default: null`, NOT `''`: `mergeAttributes` drops a null and keeps an
+       * empty string, so `''` would put a literal `caption=""` into the
+       * intermediate DOM and — via `serializeXmlTag`, which skips empties —
+       * make the markdown → tiptap → markdown round-trip depend on which of the
+       * two layers ran last. Null keeps a caption-less tag caption-less end to
+       * end.
+       */
+      caption: { default: null },
     };
   },
   parseHTML() {
     return [
       {
         tag: 'single_element',
-        getAttrs: (node) => pickAttrs(node as HTMLElement, ['type', 'slug']),
+        getAttrs: (node) => pickAttrs(node as HTMLElement, ['type', 'slug', 'caption']),
       },
     ];
   },

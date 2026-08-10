@@ -8,28 +8,27 @@ import {
   SPREADSHEET_TYPE,
 } from '../../../identity.js';
 import { spreadsheetData, spreadsheetSlugPattern } from '../schema.js';
-import { spreadsheetNodeExtension } from './node-view.js';
+import { SpreadsheetCard, SpreadsheetChip, SpreadsheetFullscreen } from './node-view.js';
 import { fetchShape, type SpreadsheetShape } from './hooks.js';
 
 /**
- * The frontend module — and mostly a list of things it does NOT contribute.
+ * The frontend module of a HIDDEN type.
  *
- * THIS IS WHAT "HIDDEN" MEANS. There is no `hidden` flag in the manifest types;
- * a type is hidden by omission, and the two omissions are here:
+ * 0.2.15 — "hidden" is now DECLARED (`embedOnly: true`), not inferred from two
+ * omissions. It still means the same two things — no `sidebarTab`, so the rail
+ * filters it out; no `routes`, so there is no list or detail page — but the host
+ * now knows, which changes two things concretely:
  *
- *   - no `sidebarTab`, so `Sidebar.tsx` filters it out of the rail entirely;
- *   - no `routes`, so there is no list page and no detail page to navigate to.
+ *   - `renderRow` / `detailPanel` are no longer required, so the four
+ *     `NullRender` stubs that used to sit here are gone. They existed only to
+ *     satisfy a slot check that demanded surfaces this type does not have, and a
+ *     module failing that check had ALL its slots skipped;
+ *   - `renderOverlay` IS required, because a hidden type's chip has nowhere to
+ *     navigate and opens a fullscreen surface instead.
  *
- * What survives is the surface a spreadsheet is actually for: the
- * `<spreadsheet/>` embed inside a page, the `/spreadsheet` slash command, and
- * the MCP tools. Which is why the render slots below are stubs rather than
- * omissions — `validateFrontendModule` requires all four to be functions, and a
- * module failing validation has ALL its slots skipped, including the editor
- * extension that puts the grid on screen.
+ * The `<spreadsheet/>` tag is gone too: the grid is reached through
+ * `<single_element type="spreadsheet" …/>`, dispatched generically on `type=`.
  */
-
-const NullRender = () => null;
-
 export const spreadsheetFrontendModule: FrontendModule = {
   type: SPREADSHEET_TYPE,
   data: spreadsheetData,
@@ -40,12 +39,10 @@ export const spreadsheetFrontendModule: FrontendModule = {
   displayOrder: SPREADSHEET_DISPLAY_ORDER,
   pathPrefix: SPREADSHEET_PATH_PREFIX,
 
-  // Required by the slot contract; unreachable in practice, because reaching a
-  // chip/card/row/detail means a surface this type does not have.
-  renderChip: NullRender,
-  renderCard: NullRender,
-  renderRow: NullRender,
-  detailPanel: NullRender,
+  embedOnly: true,
+  renderChip: SpreadsheetChip,
+  renderCard: SpreadsheetCard,
+  renderOverlay: SpreadsheetFullscreen,
 
   /**
    * The shape of one sheet, for whatever generic host UI asks. Deliberately the
@@ -78,10 +75,10 @@ export const spreadsheetFrontendModule: FrontendModule = {
    */
   listByTags: async () => [],
 
-  /**
-   * The node only. NO `slashCommand` here — the manifest's `contributes.commands`
-   * owns `/spreadsheet`, and declaring it twice puts two entries in the palette
-   * with the wrong one selected by default. See `capabilities/commands.ts`.
+  /*
+   * 0.2.15 — no editor extensions at all. The node this used to contribute
+   * (`spreadsheetNodeExtension`) went with the `<spreadsheet/>` tag; the generic
+   * `single_element` node renders the grid now. `/spreadsheet` is unaffected —
+   * the manifest's `contributes.commands` owns it, and always did.
    */
-  editorExtensions: [spreadsheetNodeExtension],
 };

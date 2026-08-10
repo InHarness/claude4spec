@@ -190,11 +190,40 @@ export function openPopover<K extends PopoverKind>(
   });
 }
 
+// ---------- Entity overlay (hidden / embed-only types) ----------
+
+/**
+ * 0.2.15 — the click target of a hidden entity's chip or card.
+ *
+ * A type with `embedOnly: true` (`diagram`, `spreadsheet`) has no detail route,
+ * so `bridge.openEntity` has nowhere to send the user. It opens a host-local,
+ * read-only fullscreen overlay instead — rendered by the type's own
+ * `renderOverlay` slot, resolved through the client plugin host.
+ *
+ * An event rather than a call through `EditorBridge`, because these chips also
+ * render in the chat pipeline and in read-only viewers, where no editor bridge
+ * exists at all. The event bus is the one surface all three share.
+ */
+export interface EntityOverlayRequest {
+  type: string;
+  slug: string;
+  caption?: string;
+}
+
+const ENTITY_OVERLAY_EVENT = 'c4s:entity-overlay-open';
+
+export function openEntityOverlay(request: EntityOverlayRequest): void {
+  window.dispatchEvent(
+    new CustomEvent<EntityOverlayRequest>(ENTITY_OVERLAY_EVENT, { detail: request }),
+  );
+}
+
 export const UI_EVENTS = {
   TOAST: TOAST_EVENT,
   CONFIRM: CONFIRM_EVENT,
   POPOVER: POPOVER_EVENT,
   GIT_ERROR: GIT_ERROR_EVENT,
+  ENTITY_OVERLAY: ENTITY_OVERLAY_EVENT,
 } as const;
 
 /*

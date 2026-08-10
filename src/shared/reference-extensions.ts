@@ -5,18 +5,19 @@ export interface ExtensionReferenceValidateResult {
   category: string;
 }
 
+/**
+ * 0.2.15 — NON-ENTITY tags only.
+ *
+ * Until 0.2.14 this shape carried an `entityType`, which is what let an entity
+ * contribute its own tag (`<diagram slug caption/>`) and have it resolve like a
+ * reference. That is gone: an entity is now embedded ONLY through the generic
+ * M19 tags, dispatched on the `type` attribute. What is left here is the
+ * mechanism for tags that name no entity at all — today exactly one,
+ * `<section_ref anchor/>`, registered directly by M06 at bootstrap.
+ */
 export interface ExtensionReferenceType {
   tag: string;
   attrOrder: readonly string[];
-  /**
-   * v0.1.129 (M19) — the entity type this tag's `slug` attribute resolves
-   * against, e.g. `'diagram'`. Enables generic broken-reference detection in
-   * `check_consistency` (any registered extension type with an `entityType`
-   * gets existence checking for free, no per-tag code). Extensions with no
-   * backing entity (e.g. `section_ref`, resolved by anchor via SectionsService)
-   * leave this unset.
-   */
-  entityType?: string;
   validate?: (attrs: Record<string, string>) => ExtensionReferenceValidateResult;
 }
 
@@ -31,19 +32,15 @@ const registry = new Map<string, ExtensionReferenceType>();
  * `validate` closure look like a genuine conflict, defeating the very
  * idempotency this function exists to provide. There is no way to deep-compare
  * closures, so "both present or both absent" is the closest available proxy —
- * `attrOrder`/`entityType`/`tag` remain exact-compared since those are plain
- * data.
+ * `attrOrder`/`tag` remain exact-compared since those are plain data.
  *
- * Exported (not just an internal `classify` helper) so callers that need to
- * dedup a BATCH of contributions against each other — before any of them hit
- * the real registry — can reuse the exact same equivalence rule, e.g.
- * `PluginRegistryImpl.registerPlugin` detecting two entries of the same
- * manifest that redeclare the same tag differently.
+ * Exported (not just an internal `classify` helper) so a caller replaying the
+ * bootstrap registrations against a fresh registry can reuse the exact same
+ * equivalence rule rather than reimplementing it.
  */
 export function sameExtensionReferenceSpec(a: ExtensionReferenceType, b: ExtensionReferenceType): boolean {
   return (
     a.tag === b.tag &&
-    a.entityType === b.entityType &&
     Boolean(a.validate) === Boolean(b.validate) &&
     JSON.stringify(a.attrOrder) === JSON.stringify(b.attrOrder)
   );
@@ -77,12 +74,10 @@ function classify(spec: ExtensionReferenceType): Classification {
 
 /**
  * Non-mutating pre-check — the exact classification `registerExtensionReferenceType`
- * itself uses, exposed so a caller registering a BATCH of contributions in one
- * logical unit (e.g. `PluginRegistryImpl.registerPlugin`, across several entity
- * modules' Slot B tags plus a manifest's Slot A tags) can validate the whole
- * batch atomically before committing ANY of it — preventing a partial commit
- * where an earlier contribution in the batch stays live with no rollback path
- * if a later one in the same batch conflicts.
+ * itself uses, exposed so a caller registering several tags in one logical unit
+ * can validate the whole batch atomically before committing ANY of it —
+ * preventing a partial commit where an earlier contribution stays live with no
+ * rollback path if a later one conflicts.
  *
  * Returns an error message for anything that would actually throw (invalid
  * tag / genuine conflict); `null` for anything that would succeed OR silently
@@ -102,11 +97,13 @@ export function wouldConflictExtensionReferenceType(spec: ExtensionReferenceType
  * core always wins, the extension is shadowed and reported, not fatal.
  *
  * Re-registering the SAME tag with an identical spec is a silent no-op, not a
- * conflict — this registry is a process-global singleton, but `registerPlugin`/
- * `registerEntityModule` are designed to be replayed against a fresh
- * `PluginRegistry` instance (every test app build, hot-reload) rather than
- * called exactly once per process. Only a tag re-claimed with a DIFFERENT
- * definition is a genuine conflict.
+ * conflict — this registry is a process-global singleton, but the bootstrap
+ * registrations that feed it are designed to be replayed (every test app build,
+ * hot-reload) rather than run exactly once per process. Only a tag re-claimed
+ * with a DIFFERENT definition is a genuine conflict.
+ *
+ * 0.2.15 — the only caller left is M06's direct `<section_ref/>` registration.
+ * Neither a plugin manifest nor an entity module can reach this any more.
  */
 export function registerExtensionReferenceType(spec: ExtensionReferenceType): void {
   const result = classify(spec);

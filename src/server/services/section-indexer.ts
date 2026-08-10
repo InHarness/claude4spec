@@ -1,7 +1,12 @@
 import crypto from 'node:crypto';
 import { customAlphabet } from 'nanoid';
 import type Database from 'better-sqlite3';
-import { parseXmlTags, parseXmlTagsExcludingCode } from '../../shared/xml-tags.js';
+import {
+  extractSlugs,
+  extractTags,
+  parseXmlTagsExcludingCode,
+  type XmlTag,
+} from '../../shared/xml-tags.js';
 import { ANCHOR_PATTERN_SOURCE } from '../../shared/anchor-pattern.js';
 import type { PagesService } from './pages.js';
 import type { WatchSubscriber, WatchScope } from '../fs/watcher.js';
@@ -475,18 +480,30 @@ export class SectionIndexerService implements WatchSubscriber {
         for (const s of ownedSections) {
           const xmlTags = parseXmlTagsExcludingCode(s.content);
           const seen = new Set<string>();
+          const link = (type: string, slug: string) => {
+            const key = `${type}|${slug}`;
+            if (seen.has(key)) return;
+            seen.add(key);
+            // M29: link by slug (sole identity); only persist for entities
+            // that actually exist, mirroring the prior id-resolver guard.
+            // `entityExists` answers for hidden types too, which is why this
+            // needs no allowlist of "core" types.
+            if (this.host.entityExists(type, slug)) linkStmt.run(rootId, s.anchor, type, slug);
+          };
           for (const tag of xmlTags) {
+            // 0.2.15 — all FIVE generic M19 tags close the link, for EVERY
+            // entity type including the hidden ones (`diagram`, `spreadsheet`).
+            // Until now the loop bailed on any tag without a `type` attribute,
+            // which silently dropped both the tag-driven kinds and the entities
+            // that carried their type in the tag name — so `detail._references`
+            // closed for some types and not others.
+            if (tag.kind === 'tagged_list' || tag.kind === 'tagged_list_mixed') {
+              for (const { type, slug } of this.entitiesMatchingTaggedList(tag)) link(type, slug);
+              continue;
+            }
             const type = tag.attrs.type;
             if (!type) continue;
-            const slugs = extractSlugsFromTag(tag);
-            for (const slug of slugs) {
-              const key = `${type}|${slug}`;
-              if (seen.has(key)) continue;
-              seen.add(key);
-              // M29: link by slug (sole identity); only persist for entities
-              // that actually exist, mirroring the prior id-resolver guard.
-              if (this.host.entityExists(type, slug)) linkStmt.run(rootId, s.anchor, type, slug);
-            }
+            for (const slug of extractSlugs(tag)) link(type, slug);
           }
         }
       }
@@ -503,6 +520,41 @@ export class SectionIndexerService implements WatchSubscriber {
       pagePath: relPath,
       anchors: sections.map((s) => s.anchor),
     });
+  }
+
+  /**
+   * The entities a `<tagged_list/>` / `<tagged_list_mixed/>` resolves to right
+   * now, so a dynamic embed closes `section_entity_link` the same way a static
+   * one does (0.2.15). `tagged_list` restricts to one `type`; `tagged_list_mixed`
+   * spans every type. `filter="and"` requires all named tags, anything else is
+   * the default "any".
+   *
+   * Resolved eagerly, at index time, against the tag assignments of the moment —
+   * which is what the rest of the section index already is. Re-tagging an entity
+   * does not by itself reindex the sections that list it; that is the same
+   * staleness the link table has always had, not something introduced here.
+   */
+  private entitiesMatchingTaggedList(tag: XmlTag): Array<{ type: string; slug: string }> {
+    const tagSlugs = extractTags(tag);
+    if (!tagSlugs.length) return [];
+    const requireAll = tag.attrs.filter === 'and';
+    const placeholders = tagSlugs.map(() => '?').join(',');
+    const typeClause = tag.kind === 'tagged_list' ? 'AND entity_type = ?' : '';
+    const params: unknown[] = [...tagSlugs];
+    if (tag.kind === 'tagged_list') {
+      if (!tag.attrs.type) return [];
+      params.push(tag.attrs.type);
+    }
+    const having = requireAll ? 'HAVING COUNT(DISTINCT tag_slug) = ?' : '';
+    if (requireAll) params.push(tagSlugs.length);
+    const rows = this.db
+      .prepare(
+        `SELECT entity_type, entity_slug FROM entity_tag
+          WHERE tag_slug IN (${placeholders}) ${typeClause}
+          GROUP BY entity_type, entity_slug ${having}`,
+      )
+      .all(...params) as Array<{ entity_type: string; entity_slug: string }>;
+    return rows.map((r) => ({ type: r.entity_type, slug: r.entity_slug }));
   }
 }
 
@@ -624,16 +676,4 @@ function countParagraphs(content: string): number {
   return blocks.length;
 }
 
-function extractSlugsFromTag(tag: ReturnType<typeof parseXmlTags>[number]): string[] {
-  if (tag.kind === 'inline_mention' || tag.kind === 'single_element') {
-    return tag.attrs.slug ? [tag.attrs.slug] : [];
-  }
-  if (tag.kind === 'element_list') {
-    return (tag.attrs.slugs ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  return [];
-}
 

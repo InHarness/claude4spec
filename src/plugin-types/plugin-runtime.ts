@@ -52,7 +52,6 @@ export type {
   PluginSettingField,
   PluginSettingsModule,
   PluginCommandContribution,
-  ReferenceTypeContribution,
 } from '../shared/plugin-host/manifest.js';
 export type { EntityModuleManifest, SystemPromptContribution };
 
@@ -357,7 +356,14 @@ export interface EntityChipProps<T = unknown> {
   entity: T | null;
   onOpen?: () => void;
 }
-export interface EntityCardProps<T = unknown> extends EntityChipProps<T> {}
+export interface EntityCardProps<T = unknown> extends EntityChipProps<T> {
+  /**
+   * 0.2.15 — the `caption` written on THIS `<single_element/>` reference.
+   * Advisory prose belonging to the reference, not to the entity, so it is never
+   * synced back and is absent whenever the tag omitted it.
+   */
+  caption?: string;
+}
 export interface EntityRowProps<T = unknown> {
   slug: string;
   entity: T;
@@ -402,8 +408,22 @@ export type RouteTreeFragment = (ctx: { rootRoute: AnyRoute }) => AnyRoute[];
 export interface FrontendModule extends EntityModuleManifest {
   renderChip: ComponentType<EntityChipProps<unknown>>;
   renderCard: ComponentType<EntityCardProps<unknown>>;
-  renderRow: ComponentType<EntityRowProps<unknown>>;
-  detailPanel: ComponentType<EntityDetailProps>;
+  /** 0.2.15 — optional; absent on an `embedOnly` type, which has no list row. */
+  renderRow?: ComponentType<EntityRowProps<unknown>>;
+  /** 0.2.15 — optional; absent on an `embedOnly` type, which has no detail route. */
+  detailPanel?: ComponentType<EntityDetailProps>;
+  /**
+   * 0.2.15 — a HIDDEN type: no `sidebarTab`, no `routes`. It exists only as
+   * something a page embeds. It must supply `renderCard`, `renderChip` and
+   * `renderOverlay`, and must NOT supply `renderRow` / `detailPanel` — so
+   * `<element_list/>` / `<tagged_list/>` of it are unsupported by contract.
+   */
+  embedOnly?: boolean;
+  /**
+   * 0.2.15 — required when `embedOnly`: the read-only fullscreen surface the
+   * type's chip and card open, since there is no detail route to navigate to.
+   */
+  renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
   useGetBySlug: (slug: string | null) => {
     data: unknown | null | undefined;
     isLoading: boolean;

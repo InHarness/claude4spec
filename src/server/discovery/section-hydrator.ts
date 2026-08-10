@@ -96,9 +96,9 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
 
     const slugs = extractSlugs(tag);
     const tags = extractTags(tag);
-    // `diagram` and friends are extension tags whose NAME is the type; core
-    // tags carry it in an attribute.
-    const type = tag.attrs.type ?? (tag.source === 'extension' ? tag.kind : '');
+    // 0.2.15 — the type is the `type` attribute, always. No tag encodes it in
+    // its name any more.
+    const type = tag.attrs.type ?? '';
     if (!type && !tags.length) continue;
     edges.entityEmbeds.push({
       tagType: tag.kind,
