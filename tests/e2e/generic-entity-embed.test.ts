@@ -35,6 +35,9 @@ const DIAGRAM_SLUG = 'e2e-embed-flow';
 const CAPTION = 'E2E EMBED CAPTION';
 /** Referenced on the page and never created — the broken-reference case. */
 const MISSING_SLUG = 'no-such-diagram';
+/** A VISIBLE type, to exercise the row half of the dispatch (diagram has no row). */
+const AC_SLUG = 'e2e-embed-row-probe';
+const AC_TEXT = 'E2E EMBED ROW PROBE';
 
 async function firstProject(): Promise<WorkspaceProject> {
   const res = await fetch(`${BASE}/api/workspace`);
@@ -69,6 +72,13 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
         source: 'graph TD; Alpha-->Beta;',
       }),
     });
+    // A visible type, seeded so the ROW half of the dispatch has something to
+    // render — `diagram` deliberately has no row.
+    await fetch(`${BASE}/api/projects/${project.id}/acs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slug: AC_SLUG, text: AC_TEXT }),
+    });
 
     // Both generic forms on one page: the block card and the inline chip. The
     // point of the release is that neither names the type in its TAG.
@@ -81,7 +91,11 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
           `# Generic embed\n\n` +
           `<single_element type="diagram" slug="${DIAGRAM_SLUG}" caption="${CAPTION}"/>\n\n` +
           `Referenced inline: <inline_mention type="diagram" slug="${DIAGRAM_SLUG}"/>\n\n` +
-          `And a broken one: <inline_mention type="diagram" slug="${MISSING_SLUG}"/>\n`,
+          `And a broken one: <inline_mention type="diagram" slug="${MISSING_SLUG}"/>\n\n` +
+          // A visible type in a list — renderRow — and the hidden type in one,
+          // which is the contract refusal rather than an empty frame.
+          `<element_list type="ac" slugs="${AC_SLUG}"/>\n\n` +
+          `<element_list type="diagram" slugs="${DIAGRAM_SLUG}"/>\n`,
       }),
     });
 
@@ -127,6 +141,9 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
       await fetch(`${BASE}/api/projects/${project.id}/diagrams/${DIAGRAM_SLUG}`, {
         method: 'DELETE',
       }).catch(() => {});
+      await fetch(`${BASE}/api/projects/${project.id}/acs/${AC_SLUG}`, { method: 'DELETE' }).catch(
+        () => {},
+      );
     }
     await browser?.close();
   });
@@ -172,13 +189,45 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     await expect
       .poll(() => page.locator('[role="dialog"] svg').count(), { timeout: 15_000 })
       .toBeGreaterThan(0);
+    // Read the stage TRANSFORM, not the toolbar text: the footer's help line
+    // ("0 = 100%") contains the same string the zoom readout does, so a text
+    // assertion passes while measuring nothing.
     await expect
-      .poll(async () => (await page.locator('[role="dialog"]').innerText()).includes('100%'))
-      .toBe(false);
+      .poll(
+        async () =>
+          await page
+            .locator('[role="dialog"] .c4s-diagram-svg > div')
+            .first()
+            .evaluate((el) => {
+              const m = /scale\(([\d.]+)\)/.exec((el as HTMLElement).style.transform ?? '');
+              return m ? Number(m[1]) : 1;
+            }),
+        { timeout: 10_000 },
+      )
+      .not.toBe(1);
 
     await page.keyboard.press('Escape');
     await expect.poll(() => page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBe(0);
     expect(page.url()).toBe(before);
+  });
+
+  /**
+   * The row half of the same dispatch, and its deliberate absence.
+   *
+   * This is what retires `ac-5-generycznych-node-w-m19-deleguje-re` from
+   * `tests/ac-skiplist.json`, whose stated reason was "TipTap NodeView rendering
+   * (renderChip/renderCard/renderRow delegation, broken-chip fallback) — React
+   * editor, not automatable in Vitest". It is automatable in a browser, and the
+   * three delegations plus the fallback are now covered across this file.
+   */
+  it('[ac:ac-5-generycznych-node-w-m19-deleguje-re] delegates rows for a visible type, and refuses them for a hidden one', async () => {
+    const body = await page.locator('body').innerText();
+    // element_list of a VISIBLE type → renderRow, with the entity's own text.
+    expect(body).toContain(AC_TEXT);
+    // element_list of a HIDDEN type → the contract, stated inline. The failure
+    // this replaces is an empty list frame, which reads as "nothing matched".
+    expect(body).toContain('cannot be listed');
+    expect(body).toContain('single_element type="diagram"');
   });
 
   it('renders a broken reference as a chip whose click does nothing', async () => {
