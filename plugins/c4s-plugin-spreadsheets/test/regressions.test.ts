@@ -9,7 +9,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { renderInlineMarkdown } from '../src/entity/spreadsheet/frontend/inline-markdown.js';
-import { serializeSpreadsheetTag } from '../src/entity/spreadsheet/frontend/node-view.js';
 import { denseCellsToSparse } from '../src/entity/spreadsheet/upgrades.js';
 import { spreadsheetData } from '../src/entity/spreadsheet/schema.js';
 import { SPREADSHEET_ATTR_ORDER, MAX_WINDOW_CELLS } from '../src/identity.js';
@@ -62,31 +61,22 @@ describe('inline markdown — href sanitising', () => {
 });
 
 describe('markdown serialization of the embed', () => {
-  it('writes the SELF-CLOSING form the type documents', () => {
-    // Without a serializer tiptap-markdown falls back to its HTML writer, which
-    // emits a paired `<spreadsheet …></spreadsheet>` — rewriting the tag, and
-    // producing a two-line diff, on every save of every page carrying an embed.
-    expect(serializeSpreadsheetTag({ slug: 'q1', caption: 'Q1' })).toBe(
-      '<spreadsheet slug="q1" caption="Q1"/>',
-    );
-  });
-
-  it('omits an absent or empty caption rather than writing an empty attribute', () => {
-    expect(serializeSpreadsheetTag({ slug: 'q1' })).toBe('<spreadsheet slug="q1"/>');
-    expect(serializeSpreadsheetTag({ slug: 'q1', caption: '' })).toBe('<spreadsheet slug="q1"/>');
-    expect(serializeSpreadsheetTag({ slug: 'q1', caption: null })).toBe('<spreadsheet slug="q1"/>');
-  });
-
-  it('escapes a quote in an attribute', () => {
-    expect(serializeSpreadsheetTag({ slug: 'q1', caption: 'a "b" c' })).toBe(
-      '<spreadsheet slug="q1" caption="a &quot;b&quot; c"/>',
-    );
-  });
-
-  it('follows the declared attrOrder, which both halves share', () => {
-    // The order is defined once in `identity.ts` and read by the serializer AND
-    // by `frontend.referenceType.attrOrder`; two copies would drift into
-    // reordering a page's attributes on save.
+  /**
+   * 0.2.15 — these four cases pinned `serializeSpreadsheetTag`, a mirror of the
+   * host's `serializeXmlTag` that this envelope had to carry because it owned a
+   * `<spreadsheet slug caption/>` tag of its own.
+   *
+   * The tag is gone and so is the mirror. A sheet is embedded as
+   * `<single_element type="spreadsheet" …/>`, serialized by the HOST, which
+   * means the drift these cases guarded against — two copies of one attribute
+   * order, one of them rewriting a page's tags on every save — is now
+   * structurally impossible rather than tested for. The host's own coverage of
+   * the self-closing form, empty-caption omission and quote escaping lives in
+   * `src/shared/xml-tags.test.ts`.
+   */
+  it('no longer exists — the host serializes the embed', () => {
+    // `SPREADSHEET_ATTR_ORDER` survives only as the MCP-facing declaration of
+    // which attributes a sheet reference carries; nothing serializes from it.
     expect([...SPREADSHEET_ATTR_ORDER]).toEqual(['slug', 'caption']);
   });
 });
