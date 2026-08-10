@@ -161,6 +161,21 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     await expect.poll(() => page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBeGreaterThan(0);
     expect(page.url()).toBe(before);
 
+    /**
+     * The overlay must FIT the diagram, which is a race rather than a layout
+     * question: it is opened from an event carrying only `{ slug, caption }`
+     * (so a chat chip can open it too) and renders the SVG afterwards, so a
+     * fit that runs only on mount measures an empty stage and does nothing —
+     * leaving the diagram at 100% in the corner of a full-screen surface, which
+     * looks like the overlay is broken rather than unfitted.
+     */
+    await expect
+      .poll(() => page.locator('[role="dialog"] svg').count(), { timeout: 15_000 })
+      .toBeGreaterThan(0);
+    await expect
+      .poll(async () => (await page.locator('[role="dialog"]').innerText()).includes('100%'))
+      .toBe(false);
+
     await page.keyboard.press('Escape');
     await expect.poll(() => page.locator('[role="dialog"][aria-label*="Diagram"]').count()).toBe(0);
     expect(page.url()).toBe(before);
