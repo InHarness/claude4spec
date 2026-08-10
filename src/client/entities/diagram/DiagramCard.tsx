@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Share2, Maximize2 } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { Share2, Maximize2, Pencil } from 'lucide-react';
 import type { Diagram } from '../../../shared/entities.js';
 import {
   renderDiagram,
@@ -8,9 +8,29 @@ import {
   isSupportedFormat,
 } from '../../tiptap/extensions/diagramRender.js';
 import { DiagramFullscreen } from '../../components/DiagramFullscreen.js';
-import { useDiagram } from '../../hooks/useDiagrams.js';
+import { useDiagram, useUpdateDiagram } from '../../hooks/useDiagrams.js';
+import { openPopover, toast } from '../../ui/events.js';
+import type { DiagramFormat } from '../../../shared/entities.js';
 import { useTheme } from '../../state/tweaks.js';
 import type { EntityCardProps } from '../registry.js';
+
+/** Shared by the two corner affordances; only `right` differs. */
+const OVERLAY_BUTTON: React.CSSProperties = {
+  position: 'absolute',
+  top: 6,
+  right: 6,
+  zIndex: 2,
+  padding: 6,
+  background: 'var(--c-card)',
+  color: 'var(--c-muted)',
+  border: '1px solid var(--c-hair)',
+  borderRadius: 3,
+  cursor: 'pointer',
+  display: 'inline-flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  opacity: 0.75,
+};
 
 type RenderState =
   | { status: 'idle' }
@@ -32,18 +52,54 @@ type RenderState =
  * `mermaid` stays lazy: `renderDiagram` imports it on first use and memoises the
  * module, so a page with no diagram on it never pays for the bundle.
  *
- * Editing is NOT here. A diagram's DSL is edited through the entity, via the
- * `/diagram` popover (`diagramAuthoringExtension`); a card is a read surface.
+ * The DSL is edited from the pencil, which opens the same `diagram` popover the
+ * old NodeView opened on double-click and writes back through `useUpdateDiagram`.
+ * It edits the ENTITY — source and format. The caption is per-reference, lives
+ * on the embedding tag, and is edited with the chip (Alt+click), which is the
+ * one thing the old view conflated.
  */
 export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<Diagram>) {
   const { effectiveTheme } = useTheme();
   const format = entity?.format ?? 'mermaid';
   const source = entity?.source ?? '';
   const [state, setState] = useState<RenderState>({ status: 'loading' });
+  const figureRef = useRef<HTMLElement>(null);
+  const updateDiagram = useUpdateDiagram();
 
+  /**
+   * The repair path. A diagram whose source no longer parses renders as an
+   * error box, and an error box with no way into the source is a dead end: the
+   * only remaining move would be `/diagram`, which mints a NEW entity under a
+   * new slug and orphans this one.
+   */
+  async function openEditPopover(e?: React.MouseEvent) {
+    const rect = figureRef.current?.getBoundingClientRect();
+    const result = await openPopover(
+      'diagram',
+      { x: e?.clientX ?? rect?.left ?? 100, y: e?.clientY ?? (rect?.bottom ?? 100) + 4 },
+      { mode: 'edit', initial: { format, caption: caption ?? '', source } },
+    );
+    if (!result || '__action' in result) return;
+    if (result.source === source && result.format === format) return;
+    updateDiagram.mutate(
+      { slug, input: { source: result.source, format: result.format as DiagramFormat } },
+      { onError: (err) => toast.error((err as Error).message) },
+    );
+  }
+
+  /**
+   * Unique per MOUNTED CARD, not per diagram. Mermaid stamps this id into the
+   * SVG it returns and derives every internal `id` from it — markers, cluster
+   * fills, gradients — which the markup then references as `url(#…)`. Two
+   * embeds of the same diagram on one page therefore inject the same ids into
+   * one document, and the second copy's arrowheads resolve against the first
+   * copy's defs. `useId` is what keeps them apart; the old `DiagramView` mixed
+   * in `Math.random()` for the same reason.
+   */
+  const instanceId = useId();
   const renderId = useMemo(
-    () => sanitizeRenderId(`card-${format}-${hashSource(source)}-${slug}`),
-    [format, source, slug, effectiveTheme],
+    () => sanitizeRenderId(`card-${format}-${effectiveTheme}-${hashSource(source)}-${slug}-${instanceId}`),
+    [format, source, slug, effectiveTheme, instanceId],
   );
 
   useEffect(() => {
@@ -87,7 +143,20 @@ export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<D
   }
 
   return (
-    <figure style={{ margin: 0, position: 'relative' }}>
+    <figure ref={figureRef} style={{ margin: 0, position: 'relative' }}>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void openEditPopover(e);
+        }}
+        title="Edit diagram source"
+        aria-label={`Edit diagram ${slug}`}
+        style={{ ...OVERLAY_BUTTON, right: onOpen ? 34 : 6 }}
+      >
+        <Pencil size={13} />
+      </button>
       {onOpen && (
         <button
           type="button"
@@ -98,22 +167,7 @@ export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<D
           }}
           title="Expand (fullscreen with zoom & pan)"
           aria-label={`Expand diagram ${slug}`}
-          style={{
-            position: 'absolute',
-            top: 6,
-            right: 6,
-            zIndex: 2,
-            padding: 6,
-            background: 'var(--c-card)',
-            color: 'var(--c-muted)',
-            border: '1px solid var(--c-hair)',
-            borderRadius: 3,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: 0.75,
-          }}
+          style={OVERLAY_BUTTON}
         >
           <Maximize2 size={13} />
         </button>
@@ -174,6 +228,10 @@ export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<D
         >
           <strong>Diagram error</strong>
           {state.line !== undefined ? ` (line ${state.line})` : ''}: {state.message}
+          {/* The offending source, so the pencil above has something to aim at. */}
+          <pre style={{ margin: '6px 0 0', whiteSpace: 'pre-wrap', fontSize: 11.5, opacity: 0.85 }}>
+            {source}
+          </pre>
         </div>
       )}
 
@@ -212,6 +270,7 @@ export function DiagramOverlay({
   onClose: () => void;
 }) {
   const { effectiveTheme } = useTheme();
+  const instanceId = useId();
   const { data: entity } = useDiagram(slug);
   const [svg, setSvg] = useState('');
   const source = entity?.source ?? '';
@@ -220,14 +279,14 @@ export function DiagramOverlay({
   useEffect(() => {
     let cancelled = false;
     if (!source.trim() || !isSupportedFormat(format)) return;
-    const id = sanitizeRenderId(`overlay-${format}-${hashSource(source)}-${slug}`);
+    const id = sanitizeRenderId(`overlay-${format}-${effectiveTheme}-${hashSource(source)}-${slug}-${instanceId}`);
     void renderDiagram(format, source, id, effectiveTheme).then((result) => {
       if (!cancelled && result.ok) setSvg(result.svg);
     });
     return () => {
       cancelled = true;
     };
-  }, [source, format, slug, effectiveTheme]);
+  }, [source, format, slug, effectiveTheme, instanceId]);
 
   return <DiagramFullscreen svg={svg} caption={caption} onClose={onClose} />;
 }

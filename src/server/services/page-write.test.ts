@@ -802,4 +802,127 @@ describe('update_sections — the batch contract', () => {
     ).catch((e) => e);
     expect(err.code).toBe('VALIDATION');
   });
+
+  /**
+   * A section's range CONTAINS its subsections, so the batch's ranges are not
+   * disjoint and bottom-up ordering alone does not make them safe. These are the
+   * two shapes that corrupted the page when every range was measured up front.
+   */
+  describe('a batch touching a parent AND its child', () => {
+    const nested = [
+      '# Top',
+      '',
+      '## Outer',
+      '',
+      'OUTER BODY',
+      '',
+      '### Inner',
+      '',
+      'INNER BODY',
+      '',
+      '## Next',
+      '',
+      'NEXT BODY',
+      '',
+    ].join('\n');
+
+    it('does not eat the following sibling when the child shrinks before the parent is deleted', async () => {
+      await index('doc.md', nested);
+      const next = anchorOf('Next');
+      await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: anchorOf('Inner'), action: 'replace', content: '' },
+            { anchor: anchorOf('Outer'), action: 'delete' },
+          ],
+        },
+        'agent',
+      );
+      const body = (await pages.read('doc.md')).body;
+      // The whole point: `## Next` was never addressed and must survive intact,
+      // anchor comment included — every `<section_ref/>` to it hangs off that.
+      expect(body).toContain('## Next');
+      expect(body).toContain('NEXT BODY');
+      expect(body).toContain(`<!-- anchor: ${next} -->`);
+      expect(body).not.toContain('## Outer');
+      expect(body).not.toContain('OUTER BODY');
+    });
+
+    it('does not strand the child’s new text when the child grows before the parent is replaced', async () => {
+      await index('doc.md', nested);
+      await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [
+            { anchor: anchorOf('Inner'), action: 'replace', content: 'L1\nL2\nL3\nL4\n' },
+            { anchor: anchorOf('Outer'), action: 'replace', content: 'REPLACED\n' },
+          ],
+        },
+        'agent',
+      );
+      const body = (await pages.read('doc.md')).body;
+      // Replacing the parent replaces its subtree, so the child's new lines go
+      // with it — what must NOT happen is a tail of them surviving past the
+      // replacement, or the splice running into `## Next`.
+      expect(body).toContain('REPLACED');
+      expect(body).not.toContain('L4');
+      expect(body).toContain('## Next');
+      expect(body).toContain('NEXT BODY');
+    });
+
+    it('append lands in the section’s OWN body, insert_after past its subtree', async () => {
+      await index('doc.md', nested);
+      await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [{ anchor: anchorOf('Outer'), action: 'append', content: 'OWN TAIL' }],
+        },
+        'agent',
+      );
+      let lines = (await pages.read('doc.md')).body.split('\n');
+      // Before its first subsection — an append that landed under the last
+      // `###` child would be an edit to a section the caller did not address.
+      expect(lines.indexOf('OWN TAIL')).toBeLessThan(lines.findIndex((l) => l.startsWith('### Inner')));
+
+      await updateSections(
+        deps(),
+        {
+          expectedHash: await hashOfPage('doc.md'),
+          edits: [{ anchor: anchorOf('Outer'), action: 'insert_after', content: 'AFTER SUBTREE' }],
+        },
+        'agent',
+      );
+      lines = (await pages.read('doc.md')).body.split('\n');
+      expect(lines.indexOf('AFTER SUBTREE')).toBeGreaterThan(lines.indexOf('INNER BODY'));
+      expect(lines.indexOf('AFTER SUBTREE')).toBeLessThan(lines.findIndex((l) => l.startsWith('## Next')));
+    });
+  });
+
+  it('a stale anchor 409s WITH the current hash, so the documented retry has one', async () => {
+    /**
+     * `PAGE_CONFLICT` carrying `''` is worse than no hash at all: a client
+     * following the documented recovery retries with it and gets
+     * `INVALID_ARGUMENT`, turning a recoverable conflict into a dead end.
+     */
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    // The index keeps the row; the file loses the anchor — which is exactly the
+    // "index behind the file" state the refusal is named after.
+    const current = (await pages.read('doc.md')).body.replace(`<!-- anchor: ${alpha} -->\n`, '');
+    await pages.write('doc.md', { body: current });
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [{ anchor: alpha, action: 'replace', content: 'x' }],
+      },
+      'agent',
+    ).catch((e) => e);
+    expect(err.code).toBe('PAGE_CONFLICT');
+    expect(err.currentHash).toBe(await hashOfPage('doc.md'));
+  });
 });

@@ -526,8 +526,13 @@ export class SectionIndexerService implements WatchSubscriber {
    * The entities a `<tagged_list/>` / `<tagged_list_mixed/>` resolves to right
    * now, so a dynamic embed closes `section_entity_link` the same way a static
    * one does (0.2.15). `tagged_list` restricts to one `type`; `tagged_list_mixed`
-   * spans every type. `filter="and"` requires all named tags, anything else is
-   * the default "any".
+   * spans every type. `filter="or"` matches any of the named tags; anything else
+   * requires all of them — the default is AND, which is what every renderer of
+   * these tags already does (`TaggedListView`, `TaggedListMixedView`,
+   * `XmlChipDispatcher`, `xml-chip-preprocess`). Reading the default the other
+   * way round made the index link entities the page does not display: the
+   * embed would show endpoints tagged `auth` AND `v2`, while `find_references`
+   * reported the page as referencing everything tagged `auth` OR `v2`.
    *
    * Resolved eagerly, at index time, against the tag assignments of the moment —
    * which is what the rest of the section index already is. Re-tagging an entity
@@ -537,7 +542,7 @@ export class SectionIndexerService implements WatchSubscriber {
   private entitiesMatchingTaggedList(tag: XmlTag): Array<{ type: string; slug: string }> {
     const tagSlugs = extractTags(tag);
     if (!tagSlugs.length) return [];
-    const requireAll = tag.attrs.filter === 'and';
+    const requireAll = tag.attrs.filter !== 'or';
     const placeholders = tagSlugs.map(() => '?').join(',');
     const typeClause = tag.kind === 'tagged_list' ? 'AND entity_type = ?' : '';
     const params: unknown[] = [...tagSlugs];

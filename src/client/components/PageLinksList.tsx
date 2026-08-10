@@ -10,7 +10,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePageLinks } from '../hooks/usePageLinks.js';
-import { useWritePage } from '../hooks/usePage.js';
+import { useCreatePage, useWritePage } from '../hooks/usePage.js';
 import { api } from '../lib/api.js';
 import { toast } from '../ui/events.js';
 import type { UnresolvedMention } from '../../shared/page-links.js';
@@ -261,6 +261,7 @@ function UnresolvedRow({
 }) {
   const navigate = useNavigate();
   const writePage = useWritePage();
+  const createPage = useCreatePage();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.candidatePath);
   const [busy, setBusy] = useState(false);
@@ -277,10 +278,10 @@ function UnresolvedRow({
     setBusy(true);
     try {
       const title = deriveTitle(item.candidatePath);
-      await writePage.mutateAsync({
+      await createPage.mutateAsync({
         rootId,
         path: item.candidatePath,
-        body: `# ${title}\n\n`,
+        content: `# ${title}\n\n`,
       });
       toast.success(`Created ${item.candidatePath}`);
       void navigate({ to: '/space/$rootId/$', params: { rootId, _splat: item.candidatePath } });
@@ -311,6 +312,9 @@ function UnresolvedRow({
         path,
         body: nextBody,
         frontmatter: page.frontmatter,
+        // Read with `api.read` a line above, so the guard travels explicitly —
+        // the hook's cache lookup would not find this page's hash.
+        expectedHash: page.hash,
       });
       toast.success(`Fixed ${item.rawToken} → ${newToken}`);
       setEditing(false);

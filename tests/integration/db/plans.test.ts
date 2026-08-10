@@ -767,7 +767,14 @@ describe('PlanService — the `applied` flag (0.2.14)', () => {
       });
       const before = (await h.service.getByThread('thread-1'))!;
 
-      await h.service.updateFrontmatter({ path: before.path, patch: { title: 'New title' }, changedBy: 'user' });
+      await h.service.updateFrontmatter({
+        path: before.path,
+        patch: { title: 'New title' },
+        changedBy: 'user',
+        // 0.2.15: the caller supplies the thread the event belongs to, or `null`
+        // when the write is not thread-bound — it is no longer guessed here.
+        threadId: null,
+      });
 
       const after = await h.service.getByPath(before.path);
       expect(after.frontmatter.title).toBe('New title');

@@ -8,7 +8,7 @@ import { ResizeHandle } from './components/ResizeHandle.js';
 import { Sidebar } from './components/Sidebar.js';
 import { useFileWatcher } from './hooks/useFileWatcher.js';
 import { usePages } from './hooks/usePages.js';
-import { useWritePage } from './hooks/usePage.js';
+import { useCreatePage } from './hooks/usePage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
@@ -120,7 +120,7 @@ function MainShell({ projectName }: { projectName: string | null }) {
   const { data: entityCounts } = useEntityCounts();
   const { data: todoCounts } = useTodosCounts();
   const { data: pageLinkCounts } = usePageLinksCounts();
-  const write = useWritePage();
+  const createPage = useCreatePage();
 
   const { cwd: cwdPath, loading: cwdLoading } = useCwdLabel();
   const headerLoading = projectName === null || cwdLoading;
@@ -146,17 +146,17 @@ function MainShell({ projectName }: { projectName: string | null }) {
     if (!result) return;
     try {
       // The global "new page" action targets the built-in pages root.
-      await write.mutateAsync({
+      await createPage.mutateAsync({
         rootId: 'pages',
         path: result.path,
-        body: `# ${deriveTitle(result.path)}\n\n`,
+        content: `# ${deriveTitle(result.path)}\n\n`,
       });
       navigate({ to: '/space/$rootId/$', params: { rootId: 'pages', _splat: result.path } });
       toast.success(`Page ${result.path} created`);
     } catch (err) {
       toast.error((err as Error).message);
     }
-  }, [write, navigate]);
+  }, [createPage, navigate]);
 
   useEffect(() => {
     const onNewPage = () => {

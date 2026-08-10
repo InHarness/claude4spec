@@ -40,15 +40,18 @@ import { DomainError } from './tags.js';
  * only REST could write. The MCP renderings pass `'agent'`, so a page's history
  * finally distinguishes the two.
  *
- * ## `expectedHash` is optional, and that is a decision
+ * ## `expectedHash` is mandatory (0.2.15)
  *
- * The guard fires only when the caller supplies the hash. Requiring it would
- * break the editor, which does not send one (`client/lib/api.ts`), and the
- * brief calls the guard "part of the operation contract" rather than mandatory.
- * So it is declared in every channel's schema and honoured identically in all of
- * them — but a caller who omits it still gets last-write-wins. Raised as a patch
- * against the brief. (`update_brief` is deliberately stricter — it has no legacy
- * caller to protect, so there the hash is mandatory.)
+ * It used to fire only when the caller supplied one, so a caller that omitted it
+ * still got last-write-wins — a guard that any writer could opt out of guards
+ * nothing against that writer. It is now required by `update_page`,
+ * `update_sections` and `update_plan` alike, enforced here rather than in each
+ * channel's schema, so no rendering can be laxer than another.
+ *
+ * The editor was the reason it stayed optional, and the reason was circular: the
+ * page read returned no hash for it to send back. It does now (`PageContent.hash`),
+ * and creation — the one write with nothing to guard against — has its own
+ * operation, `create_page`, instead of a blank guard on this one.
  *
  * ## Nothing here answers with the page it just wrote
  *
@@ -450,14 +453,25 @@ function sectionRanges(lines: string[]): Array<{ anchor: string; lineStart: numb
  * containing your edit is the one thing you could have predicted, which is
  * exactly what this answer is not for.
  */
+/**
+ * Where a section's OWN text ends: the first heading at or after its body, or
+ * the end of its range when it has no descendants. Shared by `append` and by
+ * `sectionDigests` so the two cannot drift apart.
+ */
+function ownEndOf(lines: string[], range: { lineStart: number; lineEnd: number }): number {
+  const nextHeading = parseHeadings(lines)
+    .map((h) => h.anchorLineIndex ?? h.lineIndex)
+    .find((s) => s >= range.lineStart);
+  return Math.min(range.lineEnd, nextHeading ?? range.lineEnd);
+}
+
 function sectionDigests(body: string): Map<string, string> {
   const lines = body.split('\n');
   const starts = parseHeadings(lines).map((h) => h.anchorLineIndex ?? h.lineIndex);
   const out = new Map<string, string>();
   for (const r of sectionRanges(lines)) {
     const nextHeading = starts.find((s) => s >= r.lineStart);
-    const ownEnd = Math.min(r.lineEnd, nextHeading ?? r.lineEnd);
-    out.set(r.anchor, sha256(lines.slice(r.lineStart, ownEnd).join('\n')));
+    out.set(r.anchor, sha256(lines.slice(r.lineStart, Math.min(r.lineEnd, nextHeading ?? r.lineEnd)).join('\n')));
   }
   return out;
 }
@@ -518,12 +532,24 @@ function anchorDelta(before: Map<string, string>, after: Map<string, string>): s
  * since nothing is written until every edit has been spliced in memory, a
  * failure leaves the file untouched rather than needing a rollback.
  *
- * ## Applied bottom-up, whatever order they arrive in
+ * ## Applied bottom-up, whatever order they arrive in — and re-measured each time
  *
  * An edit changes the line count, which moves every section BELOW it. Applying
  * in the caller's order would mean each splice landing on coordinates the
- * previous splice invalidated. Descending by `lineStart` avoids recomputing
- * anything: an edit never moves a section that has not been spliced yet.
+ * previous splice invalidated. Descending by `lineStart` fixes the direction:
+ * an edit never moves a section that has not been spliced yet.
+ *
+ * Direction alone is not enough, and the first version of this got that wrong.
+ * Bottom-up is only self-sufficient for DISJOINT ranges, and these ranges are
+ * not disjoint: a section's range runs to the next heading of equal-or-higher
+ * level, so it CONTAINS its subsections. A batch naming both `## Outer` and its
+ * child `### Inner` therefore shrinks or grows Outer's range while spliced
+ * against the child — and Outer's stale `lineEnd`, applied afterwards, eats
+ * whatever now sits past the real end: the next sibling's `<!-- anchor -->`
+ * comment and heading, silently, answered with a 200 and a fresh hash. So each
+ * range is re-measured against the CURRENT lines immediately before its own
+ * splice. The pre-pass below still locates every anchor first, because a batch
+ * that cannot be applied in full must fail before anything is spliced.
  *
  * `results` is nevertheless returned in the order the edits were GIVEN — the
  * application order is an implementation detail the caller did not choose.
@@ -668,20 +694,40 @@ export async function updateSections(
   // The index is built over the page BODY (frontmatter stripped), which is what
   // `read()` returns — so `parseHeadings` here sees the same lines the indexer
   // saw, and 1-based `lineStart` is `lineIndex + 1` on both sides.
-  const planned = located.map(({ edit, section }) => {
-    const range = liveRangeOf(lines, section.anchor);
-    if (!range) {
+  const startOfAnchor = new Map(sectionRanges(lines).map((r) => [r.anchor, r.lineStart]));
+  /**
+   * The refusal carries the file's hash, not an empty string. `expectedHash`
+   * just matched, so this IS the hash the caller already holds — but a client
+   * following the documented recovery ("mismatch → PAGE_CONFLICT carrying the
+   * current hash, which is what the retry needs") reads it back out of the
+   * envelope, and handing it `''` turns a recoverable 409 into an
+   * `INVALID_ARGUMENT` on the retry.
+   */
+  const currentHash = (await hashOf(target.pages, first.pagePath)) ?? '';
+  for (const { edit } of located) {
+    if (!startOfAnchor.has(edit.anchor)) {
       throw new ConflictError(
         'PAGE_CONFLICT',
         `anchor '${edit.anchor}' is not in '${first.pagePath}' any more — the section index is behind the file`,
-        '',
+        currentHash,
       );
     }
-    return { edit, range };
-  });
+  }
 
-  // Descending by start line: see "Applied bottom-up" above.
-  for (const { edit, range } of [...planned].sort((a, b) => b.range.lineStart - a.range.lineStart)) {
+  // Descending by start line, re-measuring each range: see "Applied bottom-up"
+  // above for why the direction alone is not enough.
+  const order = [...located].sort(
+    (a, b) => startOfAnchor.get(b.edit.anchor)! - startOfAnchor.get(a.edit.anchor)!,
+  );
+  for (const { edit } of order) {
+    const range = liveRangeOf(lines, edit.anchor);
+    if (!range) {
+      throw new ConflictError(
+        'PAGE_CONFLICT',
+        `anchor '${edit.anchor}' was removed by an earlier edit in the same batch`,
+        currentHash,
+      );
+    }
     applySectionEdit(lines, edit, range);
   }
 
@@ -731,17 +777,25 @@ function applySectionEdit(
     case 'replace':
       lines.splice(range.lineStart, range.lineEnd - range.lineStart, ...body);
       return;
-    case 'append':
-      lines.splice(range.lineEnd, 0, ...body);
+    case 'append': {
+      /**
+       * The end of the section's OWN prose — before its first subsection, not
+       * after the whole subtree. The range runs to the next heading of
+       * equal-or-higher level, so it CONTAINS the descendants; splicing at
+       * `lineEnd` would drop an `append` to a parent section underneath its
+       * last `###` child, in a different section than the one addressed.
+       *
+       * Same end rule as `sectionDigests`, which is the point: "this section's
+       * own text" has to mean one thing across the file.
+       */
+      lines.splice(ownEndOf(lines, range), 0, ...body);
       return;
+    }
     case 'insert_after':
       /**
-       * Identical splice position to `append`, different meaning, and the
-       * difference is real rather than cosmetic: a section's indexed range runs
-       * to the next heading of equal-or-higher level, so it CONTAINS its
-       * subsections. `append` adds to the end of the section INCLUDING its
-       * descendants; `insert_after` adds after the whole subtree. For a leaf
-       * section they coincide.
+       * After the whole subtree — a section's range contains its subsections,
+       * so `lineEnd` is exactly that position. For a leaf section this
+       * coincides with `append`.
        */
       lines.splice(range.lineEnd, 0, ...body);
       return;
