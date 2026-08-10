@@ -33,6 +33,8 @@ interface WorkspaceProject {
 const PAGE_PATH = 'e2e-generic-embed.md';
 const DIAGRAM_SLUG = 'e2e-embed-flow';
 const CAPTION = 'E2E EMBED CAPTION';
+/** Referenced on the page and never created — the broken-reference case. */
+const MISSING_SLUG = 'no-such-diagram';
 
 async function firstProject(): Promise<WorkspaceProject> {
   const res = await fetch(`${BASE}/api/workspace`);
@@ -79,16 +81,39 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
           `# Generic embed\n\n` +
           `<single_element type="diagram" slug="${DIAGRAM_SLUG}" caption="${CAPTION}"/>\n\n` +
           `Referenced inline: <inline_mention type="diagram" slug="${DIAGRAM_SLUG}"/>\n\n` +
-          `And a broken one: <inline_mention type="diagram" slug="no-such-diagram"/>\n`,
+          `And a broken one: <inline_mention type="diagram" slug="${MISSING_SLUG}"/>\n`,
       }),
     });
 
     page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    /**
+     * Both listeners are scoped to the app's OWN origin.
+     *
+     * A sandboxed env-runner container has no route to `fonts.gstatic.com`, so
+     * the web-font request 404s there and nowhere else. Counting it reports an
+     * environment's network policy as a defect in the app — and it does so
+     * INTERMITTENTLY, since the font is cached after the first successful load,
+     * which is the worst kind of red. The console message carries no URL of its
+     * own, hence the `location()` read.
+     */
+    /**
+     * Same-origin, MINUS the one 404 this fixture deliberately provokes.
+     *
+     * The page seeds `<inline_mention type="diagram" slug="no-such-diagram"/>`
+     * on purpose, and resolving a broken reference is exactly a 404 on the
+     * entity — that is HOW the chip learns it is broken. Counting it would make
+     * the broken-reference case below un-assertable alongside a zero-404 rule,
+     * and the honest fix is to name the expected refusal rather than to drop
+     * either case.
+     */
+    const ours = (url: string | undefined) =>
+      Boolean(url && url.startsWith(BASE!) && !url.includes(MISSING_SLUG));
     page.on('console', (msg) => {
-      if (msg.type() === 'error') consoleErrors.push(msg.text());
+      if (msg.type() === 'error' && ours(msg.location()?.url)) consoleErrors.push(msg.text());
     });
+    page.on('pageerror', (err) => consoleErrors.push(`pageerror: ${err.message}`));
     page.on('response', (res) => {
-      if (res.status() >= 400) failedResponses.push(`${res.status()} ${res.url()}`);
+      if (res.status() >= 400 && ours(res.url())) failedResponses.push(`${res.status()} ${res.url()}`);
     });
     await page.goto(`${BASE}/p/${project.id}/pages/${PAGE_PATH}`, { waitUntil: 'networkidle' });
     await page.waitForTimeout(2500);
@@ -145,10 +170,10 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
     // "Renders but is inert" — the alternative failure is an overlay opening on
     // an entity that does not exist, which shows an empty shell and no reason.
     const body = await page.locator('body').innerText();
-    expect(body).toContain('no-such-diagram');
+    expect(body).toContain(MISSING_SLUG);
 
     const before = page.url();
-    const broken = page.locator('text=no-such-diagram').first();
+    const broken = page.locator(`text=${MISSING_SLUG}`).first();
     if ((await broken.count()) > 0) await broken.click({ force: true }).catch(() => {});
     await page.waitForTimeout(600);
     expect(page.url()).toBe(before);
@@ -165,7 +190,12 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
      */
     const path = 'e2e-caption-roundtrip.md';
     const url = `${BASE}/api/projects/${project.id}/pages/pages/${path}`;
-    const original = `# Round trip\n\n<single_element type="diagram" slug="${DIAGRAM_SLUG}"/>\n`;
+    // The trailing paragraph is not decoration: it is where the caret is put
+    // below. `single_element` is a SELECTABLE ATOM, so clicking the editor and
+    // typing with the node selected replaces it — which is correct ProseMirror
+    // behaviour and would look exactly like the embed being lost on save.
+    const original =
+      `# Round trip\n\n<single_element type="diagram" slug="${DIAGRAM_SLUG}"/>\n\nTail paragraph.\n`;
     await fetch(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -175,14 +205,17 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
       const editorPage = await browser.newPage({ viewport: { width: 1280, height: 900 } });
       await editorPage.goto(`${BASE}/p/${project.id}/pages/${path}`, { waitUntil: 'networkidle' });
       await editorPage.waitForTimeout(2000);
-      const editor = editorPage.locator('.ProseMirror').first();
-      await editor.click();
+      // Click the TEXT, never the editor root — see the note on `original`.
+      await editorPage.locator('.ProseMirror >> text=Tail paragraph.').first().click();
       await editorPage.keyboard.press('End');
       await editorPage.keyboard.type(' touched');
       await editorPage.waitForTimeout(3000);
       await editorPage.close();
 
       const saved = (await (await fetch(url)).json()) as { body: string };
+      // The edit landed…
+      expect(saved.body).toContain('Tail paragraph. touched');
+      // …and the untouched embed came back byte-identical, with no caption.
       expect(saved.body).toContain(`<single_element type="diagram" slug="${DIAGRAM_SLUG}"/>`);
       expect(saved.body).not.toContain('caption=""');
     } finally {
