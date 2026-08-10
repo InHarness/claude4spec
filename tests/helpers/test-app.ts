@@ -279,13 +279,11 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
   // same empty list — the factory is here so the route's shape matches
   // production, not so the override can be exercised without page fixtures.
   router.use('/references', referencesRouter(host, referencesService, discovery, () => discovery));
-  router.use(
-    '/patches',
-    patchesRouter({
-      briefsDirAbs: path.join(cwd, 'briefs'),
-      patchesDirAbs: path.join(cwd, 'patches'),
-    }),
-  );
+  const patchWriteDeps = {
+    briefsDirAbs: path.join(cwd, 'briefs'),
+    patchesDirAbs: path.join(cwd, 'patches'),
+  };
+  router.use('/patches', patchesRouter(patchWriteDeps));
 
   /**
    * Host API 2.0.0 (item 31) — mirrors `project-context.ts`, INCLUDING the
@@ -374,6 +372,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     planService,
     pageVersions,
     briefService,
+    patchWrite: patchWriteDeps,
     listProjects: () => ({ projects: [] }),
     workspaceName: 'default',
   });

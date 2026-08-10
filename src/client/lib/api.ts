@@ -1,4 +1,12 @@
-import type { PageContent, PageNode, PageSearchHit, Root, TodoCounts, TodoHit } from '../../shared/types.js';
+import type {
+  PageContent,
+  PageNode,
+  PageSearchHit,
+  PageWriteAck,
+  Root,
+  TodoCounts,
+  TodoHit,
+} from '../../shared/types.js';
 import type { PluginActivationState } from '../../shared/plugin-host/types.js';
 import type { FrontendManifestResponse } from '../../shared/plugin-host/frontend-manifest.js';
 import type {
@@ -70,18 +78,23 @@ export const api = {
     return handle<PageContent>(res);
   },
 
+  /**
+   * A write answers with what changed, not with the page — see the echo-free
+   * rule in `services/page-write.ts`. Whoever needs the page after a save reads
+   * it back; `useWritePage` does exactly that by invalidating the page query.
+   */
   async write(
     rootId: string,
     path: string,
     body: string,
     frontmatter?: Record<string, unknown>,
-  ): Promise<PageContent> {
+  ): Promise<PageWriteAck> {
     const res = await apiFetch(`/api/pages/${encodeURIComponent(rootId)}/${encodePath(path)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ body, frontmatter }),
     });
-    return handle<PageContent>(res);
+    return handle<PageWriteAck>(res);
   },
 
   async remove(rootId: string, path: string): Promise<void> {

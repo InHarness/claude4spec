@@ -42,7 +42,7 @@ export function buildWorkspaceToolsServer(listProjects: () => ListProjectsResult
       'Read-only. No pagination.',
     ].join('\n'),
     {},
-    async () => toolSuccess(listProjects()),
+    async () => toolSuccess(listProjects(), { operation: 'list_projects', channel: 'mcp' }),
   );
 
   return createMcpServer({ name: 'workspace-tools', tools: [listProjectsTool] });

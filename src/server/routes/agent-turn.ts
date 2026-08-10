@@ -20,6 +20,8 @@ import type { PagesService } from '../services/pages.js';
 import type { TagsService } from '../services/tags.js';
 import type { SectionsService } from '../services/sections.js';
 import { buildPlanToolsServer } from '../mcp/plan-tools.js';
+import { createPatchToolsServer } from '../mcp/patch-tools.js';
+import type { PatchWriteDeps } from '../services/patch-write.js';
 import { buildBriefToolsServer } from '../mcp/brief-tools.js';
 import { buildC4sToolsServer } from '../mcp/c4s-tools.js';
 import { buildWorkspaceToolsServer } from '../mcp/workspace-tools.js';
@@ -76,6 +78,8 @@ export interface AgentTurnDeps {
   planService: PlanService;
   briefService: BriefService;
   patchService: PatchService;
+  /** M23 `file_patch` over MCP. Optional so the hand-rolled test rigs keep compiling. */
+  patchWrite?: PatchWriteDeps;
   /** 0.1.69 Transagents: dispatcher resolves "latest release" for analysis briefs. */
   releaseService: ReleaseService;
   pageVersions: FileVersionService;
@@ -642,6 +646,15 @@ export async function runAgentTurn(
           briefService: deps.briefService,
         })
       : null;
+    /**
+     * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
+     * operation — but NOT the same `thread.briefPath` condition: the brief a
+     * patch is filed against is an argument, not the thread's own binding, so a
+     * brief thread can report drift against any brief it names.
+     */
+    const patchTools = ctx.mcp.briefTools && deps.patchWrite
+      ? createPatchToolsServer(deps.patchWrite)
+      : null;
     // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
     // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
     // workspace (fixes AMBIGUOUS_WORKSPACE when the project lives in N>1 workspaces).
@@ -708,6 +721,7 @@ export async function runAgentTurn(
     const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
     if (planTools) mcpServers['plan-tools'] = planTools.config;
     if (briefTools) mcpServers['brief-tools'] = briefTools.config;
+    if (patchTools) mcpServers['patch-tools'] = patchTools.config;
     if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
     if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
     /**

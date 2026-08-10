@@ -796,7 +796,7 @@ async function buildInner(
     sections: sectionsService,
     resolveRoot: (rootId) => {
       const rt = rootById.get(rootId);
-      return rt ? { pages: rt.pages, writer: rt.writer } : undefined;
+      return rt ? { pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
     },
   };
   pluginHost.registerMcpServer('page-tools', () =>
@@ -1014,7 +1014,7 @@ async function buildInner(
   // segment; unknown id → 404 ROOT_NOT_FOUND.
   const resolveRoot = (rootId: string): PageRootRuntime | undefined => {
     const rt = rootById.get(rootId);
-    return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer } : undefined;
+    return rt ? { root: rt.root, pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
   };
   const resolveStatic = (rootId: string): StaticHtmlService | undefined => rootById.get(rootId)?.staticHtml;
   /**
@@ -1036,13 +1036,11 @@ async function buildInner(
    * its own process, which is the last reason it needed a filesystem handle to
    * the specification.
    */
-  router.use(
-    '/patches',
-    patchesRouter({
-      briefsDirAbs: path.resolve(cwd, briefsDir),
-      patchesDirAbs: path.resolve(cwd, patchesDir),
-    }),
-  );
+  const patchWriteDeps = {
+    briefsDirAbs: path.resolve(cwd, briefsDir),
+    patchesDirAbs: path.resolve(cwd, patchesDir),
+  };
+  router.use('/patches', patchesRouter(patchWriteDeps));
   /**
    * 0.2.13 (tier C) — `search_pages` is project-scoped (`rootId` only NARROWS
    * it), so it mounts at `/pages` with no root segment. **Order is the
@@ -1116,6 +1114,9 @@ async function buildInner(
     planService,
     briefService,
     patchService,
+    // M23: `file_patch` over MCP resolves the same two directories the REST
+    // route does — one operation, one pair of paths, both channels.
+    patchWrite: patchWriteDeps,
     releaseService,
     pageVersions,
     skillResolver,
@@ -1159,6 +1160,7 @@ async function buildInner(
     planService,
     pageVersions,
     briefService,
+    patchWrite: patchWriteDeps,
     listProjects: agentDeps.listWorkspaceProjects,
     workspaceName: workspace.name,
   });

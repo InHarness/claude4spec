@@ -14,6 +14,8 @@ export interface PageRootRuntime {
   root: Root;
   pages: PagesService;
   writer: SelfWriteMarker | null;
+  /** The `file_version` axis a write reads its reported `version` back from. */
+  versions?: FileVersionService | null;
 }
 
 /**

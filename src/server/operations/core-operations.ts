@@ -587,7 +587,10 @@ export function registerCoreOperations(): void {
     inputSchema: {
       path: z.string().optional(),
       content: z.string(),
-      expectedHash: z.string().optional(),
+      // Required, not optional: a guard the caller may omit is not a guard. The
+      // catalog is what the channel listings read, so leaving it optional here
+      // would re-advertise the contract the renderings no longer honour.
+      expectedHash: z.string(),
     },
     errorCodes: ['BRIEF_NOT_FOUND', 'BRIEF_CONFLICT', 'VALIDATION'],
     sideEffects: ['file', 'db', 'ui-notify'],

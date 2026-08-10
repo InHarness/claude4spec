@@ -71,7 +71,7 @@ export function buildBriefToolsServer(
    * replaces dropped `hint` and `ConflictError.currentHash`, which on a brief
    * write is the same remedy it is on a page write.
    */
-  const ok = toolSuccess;
+  const ok = (data: unknown, operation: string) => toolSuccess(data, { operation, channel: 'mcp' });
   const fail = toolFailure;
 
   /**
@@ -109,7 +109,7 @@ export function buildBriefToolsServer(
     async (args) => {
       try {
         const brief = await briefService.getBrief(resolveBrief(args));
-        return ok(brief);
+        return ok(brief, 'get_brief');
       } catch (err) {
         return fail(err);
       }
@@ -130,8 +130,9 @@ export function buildBriefToolsServer(
       'as `roots` to keep the diff scoped to this brief. `implemented` is owned by the',
       'implementer-agent in the target repo and toggled via filesystem edit, not via this MCP.',
       'Any frontmatter mutation attempt → IMMUTABLE_FIELD.',
-      'Optional `expectedHash` (sha256 from get_brief) enables optimistic concurrency —',
-      'mismatch → BRIEF_CONFLICT (re-read brief before retrying).',
+      'REQUIRED `expectedHash` (sha256 from get_brief) — read the brief, then pass the hash',
+      'you read back here. Mismatch → BRIEF_CONFLICT (re-read brief before retrying);',
+      'omitting it → VALIDATION. There is no unguarded write.',
       'Each mutation captures a row in file_version with changed_by="agent".',
     ].join(' '),
     {
@@ -140,12 +141,36 @@ export function buildBriefToolsServer(
       content: z.string(),
       anchor: z.string().optional(),
       heading: z.string().optional(),
-      expectedHash: z.string().optional(),
+      expectedHash: z
+        .string()
+        .describe('sha256 of the brief as you last read it (the `hash` from get_brief). Required.'),
       changeSummary: z.string().optional(),
     },
     async (args) => {
       try {
         const briefPath = resolveBrief(args);
+        /**
+         * The guard is the operation's, not the caller's discipline.
+         *
+         * This used to read `args.expectedHash ?? current.hash` — a fallback that
+         * substituted the hash read moments earlier, so the comparison in
+         * `BriefService.updateContent` could never fail and `BRIEF_CONFLICT` was
+         * unreachable through this tool. A guard you cannot fail is not a guard;
+         * two threads editing one brief overwrote each other in silence.
+         *
+         * Briefs are deliberately stricter than pages here: `update_page` treats a
+         * missing hash as a deliberate overwrite (the editor never sends one),
+         * while a brief write has no such legacy caller and must name what it
+         * expected to be overwriting.
+         */
+        const expectedHash = typeof args.expectedHash === 'string' ? args.expectedHash.trim() : '';
+        if (expectedHash === '') {
+          throw new DomainError(
+            'VALIDATION',
+            'expectedHash is required: read the brief first and pass back the hash you read',
+            'call get_brief and send its `hash` as `expectedHash`',
+          );
+        }
         const action = args.action as 'replace' | 'append' | 'insert_after_section';
         const current = await briefService.getBrief(briefPath);
         const newBody = composeBody(
@@ -161,11 +186,11 @@ export function buildBriefToolsServer(
         const result = await briefService.updateContent({
           path: briefPath,
           content: newContent,
-          expectedHash: typeof args.expectedHash === 'string' ? args.expectedHash : current.hash,
+          expectedHash,
           changedBy: 'agent',
           changeSummary: typeof args.changeSummary === 'string' ? args.changeSummary : undefined,
         });
-        return ok({ newHash: result.newHash });
+        return ok({ newHash: result.newHash }, 'update_brief');
       } catch (err) {
         return fail(err);
       }

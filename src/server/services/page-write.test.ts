@@ -98,6 +98,55 @@ describe('the page write primitive', () => {
     ).resolves.toBeTruthy();
   });
 
+  it('create_page answers with the page identity and its anchors, never its content', async () => {
+    const res = await createPage(target, { path: 'made.md', content: '# A\n\nlots of text\n' }, 'agent');
+    expect(Object.keys(res).sort()).toEqual(['anchors', 'hash', 'path', 'rootId']);
+    expect(res.rootId).toBe('pages');
+    expect(res.path).toBe('made.md');
+    expect(JSON.stringify(res)).not.toContain('lots of text');
+  });
+
+  it('update_page answers with the delta, and echoes neither body nor frontmatter', async () => {
+    const res = await updatePage(
+      target,
+      { path: 'u.md', body: '# A\n\nSECRET CONTENT\n', frontmatter: { order: 1 } },
+      'user',
+    );
+    expect(Object.keys(res).sort()).toEqual(['changedAnchors', 'hash', 'version']);
+    // `path` is gone too: the caller named it in the request a moment ago.
+    expect(res).not.toHaveProperty('path');
+    expect(JSON.stringify(res)).not.toContain('SECRET CONTENT');
+    expect(JSON.stringify(res)).not.toContain('order');
+  });
+
+  it('a duplicated hand-authored anchor is counted once, the way the index counts it', async () => {
+    /**
+     * Anchors written by hand are unpoliced, so the same value can appear twice.
+     * `buildSections` settles it as "first occurrence owns it"; if this side
+     * disagreed, the reported delta would name a section the index does not own
+     * and the splice never touches — `liveRangeOf` takes the first match.
+     */
+    const dup = [
+      '<!-- anchor: dupe1234 -->',
+      '# One',
+      'first',
+      '',
+      '<!-- anchor: dupe1234 -->',
+      '# Two',
+      'second',
+      '',
+    ].join('\n');
+    const res = await createPage(target, { path: 'dup-anchor.md', content: dup }, 'user');
+    expect(res.anchors).toEqual(['dupe1234']);
+  });
+
+  it('reports version 0 rather than failing when there is no capture to read', async () => {
+    // The hand-rolled rigs have no db, and in production a capture failure is
+    // warned and swallowed. A write must not fail because its bookkeeping did.
+    const res = await updatePage(target, { path: 'v.md', body: 'x' }, 'user');
+    expect(res.version).toBe(0);
+  });
+
   it('refuses PAGE_CONFLICT when the file moved under the caller, and hands back the current hash', async () => {
     const first = await updatePage(target, { path: 'c.md', body: 'one' }, 'user');
     await fs.writeFile(path.join(pages.root, 'c.md'), 'someone else', 'utf-8');
@@ -161,9 +210,15 @@ describe('the page write primitive', () => {
   it('an ABSENT page is not a conflict — update_page doubles as create', async () => {
     // The editor saves a brand-new page through this path with a hash it got
     // from nowhere; there is no earlier state for it to be stale against.
-    await expect(
-      updatePage(target, { path: 'new.md', body: 'x', expectedHash: 'a'.repeat(64) }, 'user'),
-    ).resolves.toMatchObject({ path: 'new.md' });
+    // The write is ACCEPTED — asserted on the hash rather than on a path, which
+    // the answer no longer carries: a write reports what changed, not the page.
+    const written = await updatePage(
+      target,
+      { path: 'new.md', body: 'x', expectedHash: 'a'.repeat(64) },
+      'user',
+    );
+    expect(written.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(await pages.exists('new.md')).toBe(true);
   });
 
   it('create_page refuses an existing page instead of overwriting it', async () => {
@@ -279,6 +334,49 @@ describe('update_section over a real section index', () => {
     expect(body).toContain('REWRITTEN');
     expect(body).not.toContain('ALPHA BODY');
     expect(body).toContain('BETA BODY');
+  });
+
+  it('answers with what changed, and never with the section or the page', async () => {
+    /**
+     * The whole point of the echo-free rule, at its sharpest: an agent that
+     * rewrote one paragraph used to get the entire page back — text it had in
+     * context a moment earlier, returned at its own expense.
+     */
+    await index('doc.md', page);
+    const anchor = anchorOf('Alpha');
+    const res = await updateSection(deps(), { anchor, content: 'REWRITTEN\n' }, 'agent');
+
+    expect(Object.keys(res).sort()).toEqual(['affectedAnchors', 'anchor', 'hash', 'version']);
+    expect(res).not.toHaveProperty('body');
+    expect(res).not.toHaveProperty('frontmatter');
+    // `rootId` and `pagePath` are gone too: the caller addressed the section by
+    // anchor and already knows where it sent the edit.
+    expect(res).not.toHaveProperty('rootId');
+    expect(res).not.toHaveProperty('pagePath');
+    expect(JSON.stringify(res)).not.toContain('REWRITTEN');
+    expect(JSON.stringify(res)).not.toContain('BETA BODY');
+  });
+
+  it('reports the siblings an edit disturbed, without repeating the edited anchor', async () => {
+    await index('doc.md', page);
+    const alpha = anchorOf('Alpha');
+    // Editing Alpha's body leaves Beta's own text untouched, so nothing else
+    // moved: an anchor list is a delta, not "every anchor on the page".
+    const quiet = await updateSection(deps(), { anchor: alpha, content: 'REWRITTEN\n' }, 'agent');
+    expect(quiet.affectedAnchors).toEqual([]);
+    expect(quiet.anchor).toBe(alpha);
+
+    // An edit that swallows a nested section DOES change the anchor set, and a
+    // disappearing anchor is the change a caller is least able to infer: every
+    // `<section_ref/>` pointing at it has just been orphaned.
+    // Distinct heading text: `anchorOf` looks a section up by heading across the
+    // whole index, so reusing "Alpha" here would address the OTHER page's.
+    await index('nested.md', ['# Root', '', '## Outer', '', 'A', '', '### Inner', '', 'I', ''].join('\n'));
+    const outer = anchorOf('Outer');
+    const inner = anchorOf('Inner');
+    const shrunk = await updateSection(deps(), { anchor: outer, content: 'JUST A\n' }, 'agent');
+    expect(shrunk.affectedAnchors).toContain(inner);
+    expect(shrunk.affectedAnchors).not.toContain(outer);
   });
 
   it('keeps the heading AND the anchor comment, so the same section is addressable twice', async () => {

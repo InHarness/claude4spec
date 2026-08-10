@@ -29,9 +29,54 @@ export interface ToolEnvelope {
   isError?: boolean;
 }
 
-/** `internal` / `mcp` success — data serialized into a single text block. */
-export function toolSuccess(data: unknown): ToolEnvelope {
-  return { content: [{ type: 'text', text: JSON.stringify(data) }] };
+/**
+ * Who is being measured — the operation's name and the channel that rendered it.
+ *
+ * This does NOT contradict the header's "output shape depends only on the
+ * CHANNEL, never on the operation". That rule is about the shape on the WIRE:
+ * the envelope must not grow a field because of which operation filled it. What
+ * the function KNOWS is a different axis from what it emits, and `ctx` never
+ * reaches `content`.
+ */
+export interface ToolCallContext {
+  /** Catalog name of the operation, e.g. `update_section`. */
+  operation: string;
+  /** The rendering channel — `mcp` and `internal` both land here. */
+  channel: string;
+}
+
+/**
+ * Response size, per call, in the same unit as the budget: characters of
+ * serialized JSON (`discovery/budget.ts` counts `JSON.stringify(item).length`).
+ *
+ * Measuring HERE rather than in each tool handler is the whole point — it is the
+ * one locus every agent-facing channel already passes through, so a single
+ * instrumentation covers all of them and no new tool can quietly escape it.
+ *
+ * Without this the budget contract (`DEFAULT_BUDGET_CHARS`, `MAX_ANCHORS_PER_CALL`)
+ * is unfalsifiable at runtime: nothing in the server ever knew how wide a
+ * response actually was, so "we made update_section echo-free" was a claim with
+ * no instrument behind it.
+ *
+ * Gated on `C4S_RESPONSE_SIZE=1`, like the `[timing]` middleware in `index.ts` —
+ * a line per tool call is a diagnostic, not a default. Read per call rather than
+ * at module load so a test can toggle it.
+ */
+function recordResponseSize(chars: number, ctx: ToolCallContext | undefined): void {
+  if (process.env.C4S_RESPONSE_SIZE !== '1') return;
+  console.log(`[response-size] ${ctx?.operation ?? 'unknown'} ${ctx?.channel ?? 'unknown'} ${chars}`);
+}
+
+/**
+ * `internal` / `mcp` success — data serialized into a single text block.
+ *
+ * Serialized once: the string that goes on the wire is the string that gets
+ * measured, so the number in the log cannot drift from what the caller paid for.
+ */
+export function toolSuccess(data: unknown, ctx?: ToolCallContext): ToolEnvelope {
+  const text = JSON.stringify(data);
+  recordResponseSize(text?.length ?? 0, ctx);
+  return { content: [{ type: 'text', text }] };
 }
 
 /**

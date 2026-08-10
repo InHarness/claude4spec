@@ -431,7 +431,7 @@ brief-tools MCP server is scoped automatically to this brief (no path param):
   - get_brief — read current brief { frontmatter, body, content, hash }
   - update_brief (action: replace | append | insert_after_section) — edit the body
       * frontmatter is IMMUTABLE for the agent (type, from_release, to_release, generated_at, generator_version)
-      * pass expectedHash from get_brief for optimistic concurrency (mismatch → BRIEF_CONFLICT)
+      * expectedHash is REQUIRED — pass the hash get_brief returned (mismatch → BRIEF_CONFLICT, omitted → VALIDATION)
       * unknown anchor → fallback append-at-end with warning
 You also have read-only release-tools (get_release, get_release_diff, list_releases) for grounding the narrative.
 You do NOT have filesystem access (no Read/Write/Edit/Glob/Grep/Bash). Brief content flows through get_brief / update_brief only.
