@@ -85,8 +85,8 @@ async function connectClient(deps: ReferenceToolsDeps): Promise<Client> {
   return client;
 }
 
-async function checkConsistency(client: Client): Promise<any> {
-  const res = await client.callTool({ name: 'check_consistency', arguments: {} });
+async function checkConsistency(client: Client, args: Record<string, unknown> = {}): Promise<any> {
+  const res = await client.callTool({ name: 'check_consistency', arguments: args });
   expect(res.isError).toBeFalsy();
   const text = (res.content as Array<{ type: string; text?: string }>)[0]?.text ?? '{}';
   return JSON.parse(text);
@@ -161,6 +161,38 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
     expect(result.unreferencedEntities).not.toContainEqual(
       expect.objectContaining({ type: 'diagram', slug: 'flow' }),
     );
+  });
+
+  /**
+   * 0.2.15 — the priority defect of the M39 budget item.
+   *
+   * `limit` is a PER-BUCKET cap and `summary` counts the whole project BEFORE
+   * any filter, so a cut report and a clean one looked identical unless the
+   * caller thought to compare the counter against each array's length. Most did
+   * not: a short report reads as a healthy project.
+   */
+  it('sets truncated when `limit` actually cut a bucket, and leaves it false when it did not', async () => {
+    for (const slug of ['ghost-a', 'ghost-b', 'ghost-c']) {
+      await pagesService.write(`${slug}.md`, {
+        body: `# Page\n\n<single_element type="diagram" slug="${slug}" caption="x"/>\n`,
+      });
+    }
+    const client = await connectClient(deps());
+
+    const cut = await checkConsistency(client, { limit: 1 });
+    expect(cut.brokenReferences).toHaveLength(1);
+    expect(cut.truncated).toBe(true);
+    // `summary` keeps counting the project, not the slice — which is exactly why
+    // the flag has to exist rather than be inferred from it.
+    expect(cut.summary.errors).toBeGreaterThanOrEqual(3);
+
+    const whole = await checkConsistency(client);
+    expect(whole.brokenReferences).toHaveLength(3);
+    expect(whole.truncated).toBe(false);
+
+    // A limit no bucket reaches is not a cut.
+    const roomy = await checkConsistency(client, { limit: 50 });
+    expect(roomy.truncated).toBe(false);
   });
 
   it('an unreferenced diagram entity is reported as unreferenced', async () => {

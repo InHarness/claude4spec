@@ -82,9 +82,17 @@ export function useFileWatcher() {
           } else if (data.kind === 'pageLinks:changed') {
             batcher.queue(['pageLinks']);
           } else if (data.kind === 'plan:updated') {
+            /**
+             * 0.2.15 — invalidation keys off `planPath` and ONLY off `planPath`.
+             * `threadId` names the author of the write, not the owner of the
+             * plan (a plan has no owning thread — several may attach), and it is
+             * null for a write made outside any thread. The `by-thread` entry
+             * below is a cache keyed by thread, so it is refreshed only when the
+             * event actually names one.
+             */
             batcher.queue(['plan', 'detail', data.planPath]);
             batcher.queue(['plan', 'versions', data.planPath]);
-            batcher.queue(['plan', 'by-thread', data.threadId]);
+            if (data.threadId) batcher.queue(['plan', 'by-thread', data.threadId]);
             batcher.queue(['plans-list']);
             batcher.queue(['threads']);
           } else if (data.kind === 'plugin:reloaded') {

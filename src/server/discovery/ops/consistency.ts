@@ -384,16 +384,34 @@ export async function checkConsistency(
     brokenExtensionReferenceCounts: countBy(brokenExtensionReferences, (r) => `${r.tagType}:${r.category}`),
     brokenAcVerifyCounts: countBy(brokenAcVerifies, (r) => r.category),
     summary: { total: errors + warnings, errors, warnings },
+    truncated: false,
   };
 
+  /**
+   * 0.2.15 — the cut is now REPORTED rather than left to be deduced.
+   *
+   * `limit` is a PER-BUCKET cap, and `summary` above counts the unfiltered
+   * buckets, so a caller passing `limit: 10` against 50 broken references got
+   * ten rows and a summary saying fifty — with nothing in the envelope saying
+   * which of the two was the answer. The only way to notice was to compare the
+   * counter against the array length, per bucket, which is a deduction a
+   * consumer has to know to make and most did not: the report simply looked
+   * complete and short.
+   *
+   * `rule` and `severity` are filters, not cuts, and deliberately do NOT set the
+   * flag — a caller that asked for errors only got exactly what it asked for.
+   */
+  let truncated = false;
   for (const [name, rows] of Object.entries(buckets)) {
     if (wanted && !wanted.has(name)) {
       report[name] = [];
       continue;
     }
     const kept = input.severity ? rows.filter((row) => severityOf(name, row) === input.severity) : rows;
+    if (input.limit !== undefined && kept.length > input.limit) truncated = true;
     report[name] = input.limit === undefined ? kept : kept.slice(0, input.limit);
   }
+  report.truncated = truncated;
 
   return report;
 }

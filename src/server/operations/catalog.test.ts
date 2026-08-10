@@ -226,8 +226,33 @@ describe('the profile gate', () => {
     // Declaring an operation must be what NARROWS access, never what accidentally
     // grants it — so an undeclared name on a surface this repo ships stays
     // governed by the coarse server gate.
+    //
+    // `runTransagent` is the TOOL name, and stays undeclared on purpose: 0.2.15
+    // declares the OPERATION as `run_turn` and records the tool as its rendering
+    // in the `via` cell, rather than renaming either side to match the other.
     expect(CATALOG.has('runTransagent')).toBe(false);
     expect(toolAdmittedByProfile('brief', 'runTransagent')).toBe(true);
+  });
+
+  it('declares run_turn, whose MCP rendering is the differently-named runTransagent', () => {
+    /**
+     * 0.2.15. The spec has always called this operation `run_turn`; the code has
+     * always called its one rendering `runTransagent`, and the catalog knew
+     * neither — so the gate took the permissive branch for it, which makes an
+     * omission indistinguishable from a decision. The `via` cell is where the
+     * naming gap is recorded instead of being spread across two repositories.
+     */
+    const row = CATALOG.require('run_turn');
+    expect(row.opClass).toBe('turn');
+    expect(row.idempotent).toBe(false);
+    expect(row.channels.mcp).toMatchObject({ kind: 'via', operation: 'runTransagent' });
+    expect(row.channels.internal).toMatchObject({ kind: 'via', operation: 'runTransagent' });
+    // No CLI and no REST door: a child turn is spawned from inside a turn.
+    expect(row.channels.cli.kind).toBe('na');
+    expect(row.channels.rest.kind).toBe('na');
+    // The guard is stateful, not hash-based — there is no expectedHash for
+    // "a turn is already running".
+    expect(row.errorCodes).toContain('STREAM_IN_PROGRESS');
   });
 
   it('withholds the release WRITES from every read-only profile', () => {

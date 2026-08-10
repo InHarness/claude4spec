@@ -23,6 +23,8 @@
  * the wire from tools sitting on the same server.
  */
 
+import { DEFAULT_BUDGET_CHARS } from '../discovery/budget.js';
+
 /** The MCP tool result shape, structurally identical to the vendor's `McpToolResult`. */
 export interface ToolEnvelope {
   content: Array<{ type: 'text'; text: string }>;
@@ -46,6 +48,21 @@ export interface ToolCallContext {
 }
 
 /**
+ * The last N measurements, newest last. A ring rather than a growing array: this
+ * runs on every tool call for the life of the process.
+ */
+const MEASUREMENT_RING = 200;
+const measurements: ResponseSizeRecord[] = [];
+
+export interface ResponseSizeRecord {
+  operation: string;
+  channel: string;
+  chars: number;
+  /** True when this response alone exceeded the whole budget. */
+  overBudget: boolean;
+}
+
+/**
  * Response size, per call, in the same unit as the budget: characters of
  * serialized JSON (`discovery/budget.ts` counts `JSON.stringify(item).length`).
  *
@@ -53,18 +70,47 @@ export interface ToolCallContext {
  * one locus every agent-facing channel already passes through, so a single
  * instrumentation covers all of them and no new tool can quietly escape it.
  *
- * Without this the budget contract (`DEFAULT_BUDGET_CHARS`, `MAX_ANCHORS_PER_CALL`)
- * is unfalsifiable at runtime: nothing in the server ever knew how wide a
- * response actually was, so "we made update_sections echo-free" was a claim with
- * no instrument behind it.
+ * 0.2.15 — ALWAYS ON, where it used to be gated on `C4S_RESPONSE_SIZE=1`.
  *
- * Gated on `C4S_RESPONSE_SIZE=1`, like the `[timing]` middleware in `index.ts` —
- * a line per tool call is a diagnostic, not a default. Read per call rather than
- * at module load so a test can toggle it.
+ * The gate made the measurement a diagnostic someone had to think to enable,
+ * which is the same as not having it: the budget contract
+ * (`DEFAULT_BUDGET_CHARS`) and the echo-free rule are both claims ABOUT response
+ * size, and a claim with no instrument behind it cannot be falsified. It costs
+ * one `length` read on a string that was serialized anyway.
+ *
+ * What is still gated is the LOG LINE — a line per tool call is noise by
+ * default. The record is kept either way, so a test or a diagnostic route can
+ * ask what the last calls actually cost.
  */
 function recordResponseSize(chars: number, ctx: ToolCallContext | undefined): void {
-  if (process.env.C4S_RESPONSE_SIZE !== '1') return;
-  console.log(`[response-size] ${ctx?.operation ?? 'unknown'} ${ctx?.channel ?? 'unknown'} ${chars}`);
+  const record: ResponseSizeRecord = {
+    operation: ctx?.operation ?? 'unknown',
+    channel: ctx?.channel ?? 'unknown',
+    chars,
+    overBudget: chars > DEFAULT_BUDGET_CHARS,
+  };
+  measurements.push(record);
+  if (measurements.length > MEASUREMENT_RING) measurements.shift();
+  if (process.env.C4S_RESPONSE_SIZE === '1') {
+    console.log(`[response-size] ${record.operation} ${record.channel} ${chars}`);
+  }
+  /**
+   * A response that blows the budget on its own is warned about unconditionally.
+   * It is not an error — the operation answered, and truncating here would
+   * corrupt a payload the caller is already parsing — but it is the signal that
+   * some operation is missing a budget, and it should not need an env var to
+   * become visible.
+   */
+  if (record.overBudget) {
+    console.warn(
+      `[response-size] ${record.operation} (${record.channel}) returned ${chars} chars, over the ${DEFAULT_BUDGET_CHARS} budget`,
+    );
+  }
+}
+
+/** The recent measurements, oldest first. For tests and diagnostics. */
+export function recentResponseSizes(): readonly ResponseSizeRecord[] {
+  return measurements;
 }
 
 /**

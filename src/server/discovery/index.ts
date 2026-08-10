@@ -102,7 +102,9 @@ export function listEntitiesAll(
 ): Array<{ slug: string; data: unknown } & SerializedMeta> {
   return collectAll((offset) => {
     const page = core.listEntities({ ...input, mode: 'items', limit: MAX_LIMIT, offset });
-    if (page.mode !== 'items') return { items: [], total: 0, hasMore: false };
+    // Unreachable — `mode: 'items'` was just asked for. Shaped as a full `Page`
+    // so the exhaustive sweep below cannot mistake it for a budget cut.
+    if (page.mode !== 'items') return { items: [], total: 0, hasMore: false, truncated: false };
     return page;
   });
 }

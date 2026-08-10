@@ -141,6 +141,17 @@ export interface PlanUpdateFrontmatterOpts {
   path: string;
   patch: { title?: string; applied?: boolean };
   changedBy: PlanChangedBy;
+  /**
+   * 0.2.15 — the thread that CAUSED this write, or `null` when the caller has
+   * none (the generic `PATCH …/frontmatter` route).
+   *
+   * Required rather than optional so every caller states it. It used to be
+   * derived here, via `findLastThreadIdForPlan`, which meant a REST write with
+   * no thread behind it was published as having been made by whichever thread
+   * happened to attach last — a plausible-looking attribution that was simply
+   * false, and indistinguishable from a true one downstream.
+   */
+  threadId: string | null;
 }
 
 /** Input of {@link PlanService.setAppliedByThread} — the `mark_plan_applied` operation. */
@@ -493,10 +504,13 @@ export class PlanService {
    *    is not a family-wide rule.
    *  - **`plan:updated` is still emitted**, so the `/plans` list and the detail
    *    header refresh their badge without a reload. `version` carries the
-   *    SAME value as before the write, which follows from the rule above.
-   *    `threadId` is best-effort: this write arrives over REST, which has no
-   *    thread, so the plan's most recent attached thread stands in (`''` when
-   *    the plan has none) — consumers key off `planPath`.
+   *    SAME value as before the write, which follows from the rule above — a
+   *    consumer must not infer a new version from having received the event.
+   *
+   * 0.2.15 — `threadId` is passed IN, never derived here. See
+   * {@link PlanUpdateFrontmatterOpts.threadId}: `mark_plan_applied` supplies the
+   * calling thread, the generic REST frontmatter route supplies `null`.
+   * Consumers key cache invalidation off `planPath` regardless.
    */
   async updateFrontmatter(opts: PlanUpdateFrontmatterOpts): Promise<Plan> {
     return this.withLock(opts.path, async () => {
@@ -517,7 +531,7 @@ export class PlanService {
       this.deps.ws.broadcast({
         kind: 'plan:updated',
         planPath: opts.path,
-        threadId: this.deps.chatService.findLastThreadIdForPlan(opts.path) ?? '',
+        threadId: opts.threadId,
         version: updated.currentVersion,
         changedBy: opts.changedBy,
       });
@@ -567,7 +581,13 @@ export class PlanService {
     if ((current.frontmatter.applied === true) === input.applied) {
       return { path: planPath, applied: input.applied };
     }
-    await this.updateFrontmatter({ path: planPath, patch: { applied: input.applied }, changedBy: 'agent' });
+    // The caller's own thread: `mark_plan_applied` is always made from one.
+    await this.updateFrontmatter({
+      path: planPath,
+      patch: { applied: input.applied },
+      changedBy: 'agent',
+      threadId,
+    });
     return { path: planPath, applied: input.applied };
   }
 

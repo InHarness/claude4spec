@@ -536,7 +536,16 @@ export function registerCoreOperations(): void {
       path: z.string().optional().describe('Plan path relative to plansDir. Defaulted from the thread only in the `internal` channel.'),
       applied: z.boolean().describe('Must be true from a non-user channel.'),
     },
-    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'IMMUTABLE_FIELD', 'VALIDATION'],
+    /**
+     * 0.2.15 — `IMMUTABLE_FIELD` is GONE from this row: it was unreachable.
+     * The shape accepts only `path` and `applied`, and `updateFrontmatter`
+     * copies only `title`/`applied` forward, so no argument to this operation
+     * can reach the immutability guard. A code no parameter can provoke is a
+     * code to delete or a missing parameter to add — here it is the former; the
+     * guard stays reachable through the generic REST frontmatter route, which
+     * has its own row.
+     */
+    errorCodes: ['NOT_FOUND', 'INVALID_ARGUMENT', 'VALIDATION'],
     // No `db`: a frontmatter-only plan write deliberately records no
     // `file_version` row, so the plan's version history is untouched.
     sideEffects: ['file', 'ui-notify'],
@@ -716,9 +725,54 @@ export function registerCoreOperations(): void {
 
   // ── M05 Agent turn ────────────────────────────────────────────────────────
 
+  /**
+   * 0.2.15 — `run_turn` is declared, and its MCP rendering is `runTransagent`.
+   *
+   * The spec has always named this operation `run_turn`; the code has always
+   * called its one rendering `runTransagent`, and the catalog knew neither — so
+   * `toolAdmittedByProfile` took the permissive branch for it, which makes an
+   * omission indistinguishable from a decision. The row closes that, and the
+   * `via` cell records the naming gap explicitly instead of leaving two names
+   * for one thing scattered across two repositories.
+   *
+   * `{ threadId, summary }` is the whole answer, on purpose: the child turn's
+   * full transcript stays in the child's own context. Echoing it upward would
+   * spend the parent's context on text the parent never asked to read, which is
+   * the entire reason the child is a separate turn.
+   *
+   * The concurrency guard is STATEFUL, not hash-based: at most ONE child per
+   * turn, because the tool call blocks until the child finishes, and a second
+   * turn on a live thread is refused with `STREAM_IN_PROGRESS` rather than
+   * queued. Batch spawn is unsupported.
+   */
+  CATALOG.register({
+    name: 'run_turn',
+    summary:
+      'Delegate a unit of work to a hidden CHILD turn of this specification, in a chosen contextType. Returns { threadId, summary } — a concise summary, never the transcript. At most one child per turn; the call blocks until the child finishes.',
+    scope: 'project',
+    mediation: 'direct',
+    opClass: 'turn',
+    inputSchema: {
+      contextType: z.enum(['brief', 'chat', 'patch']),
+      message: z.string(),
+      payload: z.record(z.string(), z.unknown()).optional(),
+      threadId: z.string().optional().describe('Continue an existing child rather than spawning one.'),
+    },
+    errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS'],
+    sideEffects: ['file', 'db', 'ui-notify'],
+    idempotent: false,
+    channels: {
+      internal: via('runTransagent', 'the tool of the M05 `transagent-tools` server — the spec names the operation `run_turn`, the code names its rendering `runTransagent`'),
+      mcp: via('runTransagent', 'same server, mounted for context_type ∈ {chat, patch} and stripped inside a child turn (recursion depth 1)'),
+      cli: na('no CLI surface — a child turn is spawned from within a turn'),
+      rest: na('no REST surface — the parent turn is the only caller'),
+    },
+  });
+
   CATALOG.register({
     name: 'abort_turn',
-    summary: 'Abort the running turn of a thread, addressed BY THREAD. Idempotent: aborting a thread with no live turn is a no-op, not an error. An unknown thread is THREAD_NOT_FOUND.',
+    summary:
+      'Abort the running turn of a thread, addressed BY THREAD. Answers a CONFIRMATION of the interruption — { aborted } — not the thread\'s state, which the caller can read if it wants it. Idempotent: aborting a thread with no live turn is a no-op, not an error. An unknown thread is THREAD_NOT_FOUND.',
     scope: 'project',
     mediation: 'direct',
     opClass: 'turn',
