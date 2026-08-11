@@ -153,8 +153,21 @@ export interface GetSectionsInput {
   includeSubtree?: boolean;
 }
 
+/**
+ * An edge carries IDENTIFIERS and nothing else — what to ask for next.
+ *
+ * 0.2.16 dropped `raw` and `line` from all three collections. `raw` was a
+ * substring of a `body` that, when present, the caller already has, and when
+ * absent it answers the wrong question: an edge exists to say which section to
+ * go back for, not what the tag looked like. `line` had no consumer at all —
+ * a write addresses `anchor` + `expectedHash` in `update_section` and
+ * `(rootId, path)` + `expectedHash` in `update_page`, never a line number.
+ *
+ * The only positional information left is ARRAY ORDER, which follows the order
+ * of occurrence within the section.
+ */
 export interface SectionEdges {
-  sectionRefs: Array<{ anchor: string; raw: string; line: number }>;
+  sectionRefs: Array<{ anchor: string }>;
   entityEmbeds: Array<{
     tagType: string;
     type: string;
@@ -162,10 +175,8 @@ export interface SectionEdges {
     slugs?: string[];
     tags?: string[];
     filter?: string;
-    raw: string;
-    line: number;
   }>;
-  pageLinks: Array<{ rootId: string; path: string; anchor?: string; raw: string; line: number }>;
+  pageLinks: Array<{ rootId: string; path: string; anchor?: string }>;
 }
 
 /**
@@ -174,6 +185,14 @@ export interface SectionEdges {
  * cheap half and stay, so a caller can still see what it did not get and go
  * fetch it. An item with no `body` always carries `truncated: true`, which is
  * what separates "cut" from "empty section".
+ *
+ * `edges` is present IF AND ONLY IF `truncated: true`. An item that carries its
+ * whole body carries its edges too — inside the prose, where the same parser
+ * that built this list can find them again — so shipping them a second time
+ * spends the response budget on a copy. The rule is keyed on the FLAG, not on
+ * the absence of `body`: the first item is never degraded to meta-only, but
+ * when its own body overflows it comes back text-clipped, and everything past
+ * the cut is invisible — so it gets edges despite having a `body`.
  */
 export interface SectionResultItem {
   anchor: string;
@@ -186,7 +205,7 @@ export interface SectionResultItem {
   /** AS AUTHORED — XML tags untouched, because a tag is an edge. */
   body?: string;
   truncated?: boolean;
-  edges: SectionEdges;
+  edges?: SectionEdges;
 }
 
 /**

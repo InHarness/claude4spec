@@ -386,7 +386,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(body.content).toContain('<single_element type="diagram" slug="flow" caption="x"/>');
     });
 
-    it('get_sections returns each body with its tag intact AND that tag as a parsed edge', async () => {
+    it('get_sections returns each body with its tag intact, and no edges beside it', async () => {
       await pagesService.write('page.md', {
         body: '# Alpha\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
       });
@@ -399,7 +399,11 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
       expect(isError).toBe(false);
       expect(body.results).toHaveLength(1);
       expect(body.results[0].body).toContain('<single_element type="diagram" slug="flow"');
-      expect(body.results[0].edges).toBeDefined();
+      // 0.2.16 — the tag IS the edge, and it is right there in the body. A
+      // parsed copy beside it would be the same fact twice, charged twice to
+      // the response budget. Edges arrive only where the body does not.
+      expect(body.results[0].truncated).toBeUndefined();
+      expect(body.results[0].edges).toBeUndefined();
     });
 
     /**

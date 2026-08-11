@@ -44,10 +44,17 @@ const host = {
 
 const pagesRoot: Root = { id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS };
 
-/** Unwraps a single-anchor `get_sections` call, asserting the item IS a section. */
+/**
+ * Unwraps a single-anchor `get_sections` call, asserting the item IS a section.
+ *
+ * Keyed on what the other two variants carry: since 0.2.16 a section item's own
+ * `body` and `edges` are both optional, so neither one identifies it.
+ */
 function sectionItem(result: GetSectionsResult): SectionResultItem {
   const item = result.results[0];
-  if (!item || !('edges' in item)) throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+  if (!item || 'error' in item || 'coveredBy' in item) {
+    throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+  }
   return item;
 }
 

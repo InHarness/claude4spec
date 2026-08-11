@@ -36,15 +36,13 @@ export interface EntityDef<T = unknown> {
   type: EntityType;
   label: string;
   labelPlural: string;
-  /** 0.2.15 — optional: an `embedOnly` type has no list row. */
+  /** Optional: a hidden type has no list row. */
   renderRow?: ComponentType<EntityRowProps<T>>;
   renderChip: ComponentType<EntityChipProps<T>>;
   renderCard: ComponentType<EntityCardProps<T>>;
-  /** 0.2.15 — optional: an `embedOnly` type has no detail route. */
+  /** Optional: a hidden type has no detail route to put a panel on. */
   detailPanel?: ComponentType<EntityDetailProps>;
-  /** 0.2.15 — see `FrontendModule.embedOnly`. */
-  embedOnly?: boolean;
-  /** 0.2.15 — required when `embedOnly`; read-only fullscreen surface. */
+  /** Required on a hidden type (0.2.16); read-only fullscreen surface. */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
   useGetBySlug: (slug: string | null) => { data: T | null | undefined; isLoading: boolean };
 }

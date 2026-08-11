@@ -28,6 +28,7 @@ import type {
   GetSectionsResult,
   ListSectionsInput,
   ListSectionsResult,
+  SectionEdges,
   SectionListItem,
   SectionResultItem,
 } from '../types.js';
@@ -213,6 +214,17 @@ export async function getSections(
   // budget dropping later items, and the caller needs telling about both: the
   // item carries the flag, the envelope carries the instruction.
   const textHints: string[] = [];
+  /**
+   * Edges parked OUT of the item until the budget has spoken.
+   *
+   * They ride along only on a `truncated` item (0.2.16), and the budget prices
+   * an item by its serialized length — so an item that will ship without edges
+   * must not be priced with them, or a full-bodied section pays for a payload
+   * the caller never receives. Every entry here was parsed from the WHOLE
+   * section, before any text clipping, which is what makes a meta-only item
+   * still report everything its section embeds.
+   */
+  const edgesByAnchor = new Map<string, SectionEdges>();
   for (const anchor of anchors) {
     const cover = coveredBy.get(anchor);
     if (cover) {
@@ -249,10 +261,11 @@ export async function getSections(
     }
     const fetched = await fetchOne(db, pages, reader, serialization, section, includeSubtree);
     items.push(fetched.item);
+    edgesByAnchor.set(anchor, fetched.edges);
     if (fetched.hint) textHints.push(fetched.hint);
   }
 
-  const budgeted = applyItemBudget(items, metaOnly, RETRY_HINT);
+  const budgeted = applyItemBudget(items, (item) => metaOnly(item, edgesByAnchor), RETRY_HINT);
   const messages = [
     ...(budgeted.truncated ? [budgeted.truncationHint ?? RETRY_HINT] : []),
     ...textHints.slice(0, 1),
@@ -264,7 +277,7 @@ export async function getSections(
 }
 
 const RETRY_HINT =
-  'response budget reached — every item after the first oversized one came back without its `body` (coordinates and edges kept, `truncated: true`). Retry those anchors as a smaller subset.';
+  'response budget reached — every item after the first oversized one came back without its `body` (coordinates kept, `edges` added, `truncated: true`). Pick the anchors you actually need out of those `edges` and retry as a smaller subset.';
 
 /**
  * Serializes ONE section, exactly as the pre-batch operation did.
@@ -281,7 +294,7 @@ async function fetchOne(
   serialization: SerializationEngine,
   section: RawSection,
   includeSubtree: boolean,
-): Promise<{ item: SectionResultItem; hint?: string }> {
+): Promise<{ item: SectionResultItem; edges: SectionEdges; hint?: string }> {
   const hydrated = await hydrateSection(db, pages, section, includeSubtree);
   // The `detail` view IS the source for this operation — the core does not
   // hand-roll a second section shape beside the serializer's. What it does own
@@ -290,7 +303,7 @@ async function fetchOne(
   // `single_element` already compile against. Projecting here keeps one source
   // of truth without renaming a shipped shape out from under its consumers.
   const detail = serialization.serializeSection('detail', hydrated, reader).data as Record<string, unknown>;
-  const edges = (detail.edges as SectionResultItem['edges']) ?? hydrated.edges;
+  const edges = (detail.edges as SectionEdges | undefined) ?? hydrated.edges;
 
   /**
    * A single body over the whole budget is truncated as TEXT rather than
@@ -309,6 +322,12 @@ async function fetchOne(
     `section body truncated by response budget — narrow to a child section via list_sections({ by: "page", rootId: "${section.rootId}", path: "${section.pagePath}" }), then get_sections({ anchors })`,
   );
 
+  /**
+   * The text-clipped first item keeps its `body` AND gets `edges` — the two are
+   * not alternatives. Its tail is invisible, so the edges are the only way to
+   * learn what the part that did not fit points at. The condition is the
+   * `truncated` flag, never `body === undefined`.
+   */
   return {
     item: {
       anchor: section.anchor,
@@ -319,9 +338,9 @@ async function fetchOne(
       line_start: section.lineStart,
       line_end: section.lineEnd,
       body: budgeted.text,
-      ...(budgeted.truncated ? { truncated: true } : {}),
-      edges,
+      ...(budgeted.truncated ? { truncated: true, edges } : {}),
     },
+    edges,
     ...(budgeted.truncationHint ? { hint: budgeted.truncationHint } : {}),
   };
 }
@@ -402,11 +421,28 @@ function computeCoverage(
   return resolved;
 }
 
-/** Strips the expensive half, keeping everything that says what was cut. */
-function metaOnly(item: GetSectionsItem): GetSectionsItem {
-  if (!('body' in item)) return item;
-  const { body: _body, ...rest } = item as SectionResultItem;
-  return { ...rest, truncated: true };
+/**
+ * Strips the expensive half, keeping everything that says what was cut.
+ *
+ * The edges come BACK here rather than surviving from the un-degraded item:
+ * they were parked outside it so the budget would price the item as it ships.
+ * They describe the whole section, not the fragment that fit — a meta-only item
+ * has no fragment at all, and still reports everything the section embeds.
+ */
+function metaOnly(item: GetSectionsItem, edgesByAnchor: ReadonlyMap<string, SectionEdges>): GetSectionsItem {
+  if (!isResultItem(item)) return item;
+  const { body: _body, ...rest } = item;
+  const edges = edgesByAnchor.get(item.anchor);
+  return { ...rest, truncated: true, ...(edges ? { edges } : {}) };
+}
+
+/**
+ * Which of the three item variants this is. Keyed on what the OTHER two carry,
+ * because since 0.2.16 both of the result item's own distinguishing fields
+ * (`body`, `edges`) are optional and a meta-only item has neither.
+ */
+function isResultItem(item: GetSectionsItem): item is SectionResultItem {
+  return !('coveredBy' in item) && !('error' in item);
 }
 
 /**
@@ -416,7 +452,7 @@ function metaOnly(item: GetSectionsItem): GetSectionsItem {
  */
 function propagateTruncation(items: readonly GetSectionsItem[]): GetSectionsItem[] {
   const truncatedAnchors = new Set(
-    items.filter((i) => 'body' in i || 'edges' in i).filter((i) => i.truncated).map((i) => i.anchor),
+    items.filter(isResultItem).filter((i) => i.truncated).map((i) => i.anchor),
   );
   if (!truncatedAnchors.size) return [...items];
   return items.map((item) =>

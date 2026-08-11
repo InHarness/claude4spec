@@ -190,13 +190,14 @@ export function openPopover<K extends PopoverKind>(
   });
 }
 
-// ---------- Entity overlay (hidden / embed-only types) ----------
+// ---------- Entity overlay (hidden types) ----------
 
 /**
- * 0.2.15 — the click target of a hidden entity's chip or card.
+ * The click target of a hidden entity's chip or card.
  *
- * A type with `embedOnly: true` (`diagram`, `spreadsheet`) has no detail route,
- * so `bridge.openEntity` has nowhere to send the user. It opens a host-local,
+ * A hidden type (`diagram`, `spreadsheet` — types declaring neither `routes`
+ * nor `detailPanel`) has no detail route, so `bridge.openEntity` has nowhere to
+ * send the user. It opens a host-local,
  * read-only fullscreen overlay instead — rendered by the type's own
  * `renderOverlay` slot, resolved through the client plugin host.
  *

@@ -24,6 +24,8 @@ describe('getEntityDef resolves plugin-host-registered types', () => {
     renderCard: Noop,
     renderRow: Noop,
     detailPanel: Noop,
+    // 0.2.16: a `detailPanel` obliges the module to bring the route it lives on.
+    routes: (() => []) as unknown as FrontendModule['routes'],
     useGetBySlug: () => ({ data: null, isLoading: false }),
     listByTags: async () => [],
   } as unknown as FrontendModule;

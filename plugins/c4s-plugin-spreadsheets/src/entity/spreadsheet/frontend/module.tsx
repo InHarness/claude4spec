@@ -14,15 +14,19 @@ import { fetchShape, type SpreadsheetShape } from './hooks.js';
 /**
  * The frontend module of a HIDDEN type.
  *
- * 0.2.15 — "hidden" is now DECLARED (`embedOnly: true`), not inferred from two
- * omissions. It still means the same two things — no `sidebarTab`, so the rail
- * filters it out; no `routes`, so there is no list or detail page — but the host
- * now knows, which changes two things concretely:
+ * 0.2.16 — "hidden" is what the OMISSIONS mean, and the host reads them: no
+ * `sidebarTab`, so the rail filters this type out; no `routes` and no
+ * `detailPanel`, so there is no list or detail page and nowhere for a chip
+ * click to navigate. (0.2.15 declared the same fact twice by pairing those
+ * omissions with an `embedOnly: true` flag; the flag is gone, since two sources
+ * for one fact can disagree and only one of them was load-bearing.)
  *
- *   - `renderRow` / `detailPanel` are no longer required, so the four
- *     `NullRender` stubs that used to sit here are gone. They existed only to
- *     satisfy a slot check that demanded surfaces this type does not have, and a
- *     module failing that check had ALL its slots skipped;
+ * Two consequences the host enforces:
+ *
+ *   - `renderRow` / `detailPanel` are not required, so the `NullRender` stubs
+ *     that once sat here are gone. They existed only to satisfy a slot check
+ *     that demanded surfaces this type does not have, and a module failing that
+ *     check had ALL its slots skipped;
  *   - `renderOverlay` IS required, because a hidden type's chip has nowhere to
  *     navigate and opens a fullscreen surface instead.
  *
@@ -39,7 +43,6 @@ export const spreadsheetFrontendModule: FrontendModule = {
   displayOrder: SPREADSHEET_DISPLAY_ORDER,
   pathPrefix: SPREADSHEET_PATH_PREFIX,
 
-  embedOnly: true,
   renderChip: SpreadsheetChip,
   renderCard: SpreadsheetCard,
   renderOverlay: SpreadsheetFullscreen,
