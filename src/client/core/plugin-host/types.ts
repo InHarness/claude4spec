@@ -75,29 +75,35 @@ export interface FrontendModule extends EntityModuleManifest {
   /**
    * L8 — list row rendered by ElementListView / TaggedListView.
    *
-   * 0.2.15 — OPTIONAL, and absent on an `embedOnly` type. A hidden entity has
-   * no row, so `<element_list/>` and `<tagged_list/>` of that type are
-   * unsupported BY CONTRACT rather than by accident: the list views say so
-   * inline instead of rendering an empty slot.
+   * OPTIONAL. Without it the type is not rendered by `<element_list/>` or
+   * `<tagged_list/>` — unsupported BY CONTRACT rather than by accident: the
+   * list views say so inline instead of rendering an empty slot. It stays
+   * reachable through its chip and its card.
    */
   renderRow?: ComponentType<EntityRowProps<unknown>>;
 
-  /** L5 — entity detail panel (sidebar). Absent on an `embedOnly` type, which
-   *  has no detail route to open. */
+  /**
+   * L5 — entity detail panel.
+   *
+   * OPTIONAL, and bound to {@link routes}: a type declares BOTH or NEITHER.
+   * Neither = a hidden entity. `EntityDetailProps` is a contract only for a
+   * type that declares this slot at all.
+   */
   detailPanel?: ComponentType<EntityDetailProps>;
 
   /**
-   * 0.2.15 — a HIDDEN entity: no `sidebarTab`, no detail route. It exists only
-   * as something a page embeds (`diagram`, `spreadsheet`). It must supply
-   * `renderCard`, `renderChip` and `renderOverlay`, and must NOT supply
-   * `renderRow` / `detailPanel`. Clicking its chip opens the overlay rather
-   * than navigating, because there is nowhere to navigate to.
-   */
-  embedOnly?: boolean;
-
-  /**
-   * 0.2.15 — read-only fullscreen surface opened from a chip or card of an
-   * `embedOnly` type. Required when `embedOnly` is set, meaningless otherwise.
+   * Read-only fullscreen surface opened by a click on a HIDDEN entity's chip or
+   * card.
+   *
+   * 0.2.16 — required exactly when the type is hidden (no `routes`, no
+   * `detailPanel`), and forbidden otherwise: a type WITH a detail route sends
+   * its clicks to `bridge.openEntity`, and an overlay slot beside that route
+   * would be a second, contradictory answer to "where does a click go".
+   *
+   * The overlay is the entity's own — the host owns the click mechanism
+   * (`openEntityHandler` → `EntityOverlayHost`), the entity owns what appears.
+   * That split is the same one `renderChip` already lives under: a slot stays
+   * declarative, the host-resolver keeps the wiring.
    */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
 
@@ -125,8 +131,13 @@ export interface FrontendModule extends EntityModuleManifest {
 
   /**
    * Phase 3 — page routes this module owns, as a factory bound to the host's
-   * `rootRoute`. The host mounts them into its single TanStack Router. Optional:
-   * a module with no pages (e.g. embed-only) omits it.
+   * `rootRoute`. The host mounts them into its single TanStack Router.
+   *
+   * OPTIONAL, and bound to {@link detailPanel}: a type declares BOTH or NEITHER
+   * (0.2.16). A detail panel with no route to render it on, or a route with no
+   * panel to put on it, is a manifest the host refuses — not because the halves
+   * are technically inseparable, but because either half alone is a promise the
+   * other one has to keep.
    */
   routes?: RouteTreeFragment;
 

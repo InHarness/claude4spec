@@ -12,6 +12,7 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { AcDetail } from './detail-panel.js';
+import { acRoutes } from './routes.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
 function truncate(s: string, n: number): string {
@@ -164,6 +165,7 @@ const acFrontendModule: FrontendModule = {
   renderChip: AcChip as FrontendModule['renderChip'],
   renderCard: AcCard as FrontendModule['renderCard'],
   detailPanel: AcDetail,
+  routes: acRoutes,
   useGetBySlug: (slug) => useAc(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => acsApi.list({ tags, tagFilter: filter, status: 'all' }),
   sidebarTab: { icon: CheckSquare, label: 'Acceptance Criteria', order: 50 },

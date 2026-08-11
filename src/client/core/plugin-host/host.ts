@@ -10,6 +10,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ClientPluginHost, FrontendModule } from './types.js';
+import { checkSlotShapes } from './slot-rules.js';
 import type { PluginActivationState } from '../../../shared/plugin-host/types.js';
 
 /**
@@ -20,41 +21,21 @@ import type { PluginActivationState } from '../../../shared/plugin-host/types.js
  */
 export type ChipBrokenCategory = 'inactive-plugin' | 'unknown-type';
 
-/** Every module renders as a chip and as a card — that is what "embeddable" means. */
-const EMBED_COMPONENT_SLOTS = ['renderChip', 'renderCard'] as const;
-/** Only a module with a place of its own: a list row and a detail panel. */
-const BROWSABLE_COMPONENT_SLOTS = ['renderRow', 'detailPanel'] as const;
-const REQUIRED_FUNCTION_SLOTS = ['useGetBySlug', 'listByTags'] as const;
-
 /**
  * M34/L11: validate a module's slot SHAPES at registration time — catches a
  * missing/mistyped slot (e.g. a plugin author's typo) before it fails deep
  * inside a render pass with a confusing stack.
  *
- * 0.2.15 — the required set now depends on `embedOnly`. A hidden type
- * (`diagram`, `spreadsheet`) has no list row and no detail panel to require;
- * demanding them is what forced those modules to ship `NullRender` stubs, which
- * satisfied the check while rendering nothing. In exchange it must supply
- * `renderOverlay`, since its chip has nowhere to navigate.
+ * 0.2.16 — the rules themselves live in `slot-rules.ts`, shared with the
+ * runtime plugin loader's softer door. What differs here is only the RESPONSE:
+ * a module that reaches this function was imported by the host itself, so a
+ * malformed one is a build error, not a third party's problem to be warned
+ * about.
  */
 function assertSlotShapes(module: FrontendModule): void {
-  const required = module.embedOnly
-    ? EMBED_COMPONENT_SLOTS
-    : [...EMBED_COMPONENT_SLOTS, ...BROWSABLE_COMPONENT_SLOTS];
-  for (const slot of required) {
-    if (typeof module[slot] !== 'function') {
-      throw new Error(`client plugin-host: module '${module.type}' — '${slot}' must be a React component`);
-    }
-  }
-  if (module.embedOnly && typeof module.renderOverlay !== 'function') {
-    throw new Error(
-      `client plugin-host: module '${module.type}' — an embedOnly module must supply 'renderOverlay' (its chip has no detail route to open)`,
-    );
-  }
-  for (const slot of REQUIRED_FUNCTION_SLOTS) {
-    if (typeof module[slot] !== 'function') {
-      throw new Error(`client plugin-host: module '${module.type}' — '${slot}' must be a function`);
-    }
+  const problem = checkSlotShapes(module);
+  if (problem) {
+    throw new Error(`client plugin-host: module '${module.type}' — ${problem}`);
   }
 }
 

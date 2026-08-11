@@ -389,18 +389,24 @@ describe('discovery core', () => {
     expect(computed['x-computed']).toBe(true);
   });
 
-  describe('get_sections returns bodies and their edges', () => {
+  describe('get_sections returns bodies, and edges when it cannot', () => {
     /**
      * 0.2.5 — the operation batches, so every assertion below reaches through
      * `results[]`. `one()` keeps the single-anchor cases readable without
      * hiding the envelope: it asserts the item IS a section (rather than an
      * error or a `coveredBy` pointer), which is exactly what a bare
      * `results[0]` would let slip past.
+     *
+     * 0.2.16 — the test is on what the OTHER two variants carry. A section item
+     * used to be recognisable by its `edges`; now those ride only on a
+     * truncated one, and `body` is optional too, so neither field identifies it.
      */
     const one = (result: Awaited<ReturnType<DiscoveryCore['getSections']>>): SectionResultItem => {
       expect(result.results).toHaveLength(1);
       const item = result.results[0]!;
-      if (!('edges' in item)) throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+      if ('error' in item || 'coveredBy' in item) {
+        throw new Error(`expected a section item, got ${JSON.stringify(item)}`);
+      }
       return item;
     };
 
@@ -468,9 +474,60 @@ describe('discovery core', () => {
       expect(section.body).toContain('<single_element type="widget" slug="flow"/>');
       expect(section.rootId).toBe('pages');
       expect(section.page_path).toBe('m.md');
-      expect(section.edges.entityEmbeds).toContainEqual(
-        expect.objectContaining({ type: 'widget', slug: 'flow', tagType: 'single_element' }),
+      /**
+       * 0.2.16 — and NO `edges`, precisely because the body arrived. The tag is
+       * in the prose the caller now holds; shipping a parsed copy of it beside
+       * the copy it came from is the duplication the release removed.
+       */
+      expect(section.truncated).toBeUndefined();
+      expect(section).not.toHaveProperty('edges');
+    });
+
+    /**
+     * The other half of the same rule: what a caller gets INSTEAD of the body.
+     *
+     * The section here embeds a tag and links a page, then gets cut by the
+     * budget. The edges must describe the WHOLE section — they are parsed
+     * before the cut, not from the fragment that survived it — so a meta-only
+     * item still names everything its section points at.
+     */
+    it('a cut item carries the edges of the whole section, as identifiers only', async () => {
+      const big = 'x'.repeat(80_000);
+      await writePage(
+        'pages',
+        'edges.md',
+        [
+          '# Top',
+          '',
+          '## One',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          big,
+          '',
+          '## Two',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'Prose with <single_element type="widget" slug="flow"/> inside.',
+          '',
+          'And a link to @other.md#abcdef01 as well.',
+          '',
+          big,
+          '',
+        ].join('\n'),
       );
+      await indexPageLikeTheIndexer('pages', 'pages', 'edges.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'] });
+
+      const cut = result.results[1] as SectionResultItem;
+      expect(cut).toMatchObject({ anchor: 'bbbbbb22', truncated: true });
+      expect(cut.body).toBeUndefined();
+      expect(cut.edges!.entityEmbeds).toContainEqual({
+        tagType: 'single_element',
+        type: 'widget',
+        slug: 'flow',
+      });
       // The anchor here is hex on purpose: the shared `@`-link parser only
       // captures `#[a-f0-9]{8}`, while the section indexer mints anchors from
       // the full `[a-z0-9]` alphabet — so most real anchors are dropped from an
@@ -478,9 +535,60 @@ describe('discovery core', () => {
       // belongs to the link indexer; it is filed as a patch rather than widened
       // here, because loosening the regex also changes what the editor marks as
       // a broken link.
-      expect(section.edges.pageLinks).toContainEqual(
-        expect.objectContaining({ path: 'other.md', anchor: 'abcdef01' }),
+      expect(cut.edges!.pageLinks).toContainEqual({
+        rootId: 'pages',
+        path: 'other.md',
+        anchor: 'abcdef01',
+      });
+      // Identifiers ONLY: `raw` was a substring of a body this item no longer
+      // has, and `line` addressed nothing — no writer takes a line number.
+      for (const edge of [...cut.edges!.entityEmbeds, ...cut.edges!.pageLinks, ...cut.edges!.sectionRefs]) {
+        expect(edge).not.toHaveProperty('raw');
+        expect(edge).not.toHaveProperty('line');
+      }
+    });
+
+    /**
+     * Stripping `raw`/`line` made repeated references indistinguishable, so they
+     * had to stop being repeated. Two mentions of one anchor were once two facts
+     * ("referenced here, and here"); as bare identifiers they are one fact billed
+     * twice — against the budget of the very response the edges exist to rescue.
+     */
+    it('collapses exact duplicate edges — the same target named twice is one edge', async () => {
+      const big = 'x'.repeat(80_000);
+      await writePage(
+        'pages',
+        'dupes.md',
+        [
+          '# Top',
+          '',
+          '## One',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          big,
+          '',
+          '## Two',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'Once: <single_element type="widget" slug="flow"/> and @other.md#abcdef01.',
+          '',
+          'Again: <single_element type="widget" slug="flow"/> and @other.md#abcdef01.',
+          '',
+          big,
+          '',
+        ].join('\n'),
       );
+      await indexPageLikeTheIndexer('pages', 'pages', 'dupes.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'] });
+      const cut = result.results[1] as SectionResultItem;
+      expect(cut.truncated).toBe(true);
+
+      const embeds = cut.edges!.entityEmbeds.filter((e) => e.slug === 'flow' && e.type === 'widget');
+      expect(embeds).toHaveLength(1);
+      const links = cut.edges!.pageLinks.filter((l) => l.path === 'other.md');
+      expect(links).toHaveLength(1);
     });
 
     /**
@@ -648,15 +756,17 @@ describe('discovery core', () => {
       expect(first.truncated).toBe(true);
       expect(first.message).toBeTruthy();
       const cut = (r: typeof first): string[] =>
-        r.results.filter((i) => 'edges' in i && i.body === undefined).map((i) => i.anchor);
+        r.results.filter((i) => 'line_start' in i && i.body === undefined).map((i) => i.anchor);
       expect(cut(first)).toEqual(cut(second));
       expect(cut(first).length).toBeGreaterThan(0);
 
       // Degraded, not dropped: a caller can still see WHAT it did not get.
       // Dropping would be indistinguishable from "that anchor does not exist".
       expect(first.results).toHaveLength(3);
-      for (const item of first.results.filter((i) => 'edges' in i && i.body === undefined)) {
+      for (const item of first.results.filter((i) => 'line_start' in i && i.body === undefined)) {
         expect(item).toMatchObject({ truncated: true, line_start: expect.any(Number) });
+        // The edges are what the item has INSTEAD of its body — the only view
+        // left of what this section points at.
         expect((item as SectionResultItem).edges).toBeDefined();
       }
       // The first item keeps a body even though it alone exceeds the budget —
@@ -839,7 +949,17 @@ describe('discovery core', () => {
       await writePage(
         'pages',
         'huge.md',
-        ['# Top', '', '## Big', '<!-- anchor: eeeeee55 -->', '', 'z'.repeat(130_000), ''].join('\n'),
+        [
+          '# Top',
+          '',
+          '## Big',
+          '<!-- anchor: eeeeee55 -->',
+          '',
+          'z'.repeat(130_000),
+          '',
+          'A tag past the cut: <single_element type="widget" slug="flow"/>',
+          '',
+        ].join('\n'),
       );
       await indexPageLikeTheIndexer('pages', 'pages', 'huge.md');
       const c = core([pagesRoot()]);
@@ -849,6 +969,18 @@ describe('discovery core', () => {
       const item = result.results[0] as SectionResultItem;
       expect(item.truncated).toBe(true);
       expect(item.body).toBeTruthy(); // never a dead end — a usable prefix survives
+      /**
+       * 0.2.16 — body AND edges, which is the case that proves the rule keys on
+       * `truncated` rather than on a missing `body`. The tag below lives past
+       * the clip: the prose the caller holds cannot show it, so the edges are
+       * the only thing that can.
+       */
+      expect(item.edges!.entityEmbeds).toContainEqual({
+        tagType: 'single_element',
+        type: 'widget',
+        slug: 'flow',
+      });
+      expect(item.body).not.toContain('single_element');
       expect(result.truncated).toBe(true);
       // The remedy has to be one the caller can actually run. It used to offer
       // "the page window with get_page" first — but a section only ever lives on

@@ -13,6 +13,7 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { UiViewDetail } from './detail-panel.js';
+import { uiViewRoutes } from './routes.js';
 
 function UiViewRow({ entity, active, onOpen }: EntityRowProps<UiView>) {
   return (
@@ -210,6 +211,7 @@ const uiViewFrontendModule: FrontendModule = {
   renderChip: UiViewChip as FrontendModule['renderChip'],
   renderCard: UiViewCard as FrontendModule['renderCard'],
   detailPanel: UiViewDetail,
+  routes: uiViewRoutes,
   useGetBySlug: (slug) => useUiView(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => uiViewsApi.list({ tags, tagFilter: filter }),
   sidebarTab: { icon: Monitor, label: 'UI Views', order: 40 },

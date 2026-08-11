@@ -54,12 +54,17 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
     pathPrefix: `/${def.type}s`,
     renderChip: def.renderChip,
     renderCard: def.renderCard,
-    // 0.2.15 — spread rather than assign: an `embedOnly` def supplies neither
-    // slot, and writing `renderRow: undefined` would make the key present with
-    // an undefined value, which is not the same as absent to `assertSlotShapes`.
+    // Spread rather than assign: a hidden def supplies neither slot, and writing
+    // `renderRow: undefined` would make the key present with an undefined
+    // value, which is not the same as absent to the slot rules — and since
+    // 0.2.16 absence is exactly how a hidden entity declares itself.
     ...(def.renderRow ? { renderRow: def.renderRow } : {}),
+    // A legacy def cannot contribute `routes` (the shape predates them), so one
+    // carrying a `detailPanel` now fails the both-or-neither rule at
+    // registration. Nothing in-tree does: the only def that still reaches this
+    // adapter is `diagram`, which is hidden. A legacy type that grows a detail
+    // panel has outgrown the adapter and wants a real module.
     ...(def.detailPanel ? { detailPanel: def.detailPanel } : {}),
-    ...(def.embedOnly ? { embedOnly: true as const } : {}),
     ...(def.renderOverlay ? { renderOverlay: def.renderOverlay } : {}),
     useGetBySlug: def.useGetBySlug,
     // Legacy registerEntity() callers don't supply tag-list APIs; return empty.

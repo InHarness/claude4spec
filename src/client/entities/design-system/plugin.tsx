@@ -14,6 +14,7 @@ import { registerEditorExtension } from '../../tiptap/registry.js';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import type { FrontendModule } from '../../core/plugin-host/types.js';
 import { DesignSystemDetail } from './detail-panel.js';
+import { designSystemRoutes } from './routes.js';
 import type { DesignSystemListItem } from './api.js';
 
 /**
@@ -219,6 +220,7 @@ const designSystemFrontendModule: FrontendModule = {
   renderChip: DesignSystemChip as FrontendModule['renderChip'],
   renderCard: DesignSystemCard as FrontendModule['renderCard'],
   detailPanel: DesignSystemDetail,
+  routes: designSystemRoutes,
   useGetBySlug: (slug) => useDesignSystem(slug) as ReturnType<FrontendModule['useGetBySlug']>,
   listByTags: ({ tags, filter }) => designSystemsApi.list({ tags, tagFilter: filter }),
   sidebarTab: { icon: Palette, label: 'Design Systems', order: 60 },

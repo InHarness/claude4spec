@@ -64,14 +64,18 @@ function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
 }
 
 /**
- * 0.2.15 — `diagram` is a HIDDEN entity: no sidebar tab, no detail route, so
- * `embedOnly: true` and neither `renderRow` nor `detailPanel`.
+ * `diagram` is a HIDDEN entity: no sidebar tab, no `routes`, no `detailPanel`,
+ * and therefore no `renderRow` either.
  *
  * That is not a demotion, it is the shape being stated. Diagram never had a
  * sidebar tab or a `/diagrams/$slug` route — `bridge.openEntity('diagram', …)`
  * pointed at a route that does not exist, so the row and the detail panel were
- * unreachable surfaces satisfying a slot check. Now the check knows they are
- * absent, and the chip opens the fullscreen overlay instead of navigating.
+ * unreachable surfaces satisfying a slot check. The chip opens the fullscreen
+ * overlay instead of navigating.
+ *
+ * 0.2.16 — hidden-ness is no longer declared with a flag. Omitting `routes` and
+ * `detailPanel` IS the declaration; `renderOverlay` is what the host requires in
+ * exchange.
  *
  * `element_list` / `tagged_list` with `type="diagram"` are unsupported by that
  * same contract; the list views say so inline rather than rendering blanks.
@@ -82,7 +86,6 @@ registerEntity<Diagram>({
   labelPlural: 'Diagrams',
   renderChip: DiagramChip,
   renderCard: DiagramCard,
-  embedOnly: true,
   renderOverlay: DiagramOverlay,
   useGetBySlug: (slug) => useDiagram(slug),
 });

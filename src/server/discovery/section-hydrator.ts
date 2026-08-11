@@ -80,16 +80,14 @@ export function bodySize(pageContent: string, section: RawSection): number {
 export function parseEdges(db: Database, section: RawSection, body: string): SectionEdges {
   const edges: SectionEdges = { sectionRefs: [], entityEmbeds: [], pageLinks: [] };
 
-  // Line numbers are page-absolute: an edge the consumer cannot locate in the
-  // page it came from is half an answer. `line` from the parser is 1-based
-  // within `body`, and `lineStart` is the heading, so the body's first line is
-  // `lineStart + 1`.
-  const lineBase = section.lineStart;
-
+  // 0.2.16 — identifiers only. An edge says what to fetch next; it does not
+  // reproduce the markdown it was parsed from, and it does not carry a line
+  // number nothing addresses. Order of occurrence within the section is the one
+  // positional fact that survives, and it survives as array order.
   for (const tag of parseXmlTagsExcludingCode(body)) {
     if (tag.kind === 'section_ref') {
       const anchor = tag.attrs.anchor;
-      if (anchor) edges.sectionRefs.push({ anchor, raw: tag.raw, line: lineBase + tag.line });
+      if (anchor) edges.sectionRefs.push({ anchor });
       continue;
     }
     if (tag.kind === 'todo') continue;
@@ -107,8 +105,6 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
       ...(slugs.length > 1 ? { slugs } : {}),
       ...(tags.length ? { tags } : {}),
       ...(tag.attrs.filter ? { filter: tag.attrs.filter } : {}),
-      raw: tag.raw,
-      line: lineBase + tag.line,
     });
   }
 
@@ -121,8 +117,6 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
       rootId: section.rootId,
       path: link.targetPath,
       ...(link.anchor ? { anchor: link.anchor } : {}),
-      raw: link.rawToken,
-      line: lineBase + link.line,
     });
   }
 
@@ -136,8 +130,29 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
   for (const row of linked) {
     const already = edges.entityEmbeds.some((e) => e.type === row.type && (e.slug === row.slug || e.slugs?.includes(row.slug)));
     if (already) continue;
-    edges.entityEmbeds.push({ tagType: 'section_entity_link', type: row.type, slug: row.slug, raw: '', line: section.lineStart });
+    edges.entityEmbeds.push({ tagType: 'section_entity_link', type: row.type, slug: row.slug });
   }
 
-  return edges;
+  // 0.2.16 — collapse exact duplicates, first occurrence wins. While edges still
+  // carried `raw` and `line`, two mentions of one anchor were two distinct facts
+  // ("it is referenced HERE, and also HERE"). Stripped to identifiers they are
+  // the same fact written twice, and a caller can act on it only once — so a
+  // section that links the same page three times would spend three times the
+  // budget of the truncated response these edges exist to rescue.
+  return {
+    sectionRefs: dedupe(edges.sectionRefs),
+    entityEmbeds: dedupe(edges.entityEmbeds),
+    pageLinks: dedupe(edges.pageLinks),
+  };
+}
+
+/** Identity is the serialized edge — key order is fixed by the literals above. */
+function dedupe<T>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = JSON.stringify(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

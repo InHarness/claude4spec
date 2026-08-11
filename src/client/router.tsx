@@ -18,9 +18,6 @@ import { EmptyState } from './components/EmptyState.js';
 import { Editor } from './components/Editor.js';
 import { PageVersionHistory } from './components/PageVersionHistory.js';
 import { HtmlViewer } from './components/HtmlViewer.js';
-import { UiViewsList } from './entities/ui-view/list-page.js';
-import { AcsList } from './entities/ac/list-page.js';
-import { DesignSystemsList } from './entities/design-system/list-page.js';
 import { TagsList } from './components/TagsList.js';
 import { TodosList } from './components/TodosList.js';
 import { PageLinksList } from './components/PageLinksList.js';
@@ -34,15 +31,8 @@ import { PatchDetail } from './components/PatchDetail.js';
 import { OnboardingPage } from './components/onboarding/OnboardingPage.js';
 import { WelcomePage } from './components/onboarding/WelcomePage.js';
 import { SettingsPage } from './components/settings/SettingsPage.js';
-import { UiViewDetail } from './entities/ui-view/detail-panel.js';
-import { AcDetail } from './entities/ac/detail-panel.js';
-import { DesignSystemDetail } from './entities/design-system/detail-panel.js';
-import { EntityVersionHistoryView } from './host-ui-kit/index.js';
 import { usePages } from './hooks/usePages.js';
-import { useUiView } from './hooks/useUiViews.js';
-import { useDesignSystem } from './hooks/useDesignSystems.js';
 import { useConfig, useRoots } from './hooks/useConfig.js';
-import { EntityBreadcrumbBar } from './entities/_shared/EntityBreadcrumbBar.js';
 import { EditorBridgeProvider } from './tiptap/EditorContext.js';
 import { usePageViewStore } from './state/pageView.js';
 import { useLastPage } from './hooks/useLastPage.js';
@@ -140,53 +130,12 @@ const legacyPageRedirectRoute = createRoute({
 // plugin (the in-host built-in module was removed in brief 0-1-82-to-0-1-83), and
 // mounted by `mountFrontend` once the plugin's frontend bundle loads.
 
-const uiViewsIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/ui-views',
-  validateSearch: listSearchSchema,
-  component: UiViewsIndexRoute,
-});
-
-const uiViewDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/ui-views/$slug',
-  component: UiViewDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="ui-view" />,
-});
-
-const designSystemsIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/design-systems',
-  validateSearch: listSearchSchema,
-  component: DesignSystemsIndexRoute,
-});
-
-const designSystemDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/design-systems/$slug',
-  component: DesignSystemDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="design-system" />,
-});
-
-const acsIndexRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/acs',
-  validateSearch: listSearchSchema,
-  component: AcsIndexRoute,
-});
-
-const acDetailRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/acs/$slug',
-  component: AcDetailRoute,
-  notFoundComponent: () => <EntityNotFound type="ac" />,
-});
-
-const acHistoryRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/acs/$slug/history',
-  component: AcHistoryRoute,
-});
+// 0.2.16: the `/ui-views`, `/design-systems` and `/acs` routes are no longer
+// hardcoded here either. Each type contributes its own `RouteTreeFragment` from
+// `entities/<type>/routes.tsx`, wired onto its `FrontendModule.routes` slot —
+// which the plugin contract now requires of every type that declares a
+// `detailPanel`. `mountFrontend` merges them at boot, the same door the
+// `endpoint`, `dto` and `database-table` fragments already came through.
 
 const tagsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -281,13 +230,6 @@ export const BASE_ROUTE_CHILDREN = Object.freeze([
   indexRoute,
   spaceRoute,
   legacyPageRedirectRoute,
-  uiViewsIndexRoute,
-  uiViewDetailRoute,
-  designSystemsIndexRoute,
-  designSystemDetailRoute,
-  acsIndexRoute,
-  acDetailRoute,
-  acHistoryRoute,
   tagsRoute,
   todosRoute,
   linksRoute,
@@ -510,185 +452,6 @@ function PageRoute() {
           )}
         </div>
       </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function UiViewsIndexRoute() {
-  const search = useSearch({ from: '/ui-views' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <UiViewsList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/ui-views', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/ui-views',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/ui-views/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function UiViewDetailRoute() {
-  const { slug } = useParams({ from: '/ui-views/$slug' });
-  const navigate = useNavigate();
-  const { data: uiView } = useUiView(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="ui-view" slug={slug} name={uiView?.name} view="details" />
-      <EditorBridgeProvider bridge={bridge}>
-        <UiViewDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/ui-views' })}
-          onRenamed={(newSlug) =>
-            navigate({
-              to: '/ui-views/$slug',
-              params: { slug: newSlug },
-              replace: true,
-            })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function DesignSystemsIndexRoute() {
-  const search = useSearch({ from: '/design-systems' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <DesignSystemsList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/design-systems', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/design-systems',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/design-systems/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function DesignSystemDetailRoute() {
-  const { slug } = useParams({ from: '/design-systems/$slug' });
-  const navigate = useNavigate();
-  const { data: ds } = useDesignSystem(slug);
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate]
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="design-system" slug={slug} name={ds?.name} view="details" />
-      <EditorBridgeProvider bridge={bridge}>
-        <DesignSystemDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/design-systems' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/design-systems/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function AcsIndexRoute() {
-  const search = useSearch({ from: '/acs' });
-  const navigate = useNavigate();
-  return (
-    <RoutePane>
-      <AcsList
-        search={search.q ?? ''}
-        tagFilter={search.tag ? [search.tag] : []}
-        onSearchChange={(q) =>
-          navigate({ to: '/acs', search: (prev) => ({ ...prev, q: q || undefined }) })
-        }
-        onTagToggle={(tag) =>
-          navigate({
-            to: '/acs',
-            search: (prev) => ({ ...prev, tag: prev.tag === tag ? undefined : tag }),
-          })
-        }
-        onSelect={(slug) => navigate({ to: '/acs/$slug', params: { slug } })}
-      />
-    </RoutePane>
-  );
-}
-
-function AcDetailRoute() {
-  const { slug } = useParams({ from: '/acs/$slug' });
-  const navigate = useNavigate();
-
-  const bridge = useMemo(
-    () => ({
-      openEntity: (type: EntityType, s: string) => navigateToEntity(navigate, type, s),
-      openSection: (pagePath: string, anchor: string) => navigateToSection(navigate, pagePath, anchor),
-    }),
-    [navigate],
-  );
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="ac" slug={slug} view="details" hasHistory />
-      <EditorBridgeProvider bridge={bridge}>
-        <AcDetail
-          key={slug}
-          slug={slug}
-          onDeleted={() => navigate({ to: '/acs' })}
-          onRenamed={(newSlug) =>
-            navigate({ to: '/acs/$slug', params: { slug: newSlug }, replace: true })
-          }
-          onOpenEntity={bridge.openEntity}
-          onOpenPage={(rid, p) => navigate({ to: '/space/$rootId/$', params: { rootId: rid, _splat: p } })}
-        />
-      </EditorBridgeProvider>
-    </RoutePane>
-  );
-}
-
-function AcHistoryRoute() {
-  const { slug } = useParams({ from: '/acs/$slug/history' });
-
-  return (
-    <RoutePane>
-      <EntityBreadcrumbBar type="ac" slug={slug} view="history" hasHistory />
-      <EntityVersionHistoryView type="ac" slug={slug} />
     </RoutePane>
   );
 }

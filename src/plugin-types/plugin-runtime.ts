@@ -408,20 +408,27 @@ export type RouteTreeFragment = (ctx: { rootRoute: AnyRoute }) => AnyRoute[];
 export interface FrontendModule extends EntityModuleManifest {
   renderChip: ComponentType<EntityChipProps<unknown>>;
   renderCard: ComponentType<EntityCardProps<unknown>>;
-  /** 0.2.15 — optional; absent on an `embedOnly` type, which has no list row. */
+  /**
+   * Optional. Without it the type is not rendered by `<element_list/>` or
+   * `<tagged_list/>` — unsupported by contract, not by accident.
+   */
   renderRow?: ComponentType<EntityRowProps<unknown>>;
-  /** 0.2.15 — optional; absent on an `embedOnly` type, which has no detail route. */
+  /**
+   * Optional, and bound to `routes`: declare BOTH or NEITHER. Neither = a
+   * HIDDEN entity, reachable only through XML references on a page (chip, card)
+   * and through the agent / MCP — no sidebar entry, no detail route.
+   *
+   * 0.2.16 — the mandatory minimum for any type is `renderChip` + `renderCard`.
+   * Hidden-ness is not a flag: it is what omitting these two slots MEANS.
+   */
   detailPanel?: ComponentType<EntityDetailProps>;
   /**
-   * 0.2.15 — a HIDDEN type: no `sidebarTab`, no `routes`. It exists only as
-   * something a page embeds. It must supply `renderCard`, `renderChip` and
-   * `renderOverlay`, and must NOT supply `renderRow` / `detailPanel` — so
-   * `<element_list/>` / `<tagged_list/>` of it are unsupported by contract.
-   */
-  embedOnly?: boolean;
-  /**
-   * 0.2.15 — required when `embedOnly`: the read-only fullscreen surface the
-   * type's chip and card open, since there is no detail route to navigate to.
+   * The read-only fullscreen surface a hidden type's chip and card open, since
+   * there is no detail route to navigate to.
+   *
+   * Required exactly when the type is hidden, and rejected otherwise: a type
+   * with a detail route must send its clicks to `bridge.openEntity`, and an
+   * overlay beside that route would be a second answer to where a click goes.
    */
   renderOverlay?: ComponentType<{ slug: string; caption?: string; onClose: () => void }>;
   useGetBySlug: (slug: string | null) => {
@@ -434,7 +441,10 @@ export interface FrontendModule extends EntityModuleManifest {
   }) => Promise<Array<{ slug: string }>>;
   sidebarTab?: SidebarTabSlot;
   editorExtensions?: EditorExtensionRegistration[];
-  /** Phase 3 — page routes this module owns (factory bound to the host root). */
+  /**
+   * Phase 3 — page routes this module owns (factory bound to the host root).
+   * Bound to `detailPanel`: declare BOTH or NEITHER (0.2.16).
+   */
   routes?: RouteTreeFragment;
 }
 

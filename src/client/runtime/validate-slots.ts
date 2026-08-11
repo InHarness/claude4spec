@@ -13,6 +13,7 @@ import { createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import type { FrontendModule } from '../core/plugin-host/types.js';
+import { checkSlotShapes } from '../core/plugin-host/slot-rules.js';
 
 export interface SlotValidation {
   ok: boolean;
@@ -20,24 +21,13 @@ export interface SlotValidation {
 }
 
 function structurallyValid(m: FrontendModule): SlotValidation {
-  // 0.2.15 — mirrors `assertSlotShapes` in the client plugin host: an
-  // `embedOnly` type has no row and no detail panel to require, and owes a
-  // `renderOverlay` instead. The two lists must stay in step; a plugin that
-  // passes one door and fails the other is the drift this comment guards.
-  const slots: Array<keyof FrontendModule> = m.embedOnly
-    ? ['renderChip', 'renderCard', 'renderOverlay', 'useGetBySlug', 'listByTags']
-    : ['renderChip', 'renderCard', 'renderRow', 'detailPanel', 'useGetBySlug', 'listByTags'];
-  for (const slot of slots) {
-    if (typeof m[slot] !== 'function') {
-      return { ok: false, reason: `slot "${String(slot)}" is not a function` };
-    }
-  }
-  for (const ext of m.editorExtensions ?? []) {
-    if (!ext || typeof ext.name !== 'string' || ext.name.length === 0) {
-      return { ok: false, reason: 'an editorExtension is missing a string "name"' };
-    }
-  }
-  return { ok: true };
+  // 0.2.16 — the rules are `checkSlotShapes`, the same function the plugin
+  // host's throwing door calls. This used to be a second, hand-maintained copy
+  // of the slot lists with a comment asking the next author to keep the two in
+  // step: a plugin that passed one door and failed the other was the drift that
+  // comment could only describe, not prevent.
+  const problem = checkSlotShapes(m);
+  return problem ? { ok: false, reason: problem } : { ok: true };
 }
 
 /** Render the chip once, detached, with no editor context. Throws → invalid. */
