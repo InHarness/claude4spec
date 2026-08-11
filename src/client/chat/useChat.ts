@@ -298,12 +298,19 @@ export function useChat({ serverUrl = '', threadId, onThreadCreated, onThreadMis
        */
       if (ext.type === 'warning') {
         warningSeqRef.current += 1;
+        // The field names are the library's (`toolUseId`/`toolName`), not the
+        // adapter's (`id`/`name`): the reducer copies them verbatim, so a cast
+        // over the wrong names silently produced `toolName: undefined`, missed
+        // the WARNING_TOOL_NAME branch in <BlockRenderer /> and crashed the whole
+        // overlay inside <ToolCard />. No cast here on purpose — it is what makes
+        // the compiler catch this drift next time.
         handleWireEvent({
           type: 'tool_use',
-          id: `warning-${warningSeqRef.current}`,
-          name: WARNING_TOOL_NAME,
+          toolUseId: `warning-${warningSeqRef.current}`,
+          toolName: WARNING_TOOL_NAME,
           input: { message: ext.message },
-        } as unknown as WireEvent);
+          isSubagent: false,
+        });
         return;
       }
       handleWireEvent(event);

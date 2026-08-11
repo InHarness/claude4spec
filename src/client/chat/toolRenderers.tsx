@@ -11,7 +11,10 @@ export interface ToolRenderer {
 
 // Strip `mcp__<server>__` prefix from a fully-qualified MCP tool name.
 // `mcp__database-tools__create_database_table` → `create_database_table`
-export function prettyToolName(full: string): string {
+export function prettyToolName(full: string | undefined): string {
+  // Same contract as `localToolCategory`: a missing name is a label problem, not
+  // a reason to throw out of render.
+  if (typeof full !== 'string' || full === '') return 'unknown';
   return full.startsWith('mcp__') ? (full.split('__').slice(-1)[0] ?? full) : full;
 }
 
