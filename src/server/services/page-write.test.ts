@@ -19,12 +19,13 @@ const NO_PRIOR_STATE = 'a'.repeat(64);
 import type { SelfWriteMarker, WriteActor } from '../fs/sources.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { WatchSubscriber } from '../fs/watcher.js';
-import { createDiscoveryCore } from '../discovery/index.js';
+import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
 import { sectionSerializer } from '../serialization/serializers/section.js';
 import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
+import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
 /**
  * 0.2.13 item 28 — the page write path as ONE primitive, shared by REST and by
@@ -390,7 +391,12 @@ describe('update_sections over a real section index', () => {
     // it named anchors, not a page. `rootId` is not — an anchor carries its own.
     expect(res.path).toBe('doc.md');
     expect(res).not.toHaveProperty('rootId');
-    expect(Object.keys(res.results[0]!).sort()).toEqual(['action', 'affectedAnchors', 'anchor']);
+    expect(Object.keys(res.results[0]!).sort()).toEqual([
+      'action',
+      'affectedAnchors',
+      'anchor',
+      'droppedAnchors',
+    ]);
     expect(JSON.stringify(res)).not.toContain('REWRITTEN');
     expect(JSON.stringify(res)).not.toContain('BETA BODY');
   });
@@ -924,5 +930,373 @@ describe('update_sections — the batch contract', () => {
     ).catch((e) => e);
     expect(err.code).toBe('PAGE_CONFLICT');
     expect(err.currentHash).toBe(await hashOfPage('doc.md'));
+  });
+});
+
+/**
+ * 0.2.17 — the anchor-loss guard.
+ *
+ * The bug it closes is not a crash, which is why it went unnoticed: a `replace`
+ * on a parent section takes the anchor comments of every subsection with it,
+ * because a section's range IS its subtree. The write succeeded, the anchors
+ * left `section_index`, and everything citing one — a `<section_ref/>` tag, a
+ * `page.md#anchor` link — pointed at nothing. `check_consistency` would say so
+ * later; nothing said so at the moment the identity was destroyed.
+ *
+ * So this suite runs the guard against a REAL discovery core over real pages,
+ * not against a stub referent lookup. The one thing worth proving is that the
+ * guard sees the same citations `find_references` sees — a hand-rolled fake
+ * would be asserting that this file and that one agree about a data shape,
+ * which is not the property at issue.
+ */
+describe('update_sections — the anchor-loss guard', () => {
+  let cwd: string;
+  let db: Database.Database;
+  let pages: PagesService;
+  let sections: SectionsService;
+  let indexer: SectionIndexerService | undefined;
+  let injection: WatchSubscriber | undefined;
+  let target: PageWriteTarget;
+  let core: DiscoveryCore;
+
+  beforeEach(async () => {
+    /**
+     * `<section_ref/>` is an EXTENSION reference type, registered PROCESS-level
+     * by `project-context.ts` in production. Unregistered, the tag parser does
+     * not see the tag at all — so a rig that skipped this would find no
+     * referents and every case below would pass by proving nothing.
+     *
+     * Per TEST, not once per module: `tests/setup.ts` clears the registry in a
+     * global `afterEach`, so a module-scope registration survives exactly one
+     * test and then silently stops working. Registered here rather than by
+     * importing `project-context`, which would drag a whole project boot into a
+     * unit suite.
+     */
+    registerExtensionReferenceType({ tag: 'section_ref', attrOrder: ['anchor'] });
+    indexer = undefined;
+    injection = undefined;
+    cwd = await fs.mkdtemp(path.join(os.tmpdir(), 'c4s-anchor-loss-'));
+    db = createTestDb();
+    pages = new PagesService(cwd, 'pages', 'pages');
+    await pages.ensureRoot();
+    sections = new SectionsService(db);
+    target = { pages, writer: null };
+    core = createDiscoveryCore({
+      reader: new RawEntityReader(db, host),
+      db,
+      host,
+      serialization: new SerializationEngine(host, sectionSerializer),
+      roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+  });
+
+  afterEach(async () => {
+    db.close();
+    await fs.rm(cwd, { recursive: true, force: true });
+  });
+
+  const deps = () => ({
+    sections,
+    resolveRoot: (id: string) => (id === 'pages' ? target : undefined),
+    findSectionReferents: async (anchor: string) =>
+      (await findReferencesAll(core, { target: 'section' as const, anchor })).map((hit) => ({
+        page: hit.pagePath,
+        ...(hit.anchor !== undefined ? { anchor: hit.anchor } : {}),
+      })),
+  });
+
+  async function hashOfPage(relPath = 'doc.md'): Promise<string> {
+    const { createHash } = await import('node:crypto');
+    const raw = await fs.readFile(path.join(pages.root, relPath), 'utf-8');
+    return createHash('sha256').update(raw, 'utf-8').digest('hex');
+  }
+
+  async function index(relPath: string, content: string): Promise<void> {
+    await pages.write(relPath, { body: content });
+    indexer ??= new SectionIndexerService(db, new Map([['pages', { pages }]]), { broadcast: () => {} } as never, host);
+    injection ??= indexer.anchorInjectionSubscriber(() => {});
+    await indexer.indexPage('pages', relPath);
+    await injection!.onChange('context:test', 'pages:pages', relPath, 'external');
+    await indexer.indexPage('pages', relPath);
+  }
+
+  function anchorOf(heading: string): string {
+    const row = db.prepare('SELECT anchor FROM section_index WHERE heading_text = ?').get(heading) as
+      | { anchor: string }
+      | undefined;
+    if (!row) throw new Error(`no indexed section titled ${heading}`);
+    return row.anchor;
+  }
+
+  /**
+   * A parent carrying two children, which is the shape the whole guard is about:
+   * `replace` on `Parent` spans `Child one` and `Child two`.
+   */
+  const nested = [
+    '# Doc',
+    '',
+    '## Parent',
+    '',
+    'PARENT BODY',
+    '',
+    '### Child one',
+    '',
+    'CHILD ONE BODY',
+    '',
+    '### Child two',
+    '',
+    'CHILD TWO BODY',
+    '',
+    '## Sibling',
+    '',
+    'SIBLING BODY',
+    '',
+  ].join('\n');
+
+  /** A second page citing `anchor` with a `<section_ref/>`. */
+  async function citeWithTag(anchor: string, relPath = 'cites.md'): Promise<void> {
+    await index(relPath, ['# Cites', '', `<section_ref anchor="${anchor}"/>`, ''].join('\n'));
+  }
+
+  const replaceParent = (content: string, dropAnchors?: string[]) =>
+    hashOfPage('doc.md').then((expectedHash) =>
+      updateSections(
+        deps(),
+        {
+          expectedHash,
+          edits: [{ anchor: anchorOf('Parent'), action: 'replace', content }],
+          ...(dropAnchors ? { dropAnchors } : {}),
+        },
+        'agent',
+      ),
+    );
+
+  it('refuses the batch with ANCHOR_LOSS when a replace drops a CITED subsection anchor', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+
+    const err = await replaceParent('JUST THE PREAMBLE\n').catch((e) => e);
+    expect(err.code).toBe('ANCHOR_LOSS');
+    // Not a bare list of ids: an anchor is an opaque token, so the refusal has
+    // to say WHAT it was and WHO cites it or the caller cannot act on it.
+    expect(err.details).toEqual([
+      {
+        anchor: childOne,
+        headingText: 'Child one',
+        referencedBy: [expect.objectContaining({ page: 'cites.md' })],
+      },
+    ]);
+  });
+
+  it('leaves the page byte-identical when it refuses — the guard runs before the write', async () => {
+    await index('doc.md', nested);
+    await citeWithTag(anchorOf('Child one'));
+    const before = (await pages.read('doc.md')).body;
+
+    await replaceParent('JUST THE PREAMBLE\n').catch(() => {});
+
+    expect((await pages.read('doc.md')).body).toBe(before);
+  });
+
+  it('lets the same call through once dropAnchors covers the cited anchors', async () => {
+    await index('doc.md', nested);
+    const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
+    await citeWithTag(childOne);
+
+    const res = await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
+
+    expect(res.results[0]!.droppedAnchors.sort()).toEqual([childOne, childTwo].sort());
+    expect((await pages.read('doc.md')).body).not.toContain('CHILD ONE BODY');
+    // The sibling was never in the parent's range and must survive untouched.
+    expect((await pages.read('doc.md')).body).toContain('SIBLING BODY');
+  });
+
+  it('passes a drop of UNCITED anchors without any declaration, reporting them instead', async () => {
+    await index('doc.md', nested);
+    const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
+
+    const res = await replaceParent('JUST THE PREAMBLE\n');
+
+    expect(res.results[0]!.droppedAnchors.sort()).toEqual([childOne, childTwo].sort());
+  });
+
+  it('reports droppedAnchors on SUCCESS, which is what replaces a dry-run mode', async () => {
+    await index('doc.md', nested);
+
+    const res = await replaceParent('JUST THE PREAMBLE\n');
+
+    // Present, populated, and on the success envelope — not only in a refusal.
+    expect(res.results[0]).toHaveProperty('droppedAnchors');
+    expect(res.results[0]!.droppedAnchors).toHaveLength(2);
+    expect(res.hash).toBeTruthy();
+  });
+
+  it('does not count an anchor the new content REPRODUCES, even under a different heading', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+
+    /**
+     * The definition goes through the INDEX, not through a text diff. The anchor
+     * comment is carried over into the new content under a renamed heading at a
+     * different depth — the identity survives, so nothing was lost, so the
+     * guard has nothing to say. Which heading it now belongs to is the adjacency
+     * rule's question and deliberately not this one's.
+     */
+    const res = await replaceParent(
+      ['PREAMBLE', '', `<!-- anchor: ${childOne} -->`, '#### Renamed and moved', '', 'NEW BODY', ''].join('\n'),
+    );
+
+    expect(res.results[0]!.droppedAnchors).not.toContain(childOne);
+    expect(sections.getByAnchor(childOne)).toBeTruthy();
+  });
+
+  it('rejects a dropAnchors entry that no addressed section contains (INVALID_ARGUMENT)', async () => {
+    await index('doc.md', nested);
+    const sibling = anchorOf('Sibling');
+
+    // In the page, but not in the batch's range — so it is not the caller's to
+    // declare here, and swallowing it would let a typo stand in for the anchor
+    // that actually needed declaring.
+    const err = await replaceParent('JUST THE PREAMBLE\n', [sibling]).catch((e) => e);
+
+    expect(err.code).toBe('INVALID_ARGUMENT');
+    expect(err.message).toContain(sibling);
+  });
+
+  it('stays idempotent: repeating a successful replace with a refreshed hash passes', async () => {
+    await index('doc.md', nested);
+    const [childOne, childTwo] = [anchorOf('Child one'), anchorOf('Child two')];
+    await citeWithTag(childOne);
+
+    await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
+    await indexer!.indexPage('pages', 'doc.md');
+
+    /**
+     * The second call drops NOTHING — the children are already gone — and
+     * repeats the same declaration verbatim. A `dropAnchors` validated against
+     * what was actually dropped would now reject its own successful predecessor;
+     * validating against the batch's scopes, and allowing a superset, is what
+     * keeps `replace` idempotent.
+     */
+    const again = await replaceParent('JUST THE PREAMBLE\n', [childOne, childTwo]);
+
+    expect(again.results[0]!.droppedAnchors).toEqual([]);
+  });
+
+  it('refuses a delete whose own anchor is cited, and names it', async () => {
+    await index('doc.md', nested);
+    const childTwo = anchorOf('Child two');
+    await citeWithTag(childTwo);
+
+    const err = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [{ anchor: childTwo, action: 'delete' }],
+      },
+      'agent',
+    ).catch((e) => e);
+
+    // `delete` takes its own heading and anchor comment, so unlike `replace` the
+    // addressed anchor is itself in scope.
+    expect(err.code).toBe('ANCHOR_LOSS');
+    expect(err.details[0].anchor).toBe(childTwo);
+  });
+
+  it('lets a leaf delete through when nothing cites it, and reports its own anchor as dropped', async () => {
+    await index('doc.md', nested);
+    const childTwo = anchorOf('Child two');
+
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [{ anchor: childTwo, action: 'delete' }],
+      },
+      'agent',
+    );
+
+    expect(res.results[0]!.droppedAnchors).toEqual([childTwo]);
+    expect((await pages.read('doc.md')).body).not.toContain('Child two');
+  });
+
+  it('reports nothing dropped for append and insert_after, which never span a subtree', async () => {
+    await index('doc.md', nested);
+
+    const res = await updateSections(
+      deps(),
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [
+          { anchor: anchorOf('Parent'), action: 'append', content: 'MORE PREAMBLE\n' },
+          { anchor: anchorOf('Sibling'), action: 'insert_after', content: '## Added\n\nADDED BODY\n' },
+        ],
+      },
+      'agent',
+    );
+
+    expect(res.results.map((r) => r.droppedAnchors)).toEqual([[], []]);
+    expect((await pages.read('doc.md')).body).toContain('CHILD ONE BODY');
+  });
+
+  it('also sees a `page.md#anchor` link as a citation, not only a section_ref tag', async () => {
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    /**
+     * A markdown link, not the `@doc.md#anchor` shorthand: `parseLinks`'s `at`
+     * syntax stops at the path and carries no anchor, so the shorthand resolves
+     * to a PAGE reference and this guard never sees it. The two link syntaxes are
+     * not interchangeable here, whatever they mean to a reader.
+     */
+    await index('links.md', ['# Links', '', `see [child one](doc.md#${childOne}) for details`, ''].join('\n'));
+
+    const err = await replaceParent('JUST THE PREAMBLE\n').catch((e) => e);
+
+    expect(err.code).toBe('ANCHOR_LOSS');
+    expect(err.details[0].referencedBy[0].page).toBe('links.md');
+  });
+
+  it('leaves content_hash and the indexed boundaries of an untouched section alone', async () => {
+    await index('doc.md', nested);
+    const sibling = anchorOf('Sibling');
+    const beforeRow = sections.getByAnchor(sibling)!;
+
+    await replaceParent('JUST THE PREAMBLE\n');
+    await indexer!.indexPage('pages', 'doc.md');
+
+    const afterRow = sections.getByAnchor(sibling)!;
+    // The guard is not an index unit: it reads the index and refuses, it never
+    // rewrites a row. `Sibling` moved UP the file, so its lines legitimately
+    // shift — its identity and its content digest must not.
+    expect(afterRow.contentHash).toBe(beforeRow.contentHash);
+    expect(afterRow.headingText).toBe(beforeRow.headingText);
+    expect(afterRow.lineEnd - afterRow.lineStart).toBe(beforeRow.lineEnd - beforeRow.lineStart);
+  });
+
+  it('reports the drop but cannot refuse when no referent lookup is wired', async () => {
+    /**
+     * The degraded mode, and it is degraded honestly. A rig with no discovery
+     * core cannot answer "is this cited", and answering "no" on its behalf would
+     * be a guard that lies — so it reports the loss and lets the write through
+     * rather than inventing a verdict.
+     */
+    await index('doc.md', nested);
+    const childOne = anchorOf('Child one');
+    await citeWithTag(childOne);
+
+    const res = await updateSections(
+      { sections, resolveRoot: (id: string) => (id === 'pages' ? target : undefined) },
+      {
+        expectedHash: await hashOfPage('doc.md'),
+        edits: [{ anchor: anchorOf('Parent'), action: 'replace', content: 'JUST THE PREAMBLE\n' }],
+      },
+      'agent',
+    );
+
+    expect(res.results[0]!.droppedAnchors).toContain(childOne);
   });
 });

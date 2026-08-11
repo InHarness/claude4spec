@@ -169,12 +169,29 @@ export function toolError(
  * other way), and both are plain classes carrying `code`/`hint`/`currentHash`.
  */
 export function toolFailure(err: unknown): ToolEnvelope {
-  const e = err as { code?: unknown; hint?: unknown; currentHash?: unknown; message?: unknown };
+  const e = err as {
+    code?: unknown;
+    hint?: unknown;
+    currentHash?: unknown;
+    details?: unknown;
+    message?: unknown;
+  };
   const code = typeof e?.code === 'string' ? e.code : 'INTERNAL';
   const message = err instanceof Error ? err.message : String(err);
   const hint = typeof e?.hint === 'string' ? e.hint : undefined;
-  const extra = typeof e?.currentHash === 'string' ? { currentHash: e.currentHash } : undefined;
-  return toolError(code, message, hint, extra);
+  /**
+   * `details` joins `currentHash` at the narrow door for the same reason it was
+   * opened: it is the remedy, not decoration. `ANCHOR_LOSS` names anchors, which
+   * are opaque 8-character tokens — a caller told only "this would drop a
+   * referenced section" cannot find out WHICH without re-deriving the guard's
+   * work, and the whole point of refusing before the write is that it does not
+   * have to.
+   */
+  const extra = {
+    ...(typeof e?.currentHash === 'string' ? { currentHash: e.currentHash } : {}),
+    ...(Array.isArray(e?.details) ? { details: e.details } : {}),
+  };
+  return toolError(code, message, hint, Object.keys(extra).length > 0 ? extra : undefined);
 }
 
 /**

@@ -172,10 +172,12 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     [
       'Edit one or more sections of ONE page, addressed by anchor. Read-modify-write of the whole page under the hood — a convenience over update_page, not a separate store.',
       'Actions: `replace` (swap the body), `append` (add at the end of the body), `insert_after` (add after the section and its subsections), `delete` (remove heading, anchor and body). `content` is required for all but `delete`.',
+      'A section is its SUBTREE, not the prose under its heading: `replace` on a `##` carrying three `###` replaces all four sections, and `delete` removes all four. To change only the parent preamble, reproduce the subsections in `content` or edit them separately.',
+      'ANCHOR LOSS: because of that, replace/delete destroy the anchor comments of the subsections they span. If a destroyed anchor is cited anywhere (`<section_ref/>` or a `page.md#anchor` link) the WHOLE batch is refused with ANCHOR_LOSS (400), listing each anchor, its heading text and who cites it. To go ahead anyway, name those anchors in `dropAnchors`; to keep them, put their `<!-- anchor: … -->` comments in `content`. Dropping an UNCITED anchor is never refused — it is just reported.',
       'All anchors must be on the SAME page (else INVALID_ARGUMENT), and no anchor may appear twice (INVALID_ARGUMENT).',
       'TRANSACTIONAL — unlike every other batch here, there is no partial success: either all edits land or none do. They apply bottom-up regardless of the order you list them, so earlier edits never shift later ones.',
       '`expectedHash` is the PAGE hash and guards the whole batch — which is the point of batching: editing sections one call at a time makes your own hash stale after the first one.',
-      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors }] }, results in the order you gave the edits.',
+      'Returns { path, hash, version, results: [{ anchor, action, affectedAnchors, droppedAnchors }] }, results in the order you gave the edits. `droppedAnchors` is filled on SUCCESS too — it is how you see what identities a write cost, so there is no dry-run mode to ask for.',
     ].join('\n'),
     {
       expectedHash: expectedHashParam,
@@ -195,6 +197,15 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
         )
         .min(1)
         .describe('The edits to apply, all addressing sections of one page.'),
+      dropAnchors: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Anchors this batch is allowed to destroy. Required only for dropped anchors that are CITED elsewhere — ' +
+            'without them the batch is refused with ANCHOR_LOSS. Every entry must be an anchor inside a section the ' +
+            'edits address (otherwise INVALID_ARGUMENT); listing more than the batch actually drops is fine, so a ' +
+            'repeated call can send the same list unchanged.',
+        ),
     },
     async (args) => {
       try {
@@ -204,6 +215,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
             {
               expectedHash: String(args.expectedHash ?? ''),
               edits: (args.edits ?? []) as UpdateSectionsInput['edits'],
+              ...(Array.isArray(args.dropAnchors) ? { dropAnchors: args.dropAnchors } : {}),
             },
             'agent',
           ),

@@ -178,7 +178,7 @@ function makeInput(): AgentTurnInput {
       patchPath: null,
     } as unknown as AgentTurnInput['thread'],
     prompt: 'hi',
-    model: 'claude-opus-4-8' as unknown as AgentTurnInput['model'],
+    model: 'claude-opus-5' as unknown as AgentTurnInput['model'],
     architectureConfig: {},
     requestId: 'r1',
     consoleObserver: null,

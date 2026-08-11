@@ -93,22 +93,33 @@ describe('buildC4sToolsServer — ask workspace inheritance', () => {
     const client = await connectClient('ws-5555');
     await client.callTool({
       name: 'ask',
-      arguments: { message: 'ping', model: 'opus-4.8', effort: 'high' },
+      arguments: { message: 'ping', model: 'opus-5', effort: 'high' },
     });
 
     expect(hoisted.calls).toHaveLength(1);
-    expect(hoisted.calls[0]).toMatchObject({ model: 'opus-4.8', effort: 'high' });
+    expect(hoisted.calls[0]).toMatchObject({ model: 'opus-5', effort: 'high' });
   });
 
-  it('rejects an unknown model at the MCP schema boundary (never reaches runAgent)', async () => {
+  /**
+   * The inverse of the `effort` case below, and deliberately so: `model` is a
+   * pass-through string, `effort` is an enum.
+   *
+   * `model` used to be `z.enum(ALLOWED_MODELS)`, which refused an unknown alias
+   * here — at the MCP schema boundary, as an input-validation error. The
+   * declared contract is that the value reaches the peer and comes back as
+   * `AGENT_ERROR`: the runtime is the only side that knows what it can run, and
+   * it refuses in its own vocabulary. So "unknown model" is not this layer's
+   * question to answer, and the forwarding is what this test locks.
+   */
+  it('forwards an unknown model to the peer rather than refusing it at the schema boundary', async () => {
     const client = await connectClient('ws-5555');
-    const res = await client.callTool({
+    await client.callTool({
       name: 'ask',
       arguments: { message: 'ping', model: 'gpt-4' },
     });
 
-    expect(res.isError).toBeTruthy();
-    expect(hoisted.calls).toHaveLength(0);
+    expect(hoisted.calls).toHaveLength(1);
+    expect(hoisted.calls[0]).toMatchObject({ model: 'gpt-4' });
   });
 
   it('rejects an out-of-range effort (e.g. max) at the MCP schema boundary', async () => {

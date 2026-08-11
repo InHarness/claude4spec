@@ -79,11 +79,11 @@ describe('ChatService initialArchitectureConfig projection', () => {
 
   it('round-trips the turn-1 snapshot', () => {
     chat.setInitialArchitectureConfig(threadId, {
-      model: 'opus-4.8',
+      model: 'opus-5',
       architectureConfig: { claude_thinking: 'adaptive', claude_effort: 'high' },
     });
     expect(chat.getThread(threadId)!.thread.initialArchitectureConfig).toEqual({
-      model: 'opus-4.8',
+      model: 'opus-5',
       architectureConfig: { claude_thinking: 'adaptive', claude_effort: 'high' },
     });
   });

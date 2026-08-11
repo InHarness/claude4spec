@@ -165,7 +165,7 @@ describe('runAgent — ask context + output axis', () => {
     const create = calls.find((c) => c.url.endsWith('/threads'));
     expect(create?.body).toEqual({ context_type: 'ask' });
     const ask = calls.find((c) => c.url.endsWith('/T1/ask'));
-    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-4.8', effort: 'medium' });
+    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-5', effort: 'medium' });
   });
 
   it('forwards an explicit effort to the run-turn body', async () => {
@@ -174,7 +174,7 @@ describe('runAgent — ask context + output axis', () => {
     await runAgent({ ...BASE, message: 'ping', contextType: 'ask', effort: 'high' });
 
     const ask = calls.find((c) => c.url.endsWith('/T1/ask'));
-    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-4.8', effort: 'high' });
+    expect(ask?.body).toEqual({ message: 'ping', model: 'opus-5', effort: 'high' });
   });
 
   it("output 'full' surfaces messages[]; default 'final' omits them", async () => {

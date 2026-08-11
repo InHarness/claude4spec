@@ -58,7 +58,7 @@ import { FileSerializer } from '../services/file-serializer.js';
 import { FileVersionService } from '../services/file-version.js';
 import { artifactRegistry, type ArtifactKind, type ArtifactRegistryEntry } from '../services/artifact-registry.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
-import { createDiscoveryCore } from '../discovery/index.js';
+import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { applyPagesOverride } from '../discovery/pages-override.js';
 import { readPackageVersion } from '../../bin/c4s/package-version.js';
@@ -796,6 +796,24 @@ async function buildInner(
       const rt = rootById.get(rootId);
       return rt ? { pages: rt.pages, writer: rt.writer, versions: pageVersions } : undefined;
     },
+    /**
+     * 0.2.17 — the anchor-loss guard's one dependency.
+     *
+     * `discovery` is declared BELOW this object, and that is safe rather than
+     * lucky: the closure is only ever called during a page write, long after the
+     * const is initialised. Hoisting the core above here to avoid the shape of
+     * the problem would reorder a block whose current order carries its own
+     * reasons.
+     *
+     * `findReferencesAll` rather than one `findReferences` page: the core
+     * paginates, and a guard that read only the first page would let a write
+     * through for having too many referents to fit.
+     */
+    findSectionReferents: async (anchor) =>
+      (await findReferencesAll(discovery, { target: 'section', anchor })).map((hit) => ({
+        page: hit.pagePath,
+        ...(hit.anchor !== undefined ? { anchor: hit.anchor } : {}),
+      })),
   };
   pluginHost.registerMcpServer('page-tools', () =>
     createPageToolsServer({ ...sectionWriteDeps, rootIds: () => [...rootById.keys()] }),

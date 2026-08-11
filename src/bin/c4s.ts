@@ -118,7 +118,7 @@ Agent:
     --server <url>                                    override server discovery (remote / one-off --port)
                                                       accepted by every server-delegating command, not just these
     --effort <low|medium|high>                        reasoning level for the turn (default medium)
-    --model <fable-5|sonnet-4.6|opus-5|opus-4.8|haiku-4.5>  model for the turn (default opus-4.8)
+    --model <fable-5|sonnet-5|opus-5|haiku-4.5>       model for the turn (default opus-5)
 
 Discovery (through the server's operations — see "Server required" below):
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)

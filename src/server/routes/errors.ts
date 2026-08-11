@@ -84,9 +84,18 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, next) => {
   }
   if (err instanceof DomainError) {
     const status = statusForDomainCode(err.code);
-    return res
-      .status(status)
-      .json({ error: { code: err.code, message: err.message, ...(err.hint ? { hint: err.hint } : {}) } });
+    // `details` is forwarded on the same terms as `hint`: structurally typed, so
+    // a refusal that carries one (today `ANCHOR_LOSS`, with the anchors it would
+    // break and who cites them) does not need a route of its own to render it.
+    const details = (err as DomainError & { details?: unknown }).details;
+    return res.status(status).json({
+      error: {
+        code: err.code,
+        message: err.message,
+        ...(err.hint ? { hint: err.hint } : {}),
+        ...(Array.isArray(details) ? { details } : {}),
+      },
+    });
   }
   console.error(err);
   res.status(500).json({ error: { code: 'INTERNAL', message: (err as Error).message } });

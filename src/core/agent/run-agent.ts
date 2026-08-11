@@ -29,8 +29,17 @@ export type { AgentErrorCode } from './http.js';
 
 export type AgentContextType = 'chat' | 'brief' | 'patch' | 'ask';
 
-/** Default model resolved here so every transport shares one source of truth. */
-const DEFAULT_MODEL = 'opus-4.8';
+/**
+ * Default model resolved here so every transport shares one source of truth.
+ *
+ * Exported rather than kept local, and that is the whole point of the constant:
+ * the HTTP handlers behind `/api/chat` and `/api/threads/:id/ask` each used to
+ * carry their OWN literal fallback (a retired mid-tier alias), which is how the repo ended
+ * up answering a model-less call differently depending on which door it came
+ * through. One literal, imported by the routes — the grep-proof property the
+ * spec asks for, without a handler quietly inventing a second default.
+ */
+export const DEFAULT_MODEL = 'opus-5';
 
 /** Default reasoning level resolved here — single source of truth, jak `DEFAULT_MODEL`. */
 const DEFAULT_EFFORT = 'medium';
@@ -64,7 +73,10 @@ export interface AgentParams {
     roots?: string[];
     suffix?: string;
   };
-  /** Model tury; domyslnie `'opus-4.8'` (rozwiazywany tutaj). */
+  /**
+   * Model tury; claude-code: `fable-5` / `sonnet-5` / `opus-5` / `haiku-4.5`.
+   * Domyslnie `'opus-5'` (rozwiazywany tutaj).
+   */
   model?: string;
   /** Poziom reasoning tury; domyslnie `'medium'` (rozwiazywany tutaj). */
   effort?: 'low' | 'medium' | 'high';

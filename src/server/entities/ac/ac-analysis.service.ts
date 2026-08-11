@@ -164,7 +164,11 @@ export class AcAnalysisService {
       prompt,
       systemPrompt:
         'You output only a single JSON object on one line. No commentary, no code fences.',
-      model: 'sonnet-4.6',
+      // Not the turn default (`opus-5`): the audit is a bulk one-shot classifier
+      // emitting a JSON verdict, so it keeps the mid tier. The alias it used to
+      // name left the catalog in 0.2.17 — this is that alias's successor, which
+      // is why it is pinned here rather than deferred to the default.
+      model: 'sonnet-5',
       cwd: this.deps.cwd,
       maxTurns: 1,
       // The audit reads ACs and entities through the host and returns a JSON verdict — it
