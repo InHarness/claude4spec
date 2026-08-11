@@ -7,7 +7,11 @@ export type LocalToolCategory =
   | 'mcp-reference'
   | 'mcp-plan';
 
-export function localToolCategory(toolName: string): LocalToolCategory {
+export function localToolCategory(toolName: string | undefined): LocalToolCategory {
+  // A block whose `toolName` never made it through the wire is a bug elsewhere,
+  // but it must degrade to a dull label — not to `undefined.startsWith(...)`,
+  // which unmounts the entire chat overlay to the catch boundary.
+  if (typeof toolName !== 'string' || toolName === '') return 'other';
   // M13: CRUD for every entity type is now one generic server, parametrized by
   // `input.type` — replaces the old per-type mcp-endpoint/mcp-dto/mcp-database
   // categories. Surviving custom servers (endpoint-tools, ac-tools,

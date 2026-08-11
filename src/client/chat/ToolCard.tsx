@@ -197,6 +197,10 @@ function categoryIcon(category: LocalToolCategory): LucideIcon {
     case 'mcp-plan':
       return ClipboardList;
     case 'other':
+    // The union is exhaustive, so this `default` is unreachable by the types —
+    // it exists because without it an unexpected runtime value returns
+    // `undefined` and `<Icon>` throws, taking the whole overlay down.
+    default:
       return Wrench;
   }
 }
@@ -218,6 +222,8 @@ function categoryColor(category: LocalToolCategory): string {
     case 'mcp-plan':
       return 'var(--c-accent)';
     case 'other':
+    // Unreachable by the types — same guard as `categoryIcon` above.
+    default:
       return 'var(--c-subtle)';
   }
 }
