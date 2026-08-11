@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from '@tanstack/react-router';
+import { mountFrontend } from '../../../tiptap/mountFrontend.js';
 import { useConfig, usePatchConfig } from '../../../hooks/useConfig.js';
 import { clientPluginHost } from '../../../core/plugin-host/host.js';
 import { ApiError, metaApi } from '../../../lib/api.js';
@@ -20,6 +22,7 @@ export function EntitiesSection() {
   const { data: config } = useConfig();
   const patch = usePatchConfig();
   const qc = useQueryClient();
+  const router = useRouter();
   // Activation partition from the server is the authoritative effective pool:
   // active ∪ inactive = every registered type (base + trusted overlay); unknown
   // = slugs in config.json with no registered plugin (surfaced read-only).
@@ -69,6 +72,14 @@ export function EntitiesSection() {
       try {
         const next = await metaApi.entities();
         clientPluginHost.applyActivation(next);
+        // 0.2.16: activation now decides ROUTES too, not just the sidebar. Once
+        // `/acs`, `/ui-views` and `/design-systems` became module fragments they
+        // stopped being unconditional base routes, so a type re-activated here
+        // would get its sidebar tab back (Sidebar re-renders off `listEntities`)
+        // while its route stayed absent until a reload — the tab would land on
+        // the not-found screen. `mountFrontend` rebuilds from the frozen base and
+        // is idempotent, so re-running it is how the two stay in step.
+        mountFrontend(router, clientPluginHost.listEntities());
         qc.invalidateQueries();
       } catch {
         window.location.reload();

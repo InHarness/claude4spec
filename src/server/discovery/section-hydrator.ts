@@ -133,5 +133,26 @@ export function parseEdges(db: Database, section: RawSection, body: string): Sec
     edges.entityEmbeds.push({ tagType: 'section_entity_link', type: row.type, slug: row.slug });
   }
 
-  return edges;
+  // 0.2.16 — collapse exact duplicates, first occurrence wins. While edges still
+  // carried `raw` and `line`, two mentions of one anchor were two distinct facts
+  // ("it is referenced HERE, and also HERE"). Stripped to identifiers they are
+  // the same fact written twice, and a caller can act on it only once — so a
+  // section that links the same page three times would spend three times the
+  // budget of the truncated response these edges exist to rescue.
+  return {
+    sectionRefs: dedupe(edges.sectionRefs),
+    entityEmbeds: dedupe(edges.entityEmbeds),
+    pageLinks: dedupe(edges.pageLinks),
+  };
+}
+
+/** Identity is the serialized edge — key order is fixed by the literals above. */
+function dedupe<T>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = JSON.stringify(item);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

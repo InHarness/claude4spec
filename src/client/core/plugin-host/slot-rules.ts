@@ -22,6 +22,16 @@ const REQUIRED_COMPONENT_SLOTS = ['renderChip', 'renderCard'] as const;
 const REQUIRED_FUNCTION_SLOTS = ['useGetBySlug', 'listByTags'] as const;
 
 /**
+ * Optional, but not unchecked. Making a slot optional moved it from "must be
+ * there" to "may be absent" — NOT to "may be anything". A namespace import or a
+ * typo'd re-export yields a truthy non-function, which passes a presence test
+ * and then throws inside a React render on whichever page happens to reach it:
+ * `renderRow` in the list views, `detailPanel` on the detail route. Load time is
+ * still where a plugin author wants to hear about it.
+ */
+const OPTIONAL_COMPONENT_SLOTS = ['renderRow', 'detailPanel', 'renderOverlay'] as const;
+
+/**
  * A HIDDEN entity: no detail route and no detail panel, therefore no place of
  * its own in the app. It is reachable only through XML references on a page (a
  * chip for an inline mention, a card for a single embed) and through the agent
@@ -45,6 +55,17 @@ export function checkSlotShapes(m: FrontendModule): string | null {
   }
   for (const slot of REQUIRED_FUNCTION_SLOTS) {
     if (typeof m[slot] !== 'function') return `'${slot}' must be a function`;
+  }
+
+  // Shape before consistency: "declared, but not a component" must not be
+  // reported as "not declared", or the author is sent to fix the wrong slot.
+  for (const slot of OPTIONAL_COMPONENT_SLOTS) {
+    if (m[slot] !== undefined && typeof m[slot] !== 'function') {
+      return `'${slot}' is declared but is not a React component — omit it, or give it a component`;
+    }
+  }
+  if (m.routes !== undefined && typeof m.routes !== 'function') {
+    return "'routes' is declared but is not a route-fragment function — omit it, or give it one";
   }
 
   // The pair rule. Half of it is not a smaller version of it — it is a detail

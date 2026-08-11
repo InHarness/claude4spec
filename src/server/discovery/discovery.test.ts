@@ -549,6 +549,49 @@ describe('discovery core', () => {
     });
 
     /**
+     * Stripping `raw`/`line` made repeated references indistinguishable, so they
+     * had to stop being repeated. Two mentions of one anchor were once two facts
+     * ("referenced here, and here"); as bare identifiers they are one fact billed
+     * twice — against the budget of the very response the edges exist to rescue.
+     */
+    it('collapses exact duplicate edges — the same target named twice is one edge', async () => {
+      const big = 'x'.repeat(80_000);
+      await writePage(
+        'pages',
+        'dupes.md',
+        [
+          '# Top',
+          '',
+          '## One',
+          '<!-- anchor: aaaaaa11 -->',
+          '',
+          big,
+          '',
+          '## Two',
+          '<!-- anchor: bbbbbb22 -->',
+          '',
+          'Once: <single_element type="widget" slug="flow"/> and @other.md#abcdef01.',
+          '',
+          'Again: <single_element type="widget" slug="flow"/> and @other.md#abcdef01.',
+          '',
+          big,
+          '',
+        ].join('\n'),
+      );
+      await indexPageLikeTheIndexer('pages', 'pages', 'dupes.md');
+      const c = core([pagesRoot()]);
+
+      const result = await c.getSections({ anchors: ['aaaaaa11', 'bbbbbb22'] });
+      const cut = result.results[1] as SectionResultItem;
+      expect(cut.truncated).toBe(true);
+
+      const embeds = cut.edges!.entityEmbeds.filter((e) => e.slug === 'flow' && e.type === 'widget');
+      expect(embeds).toHaveLength(1);
+      const links = cut.edges!.pageLinks.filter((l) => l.path === 'other.md');
+      expect(links).toHaveLength(1);
+    });
+
+    /**
      * The regression that a code review caught and this suite did not.
      *
      * The indexer computes `line_start`/`line_end` against

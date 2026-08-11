@@ -104,6 +104,34 @@ describe('registerFrontendModule — load-time slot validation', () => {
     );
   });
 
+  // Optional is not unchecked. A namespace import or a typo'd re-export lands a
+  // truthy non-component in the slot; before 0.2.16 these were mandatory and so
+  // type-checked, and making them optional must not turn a load-time error into
+  // a crash inside whichever page first renders the slot.
+  it("rejects a 'detailPanel' that is present but is not a component", () => {
+    const mod = baseModule('m34-object-panel');
+    (mod as unknown as { detailPanel: unknown }).detailPanel = {};
+    expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(
+      /'detailPanel' is declared but is not a React component/,
+    );
+  });
+
+  it("rejects a 'renderRow' that is present but is not a component", () => {
+    const mod = baseModule('m34-object-row');
+    (mod as unknown as { renderRow: unknown }).renderRow = {};
+    expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(
+      /'renderRow' is declared but is not a React component/,
+    );
+  });
+
+  it("rejects a 'routes' that is present but is not a fragment function", () => {
+    const mod = baseModule('m34-object-routes');
+    (mod as unknown as { routes: unknown }).routes = {};
+    expect(() => clientPluginHost.registerFrontendModule(mod)).toThrow(
+      /'routes' is declared but is not a route-fragment function/,
+    );
+  });
+
   it('rejects a module whose useGetBySlug is not a function', () => {
     const mod = baseModule('m34-bad-hook');
     (mod as unknown as { useGetBySlug: unknown }).useGetBySlug = 'not-a-function';
