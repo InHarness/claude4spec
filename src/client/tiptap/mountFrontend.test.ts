@@ -95,6 +95,31 @@ describe('mountFrontend collects the hoisted entity routes', () => {
     }
   });
 
+  /**
+   * The consequence the hoist bought, stated as a test so nobody has to rediscover
+   * it: these three pages now EXIST only while their type is active. Both callers
+   * pass `clientPluginHost.listEntities()`, which is activation-filtered, so a
+   * deactivated `ac` has no `/acs` route at all — where before the hoist the route
+   * was unconditional and only the sidebar tab came and went.
+   *
+   * That is why `EntitiesSection` re-runs `mountFrontend` after `applyActivation`:
+   * without it a re-enabled type gets its tab back (the sidebar re-renders) while
+   * this tree still reflects the activation of the last mount, and the tab lands
+   * on the not-found screen until a reload.
+   */
+  it('drops a deactivated type\'s routes, and restores them on the next mount', () => {
+    // What the settings save produces when `ac` is switched off: the filtered
+    // module list simply does not contain it.
+    mountFrontend(fakeRouter(), [moduleWith('ui-view', uiViewRoutes)]);
+    expect(mountedPaths()).not.toContain('/acs');
+
+    // ...and back on. Idempotent rebuild from the frozen base, so re-mounting is
+    // the whole repair — no accumulated duplicate of `/ui-views`.
+    mountFrontend(fakeRouter(), [moduleWith('ac', acRoutes), moduleWith('ui-view', uiViewRoutes)]);
+    expect(mountedPaths()).toContain('/acs');
+    expect(mountedPaths().filter((p) => p === '/ui-views')).toHaveLength(1);
+  });
+
   it('a fragment that throws is skipped with a warning, not a crash', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
