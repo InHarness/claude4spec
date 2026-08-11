@@ -104,12 +104,18 @@ describe.skipIf(!BASE)('hoisted entity routes — list and detail pages still re
     return page.locator('body').innerText();
   };
 
+  /**
+   * A list identifies an entity by its text/name; a detail page identifies it by
+   * SLUG in the breadcrumb and header. Asserting the right token per surface is
+   * what makes "the page rendered" distinguishable from "the shell rendered" —
+   * a not-found screen also answers 200 and also has a sidebar.
+   */
   it('serves the ac list and detail from the module fragment', async () => {
     expect(await visit('/acs')).toContain(AC_TEXT);
 
     const detail = await visit(`/acs/${AC_SLUG}`);
-    expect(detail).toContain(AC_TEXT);
-    // Rendered content, not merely the URL: a not-found screen also answers 200.
+    expect(detail).toContain(AC_SLUG);
+    expect(detail).toMatch(/Details/i); // the detail panel itself, not just a heading
     expect(detail).not.toMatch(/not found/i);
   });
 
@@ -130,7 +136,8 @@ describe.skipIf(!BASE)('hoisted entity routes — list and detail pages still re
     expect(await visit('/design-systems')).toContain(DS_NAME);
 
     const detail = await visit(`/design-systems/${DS_SLUG}`);
-    expect(detail).toContain(DS_NAME);
+    expect(detail).toContain(DS_SLUG);
+    expect(detail).toMatch(/token groups/i); // the design-system panel's own content
     expect(detail).not.toMatch(/not found/i);
   });
 
