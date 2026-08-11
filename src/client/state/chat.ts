@@ -20,17 +20,21 @@ if (typeof window !== 'undefined') {
   }
 }
 
-export type ChatModel = 'fable-5' | 'sonnet-4.6' | 'opus-5' | 'opus-4.8' | 'haiku-4.5';
+export type ChatModel = 'fable-5' | 'sonnet-5' | 'opus-5' | 'haiku-4.5';
 export type ChatThinking = 'off' | 'low' | 'medium' | 'high' | 'max';
 
 // Models that use adaptive thinking + a reasoning-effort knob (claude_effort),
 // and therefore support the 'max' effort level. Mirrors agent-adapters
 // ADAPTIVE_THINKING_ONLY for the claude-code aliases we expose.
-export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['opus-5', 'opus-4.8', 'fable-5']);
+// `haiku-4.5` is the only non-adaptive model left in the catalog, so the set is
+// "everything but Haiku" — spelled out rather than negated, because the next
+// model added is likelier to be adaptive than not and a negation would silently
+// class it wrong.
+export const ADAPTIVE_MODELS: ReadonlySet<ChatModel> = new Set(['fable-5', 'sonnet-5', 'opus-5']);
 export const isAdaptiveModel = (m: ChatModel): boolean => ADAPTIVE_MODELS.has(m);
 
 // Map UI thinking level → adapter architectureConfig.
-// Adaptive models (Opus 4.8, Fable 5) support 'adaptive' thinking only, plus a
+// Adaptive models (Fable 5, Sonnet 5, Opus 5) support 'adaptive' thinking only, plus a
 // reasoning-effort knob (claude_effort: low/medium/high/max) — the UI level drives
 // that effort. Other models use a fixed thinking budget; 'max' is adaptive-only so
 // it clamps to 'high'.
@@ -44,7 +48,7 @@ export function thinkingToConfig(
   return { claude_thinking: 'enabled', claude_thinking_budget: budget };
 }
 
-const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-4.6', 'opus-5', 'opus-4.8', 'haiku-4.5'];
+const CHAT_MODELS: readonly ChatModel[] = ['fable-5', 'sonnet-5', 'opus-5', 'haiku-4.5'];
 export const isChatModel = (m: unknown): m is ChatModel =>
   typeof m === 'string' && (CHAT_MODELS as readonly string[]).includes(m);
 
@@ -97,7 +101,7 @@ export const useChatStore = create<ChatState>()(
       chatWidth: 420,
       chatThreadId: null,
       annotations: [],
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       thinking: 'medium',
       seedPrompt: null,
       setChatOpen: (open) => set({ chatOpen: open }),
@@ -123,12 +127,20 @@ export const useChatStore = create<ChatState>()(
     }),
     {
       name: projectKey('c4s:m05:chat-store'),
-      version: 2,
-      // v2: opus-4.7 retired in favour of opus-4.8 (Opus 4.8 release).
+      version: 3,
+      // v2: the retired Opus 4.x point-release remap (superseded by v3 below).
+      // v3: the whole pre-5 catalog left `ALLOWED_MODELS` in 0.2.17, so any
+      // alias persisted before then is one the server no longer accepts and
+      // every turn would fall into the route's invalid-alias coercion. Any
+      // unrecognised value is rewritten to the new default rather than to a
+      // nearest neighbour, because the reasoning CLASSES moved too — the old
+      // mid tier was non-adaptive and its successor is not — so a
+      // nearest-neighbour remap would silently change what the effort slider
+      // means. The default is the only mapping that is honest about it.
       migrate: (persisted, version) => {
         const s = (persisted ?? {}) as Partial<ChatState>;
-        if (version < 2 && (s.model as string) === 'opus-4.7') {
-          s.model = 'opus-4.8';
+        if (version < 3 && !isChatModel(s.model)) {
+          s.model = 'opus-5';
         }
         if (s.thinking === 'max' && !isAdaptiveModel(s.model as ChatModel)) {
           s.thinking = 'high';

@@ -21,7 +21,7 @@ describe('checkResumeConfigLock', () => {
     checkResumeConfigLock({
       snapshotJson: snapshot === null ? null : JSON.stringify(snapshot),
       lastSessionId: 'sess-1',
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       cwd,
       roots: [],
@@ -36,7 +36,7 @@ describe('checkResumeConfigLock', () => {
   });
 
   it('returns null when the thread is not resuming', () => {
-    expect(check({ model: 'opus-4.7', architectureConfig: {} }, { lastSessionId: null })).toBeNull();
+    expect(check({ model: 'haiku-4.5', architectureConfig: {} }, { lastSessionId: null })).toBeNull();
   });
 
   it('returns null when there is no snapshot (thread predates the snapshot column)', () => {
@@ -44,7 +44,7 @@ describe('checkResumeConfigLock', () => {
   });
 
   it('flags a model change', () => {
-    const res = check({ model: 'opus-4.7', architectureConfig: {} });
+    const res = check({ model: 'haiku-4.5', architectureConfig: {} });
     expect(res?.error.code).toBe('RESUME_CONFIG_LOCKED');
     expect(res?.error.violations.map((v) => v.path)).toContain('model');
   });
@@ -52,7 +52,7 @@ describe('checkResumeConfigLock', () => {
   it('flags an FS scope change and names the field in violations, not in the message', () => {
     writeConfig({ agent: { allowedPaths: ['new'] } });
     const res = check({
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       allowedPaths: [path.join(cwd, 'old')],
     });
@@ -64,12 +64,12 @@ describe('checkResumeConfigLock', () => {
   it('uses one static message for every violation — the per-field detail lives in violations[]', () => {
     const STATIC =
       'Model, reasoning and filesystem scope are locked for the lifetime of a session. Start a new conversation to use the new settings.';
-    const modelChange = check({ model: 'opus-4.7', architectureConfig: {} });
+    const modelChange = check({ model: 'haiku-4.5', architectureConfig: {} });
     expect(modelChange?.error.message).toBe(STATIC);
 
     writeConfig({ agent: { allowedPaths: ['new'] } });
     const scopeChange = check({
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       allowedPaths: [path.join(cwd, 'old')],
     });
@@ -88,7 +88,7 @@ describe('checkResumeConfigLock', () => {
     // entry has to resolve to the same array and let the turn proceed.
     // Turn-1 stored the scope already deduped and sorted, as the column always does.
     const snapshot = {
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       allowedPaths: [path.join(cwd, 'alpha'), path.join(cwd, 'beta'), path.join(cwd, 'gamma')],
     };
@@ -105,7 +105,7 @@ describe('checkResumeConfigLock', () => {
     writeConfig({ agent: { allowedPaths: ['same'] } });
     expect(
       check({
-        model: 'sonnet-4.6',
+        model: 'opus-5',
         architectureConfig: {},
         allowedPaths: [path.join(cwd, 'same')],
       }),

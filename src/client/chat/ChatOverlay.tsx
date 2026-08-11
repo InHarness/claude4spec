@@ -427,9 +427,8 @@ export function ChatOverlay() {
 
   const MODEL_LABELS: Record<ChatModel, string> = {
     'fable-5': 'Fable 5',
-    'sonnet-4.6': 'Sonnet 4.6',
+    'sonnet-5': 'Sonnet 5',
     'opus-5': 'Opus 5',
-    'opus-4.8': 'Opus 4.8',
     'haiku-4.5': 'Haiku 4.5',
   };
   const modelLabel = MODEL_LABELS[model];
@@ -468,6 +467,7 @@ export function ChatOverlay() {
             contextSize={contextSize}
             model={model}
             architectureConfig={thinkingToConfig(thinking, model)}
+            contextWindows={chatConfig?.architectures['claude-code']?.contextWindows}
           />
           <button
             onClick={() => void handleToggleSystemPrompt()}
@@ -979,13 +979,12 @@ interface ModelSettingsPopoverProps {
 
 function ModelSettingsPopover({ model, setModel, thinking, setThinking, planMode, setPlanMode, currentPage, sessionLocked, resumeConstraints, onClose }: ModelSettingsPopoverProps) {
   const models: Array<{ id: ChatModel; label: string; sub: string }> = [
-    { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning' },
-    { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · 1M ctx' },
-    { id: 'opus-4.8', label: 'Opus 4.8', sub: 'Deep reasoning · slow' },
-    { id: 'sonnet-4.6', label: 'Sonnet 4.6', sub: 'Balanced · default' },
-    { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light' },
+    { id: 'opus-5', label: 'Opus 5', sub: 'Deep reasoning · default · 1M ctx' },
+    { id: 'fable-5', label: 'Fable 5', sub: 'Next-gen · deep reasoning · 1M ctx' },
+    { id: 'sonnet-5', label: 'Sonnet 5', sub: 'Balanced · 1M ctx' },
+    { id: 'haiku-4.5', label: 'Haiku 4.5', sub: 'Fast · light · 200k ctx' },
   ];
-  // 'Max' reasoning effort is adaptive-models only (Opus 4.8, Fable 5).
+  // 'Max' reasoning effort is adaptive-models only (everything but Haiku 4.5).
   const levels: Array<{ id: ChatThinking; label: string }> = [
     { id: 'off', label: 'Off' },
     { id: 'low', label: 'Low' },

@@ -130,13 +130,18 @@ export function sectionsRouter(
       if (!writeDeps) {
         throw new DomainError('NOT_IMPLEMENTED', 'this project mounts no writable page roots');
       }
-      const body = (req.body ?? {}) as { expectedHash?: string; edits?: SectionEdit[] };
+      const body = (req.body ?? {}) as {
+        expectedHash?: string;
+        edits?: SectionEdit[];
+        dropAnchors?: string[];
+      };
       res.json(
         await updateSections(
           writeDeps,
           {
             expectedHash: body.expectedHash as string,
             edits: (body.edits ?? []) as SectionEdit[],
+            ...(Array.isArray(body.dropAnchors) ? { dropAnchors: body.dropAnchors } : {}),
           },
           'user',
         ),

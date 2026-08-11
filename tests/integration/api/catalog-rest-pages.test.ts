@@ -238,7 +238,14 @@ describe('GET /api/sections/list and /api/sections/get', () => {
  * `page-write.test.ts` covers against a real filesystem.
  */
 describe('PUT /api/sections — the rest rendering of update_sections', () => {
-  function appWithWrites() {
+  /**
+   * @param referents Who cites a given anchor, for the anchor-loss guard. A
+   *   stub rather than the real discovery core: what these cases are about is
+   *   the ROUTE — that it forwards `dropAnchors`, and that it renders the
+   *   refusal as a 400 carrying `details`. Whether the guard finds the right
+   *   referents is settled over real pages in `page-write.test.ts`.
+   */
+  function appWithWrites(referents: Record<string, Array<{ page: string }>> = {}) {
     const { core } = recordingCore();
     const app = express();
     app.use(express.json());
@@ -268,6 +275,7 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
             : null,
       },
       resolveRoot: (id: string) => (id === 'mainspec' ? { pages, writer: null } : undefined),
+      findSectionReferents: async (anchor: string) => referents[anchor] ?? [],
     };
     app.use('/api/sections', sectionsRouter(service, core, writeDeps as never));
     return { app, pages, dir };
@@ -382,6 +390,66 @@ describe('PUT /api/sections — the rest rendering of update_sections', () => {
         .expect(409);
       expect(res.body.error.code).toBe('PAGE_CONFLICT');
       expect((await pages.read('a.md')).body).toContain('old body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  /** A page whose first section CONTAINS a subsection — the anchor-loss shape. */
+  const NESTED =
+    '<!-- anchor: aaaa1111 -->\n# H\nold body\n\n' +
+    '<!-- anchor: cccc3333 -->\n## Sub\nsub body\n\n' +
+    '<!-- anchor: bbbb2222 -->\n# Next\nkeep me';
+
+  it('renders ANCHOR_LOSS as 400 with details, not as a 409', async () => {
+    /**
+     * The status is the assertion. `PAGE_CONFLICT` next door is 409 because its
+     * repair is "re-read and retry"; this refusal is deterministic, so a client
+     * that treated it as a conflict would retry the identical request forever.
+     * `details` rides along because an anchor is an opaque token — without it the
+     * caller cannot tell WHICH section it was about to orphan.
+     */
+    const { app, pages, dir } = appWithWrites({ cccc3333: [{ page: 'cites.md' }] });
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', { body: NESTED });
+      const res = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: (await pages.read('a.md')).hash,
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+        })
+        .expect(400);
+      expect(res.body.error.code).toBe('ANCHOR_LOSS');
+      expect(res.body.error.details).toEqual([
+        { anchor: 'cccc3333', headingText: '', referencedBy: [{ page: 'cites.md' }] },
+      ]);
+      // Refused BEFORE the write: the page is untouched.
+      expect((await pages.read('a.md')).body).toContain('sub body');
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('forwards dropAnchors rather than dropping it', async () => {
+    // Same failure mode as `expectedHash` above: a route that silently discards
+    // the field turns an accepted loss into a permanent refusal, and the caller
+    // has no way to tell it was never read.
+    const { app, pages, dir } = appWithWrites({ cccc3333: [{ page: 'cites.md' }] });
+    try {
+      await pages.ensureRoot();
+      await pages.write('a.md', { body: NESTED });
+      const res = await request(app)
+        .put('/api/sections')
+        .send({
+          expectedHash: (await pages.read('a.md')).hash,
+          edits: [{ anchor: 'aaaa1111', action: 'replace', content: 'new body' }],
+          dropAnchors: ['cccc3333'],
+        })
+        .expect(200);
+      expect(res.body.results[0].droppedAnchors).toEqual(['cccc3333']);
+      expect((await pages.read('a.md')).body).not.toContain('sub body');
+      expect((await pages.read('a.md')).body).toContain('keep me');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

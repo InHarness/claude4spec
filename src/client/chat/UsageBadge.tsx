@@ -2,31 +2,43 @@ import { useState } from 'react';
 import type { UsageStats } from '@inharness-ai/agent-chat';
 import type { ChatModel } from '../state/chat.js';
 
-// Lokalne defaulty — NIE inline z @inharness-ai/agent-adapters.
-// Biblioteka ma 200_000 dla wszystkich claude-code modeli (zgodnie z publicznym SDK),
-// ale ta aplikacja odpala Opus 4.8 z betą `context-1m` → 1M okno.
-// Override per-thread przez `architectureConfig.context_window_override` (konwencja
-// z agent-adapters/src/options.ts — UI-only, adaptery ignorują).
-const CLAUDE_CODE_CONTEXT_WINDOWS: Record<ChatModel, number> = {
-  'fable-5': 1_000_000,
-  'sonnet-4.6': 200_000,
-  'opus-5': 1_000_000,
-  'opus-4.8': 1_000_000,
-  'haiku-4.5': 200_000,
-};
+/**
+ * Fallback okna kontekstu — używany wyłącznie, dopóki `GET /api/chat/config`
+ * się nie wczyta (albo gdy nie zna aliasu).
+ *
+ * Do 0.2.16 stała tu pełna, ręcznie utrzymywana tabela per model. Katalog
+ * przestał być jednorodny (`fable-5` / `sonnet-5` / `opus-5` → 1M,
+ * `haiku-4.5` → 200k), więc kopia rozjeżdżałaby się z prawdą o 5x na modelu
+ * domyślnym. Prawdę zna `getModelContextWindow('claude-code', model)` z
+ * @inharness-ai/agent-adapters — ale main entry paczki ciągnie `fs/promises`
+ * / `os` / `path`, więc klient importuje z niej wyłącznie TYPY. Wartości
+ * przychodzą przez `architectures['claude-code'].contextWindows`.
+ *
+ * Override per-thread przez `architectureConfig.context_window_override`
+ * (konwencja z agent-adapters/src/options.ts — UI-only, adaptery ignorują).
+ */
+const FALLBACK_CONTEXT_WINDOW = 200_000;
 
 interface Props {
   usage: UsageStats | null;
   contextSize: number | null;
   model: ChatModel;
   architectureConfig?: Record<string, unknown>;
+  /** Per-alias okna kontekstu z `GET /api/chat/config`; brak = fallback. */
+  contextWindows?: Record<string, number>;
 }
 
-export function UsageBadge({ usage, contextSize, model, architectureConfig }: Props) {
+export function UsageBadge({
+  usage,
+  contextSize,
+  model,
+  architectureConfig,
+  contextWindows,
+}: Props) {
   const [showTooltip, setShowTooltip] = useState(false);
   const overrideRaw = architectureConfig?.context_window_override;
   const override = typeof overrideRaw === 'number' && overrideRaw > 0 ? overrideRaw : undefined;
-  const contextWindow = override ?? CLAUDE_CODE_CONTEXT_WINDOWS[model] ?? 200_000;
+  const contextWindow = override ?? contextWindows?.[model] ?? FALLBACK_CONTEXT_WINDOW;
 
   // Badge liczymy z usage OSTATNIEJ wiadomości = realne zajęcie okna kontekstu.
   // Prop `contextSize` (event `result`) to kumulatyw per-query() — suma inputTokens

@@ -496,7 +496,15 @@ export interface SessionResumeConstraint {
 }
 
 export interface ChatConfigResponse {
-  architectures: Record<string, { models: string[]; default: string }>;
+  architectures: Record<
+    string,
+    {
+      models: string[];
+      default: string;
+      /** Context window per model alias — the badge's denominator, from the adapter package. */
+      contextWindows?: Record<string, number>;
+    }
+  >;
   defaultArchitecture: string;
   sessionResumeConstraints: SessionResumeConstraint[];
 }

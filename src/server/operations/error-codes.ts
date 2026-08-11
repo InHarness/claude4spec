@@ -68,6 +68,18 @@ export const STATUS_FOR_CODE: Record<string, number> = {
   PAGE_EXISTS: 409,
   ROOT_NOT_FOUND: 404,
   /**
+   * 0.2.17 (M06) — `update_sections` would destroy an anchor something cites.
+   *
+   * 400 and not 409, sitting one line from `PAGE_CONFLICT` which IS 409, because
+   * the two say opposite things about a retry. `PAGE_CONFLICT` means "your hash
+   * is stale" — re-read, re-apply, and the identical intent succeeds. This
+   * refusal is deterministic: nothing about the server will change the answer,
+   * so replaying the same request refuses again forever. The repair is in the
+   * REQUEST (declare the anchors in `dropAnchors`, or send content that
+   * reproduces them), which is what the 4xx/`INVALID_ARGUMENT` class means.
+   */
+  ANCHOR_LOSS: 400,
+  /**
    * 0.2.13 — reached HTTP with `POST /api/patches`. It existed before only as a
    * CLI/core code (`core/briefs/types.ts`), because filing a patch was an
    * fs-scoped CLI operation with no server route; the route made the same

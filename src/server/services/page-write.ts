@@ -107,6 +107,18 @@ export interface UpdatePageInput {
  *                     higher level. NOT idempotent.
  *  - `delete`       — remove the section: heading, anchor comment and body.
  *                     Idempotent, and the ONLY action that takes no `content`.
+ *
+ * Every one of them addresses the section WITH ITS SUBTREE, not the prose under
+ * the heading. A section's range runs to the next heading of equal-or-higher
+ * level, so it contains its descendants — a `replace` on a `##` carrying three
+ * `###` replaces all four sections, and a `delete` removes all four. To change
+ * only a parent's preamble, either reproduce the subsections in the new
+ * `content` or edit the subsections separately.
+ *
+ * `append` is the exception in practice, not in principle: it splices at the end
+ * of the section's OWN text (before the first descendant heading), because
+ * appending to a parent underneath its last grandchild would be adding to a
+ * different section than the one addressed.
  */
 export type SectionEditAction = 'replace' | 'append' | 'insert_after' | 'delete';
 
@@ -140,6 +152,21 @@ export interface UpdateSectionsInput {
    */
   expectedHash: string;
   edits: SectionEdit[];
+  /**
+   * 0.2.17 — the anchors this batch is ALLOWED to destroy.
+   *
+   * A `replace` or `delete` addresses a section together with its subtree, so it
+   * takes the anchor comments of every descendant heading with it. That was
+   * silent: the anchors vanished from `section_index`, and anything citing one —
+   * a `<section_ref/>`, a `@page.md#anchor` link — broke, to be discovered later
+   * by `check_consistency` or not at all.
+   *
+   * Naming an anchor here is the caller saying "yes, that identity goes away".
+   * It is required only for dropped anchors that HAVE referents; dropping an
+   * unreferenced anchor needs no declaration, it is merely reported back. The
+   * guard has no off switch — see {@link updateSections}.
+   */
+  dropAnchors?: string[];
 }
 
 /**
@@ -174,6 +201,18 @@ export interface SectionEditResult {
    * edited anchor is already `anchor` above and is not repeated here.
    */
   affectedAnchors: string[];
+  /**
+   * Anchors this edit removed from `section_index` — the subtree identities it
+   * destroyed, including its own when the action was `delete`.
+   *
+   * Present on SUCCESS, not only in a refusal, and that is the point: it is what
+   * replaces a dry-run mode. The guard refuses on one branch only (a dropped
+   * anchor with referents and no `dropAnchors`), so a caller who wants to know
+   * what a write cost in identities reads it off the write itself.
+   *
+   * Empty for `append` / `insert_after`, which never span a subtree.
+   */
+  droppedAnchors: string[];
 }
 
 /**
@@ -385,10 +424,67 @@ export async function deletePage(
   return { ok: true, deleted: true };
 }
 
+/** Who cites a section: one page, and the section of it the citation sits in. */
+export interface SectionReferent {
+  page: string;
+  anchor?: string;
+}
+
 export interface SectionWriteDeps {
   sections: SectionsService;
   /** Resolves the root the addressed section lives on. */
   resolveRoot: (rootId: string) => PageWriteTarget | undefined;
+  /**
+   * Who cites this anchor — `find_references({ target: 'section', anchor })`,
+   * the same sweep `check_consistency`'s broken-reference rule runs, called
+   * BEFORE the write instead of after it. The guard builds no reference
+   * machinery of its own; it only asks the question earlier.
+   *
+   * Optional because the hand-rolled rigs that mount the section router for its
+   * read routes have no discovery core to hand over. Absent, the guard still
+   * REPORTS `droppedAnchors` but cannot refuse — it has no way to know whether
+   * an anchor is cited, and inventing "nothing cites it" would be a guard that
+   * lies. A real project always wires it.
+   */
+  findSectionReferents?: (anchor: string) => Promise<SectionReferent[]>;
+}
+
+/** One doomed anchor and who would be left pointing at nothing. */
+export interface AnchorLoss {
+  anchor: string;
+  headingText: string;
+  referencedBy: SectionReferent[];
+}
+
+/**
+ * `ANCHOR_LOSS` — the batch would destroy an anchor that something else cites,
+ * and the caller has not said it means to.
+ *
+ * A `DomainError` (400), NOT a `ConflictError` (409), and the distinction is the
+ * repair path rather than taxonomy for its own sake. `PAGE_CONFLICT` means "your
+ * hash is stale, re-read and retry" — the same request succeeds on the second
+ * attempt. This refusal is deterministic: replaying it byte-for-byte refuses
+ * again, forever, until the REQUEST changes. Two repairs exist, both the
+ * caller's to choose: declare the anchors in `dropAnchors`, or send `content`
+ * that reproduces them.
+ *
+ * `details` carries a structure, not a list of ids: an anchor is an opaque
+ * 8-character token, so "you would break `k3f9a1x2`" is not something a human or
+ * an agent can act on. The heading text says what it was, and `referencedBy`
+ * says whose links go dead.
+ */
+export class AnchorLossError extends DomainError {
+  readonly details: AnchorLoss[];
+  constructor(details: AnchorLoss[]) {
+    const names = details.map((d) => `'${d.headingText}' (${d.anchor})`).join(', ');
+    super(
+      'ANCHOR_LOSS',
+      `this batch would drop ${details.length === 1 ? 'a referenced section' : 'referenced sections'}: ${names}`,
+      'pass the anchors in dropAnchors to accept the loss, or send content that reproduces their anchor comments',
+    );
+    this.name = 'AnchorLossError';
+    this.details = details;
+  }
 }
 
 /**
@@ -719,6 +815,20 @@ export async function updateSections(
   const order = [...located].sort(
     (a, b) => startOfAnchor.get(b.edit.anchor)! - startOfAnchor.get(a.edit.anchor)!,
   );
+  /**
+   * Anchors the batch is ABOUT — per edit, everything inside the range it is
+   * about to splice.
+   *
+   * Captured here, before the splice, because after it the range is gone; and
+   * per edit rather than batch-wide, because unlike `affectedAnchors` this one
+   * CAN be attributed. Every anchor is measured inside the one range that was
+   * overwritten, so no guessing after the fact is involved.
+   *
+   * `delete` includes the addressed anchor itself — it takes its own heading and
+   * anchor comment with it. `replace` does not: the heading and its anchor
+   * comment survive the splice, only the body below them is overwritten.
+   */
+  const scopeOf = new Map<string, string[]>();
   for (const { edit } of order) {
     const range = liveRangeOf(lines, edit.anchor);
     if (!range) {
@@ -728,7 +838,79 @@ export async function updateSections(
         currentHash,
       );
     }
+    const inRange = sectionRanges(lines)
+      .filter((r) => r.lineStart > range.lineStart && r.lineStart < range.lineEnd)
+      .map((r) => r.anchor);
+    scopeOf.set(edit.anchor, edit.action === 'delete' ? [edit.anchor, ...inRange] : inRange);
     applySectionEdit(lines, edit, range);
+  }
+
+  /**
+   * The guard. Runs on the spliced lines but BEFORE `commit` — a refusal here
+   * leaves the file untouched, which is what makes the batch transactional
+   * against anchor loss as well as against a stale hash.
+   *
+   * "Dropped" is decided BY THE INDEX, not by a text diff: an anchor counts as
+   * lost only if it is absent from the section ranges the page will have after
+   * the write. So `content` that reproduces an anchor comment keeps that anchor —
+   * even under a different heading, at a different depth, in a different order.
+   * Which heading it then belongs to is the adjacency rule's question, and a
+   * different one from this: the guard is about identities surviving, not about
+   * where they land.
+   */
+  const finalAnchors = new Set(sectionRanges(lines).map((r) => r.anchor));
+  const droppedOf = new Map<string, string[]>(
+    [...scopeOf].map(([anchor, scope]) => [anchor, scope.filter((a) => !finalAnchors.has(a))]),
+  );
+
+  /**
+   * `dropAnchors` is validated against the batch's SCOPES, not against the
+   * anchors actually dropped, and the asymmetry is deliberate.
+   *
+   * Too wide is fine: a superset inside the scopes passes. That is what keeps
+   * `replace` idempotent — the second call with a refreshed hash drops nothing,
+   * and the declaration it repeats verbatim must not become an error for having
+   * come true. That replay is also why an anchor NO LONGER ON THE PAGE is not a
+   * stranger: on the second call the children it names are already gone, so
+   * "must be in scope" read strictly would reject a batch for succeeding once.
+   *
+   * A stranger is an anchor that is on this page and OUTSIDE every addressed
+   * range — the caller declaring a loss the batch could not cause. That is not
+   * ignored, because silently accepting it lets a typo'd anchor stand in for the
+   * one that actually needed declaring, and the write then goes through having
+   * declared nothing.
+   */
+  const declared = new Set(input.dropAnchors ?? []);
+  const inScope = new Set([...scopeOf.values()].flat());
+  const onPage = new Set(startOfAnchor.keys());
+  const stranger = [...declared].find((a) => onPage.has(a) && !inScope.has(a));
+  if (stranger !== undefined) {
+    throw new DomainError(
+      'INVALID_ARGUMENT',
+      `dropAnchors names '${stranger}', which none of this batch's sections contains`,
+      'dropAnchors may only name anchors inside the sections the edits address',
+    );
+  }
+
+  const undeclared = [...new Set([...droppedOf.values()].flat())].filter((a) => !declared.has(a));
+  if (undeclared.length > 0 && deps.findSectionReferents) {
+    const losses: AnchorLoss[] = [];
+    for (const anchor of undeclared) {
+      const referencedBy = await deps.findSectionReferents(anchor);
+      if (referencedBy.length === 0) continue;
+      losses.push({
+        anchor,
+        headingText: deps.sections.getByAnchor(anchor)?.headingText ?? '',
+        referencedBy,
+      });
+    }
+    /**
+     * The WHOLE batch, not the offending edit. Every edit rewrote the same file
+     * under one `expectedHash`, so there is no partial application to fall back
+     * to — and a caller told "3 of your 4 edits landed" would have to diff the
+     * page to find out which.
+     */
+    if (losses.length > 0) throw new AnchorLossError(losses);
   }
 
   const before = sectionDigests(page.body);
@@ -755,6 +937,7 @@ export async function updateSections(
       anchor: edit.anchor,
       action: edit.action,
       affectedAnchors: affected.filter((a) => a !== edit.anchor),
+      droppedAnchors: droppedOf.get(edit.anchor) ?? [],
     })),
   };
 }

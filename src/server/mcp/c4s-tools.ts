@@ -2,7 +2,6 @@ import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runt
 import { z } from 'zod';
 import { toolError } from '../operations/envelope.js';
 import { runAgent, AgentError } from '../../core/agent/run-agent.js';
-import { ALLOWED_MODELS } from '../routes/models.js';
 
 /**
  * `c4s-tools` — cross-cutting in-process MCP server expozujacy peer-consult
@@ -52,10 +51,24 @@ export function buildC4sToolsServer(callerWorkspace?: string): CapturedMcpServer
         .describe("Workspace override; defaults to the caller's workspace when omitted."),
       server: z.string().optional().describe('Peer server URL override; wins over `project` if both set.'),
       threadId: z.string().optional().describe('Continue an existing peer thread.'),
+      /**
+       * Pass-through STRING, deliberately not `z.enum(ALLOWED_MODELS)`.
+       *
+       * The enum was rejecting an unknown alias at the MCP schema boundary, as
+       * an input-validation error. The declared contract is that an unknown
+       * model reaches the peer and comes back as `AGENT_ERROR` — the runtime
+       * refuses it with its own vocabulary, which is the only side that knows
+       * what it can actually run. Deriving the enum from `ALLOWED_MODELS` did
+       * not fix that: it is the right catalog, refusing at the wrong layer, with
+       * the wrong code.
+       */
       model: z
-        .enum(ALLOWED_MODELS)
+        .string()
         .optional()
-        .describe('Peer turn model. Default: opus-4.8. Resume-immutable.'),
+        .describe(
+          'Peer turn model — claude-code: fable-5 / sonnet-5 / opus-5 / haiku-4.5. ' +
+            "Default: opus-5. Resume-immutable. Unknown values reach the peer and fail as AGENT_ERROR there.",
+        ),
       effort: z
         .enum(['low', 'medium', 'high'])
         .optional()

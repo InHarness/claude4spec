@@ -85,10 +85,10 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
 
   const lastArchitectureConfig = () => runAgentTurnMock.mock.calls.at(-1)?.[1].architectureConfig;
 
-  it("adaptive model (opus-4.8) + effort -> claude_thinking: 'adaptive', no budget", async () => {
+  it("adaptive model (opus-5) + effort -> claude_thinking: 'adaptive', no budget", async () => {
     const res = await request(app())
       .post(`/threads/${thread.id}/ask`)
-      .send({ message: 'hi', model: 'opus-4.8', effort: 'high' });
+      .send({ message: 'hi', model: 'opus-5', effort: 'high' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({ claude_effort: 'high', claude_thinking: 'adaptive' });
     expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');
@@ -108,11 +108,11 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     ['medium', 8192],
     ['high', 24000],
   ] as const)(
-    "non-adaptive model (sonnet-4.6) + effort '%s' -> claude_thinking: 'enabled', budget %i",
+    "non-adaptive model (haiku-4.5) + effort '%s' -> claude_thinking: 'enabled', budget %i",
     async (effort, budget) => {
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6', effort });
+        .send({ message: 'hi', model: 'haiku-4.5', effort });
       expect(res.status).toBe(200);
       expect(lastArchitectureConfig()).toMatchObject({
         claude_effort: effort,
@@ -122,30 +122,36 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     },
   );
 
-  it("non-adaptive model (haiku-4.5) + effort -> claude_thinking: 'enabled' + budget", async () => {
+  it("adaptive model (sonnet-5) + effort -> claude_thinking: 'adaptive', no budget", async () => {
     const res = await request(app())
       .post(`/threads/${thread.id}/ask`)
-      .send({ message: 'hi', model: 'haiku-4.5', effort: 'medium' });
+      .send({ message: 'hi', model: 'sonnet-5', effort: 'medium' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({
       claude_effort: 'medium',
-      claude_thinking: 'enabled',
-      claude_thinking_budget: 8192,
+      claude_thinking: 'adaptive',
     });
+    expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');
   });
 
-  it('no explicit model (defaults to sonnet-4.6) + effort behaves like the non-adaptive case', async () => {
+  /**
+   * The default is `opus-5`, which is ADAPTIVE — so this case flipped branches
+   * in 0.2.17. It used to assert the budget path, because the default was the
+   * mid-tier non-adaptive model; `haiku-4.5` is the only non-adaptive alias
+   * left, and nothing resolves to it implicitly.
+   */
+  it('no explicit model (defaults to opus-5) + effort behaves like the adaptive case', async () => {
     const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', effort: 'low' });
     expect(res.status).toBe(200);
     expect(lastArchitectureConfig()).toMatchObject({
       claude_effort: 'low',
-      claude_thinking: 'enabled',
-      claude_thinking_budget: 2048,
+      claude_thinking: 'adaptive',
     });
+    expect(lastArchitectureConfig()).not.toHaveProperty('claude_thinking_budget');
   });
 
   it('no effort in body -> none of claude_effort/claude_thinking/claude_thinking_budget are set (adaptive model)', async () => {
-    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'opus-4.8' });
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'opus-5' });
     expect(res.status).toBe(200);
     const cfg = lastArchitectureConfig();
     expect(cfg).not.toHaveProperty('claude_effort');
@@ -154,7 +160,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
   });
 
   it('no effort in body -> none of claude_effort/claude_thinking/claude_thinking_budget are set (non-adaptive model)', async () => {
-    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'sonnet-4.6' });
+    const res = await request(app()).post(`/threads/${thread.id}/ask`).send({ message: 'hi', model: 'haiku-4.5' });
     expect(res.status).toBe(200);
     const cfg = lastArchitectureConfig();
     expect(cfg).not.toHaveProperty('claude_effort');
@@ -165,7 +171,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
   it('invalid effort value -> 400 VALIDATION, runAgentTurn never invoked', async () => {
     const res = await request(app())
       .post(`/threads/${thread.id}/ask`)
-      .send({ message: 'hi', model: 'sonnet-4.6', effort: 'ultra' });
+      .send({ message: 'hi', model: 'haiku-4.5', effort: 'ultra' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
     expect(runAgentTurnMock).not.toHaveBeenCalled();
@@ -178,12 +184,12 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
 
     it('409 RESUME_CONFIG_LOCKED when resuming with a different effort (different budget) on the same non-adaptive model', async () => {
       initialArchitectureConfigSnapshot = JSON.stringify({
-        model: 'sonnet-4.6',
+        model: 'haiku-4.5',
         architectureConfig: { claude_effort: 'medium', claude_thinking: 'enabled', claude_thinking_budget: 8192 },
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6', effort: 'high' });
+        .send({ message: 'hi', model: 'haiku-4.5', effort: 'high' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
       expect(res.body.error.violations.length).toBeGreaterThan(0);
@@ -192,12 +198,12 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
 
     it('no violation (200) when resuming with the same effort/model', async () => {
       initialArchitectureConfigSnapshot = JSON.stringify({
-        model: 'sonnet-4.6',
+        model: 'haiku-4.5',
         architectureConfig: { claude_effort: 'medium', claude_thinking: 'enabled', claude_thinking_budget: 8192 },
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6', effort: 'medium' });
+        .send({ message: 'hi', model: 'haiku-4.5', effort: 'medium' });
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });
@@ -213,7 +219,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       fs.writeFileSync(path.join(dir, '.claude4spec', 'config.json'), JSON.stringify(cfg));
     };
     const snapshotWith = (paths: { allowedPaths?: string[]; disallowedPaths?: string[] }) =>
-      JSON.stringify({ model: 'sonnet-4.6', architectureConfig: {}, ...paths });
+      JSON.stringify({ model: 'opus-5', architectureConfig: {}, ...paths });
 
     beforeEach(() => {
       thread = makeThread({ lastSessionId: 'sess-1' });
@@ -226,7 +232,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6' });
+        .send({ message: 'hi', model: 'opus-5' });
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
       // `violations[]` names the field, so the UI can lock the right control; `message`
@@ -250,7 +256,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6' });
+        .send({ message: 'hi', model: 'opus-5' });
       expect(res.status).toBe(409);
       expect(res.body.error.violations.map((v: { path: string }) => v.path)).toContain(
         'disallowedPaths',
@@ -270,7 +276,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6' });
+        .send({ message: 'hi', model: 'opus-5' });
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });
@@ -278,12 +284,12 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
     it('no 409 for a pre-0.2.8 snapshot that has no path fields (back-compat)', async () => {
       writeConfig({ agent: { allowedPaths: ['anything'] } });
       initialArchitectureConfigSnapshot = JSON.stringify({
-        model: 'sonnet-4.6',
+        model: 'opus-5',
         architectureConfig: {},
       });
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6' });
+        .send({ message: 'hi', model: 'opus-5' });
       expect(res.status).toBe(200);
     });
 
@@ -293,7 +299,7 @@ describe('POST /:id/ask — server-side reasoning resolution (0.1.107)', () => {
       initialArchitectureConfigSnapshot = null;
       const res = await request(app())
         .post(`/threads/${thread.id}/ask`)
-        .send({ message: 'hi', model: 'sonnet-4.6' });
+        .send({ message: 'hi', model: 'opus-5' });
       expect(res.status).toBe(200);
       expect(runAgentTurnMock).toHaveBeenCalledTimes(1);
     });

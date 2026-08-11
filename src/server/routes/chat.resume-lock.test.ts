@@ -101,12 +101,12 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('409s with the static message and a dynamic violations[] when the FS scope changed', async () => {
     writeConfig({ agent: { allowedPaths: ['new'] } });
     snapshot = JSON.stringify({
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       allowedPaths: [path.join(dir, 'old')],
     });
 
-    const res = await post({ model: 'sonnet-4.6' });
+    const res = await post({ model: 'opus-5' });
 
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('RESUME_CONFIG_LOCKED');
@@ -120,7 +120,7 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   });
 
   it('409s on a model change', async () => {
-    snapshot = JSON.stringify({ model: 'sonnet-4.6', architectureConfig: {} });
+    snapshot = JSON.stringify({ model: 'haiku-4.5', architectureConfig: {} });
 
     // Must be a member of ALLOWED_MODELS — the route silently coerces anything else
     // back to the default, which would make this assert nothing.
@@ -135,12 +135,12 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('lets a turn through when nothing locked has changed', async () => {
     writeConfig({ agent: { allowedPaths: ['same'] } });
     snapshot = JSON.stringify({
-      model: 'sonnet-4.6',
+      model: 'opus-5',
       architectureConfig: {},
       allowedPaths: [path.join(dir, 'same')],
     });
 
-    const res = await post({ model: 'sonnet-4.6' });
+    const res = await post({ model: 'opus-5' });
 
     expect(res.status).not.toBe(409);
     expect(runAgentTurnMock).toHaveBeenCalled();
@@ -149,9 +149,9 @@ describe('POST /api/chat — RESUME_CONFIG_LOCKED wiring (M05 item 33)', () => {
   it('does not lock a thread that is not resuming', async () => {
     thread = makeThread({ lastSessionId: null });
     writeConfig({ agent: { allowedPaths: ['whatever'] } });
-    snapshot = JSON.stringify({ model: 'opus-4.7', architectureConfig: {} });
+    snapshot = JSON.stringify({ model: 'haiku-4.5', architectureConfig: {} });
 
-    const res = await post({ model: 'sonnet-4.6' });
+    const res = await post({ model: 'opus-5' });
 
     expect(res.status).not.toBe(409);
   });

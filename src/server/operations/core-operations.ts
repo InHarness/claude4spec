@@ -460,11 +460,16 @@ export function registerCoreOperations(): void {
             content: z.string().optional(),
           }),
         ).min(1),
+        dropAnchors: z.array(z.string()).optional(),
       },
       // `replace` and `delete` are idempotent; `append` and `insert_after` are
       // not, so the operation as a whole cannot claim to be.
+      //
+      // `dropAnchors` does not change that: a superset of what a repeat call
+      // actually drops is legal precisely so the idempotent actions stay
+      // idempotent when the declaration is replayed verbatim.
       false,
-      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT'],
+      ['SECTION_NOT_FOUND', 'PAGE_CONFLICT', 'ROOT_NOT_FOUND', 'INVALID_ARGUMENT', 'ANCHOR_LOSS'],
     ),
   );
 

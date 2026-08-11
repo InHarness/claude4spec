@@ -5,6 +5,7 @@ import { nanoid } from 'nanoid';
 import {
   architectureCapabilities,
   createConsoleObserver,
+  getModelContextWindow,
   getSessionResumeConstraints,
   type StreamObserver,
   type UserInputRequest,
@@ -23,6 +24,7 @@ import {
   type AgentTurnDeps,
 } from './agent-turn.js';
 import { checkResumeConfigLock } from './resume-lock.js';
+import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 
 export function chatRouter(deps: AgentTurnDeps): Router {
   const router = Router();
@@ -74,7 +76,28 @@ export function chatRouter(deps: AgentTurnDeps): Router {
       architectures: {
         'claude-code': {
           models: [...ALLOWED_MODELS],
-          default: 'sonnet-4.6',
+          default: DEFAULT_MODEL,
+          /**
+           * The context window per model, for `<UsageBadge />`'s denominator.
+           *
+           * It used to be a hardcoded table in the badge itself, which was
+           * defensible while the whole catalog was 200k and Opus was the one
+           * exception. It is not defensible now: `fable-5` / `sonnet-5` /
+           * `opus-5` carry 1M and `haiku-4.5` carries 200k, so a stale copy
+           * would misreport occupancy by 5x on the default model.
+           *
+           * Served rather than imported, for the same reason as
+           * `sessionResumeConstraints` below: the package's main entry pulls
+           * `fs/promises` / `os` / `path`, so the client can only import TYPES
+           * from it. The value still comes from `getModelContextWindow` — this
+           * is where that call can happen.
+           */
+          contextWindows: Object.fromEntries(
+            ALLOWED_MODELS.flatMap((m) => {
+              const w = getModelContextWindow('claude-code', m);
+              return typeof w === 'number' ? [[m, w] as const] : [];
+            }),
+          ),
         },
       },
       defaultArchitecture: 'claude-code',
@@ -90,8 +113,10 @@ export function chatRouter(deps: AgentTurnDeps): Router {
     try {
       const prompt = typeof req.body?.prompt === 'string' ? req.body.prompt : '';
       const threadId = typeof req.body?.threadId === 'string' ? req.body.threadId : undefined;
-      const modelArg = typeof req.body?.model === 'string' ? req.body.model : 'sonnet-4.6';
-      const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg) ? (modelArg as Model) : 'sonnet-4.6';
+      const modelArg = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
+      const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg)
+        ? (modelArg as Model)
+        : DEFAULT_MODEL;
       const currentPage = typeof req.body?.currentPage === 'string' ? req.body.currentPage : null;
       const currentPageRootId =
         typeof req.body?.currentPageRootId === 'string' ? req.body.currentPageRootId : null;

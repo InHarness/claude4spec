@@ -13,6 +13,7 @@ import {
 } from './agent-turn.js';
 import { checkResumeConfigLock } from './resume-lock.js';
 import { ASK_TURN_TIMEOUT_MS } from '../../shared/agent-turn.js';
+import { DEFAULT_MODEL } from '../../core/agent/run-agent.js';
 
 export function threadsRouter(deps: AgentTurnDeps): Router {
   const router = Router();
@@ -117,12 +118,29 @@ export function threadsRouter(deps: AgentTurnDeps): Router {
         return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'thread not found' } });
       }
 
-      // Opcjonalny `model` z body (domyslnie `sonnet-4.6`); merge `architectureConfig` jak w
-      // `POST /api/chat` — serwer wygrywa wylacznie na `claude_usePreset`.
-      const modelArg = typeof req.body?.model === 'string' ? req.body.model : 'sonnet-4.6';
+      /**
+       * Opcjonalny `model` z body. Kontrakt endpointa to pass-through: wolacz
+       * idacy przez `runAgent` niesie w body juz konkretna wartosc, bo default
+       * rozwiazal sie tam. Wczesniej stal tu WLASNY literal (wycofany alias
+       * mid-tier), rozjezdzajacy sie z defaultem runtime'u — dwa defaulty
+       * jednej operacji, zaleznie od tego, ktorymi drzwiami wolacz wszedl.
+       *
+       * Teraz jest tu `DEFAULT_MODEL` importowany z `runAgent`, wiec zadanie
+       * bez `model` dostaje dokladnie to, co rozwiazalby runtime. Nie jest to
+       * literalny brak defaultu (specka opisuje handler, ktory go nie
+       * przypisuje), i to jest swiadome: `input.model` trafia do snapshotu
+       * session-lock tury-1 (`setInitialArchitectureConfig`), na ktorym stoi
+       * immutability modelu przy wznowieniu. `undefined` w tym snapshocie
+       * zdjeloby ten lock — czyli zlamaloby kontrakt, ktorego ta zmiana nie
+       * dotyka — wiec stala jest tu wezszym zlem niz dziura w snapshocie.
+       *
+       * Merge `architectureConfig` jak w `POST /api/chat` — serwer wygrywa
+       * wylacznie na `claude_usePreset`.
+       */
+      const modelArg = typeof req.body?.model === 'string' ? req.body.model : DEFAULT_MODEL;
       const model: Model = (ALLOWED_MODELS as readonly string[]).includes(modelArg)
         ? (modelArg as Model)
-        : 'sonnet-4.6';
+        : DEFAULT_MODEL;
       const clientArchitectureConfig =
         req.body?.architectureConfig && typeof req.body.architectureConfig === 'object'
           ? (req.body.architectureConfig as Record<string, unknown>)
