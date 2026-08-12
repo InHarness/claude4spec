@@ -182,17 +182,6 @@ export interface DesignSystemListQuery {
   offset?: number;
 }
 
-/** Trimmed list row — counts computed server-side without the full token payload. */
-export interface DesignSystemListItem {
-  slug: string;
-  name: string;
-  description: string | null;
-  groupCount: number;
-  tokenCount: number;
-  modeCount: number;
-  tags: string[];
-}
-
 export interface DesignSystemDanglingUiView {
   slug: string;
 }

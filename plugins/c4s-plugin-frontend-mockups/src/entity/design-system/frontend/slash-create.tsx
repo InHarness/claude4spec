@@ -25,7 +25,7 @@ import {
   DESIGN_SYSTEM_POPOVER_KIND,
   DESIGN_SYSTEM_TYPE,
 } from '../../../identity.js';
-import { useCreateDesignSystem } from './hooks.js';
+import { keys as designSystemKeys, useCreateDesignSystem } from './hooks.js';
 
 function DesignSystemSlashCreateForm({
   editor,
@@ -54,7 +54,7 @@ function DesignSystemSlashCreateForm({
       name: trimmed,
       description: description.trim() || undefined,
     });
-    void qc.invalidateQueries({ queryKey: [DESIGN_SYSTEM_TYPE] });
+    void qc.invalidateQueries({ queryKey: designSystemKeys.all });
     insertEmbed(editor, DESIGN_SYSTEM_TYPE, ds.slug);
     toast.success(`${DESIGN_SYSTEM_LABEL} ${ds.slug} created`);
     onClose();

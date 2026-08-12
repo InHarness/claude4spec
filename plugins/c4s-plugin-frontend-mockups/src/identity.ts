@@ -83,19 +83,3 @@ export function slugify(input: string): string {
   }
   return `x-${hash.toString(36)}`;
 }
-
-/**
- * Both slug patterns are `{ op: 'slugify', field: 'name', splitCamelCase: true }`,
- * so `UserProfile` → `user-profile` and `HTTPCache` → `http-cache`.
- *
- * The two `replace` calls are `splitBoundaries` from the host's
- * `shared/plugin-host/slug-pattern.ts`, vendored for the same reason `slugify`
- * is: the client computes a slug to decide whether a rename happened, and a
- * client that drops the second (acronym) boundary disagrees with the server on
- * every name containing one.
- */
-export function slugifyEntityName(name: string): string {
-  return slugify(
-    name.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2'),
-  );
-}

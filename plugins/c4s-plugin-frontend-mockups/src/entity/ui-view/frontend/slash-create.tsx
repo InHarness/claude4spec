@@ -27,7 +27,7 @@ import {
 import { InlineError, PopoverFooter, TextInput } from '../../../frontend-kit/popover-form.js';
 import { toast } from '../../../frontend-kit/host-events.js';
 import { UI_VIEW_LABEL, UI_VIEW_POPOVER_KIND, UI_VIEW_TYPE } from '../../../identity.js';
-import { useCreateUiView } from './hooks.js';
+import { keys as uiViewKeys, useCreateUiView } from './hooks.js';
 
 function UiViewSlashCreateForm({
   editor,
@@ -58,7 +58,7 @@ function UiViewSlashCreateForm({
       url: url.trim() || null,
       description: description.trim() || undefined,
     });
-    void qc.invalidateQueries({ queryKey: [UI_VIEW_TYPE] });
+    void qc.invalidateQueries({ queryKey: uiViewKeys.all });
     insertEmbed(editor, UI_VIEW_TYPE, view.slug);
     toast.success(`${UI_VIEW_LABEL} ${view.slug} created`);
     onClose();

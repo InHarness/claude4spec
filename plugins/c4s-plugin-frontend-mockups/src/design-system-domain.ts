@@ -9,7 +9,6 @@ import {
   UNRESOLVED_TOKEN,
   type DesignMode,
   type DesignSystem,
-  type DesignSystemListItem,
   type DesignToken,
   type ResolvedTokenValue,
   type TokenGroup,
@@ -73,18 +72,6 @@ export function parseModes(raw: string | unknown): DesignMode[] {
             .map((o) => ({ token: String(o.token ?? ''), value: parseValue(o.value) }))
         : [],
     }));
-}
-
-export function toListItem(ds: DesignSystem): DesignSystemListItem {
-  return {
-    slug: ds.slug,
-    name: ds.name,
-    description: ds.description,
-    groupCount: ds.groups.length,
-    tokenCount: ds.groups.reduce((acc, g) => acc + (g.tokens?.length ?? 0), 0),
-    modeCount: ds.modes.length,
-    tags: ds.tags,
-  };
 }
 
 // ─── resolve() ───────────────────────────────────────────────────────────────

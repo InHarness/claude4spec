@@ -7,7 +7,8 @@ import type {
   UiViewUpdateInput,
 } from '../../../types.js';
 
-const keys = {
+/** Exported so the slash-create popover invalidates the SAME keys the hooks use. */
+export const keys = {
   all: ['ui-views'] as const,
   list: (q: UiViewListQuery) => ['ui-views', 'list', q] as const,
   detail: (slug: string) => ['ui-view', slug] as const,

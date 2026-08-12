@@ -7,7 +7,8 @@ import type {
   DesignSystemUpdateInput,
 } from '../../../types.js';
 
-const keys = {
+/** Exported so the slash-create popover invalidates the SAME keys the hooks use. */
+export const keys = {
   all: ['design-systems'] as const,
   list: (q: DesignSystemListQuery) => ['design-systems', 'list', q] as const,
   detail: (slug: string) => ['design-system', slug] as const,
