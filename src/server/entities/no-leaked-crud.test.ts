@@ -77,14 +77,21 @@ describe('no leaked per-type CRUD abstractions (M13)', () => {
  * second description of a shape the declaration already gives, or a second write
  * door the host does not know about.
  *
- * So the assertion is on the tree, not on behaviour. It scans both the in-repo
- * types and the plugin envelope, because the envelope is where two of the six
- * services lived.
+ * So the assertion is on the tree, not on behaviour. It scans the in-repo types
+ * AND every built-in envelope, discovered rather than listed — the envelopes are
+ * where most of the retired services lived, and by 0.2.18 they are where most of
+ * the types live. A hardcoded list would silently stop covering the next one.
  */
 describe('tier K left nothing to grow back (item 62)', () => {
+  const PLUGINS_DIR = path.join(SRC_ROOT, 'plugins');
   const TYPE_ROOTS = [
     path.join(SRC_ROOT, 'src', 'server', 'entities'),
-    path.join(SRC_ROOT, 'plugins', 'c4s-plugin-api-contracts', 'src', 'entity'),
+    ...(fs.existsSync(PLUGINS_DIR)
+      ? fs
+          .readdirSync(PLUGINS_DIR, { withFileTypes: true })
+          .filter((e) => e.isDirectory())
+          .map((e) => path.join(PLUGINS_DIR, e.name, 'src', 'entity'))
+      : []),
   ].filter((dir) => fs.existsSync(dir));
 
   const typeFiles = (): string[] => TYPE_ROOTS.flatMap((root) => walk(root));

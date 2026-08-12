@@ -29,6 +29,7 @@ const ENVELOPES = [
   'c4s-plugin-api-contracts',
   'c4s-plugin-spreadsheets',
   'c4s-plugin-database-tables',
+  'c4s-plugin-frontend-mockups',
 ];
 
 describe('npm package contents', () => {

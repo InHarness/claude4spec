@@ -116,19 +116,23 @@ describe('Single Abstraction Rule', () => {
   it('the host does not branch on an entity type literal', () => {
     const ENTITY_TYPES = ['endpoint', 'dto', 'ui-view', 'ac', 'design-system', 'diagram', 'database-table'];
     const pattern = new RegExp(`type === '(${ENTITY_TYPES.join('|')})'`);
-    expect(hits(pattern, isProduction)).toEqual([
-      // The last live one, and it needs a host-API addition to remove rather
-      // than a rewrite here: the shared breadcrumb renders a per-type crumb, and
-      // `FrontendModule` has no slot for one, so the type cannot supply it. The
-      // three dead branches beside it (endpoint/dto/database-table, left behind
-      // when those types moved out) ARE gone. Filed as a patch.
-      expect.stringContaining('_shared/EntityBreadcrumbBar.tsx'),
-      // The reference-tools hit is GONE as of M39. That server's `ac` literal
-      // came from the consistency rules it owned; those moved into the
-      // discovery core, and the "AC needs no AC coverage of itself" exemption
-      // there compares the resolved AC module's identity rather than
-      // re-hardcoding the literal a second time.
-    ]);
+    /*
+     * ZERO, with no exemption — as of 0.2.18.
+     *
+     * The `endpoint`/`dto`/`database-table` branches went when those types left
+     * the host in 0.2.2/0.2.11. The last live one was `ui-view`'s crumb in
+     * `_shared/EntityBreadcrumbBar.tsx`, and the note here used to say it needed
+     * a host-API addition to remove, because `FrontendModule` has no slot for a
+     * per-type crumb. It did not: `ui-view` and `design-system` moved into the
+     * `c4s-plugin-frontend-mockups` envelope, which vendors its own breadcrumb
+     * bar the way `c4s-plugin-api-contracts` already did, and the host's copy is
+     * now branchless.
+     *
+     * The type names STAY in `ENTITY_TYPES` above. The pattern is what forbids a
+     * branch coming back; forgetting a retired name would quietly stop forbidding
+     * it.
+     */
+    expect(hits(pattern, isProduction)).toEqual([]);
   });
 
   /**

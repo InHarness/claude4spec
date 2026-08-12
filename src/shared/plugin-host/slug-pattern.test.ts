@@ -13,9 +13,17 @@ import { describe, expect, it } from 'vitest';
 import { evaluateSlugPattern, previewSlugPattern, type SlugPattern } from './slug-pattern.js';
 import { slugify } from '../slug.js';
 import { acSlugPattern } from '../entities/ac/schema.js';
-import { uiViewSlugPattern } from '../entities/ui-view/schema.js';
-import { designSystemSlugPattern } from '../entities/design-system/schema.js';
 import { diagramSlugPattern } from '../entities/diagram/schema.js';
+
+/**
+ * `ui-view` and `design-system` moved into the `c4s-plugin-frontend-mockups`
+ * envelope in 0.2.18, and the host may not import a plugin's source. Both
+ * declare exactly this pattern, and the parity claim below is about the STEP —
+ * `slugify` with `splitCamelCase` — not about who declares it, so the literal
+ * stands in for both. If either type ever changes its pattern, the envelope's
+ * own suite is where that has to be caught.
+ */
+const nameSlugPattern: SlugPattern = [{ op: 'slugify', field: 'name', splitCamelCase: true }];
 
 /** Deterministic stand-in so a chain ending in `nanoid` is assertable. */
 const fixedNanoid = (n: number) => 'z'.repeat(n);
@@ -33,12 +41,8 @@ function retiredNameSlug(name: string): string {
 describe('slugPattern — parity with the retired per-type helpers', () => {
   const names = ['User Profile Screen', 'UserProfile', 'HTTPServerConfig', 'Brand 2026', 'a'];
 
-  it.each(names)('ui-view reproduces uiViewSlug for %j', (name) => {
-    expect(evaluate(uiViewSlugPattern, { name })).toBe(retiredNameSlug(name));
-  });
-
-  it.each(names)('design-system reproduces designSystemSlug for %j', (name) => {
-    expect(evaluate(designSystemSlugPattern, { name })).toBe(retiredNameSlug(name));
+  it.each(names)('slugify+splitCamelCase reproduces the retired helper for %j', (name) => {
+    expect(evaluate(nameSlugPattern, { name })).toBe(retiredNameSlug(name));
   });
 
   /**
@@ -132,8 +136,8 @@ describe('previewSlugPattern', () => {
   });
 
   it('is identical to full evaluation for a pattern with no random step', () => {
-    expect(previewSlugPattern(uiViewSlugPattern, { name: 'UserProfile' })).toBe(
-      evaluate(uiViewSlugPattern, { name: 'UserProfile' }),
+    expect(previewSlugPattern(nameSlugPattern, { name: 'UserProfile' })).toBe(
+      evaluate(nameSlugPattern, { name: 'UserProfile' }),
     );
   });
 });

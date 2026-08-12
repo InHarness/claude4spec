@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { ChevronRight, Monitor } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { clientPluginHost } from '../../core/plugin-host/host.js';
 import { EntityViewSwitcher } from './EntityViewSwitcher.js';
 import type { EntityType } from '../../../shared/entities.js';
@@ -53,19 +53,20 @@ export function EntityBreadcrumbBar({ type, slug, name, view, hasHistory }: Prop
 }
 
 function renderCrumb(type: EntityType, slug: string, name?: string): React.ReactNode {
-  // The `endpoint`, `dto` and `database-table` branches are gone: 0.2.2 moved
-  // those three types out of the host, into the api-contracts envelope and the
-  // database-tables plugin, and each ships its own breadcrumb. The branches here
-  // survived the move as dead code — the host has no route that renders this bar
-  // for any of them — and, being dead, kept the whole `entities/` tree exempt
-  // from the Single Abstraction gate to no purpose.
-  if (type === 'ui-view') {
-    return (
-      <>
-        <Monitor size={12} style={{ color: 'var(--c-accent)' }} />
-        <span>{name ?? slug}</span>
-      </>
-    );
-  }
+  /*
+   * 0.2.18: BRANCHLESS, and that is the point.
+   *
+   * The `endpoint`, `dto` and `database-table` branches went in 0.2.2/0.2.11
+   * when those types moved out of the host; `ui-view` was the last one left, and
+   * it goes here with `ui-view` and `design-system` into the
+   * `c4s-plugin-frontend-mockups` envelope. Each extracted package renders its
+   * own crumb — api-contracts and frontend-mockups by vendoring this component,
+   * database-tables through `DetailPanelShell` — so the Single Abstraction gate
+   * now expects ZERO `type === '<literal>'` hits in the host, with no exemption.
+   *
+   * `name` is still taken, and still ignored here: the host cannot know which
+   * types have a display name distinct from the slug. A type that wants one
+   * ships a bar that uses it.
+   */
   return <span className="font-mono">{slug}</span>;
 }

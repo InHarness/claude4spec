@@ -1,11 +1,11 @@
 // Registering entity modules — import order establishes registry.
-// `database-table` is no longer an in-app entity — it ships in the preinstalled
-// `c4s-plugin-simple-database-tables` plugin, whose frontend bundle self-registers
-// (entity def, slash command, `/database-tables` routes + create/edit popover) at
-// runtime via the M33 frontend-manifest boot loader.
-import './ui-view/plugin.js';
+//
+// Two left. Every other type arrives as a plugin frontend bundle that
+// self-registers (entity def, slash command, routes, create popover) at runtime
+// through the M33 frontend-manifest boot loader: `endpoint`/`dto`,
+// `database-table`, `spreadsheet`, and — as of 0.2.18 — `ui-view` and
+// `design-system`, which travel together in `c4s-plugin-frontend-mockups`.
 import './ac/plugin.js';
-import './design-system/plugin.js';
 import './diagram/plugin.js';
 
 export { getEntityDef, listActiveEntityTypes, registerEntity } from './registry.js';

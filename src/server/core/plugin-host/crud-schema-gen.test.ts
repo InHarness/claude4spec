@@ -29,8 +29,6 @@ import type { ZodRawShape } from 'zod';
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { acData } from '../../../shared/entities/ac/schema.js';
 import { diagramData } from '../../../shared/entities/diagram/schema.js';
-import { uiViewData } from '../../../shared/entities/ui-view/schema.js';
-import { designSystemData } from '../../../shared/entities/design-system/schema.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
 import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
@@ -76,85 +74,6 @@ const diagramUpdateSchema: ZodRawShape = {
   source: z.string().optional(),
   format: z.enum(['mermaid', 'd2']).optional(),
   tags: z.array(z.string()).optional(),
-};
-
-const paramSchema = z.object({
-  name: z.string().describe('Parameter name (no `:` prefix)'),
-  in: z.enum(['path', 'query', 'hash']).describe('Where the param lives'),
-  type: z.string().optional().describe('Suggested value type (string|int|uuid|enum|...)'),
-  required: z.boolean().optional(),
-  default: z.string().optional(),
-  description: z.string().optional(),
-});
-
-const uiViewCreateSchema: ZodRawShape = {
-  name: z.string().describe('Display name (e.g. "User Profile Screen")'),
-  url: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.'),
-  description: z.string().optional(),
-  params: z.array(paramSchema).optional(),
-  designSystemSlug: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Slug of a design-system this view uses (no FK; dangling allowed). Null = none.'),
-  slug: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-};
-
-const uiViewUpdateSchema: ZodRawShape = {
-  name: z.string().optional(),
-  url: z.string().nullable().optional(),
-  description: z.string().nullable().optional(),
-  params: z.array(paramSchema).optional(),
-  designSystemSlug: z
-    .string()
-    .nullable()
-    .optional()
-    .describe('Set/clear the design-system reference. Null = detach. Omit = unchanged.'),
-};
-
-const tokenValueSchema = z.union([z.string(), z.record(z.string(), z.string())]);
-
-const tokenSchema = z.object({
-  name: z.string().describe('Token name, unique within the design system'),
-  type: z
-    .string()
-    .describe('TokenType (color|dimension|fontSize|...|typography|shadow). Best-effort, not hard-validated.'),
-  value: tokenValueSchema.describe(
-    'Literal ("#2563eb", "16px"), an alias "{token-name}", or a composite object (typography/shadow).',
-  ),
-  description: z.string().optional(),
-});
-
-const groupSchema = z.object({
-  name: z.string(),
-  tier: z.enum(['primitive', 'semantic']),
-  tokens: z.array(tokenSchema),
-});
-
-const modeSchema = z.object({
-  name: z.string(),
-  overrides: z.array(z.object({ token: z.string(), value: tokenValueSchema })),
-});
-
-const designSystemCreateSchema: ZodRawShape = {
-  name: z.string().describe('Display name (e.g. "Brand 2026")'),
-  description: z.string().optional(),
-  groups: z.array(groupSchema).optional().describe('Token groups (default []).'),
-  modes: z.array(modeSchema).optional().describe('Theme modes — token override sets (default []).'),
-  slug: z.string().optional(),
-  tags: z.array(z.string()).optional().describe('Tag slugs; non-existent tags are auto-created.'),
-};
-
-const designSystemUpdateSchema: ZodRawShape = {
-  name: z.string().optional(),
-  description: z.string().nullable().optional(),
-  groups: z.array(groupSchema).optional(),
-  modes: z.array(modeSchema).optional(),
 };
 
 const keys = (shape: ZodRawShape): string[] => Object.keys(shape).sort();
@@ -218,9 +137,9 @@ interface Case {
 }
 
 /**
- * The four in-repo types. `dto` and `endpoint` live in the plugin workspace and
- * are covered by that package's own suite — importing across the workspace
- * boundary here is exactly the coupling the envelope exists to prevent.
+ * The two in-repo types. Every other type lives in an envelope and is covered by
+ * that package's own suite — importing across the workspace boundary here is
+ * exactly the coupling the envelope exists to prevent.
  */
 const CASES: Case[] = [
   {
@@ -245,25 +164,6 @@ const CASES: Case[] = [
      */
     createAdds: ['firstSourceIdentifier'],
     updateAdds: [],
-  },
-  {
-    type: 'ui-view',
-    data: uiViewData,
-    create: uiViewCreateSchema,
-    update: uiViewUpdateSchema,
-    createAdds: [],
-    // Every type takes `tags` on update. Two of the six hand-written shapes
-    // omitted it for no stated reason — nothing about ui-view makes its tags
-    // less editable than ac's.
-    updateAdds: ['tags'],
-  },
-  {
-    type: 'design-system',
-    data: designSystemData,
-    create: designSystemCreateSchema,
-    update: designSystemUpdateSchema,
-    createAdds: [],
-    updateAdds: ['tags'],
   },
 ];
 
@@ -305,44 +205,12 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     });
   });
 
-  it('a design-system token value accepts a literal, which its retired record node did not', () => {
-    // The regression this release would have shipped: `record<string,string>`
-    // declared only the composite arm, so the commonest token in any design
-    // system — a colour — failed its own create schema.
-    const create = z.object(buildCreateShape(designSystemData));
-    const withLiteral = {
-      name: 'Brand',
-      groups: [{ name: 'color', tier: 'primitive', tokens: [{ name: 'brand', type: 'color', value: '#2563eb' }] }],
-    };
-    expect(create.safeParse(withLiteral).success).toBe(true);
-
-    const withComposite = {
-      name: 'Brand',
-      groups: [
-        {
-          name: 'type',
-          tier: 'semantic',
-          tokens: [{ name: 'body', type: 'typography', value: { fontSize: '16px', lineHeight: '1.5' } }],
-        },
-      ],
-    };
-    expect(create.safeParse(withComposite).success).toBe(true);
-  });
-
   it('rejects an unknown enum value rather than coercing it', () => {
     // `diagram.format` is the case the brief names: the retired read path
     // mapped everything that was not `d2` onto `mermaid`, silently.
     const create = z.object(buildCreateShape(diagramData));
     expect(create.safeParse({ source: 'graph TD', format: 'graphviz' }).success).toBe(false);
     expect(create.safeParse({ source: 'graph TD', format: 'd2' }).success).toBe(true);
-  });
-
-  it('admits null on update only for a clearable field', () => {
-    const update = z.object(buildUpdateShape(uiViewData));
-    // `designSystemSlug` is `clearable` — null means detach.
-    expect(update.safeParse({ designSystemSlug: null }).success).toBe(true);
-    // `name` is not, so null is a type error and not a way to blank the row.
-    expect(update.safeParse({ name: null }).success).toBe(false);
   });
 
   it('omits systemManaged timestamps from both shapes', () => {
