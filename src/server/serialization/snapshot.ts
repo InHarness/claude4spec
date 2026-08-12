@@ -189,15 +189,38 @@ export function defaultDeepDiff(
   const a = stripSystemFields(aIn);
   const b = stripSystemFields(bIn);
   if (a == null && b == null) return { type, slug, op: 'noop' };
-  if (a == null) return { type, slug, op: 'created', raw: contentBearingRaw(deepDiffPartition(undefined, b), undefined, b, schema) };
-  if (b == null) return { type, slug, op: 'deleted', raw: contentBearingRaw(deepDiffPartition(a, undefined), a, undefined, schema) };
+  const fields = contentBearingFields(schema);
+  // The field is removed BEFORE partitioning, not filtered out of the result
+  // afterwards. On `created`/`deleted` the partition reports the whole entity
+  // under a single `/` key, so no key-name filter can reach the body inside it —
+  // and a newly added entity is exactly the case where a body is largest.
+  const raw = (x: unknown, y: unknown) =>
+    withContentBearingEntries(deepDiffPartition(withoutFields(x, fields), withoutFields(y, fields)), x, y, fields);
+  if (a == null) return { type, slug, op: 'created', raw: raw(undefined, b) };
+  if (b == null) return { type, slug, op: 'deleted', raw: raw(a, undefined) };
   if (deepEqual(a, b)) return { type, slug, op: 'noop' };
-  return { type, slug, op: 'modified', raw: contentBearingRaw(deepDiffPartition(a, b), a, b, schema) };
+  return { type, slug, op: 'modified', raw: raw(a, b) };
+}
+
+/** The declared `contentBearing` field names, or `[]` when the caller had no schema. */
+function contentBearingFields(schema?: Readonly<Record<string, FieldNode>>): string[] {
+  if (!schema) return [];
+  return Object.entries(schema)
+    .filter(([, node]) => node.contentBearing)
+    .map(([field]) => field);
+}
+
+/** A shallow copy without the named top-level keys; `undefined`/non-object passes through. */
+function withoutFields(value: unknown, fields: string[]): unknown {
+  if (fields.length === 0 || !isObj(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) if (!fields.includes(key)) out[key] = v;
+  return out;
 }
 
 /**
- * Replace every `contentBearing` field's entries in a raw partition with one
- * `<field>_changed: { fromBytes, toBytes }` under `changed`.
+ * Add one `<field>_changed: { fromBytes, toBytes }` under `changed` per
+ * `contentBearing` field whose content differs.
  *
  * Reported under `changed` even when the field was only added or only removed:
  * for content, "it appeared" and "it grew from nothing" are the same event, and
@@ -205,26 +228,17 @@ export function defaultDeepDiff(
  * learn. The alternative — a body-sized payload in `added` — is precisely the
  * output the flag exists to prevent.
  */
-function contentBearingRaw(
+function withContentBearingEntries(
   raw: { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> },
   a: unknown,
   b: unknown,
-  schema?: Readonly<Record<string, FieldNode>>
+  fields: string[]
 ): { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> } {
-  if (!schema) return raw;
-  for (const [field, node] of Object.entries(schema)) {
-    if (!node.contentBearing) continue;
-    // Drop the field itself and anything nested under it from all three buckets.
-    for (const bucket of [raw.added, raw.removed, raw.changed]) {
-      for (const key of Object.keys(bucket)) {
-        if (key === field || key.startsWith(`${field}.`)) delete bucket[key];
-      }
-    }
-    const fromBytes = contentBytes(isObj(a) ? a[field] : undefined);
-    const toBytes = contentBytes(isObj(b) ? b[field] : undefined);
-    const same =
-      deepEqual(isObj(a) ? a[field] : undefined, isObj(b) ? b[field] : undefined);
-    if (!same) raw.changed[`${field}_changed`] = { fromBytes, toBytes };
+  for (const field of fields) {
+    const from = isObj(a) ? a[field] : undefined;
+    const to = isObj(b) ? b[field] : undefined;
+    if (deepEqual(from, to)) continue;
+    raw.changed[`${field}_changed`] = { fromBytes: contentBytes(from), toBytes: contentBytes(to) };
   }
   return raw;
 }

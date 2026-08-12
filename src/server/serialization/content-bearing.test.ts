@@ -35,6 +35,15 @@ describe('contentBearing — the generated view payload', () => {
     expect(out.title).toBe('T');
   });
 
+  it('emits the two keys even when the row never carried the column', () => {
+    // The derived schema declares both `required`, so a row hydrated without the
+    // content column (or written before the field existed) must not produce a
+    // payload that fails its own schema.
+    const out = genericEntity(entity({ title: 'T' }), 'detail', SCHEMA);
+    expect(out.hasBody).toBe(false);
+    expect(out.bodyBytes).toBe(0);
+  });
+
   it('reports an absent body as false / 0 rather than omitting the keys', () => {
     // The keys are part of the view's shape; a consumer must not have to
     // distinguish "no body" from "this host predates the flag".
@@ -98,6 +107,25 @@ describe('contentBearing — the default diff', () => {
   it('says nothing about a body that did not change', () => {
     const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'same' }, { title: 'U', body: 'same' }, SCHEMA);
     expect(diff.raw?.changed).not.toHaveProperty('body_changed');
+  });
+
+  it('does not ship the body of a CREATED entity — the whole-entity payload is stripped too', () => {
+    // `created` reports the entity under a single `/` key, so the body rides
+    // inside a value, not under a key named after the field. A newly added entity
+    // is exactly where the body is biggest.
+    const diff = defaultDeepDiff('doc', 'a-doc', null, { title: 'T', body: 'SECRET-BIG-BODY' }, SCHEMA);
+    expect(diff.op).toBe('created');
+    expect(JSON.stringify(diff)).not.toContain('SECRET-BIG-BODY');
+    expect(diff.raw?.added).toEqual({ '/': { title: 'T' } });
+    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 0, toBytes: 15 } });
+  });
+
+  it('does not ship the body of a DELETED entity either', () => {
+    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'SECRET-BIG-BODY' }, null, SCHEMA);
+    expect(diff.op).toBe('deleted');
+    expect(JSON.stringify(diff)).not.toContain('SECRET-BIG-BODY');
+    expect(diff.raw?.removed).toEqual({ '/': { title: 'T' } });
+    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 15, toBytes: 0 } });
   });
 
   it('falls back to raw values with no schema — an inactive type keeps a usable diff', () => {

@@ -226,6 +226,43 @@ describe('SkillResolver.resolveForContext', () => {
       expect(attached[0].content).not.toContain('PLUGIN BODY');
     });
 
+    it('never lets a contextual attachment shadow the ACTIVE writing style of the same slug', () => {
+      // Both contextual sources report their entries as `contextual` and the dedupe
+      // keeps the first, so a style also named by a contextual source would lose its
+      // `writing-style` scope — and with it the one `<project_skill>` block the
+      // project selected it for.
+      const bundled = writeSkill(path.join(tmp, 'bundled'), 'house-style', 'bundled');
+      const registry = SkillRegistry.load([bundled]);
+      registry.addPluginSkill({
+        slug: 'house-style',
+        title: 'House Style',
+        description: 'plugin copy',
+        version: 1,
+        language: 'en',
+        scope: 'contextual',
+        content: 'plugin copy',
+      });
+      writeConfig(tmp, 'house-style');
+
+      const attached = new SkillResolver(registry, tmp).resolveForContext('chat');
+      expect(attached.map((s) => s.name)).toEqual(['house-style']);
+      expect(attached[0].metadata?.scope).toBe('writing-style');
+    });
+
+    it('reports an attach-list skill as contextual even when the winning FILE says writing-style', () => {
+      // A user root may only author `writing-style`-scoped skills, so that IS how an
+      // override of a bundled contextual slug is spelled. Passing the file's scope
+      // through would hand the override the writing-style slot nobody selected it for.
+      const userRoot = writeSkill(path.join(tmp, 'user'), 'writing-style-author', 'user', { scope: 'writing-style' });
+      const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
+      const registry = SkillRegistry.load([userRoot, bundled]);
+      const [skill] = new SkillResolver(registry, tmp).resolveForContext('chat'); // no style selected
+
+      expect(skill.name).toBe('writing-style-author');
+      expect(skill.metadata?.scope).toBe('contextual');
+      expect(skill.content).toContain('body from user');
+    });
+
     it('emits one entry per slug even when a source names it twice', () => {
       const bundled = writeSkill(path.join(tmp, 'bundled'), 'writing-style-author', 'bundled', { scope: 'contextual' });
       const registry = SkillRegistry.load([bundled]);

@@ -172,9 +172,21 @@ export class SkillRegistry {
     //    contribute styles: a plugin entry landing on a bundled `contextual` slug could
     //    then only be an accident. Now that `contributes.skills` carries contextual
     //    skills too, that guard would silently drop a legitimate contribution.
+    //
+    //    What survives of it is the SCOPE check: an override may replace a bundled
+    //    entry's content, never reclassify it. A contextual plugin skill taking over a
+    //    bundled writing-style slug would drop that slug out of `listSelectable()` and
+    //    make `resolve()` return nothing for a project that has it selected — the
+    //    project loses its writing style to a plugin it merely installed.
     for (const [slug, m] of this.pluginMeta) {
       const existing = meta.get(slug);
       if (existing && existing.source === 'user') continue;
+      if (existing && existing.scope !== m.scope) {
+        console.warn(
+          `[skill] plugin skill "${slug}" (${m.scope}) does not override the ${existing.source} skill of the same slug (${existing.scope}) — scopes differ, skipping`
+        );
+        continue;
+      }
       meta.set(slug, m);
       skips.delete(slug);
     }
@@ -399,12 +411,26 @@ export class SkillResolver {
    */
   resolveForContext(contextType: ChatContextType): InlineSkill[] {
     const out: InlineSkill[] = [];
+    // The active writing style is resolved FIRST but pushed LAST. Its slug is
+    // excluded from the two contextual sources below, because both report their
+    // entries as `contextual` and `dedupeBySlug` keeps the first: a style that
+    // also appears as a contextual attachment would otherwise be dropped, leaving
+    // the turn with no `scope: 'writing-style'` entry and hence no
+    // `<project_skill>` block for a style the project did select.
+    const style = this.resolve();
+    const styleSlugs = new Set(style.map((s) => s.name));
     for (const slug of CONTEXT_TYPE_REGISTRY[contextType].attachInternalSkills) {
+      if (styleSlugs.has(slug)) continue;
       if (!this.registry.has(slug)) {
         console.warn(`[skill] attachInternalSkills slug "${slug}" not in registry, skipping`);
         continue;
       }
-      out.push(toInlineSkill(this.registry.resolve(slug)));
+      // Reported as `contextual` for the same reason the fan-out below does it: a
+      // user root may only author `writing-style`-scoped skills, so a user override
+      // of a bundled contextual slug carries that scope in its file and would
+      // otherwise be mistaken for the active writing style.
+      const resolved = this.registry.resolve(slug);
+      out.push(toInlineSkill({ ...resolved, metadata: { ...resolved.metadata, scope: 'contextual' } }));
     }
     // Source 2 — the unconditional plugin fan-out. `distinctBySlug` because the
     // contribution list is not deduped; `resolve()` then applies precedence, so what
@@ -420,10 +446,11 @@ export class SkillResolver {
     for (const meta of distinctBySlug(
       this.registry.listPluginContributions().filter((s) => s.scope === 'contextual'),
     )) {
+      if (styleSlugs.has(meta.slug)) continue;
       const resolved = this.registry.resolve(meta.slug);
       out.push(toInlineSkill({ ...resolved, metadata: { ...resolved.metadata, scope: 'contextual' } }));
     }
-    out.push(...this.resolve());
+    out.push(...style);
     return dedupeBySlug(out);
   }
 }
@@ -573,7 +600,15 @@ function parseFrontmatter(slug: string, skillPath: string, source: SkillSource, 
  * model as nothing at all — silently, with the skill still loading — which is
  * exactly the failure mode that matters now that `workflows/*.md` carries all
  * genre methodology.
+ *
+ * Open, but not unbounded: the walk skips dot-directories and `node_modules`,
+ * and drops any file over `MAX_SKILL_FILE_BYTES`. Those are not skill material —
+ * they are a checked-out `.git`, an installed dependency tree or a data file
+ * parked next to the prose — and every one of them would otherwise be read and
+ * inlined into the prompt on EVERY turn, since `resolve()` runs per turn.
  */
+const MAX_SKILL_FILE_BYTES = 256 * 1024;
+const SKIPPED_DIRS = new Set(['node_modules']);
 function loadSkillFiles(skillDir: string): Record<string, string> {
   const out: Record<string, string> = {};
   if (!fs.existsSync(skillDir)) return out;
@@ -588,10 +623,15 @@ function walkDir(absDir: string, relPrefix: string, out: Record<string, string>)
     const absChild = path.join(absDir, entry.name);
     const relChild = relPrefix === '' ? entry.name : `${relPrefix}/${entry.name}`;
     if (entry.isDirectory()) {
+      if (entry.name.startsWith('.') || SKIPPED_DIRS.has(entry.name)) continue;
       walkDir(absChild, relChild, out);
       continue;
     }
     if (!entry.isFile()) continue;
+    if (fs.statSync(absChild).size > MAX_SKILL_FILE_BYTES) {
+      console.warn(`[skill] ${relChild}: larger than ${MAX_SKILL_FILE_BYTES} bytes, skipping`);
+      continue;
+    }
     const buf = fs.readFileSync(absChild);
     if (!isUtf8Text(buf)) {
       console.warn(`[skill] ${relChild}: not valid UTF-8 text, skipping`);

@@ -74,11 +74,25 @@ function byFieldName(
     // read through the type's own operation.
     if (node?.contentBearing) {
       const keys = contentBearingKeys(field);
-      out[keys.has] = contentBytes(value) > 0;
-      out[keys.bytes] = contentBytes(value);
+      const bytes = contentBytes(value);
+      out[keys.has] = bytes > 0;
+      out[keys.bytes] = bytes;
       continue;
     }
     out[field] = value;
+  }
+
+  // The two derived keys come from the SCHEMA, not from the row's key set: the
+  // derived JSON Schema declares both `required` unconditionally, and a row
+  // hydrated without the content column (or written before the field existed)
+  // would otherwise produce a payload that fails its own schema. "No body" is
+  // `false`/`0`, which is what the loop above already says for a null column.
+  for (const [field, node] of Object.entries(schema)) {
+    if (!node.contentBearing) continue;
+    const keys = contentBearingKeys(field);
+    if (keys.has in out) continue;
+    out[keys.has] = false;
+    out[keys.bytes] = 0;
   }
   return out;
 }
