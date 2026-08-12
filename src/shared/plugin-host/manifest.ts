@@ -85,6 +85,18 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  * semver gate `continue`s BEFORE `registerPlugin`, so raising the major would
  * reject every external package wholesale — including ones that never touched
  * any of these slots. The cost is asymmetric, and it favours the additive form.
+ *
+ * 0.2.19 — three changes, none of which bumps the version (all three carry a
+ * `HOST_API_UNVERSIONED_CHANGES` entry — see `host-api.ts`):
+ *   - `contributes.skills` joins `entities` / `writingStyles` / `settings` /
+ *     `commands` on the versioned surface — the fifth manifest slot, additive.
+ *   - the `contentBearing` field flag joins the closed `FieldFlags` dictionary;
+ *     adding a flag is a Host API change precisely because the host must learn
+ *     to honour it, but it is additive to the declaration shape.
+ *   - `injection` is REMOVED from the skill vocabulary. Formally breaking, and
+ *     absorbed into the baseline under the same stabilization rule as the 0.2.4
+ *     removal above: zero published plugins, so nothing can break. Once a first
+ *     third-party plugin is published, removals go back under the major rule.
  */
 export const HOST_API_VERSION = '2.0.0';
 
@@ -180,10 +192,55 @@ export interface EntityContribution extends EntityModuleManifest {
 }
 
 /**
+ * 0.2.19 (M37) — authoring shape for one contributed SKILL, the generalisation of
+ * {@link WritingStyleContribution}. A plugin carries the skill inline (body +
+ * optional attached files) rather than dropping a SKILL.md dir on disk;
+ * discovery is by push at load time (the loader fans these into the per-project
+ * SkillRegistry as `source: "plugin"`), not by FS scan.
+ *
+ * `scope` is what makes this more than a rename, and the two values are NOT
+ * symmetric:
+ *
+ *   - `'writing-style'` — offered in the M15 selector, and at most ONE of them
+ *     ever reaches a prompt: the one named by `config.writingStyle`. A plugin
+ *     contributing three of these shows three choices and injects zero or one.
+ *   - `'contextual'` — attached unconditionally and in full to ALL FOUR context
+ *     types (chat/brief/patch/ask), with no selector entry, no config opt-in and
+ *     no opt-out. There is deliberately no `contexts` field to narrow it. A
+ *     plugin contributing three of these adds all three to every thread of every
+ *     type. The only indirect brakes are the `trustProjectPlugins` gate and the
+ *     fact that a user-authored skill of the same slug overrides the body.
+ *
+ * Either way a plugin skill only ever rides `inlineSkills` — it never earns a
+ * `<project_skill/>` block, which since 0.2.19 belongs to the writing-style slot
+ * alone.
+ */
+export interface PluginSkillContribution {
+  /** Stable identifier; also the dedup key against bundled/user/other-plugin skills. */
+  slug: string;
+  title: string;
+  description: string;
+  /** Positive integer; mirrors SKILL.md frontmatter `version`. */
+  version: number;
+  language: 'en' | 'pl';
+  /** See the asymmetry note above — this is the load-bearing field. */
+  scope: 'writing-style' | 'contextual';
+  /** The skill body markdown (the SKILL.md content without frontmatter). */
+  content: string;
+  /** The rest of the package keyed by rel path (e.g. `workflows/brief.md`). */
+  files?: Record<string, string>;
+}
+
+/**
  * Authoring shape for one contributed writing style (M15). A plugin carries the
  * style inline (body + optional attached files) rather than dropping a SKILL.md
  * dir on disk — discovery is by push at load time (the loader fans these into
  * the per-project SkillRegistry as `source: "plugin"`), not by FS scan.
+ *
+ * 0.2.19: this is now SUGAR over {@link PluginSkillContribution} — the loader
+ * lowers each entry to one with `scope: 'writing-style'` and routes it into the
+ * same registry, so the two slots produce an identical entry and identical
+ * selection behaviour.
  */
 export interface WritingStyleContribution {
   /** Stable identifier; also the dedup key against bundled/user styles. */
@@ -263,9 +320,9 @@ export interface PluginCommandContribution {
 
 /**
  * The default export of a plugin package. `contributes` is the capability
- * bundle: `contributes.entities`, `contributes.writingStyles` (pushed into the
- * SkillRegistry as `source: "plugin"`), and
- * `contributes.settings` / `contributes.commands`.
+ * bundle: `contributes.entities`, `contributes.skills` and its sugar
+ * `contributes.writingStyles` (both pushed into the SkillRegistry as
+ * `source: "plugin"`), and `contributes.settings` / `contributes.commands`.
  */
 export interface PluginManifest {
   /** npm package name. */
@@ -287,7 +344,12 @@ export interface PluginManifest {
   onUnregister(): void;
   contributes: {
     entities?: EntityContribution[];
-    /** M15 — writing styles contributed by this plugin. */
+    /**
+     * 0.2.19 (M37) — skills contributed by this plugin, of either scope. The
+     * fifth slot; `writingStyles` below is sugar over it.
+     */
+    skills?: PluginSkillContribution[];
+    /** M15 — writing styles contributed by this plugin (sugar for `skills` with `scope: 'writing-style'`). */
     writingStyles?: WritingStyleContribution[];
     /** M33 — settings fields rendered per-plugin in Settings (M26). */
     settings?: PluginSettingsModule;

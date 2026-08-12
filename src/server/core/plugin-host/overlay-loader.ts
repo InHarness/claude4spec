@@ -28,14 +28,19 @@ import {
   isValidManifestShape,
   type PluginLoadRecord,
 } from './loader.js';
-import { lowerEntityContribution, synthesizeMount, validateWritingStyle } from './manifest-adapter.js';
+import {
+  lowerEntityContribution,
+  synthesizeMount,
+  validateSkillContribution,
+  validateWritingStyle,
+} from './manifest-adapter.js';
 import { attachComposition } from './composition-validation.js';
 import { installPluginRuntimeResolver } from './plugin-runtime-resolver.js';
 import type { BackendModule, ProjectPluginOverlay } from './types.js';
 import type {
   PluginCommandContribution,
   PluginSettingsSection,
-  WritingStyleContribution,
+  PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 
 /** Importer seam — overridable in tests; defaults to native dynamic import. */
@@ -47,8 +52,9 @@ export interface ProjectOverlayResult {
   overlay: ProjectPluginOverlay | undefined;
   /** Per-package diagnostics for the per-project `/_meta/plugins` route. */
   records: PluginLoadRecord[];
-  /** M15: trusted project-local writing styles, pushed into SkillRegistry. */
-  writingStyles: WritingStyleContribution[];
+  /** M15/M37: trusted project-local skills (both manifest slots, lowered to one
+   *  shape), pushed into SkillRegistry. */
+  skills: PluginSkillContribution[];
   /** Best-effort detach of imported project-local modules (see dispose note). */
   dispose: () => void;
 }
@@ -142,7 +148,7 @@ export async function loadProjectOverlay(
   const records: PluginLoadRecord[] = [];
   const modules = new Map<string, BackendModule>();
   const originByType = new Map<string, string>();
-  const writingStyles: WritingStyleContribution[] = [];
+  const skills: PluginSkillContribution[] = [];
   // M33: non-entity capabilities of trusted project-local plugins. An
   // entity-less plugin (commands/settings only) still produces these.
   const settingsSections: PluginSettingsSection[] = [];
@@ -203,10 +209,10 @@ export async function loadProjectOverlay(
       continue;
     }
 
-    // Lower contributions (entities + styles) before committing — a throw on
+    // Lower contributions (entities + skills) before committing — a throw on
     // either fails the whole plugin atomically.
     let lowered: BackendModule[];
-    let styles: WritingStyleContribution[];
+    let pkgSkills: PluginSkillContribution[];
     try {
       // M13: synthesizeMount is the same choke point registry.ts's
       // registerEntityModule uses for base-layer plugins — apply it here too,
@@ -229,7 +235,10 @@ export async function loadProjectOverlay(
           overlayBatch.push(validated);
           return validated;
         });
-      styles = (manifest.contributes?.writingStyles ?? []).map(validateWritingStyle);
+      pkgSkills = [
+        ...(manifest.contributes?.skills ?? []).map(validateSkillContribution),
+        ...(manifest.contributes?.writingStyles ?? []).map(validateWritingStyle),
+      ];
     } catch (err) {
       const reason = (err as Error).message;
       console.warn(`[overlay-loader] PLUGIN_INVALID_MANIFEST ${pkg}: ${reason}`);
@@ -254,7 +263,7 @@ export async function loadProjectOverlay(
       modules.set(m.type, m);
       originByType.set(m.type, origin);
     }
-    writingStyles.push(...styles);
+    skills.push(...pkgSkills);
     // M33: capture non-entity capabilities + teardown of this trusted plugin.
     if ((manifest.contributes?.settings ?? []).length > 0) {
       settingsSections.push({
@@ -302,7 +311,7 @@ export async function loadProjectOverlay(
   // M33: an entity-less plugin with only settings/commands DOES produce
   // an overlay so the host surfaces those capabilities (axis B).
   if (modules.size === 0 && settingsSections.length === 0 && commands.length === 0) {
-    return { overlay: undefined, records, writingStyles, dispose };
+    return { overlay: undefined, records, skills, dispose };
   }
 
   const overlay: ProjectPluginOverlay = {
@@ -312,5 +321,5 @@ export async function loadProjectOverlay(
     listCommands: () => commands,
   };
 
-  return { overlay, records, writingStyles, dispose };
+  return { overlay, records, skills, dispose };
 }

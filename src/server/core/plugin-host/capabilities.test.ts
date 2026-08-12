@@ -144,3 +144,62 @@ describe('M33 — host.listSettings / listCommands ignore config.entities', () =
     expect(registry.consolidate({}).listSettings()).toEqual([]);
   });
 });
+
+describe('M37 — contributes.skills (0.2.19)', () => {
+  const skill = (over: Record<string, unknown> = {}) => ({
+    slug: 'house-rules',
+    title: 'House Rules',
+    description: 'always on',
+    version: 1,
+    language: 'en' as const,
+    scope: 'contextual' as const,
+    content: '# House rules',
+    ...over,
+  });
+
+  function skillManifest(name: string, contributes: PluginManifest['contributes']): PluginManifest {
+    return { name, version: '1.0.0', hostApiVersion: '^2.0.0', onUnregister: () => {}, contributes };
+  }
+
+  it('collects skills of either scope through listSkills', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(
+      skillManifest('@c4s/plugin-skills', {
+        skills: [skill(), skill({ slug: 'terse', scope: 'writing-style', title: 'Terse' })],
+      }),
+    );
+    expect(registry.listSkills().map((s) => [s.slug, s.scope])).toEqual([
+      ['house-rules', 'contextual'],
+      ['terse', 'writing-style'],
+    ]);
+  });
+
+  it('lowers contributes.writingStyles to the SAME shape — the older slot is sugar, not a second path', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(
+      skillManifest('@c4s/plugin-style', {
+        writingStyles: [
+          { slug: 'terse', title: 'Terse', description: 'short', version: 1, language: 'en', content: 'body' },
+        ],
+      }),
+    );
+    expect(registry.listSkills()).toEqual([
+      { slug: 'terse', title: 'Terse', description: 'short', version: 1, language: 'en', content: 'body', scope: 'writing-style' },
+    ]);
+  });
+
+  it('rejects a skill contribution with an unknown scope, failing that plugin atomically', () => {
+    const registry = new PluginRegistryImpl();
+    expect(() =>
+      registry.registerPlugin(skillManifest('@c4s/plugin-bad', { skills: [skill({ scope: 'everywhere' })] })),
+    ).toThrow(/scope must be/);
+    expect(registry.listSkills()).toEqual([]);
+  });
+
+  it('drops a plugin\'s skills again on unregister, so a hot-reload cannot leave a stale one behind', () => {
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(skillManifest('@c4s/plugin-skills', { skills: [skill()] }));
+    registry.unregisterPlugin('@c4s/plugin-skills');
+    expect(registry.listSkills()).toEqual([]);
+  });
+});

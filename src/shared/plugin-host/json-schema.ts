@@ -15,7 +15,7 @@
  */
 
 import type { DataDeclaration, FieldNode } from './data-schema.js';
-import { columnOf, isEmbedded } from './data-schema.js';
+import { columnOf, contentBearingKeys, isEmbedded } from './data-schema.js';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -132,6 +132,16 @@ function objectSchema(
     // claim it. A computed view may well resolve it, which is why this only
     // applies in row mode.
     if (row && !isEmbedded(node)) continue;
+    // 0.2.19 — a `contentBearing` field is excluded from the view and described
+    // by its two derived keys instead. Both are always present: the host emits
+    // them for every row, including one whose content is absent (`false` / `0`).
+    if (node.contentBearing) {
+      const derived = contentBearingKeys(name);
+      properties[derived.has] = { type: 'boolean' };
+      properties[derived.bytes] = { type: 'integer' };
+      required.push(derived.has, derived.bytes);
+      continue;
+    }
     const key = keyOf(name, node);
     const present = alwaysPresent(node);
     // In row mode an optional field is still PRESENT, holding null — the column

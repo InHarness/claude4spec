@@ -83,6 +83,31 @@ export interface FieldFlags {
   /** Target-deleted policy. Only `'leave-dangling'` today. */
   onDelete?: 'leave-dangling';
   /**
+   * A field whose value is CONTENT, not a value to compare: a document body, a
+   * blob of markdown, anything measured in kilobytes rather than characters.
+   *
+   * The host treats it as content everywhere at once, which is the point of
+   * making it a flag rather than a per-type convention:
+   *   - it is EXCLUDED from all five generated views, and `has<Field>: boolean`
+   *     + `<field>Bytes: number` are emitted in its place;
+   *   - it stays in the SNAPSHOT — it is reproducible from the entity file, so
+   *     the projection invariant binds it exactly like any other field;
+   *   - the default diff reports `<field>_changed: { fromBytes, toBytes }`
+   *     instead of two payloads no reader can compare side by side.
+   *
+   * Two rules bind a type that declares one:
+   *   1. It may NOT also declare its own `views?`. The flag's meaning is
+   *      derivable only from views the HOST generates — a type computing its own
+   *      views decides for itself what they carry, and the host has no way to
+   *      honour the exclusion. Rejected at load time.
+   *   2. It MUST declare an operation that exposes the content. A field excluded
+   *      from every view with no way to read it is write-only data, which is not
+   *      a thing this system should be able to declare. Not mechanically
+   *      enforced today (the operation catalog is not part of the entity
+   *      contribution) — it is on the type's author.
+   */
+  contentBearing?: boolean;
+  /**
    * Projection column name. Defaults to `snakeCase(fieldName)`; declared only
    * where a type's payload name and its historical column name diverge.
    */
@@ -388,6 +413,26 @@ export function snakeCase(name: string): string {
 /** The projection column a field lands in. */
 export function columnOf(name: string, node: FieldNode): string {
   return node.column ?? snakeCase(name);
+}
+
+/**
+ * The two keys a `contentBearing` field is replaced by in every generated view:
+ * `body` → `{ has: 'hasBody', bytes: 'bodyBytes' }`.
+ *
+ * Derived in one place because three layers have to agree on the spelling — the
+ * payload builder, the JSON Schema deriver and the diff — and a field name
+ * spelled by hand in three files is a field name spelled two ways in two of them.
+ */
+export function contentBearingKeys(name: string): { has: string; bytes: string } {
+  return { has: `has${name.charAt(0).toUpperCase()}${name.slice(1)}`, bytes: `${name}Bytes` };
+}
+
+/** UTF-8 size of a content-bearing value; absent/null counts as 0. */
+export function contentBytes(value: unknown): number {
+  if (value == null) return 0;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  // `Buffer` is unavailable in the client bundle, and this module is shared.
+  return new TextEncoder().encode(text ?? '').length;
 }
 
 /**

@@ -20,6 +20,7 @@ import type { Router } from 'express';
 import type { Database } from 'better-sqlite3';
 import type {
   EntityContribution,
+  PluginSkillContribution,
   WritingStyleContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import type { SerializationContribution } from '../../serialization/types.js';
@@ -38,34 +39,48 @@ export class PluginManifestError extends Error {
 }
 
 /**
- * Validate one writing-style contribution (M15). Mirrors the SKILL.md
- * frontmatter checks in skill-registry so a plugin style is held to the same
- * shape as a file-authored one. Throws `PluginManifestError` (caught per-package
- * by the loader) on any structural problem.
+ * Validate one skill contribution (M37, 0.2.19 — generalised from
+ * `validateWritingStyle`). Mirrors the SKILL.md frontmatter checks in
+ * skill-registry so a plugin skill is held to the same shape as a file-authored
+ * one, `scope` included. Throws `PluginManifestError` (caught per-package by the
+ * loader) on any structural problem.
  */
-export function validateWritingStyle(c: WritingStyleContribution): WritingStyleContribution {
+export function validateSkillContribution(c: PluginSkillContribution): PluginSkillContribution {
   if (!c || typeof c !== 'object') {
-    throw new PluginManifestError('writingStyle contribution must be an object');
+    throw new PluginManifestError('skill contribution must be an object');
   }
   if (typeof c.slug !== 'string' || c.slug.length === 0) {
-    throw new PluginManifestError('writingStyle — slug must be a non-empty string');
+    throw new PluginManifestError('skill — slug must be a non-empty string');
   }
   if (typeof c.title !== 'string' || c.title.length === 0) {
-    throw new PluginManifestError(`writingStyle "${c.slug}" — title must be a non-empty string`);
+    throw new PluginManifestError(`skill "${c.slug}" — title must be a non-empty string`);
   }
   if (typeof c.description !== 'string' || c.description.length === 0) {
-    throw new PluginManifestError(`writingStyle "${c.slug}" — description must be a non-empty string`);
+    throw new PluginManifestError(`skill "${c.slug}" — description must be a non-empty string`);
   }
   if (typeof c.version !== 'number' || !Number.isInteger(c.version) || c.version < 1) {
-    throw new PluginManifestError(`writingStyle "${c.slug}" — version must be a positive integer`);
+    throw new PluginManifestError(`skill "${c.slug}" — version must be a positive integer`);
   }
   if (c.language !== 'en' && c.language !== 'pl') {
-    throw new PluginManifestError(`writingStyle "${c.slug}" — language must be 'en' or 'pl'`);
+    throw new PluginManifestError(`skill "${c.slug}" — language must be 'en' or 'pl'`);
+  }
+  if (c.scope !== 'writing-style' && c.scope !== 'contextual') {
+    throw new PluginManifestError(`skill "${c.slug}" — scope must be 'writing-style' or 'contextual'`);
   }
   if (typeof c.content !== 'string') {
-    throw new PluginManifestError(`writingStyle "${c.slug}" — content must be a string`);
+    throw new PluginManifestError(`skill "${c.slug}" — content must be a string`);
   }
   return c;
+}
+
+/**
+ * M15 sugar: a `writingStyles` entry is a skill contribution with `scope`
+ * implied. Lowering it here — rather than at the registry — is what makes the two
+ * manifest slots produce a byte-identical entry, which is the whole claim of
+ * "`writingStyles` is sugar over `skills`".
+ */
+export function validateWritingStyle(c: WritingStyleContribution): PluginSkillContribution {
+  return validateSkillContribution({ ...c, scope: 'writing-style' });
 }
 
 const MANIFEST_FIELDS = [

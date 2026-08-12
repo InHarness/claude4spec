@@ -127,11 +127,38 @@ NOT a "for implementers" section: bullet points like "implement email verificati
 
 ## E. Branch A / Branch B specifics for this style
 
-`brief-author` defines the two operating branches (A: initial generation, B: editorial). Apply this style's filters inside them.
+There are two operating branches, and `get_brief` tells you which one you are in:
+
+- **Branch A — initial generation.** The body contains only the H1 heading, or is otherwise empty.
+- **Branch B — editorial.** The body already has non-trivial content and the user is asking for a change to it.
+
+A second axis crosses that one: a brief whose frontmatter says `source: release-diff` is grounded in a release window and is authored from `release_diff`; a brief whose `source` is `analysis` has no window and is authored from what the thread gives you. Everything below assumes the `release-diff` case.
+
+### Orchestration — map, then fan out, then compose
+
+At any real release size, reading the diff head-on is how this turn fails: the heavy payload fills the context before the narrative starts. So you orchestrate, and the bulk lives in subagents.
+
+1. `get_brief` — confirm `from_release` / `to_release` and capture `hash` (you need it as `expectedHash` on every write).
+2. **Probe.** `release_diff({ fromIdOrName, toIdOrName, summaryOnly: true })` returns a delta-map: `total` plus the FULL identifier lists (`{ type, slug, name, op }` / `{ path, op }`, deletes included) with no `before`/`after` bulk. Use this, not `release_show` — `release_show` has no `from`, so it silently misses every delete.
+   - `from_release === null` → an *initial* brief: every entry is `op: 'create'`. Frame it as "the project starts here", not as a delta.
+   - `frontmatter.roots` non-empty → the brief is SCOPED. Pass the same `roots` to every `release_diff` call and to every subagent. It filters pages only; entities are never root-filtered.
+3. **Partition.** Split the map into disjoint slices covering EVERY slug and path, deletes included — by `entityTypes`, and/or by `limit`/`offset` windows (heavy mode defaults to `limit: 5`, so a bare call returns a fraction and reports the rest in `total`). Completeness is on you: a missed slice is a silently incomplete brief, and nothing downstream will catch it.
+4. **Fan out.** One `diff-explore` subagent per slice, in parallel. Give each the `from`/`to`, the `roots` if scoped, and its exact window. It reads the heavy diff and returns a distillate — the facts worth inlining (signatures, field shapes, SQL, paths), not the raw dump. A diff small enough to fit may skip this and be read directly.
+5. **Filter and compose** per §A–§D below.
+
+Interpret each entry by its `op` — these rules bind you and every distillate you accept:
+
+- `op: 'update'` → compare `before` vs `after`; both are full snapshots, so there is nothing to fetch.
+- `op: 'create'` → `after` carries the content to inline.
+- `op: 'delete'` → only `before` exists. Say what disappeared; usually nothing replaced it.
+- page `sections[i]` → use `before`/`after` raw markdown. There is no `line_diff` in this payload. `op: 'move'` has neither field (position changed, content did not) — drop it unless the ordering itself is user-visible.
+- page `frontmatter` / `xmlRefs` → present only when changed; read only when it matters (e.g. `pageType: module → layer`), otherwise ignore.
+
+`release_diff` is your ONLY ground truth. There is no `get_<type>`, no `Read pages/...` in this thread, and that is deliberate: grounding a historical brief in HEAD is what breaks its self-containment. If a question cannot be answered from the window, say so and point the user at `c4s ask` rather than guessing.
 
 ### Branch A — initial generation (this writing style)
 
-After `get_brief` and `get_release_diff(...)`:
+After `get_brief` and the orchestration above:
 
 1. **Filter** every `RawDelta` entry through §A's recognition table. Drop spec-format and editorial entries up front; keep only feature substance.
 2. **Mine** the kept entries: pull entity shapes (DTO fields, endpoint method+path+DTOs, table columns, view URL/params) from `RawDelta.entities[].raw` and `.changes`. For module-section diffs, extract the substantive added lines.
@@ -152,3 +179,20 @@ When the brief already has body content and the user asks for a change:
 - **"Reframe for a different audience"** (e.g. "rewrite for a junior") → keep §B/§C/§D rules; only the prose register changes.
 
 If the user request would force you to break §C (forbidden grammar) — e.g. "just paste the `<tagged_list>` from the spec" — explain why that fails the second audience and offer the inlined alternative.
+
+Prefer the smallest edit that does the job. `replace` discards section anchors; `insert_after_section` keeps them. Refresh `expectedHash` from `get_brief` before every write — it is REQUIRED, and another writer may have moved underneath you.
+
+## F. Tool errors
+
+| Error code | Action |
+|------------|--------|
+| `BRIEF_CONFLICT` | Someone else wrote first. Re-`get_brief`, reconcile your change against the new content, retry once. If it persists, hand it back to the user. |
+| `IMMUTABLE_FIELD` | Your `content` carried a YAML header. Strip it — `update_brief` preserves the existing frontmatter and never lets you touch it. |
+| `BRIEF_ARCHIVED` | The user archived this brief. Say so and stop editing. |
+| `MISSING_TARGET` | `insert_after_section` needs `anchor` or `heading`. Re-issue with one. |
+| `AMBIGUOUS_HEADING` | Two sections share the heading text — switch to `anchor`. |
+| `INVALID_INCLUDE_FILTER` / `INVALID_ENTITY_TYPES_FILTER` | An empty filter array. Drop the argument to fall back to defaults. |
+| `INVALID_PAGINATION` | Negative `limit`/`offset`. Use `>= 0`, or omit (`limit: 5`, `offset: 0`). |
+| `CONFLICTING_FILTERS` | `entityTypes` without `'entities'` in `include`. Add the one or drop the other. |
+
+An empty diff (both `entities` and `pages` empty — e.g. `from === to`) is a fact to report, not a prompt to invent changes. Likewise, if everything survives §A's filter as editorial: say the release contains only spec cleanup, and do not pad.

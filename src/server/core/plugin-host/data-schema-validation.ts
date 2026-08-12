@@ -567,6 +567,36 @@ export function validateDataDeclaration(
   }
 }
 
+/**
+ * 0.2.19 — a type may not declare its own `views?` AND emit a `contentBearing`
+ * field. The flag's meaning is derivable only from views the HOST generates: the
+ * host is what excludes the field and puts `has<Field>` / `<field>Bytes` in its
+ * place. A type computing its own views decides for itself what each one
+ * carries, so the flag would either be silently ignored or, worse, honoured in
+ * the schema and contradicted by the payload.
+ *
+ * Rejected at registration rather than tolerated, because both failure modes are
+ * invisible at runtime: nothing throws when a computed view emits a 400 KB body
+ * that the derived JSON Schema says is not there.
+ */
+export function assertContentBearingViews(
+  type: string,
+  schema: DataDeclaration['schema'] | undefined,
+  views: unknown,
+): void {
+  if (!schema || !views || typeof views !== 'object' || !Object.keys(views).length) return;
+  const offenders = Object.entries(schema)
+    .filter(([, node]) => (node as FieldNode).contentBearing)
+    .map(([name]) => name);
+  if (!offenders.length) return;
+  fail(
+    type,
+    `declares its own \`views\` and the contentBearing field(s) ${offenders.map((f) => `"${f}"`).join(', ')} — ` +
+      `the flag only has meaning for host-generated views (it is the host that swaps the field for ` +
+      `\`has<Field>\`/\`<field>Bytes\`). Drop the flag, or drop the computed views for this type`,
+  );
+}
+
 /** Every `ref` flag in a schema → the payload path carrying it. Consumed by rename propagation (tier D). */
 export function refFieldsOf(schema: DataDeclaration['schema']): Array<{ path: string; node: FieldNode }> {
   const out: Array<{ path: string; node: FieldNode }> = [];
