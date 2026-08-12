@@ -235,7 +235,14 @@ describe('builtin envelope — real load path', () => {
     // Every envelope in `plugins/`, and every one of them `loaded` — a `skipped`
     // here would be the version gate, which is how `spreadsheet` was absent for
     // the whole of 2.0.0 while its plugin still declared `^1.0.0`.
-    expect(parsed.statuses).toEqual(['loaded', 'loaded', 'loaded']);
-    expect(parsed.types).toEqual(['database-table', 'dto', 'endpoint', 'spreadsheet']);
+    expect(parsed.statuses).toEqual(['loaded', 'loaded', 'loaded', 'loaded']);
+    expect(parsed.types).toEqual([
+      'database-table',
+      'design-system',
+      'dto',
+      'endpoint',
+      'spreadsheet',
+      'ui-view',
+    ]);
   });
 });

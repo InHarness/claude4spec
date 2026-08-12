@@ -12,8 +12,6 @@ import { useCreatePage } from './hooks/usePage.js';
 import { useEntityCounts } from './hooks/useEntityCounts.js';
 import { useTodosCounts } from './hooks/useTodos.js';
 import { usePageLinksCounts } from './hooks/usePageLinks.js';
-import { NewUiViewPopover } from './components/NewUiViewPopover.js';
-import { NewDesignSystemPopover } from './components/NewDesignSystemPopover.js';
 import { TodoPopover } from './components/TodoPopover.js';
 import { PopoverHost } from './ui/Popover.js';
 import { ModalHost } from './ui/ConfirmModal.js';
@@ -206,8 +204,6 @@ function MainShell({ projectName }: { projectName: string | null }) {
 
       <ChatEdgeAffordance />
       <ChatOverlay />
-      <NewUiViewPopover />
-      <NewDesignSystemPopover />
       <TodoPopover />
       <PopoverHost />
       <PageRefPopoverHost />

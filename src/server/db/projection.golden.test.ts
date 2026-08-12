@@ -16,20 +16,19 @@
  * it cannot drift into being accidental: the `slug` PK gains `NOT NULL` on the
  * tables that lacked it.
  *
- * SCOPE: the four types this repo contributes directly. `dto` and `endpoint`
- * live in the api-contracts envelope and are covered by the same assertions in
- * that workspace's own suite (`test/projection-golden.test.ts`) — importing
- * their source here would pull files that import `@c4s/plugin-runtime` into the
- * root TS program, where the specifier resolves to the BUILT `dist/` .d.ts
- * rather than to source, making this file's typecheck depend on build order.
+ * SCOPE: the two types this repo contributes directly. Every other type lives
+ * in an envelope and is covered by the same assertions in that workspace's own
+ * suite (`plugins/<name>/test/projection-golden.test.ts`) — `dto`/`endpoint`
+ * since 0.2.2, `ui-view`/`design-system` since 0.2.18. Importing their source
+ * here would pull files that import `@c4s/plugin-runtime` into the root TS
+ * program, where the specifier resolves to the BUILT `dist/` .d.ts rather than
+ * to source, making this file's typecheck depend on build order.
  */
 
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { applyProjection, generateProjectionDDL, type ProjectableModule } from './projection.js';
 import { acData } from '../../shared/entities/ac/schema.js';
-import { uiViewData } from '../../shared/entities/ui-view/schema.js';
-import { designSystemData } from '../../shared/entities/design-system/schema.js';
 import { diagramData } from '../../shared/entities/diagram/schema.js';
 
 /** The DDL as the deleted `migrations.ts` files wrote it, byte for byte. */
@@ -48,29 +47,6 @@ const RETIRED_DDL: Record<string, string> = {
     CREATE INDEX IF NOT EXISTS idx_ac_status ON ac(status);
     CREATE INDEX IF NOT EXISTS idx_ac_kind   ON ac(kind);
   `,
-  'ui-view': `
-    CREATE TABLE IF NOT EXISTS ui_view (
-      slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      url TEXT,
-      description TEXT,
-      params TEXT NOT NULL DEFAULT '[]',
-      created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      design_system_slug TEXT
-    );
-  `,
-  'design-system': `
-    CREATE TABLE IF NOT EXISTS design_system (
-      slug        TEXT PRIMARY KEY,
-      name        TEXT NOT NULL,
-      description TEXT,
-      groups      TEXT NOT NULL DEFAULT '[]',
-      modes       TEXT NOT NULL DEFAULT '[]',
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-  `,
   diagram: `
     CREATE TABLE IF NOT EXISTS diagram (
       slug       TEXT NOT NULL PRIMARY KEY,
@@ -84,8 +60,6 @@ const RETIRED_DDL: Record<string, string> = {
 
 const MODULES: ProjectableModule[] = [
   { type: 'ac', data: acData },
-  { type: 'ui-view', data: uiViewData },
-  { type: 'design-system', data: designSystemData },
   { type: 'diagram', data: diagramData },
 ];
 

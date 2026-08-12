@@ -16,11 +16,35 @@ import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../tests/helpers/fixtu
 import type { FrontendModule } from '../core/plugin-host/types.js';
 import { BASE_ROUTE_CHILDREN, rootRoute } from '../router.js';
 import { acRoutes } from '../entities/ac/routes.js';
-import { uiViewRoutes } from '../entities/ui-view/routes.js';
-import { designSystemRoutes } from '../entities/design-system/routes.js';
+import { createRoute } from '@tanstack/react-router';
 import { mountFrontend } from './mountFrontend.js';
 
 const Noop = (() => null) as unknown as FrontendModule['renderCard'];
+
+/**
+ * A route fragment the host does not own.
+ *
+ * `ui-view` and `design-system` played this part until 0.2.18 moved them into
+ * the `c4s-plugin-frontend-mockups` envelope, leaving `ac` as the only in-host
+ * fragment. Synthesising the other two is closer to the real thing anyway: what
+ * `mountFrontend` has to get right is a fragment arriving from a package the
+ * host cannot import, which is now every fragment but one.
+ */
+function fragmentFor(prefix: string): FrontendModule['routes'] {
+  const make = createRoute as unknown as (opts: {
+    getParentRoute: () => unknown;
+    path: string;
+    component: unknown;
+  }) => unknown;
+  return ({ rootRoute: parent }) =>
+    [
+      make({ getParentRoute: () => parent, path: prefix, component: Noop }),
+      make({ getParentRoute: () => parent, path: `${prefix}/$slug`, component: Noop }),
+    ] as never;
+}
+
+const uiViewRoutes = fragmentFor('/ui-views');
+const designSystemRoutes = fragmentFor('/design-systems');
 
 function moduleWith(type: string, routes: FrontendModule['routes']): FrontendModule {
   return {
@@ -62,7 +86,7 @@ const mountedPaths = (): Array<string | undefined> =>
   ((rootRoute as unknown as { children?: unknown[] }).children ?? []).map(pathOf);
 
 describe('mountFrontend collects the hoisted entity routes', () => {
-  it('mounts every path of the three in-host fragments, none deduped against the base tree', () => {
+  it('mounts every path of three fragments, none deduped against the base tree', () => {
     mountFrontend(fakeRouter(), [
       moduleWith('ac', acRoutes),
       moduleWith('ui-view', uiViewRoutes),

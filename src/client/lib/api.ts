@@ -46,14 +46,10 @@ import { ApiError, handle, apiFetch } from './api-core.js';
 
 export { ApiError, handle };
 
-// Re-exports for backward compat — per-entity API clients live in
-// src/client/entities/{type}/api.ts (M13 plugin-slice rule).
-// `database-table` API client moved to the preinstalled plugin
-// `c4s-plugin-simple-database-tables` (its frontend owns the HTTP surface).
-export { uiViewsApi } from '../entities/ui-view/api.js';
-export {
-  designSystemsApi,
-} from '../entities/design-system/api.js';
+// 0.2.18: the last two per-entity re-exports (`uiViewsApi`, `designSystemsApi`)
+// are gone with the types themselves. Every entity's HTTP surface now belongs to
+// the package contributing it — `plugins/<name>/src/entity/<type>/frontend/api.ts`
+// — and this barrel carries only the cross-cutting families below.
 
 // 0.1.96 multiroot: every page primitive is keyed by `(rootId, path)`. The
 // server mounts the pages router under `/api/pages/:rootId`, so `rootId` is the

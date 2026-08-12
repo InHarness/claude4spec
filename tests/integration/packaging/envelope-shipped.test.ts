@@ -29,6 +29,7 @@ const ENVELOPES = [
   'c4s-plugin-api-contracts',
   'c4s-plugin-spreadsheets',
   'c4s-plugin-database-tables',
+  'c4s-plugin-frontend-mockups',
 ];
 
 describe('npm package contents', () => {
@@ -63,4 +64,29 @@ describe('npm package contents', () => {
       ).toBeGreaterThan(2);
     }
   }, 120_000);
+});
+
+/**
+ * The other half of "an envelope ships correctly": its *styles*.
+ *
+ * Envelope bundles emit no CSS of their own — they render into the host's
+ * document and rely entirely on the single stylesheet Tailwind generates from
+ * `tailwind.config.js`. Tailwind only emits a utility it has literally seen in
+ * a scanned file, so a class used *only* inside `plugins/` is generated only if
+ * `plugins/` is in `content`.
+ *
+ * This was invisible for three releases because every envelope happened to use
+ * utilities `src/client` also used. Extracting `ui-view` + `design-system` in
+ * 0.2.18 was the first move to take arbitrary values (`text-[14.5px]`,
+ * `text-[9px]`, `pr-4`) out of `src/client` entirely — the classes stayed in the
+ * markup, the rules vanished from the stylesheet, and nothing failed: the cards
+ * just silently rendered at the inherited font size.
+ */
+describe('tailwind content globs', () => {
+  it('scans envelope sources, not just src/client', async () => {
+    const config = (await import(path.join(REPO_ROOT, 'tailwind.config.js'))).default as {
+      content: string[];
+    };
+    expect(config.content).toContain('./plugins/*/src/**/*.{ts,tsx}');
+  });
 });

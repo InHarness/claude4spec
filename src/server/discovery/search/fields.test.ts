@@ -6,15 +6,20 @@
  * rule in one direction or the other: advertising a path no value lives at, or
  * holding text the agent is then told was searched when it was not.
  *
- * `design-system` is used as the real-declaration case because it is the type
- * the old `z.toJSONSchema` route failed on: its token values are a
- * `record<string,string>`, the branch that was skipped silently for want of
- * declared `properties`.
+ * The opaque-value case used to be driven by the real `designSystemData`,
+ * because `design-system` is the type the old `z.toJSONSchema` route failed on:
+ * its token values are a `record<string,string>`, the branch that was skipped
+ * silently for want of declared `properties`. That type moved into the
+ * `c4s-plugin-frontend-mockups` envelope in 0.2.18 and the host may not import a
+ * plugin's source — doing so pulls `@c4s/plugin-runtime` into the root TS
+ * program, where it resolves to the built `dist/` `.d.ts` and makes this file's
+ * typecheck depend on build order. So the SHAPE is reproduced below as
+ * `opaqueValueData`: a collection of objects whose leaf is a `json` node. The
+ * claim is about the shape, not about who declares it.
  */
 
 import { describe, expect, it } from 'vitest';
 import { hostDefaultFields, resolveSearchFields, valuesAtPath } from './fields.js';
-import { designSystemData } from '../../../shared/entities/design-system/schema.js';
 import { acData } from '../../../shared/entities/ac/schema.js';
 import type { BackendModule } from '../../core/plugin-host/types.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
@@ -24,6 +29,36 @@ const moduleWith = (data: DataDeclaration | undefined): BackendModule =>
 
 const paths = (data: DataDeclaration | undefined): string[] =>
   hostDefaultFields(moduleWith(data)).map((f) => f.path);
+
+/** `design-system`'s token shape, reproduced: named leaves around an opaque one. */
+const opaqueValueData: DataDeclaration = {
+  schema: {
+    name: { kind: 'string', required: true },
+    groups: {
+      kind: 'collection',
+      collection: 'value',
+      item: {
+        kind: 'object',
+        fields: {
+          name: { kind: 'string', required: true },
+          tokens: {
+            kind: 'collection',
+            collection: 'value',
+            required: true,
+            item: {
+              kind: 'object',
+              fields: {
+                name: { kind: 'string', required: true },
+                type: { kind: 'string', required: true },
+                value: { kind: 'json', required: true },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+};
 
 describe('hostDefaultFields', () => {
   it('reaches into a record through $key and $value — the branch that used to be skipped', () => {
@@ -64,7 +99,7 @@ describe('hostDefaultFields', () => {
      * would return nothing with `searchedFields` no longer naming the path —
      * the omission invisible as the cause.
      */
-    const out = paths(designSystemData);
+    const out = paths(opaqueValueData);
     expect(out).toContain('groups[].tokens[].value');
     expect(out).not.toContain('groups[].tokens[].value.$value');
     // The named leaves around it stay in scope.

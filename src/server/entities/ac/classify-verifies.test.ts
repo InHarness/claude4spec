@@ -19,12 +19,17 @@ import { createTestDb } from '../../../../tests/helpers/test-db.js';
 import { classifyVerifies } from './classify-verifies.js';
 import { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { PluginRegistryImpl } from '../../core/plugin-host/registry.js';
-import { designSystemBackendModule } from '../design-system/plugin.js';
+import { diagramBackendModule } from '../diagram/plugin.js';
 import type { BackendModule, ProjectPluginHost } from '../../core/plugin-host/types.js';
 
 /**
- * A REAL host holding `design-system` — with its index wired and, deliberately,
- * no entity service registered. `mount` is never called, which is exactly the
+ * A REAL host holding `diagram` — with its index wired and, deliberately, no
+ * entity service registered.
+ *
+ * It was `design-system` until 0.2.18 moved that type into the
+ * `c4s-plugin-frontend-mockups` envelope, out of the host's reach. `diagram` is
+ * the same shape for this test's purposes: a type the host still contributes
+ * that registers no `EntityService`. `mount` is never called, which is exactly the
  * shape of a type that declares its data and contributes no service.
  */
 function serviceLessHost(db: ReturnType<typeof createTestDb>, module: BackendModule): ProjectPluginHost {
@@ -39,12 +44,12 @@ describe('ProjectPluginHost.entityExists', () => {
   it('falls back to the projection row when the type registered no service', () => {
     const db = createTestDb();
     try {
-      const host = serviceLessHost(db, designSystemBackendModule);
-      expect(host.getEntityService('design-system')).toBeNull();
+      const host = serviceLessHost(db, diagramBackendModule);
+      expect(host.getEntityService('diagram')).toBeNull();
 
-      expect(host.entityExists('design-system', 'brand')).toBe(false);
-      db.prepare("INSERT INTO design_system (slug, name) VALUES ('brand', 'Brand')").run();
-      expect(host.entityExists('design-system', 'brand')).toBe(true);
+      expect(host.entityExists('diagram', 'flow')).toBe(false);
+      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      expect(host.entityExists('diagram', 'flow')).toBe(true);
     } finally {
       db.close();
     }
@@ -53,7 +58,7 @@ describe('ProjectPluginHost.entityExists', () => {
   it('is false for a type with no table and no service', () => {
     const db = createTestDb();
     try {
-      const host = serviceLessHost(db, designSystemBackendModule);
+      const host = serviceLessHost(db, diagramBackendModule);
       expect(host.entityExists('nope', 'x')).toBe(false);
     } finally {
       db.close();
@@ -63,13 +68,13 @@ describe('ProjectPluginHost.entityExists', () => {
 
 describe('classifyVerifies', () => {
   const hostOver = (db: ReturnType<typeof createTestDb>): ProjectPluginHost =>
-    serviceLessHost(db, designSystemBackendModule);
+    serviceLessHost(db, diagramBackendModule);
 
   it('accepts a reference to an indexed entity whose type has no entity service', () => {
     const db = createTestDb();
     try {
-      db.prepare("INSERT INTO design_system (slug, name) VALUES ('brand', 'Brand')").run();
-      expect(classifyVerifies(hostOver(db), [{ type: 'design-system', slug: 'brand' }])).toEqual([]);
+      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      expect(classifyVerifies(hostOver(db), [{ type: 'diagram', slug: 'flow' }])).toEqual([]);
     } finally {
       db.close();
     }
@@ -78,8 +83,8 @@ describe('classifyVerifies', () => {
   it('still reports a reference to a slug that is not in the table', () => {
     const db = createTestDb();
     try {
-      expect(classifyVerifies(hostOver(db), [{ type: 'design-system', slug: 'ghost' }])).toEqual([
-        { type: 'design-system', slug: 'ghost', reason: 'missing' },
+      expect(classifyVerifies(hostOver(db), [{ type: 'diagram', slug: 'ghost' }])).toEqual([
+        { type: 'diagram', slug: 'ghost', reason: 'missing' },
       ]);
     } finally {
       db.close();
@@ -92,15 +97,15 @@ describe('classifyVerifies', () => {
     const db = createTestDb();
     try {
       const registry = new PluginRegistryImpl();
-      registry.registerEntityModule(designSystemBackendModule);
-      // Whitelist a type that is not this one: `design-system` stays AVAILABLE
-      // but not active.
+      registry.registerEntityModule(diagramBackendModule);
+      // Whitelist a type that is not this one: `diagram` stays AVAILABLE but
+      // not active.
       const host = registry.consolidate({ entities: ['ac'] } as never);
       host.setRawReader(new RawEntityReader(db, host));
 
-      db.prepare("INSERT INTO design_system (slug, name) VALUES ('brand', 'Brand')").run();
-      expect(classifyVerifies(host, [{ type: 'design-system', slug: 'brand' }])).toEqual([
-        { type: 'design-system', slug: 'brand', reason: 'inactive' },
+      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      expect(classifyVerifies(host, [{ type: 'diagram', slug: 'flow' }])).toEqual([
+        { type: 'diagram', slug: 'flow', reason: 'inactive' },
       ]);
       expect(classifyVerifies(host, [{ type: 'nope', slug: 'x' }])).toEqual([
         { type: 'nope', slug: 'x', reason: 'unknown' },
