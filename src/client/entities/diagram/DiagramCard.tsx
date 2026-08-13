@@ -284,8 +284,12 @@ export function DiagramOverlay({
   const { effectiveTheme } = useTheme();
   const instanceId = useId();
   const { data: entity } = useDiagram(slug);
+  // Same rule as the card above: `source` is content-bearing, so it arrives from
+  // its own operation and not with the entity. The overlay renders the SAME body
+  // the card does, so it reads the same cached query rather than a second copy.
+  const { data: overlaySource } = useDiagramSource(slug);
   const [svg, setSvg] = useState('');
-  const source = entity?.source ?? '';
+  const source = overlaySource ?? '';
   const format = entity?.format ?? 'mermaid';
 
   useEffect(() => {
