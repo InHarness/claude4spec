@@ -17,7 +17,7 @@
  *      the only way to catch a parameter that is parsed and then dropped.
  *   2. That the payload is printed AS RECEIVED. The CLI does not serialize,
  *      re-shape or re-order; where it does project (the tag commands' buckets,
- *      `list-slugs`), the projection is asserted.
+ *      `detail`), the projection is asserted.
  *   3. That the CLI's OWN guards still refuse before a request is made — a flag
  *      the command does not accept must not reach the server at all.
  *
@@ -46,7 +46,6 @@ import { runResolveIdentity } from './resolve-identity.js';
 import { runCheckConsistency } from './check-consistency.js';
 import { runListEntities } from './list-entities.js';
 import { runGetEntities } from './get-entities.js';
-import { runListSlugs } from './list-slugs.js';
 import { runFindReferences } from './find-references.js';
 import { runTaggedList } from './tagged-list.js';
 import { runCatalog } from './catalog.js';
@@ -138,8 +137,8 @@ describe('discovery commands on the CLI', () => {
       seen = [];
       stdout = '';
       reply = { types: [{ type: 'ac' }] };
-      await runDescribe(args('describe', '--type', 'ac', '--view', 'detail'));
-      expect(called()).toBe('/_meta/types?type=ac&view=detail');
+      await runDescribe(args('describe', '--type', 'ac'));
+      expect(called()).toBe('/_meta/types?type=ac');
 
       seen = [];
       stdout = '';
@@ -153,17 +152,19 @@ describe('discovery commands on the CLI', () => {
     it('the entity operations carry every flag they accept', async () => {
       reply = { items: [], total: 0, hasMore: false };
       await runListEntities(
-        args('list-entities', '--type', 'ac', '--tags', 'a,b', '--filter', 'and', '--view', 'detail', '--mode', 'items', '--limit', '5', '--offset', '10'),
+        args('list-entities', '--type', 'ac', '--tags', 'a,b', '--tag-filter', 'and', '--sort', 'title', '--dir', 'desc', '--mode', 'items', '--limit', '5', '--offset', '10'),
       );
-      expect(called()).toBe('/entities/ac/list?tags=a%2Cb&filter=and&view=detail&mode=items&limit=5&offset=10');
+      expect(called()).toBe(
+        '/entities/ac/list?tags=a%2Cb&tagFilter=and&sort=title&dir=desc&mode=items&limit=5&offset=10',
+      );
 
       seen = [];
       stdout = '';
-      reply = { type: 'ac', view: 'detail', results: [] };
-      await runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'beta,alpha', '--view', 'detail'));
+      reply = { type: 'ac', selectedFields: ['slug', 'title', 'tags'], results: [] };
+      await runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'beta,alpha', '--select', 'text,kind'));
       // Input ORDER is preserved on the wire — the core answers in the order the
       // caller named, and a transport that sorted would lose that.
-      expect(called()).toBe('/entities/ac/get?slugs=beta%2Calpha&view=detail');
+      expect(called()).toBe('/entities/ac/get?slugs=beta%2Calpha&select=text%2Ckind');
 
       seen = [];
       stdout = '';
@@ -257,16 +258,6 @@ describe('discovery commands on the CLI', () => {
       });
     });
 
-    it('list-slugs sweeps and projects down to the slugs', async () => {
-      reply = { items: [{ slug: 'a', data: {} }, { slug: 'b', data: {} }], total: 2, hasMore: false };
-      await runListSlugs(args('list-slugs', '--type', 'ac'));
-      // `limit=1000` is the sweep's page size, asked for explicitly. The core
-      // helpers this replaced passed `MAX_LIMIT`; omitting it let the server
-      // apply the 50-row agent default, which cut the sweep's completeness
-      // ceiling ~40x and multiplied the round-trips for the same answer by 20.
-      expect(called()).toBe('/entities/ac/list?limit=1000&view=inline_mention&offset=0');
-      expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'], hasMore: false });
-    });
   });
 
   /**
@@ -279,7 +270,7 @@ describe('discovery commands on the CLI', () => {
   describe('element_list keeps what the raw operation does not promise', () => {
     const replyFor = (slugs: string[], truncate: string[] = []) => ({
       type: 'ac',
-      view: 'element_list_item',
+      selectedFields: ['slug', 'title', 'tags'],
       results: slugs.map((slug) =>
         truncate.includes(slug)
           ? { slug, entity: null, truncated: true }
@@ -390,7 +381,7 @@ describe('discovery commands on the CLI', () => {
     it('a sweep the guard cuts short is reported as incomplete, not printed as the answer', async () => {
       /**
        * `delegateGetAll` documents `exhausted: false` as "the caller must report
-       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`/`list-slugs`
+       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`
        * all swallowed it. A tag list cut at the runaway guard and presented as
        * complete is what authorizes a rename or a delete against a set that was
        * never fully seen. Simulated here with a server that never stops saying
