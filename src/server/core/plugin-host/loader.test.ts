@@ -69,7 +69,7 @@ describe('loadWorkspacePlugins', () => {
     const registry = new PluginRegistryImpl();
     // `^2.5.0` needs a newer minor than the 2.0.0 host — unsatisfiable but SAME
     // major, so it is `skipped` (not `incompatible`) with no migration descriptor.
-    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^2.5.0' }) } });
+    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^3.5.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-b'], importer);
 
@@ -81,14 +81,22 @@ describe('loadWorkspacePlugins', () => {
   it('flags an incompatible MAJOR hostApiVersion as `incompatible` with a migration descriptor', async () => {
     const registry = new PluginRegistryImpl();
     // `^3.0.0` targets a different major — incompatible under the 2.x host.
-    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^3.0.0' }) } });
+    // One major BEHIND the host — the realistic case since 0.2.22, and the one
+    // whose migration descriptor a plugin author actually reads.
+    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^2.0.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
 
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
-    // Empty changelog at the 1.x baseline ⇒ no descriptors and no shim.
-    expect(records[0]?.migration?.migrations).toHaveLength(0);
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('3.0.0');
+    /**
+     * The 2 → 3 crossing, which is what makes this record useful: a plugin one
+     * major behind gets the four descriptors naming exactly what it must change
+     * (`title`, `contentBearing`, `select`, the retired `nanoid` step). This
+     * assertion read `toHaveLength(0)` while the changelog was empty at the 1.x
+     * baseline; there is a crossing to describe now.
+     */
+    expect(records[0]?.migration?.migrations).toHaveLength(4);
     expect(records[0]?.migration?.shimAvailable).toBe(false);
     expect(registry.getAvailable('glossary')).toBeNull();
   });
