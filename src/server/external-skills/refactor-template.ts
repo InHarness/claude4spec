@@ -54,7 +54,7 @@ full command reference. In short:
 \`\`\`sh
 c4s catalog ${identity}                                   # entity types + schemas
 c4s list-tags --with-counts ${identity}                   # tags + counts (counts are opt-in)
-c4s list-slugs --type endpoint ${identity}                # slugs for a type
+c4s list-entities --type endpoint ${identity}             # { slug, title } rows for a type
 c4s single_element --type endpoint --slug <x> ${identity}
 c4s resolve modules/<module>.md ${identity}               # expand a page's tags inline
 \`\`\`
@@ -66,7 +66,7 @@ the user to install it; never read the spec repo's pages directly.
 
 ### 1. Establish the topic
 
-Confirm the scope and gather vocabulary (\`c4s list-slugs\`, \`c4s list-tags\`,
+Confirm the scope and gather vocabulary (\`c4s list-entities\`, \`c4s list-tags\`,
 \`c4s catalog\`). If no topic was given, ask the user to narrow it first.
 
 ### 2. Read the spec

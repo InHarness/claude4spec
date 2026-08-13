@@ -57,7 +57,7 @@ full command reference. In short:
 ```sh
 c4s catalog --project 'app-spec' --workspace 'default'                                   # entity types + schemas
 c4s list-tags --with-counts --project 'app-spec' --workspace 'default'                   # tags + counts (counts are opt-in)
-c4s list-slugs --type endpoint --project 'app-spec' --workspace 'default'                # slugs for a type
+c4s list-entities --type endpoint --project 'app-spec' --workspace 'default'             # { slug, title } rows for a type
 c4s single_element --type endpoint --slug <x> --project 'app-spec' --workspace 'default'
 c4s resolve modules/<module>.md --project 'app-spec' --workspace 'default'               # expand a page's tags inline
 ```
@@ -69,7 +69,7 @@ the user to install it; never read the spec repo's pages directly.
 
 ### 1. Establish the topic
 
-Confirm the scope and gather vocabulary (`c4s list-slugs`, `c4s list-tags`,
+Confirm the scope and gather vocabulary (`c4s list-entities`, `c4s list-tags`,
 `c4s catalog`). If no topic was given, ask the user to narrow it first.
 
 ### 2. Read the spec

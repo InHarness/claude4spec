@@ -95,11 +95,11 @@ refuses and tells you to use \`list-sections\` + \`get-sections\` instead.
 ## Discovery
 
 - \`c4s catalog ${identity}\` — the ENTRY POINT: page roots with their properties, active entity types with counts + version + description + roleNoun + mcpToolsLine per type, tag count. Start here; it is cheap and it tells you what else is worth asking.
-- \`c4s describe --type <t> [--view <v>] ${identity}\` — JSON Schema per view for one type, plus the paths a search would cover (on-demand).
+- \`c4s describe --type <t> ${identity}\` — what a type IS: JSON Schemas, the value \`constraints\` a write must satisfy, \`selectableFields\` (the names \`--select\` accepts), \`contentFields\` (fields no generic read carries, each with the operation that issues them) and \`searchableFields\`. Worth calling before a READ, not just before a write.
 - \`c4s list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>] ${identity}\` — the project tags. Counts are OFF by default (they are a product of tags by types); \`--co-occurring-with\` returns the tags sharing entities with one you name, which is how you discover a taxonomy without already knowing it.
-- \`c4s list-slugs --type endpoint ${identity}\` — all slugs for a given type.
-- \`c4s list-entities --type endpoint [--tags auth] [--view <v>] [--mode items|count] ${identity}\` — full paginated traversal of one type; \`--mode count\` answers "how many" without listing.
-- \`c4s get-entities --type dto --slugs a,b,c --view detail ${identity}\` — several entities in one call, any view.
+- \`c4s list-entities --type endpoint [--tags auth] [--tag-filter and|or] [--sort createdAt|title|slug] [--dir asc|desc] [--mode items|count] ${identity}\` — full paginated traversal of one type. Rows are \`{ slug, title }\`: discovery answers with keys, and you follow up with \`get-entities\` for content. \`--mode count\` answers "how many" without listing. Only the default \`createdAt\` order has a write-stable offset window.
+- \`c4s get-entities --type dto --slugs a,b,c [--select <f1,f2>] ${identity}\` — several entities in one call. \`--select\` names top-level fields (\`slug\`, \`title\` and \`tags\` always come back); omit it for every field except content-bearing ones, or pass \`--select=\` for the identity skeleton alone.
+- \`c4s get-field-content --type diagram --slug <s> --field source ${identity}\` — the content of ONE content-bearing field. Such a field is carried by no generic read (you get \`has<Field>\` / \`<field>Bytes\` instead), so this is the only way to read one.
 - \`c4s search-entities --type ac --query "<phrase>" [--fields <f1,f2>] ${identity}\` — text search inside one type (the type is required); the output always declares \`searchedFields\`, so an empty result is distinguishable from an unsearched field.
 - \`c4s resolve-identity --query "<fragment>" [--types endpoint,dto] ${identity}\` — the only cross-type command: "what is this called?" from a fragment of a name.
 - \`c4s check-consistency [--severity <s>] [--rule <r>] ${identity}\` — the spec's own diagnostics (broken references, drift between disk and index).
@@ -107,7 +107,7 @@ refuses and tells you to use \`list-sections\` + \`get-sections\` instead.
 Every list command accepts \`--limit\` / \`--offset\` and reports \`total\` +
 \`hasMore\` — measure before you fetch.
 
-Every command above is one of the fourteen read-only **discovery operations**
+Every command above is one of the fifteen read-only **discovery operations**
 under a CLI name. The operation owns the behaviour — pagination, response
 budget, sort order, and what an error suggests you do next; the command is a
 transport over it. The mapping, when you need to read the operation's contract:
@@ -117,8 +117,8 @@ transport over it. The mapping, when you need to read the operation's contract:
 | \`c4s catalog\` | \`overview\` |
 | \`c4s describe\` | \`describe_types\` |
 | \`c4s list-tags\` | \`list_tags\` |
-| \`c4s list-slugs\` | \`list_entities\` (minimal view) |
-| \`c4s inline_mention\` / \`single_element\` / \`element_list\` / \`detail\` | \`get_entities\` (one view each) |
+| \`c4s inline_mention\` / \`single_element\` / \`element_list\` / \`detail\` | \`get_entities\` (one projection each) |
+| \`c4s get-field-content\` | \`get_field_content\` |
 | \`c4s tagged_list\` / \`tagged_list_mixed\` | \`list_entities\` (tag-filtered) |
 | \`c4s get-entities\` / \`c4s list-entities\` | \`get_entities\` / \`list_entities\` (the canonical surface the aliases above sit on) |
 | \`c4s list-pages\` / \`c4s get-page\` | \`list_pages\` / \`get_page\` |
