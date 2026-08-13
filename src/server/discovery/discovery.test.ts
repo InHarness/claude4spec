@@ -353,13 +353,25 @@ describe('discovery core', () => {
     );
   });
 
-  it('describe_types rejects an unknown view in the CORE, before any type is touched', () => {
-    // 0.2.9 (item 9/14): the guard used to live in the MCP zod enum and in the
-    // CLI's own list — two transport-local copies and no rule for anyone else,
-    // so a bad view reached the serializer and came back as a shrug.
+  /**
+   * 0.2.22 — `describe_types` takes no view, so there is no bad view to reject.
+   *
+   * The guard this replaces existed because the check lived in the MCP zod enum
+   * and in the CLI's own list, two transport-local copies with no rule for
+   * anyone else. What takes its place is `select` validation on `get_entities`,
+   * which is one rule in the core and names the legal fields in its message.
+   */
+  it('get_entities rejects an unknown select name in the CORE, naming the legal ones', () => {
     const c = core([pagesRoot()], [widgetModule()]);
-    expect(() => c.describeTypes({ view: 'summary' as never })).toThrowError(
-      expect.objectContaining({ code: 'INVALID_VIEW', hint: expect.stringContaining('single_element') }),
+    expect(() => c.getEntities({ type: 'widget', slugs: ['a'], select: ['nope'] })).toThrowError(
+      expect.objectContaining({
+        code: 'INVALID_ARGUMENT',
+        hint: expect.stringContaining('legal names'),
+      }),
+    );
+    // A dotted path is the same refusal: a value collection is read whole.
+    expect(() => c.getEntities({ type: 'widget', slugs: ['a'], select: ['parts.name'] })).toThrowError(
+      expect.objectContaining({ code: 'INVALID_ARGUMENT' }),
     );
   });
 
@@ -369,13 +381,18 @@ describe('discovery core', () => {
     // presence-check chain reported. The fixture computes `single_element` only.
     const c = core([pagesRoot()], [widgetModule()]);
     const described = c.describeTypes({ types: ['widget'] }).types[0]!;
-    expect(described.views).toEqual([
+    // 0.2.22 — `views` is gone from the payload; the five schemas remain, since
+    // they describe shapes the host really can produce. What replaced the list
+    // is `selectableFields`, which answers a question the caller can act on.
+    expect(described).not.toHaveProperty('views');
+    expect(Object.keys(described.schemas).sort()).toEqual([
+      'detail',
+      'element_list_item',
       'inline_mention',
       'single_element',
-      'element_list_item',
       'tagged_list_item',
-      'detail',
     ]);
+    expect(described.selectableFields).toContain('title');
     expect(described.payloadVersion).toBe(1);
     // Derived from `data.schema` — no `_auto`, no db reflection, and closed,
     // because the host builds this payload itself.
@@ -1082,15 +1099,26 @@ describe('discovery core', () => {
    * wide as N detail records — enough to hit the budget and come back truncated
    * where the same call used to return everything.
    */
-  it('get_entities defaults narrow for a batch and wide for a single slug', () => {
+  /**
+   * 0.2.22 — the answer no longer depends on how many slugs were asked for.
+   *
+   * It used to: one slug meant `single_element`, several meant the narrower
+   * `element_list_item`, so `['a']` and `['a','b']` returned DIFFERENT shapes
+   * for `a`. Width is the caller's now, and `selectedFields` says what it got.
+   */
+  it('get_entities answers one shape regardless of batch size, and echoes it', () => {
     db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('a', 'mermaid', 'graph TD;')`).run();
     db.prepare(`INSERT INTO widget (slug, format, source) VALUES ('b', 'mermaid', 'graph TD;')`).run();
     const c = core([pagesRoot()]);
 
-    expect(c.getEntities({ type: 'widget', slugs: ['a'] }).view).toBe('single_element');
-    expect(c.getEntities({ type: 'widget', slugs: ['a', 'b'] }).view).toBe('element_list_item');
-    // An explicit view still wins over both.
-    expect(c.getEntities({ type: 'widget', slugs: ['a', 'b'], view: 'detail' }).view).toBe('detail');
+    const one = c.getEntities({ type: 'widget', slugs: ['a'] });
+    const many = c.getEntities({ type: 'widget', slugs: ['a', 'b'] });
+    expect(one.selectedFields).toEqual(many.selectedFields);
+    expect(one.selectedFields).toEqual(expect.arrayContaining(['slug', 'title', 'tags']));
+
+    // `select: []` is the identity skeleton — a legal, cheap request.
+    const skeleton = c.getEntities({ type: 'widget', slugs: ['a'], select: [] });
+    expect(skeleton.selectedFields).toEqual(['slug', 'title', 'tags']);
   });
 
   /**
@@ -1179,11 +1207,17 @@ describe('discovery core', () => {
      * come back in the narrow list projection, while the identical de-duplicated
      * call came back whole.
      */
-    it('picks the default view AFTER de-duplication, so a repeated slug is still a lookup', () => {
+    /**
+     * De-duplication used to decide the default WIDTH, so `['w1','w1']` — which
+     * answers with exactly the entity `['w1']` answers with — could come back in
+     * a different shape. Nothing depends on the count any more; what remains to
+     * assert is that the duplicate collapses.
+     */
+    it('collapses a repeated slug, answering it once', () => {
       const c = core([pagesRoot()]);
-      expect(c.getEntities({ type: 'widget', slugs: ['w1', 'w1'] }).view).toBe('single_element');
-      expect(c.getEntities({ type: 'widget', slugs: ['w1'] }).view).toBe('single_element');
-      expect(c.getEntities({ type: 'widget', slugs: ['w1', 'w2'] }).view).toBe('element_list_item');
+      expect(c.getEntities({ type: 'widget', slugs: ['w1', 'w1'] }).results.map((r) => r.slug)).toEqual([
+        'w1',
+      ]);
     });
 
     /**
@@ -1194,10 +1228,10 @@ describe('discovery core', () => {
      */
     it('getEntitiesAll re-asks for truncated rows, so no caller sees a budget cut as absence', () => {
       const c = core([pagesRoot()]);
-      const all = getEntitiesAll(c, { type: 'widget', slugs: ['w1', 'w2', 'w3'], view: 'detail' });
-      expect(all.map((r) => r.slug)).toEqual(['w1', 'w2', 'w3']);
-      expect(all.filter((r) => r.truncated === true)).toEqual([]);
-      for (const row of all) expect(row.entity).not.toBeNull();
+      const { results } = getEntitiesAll(c, { type: 'widget', slugs: ['w1', 'w2', 'w3'] });
+      expect(results.map((r) => r.slug)).toEqual(['w1', 'w2', 'w3']);
+      expect(results.filter((r) => r.truncated === true)).toEqual([]);
+      for (const row of results) expect(row.entity).not.toBeNull();
     });
   });
 
@@ -1282,9 +1316,9 @@ describe('discovery core', () => {
         expect.objectContaining({ code: 'INVALID_ARGUMENT' }),
       );
       // Host-side composition (a page renderer, the CLI) batches instead.
-      const all = getEntitiesAll(c, { type: 'widget', slugs });
-      expect(all).toHaveLength(120);
-      expect(all.map((r) => r.slug)).toEqual(slugs);
+      const { results } = getEntitiesAll(c, { type: 'widget', slugs });
+      expect(results).toHaveLength(120);
+      expect(results.map((r) => r.slug)).toEqual(slugs);
     });
 
     it('listEntitiesAll exhausts past the page size instead of truncating', () => {
