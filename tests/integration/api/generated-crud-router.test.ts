@@ -24,7 +24,7 @@ import type { DataDeclaration } from '../../../src/shared/plugin-host/data-schem
  */
 const WIDGET_DATA: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true },
+    title: { kind: 'string', required: true, maxLength: 200 },
     status: { kind: 'enum', values: ['draft', 'live'], default: 'draft' },
     note: { kind: 'string', clearable: true },
     /**
@@ -76,7 +76,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   afterEach(() => t.cleanup());
 
   it('POST mints the slug from slugPattern and answers 201 with the entity', async () => {
-    const res = await request(t.app).post('/api/widgets').send({ name: 'Order Form' });
+    const res = await request(t.app).post('/api/widgets').send({ title: 'Order Form' });
     expect(res.status).toBe(201);
     // `slugify(name)` — the DECLARED rule, evaluated server-side for the first
     // time in 0.2.9. Tier A shipped the grammar and left every type's slug
@@ -97,22 +97,22 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    * suffix because their slugs are slugified prose.
    */
   it('an explicit slug wins, and a collision on one is refused rather than renamed', async () => {
-    expect((await request(t.app).post('/api/widgets').send({ name: 'A', slug: 'pinned' })).body.data.slug).toBe('pinned');
-    const second = await request(t.app).post('/api/widgets').send({ name: 'B', slug: 'pinned' });
+    expect((await request(t.app).post('/api/widgets').send({ title: 'A', slug: 'pinned' })).body.data.slug).toBe('pinned');
+    const second = await request(t.app).post('/api/widgets').send({ title: 'B', slug: 'pinned' });
     expect(second.status).toBe(409);
     expect(second.body.error.code).toBe('SLUG_CONFLICT');
   });
 
   it('refuses a DERIVED collision too, for a type that declares no slugConflict', async () => {
-    expect((await request(t.app).post('/api/widgets').send({ name: 'Order Form' })).status).toBe(201);
-    const dup = await request(t.app).post('/api/widgets').send({ name: 'Order Form' });
+    expect((await request(t.app).post('/api/widgets').send({ title: 'Order Form' })).status).toBe(201);
+    const dup = await request(t.app).post('/api/widgets').send({ title: 'Order Form' });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('SLUG_CONFLICT');
   });
 
   it('GET / answers the L4 envelope, not the retired per-type key', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'One' });
-    await request(t.app).post('/api/widgets').send({ name: 'Two' });
+    await request(t.app).post('/api/widgets').send({ title: 'One' });
+    await request(t.app).post('/api/widgets').send({ title: 'Two' });
 
     const res = await request(t.app).get('/api/widgets');
     expect(res.status).toBe(200);
@@ -126,7 +126,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('re-attaches the audit stamp no L9 view emits', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Stamped' });
+    await request(t.app).post('/api/widgets').send({ title: 'Stamped' });
     const res = await request(t.app).get('/api/widgets/stamped');
     // `createdAt`/`updatedAt` are `systemManaged`, so `hydrate` lifts them out
     // of `data` and no view carries them — but every list row and detail header
@@ -136,11 +136,11 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('PATCH is a tri-state: omitted keeps, null clears, a value replaces', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Tri', note: 'original', status: 'live' });
+    await request(t.app).post('/api/widgets').send({ title: 'Tri', note: 'original', status: 'live' });
 
     // omitted → unchanged. The projection upsert names every column, so a naive
     // implementation blanks `status` and `note` on any partial write.
-    const kept = await request(t.app).patch('/api/widgets/tri').send({ name: 'Tri Renamed' });
+    const kept = await request(t.app).patch('/api/widgets/tri').send({ title: 'Tri Renamed' });
     expect(kept.status).toBe(200);
     expect(kept.body.data.note).toBe('original');
     expect(kept.body.data.status).toBe('live');
@@ -167,8 +167,8 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   const row = () => t.db.prepare(`SELECT * FROM widget WHERE slug = ?`).get('owned') as Record<string, unknown>;
 
   it('an unrelated PATCH leaves a column-renamed field alone', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Owned', ownerSlug: 'me', kindLabel: 'special' });
-    const patched = await request(t.app).patch('/api/widgets/owned').send({ name: 'Owned Renamed' });
+    await request(t.app).post('/api/widgets').send({ title: 'Owned', ownerSlug: 'me', kindLabel: 'special' });
+    const patched = await request(t.app).patch('/api/widgets/owned').send({ title: 'Owned Renamed' });
     expect(patched.status).toBe(200);
     // Was `null`: the merge base was keyed by column (`owner_slug`) and the
     // upsert reads field names, so `ownerSlug` was absent and written as default.
@@ -181,7 +181,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   it('an unrelated PATCH leaves a table-backed value collection alone', async () => {
     await request(t.app)
       .post('/api/widgets')
-      .send({ name: 'Linked', links: [{ target: 'a', rank: 1 }, { target: 'b', rank: 2 }] });
+      .send({ title: 'Linked', links: [{ target: 'a', rank: 1 }, { target: 'b', rank: 2 }] });
     const links = () => t.rawReader.readCollection('widget', 'linked', 'links');
     expect(links()).toHaveLength(2);
 
@@ -193,7 +193,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('a rejected payload does not leave the entity renamed', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Stable' });
+    await request(t.app).post('/api/widgets').send({ title: 'Stable' });
     const res = await request(t.app)
       .patch('/api/widgets/stable')
       .send({ newSlug: 'moved', status: 'archived' });
@@ -206,7 +206,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('round-trips an opaque json value instead of re-escaping it', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Blobby', blob: { a: 1, b: ['x'] } });
+    await request(t.app).post('/api/widgets').send({ title: 'Blobby', blob: { a: 1, b: ['x'] } });
     const res = await request(t.app).get('/api/widgets/blobby');
     // Came back as the STRING '{"a":1,"b":["x"]}' — `hydrate` decoded only
     // object/record/collection columns, and `persist` rewrites the file from the
@@ -214,12 +214,12 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     expect(res.body.data.blob).toEqual({ a: 1, b: ['x'] });
 
     // A scalar arm too — this is what `design-system`'s token values are.
-    await request(t.app).post('/api/widgets').send({ name: 'Scalar', blob: '#2563eb' });
+    await request(t.app).post('/api/widgets').send({ title: 'Scalar', blob: '#2563eb' });
     expect((await request(t.app).get('/api/widgets/scalar')).body.data.blob).toBe('#2563eb');
   });
 
   it('records the tags on the version it captures, not an empty list', async () => {
-    const created = await request(t.app).post('/api/widgets').send({ name: 'Tagged', tags: ['keep'] });
+    const created = await request(t.app).post('/api/widgets').send({ title: 'Tagged', tags: ['keep'] });
     expect(created.status).toBe(201);
     const captured = t.db
       .prepare(`SELECT data FROM entity_version WHERE entity_type = 'widget' AND entity_slug = 'tagged' ORDER BY version`)
@@ -234,7 +234,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
     // The generated schema calls `kindLabel` optional because it has a default;
     // the write path used to reject it as missing anyway, so the schema and the
     // only door it feeds disagreed about the same declaration.
-    const res = await request(t.app).post('/api/widgets').send({ name: 'Defaulted' });
+    const res = await request(t.app).post('/api/widgets').send({ title: 'Defaulted' });
     expect(res.status).toBe(201);
     const stored = t.db.prepare(`SELECT kind_label FROM widget WHERE slug = ?`).get('defaulted') as {
       kind_label: string;
@@ -243,14 +243,14 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('rejects null for a field that is not clearable, with 400 and not 500', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Strict' });
-    const res = await request(t.app).patch('/api/widgets/strict').send({ name: null });
+    await request(t.app).post('/api/widgets').send({ title: 'Strict' });
+    const res = await request(t.app).patch('/api/widgets/strict').send({ title: null });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
 
   it('rejects a value outside a declared enum instead of coercing it', async () => {
-    const res = await request(t.app).post('/api/widgets').send({ name: 'Bad', status: 'archived' });
+    const res = await request(t.app).post('/api/widgets').send({ title: 'Bad', status: 'archived' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('VALIDATION');
   });
@@ -261,7 +261,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('renames through newSlug and leaves nothing at the old one', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Before' });
+    await request(t.app).post('/api/widgets').send({ title: 'Before' });
     const renamed = await request(t.app).patch('/api/widgets/before').send({ newSlug: 'after' });
     expect(renamed.status).toBe(200);
     expect(renamed.body.data.slug).toBe('after');
@@ -272,13 +272,13 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   it('round-trips a value collection', async () => {
     await request(t.app)
       .post('/api/widgets')
-      .send({ name: 'Composite', parts: [{ label: 'head' }, { label: 'tail' }] });
+      .send({ title: 'Composite', parts: [{ label: 'head' }, { label: 'tail' }] });
     const res = await request(t.app).get('/api/widgets/composite');
     expect(res.body.data.parts).toEqual([{ label: 'head' }, { label: 'tail' }]);
   });
 
   it('DELETE removes the entity and reports what pointed at it', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Doomed' });
+    await request(t.app).post('/api/widgets').send({ title: 'Doomed' });
     const res = await request(t.app).delete('/api/widgets/doomed');
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ deleted: true, brokenReferences: [] });
@@ -292,8 +292,8 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   it('filters by tag, and search ranks rather than filtering', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Alpha', tags: ['keep'] });
-    await request(t.app).post('/api/widgets').send({ name: 'Beta' });
+    await request(t.app).post('/api/widgets').send({ title: 'Alpha', tags: ['keep'] });
+    await request(t.app).post('/api/widgets').send({ title: 'Beta' });
 
     const tagged = await request(t.app).get('/api/widgets?tags=keep');
     expect(tagged.body.total).toBe(1);
@@ -314,8 +314,8 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    * typed — the filter is still on screen, the rows no longer obey it.
    */
   it('ANDs the tag filter with the ranking, instead of dropping it once search is present', async () => {
-    await request(t.app).post('/api/widgets').send({ name: 'Beta Keeper', tags: ['keep'] });
-    await request(t.app).post('/api/widgets').send({ name: 'Beta Stranger' });
+    await request(t.app).post('/api/widgets').send({ title: 'Beta Keeper', tags: ['keep'] });
+    await request(t.app).post('/api/widgets').send({ title: 'Beta Stranger' });
 
     const both = await request(t.app).get('/api/widgets?search=Beta&tags=keep');
     expect(both.status).toBe(200);
@@ -333,7 +333,7 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    */
   it('defaults to a page big enough for a list page with no pagination UI', async () => {
     for (let i = 0; i < 60; i += 1) {
-      await request(t.app).post('/api/widgets').send({ name: `W ${i}` });
+      await request(t.app).post('/api/widgets').send({ title: `W ${i}` });
     }
     const res = await request(t.app).get('/api/widgets');
     expect(res.body.data).toHaveLength(60);
@@ -402,18 +402,19 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   /**
-   * `?view=detail` — found by the e2e suite, which the unit suite could not see.
+   * The joins a detail page needs arrive WITHOUT anyone naming a view.
    *
-   * `view` was reserved as a query key and never read, so every GET answered
-   * `single_element`. That was harmless while each type had a router serving its
-   * own shape and became a CRASH when tier K deleted them: the DTO detail page
-   * reads `dto.endpoints.length`, `endpoints` is a reverse join that lives only
-   * in the `detail` view, and the page threw on load against a real server.
+   * `?view=detail` used to be how a caller reached them, and the parameter was
+   * added because it had been reserved-and-never-read: every GET answered
+   * `single_element`, so the DTO detail page threw on load reading
+   * `dto.endpoints.length` off a view that never carried `endpoints`.
    *
-   * Pinned on `dto` because it is the type whose two views genuinely differ.
+   * 0.2.22 removes the parameter and the failure mode with it. A GET serializes
+   * the widest view and projects, so the reverse join is simply there. Pinned on
+   * `dto` because it is the type whose two old views genuinely differed.
    */
-  it('serves the detail view on request, and single_element by default', async () => {
-    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+  it('serves the reverse join on a plain GET, with no view to ask for', async () => {
+    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
     await request(t.app)
       .post('/api/endpoints')
       .send({ slug: 'get-users', method: 'GET', path: '/users', summary: 'List' });
@@ -421,40 +422,31 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
       .post('/api/endpoints/get-users/dtos')
       .send({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
 
-    const plain = await request(t.app).get('/api/dtos/user-dto');
-    expect(plain.status).toBe(200);
-    expect(plain.body.data.endpoints).toBeUndefined();
-
-    const detail = await request(t.app).get('/api/dtos/user-dto?view=detail');
-    expect(detail.status).toBe(200);
-    expect(detail.body.data.endpoints.map((e: { endpointSlug: string }) => e.endpointSlug)).toEqual([
+    const res = await request(t.app).get('/api/dtos/user-dto');
+    expect(res.status).toBe(200);
+    expect(res.body.data.endpoints.map((e: { endpointSlug: string }) => e.endpointSlug)).toEqual([
       'get-users',
     ]);
-    // The stamp is attached to whichever view was asked for.
-    expect(detail.body.data.createdAt).toEqual(expect.any(String));
+    expect(res.body.data.createdAt).toEqual(expect.any(String));
   });
 
-  it('refuses a view it does not serve, rather than quietly serving another', async () => {
-    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
-    /**
-     * `element_list_item` is a real ViewKind but not a readable one here, and
-     * `nonsense` is not a view at all. Both are a 400 naming the alternatives.
-     *
-     * Falling back to `single_element` — which this did at first — reproduces
-     * the exact bug the parameter was added to fix: `?view=details` (a typo)
-     * answers 200 with no `endpoints`, and the caller cannot tell it was not
-     * given what it asked for.
-     */
-    for (const view of ['element_list_item', 'inline_mention', 'nonsense', 'details']) {
-      const res = await request(t.app).get(`/api/dtos/user-dto?view=${view}`);
-      expect(res.status).toBe(400);
-      expect(res.body.error.code).toBe('VALIDATION');
-      expect(res.body.error.message).toMatch(/single_element, detail/);
-    }
-
-    // An absent or empty `view` is not a request for a strange one.
-    for (const q of ['', '?view=']) {
-      expect((await request(t.app).get(`/api/dtos/user-dto${q}`)).status).toBe(200);
+  /**
+   * `?view=` is not refused — it is not a parameter at all any more, and an
+   * unknown query key on this route is read as a FIELD FILTER (that is what
+   * `RESERVED_QUERY_KEYS` exists to carve out). A detail GET ignores it.
+   *
+   * The rule it replaces was "reject a view you do not serve, rather than
+   * quietly serving another", which mattered while a typo (`?view=details`)
+   * could silently answer a narrower shape. Nothing narrows on a typo now: the
+   * projection is decided by `select` on `GET /api/entities/:type/get`, and an
+   * unknown name THERE is INVALID_ARGUMENT carrying the legal list.
+   */
+  it('ignores a leftover ?view= on a detail GET instead of failing', async () => {
+    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
+    for (const q of ['', '?view=', '?view=detail', '?view=nonsense']) {
+      const res = await request(t.app).get(`/api/dtos/user-dto${q}`);
+      expect(res.status).toBe(200);
+      expect(res.body.data.slug).toBe('user-dto');
     }
   });
 
@@ -470,13 +462,13 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
    */
   it('refuses a blank value in the field the slug is derived from', async () => {
     for (const name of ['', '   ']) {
-      const res = await request(t.app).post('/api/widgets').send({ name });
+      const res = await request(t.app).post('/api/widgets').send({ title: name });
       expect(res.status).toBe(400);
       expect(res.body.error.message).toMatch(/must not be blank/);
     }
     // Blanking it later is the same write.
-    await request(t.app).post('/api/widgets').send({ name: 'Real' });
-    expect((await request(t.app).patch('/api/widgets/real').send({ name: '' })).status).toBe(400);
+    await request(t.app).post('/api/widgets').send({ title: 'Real' });
+    expect((await request(t.app).patch('/api/widgets/real').send({ title: '' })).status).toBe(400);
 
     // A required field that is NOT a slug source keeps accepting blank —
     // `endpoint.summary` is the shipped example.
@@ -498,13 +490,13 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   it('rejects a diagram format the declaration does not name, instead of coercing it', async () => {
     const coerced = await request(t.app)
       .post('/api/diagrams')
-      .send({ caption: 'Flow', format: 'graphviz', source: 'digraph { a -> b }' });
+      .send({ title: 'Flow', format: 'graphviz', source: 'digraph { a -> b }' });
     expect(coerced.status).toBe(400);
 
     for (const format of ['mermaid', 'd2']) {
       const ok = await request(t.app)
         .post('/api/diagrams')
-        .send({ caption: `Flow ${format}`, format, source: 'x' });
+        .send({ title: `Flow ${format}`, format, source: 'x' });
       expect(ok.status).toBe(201);
       expect(ok.body.data.format).toBe(format);
     }
@@ -523,10 +515,14 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   it('stores an unparseable diagram source verbatim, and says nothing about it', async () => {
     const res = await request(t.app)
       .post('/api/diagrams')
-      .send({ caption: 'Broken', source: 'not a diagram at all' });
+      .send({ title: 'Broken', source: 'not a diagram at all' });
     expect(res.status).toBe(201);
     expect(res.body.data).not.toHaveProperty('warnings');
-    expect(res.body.data.source).toBe('not a diagram at all');
+    // 0.2.22 — `source` is content-bearing, so the create response (a generic
+    // read) reports its SIZE, not its text. The body itself comes back from
+    // `GET /api/entities/diagram/:slug/content/source`.
+    expect(res.body.data.hasSource).toBe(true);
+    expect(res.body.data.sourceBytes).toBe('not a diagram at all'.length);
     // Default format still applies — it is `default: 'mermaid'` on the field.
     expect(res.body.data.format).toBe('mermaid');
   });

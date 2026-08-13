@@ -216,7 +216,15 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
     const { data, ...meta } = serializeSlug(deps, input.type, 'detail', slug);
-    return { slug, entity: data === null ? null : project(data, input.select, schema), ...meta };
+    // The stored row goes in beside the serialized one, so a content-bearing
+    // field's SIZE is knowable even for a type whose own views (correctly) do
+    // not carry it. See `project`.
+    const stored = deps.reader.getEntity(input.type, slug)?.data;
+    return {
+      slug,
+      entity: data === null ? null : project(data, input.select, schema, stored),
+      ...meta,
+    };
   });
 
   /**

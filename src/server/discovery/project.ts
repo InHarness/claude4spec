@@ -84,6 +84,16 @@ export function project(
   data: unknown,
   select: readonly string[] | undefined,
   schema: Schema,
+  /**
+   * The stored row, for the one thing a serialized payload cannot always
+   * supply: the SIZE of a content-bearing field.
+   *
+   * A host-generated payload already carries `has<Field>`/`<field>Bytes`, but a
+   * type that computes its own views has no reason to — and correctly does not,
+   * since the field is excluded from them. Reading the raw column here is what
+   * makes the descriptor identical whichever of the two produced the record.
+   */
+  stored?: Record<string, unknown>,
 ): unknown {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
@@ -119,7 +129,8 @@ export function project(
        * not, makes both paths agree.
        */
       const keys = contentBearingKeys(name);
-      const bytes = name in row ? contentBytes(row[name]) : Number(row[keys.bytes] ?? 0);
+      const source = name in row ? row[name] : stored?.[name] ?? stored?.[node.column ?? name];
+      const bytes = source !== undefined ? contentBytes(source) : Number(row[keys.bytes] ?? 0);
       out[keys.has] = bytes > 0;
       out[keys.bytes] = bytes;
       out[`${name}Operation`] = contentOperationOf(node);
@@ -127,6 +138,29 @@ export function project(
     }
 
     if (name in row) out[name] = row[name];
+  }
+
+  /**
+   * With NO `select`, keys the type computed but the schema never declared
+   * survive: `dto.endpoints` (a reverse join), `ac.brokenVerifies`,
+   * `_references`.
+   *
+   * The strict reading of "every schema field" would drop them, and that reading
+   * costs real behaviour — the DTO detail page reads `endpoints.length`, and it
+   * threw on load the last time a read stopped carrying it. So the default is
+   * "the record as the host produced it, minus what is content-bearing", which
+   * is what a caller who asked for no particular shape means.
+   *
+   * A caller who DOES name fields gets exactly those: they asked for a shape, so
+   * a computed extra riding along would be the same surprise in the other
+   * direction. Such a key is also not `select`-able, since `selectableFields`
+   * comes from the schema — reported to the spec author as a clarification.
+   */
+  if (!wanted) {
+    for (const [key, value] of Object.entries(row)) {
+      if (key in out || key in schema) continue;
+      out[key] = value;
+    }
   }
 
   return out;

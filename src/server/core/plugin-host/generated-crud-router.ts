@@ -37,6 +37,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
+import { getEntitiesAll } from '../../discovery/index.js';
 import { errorHandler } from '../../routes/errors.js';
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { genericCreate, genericDelete, genericUpdate, propagateRename, type GenericCrudDeps } from './generic-crud.js';
@@ -171,10 +172,15 @@ function readOne(deps: GeneratedCrudDeps, type: string, slug: string): unknown {
  * No `select`: the default projection is already "everything but the
  * content-bearing fields", which is exactly what a list wants — and it is the
  * same rule the agent-facing channel gets, so the UI has no privileged width.
+ *
+ * `getEntitiesAll`, NOT `getEntities`: this route's default page is 200 while
+ * the core operation refuses more than 50 slugs in one call. That cap is the
+ * agent's contract and is right for it; a page the server itself just decided
+ * the size of is not overreaching, so it batches instead of being refused.
  */
 function hydrateRows(deps: GeneratedCrudDeps, type: string, rows: Array<{ slug: string }>): unknown[] {
   if (!rows.length) return [];
-  const { results } = deps.discovery.getEntities({ type, slugs: rows.map((r) => r.slug) });
+  const { results } = getEntitiesAll(deps.discovery, { type, slugs: rows.map((r) => r.slug) });
   return withSystemAll(
     deps,
     type,
