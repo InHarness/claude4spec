@@ -52,7 +52,7 @@ function withJunction(type: string, projectionTable?: string): BackendModule {
   return mod(type, {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+      name: { kind: 'string', required: true },
       links: {
         kind: 'collection',
         collection: 'value',
@@ -132,7 +132,7 @@ describe('composition descriptor — derived from data.schema', () => {
       mod('widget', {
         schema: {
           title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+          name: { kind: 'string', required: true },
           notes: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
         },
       }),

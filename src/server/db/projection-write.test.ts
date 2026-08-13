@@ -38,7 +38,7 @@ const widget: WritableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-label: { kind: 'string', required: true },
+      label: { kind: 'string', required: true },
       size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
       active: { kind: 'boolean', default: true },
       meta: { kind: 'object', fields: { note: { kind: 'string' } } },
@@ -216,7 +216,7 @@ describe('keyed collections', () => {
     data: {
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+        name: { kind: 'string', required: true },
         nRows: { kind: 'number', column: 'n_rows', default: 0 },
         nCols: { kind: 'number', column: 'n_cols', default: 0 },
         cells: {
@@ -799,7 +799,7 @@ describe('the generic junction door keeps the per-type guarantees', () => {
     data: {
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-label: { kind: 'string', required: true },
+        label: { kind: 'string', required: true },
         links: {
           kind: 'collection',
           collection: 'value',
@@ -882,7 +882,7 @@ describe('dangling refs — anywhere the declaration puts one', () => {
     data: {
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+        name: { kind: 'string', required: true },
         columns: {
           kind: 'collection',
           collection: 'value',
@@ -972,7 +972,7 @@ name: { kind: 'string', required: true },
       data: {
         schema: {
           title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-label: { kind: 'string', required: true },
+          label: { kind: 'string', required: true },
           links: {
             kind: 'collection',
             collection: 'value',
@@ -1011,7 +1011,7 @@ label: { kind: 'string', required: true },
       data: {
         schema: {
           title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-label: { kind: 'string', required: true },
+          label: { kind: 'string', required: true },
           designSystemSlug: {
             kind: 'string',
             column: 'design_system_slug',
@@ -1048,7 +1048,7 @@ describe('dangling refs — polymorphic refs are excluded', () => {
     data: {
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-text: { kind: 'string', required: true },
+        text: { kind: 'string', required: true },
         verifies: {
           kind: 'collection',
           collection: 'value',

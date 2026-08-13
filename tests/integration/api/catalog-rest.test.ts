@@ -191,7 +191,7 @@ describe('GET /api/tags/list', () => {
   afterEach(() => t.cleanup());
 
   it('answers the CORE projection, leaving the UI DTO on `GET /api/tags` untouched', async () => {
-    await request(t.app).post('/api/tags').send({ slug: 'red', name: 'Red' }).expect(201);
+    await request(t.app).post('/api/tags').send({ slug: 'red', title: 'Red' }).expect(201);
 
     const ui = await request(t.app).get('/api/tags').expect(200);
     // The published DTO: `counts` REQUIRED, ordered by name — `TagsList.tsx`
@@ -226,7 +226,7 @@ describe('GET /api/tags/list', () => {
    * guards `/api/pages/search` — and the route still answers the operation.
    */
   it('reserves the `list` slug rather than letting a tag shadow the route', async () => {
-    const refused = await request(t.app).post('/api/tags').send({ slug: 'list', name: 'List' }).expect(400);
+    const refused = await request(t.app).post('/api/tags').send({ slug: 'list', title: 'List' }).expect(400);
     expect(refused.body.error.code).toBe('VALIDATION');
     expect(refused.body.error.message).toContain('reserved');
 

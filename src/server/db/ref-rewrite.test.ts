@@ -25,7 +25,7 @@ const viewer: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+      name: { kind: 'string', required: true },
       themeSlug: { kind: 'string', ref: 'theme', onMissing: 'warn', onDelete: 'leave-dangling' },
     },
   },
@@ -37,7 +37,7 @@ const route: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+      name: { kind: 'string', required: true },
       payloads: {
         kind: 'collection',
         collection: 'value',
@@ -65,7 +65,7 @@ const roster: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+      name: { kind: 'string', required: true },
       // Embedded JSON: `["user-dto", "order-dto"]`.
       members: {
         kind: 'collection',

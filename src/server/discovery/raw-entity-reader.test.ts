@@ -150,7 +150,7 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
       data: {
         schema: {
           title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-text: { kind: 'string', required: true },
+          text: { kind: 'string', required: true },
           status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
           caption: { kind: 'string', transientInput: true },
         },
@@ -274,7 +274,7 @@ describe('hydrate — decoding is driven by the declared kind', () => {
       data: {
         schema: {
           title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-format: { kind: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
+          format: { kind: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
           source: { kind: 'string', required: true },
           params: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
         },

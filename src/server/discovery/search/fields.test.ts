@@ -34,7 +34,7 @@ const paths = (data: DataDeclaration | undefined): string[] =>
 const opaqueValueData: DataDeclaration = {
   schema: {
     title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+    name: { kind: 'string', required: true },
     groups: {
       kind: 'collection',
       collection: 'value',
@@ -75,7 +75,7 @@ describe('hostDefaultFields', () => {
     const out = paths({
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+        labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
         composites: {
           kind: 'record',
           key: { kind: 'string' },
@@ -125,7 +125,7 @@ labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
     const out = paths({
       schema: {
         title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true },
+        name: { kind: 'string', required: true },
         upload: {
           kind: 'object',
           transientInput: true,

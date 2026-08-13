@@ -31,7 +31,7 @@ import type { Root } from '../../../src/shared/types.js';
 const sprocketData: DataDeclaration = {
   schema: {
     title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-name: { kind: 'string', required: true, description: 'What the sprocket is called.' },
+    name: { kind: 'string', required: true, description: 'What the sprocket is called.' },
     // An enum with a default — the host owes it both a CHECK-shaped validation
     // and the default on create.
     grade: { kind: 'enum', values: ['draft', 'shipped', 'retired'], default: 'draft' },
@@ -249,7 +249,7 @@ describe('item 63 — a type that declares only its data is a first-class type',
   it('takes part in rename propagation, because a field said `ref: dto`', async () => {
     const t = await app();
     try {
-      await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+      await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
       await request(t.app)
         .post('/api/sprockets')
         .send({ name: 'Linked', fitsWith: [{ dto: 'user-dto' }] });
@@ -278,7 +278,7 @@ describe('item 63 — a type that declares only its data is a first-class type',
   it('the crud facade a plugin is handed propagates a rename, like the REST route does', async () => {
     const t = await app();
     try {
-      await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
+      await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
       await request(t.app)
         .post('/api/sprockets')
         .send({ name: 'Linked', fitsWith: [{ dto: 'user-dto' }] });

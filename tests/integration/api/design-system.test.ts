@@ -28,7 +28,7 @@ describe('design-system REST + ui-view relation', () => {
     const res = await request(t.app)
       .post('/api/design-systems')
       .send({
-        name: 'Brand 2026',
+        title: 'Brand 2026',
         groups: [
           { name: 'Roles', tier: 'semantic', tokens: [{ name: 'x', type: 'color', value: '{missing}' }] },
         ],
@@ -62,7 +62,7 @@ describe('design-system REST + ui-view relation', () => {
 
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
     expect(view.status).toBe(201);
     expect(view.body.data.designSystemSlug).toBe('brand');
 
@@ -79,7 +79,7 @@ describe('design-system REST + ui-view relation', () => {
     await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     const del = await request(t.app).delete('/api/design-systems/brand');
     expect(del.status).toBe(200);
@@ -105,7 +105,7 @@ describe('design-system REST + ui-view relation', () => {
     await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     const renamed = await request(t.app)
       .patch('/api/design-systems/brand')
@@ -121,7 +121,7 @@ describe('design-system REST + ui-view relation', () => {
     await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     // 0.2.9 (item 13): an integer payload version on the MANIFEST, not a
     // per-serializer semver. The semver was advisory and unenforced; this one
