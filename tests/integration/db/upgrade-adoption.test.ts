@@ -61,7 +61,7 @@ describe('upgrading a pre-0.2.2 database', () => {
           VALUES ('get-users', 'GET', '/users', 'List', '2024-01-01', '2024-01-01');
         INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation, status_code)
           VALUES ('get-users', 'user-dto', 'response', 200);
-        INSERT INTO ac (slug, text, created_at, updated_at)
+        INSERT INTO ac (slug, title, text, created_at, updated_at)
           VALUES ('ac-one', 'something holds', '2024-01-01', '2024-01-01');
       `);
 

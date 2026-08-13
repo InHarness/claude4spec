@@ -168,7 +168,7 @@ text: { kind: 'string', required: true },
   function seeded(): Database.Database {
     const db = new Database(':memory:');
     db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, text TEXT, status TEXT);`);
-    const insert = db.prepare('INSERT INTO ac (slug, text, status) VALUES (?, ?, ?)');
+    const insert = db.prepare('INSERT INTO ac (slug, title, text, status) VALUES (?, ?, ?)');
     for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 'active');
     for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 'deprecated');
     return db;

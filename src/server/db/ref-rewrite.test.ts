@@ -142,7 +142,7 @@ describe('rewriteRefsForRename', () => {
   it('rewrites a $type ref inside an embedded-JSON collection — ac.verifies', () => {
     const db = projectDb([ac]);
     try {
-      const insert = db.prepare('INSERT INTO ac (slug, text, verifies) VALUES (?, ?, ?)');
+      const insert = db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?)');
       insert.run('ac-1', 'A', JSON.stringify([{ type: 'endpoint', slug: 'get-users' }]));
       insert.run('ac-2', 'B', JSON.stringify([{ type: 'dto', slug: 'get-users' }]));
       insert.run('ac-3', 'C', JSON.stringify([{ type: 'endpoint', slug: 'other' }]));
@@ -172,7 +172,7 @@ describe('rewriteRefsForRename', () => {
     // repoint an unrelated reference.
     const db = projectDb([ac]);
     try {
-      db.prepare('INSERT INTO ac (slug, text, verifies) VALUES (?, ?, ?)').run(
+      db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?)').run(
         'ac-1',
         'A',
         JSON.stringify([{ type: 'endpoint', slug: 'get-users-legacy' }]),
