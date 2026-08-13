@@ -52,6 +52,17 @@ type MutableShape = Record<string, ZodTypeAny>;
  */
 function stringType(node: ScalarNode): z.ZodString {
   let out = z.string();
+  if (node.maxLength !== undefined) {
+    /**
+     * 0.2.22 — the value constraint, enforced HERE and nowhere else.
+     *
+     * On the write path only: a read never checks a length and never shortens a
+     * value it was handed. Refusing rather than truncating is the whole point —
+     * a silently shortened title is data loss the author never sees, while a
+     * `VALIDATION_ERROR` names the field and the bound.
+     */
+    out = out.max(node.maxLength, `must be at most ${node.maxLength} characters`);
+  }
   if (node.pattern !== undefined) {
     /**
      * Compiled per generated schema, not per parse. `data-schema-validation`

@@ -27,9 +27,11 @@
  * only branch there is).
  */
 
-import { customAlphabet } from 'nanoid';
 import { DomainError } from '../../services/tags.js';
-import { evaluateSlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
+import {
+  evaluateComputedDefault,
+  evaluateSlugPattern,
+} from '../../../shared/plugin-host/slug-pattern.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { RawEntity, RawEntityReader, RawEntityType } from '../../discovery/raw-entity-reader.js';
 import type { EntityStore } from '../../services/entity-store.js';
@@ -101,14 +103,37 @@ function inOneTransaction<T>(deps: GenericCrudDeps, fn: () => T): T {
 }
 
 /**
- * The random source `slugPattern`'s `nanoid(n)` step draws from.
+ * Fill every field the author left empty and the schema knows how to derive.
  *
- * Same alphabet and the same construction as the section indexer's anchors
- * (`[a-z0-9]`), because a slug and an anchor are read by the same eye and typed
- * into the same URL bar. `customAlphabet` is bound once: rebuilding it per call
- * would re-seed on every create.
+ * RUNS BEFORE `allocateSlug`, and the order is load-bearing rather than
+ * incidental: since 0.2.22 every type's slug pattern reads `title`, and `title`
+ * is itself often derived (`ac` truncates `text`, `endpoint` joins `method` and
+ * `path`). Deriving after the slug would hand the pattern an absent field, and
+ * an absent field contributes nothing — so every create of every such type would
+ * produce an empty slug and fail validation with a message pointing at the
+ * payload rather than at this line.
+ *
+ * Single pass, no chaining: registration rejects a `computedDefault` reading
+ * another computed field, so the result does not depend on iteration order.
+ * `'now'` is left to the writer, which owns the timestamps.
  */
-const slugNanoid = customAlphabet('abcdefghijklmnopqrstuvwxyz0123456789');
+function applyComputedDefaults(
+  module: BackendModule,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const schema = module.data?.schema;
+  if (!schema) return payload;
+  const out = { ...payload };
+  for (const [name, node] of Object.entries(schema)) {
+    const computed = node.computedDefault;
+    if (!computed || computed === 'now') continue;
+    const supplied = out[name];
+    if (typeof supplied === 'string' ? supplied.trim() !== '' : supplied != null) continue;
+    const derived = evaluateComputedDefault(computed, out);
+    if (derived) out[name] = derived;
+  }
+  return out;
+}
 
 function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
   const module = deps.host.getEntity(type);
@@ -140,7 +165,7 @@ function requireModule(deps: GenericCrudDeps, type: string): BackendModule {
  */
 function allocateSlug(deps: GenericCrudDeps, module: BackendModule, payload: Record<string, unknown>): string {
   const explicit = typeof payload.slug === 'string' ? payload.slug.trim() : '';
-  const base = explicit || evaluateSlugPattern(module.slugPattern, payload, (n) => slugNanoid(n));
+  const base = explicit || evaluateSlugPattern(module.slugPattern, payload);
   if (!base) throw new DomainError('VALIDATION', `${module.type}: slug resolves to empty`);
   if (!deps.reader.getEntity(module.type, base)) return base;
 
@@ -169,7 +194,9 @@ export function genericCreate(
   actor: ChangedBy,
 ): GenericMutateResult {
   const module = requireModule(deps, type);
-  const supplied = { ...((input ?? {}) as Record<string, unknown>) };
+  // Derived fields first — see `applyComputedDefaults`: the slug pattern reads
+  // `title`, and `title` may be one of them.
+  const supplied = applyComputedDefaults(module, { ...((input ?? {}) as Record<string, unknown>) });
   const tags = Array.isArray(supplied.tags) ? (supplied.tags as string[]) : [];
 
   /**

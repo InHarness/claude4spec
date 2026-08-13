@@ -26,7 +26,7 @@ import {
   type ResolvedComposition,
 } from '../../../shared/plugin-host/composition.js';
 import { PluginManifestError } from './manifest-adapter.js';
-import { assertContentBearingViews, validateDataDeclaration } from './data-schema-validation.js';
+import { validateDataDeclaration } from './data-schema-validation.js';
 import type { BackendModule } from './types.js';
 
 /** A bare SQL identifier — the shape safe to interpolate into DDL/DML. */
@@ -250,11 +250,9 @@ export function attachComposition(module: BackendModule, peers: Iterable<Backend
     module.slugPattern,
     module.payloadVersion,
     module.systemPrompt?.defaultPredicate,
+    // 0.2.22 — `contentOperation` resolution accepts a name the type advertises
+    // on its tools line, since plugin tools never reach the operation catalog.
+    module.systemPrompt?.mcpToolsLine,
   );
-  // 0.2.19 — the one cross-slot rule of the `contentBearing` flag: it is
-  // incompatible with a type computing its own views. Checked here for the same
-  // reason as the declaration above — this is the choke point all three
-  // registration paths pass through.
-  assertContentBearingViews(module.type, module.data?.schema, module.serializer?.views);
   return attachResolvedComposition(module, validateComposition(module, peers));
 }
