@@ -95,6 +95,8 @@ describe('item 63 — a type that declares only its data is a first-class type',
       // embedded-JSON fields sit inline while nothing else was invented.
       expect(cols).toEqual([
         'slug',
+        // The reserved field, first among the declared ones — every type has it.
+        'title',
         'name',
         'grade',
         'teeth',

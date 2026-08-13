@@ -138,12 +138,12 @@ describe('generated create shape — numeric bounds', () => {
   });
 
   it('applies the same rule to both axes', () => {
-    expect(shape.safeParse({ name: 'Q1', nRows: 2, nCols: -3 }).success).toBe(false);
-    expect(shape.safeParse({ name: 'Q1', nRows: 2, nCols: 1.5 }).success).toBe(false);
+    expect(shape.safeParse({ title: 'Q1', nRows: 2, nCols: -3 }).success).toBe(false);
+    expect(shape.safeParse({ title: 'Q1', nRows: 2, nCols: 1.5 }).success).toBe(false);
   });
 
   it('allows zero — an empty grid is a legitimate sheet', () => {
-    expect(shape.safeParse({ name: 'Q1', nRows: 0, nCols: 0 }).success).toBe(true);
+    expect(shape.safeParse({ title: 'Q1', nRows: 0, nCols: 0 }).success).toBe(true);
   });
 });
 

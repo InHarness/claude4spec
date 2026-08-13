@@ -61,6 +61,7 @@ describe('entity_version.serializer_version — written by a per-type service (0
     const row = t.db
       .prepare(`SELECT serializer_version FROM entity_version WHERE entity_type = 'ac' AND entity_slug = ?`)
       .get(created.body.data.slug) as { serializer_version: string };
-    expect(row.serializer_version).toBe('1');
+    // `ac` moved to payload 2 in 0.2.22, when it gained the reserved `title`.
+    expect(row.serializer_version).toBe('2');
   });
 });

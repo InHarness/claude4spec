@@ -261,7 +261,7 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     const update = z.object(buildUpdateShape(uiViewData));
     // `designSystemSlug` is `clearable` — null means detach.
     expect(update.safeParse({ designSystemSlug: null }).success).toBe(true);
-    // `name` is not, so null is a type error and not a way to blank the row.
-    expect(update.safeParse({ name: null }).success).toBe(false);
+    // `title` is not, so null is a type error and not a way to blank the row.
+    expect(update.safeParse({ title: null }).success).toBe(false);
   });
 });

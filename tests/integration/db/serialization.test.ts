@@ -15,7 +15,7 @@ describe('entity snapshot serialization', () => {
     // tags and linked dtos created deliberately out of alphabetical order
     const dtoSlugsCreated: string[] = [];
     for (const name of ['ZetaDto', 'AlphaDto']) {
-      const res = await request(t.app).post('/api/dtos').send({ name, fields: [] });
+      const res = await request(t.app).post('/api/dtos').send({ title: name, fields: [] });
       expect(res.status).toBe(201);
       dtoSlugsCreated.push(res.body.data.slug);
     }

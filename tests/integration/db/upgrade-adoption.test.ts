@@ -61,7 +61,7 @@ describe('upgrading a pre-0.2.2 database', () => {
           VALUES ('get-users', 'GET', '/users', 'List', '2024-01-01', '2024-01-01');
         INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation, status_code)
           VALUES ('get-users', 'user-dto', 'response', 200);
-        INSERT INTO ac (slug, title, text, created_at, updated_at)
+        INSERT INTO ac (slug, text, created_at, updated_at)
           VALUES ('ac-one', 'something holds', '2024-01-01', '2024-01-01');
       `);
 
@@ -98,7 +98,18 @@ describe('upgrading a pre-0.2.2 database', () => {
       const legacyTables = ['dto', 'endpoint', 'ac'];
       expect(result.created).not.toEqual(expect.arrayContaining(legacyTables));
       expect(result.created).toEqual(['spreadsheet']);
-      expect(result.alteredColumns).toEqual([]);
+      /**
+       * 0.2.22 — the adopted tables gain the reserved `title` column, and that
+       * is the point of `reconcileColumns`: a legacy database reaches the new
+       * shape by an ADD COLUMN at boot rather than by a rebuild that would
+       * discard the rows this test just checked are intact. `dto` also keeps its
+       * now-unused `name` column, since a removed field is resolved by the
+       * rebuild from files, never by dropping a column underneath a running
+       * install.
+       */
+      expect(result.alteredColumns).toEqual(
+        expect.arrayContaining(['endpoint.title', 'dto.title', 'ac.title']),
+      );
 
       // 3. The retired ledger is gone, dropped by the host chain rather than
       //    left behind to be mistaken for authoritative.

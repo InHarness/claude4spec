@@ -182,7 +182,7 @@ describe('ReferencesService fan-out', () => {
       // 2.0.0 tier K: written through the REST surface rather than through
       // `requireService`, which no longer hands back a write door for either
       // type. Same production path a client takes.
-      await request(app.app).post('/api/dtos').send({ name: 'UserDto', fields: [] }).expect(201);
+      await request(app.app).post('/api/dtos').send({ title: 'UserDto', fields: [] }).expect(201);
       await request(app.app)
         .post('/api/endpoints')
         .send({ method: 'GET', path: '/users', summary: 'list' })
