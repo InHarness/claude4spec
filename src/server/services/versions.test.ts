@@ -95,7 +95,7 @@ describe('VersionService.restore', () => {
     // A real row, because the delete now goes through the projection: with no
     // row there is nothing to delete and nothing to capture, and the test would
     // pass for the wrong reason.
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('my-dto', 'Foo')`).run();
     versions.createVersion('dto', 'my-dto', { name: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
     versions.createVersion('dto', 'my-dto', null, 'user', 'Deleted', 'delete', '1.1.0');
 
@@ -113,7 +113,7 @@ describe('VersionService.restore', () => {
     // Pre-M17 rows have no `op` column value at all — VersionDetail.op comes
     // back undefined (toDetail omits it when falsy), so the guard must not
     // rely on `op === 'delete'` alone; `data === null` must also trigger it.
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('my-dto', 'Foo')`).run();
     db.prepare(
       `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, op)
        VALUES ('dto', 'my-dto', 1, 'null', 'user', NULL)`,

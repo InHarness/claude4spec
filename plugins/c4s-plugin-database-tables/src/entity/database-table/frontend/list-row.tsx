@@ -59,7 +59,10 @@ export const DatabaseTableListRow: FC<DatabaseTableListRowProps> = ({
       </span>
     </div>
     <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>
-      {shapeSummary({ columns: item.columnCount, indexes: item.indexCount })}
+      {shapeSummary({
+        columns: item.columnCount ?? item.columns?.length ?? 0,
+        indexes: item.indexCount ?? item.indexes?.length ?? 0,
+      })}
     </div>
   </EntityListRow>
 );
