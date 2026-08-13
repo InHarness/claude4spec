@@ -52,7 +52,7 @@ export function legacyManifest(onUnregister: () => void = () => {}): PluginManif
   return {
     name: '@c4s/plugin-legacy',
     version: '0.9.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^3.0.0',
     onUnregister,
     contributes: {},
   };

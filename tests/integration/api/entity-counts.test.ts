@@ -21,8 +21,8 @@ describe('GET /api/entities/counts', () => {
   });
 
   it('reflects created entities', async () => {
-    expect((await request(t.app).post('/api/ui-views').send({ name: 'Profile' })).status).toBe(201);
-    expect((await request(t.app).post('/api/ui-views').send({ name: 'Settings' })).status).toBe(201);
+    expect((await request(t.app).post('/api/ui-views').send({ title: 'Profile' })).status).toBe(201);
+    expect((await request(t.app).post('/api/ui-views').send({ title: 'Settings' })).status).toBe(201);
 
     const res = await request(t.app).get('/api/entities/counts');
     expect(res.status).toBe(200);
@@ -53,8 +53,8 @@ describe('entity counts — one number per type, whoever asks', () => {
   afterEach(() => t.cleanup());
 
   it('the agent-prompt aggregate and the sidebar aggregate agree, type for type', async () => {
-    expect((await request(t.app).post('/api/ui-views').send({ name: 'Profile' })).status).toBe(201);
-    expect((await request(t.app).post('/api/ui-views').send({ name: 'Settings' })).status).toBe(201);
+    expect((await request(t.app).post('/api/ui-views').send({ title: 'Profile' })).status).toBe(201);
+    expect((await request(t.app).post('/api/ui-views').send({ title: 'Settings' })).status).toBe(201);
 
     const sidebar = (await request(t.app).get('/api/entities/counts')).body as Record<string, number>;
     const prompt = t.host.computeEntityCounts(t.db);

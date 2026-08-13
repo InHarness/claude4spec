@@ -75,7 +75,7 @@ function staleManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@acme/c4s-plugin-figure',
     version: '1.0.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^3.0.0',
     onUnregister: () => {},
     contributes: {
       referenceTypes: [{ tag: 'figure_ref', attrOrder: ['id', 'caption'] }],

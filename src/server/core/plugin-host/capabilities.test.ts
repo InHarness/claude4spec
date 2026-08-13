@@ -10,7 +10,7 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@c4s/plugin-with-entity',
     version: '1.0.0',
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^3.0.0',
     onUnregister: () => {},
     contributes: {
       entities: [
@@ -137,7 +137,7 @@ describe('M33 — host.listSettings / listCommands ignore config.entities', () =
     registry.registerPlugin({
       name: '@c4s/no-settings',
       version: '1.0.0',
-      hostApiVersion: '^2.0.0',
+      hostApiVersion: '^3.0.0',
       onUnregister: () => {},
       contributes: {},
     });
@@ -158,7 +158,7 @@ describe('M37 — contributes.skills (0.2.19)', () => {
   });
 
   function skillManifest(name: string, contributes: PluginManifest['contributes']): PluginManifest {
-    return { name, version: '1.0.0', hostApiVersion: '^2.0.0', onUnregister: () => {}, contributes };
+    return { name, version: '1.0.0', hostApiVersion: '^3.0.0', onUnregister: () => {}, contributes };
   }
 
   it('collects skills of either scope through listSkills', () => {

@@ -9,7 +9,7 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
   return {
     name: '@c4s/reloadable',
     version,
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^3.0.0',
     onUnregister,
     contributes: {
       entities: [

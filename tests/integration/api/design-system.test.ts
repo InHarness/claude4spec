@@ -39,7 +39,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('lists, gets, and full-replaces groups on update', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
 
     const list = await request(t.app).get('/api/design-systems');
     expect(list.status).toBe(200);
@@ -58,7 +58,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('ui-view accepts designSystemSlug (incl. a dangling one) and round-trips it', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
 
     const view = await request(t.app)
       .post('/api/ui-views')
@@ -76,7 +76,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('delete reports ui-views that become dangling', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
       .send({ name: 'Profile', designSystemSlug: 'brand' });
@@ -102,7 +102,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('renaming a design-system propagates to ui-view.designSystemSlug', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
       .send({ name: 'Profile', designSystemSlug: 'brand' });
@@ -118,7 +118,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('ui-view and design-system declare payload version 1, and the snapshot carries designSystemSlug', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
       .send({ name: 'Profile', designSystemSlug: 'brand' });
@@ -150,8 +150,8 @@ describe('design-system REST + ui-view relation', () => {
    * takes the default.
    */
   it('refuses a duplicate name rather than minting a second design system', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
-    const dup = await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand' });
+    const dup = await request(t.app).post('/api/design-systems').send({ title: 'Brand' });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('SLUG_CONFLICT');
   });

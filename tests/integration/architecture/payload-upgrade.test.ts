@@ -96,7 +96,7 @@ describe('payload upgrades on the disk-load path', () => {
     warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // The DTO the legacy junction points at. A dangling ref would be warned
     // through rather than written, which would hide the junction assertions.
-    const dto = await request(t.app).post('/api/dtos').send({ name: 'UserDto', fields: [] });
+    const dto = await request(t.app).post('/api/dtos').send({ title: 'UserDto', fields: [] });
     expect(dto.status).toBe(201);
   });
   afterEach(() => {
@@ -109,7 +109,7 @@ describe('payload upgrades on the disk-load path', () => {
     await indexerFor(t).indexAll();
 
     const file = readFile(t, 'endpoint', 'get-legacy-one');
-    expect(file.payloadVersion).toBe(2);
+    expect(file.payloadVersion).toBe(3);
     expect(file.linkedDtos).toEqual([{ dto: 'user-dto', relation: 'response', statusCode: 200 }]);
     expect(file.linked_dtos).toBeUndefined();
     // The declaration's answer, applied to the value it was contradicted about.
@@ -183,7 +183,7 @@ describe('payload upgrades on the disk-load path', () => {
     expect(created.status).toBe(201);
     const slug = created.body.data.slug as string;
 
-    expect(readFile(t, 'endpoint', slug).payloadVersion).toBe(2);
+    expect(readFile(t, 'endpoint', slug).payloadVersion).toBe(3);
     const before = fs.readFileSync(fileOf(t, 'endpoint', slug), 'utf-8');
     const versionsBefore = versionRows(t, 'endpoint', slug);
 
@@ -222,9 +222,9 @@ describe('a projected collection survives the rebuild that reads it', () => {
       return (res.body as { data: { slug: string } }).data;
     };
     const dtos = [
-      (await post('/api/dtos', { name: 'AlphaDto', fields: [] })).slug,
-      (await post('/api/dtos', { name: 'BetaDto', fields: [] })).slug,
-      (await post('/api/dtos', { name: 'GammaDto', fields: [] })).slug,
+      (await post('/api/dtos', { title: 'AlphaDto', fields: [] })).slug,
+      (await post('/api/dtos', { title: 'BetaDto', fields: [] })).slug,
+      (await post('/api/dtos', { title: 'GammaDto', fields: [] })).slug,
     ];
     const endpoint = (await post('/api/endpoints', { method: 'GET', path: '/api/things', summary: 's' })).slug;
 
@@ -280,7 +280,7 @@ describe('behaviour the per-type restore hooks used to provide', () => {
     // a rebuild reported clean success and the user found out by opening the view.
     const created = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'never-existed' });
+      .send({ title: 'Profile', designSystemSlug: 'never-existed' });
     expect(created.status).toBeLessThan(400);
 
     const writer = new HostEntityWriter(t.host, t.tagsService, { capture: false }, {
@@ -289,7 +289,7 @@ describe('behaviour the per-type restore hooks used to provide', () => {
       versions: null,
     });
     const result = writer.upsert('ui-view', created.body.data.slug, {
-      name: 'Profile',
+      title: 'Profile',
       designSystemSlug: 'never-existed',
     }, 'user');
 
@@ -301,7 +301,7 @@ describe('behaviour the per-type restore hooks used to provide', () => {
     // `EndpointService.linkDto` rejected an unknown relation; the generic junction
     // door inserted it verbatim, so it rendered on the detail page and was written
     // back into the entity file as if it were real.
-    const dto = await request(t.app).post('/api/dtos').send({ name: 'UserDto', fields: [] });
+    const dto = await request(t.app).post('/api/dtos').send({ title: 'UserDto', fields: [] });
     const ep = await request(t.app)
       .post('/api/endpoints')
       .send({ method: 'GET', path: '/api/things', summary: 's' });
@@ -312,6 +312,9 @@ describe('behaviour the per-type restore hooks used to provide', () => {
       versions: null,
     });
     const result = writer.upsert('endpoint', ep.body.data.slug, {
+      // `title` is a required column since 0.2.22; the writer takes a whole
+      // payload, so this test has to supply what the create derived.
+      title: 'GET /api/things',
       method: 'GET',
       path: '/api/things',
       summary: 's',
