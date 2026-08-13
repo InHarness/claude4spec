@@ -69,7 +69,7 @@ describe('design-system REST + ui-view relation', () => {
     // dangling reference is allowed (no FK) — write succeeds, value persists
     const dangling = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Ghost', designSystemSlug: 'does-not-exist' });
+      .send({ title: 'Ghost', designSystemSlug: 'does-not-exist' });
     expect(dangling.status).toBe(201);
     const gv = await request(t.app).get(`/api/ui-views/${dangling.body.data.slug}`);
     expect(gv.body.data.designSystemSlug).toBe('does-not-exist');
@@ -117,7 +117,7 @@ describe('design-system REST + ui-view relation', () => {
     expect(gv.body.data.designSystemSlug).toBe('brand-2026');
   });
 
-  it('ui-view and design-system declare payload version 1, and the snapshot carries designSystemSlug', async () => {
+  it('ui-view and design-system declare their payload versions, and the snapshot carries designSystemSlug', async () => {
     await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
@@ -126,10 +126,11 @@ describe('design-system REST + ui-view relation', () => {
     // 0.2.9 (item 13): an integer payload version on the MANIFEST, not a
     // per-serializer semver. The semver was advisory and unenforced; this one
     // is what the upgrade chain acts on.
-    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(1);
-    // design-system is at 2 as of tier B PR2: v1 files carry a `description:
-    // null` on every token that only ever existed in the file.
-    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(2);
+    // Both moved in 0.2.22, when `name` became the reserved `title`: ui-view
+    // 1 → 2, design-system 2 → 3 (its v1 step is the token `description: null`
+    // that only ever existed in the file).
+    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(2);
+    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(3);
 
     const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.data.slug), t.rawReader) as {
       designSystemSlug: string | null;

@@ -150,9 +150,10 @@ describe('hostDefaultFields', () => {
   it('boosts an identity path the type actually declares, and invents none', () => {
     const withName = hostDefaultFields(moduleWith({ schema: { name: { kind: 'string' } } }));
     expect(withName).toContainEqual({ path: 'name', weight: 3 });
-    // `ac` has no `name`/`label`/`title`; advertising one would be a path that
-    // cannot match.
-    expect(paths(acData)).not.toContain('title');
+    // Since 0.2.22 EVERY type declares `title`, so the boost always applies —
+    // what the rule still forbids is inventing a path the schema lacks.
+    expect(hostDefaultFields(moduleWith(acData))).toContainEqual({ path: 'title', weight: 3 });
+    expect(paths(acData)).not.toContain('label');
   });
 
   it('degrades to the identity fallback rather than throwing, when the slot throws', () => {
