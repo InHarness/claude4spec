@@ -16,9 +16,9 @@ import { detailCommand } from './c4s/commands/detail.js';
 import { catalogCommand } from './c4s/commands/catalog.js';
 import { describeCommand } from './c4s/commands/describe.js';
 import { listTagsCommand } from './c4s/commands/list-tags.js';
-import { listSlugsCommand } from './c4s/commands/list-slugs.js';
 import { findReferencesCommand } from './c4s/commands/find-references.js';
 import { getEntitiesCommand } from './c4s/commands/get-entities.js';
+import { getFieldContentCommand } from './c4s/commands/get-field-content.js';
 import { listEntitiesCommand } from './c4s/commands/list-entities.js';
 import { listPagesCommand } from './c4s/commands/list-pages.js';
 import { listSectionsCommand } from './c4s/commands/list-sections.js';
@@ -56,13 +56,13 @@ const COMMANDS: CliCommandContribution[] = [
   catalogCommand,
   describeCommand,
   listTagsCommand,
-  listSlugsCommand,
   findReferencesCommand,
   // 0.2.6 — the CLI stops narrowing the core's operation set. Every one of the
   // fourteen M39 operations is reachable from here: these ten by their own name,
   // the other four through the tag commands and `catalog`/`describe` above,
   // which are aliases with a fixed `--view`.
   getEntitiesCommand,
+  getFieldContentCommand,
   listEntitiesCommand,
   listPagesCommand,
   listSectionsCommand,
@@ -122,21 +122,33 @@ Agent:
 
 Discovery (through the server's operations — see "Server required" below):
   catalog                          counts + version + description + roleNoun + mcpToolsLine per type (smoke test)
-  describe --type <t> [--view <v>] JSON Schema per view for one type, plus the paths a
-                                    search would cover. Since 0.2.6 the payload is the core's
-                                    { types: [ { type, label, version, views, schemas,
-                                    searchableFields } ] } — it was a bare { version, views,
-                                    schemas } before
+  describe --type <t>              what a type IS: JSON Schemas, the value constraints a write
+                                    must satisfy, selectableFields (the names --select takes),
+                                    contentFields (fields no generic read carries, with the
+                                    operation that issues them) and searchableFields. Call it
+                                    before a read as well as before a write. 'views' left the
+                                    payload in 0.2.22 with the view axis itself
   list-tags [--with-counts] [--min-count <n>] [--co-occurring-with <slug>]
                                     Since 0.2.6 this is the paginated { items, total, hasMore }
                                     (was { tags: [...] }), and per-type counts are OPT-IN via
                                     --with-counts — they are a product of tags by types.
                                     --co-occurring-with names the tags sharing entities with one
-  list-slugs --type <t>            shorthand for list-entities in the minimal view
-  list-entities --type <t> [--tags <t1,t2>] [--filter and|or] [--view <v>] [--mode items|count]
-  get-entities --type <t> --slugs <s1,s2> [--view <v>]    several entities in one call, any view
-  search-entities --type <t> --query <q> [--fields <f1,f2>] [--view <v>] [--mode hits|count]
-                                    --type is required; output always declares searchedFields
+  list-entities --type <t> [--tags <t1,t2>] [--tag-filter and|or]
+                [--sort createdAt|title|slug] [--dir asc|desc] [--mode items|count]
+                                    rows are { slug, title }; only the default createdAt order
+                                    has a write-stable offset window. Absorbed list-slugs,
+                                    which is gone without an alias
+  get-entities --type <t> --slugs <s1,s2> [--select <f1,f2>]
+                                    several entities in one call. --select names top-level
+                                    fields (slug/title/tags always come back); omit it for
+                                    everything except content-bearing fields, --select= for the
+                                    identity skeleton alone
+  get-field-content --type <t> --slug <s> --field <f>
+                                    the content of one content-bearing field — the only way to
+                                    read one, since no generic read carries it
+  search-entities --type <t> --query <q> [--fields <f1,f2>] [--mode hits|count]
+                                    --type is required; hits are { slug, title, score } and the
+                                    output always declares searchedFields
   resolve-identity --query <q> [--types <t1,t2>] [--limit <n>]
                                     the only cross-type command: "what is this called?"
   check-consistency [--severity error|warning] [--rule <r>] [--limit <n>]

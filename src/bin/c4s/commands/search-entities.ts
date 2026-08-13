@@ -1,8 +1,9 @@
 import type { ParsedArgs } from '../args.js';
-import { optionalString, optionalStringList, paginationFrom, requireString } from '../args.js';
+import { refuseFlags, optionalString, optionalStringList, paginationFrom, requireString } from '../args.js';
 import { delegateGet } from '../delegate.js';
 import { writeOutput } from '../output.js';
-import { normalizeEntityType, normalizeViewKind } from '../type-validation.js';
+import { normalizeEntityType } from '../type-validation.js';
+import { refuseSelect } from './_select.js';
 import { CliError } from '../errors.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -25,8 +26,8 @@ export async function runSearchEntities(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const query = requireString(args, 'query');
   const fields = optionalStringList(args, 'fields');
-  const rawView = optionalString(args, 'view');
-  const view = rawView === undefined ? undefined : normalizeViewKind(rawView);
+  refuseSelect(args);
+  refuseFlags(args, ['view'], 'the view axis is gone; search hits are a fixed { slug, title, score } row');
 
   const rawMode = optionalString(args, 'mode');
   if (rawMode !== undefined && rawMode !== 'hits' && rawMode !== 'count') {
@@ -37,7 +38,6 @@ export async function runSearchEntities(args: ParsedArgs): Promise<void> {
     await delegateGet(args, `/entities/${type}/search`, {
       q: query,
       fields,
-      view,
       mode: rawMode,
       ...paginationFrom(args),
     }),
@@ -49,6 +49,6 @@ export const searchEntitiesCommand: CliCommandContribution = {
   name: 'search-entities',
   operation: 'search_entities',
   executionMode: 'server-delegating',
-  errorCodes: ['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
+  errorCodes: ['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT'],
   handler: runSearchEntities,
 };

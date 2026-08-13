@@ -1,6 +1,7 @@
 import type { ParsedArgs } from '../args.js';
 import { optionalInt, optionalStringList, refuseFlags, requireString } from '../args.js';
 import { delegateGet } from '../delegate.js';
+import { refuseSelect } from './_select.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
 import type { CliCommandContribution } from '../registry.js';
@@ -25,6 +26,7 @@ export async function runResolveIdentity(args: ParsedArgs): Promise<void> {
   const types = optionalStringList(args, 'types')?.map(normalizeEntityType);
   const limit = optionalInt(args, 'limit');
 
+  refuseSelect(args);
   refuseFlags(args, ['offset'], 'resolve-identity is a top-N ranking: page two is the answers the ranking already judged worse');
 
   writeOutput(await delegateGet(args, '/_meta/identities', { q: query, types, limit }), args);

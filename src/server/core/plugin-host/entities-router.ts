@@ -7,7 +7,7 @@ import type { EntityCountsResponse } from '../../../shared/entities.js';
 import type { EntityType } from '../../../shared/entities.js';
 import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
-import { invalidType } from '../../discovery/errors.js';
+import { invalidType, isDiscoveryError } from '../../discovery/errors.js';
 import { httpStatusForCode } from '../../operations/error-codes.js';
 import { errorHandler } from '../../routes/errors.js';
 import { commaList, nonNegativeInt, positiveInt } from '../../routes/query-params.js';
@@ -393,6 +393,48 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    * ("known slugs", "the call that would have worked"), and re-phrasing them at
    * the transport is how two surfaces start disagreeing about the same refusal.
    */
+  /**
+   * The `rest` rendering of `get_field_content` — one route PER FIELD, not per
+   * type: a type with two content-bearing fields is addressable at two URLs.
+   *
+   * It is not modelled as an endpoint entity, because how many of these exist
+   * depends on which plugins are installed, and a spec cannot enumerate routes
+   * that only exist in some deployments.
+   *
+   * NO EXCEPTION FOR THE UI. The React component rendering a diagram fetches its
+   * body here, exactly as an agent does — the width of a record is the same
+   * question for both, answered by the same parameter. The earlier shape of this
+   * rule ("REST under the UI returns everything") is what let a field be
+   * excluded from the agent's view while still being shipped to the browser, so
+   * the exclusion was never really an exclusion.
+   *
+   * A field that is absent or not content-bearing is a 404, NOT the 400 the
+   * core's `INVALID_ARGUMENT` maps to by default. The remap is deliberate and
+   * local to this route: here the field name is part of the URL PATH, so an
+   * unrecognised one means "no such resource" in exactly the way an unknown slug
+   * does. On every other surface the same condition really is a bad argument and
+   * keeps its 400. The message is the core's either way, so it still carries the
+   * covered field names and a caller can fix the URL from the response.
+   */
+  router.get('/:type/:slug/content/:field', (req, res, next) => {
+    try {
+      const type = assertActiveType(host, req.params.type);
+      res.json(
+        discovery.getFieldContent({
+          type,
+          slug: String(req.params.slug),
+          field: String(req.params.field),
+        }),
+      );
+    } catch (err) {
+      if (isDiscoveryError(err) && err.code === 'INVALID_ARGUMENT') {
+        res.status(404).json({ error: err.message, code: 'NOT_FOUND', hint: err.hint });
+        return;
+      }
+      next(err);
+    }
+  });
+
   router.get('/:type/:slug/collections/:field/overview', (req, res, next) => {
     try {
       res.json(
