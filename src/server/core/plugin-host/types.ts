@@ -155,12 +155,13 @@ export interface CrudFacade {
   ): Promise<{ slug: string; extent: number }>;
 }
 
-export interface RouteRegistration {
-  /** Mount prefix, e.g. "/api/endpoints". */
-  prefix: string;
-  /** Express subrouter — handler chain owned by the plugin. */
-  router: Router;
-}
+/*
+ * 2.0.0 — `RouteRegistration { prefix, router }` was REMOVED with
+ * `routes.prefix`. A plugin's router is mounted at the module's `pathPrefix`, so
+ * a per-registration prefix is no longer a thing a plugin can choose, and the
+ * `routes` slot is `{ router }` alone. The interface outlived its last consumer
+ * and was carrying a field the changelog lists as removed.
+ */
 
 /**
  * Mount-time context passed to each plugin's `backend.mount(ctx)`. Carries

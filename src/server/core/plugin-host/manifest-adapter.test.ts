@@ -1,6 +1,11 @@
 import { FIXTURE_DATA, FIXTURE_SLUG_PATTERN } from '../../../../tests/helpers/fixture-module.js';
 import { describe, expect, it, vi } from 'vitest';
-import { lowerEntityContribution, PluginManifestError, synthesizeMount } from './manifest-adapter.js';
+import {
+  assertSerializationContribution,
+  lowerEntityContribution,
+  PluginManifestError,
+  synthesizeMount,
+} from './manifest-adapter.js';
 import type { EntityContribution } from '../../../shared/plugin-host/manifest.js';
 import type { MountContext } from './types.js';
 
@@ -38,7 +43,7 @@ describe('lowerEntityContribution', () => {
     expect(mod.systemPrompt.roleNoun).toBe('Glossary');
   });
 
-  it('throws PluginManifestError on a missing required field', () => {
+  it('[ac:ac-kazdy-typ-deklaruje-payloadversion-pl] throws PluginManifestError on a missing required field', () => {
     for (const field of ['data', 'slugPattern', 'payloadVersion'] as const) {
       expect(() => lowerEntityContribution(base({ [field]: undefined })), field).toThrow(
         PluginManifestError,
@@ -72,6 +77,47 @@ describe('lowerEntityContribution', () => {
     ['onEntityRenamed', { onEntityRenamed: () => {} }, /ref: '<type>'/],
   ])('rejects the removed backend slot %s and names its successor', (_slot, extra, successor) => {
     expect(() => lowerEntityContribution(base({ backend: extra as never }))).toThrow(successor);
+  });
+});
+
+/**
+ * The closed list of imperative envelope callbacks is EMPTY: `snapshot` and
+ * `restore` are not authorable slots, the host generates both from the type's
+ * logical `data.schema`. `REMOVED_SERIALIZER_SLOTS` has carried them since tier
+ * B PR2, but nothing fed it those keys — and a rejection nobody exercises is a
+ * rejection that survives exactly until someone reorders the list.
+ *
+ * Rejected rather than ignored on purpose: a package still shipping `snapshot`
+ * believes it owns its file format, so silently dropping the slot would leave
+ * the host writing a payload that package's own read path disagrees with.
+ */
+describe('assertSerializationContribution — snapshot/restore are not authorable', () => {
+  it.each([
+    ['snapshot', { snapshot: () => ({}) }],
+    ['restore', { restore: () => {} }],
+  ])(
+    '[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] rejects an authored `%s` slot, naming data.schema as its successor',
+    (slot, serializer) => {
+      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
+        PluginManifestError,
+      );
+      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
+        new RegExp(`serializer\\.${slot}\`? was removed in Host API 2\\.0\\.0`),
+      );
+      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
+        /generated from data\.schema/,
+      );
+    },
+  );
+
+  it('[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] accepts a serializer that declares only computed views, a diff and a payload version', () => {
+    expect(() =>
+      assertSerializationContribution(
+        'widget',
+        { views: { detail: () => ({}) }, diff: () => ({}) },
+        1,
+      ),
+    ).not.toThrow();
   });
 });
 

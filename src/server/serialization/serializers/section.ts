@@ -70,13 +70,19 @@ const views: ViewSet<RawSection> = {
   },
 
   /**
-   * Sections carry no tags and are not addressable by slug, so they never
-   * appear in a manual `<element_list>` or a `<tagged_list>`. These exist so
-   * that a caller which asks anyway gets the coordinates instead of the generic
-   * envelope.
+   * `element_list_item` and `tagged_list_item` are DELIBERATELY absent, and the
+   * reason is domain, not cost. A section has no slug — its identity key is the
+   * anchor, and it will not get one — so it can never be named in an
+   * `<element_list slugs="…"/>`; it carries no tags, so it can never fall into a
+   * `<tagged_list/>`. Neither list can produce a section to project.
+   *
+   * They used to be declared here, returning coordinates, so that a caller who
+   * asked anyway got something shaped rather than the generic envelope. That
+   * inverted the contract: it made the two views look supported to anyone
+   * reading the registry. A caller who asks now falls through to
+   * `genericSection`, which is the honest answer — this serializer does not
+   * implement those views.
    */
-  element_list_item: (section) => coordinates(section),
-  tagged_list_item: (section) => coordinates(section),
 };
 
 /**

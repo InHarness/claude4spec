@@ -343,7 +343,7 @@ describe('discovery core', () => {
     expect(result.hasMore).toBe(false);
   });
 
-  it('describe_types on a deactivated type is INVALID_TYPE carrying the active list', () => {
+  it('[ac:ac-helper-serialize-host-type-view-entit] describe_types on a deactivated type is INVALID_TYPE carrying the active list', () => {
     const inactive = { ...widgetModule(), type: 'ghost' };
     const c = core([pagesRoot()], [widgetModule()]);
     void inactive;
@@ -362,7 +362,7 @@ describe('discovery core', () => {
     );
   });
 
-  it('describe_types answers every view, computed or generic', () => {
+  it('[ac:ac-operacja-overview-zwraca-per-aktywny] describe_types answers every view, computed or generic', () => {
     // "Generic is the rule": a type that computes ONE view still answers all
     // five, and must not read as supporting only the one — which is what the old
     // presence-check chain reported. The fixture computes `single_element` only.
@@ -1320,6 +1320,67 @@ describe('discovery core', () => {
       expect.objectContaining({ id: 'notes', sectionIndexed: false, pageCount: 1 }),
     ]);
     expect(result.claude4spec).toBe('test');
+  });
+
+  /**
+   * `overview` is the ORIENTATION call, and the line between it and
+   * `describe_types` is what keeps it cheap: five scalars per type, never a
+   * schema and never a view list. An agent that has to page through generated
+   * JSON Schema to learn how many endpoints exist has been handed the wrong
+   * operation, so the absence assertions below matter as much as the presence
+   * ones.
+   */
+  it('[ac:ac-operacja-overview-zwraca-per-aktywny] reports five scalars per active type, and neither schema nor views', async () => {
+    const withTools: BackendModule = {
+      ...widgetModule(),
+      systemPrompt: {
+        roleNoun: 'Widgets',
+        mcpToolsLine: 'widget-tools: spin, unspin',
+      },
+    };
+    const c = core([pagesRoot()], [withTools]);
+
+    const result = await c.overview();
+
+    expect(result.types.widget).toEqual({
+      count: 0,
+      payloadVersion: 1,
+      // Falls back to `roleNoun` when the type declares no narrative block.
+      description: 'Widgets',
+      roleNoun: 'Widgets',
+      mcpToolsLine: 'widget-tools: spin, unspin',
+    });
+    expect(result.types.widget).not.toHaveProperty('schema');
+    expect(result.types.widget).not.toHaveProperty('views');
+  });
+
+  it('[ac:ac-operacja-overview-zwraca-per-aktywny] omits mcpToolsLine for a type that contributes no server of its own', async () => {
+    // The default fixture declares `roleNoun` and nothing else. An absent key,
+    // not an empty string — the row says "no custom tools", it does not
+    // advertise a server that is not there.
+    const result = await core([pagesRoot()]).overview();
+
+    expect(result.types.widget).not.toHaveProperty('mcpToolsLine');
+    expect(result.types.widget).toMatchObject({ roleNoun: 'Widgets', payloadVersion: 1 });
+  });
+
+  it('[ac:ac-operacja-overview-zwraca-per-aktywny] lists only ACTIVE types — a deactivated one is absent, not zero-counted', async () => {
+    const gadget: BackendModule = { ...widgetModule(), type: 'gadget' };
+    // Available but not active: the host knows it, `overview` does not list it.
+    const pluginHost = host([widgetModule()], [widgetModule(), gadget]);
+    const c = createDiscoveryCore({
+      reader: new RawEntityReader(db, pluginHost),
+      db,
+      host: pluginHost,
+      serialization: new SerializationEngine(pluginHost, sectionSerializer),
+      roots: [pagesRoot()],
+      projectDir: cwd,
+      packageVersion: 'test',
+    });
+
+    const result = await c.overview();
+
+    expect(Object.keys(result.types)).toEqual(['widget']);
   });
 
   it('search_pages degrades hit identity on a root with no section index', async () => {

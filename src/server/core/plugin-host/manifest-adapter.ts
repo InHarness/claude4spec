@@ -282,7 +282,10 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
       mcpServer: backend.mcpServer as
         | ((service: unknown, ctx: MountContext) => McpServerFactory)
         | undefined,
-      auxTables: backend.auxTables as string[] | undefined,
+      // No `auxTables`: `REMOVED_BACKEND_SLOTS` above throws on it, so a
+      // contribution carrying one never reaches this line. The slot survives on
+      // the server-side `BackendModule` for in-repo modules built by hand — it
+      // is only the AUTHORING surface that stopped offering it.
     };
   }
 

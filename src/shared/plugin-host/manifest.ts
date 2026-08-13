@@ -138,19 +138,14 @@ export interface EntityContribution extends EntityModuleManifest {
      * `routes`/`mcpServer` factories below (referential identity).
      */
     service?: unknown;
-    /**
-     * M13 — declarative contribution to the generic `entity-tools` MCP server.
-     * Requires `service` (validated at registration — `crud` without `service`
-     * is a rejected plugin, not silently-missing CRUD). `updateSchema` defaults
-     * to `createSchema.partial()`.
+    /*
+     * 2.0.0 — `crud` was REMOVED. Every active type has CRUD by construction and
+     * its input schemas are generated from `data.schema` (create omits
+     * `systemManaged`/`localSurrogate`, update is partial and tri-state). The
+     * slot outlived its handling by two releases: the server stopped copying it
+     * into the lowered module, so a manifest still declaring one was silently
+     * ignored while this type went on advertising it to plugin authors.
      */
-    crud?: {
-      /** server `ZodRawShape`. */
-      createSchema: unknown;
-      /** server `ZodRawShape`; default `createSchema.partial()`. */
-      updateSchema?: unknown;
-      descriptions?: { entity?: string };
-    };
     /**
      * A factory receiving the SAME service instance as `crud`/`mcpServer`
      * (server `(service, ctx) => Router`), mounted at `pathPrefix`. ALWAYS a
@@ -174,12 +169,13 @@ export interface EntityContribution extends EntityModuleManifest {
      * server registry narrows it to `(service, ctx) => McpServerFactory`.
      */
     mcpServer?: unknown;
-    /**
-     * 0.2.2 — auxiliary tables this module owns beyond `table` (junctions, side
-     * indexes) whose rows are derived from the entity files. The host clears
-     * them on an index rebuild and otherwise never interprets them.
+    /*
+     * 2.0.0 — `auxTables` was REMOVED along with `table`. Junctions and side
+     * indexes are derived from `data.schema` (a collection with `keyFields`
+     * projects to its own table), so there is nothing left for a module to
+     * declare. Unlike `crud` this one is REJECTED at registration, and the
+     * declaration surviving here made the published type contradict the loader.
      */
-    auxTables?: string[];
     /*
      * 2.0.0 — `onEntityRenamed` was REMOVED. Declare `ref: '<type>'` on the
      * field that holds the reference and the host repoints it; see the

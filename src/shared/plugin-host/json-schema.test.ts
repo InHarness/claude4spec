@@ -59,7 +59,7 @@ describe('nodeSchema', () => {
 });
 
 describe('viewSchema', () => {
-  it('describes the generic view exactly: closed, column-keyed, with the provenance markers', () => {
+  it('[ac:ac-slot-views-zawiera-wylacznie-widoki-o] describes the generic view exactly: closed, column-keyed, with the provenance markers', () => {
     const schema = viewSchema({ type: 'widget', data: DATA, view: 'single_element', computed: false });
     const props = schema.properties as Record<string, unknown>;
 
@@ -114,7 +114,7 @@ describe('viewSchema', () => {
     });
   });
 
-  it('describes a computed view as an OPEN floor — the host cannot introspect a function', () => {
+  it('[ac:ac-slot-views-zawiera-wylacznie-widoki-o] describes a computed view as an OPEN floor — the host cannot introspect a function', () => {
     const schema = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: true });
     const props = schema.properties as Record<string, unknown>;
 
