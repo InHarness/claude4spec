@@ -67,7 +67,7 @@ describe('system-fields', () => {
 });
 
 describe('a stamp-only delta is noop', () => {
-  it('through defaultDeepDiff', () => {
+  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] through defaultDeepDiff', () => {
     const payload = { slug: 'x', name: 'X' };
     const diff = defaultDeepDiff(
       'x',
@@ -78,7 +78,7 @@ describe('a stamp-only delta is noop', () => {
     expect(diff.op).toBe('noop');
   });
 
-  it('through a per-type diff slot — the envelope never reaches the serializer', () => {
+  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] through a per-type diff slot — the envelope never reaches the serializer', () => {
     const seen: unknown[] = [];
     const payload = { slug: 'x', name: 'X' };
     const diff = diffEntity(

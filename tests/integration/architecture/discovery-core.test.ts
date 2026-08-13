@@ -69,7 +69,7 @@ function hits(files: string[], pattern: RegExp): string[] {
 const isProduction = (file: string) => !/\.test\.tsx?$/.test(file) && !file.includes('__fixtures__');
 
 describe('M39 — Discovery Core', () => {
-  it('the serialization registry is invoked only from the core', () => {
+  it('[ac:ac-registry-l9-jest-wolane-wylacznie-prz] the serialization registry is invoked only from the core', () => {
     const outside = sourceFiles(SRC).filter(
       (f) =>
         isProduction(f) &&
@@ -91,7 +91,7 @@ describe('M39 — Discovery Core', () => {
    * engine directly through a dep it called `registry`, so the grep passed while
    * a transport was doing precisely what the item forbids.
    */
-  it('no global serializer registry exists, and no transport reaches the engine', () => {
+  it('[ac:ac-registry-l9-jest-wolane-wylacznie-prz] no global serializer registry exists, and no transport reaches the engine', () => {
     expect(hits(sourceFiles(SRC).filter(isProduction), /serializerRegistry|registerSerializer/)).toEqual([]);
 
     /**

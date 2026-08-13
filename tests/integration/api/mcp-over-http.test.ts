@@ -54,7 +54,7 @@ describe('MCP over HTTP', () => {
     return client;
   }
 
-  it('[ac:ac-mcp-over-http-mount] completes a handshake and lists the composed catalog', async () => {
+  it('completes a handshake and lists the composed catalog', async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     const names = tools.map((t) => t.name);
@@ -76,7 +76,7 @@ describe('MCP over HTTP', () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
-  it('[ac:ac-mcp-over-http-mount] actually executes an operation, not just advertises it', async () => {
+  it('actually executes an operation, not just advertises it', async () => {
     const client = await connect();
     const result = await client.callTool({ name: 'overview', arguments: {} });
     const text = (result.content as Array<{ type: string; text: string }>)[0]!.text;

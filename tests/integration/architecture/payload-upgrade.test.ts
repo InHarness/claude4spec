@@ -104,7 +104,7 @@ describe('payload upgrades on the disk-load path', () => {
     t.cleanup();
   });
 
-  it('rewrites a v1 file to v2 without stamping updatedAt or capturing a version', async () => {
+  it('[ac:ac-kazdy-typ-deklaruje-payloadversion-pl] [ac:ac-upgrade-payloadu-nie-jest-mutacja-dom] [ac:ac-upgrade-payloadu-nie-zmienia-updatedat] rewrites a v1 file to v2 without stamping updatedAt or capturing a version', async () => {
     const stamp = writeV1Endpoint(t, 'one');
     await indexerFor(t).indexAll();
 
@@ -125,7 +125,7 @@ describe('payload upgrades on the disk-load path', () => {
     expect(versionRows(t, 'endpoint', 'get-legacy-one')).toBe(0);
   });
 
-  it('rewrites the file exactly once — a second rebuild leaves it byte-identical', async () => {
+  it('[ac:ac-upgrade-payloadu-nie-jest-mutacja-dom] rewrites the file exactly once — a second rebuild leaves it byte-identical', async () => {
     writeV1Endpoint(t, 'two');
     await indexerFor(t).indexAll();
 

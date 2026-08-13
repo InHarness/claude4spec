@@ -258,7 +258,7 @@ describe('snapshotFromSchema — keyed collections', () => {
     ]);
   });
 
-  it('produces an identical capture for two equivalent states', () => {
+  it('[ac:ac-snapshot-wygenerowany-ze-schematu-jes] produces an identical capture for two equivalent states', () => {
     const dense = gridSnap([{ r: 1, c: 1, value: 'a' }, { r: 2, c: 2, value: 'b' }]);
     const shuffledWithEmpties = gridSnap([
       { r: 2, c: 2, value: 'b' },

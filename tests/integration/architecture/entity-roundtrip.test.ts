@@ -162,7 +162,7 @@ describe('entity round trip is a fixpoint', () => {
    * Unreachable through `snapshot → restore → snapshot`, which never assembles
    * an object from a delta — which is why this was invisible until 0.2.7.
    */
-  it('a partial update takes createdAt from the FILE, not from the index row', async () => {
+  it('[ac:ac-pola-systemowe-koperty-createdat-upda] a partial update takes createdAt from the FILE, not from the index row', async () => {
     await seed(t);
     await indexerFor(t).indexAll();
 

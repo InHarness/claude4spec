@@ -232,7 +232,7 @@ describe('upgradeCapture', () => {
     });
   });
 
-  it('reports success and the migrated payload on a clean upgrade', () => {
+  it('[ac:ac-kazdy-typ-deklaruje-payloadversion-pl] reports success and the migrated payload on a clean upgrade', () => {
     return import('./payload-upgrade.js').then(({ upgradeCapture }) => {
       const module = moduleAt(2, [(p) => ({ ...(p as object), migrated: true })]);
       const result = upgradeCapture(module, { name: 'x' }, 1);

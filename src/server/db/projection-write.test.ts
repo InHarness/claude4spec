@@ -257,7 +257,7 @@ describe('keyed collections', () => {
   const cellsOf = (db: Database.Database) =>
     db.prepare('SELECT r, c, value FROM grid_cells ORDER BY r, c').all();
 
-  it('reconciles per key: absent keys go, present keys land', () => {
+  it('[ac:ac-restore-kolekcji-wartosciowej-podmien] [ac:ac-restore-kolekcji-wartosciowej-podmienia] reconciles per key: absent keys go, present keys land', () => {
     const db = seeded();
     // Replace-all: (1,1) survives because it is in the dump, (2,2) goes because
     // it is not, (3,3) arrives. A value-collection write would have produced the
@@ -710,7 +710,7 @@ describe('upsertProjectionRow — projection tables', () => {
     ]);
   });
 
-  it('REPLACES the rows wholesale on rewrite — the collection IS the field', () => {
+  it('[ac:ac-restore-kolekcji-wartosciowej-podmien] [ac:ac-restore-kolekcji-wartosciowej-podmienia] REPLACES the rows wholesale on rewrite — the collection IS the field', () => {
     const db = projected();
     const deps = { db, versions: null };
     upsertProjectionRow(deps, widget, 'w1', {
