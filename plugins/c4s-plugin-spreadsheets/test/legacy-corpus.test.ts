@@ -79,16 +79,17 @@ describe('a v1 spreadsheet file, through the real indexer', () => {
   });
 
   it('keeps the sheet’s identity and dimensions', () => {
-    const row = t.db.prepare('SELECT name, n_rows, n_cols, header_row FROM spreadsheet WHERE slug = ?').get('pliki-external') as Record<string, unknown>;
-    expect(row.name).toBe(V1_FILE.name);
+    const row = t.db.prepare('SELECT title, n_rows, n_cols, header_row FROM spreadsheet WHERE slug = ?').get('pliki-external') as Record<string, unknown>;
+    // 0.2.22 — the v1 `name` lands in the reserved `title`.
+    expect(row.title).toBe(V1_FILE.name);
     expect(row.n_rows).toBe(2);
     expect(row.n_cols).toBe(2);
     expect(row.header_row).toBe(1);
   });
 
-  it('rewrites the file into the sparse shape, stamped v2', () => {
+  it('rewrites the file into the sparse shape, stamped v3', () => {
     const after = onDisk();
-    expect(after.payloadVersion).toBe(2);
+    expect(after.payloadVersion).toBe(3);
     expect(after.cells).toEqual([
       { r: 1, c: 1, value: 'Plik' },
       { r: 1, c: 2, value: 'Opisuje' },

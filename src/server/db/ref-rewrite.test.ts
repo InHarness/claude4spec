@@ -25,7 +25,6 @@ const viewer: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      name: { kind: 'string', required: true },
       themeSlug: { kind: 'string', ref: 'theme', onMissing: 'warn', onDelete: 'leave-dangling' },
     },
   },
@@ -37,7 +36,6 @@ const route: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      name: { kind: 'string', required: true },
       payloads: {
         kind: 'collection',
         collection: 'value',
@@ -65,7 +63,6 @@ const roster: ProjectableModule = {
   data: {
     schema: {
       title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      name: { kind: 'string', required: true },
       // Embedded JSON: `["user-dto", "order-dto"]`.
       members: {
         kind: 'collection',
@@ -84,8 +81,8 @@ const roster: ProjectableModule = {
 };
 
 /** The referenced types, so the generated FKs have something to point at. */
-const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { kind: 'string', required: true } } } };
-const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { kind: 'string', required: true } } } };
+const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
+const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' } } } };
 const ac: ProjectableModule = { type: 'ac', data: acData };
 
 function projectDb(modules: ProjectableModule[]): Database.Database {
@@ -99,9 +96,9 @@ describe('rewriteRefsForRename', () => {
   it('repoints a scalar ref on the entity row and reports the row it changed', () => {
     const db = projectDb([theme, viewer]);
     try {
-      db.prepare("INSERT INTO theme (slug, name) VALUES ('dark', 'Dark')").run();
-      db.prepare("INSERT INTO viewer (slug, name, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
-      db.prepare("INSERT INTO viewer (slug, name, theme_slug) VALUES ('v2', 'V2', NULL)").run();
+      db.prepare("INSERT INTO theme (slug, title) VALUES ('dark', 'Dark')").run();
+      db.prepare("INSERT INTO viewer (slug, title, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
+      db.prepare("INSERT INTO viewer (slug, title, theme_slug) VALUES ('v2', 'V2', NULL)").run();
 
       db.prepare("UPDATE theme SET slug = 'midnight' WHERE slug = 'dark'").run();
       expect(rewriteRefsForRename(db, viewer, 'theme', 'dark', 'midnight')).toEqual(['v1']);
@@ -124,8 +121,8 @@ describe('rewriteRefsForRename', () => {
     // keep the old slug forever while the index looks correct.
     const db = projectDb([shape, route]);
     try {
-      db.prepare("INSERT INTO shape (slug, name) VALUES ('user', 'User')").run();
-      db.prepare("INSERT INTO route (slug, name) VALUES ('get-users', 'GET /users')").run();
+      db.prepare("INSERT INTO shape (slug, title) VALUES ('user', 'User')").run();
+      db.prepare("INSERT INTO route (slug, title) VALUES ('get-users', 'GET /users')").run();
       db.prepare(
         "INSERT INTO route_payloads (route_slug, shape_slug, relation) VALUES ('get-users', 'user', 'response')",
       ).run();
@@ -142,10 +139,10 @@ describe('rewriteRefsForRename', () => {
   it('rewrites a $type ref inside an embedded-JSON collection — ac.verifies', () => {
     const db = projectDb([ac]);
     try {
-      const insert = db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?)');
-      insert.run('ac-1', 'A', JSON.stringify([{ type: 'endpoint', slug: 'get-users' }]));
-      insert.run('ac-2', 'B', JSON.stringify([{ type: 'dto', slug: 'get-users' }]));
-      insert.run('ac-3', 'C', JSON.stringify([{ type: 'endpoint', slug: 'other' }]));
+      const insert = db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?, ?)');
+      insert.run('ac-1', 'A', 'A', JSON.stringify([{ type: 'endpoint', slug: 'get-users' }]));
+      insert.run('ac-2', 'B', 'B', JSON.stringify([{ type: 'dto', slug: 'get-users' }]));
+      insert.run('ac-3', 'C', 'C', JSON.stringify([{ type: 'endpoint', slug: 'other' }]));
 
       expect(rewriteRefsForRename(db, ac, 'endpoint', 'get-users', 'list-users')).toEqual(['ac-1']);
 
@@ -172,8 +169,9 @@ describe('rewriteRefsForRename', () => {
     // repoint an unrelated reference.
     const db = projectDb([ac]);
     try {
-      db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?)').run(
+      db.prepare('INSERT INTO ac (slug, title, text, verifies) VALUES (?, ?, ?, ?)').run(
         'ac-1',
+        'A',
         'A',
         JSON.stringify([{ type: 'endpoint', slug: 'get-users-legacy' }]),
       );
@@ -189,7 +187,7 @@ describe('rewriteRefsForRename', () => {
   it('is a no-op for a type that references nothing of the renamed type', () => {
     const db = projectDb([theme, viewer]);
     try {
-      db.prepare("INSERT INTO viewer (slug, name, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
+      db.prepare("INSERT INTO viewer (slug, title, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
       expect(rewriteRefsForRename(db, viewer, 'diagram', 'dark', 'midnight')).toEqual([]);
       expect(db.prepare('SELECT theme_slug FROM viewer WHERE slug = ?').get('v1')).toEqual({
         theme_slug: 'dark',
@@ -205,8 +203,8 @@ describe('rewriteRefsForRename', () => {
     // success. The reference then rots permanently.
     const db = projectDb([shape, roster]);
     try {
-      db.prepare("INSERT INTO shape (slug, name) VALUES ('user', 'User')").run();
-      db.prepare('INSERT INTO roster (slug, name, members, by_role, meta) VALUES (?, ?, ?, ?, ?)').run(
+      db.prepare("INSERT INTO shape (slug, title) VALUES ('user', 'User')").run();
+      db.prepare('INSERT INTO roster (slug, title, members, by_role, meta) VALUES (?, ?, ?, ?, ?)').run(
         'r1',
         'R1',
         JSON.stringify(['user', 'other']),
@@ -232,7 +230,7 @@ describe('rewriteRefsForRename', () => {
   it('is a no-op when the slug did not actually change', () => {
     const db = projectDb([theme, viewer]);
     try {
-      db.prepare("INSERT INTO viewer (slug, name, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
+      db.prepare("INSERT INTO viewer (slug, title, theme_slug) VALUES ('v1', 'V1', 'dark')").run();
       expect(rewriteRefsForRename(db, viewer, 'theme', 'dark', 'dark')).toEqual([]);
     } finally {
       db.close();
