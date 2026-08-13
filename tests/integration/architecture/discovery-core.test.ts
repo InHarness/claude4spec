@@ -170,6 +170,9 @@ describe('M39 — Discovery Core', () => {
         'search_entities',
         'list_entities',
         'get_entities',
+        // 0.2.22 — the operation that hands over what a content-bearing field
+        // withholds from every generic read.
+        'get_field_content',
         'list_tags',
         'find_references',
         'check_consistency',
@@ -257,7 +260,7 @@ describe('M39 — Discovery Core', () => {
       // core exposes no write, so there is no path to one from this process.
       // A mutating NAME here would mean someone had found another path.
       const names = toolNames(READER);
-      expect(names).toHaveLength(14);
+      expect(names).toHaveLength(15);
       expect(names.filter((n) => /^(create|update|delete|tag|untag|link|unlink)_/.test(n))).toEqual([]);
       expect(hits([READER], /\b(INSERT|UPDATE\s+\w+\s+SET|DELETE\s+FROM)\b/i)).toEqual([]);
     });
@@ -427,6 +430,7 @@ describe('M39 — Discovery Core', () => {
       ['search_entities', 'search-entities'],
       ['list_entities', 'list-entities'],
       ['get_entities', 'get-entities'],
+      ['get_field_content', 'get-field-content'],
       ['list_tags', 'list-tags'],
       ['find_references', 'find-references'],
       ['check_consistency', 'check-consistency'],

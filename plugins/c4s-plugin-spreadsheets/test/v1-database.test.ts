@@ -39,7 +39,7 @@ function v1Database(): Database.Database {
       value  TEXT    NOT NULL,
       PRIMARY KEY (slug, r, c)
     );
-    INSERT INTO spreadsheet (slug, title, n_rows, n_cols, header_row)
+    INSERT INTO spreadsheet (slug, name, n_rows, n_cols, header_row)
       VALUES ('pliki-external', 'external/', 2, 2, 1);
     INSERT INTO spreadsheet_cell (slug, r, c, value) VALUES ('pliki-external', 1, 1, 'Plik');
     INSERT INTO spreadsheet_cell (slug, r, c, value) VALUES ('pliki-external', 2, 1, 'x');
@@ -90,13 +90,23 @@ describe('upgrading a database that ran c4s-plugin-spreadsheets 0.0.6', () => {
     expect(legacyCols).toEqual(['slug', 'r', 'c', 'value']);
   });
 
-  it('adopts the parent table, adding only the two system timestamps', () => {
+  it('adopts the parent table, adding the reserved title and the two system timestamps', () => {
     const db = v1Database();
     const result = applyProjection(db, [MODULE] as never);
 
     // The parent already existed, so it is adopted rather than created.
     expect(result.created).not.toContain('spreadsheet');
-    expect(result.alteredColumns).toEqual(['spreadsheet.created_at', 'spreadsheet.updated_at']);
+    /**
+     * `title` joins the timestamps in 0.2.22: an in-place upgrade reconciles the
+     * new column onto the existing table rather than needing a migration for it,
+     * and the VALUE arrives when the entity files are re-read (the payload
+     * upgrade moves `name` into it).
+     */
+    expect(result.alteredColumns).toEqual([
+      'spreadsheet.title',
+      'spreadsheet.created_at',
+      'spreadsheet.updated_at',
+    ]);
 
     // And the sheet's own data is intact.
     const row = db.prepare(`SELECT name, n_rows FROM spreadsheet WHERE slug = ?`).get('pliki-external') as {
