@@ -78,7 +78,7 @@ describe('rename listeners', () => {
     const { host, db } = mountWith([fixture('widget', REFERENCING_DATA)]);
     try {
       expect(host.listRenameListeners()).toHaveLength(1);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
 
       for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
 
@@ -124,7 +124,7 @@ describe('rename listeners', () => {
     try {
       expect(ownMountRan).toBe(true);
       expect(host.listRenameListeners()).toHaveLength(1);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
 
       for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
 
@@ -155,8 +155,8 @@ describe('rename listeners', () => {
     ]);
     try {
       expect(host.listRenameListeners()).toHaveLength(2);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
-      db.prepare('INSERT INTO gadget (slug, name, dto_slug) VALUES (?, ?, ?)').run('g1', 'G', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO gadget (slug, title, dto_slug) VALUES (?, ?, ?)').run('g1', 'G', 'user-dto');
 
       // A rename of a type NEITHER module references must leave both alone —
       // that filtering used to be an `if (type !== 'dto') return;` in each hook.

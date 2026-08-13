@@ -21,11 +21,16 @@ import { generateProjectionDDL } from '../../../src/server/db/projection.js';
 import { spreadsheetData } from '../src/entity/spreadsheet/schema.js';
 import { LEGACY_SPREADSHEET_CELL_TABLE, SPREADSHEET_CELL_TABLE } from '../src/identity.js';
 
-/** v1 migration 1, verbatim. */
+/**
+ * v1 migration 1, verbatim — with the 0.2.22 rename applied.
+ *
+ * `name` became the reserved `title`; the column moved with the field, and the
+ * rest of the table still has to match what the hand-written migration wrote.
+ */
 const RETIRED_PARENT_DDL = `
   CREATE TABLE IF NOT EXISTS spreadsheet (
     slug        TEXT PRIMARY KEY NOT NULL,
-    name        TEXT NOT NULL,
+    title       TEXT NOT NULL,
     n_rows      INTEGER NOT NULL DEFAULT 0,
     n_cols      INTEGER NOT NULL DEFAULT 0,
     header_row  INTEGER NOT NULL DEFAULT 0,
@@ -174,7 +179,7 @@ describe('spreadsheet projection', () => {
 
   it('enforces the identity it declares', () => {
     const db = generatedDb();
-    db.exec(`INSERT INTO spreadsheet (slug, name) VALUES ('s', 'S')`);
+    db.exec(`INSERT INTO spreadsheet (slug, title) VALUES ('s', 'S')`);
     db.exec(`INSERT INTO ${SPREADSHEET_CELL_TABLE} (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'a')`);
     expect(() =>
       db.exec(`INSERT INTO ${SPREADSHEET_CELL_TABLE} (spreadsheet_slug, r, c, value) VALUES ('s', 1, 1, 'b')`),

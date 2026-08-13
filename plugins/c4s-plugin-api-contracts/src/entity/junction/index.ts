@@ -125,8 +125,9 @@ export function readEndpointDtos(reader: JunctionReader, endpointSlug: string): 
   return links
     .map((link) => {
       const dtoSlug = typeof link.dto === 'string' ? link.dto : '';
-      const dto = reader.getEntity('dto', dtoSlug) as { data?: { name?: unknown } } | null;
-      const name = dto?.data?.name;
+      // 0.2.22 — the DTO's label is `title`; `name` is gone from the type.
+      const dto = reader.getEntity('dto', dtoSlug) as { data?: { title?: unknown } } | null;
+      const name = dto?.data?.title;
       return {
         dtoSlug,
         // Defensive only: a ref inside a PROJECTED collection is FK-enforced

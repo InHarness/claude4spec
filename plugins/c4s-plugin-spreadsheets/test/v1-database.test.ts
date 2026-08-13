@@ -39,7 +39,7 @@ function v1Database(): Database.Database {
       value  TEXT    NOT NULL,
       PRIMARY KEY (slug, r, c)
     );
-    INSERT INTO spreadsheet (slug, name, n_rows, n_cols, header_row)
+    INSERT INTO spreadsheet (slug, title, n_rows, n_cols, header_row)
       VALUES ('pliki-external', 'external/', 2, 2, 1);
     INSERT INTO spreadsheet_cell (slug, r, c, value) VALUES ('pliki-external', 1, 1, 'Plik');
     INSERT INTO spreadsheet_cell (slug, r, c, value) VALUES ('pliki-external', 2, 1, 'x');

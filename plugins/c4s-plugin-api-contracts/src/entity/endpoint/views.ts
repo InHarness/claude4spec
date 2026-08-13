@@ -222,7 +222,8 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
           ...link,
           dto: {
             slug: dto.slug,
-            name: dto.data.name as string,
+            // 0.2.22 — the DTO's label is `title`.
+            title: dto.data.title as string,
             description: (dto.data.description as string | null) ?? null,
             fields: dto.data.fields,
             tags: dto.tags,

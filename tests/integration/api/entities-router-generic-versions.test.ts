@@ -9,7 +9,7 @@ describe('GET /api/entities/:type/:slug/versions — generic for a plugin-contri
 
   beforeEach(async () => {
     t = await createTestApp({ extraModules: [fixtureModule(type, { withEntityService: true })] });
-    t.db.prepare(`INSERT INTO ${type} (slug, name) VALUES ('my-widget', 'Hello')`).run();
+    t.db.prepare(`INSERT INTO ${type} (slug, title) VALUES ('my-widget', 'Hello')`).run();
   });
   afterEach(() => t.cleanup());
 
