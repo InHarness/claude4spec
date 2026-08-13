@@ -47,8 +47,8 @@ function readerWith(dtos: Record<string, unknown>) {
   } as never;
 }
 
-function dto(slug: string, name: string, fields: unknown) {
-  return { type: 'dto', slug, data: { name, description: null, fields }, tags: [] };
+function dto(slug: string, title: string, fields: unknown) {
+  return { type: 'dto', slug, data: { title, description: null, fields }, tags: [] };
 }
 
 const detail = endpointSerializer.views!.detail!;
@@ -69,7 +69,7 @@ describe('endpoint.detail — reference resolution depth', () => {
     // By slug, not by index: the junction re-sorts links by relation, so
     // `error` precedes `response` regardless of declaration order.
     const nested = out.dtos.find((d) => d.dtoSlug === 'user-dto')!.dto!;
-    expect(nested).toMatchObject({ slug: 'user-dto', name: 'User' });
+    expect(nested).toMatchObject({ slug: 'user-dto', title: 'User' });
     // Its own fields travel, its own edges do not.
     expect(nested.fields).toEqual([{ name: 'address', type: 'address-dto' }]);
     expect(nested).not.toHaveProperty('dtos');

@@ -115,7 +115,7 @@ describe('dense → sparse upgrade — the idempotence guard', () => {
 
 describe('generated create shape — numeric bounds', () => {
   const shape = z.object(buildCreateShape(spreadsheetData, [{ op: 'slugify', field: 'name' }]) as never);
-  const base = { name: 'Q1', nCols: 3 };
+  const base = { title: 'Q1', nCols: 3 };
 
   it('accepts a sane grid', () => {
     expect(shape.safeParse({ ...base, nRows: 4 }).success).toBe(true);

@@ -162,8 +162,8 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
     // (d) an orphan with no file behind it — does the reconcile pass remove it?
     t.db
       .prepare(
-        `INSERT INTO database_table (slug, name, columns, indexes, created_at, updated_at)
-         VALUES ('ghost-table', 'ghost', '[]', '[]', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z')`,
+        `INSERT INTO database_table (slug, title, name, columns, indexes, created_at, updated_at)
+         VALUES ('ghost-table', 'ghost', 'ghost', '[]', '[]', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z')`,
       )
       .run();
 
