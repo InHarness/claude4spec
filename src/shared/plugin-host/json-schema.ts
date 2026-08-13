@@ -60,6 +60,12 @@ function withNull(schema: JsonSchema): JsonSchema {
 function baseSchema(node: FieldNode): JsonSchema {
   switch (node.kind) {
     case 'string':
+      // 0.2.22 — the value constraint travels into the derived schema, so a
+      // caller reading `describe_entity_type` sees the same bound the write path
+      // enforces rather than discovering it from a rejection.
+      return node.maxLength === undefined
+        ? { type: 'string' }
+        : { type: 'string', maxLength: node.maxLength };
     case 'number':
     case 'boolean':
       return { type: node.kind };
