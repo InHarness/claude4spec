@@ -19,7 +19,7 @@ import { spreadsheetPayloadUpgrades } from './upgrades.js';
 function detailFields(overview: ReturnType<typeof buildOverview>): Array<{ label: string; value: string }> {
   const fields = [
     { label: 'Slug', value: overview.slug },
-    { label: 'Name', value: overview.name },
+    { label: 'Title', value: overview.title },
     { label: 'Rows', value: String(overview.nRows) },
     { label: 'Columns', value: String(overview.nCols) },
     { label: 'Header row', value: overview.headerRow ? 'yes' : 'no' },
@@ -34,7 +34,7 @@ function detailFields(overview: ReturnType<typeof buildOverview>): Array<{ label
   return fields;
 }
 
-const DIFF_KEYS = ['name', 'nRows', 'nCols', 'headerRow', 'headerCol', 'cells'] as const;
+const DIFF_KEYS = ['title', 'nRows', 'nCols', 'headerRow', 'headerCol', 'cells'] as const;
 
 function spreadsheetDiff(a: SnapshotData, b: SnapshotData, slug: string): EntityDiff {
   const left = (a ?? null) as Record<string, unknown> | null;
@@ -53,14 +53,14 @@ export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
   views: {
     /**
      * Stays a slot because `label` and `href` are a rendering decision rather
-     * than fields — nothing in `data.schema` says a mention shows the name and
+     * than fields — nothing in `data.schema` says a mention shows the title and
      * links to the (nonexistent) detail page.
      */
     inline_mention: (entity) => ({
       kind: 'inline_mention',
       type: SPREADSHEET_TYPE,
       slug: entity.slug,
-      label: metaOf(entity).name || entity.slug,
+      label: metaOf(entity).title || entity.slug,
       href: `${SPREADSHEET_PATH_PREFIX}/${entity.slug}`,
     }),
 
@@ -79,7 +79,7 @@ export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
     detail: (entity, reader) => {
       const meta = metaOf(entity);
       if (!meta.headerRow && !meta.headerCol) {
-        return { kind: 'detail', type: SPREADSHEET_TYPE, slug: meta.slug, title: meta.name, fields: detailFields(meta) };
+        return { kind: 'detail', type: SPREADSHEET_TYPE, slug: meta.slug, title: meta.title, fields: detailFields(meta) };
       }
       /*
        * `readCollection` answers the whole collection, and there is no narrower
@@ -96,7 +96,7 @@ export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
         kind: 'detail',
         type: SPREADSHEET_TYPE,
         slug: overview.slug,
-        title: overview.name,
+        title: overview.title,
         fields: detailFields(overview),
       };
     },
@@ -109,6 +109,6 @@ export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
    * (which is the authority); echoing it here keeps the two visible together,
    * and registration refuses the pair if the chain length disagrees.
    */
-  payloadVersion: 2,
+  payloadVersion: 3,
   payloadUpgrades: spreadsheetPayloadUpgrades,
 };

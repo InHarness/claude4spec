@@ -29,7 +29,7 @@ export const designSystemEntity: EntityContribution = {
   type: DESIGN_SYSTEM_TYPE,
   data: designSystemData,
   slugPattern: designSystemSlugPattern,
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: DESIGN_SYSTEM_LABEL,
   labelPlural: DESIGN_SYSTEM_LABEL_PLURAL,
   displayOrder: DESIGN_SYSTEM_DISPLAY_ORDER,

@@ -23,10 +23,22 @@ const tokenValue: FieldNode = {
     'Literal ("#2563eb", "16px"), an alias "{token-name}", or a composite object (typography/shadow).',
 };
 
-/** Host API 2.0.0 — what `design-system` IS. */
+/** Host API 3.0.0 — what `design-system` IS. */
 export const designSystemData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true, description: 'Display name (e.g. "Brand 2026")' },
+    /**
+     * Was `name` — a straight rename to the reserved field.
+     *
+     * The NESTED names stay exactly as they are: `groups[].name`,
+     * `groups[].tokens[].name` and `modes[].name` identify a member of a
+     * structure, not the entity, and `title` is reserved for the entity alone.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'Display name (e.g. "Brand 2026")',
+    },
     description: { kind: 'string', clearable: true },
     groups: {
       kind: 'collection',
@@ -98,7 +110,12 @@ export const designSystemData: DataDeclaration = {
   },
 };
 
-/** slugify(name) with PascalCase boundaries — matches the retired `designSystemSlug`. */
+/**
+ * slugify(title) with PascalCase boundaries.
+ *
+ * Same output as the retired `slugify(name)` — the rename moved the value, not
+ * its content — so no existing design system re-slugs.
+ */
 export const designSystemSlugPattern: SlugPattern = [
-  { op: 'slugify', field: 'name', splitCamelCase: true },
+  { op: 'slugify', field: 'title', splitCamelCase: true },
 ];

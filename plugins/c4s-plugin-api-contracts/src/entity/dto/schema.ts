@@ -1,9 +1,21 @@
 import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 
-/** Host API 2.0.0 — what `dto` IS. */
+/** Host API 3.0.0 — what `dto` IS. */
 export const dtoData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true, description: 'DTO name (PascalCase, e.g. UserResponse)' },
+    /**
+     * Was `name`. A straight rename rather than an addition: a DTO's name IS its
+     * label, so carrying both would be two spellings of one fact, free to drift.
+     *
+     * The nested `fields[].name` and `examples[].name` are untouched — those
+     * name a member of a structure, not the structure.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'DTO name (PascalCase, e.g. UserResponse)',
+    },
     description: { kind: 'string', clearable: true },
     fields: {
       kind: 'collection',
@@ -63,5 +75,10 @@ export const dtoData: DataDeclaration = {
   },
 };
 
-/** slugify(name) with PascalCase boundaries — `UserResponse` → `user-response`. */
-export const dtoSlugPattern: SlugPattern = [{ op: 'slugify', field: 'name', splitCamelCase: true }];
+/**
+ * slugify(title) with PascalCase boundaries — `UserResponse` → `user-response`.
+ *
+ * Identical output to the retired `slugify(name)`: the rename moved the value,
+ * not its content, so no existing DTO re-slugs.
+ */
+export const dtoSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title', splitCamelCase: true }];

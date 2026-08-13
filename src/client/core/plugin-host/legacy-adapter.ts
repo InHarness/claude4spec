@@ -41,12 +41,17 @@ export function legacyRegisterClientEntity(def: EntityDef<unknown>): void {
      * field set to declare and no slug rule to state. An EMPTY schema is the
      * honest answer — it projects to nothing, which is correct, since the SERVER
      * module of the same type owns the projection and this adapter only ever
-     * fed client rendering. `previewSlugPattern` over the nanoid alternative
-     * gives the UI a stable placeholder instead of the throw that used to sit
-     * here, which is strictly better: nothing that reached it could work before.
+     * fed client rendering.
+     *
+     * The slug pattern is a LITERAL placeholder. It used to be `nanoid(8)`,
+     * which left the UI a stable row of `#`; the op left the grammar in 0.2.22
+     * (a derived title may not be random), and a literal serves the same purpose
+     * — a visible "the host fills this in" rather than the throw that used to
+     * sit here. Nothing that reaches this adapter could compute a real slug
+     * anyway: it has no schema to read one from.
      */
     data: { schema: {} },
-    slugPattern: [{ op: 'nanoid', n: 8 }],
+    slugPattern: [{ op: 'literal', value: 'legacy' }],
     payloadVersion: 1,
     label: def.label,
     labelPlural: def.labelPlural,

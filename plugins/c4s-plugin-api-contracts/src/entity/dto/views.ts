@@ -7,12 +7,13 @@ import type {
 } from '@c4s/plugin-runtime';
 import type { DtoExample, DtoField } from '../../types.js';
 import { findDtoEndpoints } from '../junction/index.js';
+import { dtoPayloadUpgrades } from './upgrades.js';
 
 function baseSingle(entity: RawEntity) {
   return {
     type: 'dto',
     slug: entity.slug,
-    name: entity.data.name as string,
+    title: entity.data.title as string,
     description: (entity.data.description as string | null) ?? null,
     fields: entity.data.fields ?? [],
     examples: entity.data.examples ?? [],
@@ -24,7 +25,7 @@ function baseSingle(entity: RawEntity) {
 
 export interface DtoSnapshot {
   slug: string;
-  name: string;
+  title: string;
   description: string | null;
   fields: DtoField[];
   examples: DtoExample[];
@@ -35,7 +36,7 @@ function coerceDto(raw: unknown): DtoSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     slug: String(r.slug ?? ''),
-    name: String(r.name ?? ''),
+    title: String(r.title ?? ''),
     description: (r.description as string | null) ?? null,
     fields: Array.isArray(r.fields) ? (r.fields as DtoField[]) : [],
     examples: Array.isArray(r.examples) ? (r.examples as DtoExample[]) : [],
@@ -53,7 +54,7 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
   // Meta
   const metaChanges: Array<{ field: string; from: unknown; to: unknown }> = [];
-  if (sa.name !== sb.name) metaChanges.push({ field: 'name', from: sa.name, to: sb.name });
+  if (sa.title !== sb.title) metaChanges.push({ field: 'title', from: sa.title, to: sb.title });
   if (sa.description !== sb.description) metaChanges.push({ field: 'description', from: sa.description, to: sb.description });
   if (metaChanges.length) changes.meta_changes = metaChanges;
 
@@ -132,11 +133,13 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
  * lives in `dto`'s own row.
  */
 export const dtoSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 2,
+  payloadUpgrades: dtoPayloadUpgrades,
   views: {
     inline_mention: (entity) => ({
       type: 'dto',
       slug: entity.slug,
-      label: (entity.data.name as string) ?? entity.slug,
+      label: (entity.data.title as string) ?? entity.slug,
       href: `/dtos/${entity.slug}`,
     }),
 

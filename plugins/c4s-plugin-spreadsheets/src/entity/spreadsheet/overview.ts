@@ -3,7 +3,7 @@ import type { RawEntity, SparseCell } from '../../host-kit/host-types.js';
 /** The shape + header labels of a sheet. Never body cells. */
 export interface SpreadsheetOverview {
   slug: string;
-  name: string;
+  title: string;
   nRows: number;
   nCols: number;
   headerRow: boolean;
@@ -26,7 +26,7 @@ const bool = (v: unknown): boolean => v !== 0 && v != null && v !== false;
 export function metaOf(entity: RawEntity): SpreadsheetOverview {
   return {
     slug: entity.slug,
-    name: typeof entity.data.name === 'string' ? entity.data.name : '',
+    title: typeof entity.data.title === 'string' ? entity.data.title : '',
     nRows: num(entity.data.n_rows ?? entity.data.nRows),
     nCols: num(entity.data.n_cols ?? entity.data.nCols),
     headerRow: bool(entity.data.header_row ?? entity.data.headerRow),

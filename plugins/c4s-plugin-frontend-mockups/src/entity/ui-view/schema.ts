@@ -9,7 +9,16 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
  */
 export const uiViewData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true, description: 'Display name (e.g. "User Profile Screen")' },
+    /**
+     * Was `name`. `params[].name` is untouched — it names a parameter, not the
+     * view.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'Display name (e.g. "User Profile Screen")',
+    },
     url: {
       kind: 'string',
       clearable: true,
@@ -58,7 +67,10 @@ export const uiViewData: DataDeclaration = {
   },
 };
 
-/** slugify(name) with PascalCase boundaries — `UserProfile` → `user-profile`. */
+/**
+ * slugify(title) with PascalCase boundaries — `UserProfile` → `user-profile`.
+ * Identical output to the retired `slugify(name)`; nothing re-slugs.
+ */
 export const uiViewSlugPattern: SlugPattern = [
-  { op: 'slugify', field: 'name', splitCamelCase: true },
+  { op: 'slugify', field: 'title', splitCamelCase: true },
 ];

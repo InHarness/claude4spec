@@ -26,7 +26,16 @@ import { SPREADSHEET_CELL_TABLE } from '../../identity.js';
  */
 export const spreadsheetData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true, description: 'Human title of the sheet.' },
+    /**
+     * Was `name` — and this type is where the rename is most obviously right:
+     * the field's own description already called it a title.
+     *
+     * `maxLength: 200` is the host's bound on every title. A sheet named longer
+     * than that is refused on write rather than shortened, and the v1 → v2
+     * upgrade truncates the ones already stored (see `upgrades.ts`) rather than
+     * leaving a value that would fail its own schema on the next unrelated edit.
+     */
+    title: { kind: 'string', required: true, maxLength: 200, description: 'Human title of the sheet.' },
     /**
      * `integer` + `min: 0` restore v1's `z.number().int().nonnegative()`, which
      * the first translation of this schema dropped.
@@ -116,7 +125,7 @@ export const spreadsheetData: DataDeclaration = {
  * v1 fell back to a random suffix when `name` slugified to nothing, and
  * separately deduped `-2` / `-3` inside its own create transaction. The host
  * covers the second with `slugConflict: 'suffix'` on the contribution; the first
- * is covered by `name` being `required`, which the generated create schema
+ * is covered by `title` being `required`, which the generated create schema
  * enforces as non-blank precisely because this pattern has a single alternative.
  */
-export const spreadsheetSlugPattern: SlugPattern = [{ op: 'slugify', field: 'name' }];
+export const spreadsheetSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title' }];

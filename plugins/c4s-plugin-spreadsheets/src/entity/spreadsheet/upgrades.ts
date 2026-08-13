@@ -101,7 +101,35 @@ function asCount(value: unknown): number | null {
 /**
  * `payloadUpgrades[i]` takes payload `i+1` to `i+2`, and registration refuses a
  * chain whose length disagrees with the declared `payloadVersion` — so this
- * array and the `payloadVersion: 2` on the contribution move together or the
+ * array and the `payloadVersion` on the contribution move together or the
  * type does not register at all.
  */
-export const spreadsheetPayloadUpgrades = [denseCellsToSparse];
+export const spreadsheetPayloadUpgrades = [denseCellsToSparse, spreadsheetPayloadV2ToV3];
+
+/**
+ * v2 → v3: `name` becomes the reserved `title`, truncated to the host's bound.
+ *
+ * This is the one migration in the release that both RENAMES and NARROWS. `name`
+ * was unbounded; `title` is capped at 200 characters by the host. Declaring a
+ * `maxLength` over values that already exceed it is a breaking change, and the
+ * rule is that it must be resolved HERE — explicitly, at upgrade time — rather
+ * than surfacing later as a validation error on some unrelated edit to a sheet
+ * the author has not touched in months.
+ *
+ * Truncating rather than refusing is the right half of that choice for this
+ * type: a sheet's title is a label, the sheet is still fully addressable by
+ * slug, and refusing would make a corpus with one long title unopenable. A type
+ * whose over-long values are load-bearing should refuse instead and name the
+ * offending slugs.
+ *
+ * Idempotent: a payload already carrying a `title` keeps it.
+ */
+export function spreadsheetPayloadV2ToV3(payload: SnapshotData): SnapshotData {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const p = { ...(payload as Record<string, unknown>) };
+  if (typeof p.title !== 'string' || p.title.trim() === '') {
+    p.title = String(p.name ?? '').slice(0, 200);
+  }
+  delete p.name;
+  return p;
+}

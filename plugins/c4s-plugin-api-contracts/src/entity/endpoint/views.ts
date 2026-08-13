@@ -9,7 +9,7 @@ import type {
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
 import { readEndpointDtos } from '../junction/index.js';
 import { ENDPOINT_TYPE } from '../../identity.js';
-import { endpointPayloadV1ToV2 } from './upgrades.js';
+import { endpointPayloadV1ToV2, endpointPayloadV2ToV3 } from './upgrades.js';
 
 interface EndpointDtoRef {
   dtoSlug: string;
@@ -18,7 +18,15 @@ interface EndpointDtoRef {
   statusCode: number | null;
 }
 
+/**
+ * 0.2.22 — the label is the stored `title`, not a string rebuilt here.
+ *
+ * The fallback keeps the old construction for a row read mid-upgrade, so a
+ * chip never renders empty while the index is catching up with the files.
+ */
 function label(entity: RawEntity): string {
+  const title = (entity.data.title as string | undefined) ?? '';
+  if (title.trim() !== '') return title;
   const method = (entity.data.method as string | undefined) ?? '';
   const path = (entity.data.path as string | undefined) ?? '';
   return `${method} ${path}`.trim();
@@ -33,6 +41,7 @@ function baseSingle(entity: RawEntity, reader: HostEntityReader, includeDtos = t
   return {
     type: 'endpoint',
     slug: entity.slug,
+    title: label(entity),
     method: entity.data.method as string,
     path: entity.data.path as string,
     summary: (entity.data.summary as string) ?? '',
@@ -55,6 +64,7 @@ function formatDtos(dtos: EndpointDtoRef[]) {
 
 export interface EndpointSnapshot {
   slug: string;
+  title: string;
   method: HttpMethod;
   path: string;
   summary: string | null;
@@ -104,6 +114,7 @@ function coerceEndpoint(raw: unknown): EndpointSnapshot {
   }));
   return {
     slug: String(r.slug ?? ''),
+    title: String(r.title ?? ''),
     method: String(r.method ?? '') as EndpointSnapshot['method'],
     path: String(r.path ?? ''),
     summary: (r.summary as string | null) ?? null,
@@ -122,7 +133,7 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
   const changes: Record<string, unknown> = {};
   const fieldChanges: Array<{ field: string; from: unknown; to: unknown }> = [];
-  for (const field of ['method', 'path', 'summary', 'description'] as const) {
+  for (const field of ['title', 'method', 'path', 'summary', 'description'] as const) {
     if (sa[field] !== sb[field]) fieldChanges.push({ field, from: sa[field], to: sb[field] });
   }
   if (fieldChanges.length) changes.field_changes = fieldChanges;
@@ -235,9 +246,9 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
    * v1 files spell the junction in column names and coerce an empty `summary`
    * to null; both are what the generated snapshot stopped doing. The chain's
    * LENGTH is checked against `payloadVersion` at registration, so this array
-   * and the `2` in `index.ts` cannot drift apart.
+   * and the number in `index.ts` cannot drift apart. v2 → v3 adds `title`.
    */
-  payloadUpgrades: [endpointPayloadV1ToV2],
+  payloadUpgrades: [endpointPayloadV1ToV2, endpointPayloadV2ToV3],
 };
 
 function formatReferences(refs: SectionEntityRef[]) {

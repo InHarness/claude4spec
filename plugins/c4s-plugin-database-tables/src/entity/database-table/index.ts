@@ -46,7 +46,7 @@ export const databaseTableEntity: EntityContribution = {
   type: DATABASE_TABLE_TYPE,
   data: databaseTableData,
   slugPattern: databaseTableSlugPattern,
-  payloadVersion: 1,
+  payloadVersion: 2,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
   displayOrder: DATABASE_TABLE_DISPLAY_ORDER,

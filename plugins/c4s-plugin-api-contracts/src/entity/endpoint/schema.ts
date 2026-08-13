@@ -1,8 +1,31 @@
 import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 
-/** Host API 2.0.0 — what `endpoint` IS. */
+/** Host API 3.0.0 — what `endpoint` IS. */
 export const endpointData: DataDeclaration = {
   schema: {
+    /**
+     * `"{method} {path}"`, derived once at create.
+     *
+     * `method` and `path` STAY as domain fields — they are how a route is
+     * addressed, filtered and generated from, and folding them into one string
+     * would make every consumer parse the title back apart. What the reserved
+     * field replaces is the hardcoded `` `${method} ${path}` `` that four
+     * separate renderers each assembled for themselves.
+     *
+     * `raw`, not `slugify`: this is the label. `GET /orders/{id}` reads as a
+     * route; `get-orders-id` is the slug, and the pattern below still builds it.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      computedDefault: [
+        { op: 'raw', field: 'method' },
+        { op: 'literal', value: ' ' },
+        { op: 'raw', field: 'path' },
+      ],
+      description: 'Label. Defaults to "{method} {path}", e.g. "GET /orders/{id}".',
+    },
     /**
      * An ENUM, not a string — the allowlist `EndpointService.requireMethod`
      * enforced, restated as data now that the generated router is the only door.
@@ -71,9 +94,12 @@ export const endpointData: DataDeclaration = {
   },
 };
 
-/** `{method}-{slugify(path)}` — `GET /api/users/:id` → `get-api-users-id`. */
-export const endpointSlugPattern: SlugPattern = [
-  { op: 'slugify', field: 'method' },
-  { op: 'literal', value: '-' },
-  { op: 'slugify', field: 'path' },
-];
+/**
+ * `slugify(title)` — `GET /api/users/:id` → `get-api-users-id`.
+ *
+ * Same output as the retired `{method}-{slugify(path)}`, because `title`
+ * defaults to `"{method} {path}"` and slugifying a space yields the same hyphen
+ * the literal used to supply. An endpoint created before and after this release
+ * from the same method and path gets the same slug.
+ */
+export const endpointSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title' }];

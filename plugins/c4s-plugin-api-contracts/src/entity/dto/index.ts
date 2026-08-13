@@ -19,7 +19,7 @@ export const dtoEntity: EntityContribution = {
   type: DTO_TYPE,
   data: dtoData,
   slugPattern: dtoSlugPattern,
-  payloadVersion: 1,
+  payloadVersion: 2,
   label: 'DTO',
   labelPlural: 'DTOs',
   displayOrder: DTO_DISPLAY_ORDER,

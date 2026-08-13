@@ -35,6 +35,7 @@
  */
 
 import type { FieldNode } from '../../shared/plugin-host/data-schema.js';
+import { evaluateComputedDefault } from '../../shared/plugin-host/slug-pattern.js';
 import type { SnapshotData } from './types.js';
 import { stripSystemFields } from './system-fields.js';
 
@@ -159,6 +160,24 @@ export function classifyGap(
       filled[name] = new Date().toISOString();
       warnings.push(`filled required '${name}' from computedDefault 'now'`);
       continue;
+    }
+    if (node.computedDefault) {
+      /**
+       * 0.2.22 — a DERIVED default fills the gap too, from fields the payload
+       * already carries. Without this branch a type adding a derived `title`
+       * would report a contradiction on every pre-existing file, even though its
+       * own declaration says exactly where the value comes from.
+       *
+       * An empty result still falls through to the contradiction below: the
+       * source fields were absent as well, and inventing a label out of nothing
+       * is the guess this whole function exists to refuse.
+       */
+      const derived = evaluateComputedDefault(node.computedDefault, filled);
+      if (derived) {
+        filled[name] = derived;
+        warnings.push(`filled required '${name}' from its declared computedDefault`);
+        continue;
+      }
     }
     return {
       filled,

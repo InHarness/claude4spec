@@ -1,4 +1,6 @@
 import type { RawEntity } from '../../discovery/raw-entity-reader.js';
+import { contentBytes } from '../../../shared/plugin-host/data-schema.js';
+import { diagramPayloadUpgrades } from './upgrades.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -11,8 +13,16 @@ import type { DiagramFormat } from '../../../shared/entities.js';
 
 export interface DiagramSnapshot {
   slug: string;
+  title: string;
   format: DiagramFormat;
-  /** Literal DSL body, kept verbatim (no trim). May be empty. */
+  /**
+   * Literal DSL body, kept verbatim (no trim). May be empty.
+   *
+   * `contentBearing` since 0.2.22, and it STILL BELONGS HERE. The flag governs
+   * reads, not writes: the snapshot is what the entity file contains and what a
+   * release package carries, so excluding the body would make the file
+   * unable to reproduce the entity — the one invariant the projection rests on.
+   */
   source: string;
   tags: string[];
 }
@@ -29,25 +39,37 @@ function readSource(value: unknown): string {
 
 // ─── view helpers ────────────────────────────────────────────────────────────
 
+/**
+ * The shape every diagram view starts from.
+ *
+ * `source` is NOT here any more. It used to be spread into `single_element` and
+ * `detail`, which is precisely what `contentBearing` now forbids — and the field
+ * does not need removing per view, because `project()` cuts it after
+ * serialization on the strength of the schema flag. It is left out anyway, so
+ * this file says the same thing the declaration does instead of relying on
+ * something downstream to correct it.
+ */
 function baseSingle(entity: RawEntity) {
   return {
     type: 'diagram',
     slug: entity.slug,
+    title: (entity.data.title as string) ?? entity.slug,
     format: readFormat(entity.data.format),
-    source: readSource(entity.data.source),
     tags: entity.tags,
   };
 }
 
+/**
+ * 0.2.22 dropped `sourceLines`.
+ *
+ * It was a COMPUTED field on a list row — a measurement of a body the row did
+ * not carry, invented by this type alone, in a system whose declared position is
+ * that types compute no such thing. Its replacement, `sourceBytes`, comes from
+ * the host's `contentBearing` rule and appears on every read of every
+ * content-bearing field, spelled the same way for all of them.
+ */
 function trimItem(entity: RawEntity) {
-  const source = readSource(entity.data.source);
-  return {
-    type: 'diagram',
-    slug: entity.slug,
-    format: readFormat(entity.data.format),
-    sourceLines: source ? source.split('\n').length : 0,
-    tags: entity.tags,
-  };
+  return baseSingle(entity);
 }
 
 // ─── snapshot / restore / diff ──────────────────────────────────────────────
@@ -56,6 +78,7 @@ function coerce(raw: unknown): DiagramSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     slug: String(r.slug ?? ''),
+    title: String(r.title ?? r.slug ?? ''),
     format: readFormat(r.format),
     source: readSource(r.source),
     tags: Array.isArray(r.tags) ? (r.tags as string[]) : [],
@@ -70,8 +93,20 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   const sb = coerce(b);
   const changes: Record<string, unknown> = {};
 
+  if (sa.title !== sb.title) changes.title_changed = { from: sa.title, to: sb.title };
   if (sa.format !== sb.format) changes.format_changed = { from: sa.format, to: sb.format };
-  if (sa.source !== sb.source) changes.source_changed = true;
+  /**
+   * A content-bearing field diffs by SIZE, not by value.
+   *
+   * `source_changed: true` said only that something moved. Two byte counts say
+   * how much and in which direction, which is the most a reader can act on
+   * without opening the bodies — and printing the bodies side by side is exactly
+   * what the flag exists to stop. The shape is the host's default for every
+   * content-bearing field, not a diagram-specific invention.
+   */
+  if (sa.source !== sb.source) {
+    changes.source_changed = { fromBytes: contentBytes(sa.source), toBytes: contentBytes(sb.source) };
+  }
 
   const tagAdded = sb.tags.filter((t) => !sa.tags.includes(t));
   const tagRemoved = sa.tags.filter((t) => !sb.tags.includes(t));
@@ -83,11 +118,14 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 export const diagramSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 2,
+  payloadUpgrades: diagramPayloadUpgrades,
   views: {
     inline_mention: (entity) => ({
       type: 'diagram',
       slug: entity.slug,
-      label: entity.slug,
+      // Was the slug — this type had no other name to show. It has one now.
+      label: (entity.data.title as string) ?? entity.slug,
       href: `/diagrams/${entity.slug}`,
     }),
 
