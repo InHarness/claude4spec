@@ -59,7 +59,7 @@ async function buildFixture() {
 
   await post('/api/design-systems', {
     slug: 'brand-2026',
-    name: 'Brand2026',
+    title: 'Brand2026',
     description: 'Podstawowy system — kolory i typografia',
     groups: [
       {
@@ -100,14 +100,14 @@ async function buildFixture() {
   // Zero groups, zero modes — the empty-collection shape.
   await post('/api/design-systems', {
     slug: 'legacy-tokens',
-    name: 'LegacyTokens',
+    title: 'LegacyTokens',
     groups: [],
     modes: [],
   });
 
   await post('/api/ui-views', {
     slug: 'user-profile',
-    name: 'UserProfile',
+    title: 'UserProfile',
     url: '/users/:id',
     description: 'Ekran profilu — zakładki',
     params: [
@@ -121,7 +121,7 @@ async function buildFixture() {
   // Null url (modal/drawer without routing), no params, no design system.
   await post('/api/ui-views', {
     slug: 'confirm-dialog',
-    name: 'ConfirmDialog',
+    title: 'ConfirmDialog',
     url: null,
     params: [],
   });
@@ -133,7 +133,7 @@ async function buildFixture() {
    */
   await post('/api/ui-views', {
     slug: 'orphan-view',
-    name: 'OrphanView',
+    title: 'OrphanView',
     url: '/orphan',
     params: [],
     designSystemSlug: 'never-existed',

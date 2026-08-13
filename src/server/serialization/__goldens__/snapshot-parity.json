@@ -1,5 +1,5 @@
 {
-  "ac.payloadVersion": 1,
+  "ac.payloadVersion": 2,
   "ac/ac-the-list-is-ordered": {
     "description": "sorted by name",
     "kind": "requirement",
@@ -7,6 +7,7 @@
     "status": "active",
     "tags": [],
     "text": "the list is ordered",
+    "title": "the list is ordered",
     "verifies": [
       {
         "slug": "error-dto",
@@ -23,7 +24,7 @@
     ]
   },
   "ac/ac-the-list-is-ordered/_stamped": true,
-  "design-system.payloadVersion": 2,
+  "design-system.payloadVersion": 3,
   "design-system/smoke-ds": {
     "description": null,
     "groups": [
@@ -50,20 +51,21 @@
       }
     ],
     "modes": [],
-    "name": "Smoke DS",
     "slug": "smoke-ds",
-    "tags": []
+    "tags": [],
+    "title": "Smoke DS"
   },
   "design-system/smoke-ds/_stamped": true,
-  "diagram.payloadVersion": 1,
+  "diagram.payloadVersion": 2,
   "diagram/flow": {
     "format": "mermaid",
     "slug": "flow",
     "source": "graph TD; A-->B;",
-    "tags": []
+    "tags": [],
+    "title": "Flow"
   },
   "diagram/flow/_stamped": true,
-  "dto.payloadVersion": 1,
+  "dto.payloadVersion": 2,
   "dto/error-dto": {
     "description": null,
     "examples": [],
@@ -74,9 +76,9 @@
         "type": "string"
       }
     ],
-    "name": "ErrorDto",
     "slug": "error-dto",
-    "tags": []
+    "tags": [],
+    "title": "ErrorDto"
   },
   "dto/error-dto/_stamped": true,
   "dto/user-dto": {
@@ -103,9 +105,9 @@
         "type": "string"
       }
     ],
-    "name": "UserDto",
     "slug": "user-dto",
-    "tags": []
+    "tags": [],
+    "title": "UserDto"
   },
   "dto/user-dto/_stamped": true,
   "dto/zamowienie-dto": {
@@ -118,12 +120,12 @@
         "type": "number"
       }
     ],
-    "name": "ZamówienieDto",
     "slug": "zamowienie-dto",
-    "tags": []
+    "tags": [],
+    "title": "ZamówienieDto"
   },
   "dto/zamowienie-dto/_stamped": true,
-  "endpoint.payloadVersion": 2,
+  "endpoint.payloadVersion": 3,
   "endpoint/get-api-users": {
     "description": null,
     "linkedDtos": [
@@ -149,7 +151,8 @@
     "summary": "List users",
     "tags": [
       "alpha"
-    ]
+    ],
+    "title": "GET /api/users"
   },
   "endpoint/get-api-users/_stamped": true,
   "endpoint/post-api-ping": {
@@ -159,14 +162,14 @@
     "path": "/api/ping",
     "slug": "post-api-ping",
     "summary": "",
-    "tags": []
+    "tags": [],
+    "title": "POST /api/ping"
   },
   "endpoint/post-api-ping/_stamped": true,
-  "ui-view.payloadVersion": 1,
+  "ui-view.payloadVersion": 2,
   "ui-view/users": {
     "description": null,
     "designSystemSlug": null,
-    "name": "Users",
     "params": [
       {
         "in": "path",
@@ -175,6 +178,7 @@
     ],
     "slug": "users",
     "tags": [],
+    "title": "Users",
     "url": "/users/:id"
   },
   "ui-view/users/_stamped": true

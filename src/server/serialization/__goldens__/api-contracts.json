@@ -1,5 +1,5 @@
 {
-  "endpoint.payloadVersion": 2,
+  "endpoint.payloadVersion": 3,
   "endpoint/get-users/snapshot": {
     "description": null,
     "linkedDtos": [
@@ -23,7 +23,8 @@
     "path": "/users",
     "slug": "get-users",
     "summary": "List users",
-    "tags": []
+    "tags": [],
+    "title": "GET /users"
   },
   "endpoint/get-users/inline_mention": {
     "type": "endpoint",
@@ -34,6 +35,7 @@
   "endpoint/get-users/single_element": {
     "type": "endpoint",
     "slug": "get-users",
+    "title": "GET /users",
     "method": "GET",
     "path": "/users",
     "summary": "List users",
@@ -63,6 +65,7 @@
   "endpoint/get-users/element_list_item": {
     "type": "endpoint",
     "slug": "get-users",
+    "title": "GET /users",
     "method": "GET",
     "path": "/users",
     "summary": "List users",
@@ -92,6 +95,7 @@
   "endpoint/get-users/tagged_list_item": {
     "type": "endpoint",
     "slug": "get-users",
+    "title": "GET /users",
     "method": "GET",
     "path": "/users",
     "summary": "List users",
@@ -121,6 +125,7 @@
   "endpoint/get-users/detail": {
     "type": "endpoint",
     "slug": "get-users",
+    "title": "GET /users",
     "method": "GET",
     "path": "/users",
     "summary": "List users",
@@ -134,7 +139,7 @@
         "statusCode": null,
         "dto": {
           "slug": "order-dto",
-          "name": "ZamówienieDto",
+          "title": "ZamówienieDto",
           "description": "Zamówienie — pozycja",
           "fields": [
             {
@@ -153,7 +158,7 @@
         "statusCode": 200,
         "dto": {
           "slug": "user-dto",
-          "name": "UserDto",
+          "title": "UserDto",
           "description": "A user",
           "fields": [
             {
@@ -178,7 +183,7 @@
         "statusCode": 404,
         "dto": {
           "slug": "error-dto",
-          "name": "ErrorDto",
+          "title": "ErrorDto",
           "description": null,
           "fields": [
             {
@@ -200,7 +205,8 @@
     "path": "/ping",
     "slug": "post-ping",
     "summary": "",
-    "tags": []
+    "tags": [],
+    "title": "POST /ping"
   },
   "endpoint/post-ping/inline_mention": {
     "type": "endpoint",
@@ -211,6 +217,7 @@
   "endpoint/post-ping/single_element": {
     "type": "endpoint",
     "slug": "post-ping",
+    "title": "POST /ping",
     "method": "POST",
     "path": "/ping",
     "summary": "",
@@ -221,6 +228,7 @@
   "endpoint/post-ping/element_list_item": {
     "type": "endpoint",
     "slug": "post-ping",
+    "title": "POST /ping",
     "method": "POST",
     "path": "/ping",
     "summary": "",
@@ -231,6 +239,7 @@
   "endpoint/post-ping/tagged_list_item": {
     "type": "endpoint",
     "slug": "post-ping",
+    "title": "POST /ping",
     "method": "POST",
     "path": "/ping",
     "summary": "",
@@ -241,6 +250,7 @@
   "endpoint/post-ping/detail": {
     "type": "endpoint",
     "slug": "post-ping",
+    "title": "POST /ping",
     "method": "POST",
     "path": "/ping",
     "summary": "",
@@ -249,7 +259,7 @@
     "dtos": [],
     "_references": []
   },
-  "dto.payloadVersion": 1,
+  "dto.payloadVersion": 2,
   "dto/error-dto/snapshot": {
     "description": null,
     "examples": [],
@@ -260,9 +270,9 @@
         "type": "string"
       }
     ],
-    "name": "ErrorDto",
     "slug": "error-dto",
-    "tags": []
+    "tags": [],
+    "title": "ErrorDto"
   },
   "dto/error-dto/inline_mention": {
     "type": "dto",
@@ -274,7 +284,7 @@
     "type": "dto",
     "slug": "error-dto",
     "tags": [],
-    "name": "ErrorDto",
+    "title": "ErrorDto",
     "description": null,
     "fields": [
       {
@@ -292,7 +302,7 @@
     "type": "dto",
     "slug": "error-dto",
     "tags": [],
-    "name": "ErrorDto",
+    "title": "ErrorDto",
     "description": null,
     "fields": [
       {
@@ -310,7 +320,7 @@
     "type": "dto",
     "slug": "error-dto",
     "tags": [],
-    "name": "ErrorDto",
+    "title": "ErrorDto",
     "description": null,
     "fields": [
       {
@@ -327,7 +337,7 @@
   "dto/error-dto/detail": {
     "type": "dto",
     "slug": "error-dto",
-    "name": "ErrorDto",
+    "title": "ErrorDto",
     "description": null,
     "fields": [
       {
@@ -359,9 +369,9 @@
         "type": "number"
       }
     ],
-    "name": "ZamówienieDto",
     "slug": "order-dto",
-    "tags": []
+    "tags": [],
+    "title": "ZamówienieDto"
   },
   "dto/order-dto/inline_mention": {
     "type": "dto",
@@ -373,7 +383,7 @@
     "type": "dto",
     "slug": "order-dto",
     "tags": [],
-    "name": "ZamówienieDto",
+    "title": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
@@ -391,7 +401,7 @@
     "type": "dto",
     "slug": "order-dto",
     "tags": [],
-    "name": "ZamówienieDto",
+    "title": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
@@ -409,7 +419,7 @@
     "type": "dto",
     "slug": "order-dto",
     "tags": [],
-    "name": "ZamówienieDto",
+    "title": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
@@ -426,7 +436,7 @@
   "dto/order-dto/detail": {
     "type": "dto",
     "slug": "order-dto",
-    "name": "ZamówienieDto",
+    "title": "ZamówienieDto",
     "description": "Zamówienie — pozycja",
     "fields": [
       {
@@ -472,9 +482,9 @@
         "type": "string"
       }
     ],
-    "name": "UserDto",
     "slug": "user-dto",
-    "tags": []
+    "tags": [],
+    "title": "UserDto"
   },
   "dto/user-dto/inline_mention": {
     "type": "dto",
@@ -486,7 +496,7 @@
     "type": "dto",
     "slug": "user-dto",
     "tags": [],
-    "name": "UserDto",
+    "title": "UserDto",
     "description": "A user",
     "fields": [
       {
@@ -518,7 +528,7 @@
     "type": "dto",
     "slug": "user-dto",
     "tags": [],
-    "name": "UserDto",
+    "title": "UserDto",
     "description": "A user",
     "fields": [
       {
@@ -550,7 +560,7 @@
     "type": "dto",
     "slug": "user-dto",
     "tags": [],
-    "name": "UserDto",
+    "title": "UserDto",
     "description": "A user",
     "fields": [
       {
@@ -581,7 +591,7 @@
   "dto/user-dto/detail": {
     "type": "dto",
     "slug": "user-dto",
-    "name": "UserDto",
+    "title": "UserDto",
     "description": "A user",
     "fields": [
       {

@@ -56,7 +56,7 @@ async function buildFixture() {
 
   await post('/api/dtos', {
     slug: 'user-dto',
-    name: 'UserDto',
+    title: 'UserDto',
     description: 'A user',
     fields: [
       { name: 'id', type: 'string', required: true },
@@ -68,7 +68,7 @@ async function buildFixture() {
   // any re-encoding on the way through the move shows up here.
   await post('/api/dtos', {
     slug: 'order-dto',
-    name: 'ZamówienieDto',
+    title: 'ZamówienieDto',
     description: 'Zamówienie — pozycja',
     // `required` is now MANDATORY on the REST path — the retired router validated
     // nothing, so these two fixtures could omit it. See the declaration.
@@ -76,7 +76,7 @@ async function buildFixture() {
   });
   await post('/api/dtos', {
     slug: 'error-dto',
-    name: 'ErrorDto',
+    title: 'ErrorDto',
     fields: [{ name: 'message', type: 'string', required: false }],
   });
 

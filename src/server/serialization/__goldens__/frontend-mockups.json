@@ -1,5 +1,5 @@
 {
-  "design-system.payloadVersion": 2,
+  "design-system.payloadVersion": 3,
   "design-system/brand-2026/snapshot": {
     "description": "Podstawowy system — kolory i typografia",
     "groups": [
@@ -71,9 +71,9 @@
         "overrides": []
       }
     ],
-    "name": "Brand2026",
     "slug": "brand-2026",
-    "tags": []
+    "tags": [],
+    "title": "Brand2026"
   },
   "design-system/brand-2026/inline_mention": {
     "type": "design-system",
@@ -84,7 +84,7 @@
   "design-system/brand-2026/single_element": {
     "type": "design-system",
     "slug": "brand-2026",
-    "name": "Brand2026",
+    "title": "Brand2026",
     "description": "Podstawowy system — kolory i typografia",
     "groups": [
       {
@@ -170,7 +170,7 @@
   "design-system/brand-2026/element_list_item": {
     "type": "design-system",
     "slug": "brand-2026",
-    "name": "Brand2026",
+    "title": "Brand2026",
     "description": "Podstawowy system — kolory i typografia",
     "groupCount": 3,
     "tokenCount": 6,
@@ -179,7 +179,7 @@
   "design-system/brand-2026/tagged_list_item": {
     "type": "design-system",
     "slug": "brand-2026",
-    "name": "Brand2026",
+    "title": "Brand2026",
     "description": "Podstawowy system — kolory i typografia",
     "groupCount": 3,
     "tokenCount": 6,
@@ -188,7 +188,7 @@
   "design-system/brand-2026/detail": {
     "type": "design-system",
     "slug": "brand-2026",
-    "name": "Brand2026",
+    "title": "Brand2026",
     "description": "Podstawowy system — kolory i typografia",
     "groups": [
       {
@@ -276,9 +276,9 @@
     "description": null,
     "groups": [],
     "modes": [],
-    "name": "LegacyTokens",
     "slug": "legacy-tokens",
-    "tags": []
+    "tags": [],
+    "title": "LegacyTokens"
   },
   "design-system/legacy-tokens/inline_mention": {
     "type": "design-system",
@@ -289,7 +289,7 @@
   "design-system/legacy-tokens/single_element": {
     "type": "design-system",
     "slug": "legacy-tokens",
-    "name": "LegacyTokens",
+    "title": "LegacyTokens",
     "description": null,
     "groups": [],
     "modes": [],
@@ -298,7 +298,7 @@
   "design-system/legacy-tokens/element_list_item": {
     "type": "design-system",
     "slug": "legacy-tokens",
-    "name": "LegacyTokens",
+    "title": "LegacyTokens",
     "description": null,
     "groupCount": 0,
     "tokenCount": 0,
@@ -307,7 +307,7 @@
   "design-system/legacy-tokens/tagged_list_item": {
     "type": "design-system",
     "slug": "legacy-tokens",
-    "name": "LegacyTokens",
+    "title": "LegacyTokens",
     "description": null,
     "groupCount": 0,
     "tokenCount": 0,
@@ -316,21 +316,21 @@
   "design-system/legacy-tokens/detail": {
     "type": "design-system",
     "slug": "legacy-tokens",
-    "name": "LegacyTokens",
+    "title": "LegacyTokens",
     "description": null,
     "groups": [],
     "modes": [],
     "tags": [],
     "_references": []
   },
-  "ui-view.payloadVersion": 1,
+  "ui-view.payloadVersion": 2,
   "ui-view/confirm-dialog/snapshot": {
     "description": null,
     "designSystemSlug": null,
-    "name": "ConfirmDialog",
     "params": [],
     "slug": "confirm-dialog",
     "tags": [],
+    "title": "ConfirmDialog",
     "url": null
   },
   "ui-view/confirm-dialog/inline_mention": {
@@ -343,7 +343,7 @@
   "ui-view/confirm-dialog/single_element": {
     "type": "ui-view",
     "slug": "confirm-dialog",
-    "name": "ConfirmDialog",
+    "title": "ConfirmDialog",
     "url": null,
     "description": null,
     "params": [],
@@ -353,7 +353,7 @@
   "ui-view/confirm-dialog/element_list_item": {
     "type": "ui-view",
     "slug": "confirm-dialog",
-    "name": "ConfirmDialog",
+    "title": "ConfirmDialog",
     "url": null,
     "description": null,
     "paramCount": 0,
@@ -362,7 +362,7 @@
   "ui-view/confirm-dialog/tagged_list_item": {
     "type": "ui-view",
     "slug": "confirm-dialog",
-    "name": "ConfirmDialog",
+    "title": "ConfirmDialog",
     "url": null,
     "description": null,
     "paramCount": 0,
@@ -371,7 +371,7 @@
   "ui-view/confirm-dialog/detail": {
     "type": "ui-view",
     "slug": "confirm-dialog",
-    "name": "ConfirmDialog",
+    "title": "ConfirmDialog",
     "url": null,
     "description": null,
     "params": [],
@@ -382,10 +382,10 @@
   "ui-view/orphan-view/snapshot": {
     "description": null,
     "designSystemSlug": "never-existed",
-    "name": "OrphanView",
     "params": [],
     "slug": "orphan-view",
     "tags": [],
+    "title": "OrphanView",
     "url": "/orphan"
   },
   "ui-view/orphan-view/inline_mention": {
@@ -398,7 +398,7 @@
   "ui-view/orphan-view/single_element": {
     "type": "ui-view",
     "slug": "orphan-view",
-    "name": "OrphanView",
+    "title": "OrphanView",
     "url": "/orphan",
     "description": null,
     "params": [],
@@ -408,7 +408,7 @@
   "ui-view/orphan-view/element_list_item": {
     "type": "ui-view",
     "slug": "orphan-view",
-    "name": "OrphanView",
+    "title": "OrphanView",
     "url": "/orphan",
     "description": null,
     "paramCount": 0,
@@ -417,7 +417,7 @@
   "ui-view/orphan-view/tagged_list_item": {
     "type": "ui-view",
     "slug": "orphan-view",
-    "name": "OrphanView",
+    "title": "OrphanView",
     "url": "/orphan",
     "description": null,
     "paramCount": 0,
@@ -426,7 +426,7 @@
   "ui-view/orphan-view/detail": {
     "type": "ui-view",
     "slug": "orphan-view",
-    "name": "OrphanView",
+    "title": "OrphanView",
     "url": "/orphan",
     "description": null,
     "params": [],
@@ -437,7 +437,6 @@
   "ui-view/user-profile/snapshot": {
     "description": "Ekran profilu — zakładki",
     "designSystemSlug": "brand-2026",
-    "name": "UserProfile",
     "params": [
       {
         "description": "User id",
@@ -461,6 +460,7 @@
     ],
     "slug": "user-profile",
     "tags": [],
+    "title": "UserProfile",
     "url": "/users/:id"
   },
   "ui-view/user-profile/inline_mention": {
@@ -473,7 +473,7 @@
   "ui-view/user-profile/single_element": {
     "type": "ui-view",
     "slug": "user-profile",
-    "name": "UserProfile",
+    "title": "UserProfile",
     "url": "/users/:id",
     "description": "Ekran profilu — zakładki",
     "params": [
@@ -503,7 +503,7 @@
   "ui-view/user-profile/element_list_item": {
     "type": "ui-view",
     "slug": "user-profile",
-    "name": "UserProfile",
+    "title": "UserProfile",
     "url": "/users/:id",
     "description": "Ekran profilu — zakładki",
     "paramCount": 3,
@@ -512,7 +512,7 @@
   "ui-view/user-profile/tagged_list_item": {
     "type": "ui-view",
     "slug": "user-profile",
-    "name": "UserProfile",
+    "title": "UserProfile",
     "url": "/users/:id",
     "description": "Ekran profilu — zakładki",
     "paramCount": 3,
@@ -521,7 +521,7 @@
   "ui-view/user-profile/detail": {
     "type": "ui-view",
     "slug": "user-profile",
-    "name": "UserProfile",
+    "title": "UserProfile",
     "url": "/users/:id",
     "description": "Ekran profilu — zakładki",
     "params": [

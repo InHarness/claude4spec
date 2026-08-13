@@ -44,7 +44,7 @@ const TYPES = ['ac', 'design-system', 'diagram', 'dto', 'endpoint', 'ui-view'] a
  * value collection with a ref (`ac.verifies`), a nested collection whose item
  * order is AUTHORED and must not be sorted (`design-system.groups[].tokens`), a
  * `clearable` field left unset (`ui-view.designSystemSlug`), an enum on its
- * default (`diagram.format`), a transient input (`diagram.caption`), a NULL
+ * default (`diagram.format`), a content-bearing field (`diagram.source`), a NULL
  * `status_code` in the junction, and an endpoint with no links at all.
  */
 async function seed(t: TestApp): Promise<void> {
@@ -57,7 +57,7 @@ async function seed(t: TestApp): Promise<void> {
   };
 
   const userDto = await post('/api/dtos', {
-    name: 'UserDto',
+    title: 'UserDto',
     description: 'A user',
     fields: [
       { name: 'id', type: 'string', required: true },
@@ -68,12 +68,12 @@ async function seed(t: TestApp): Promise<void> {
   // Unicode in the CONTENT (slugs are ASCII kebab by contract) — a re-encoding
   // on the way through the generator shows up here and nowhere else.
   const orderDto = await post('/api/dtos', {
-    name: 'ZamówienieDto',
+    title: 'ZamówienieDto',
     description: 'Zamówienie — pozycja',
     fields: [{ name: 'nr', type: 'number', required: false }],
   });
   const errorDto = await post('/api/dtos', {
-    name: 'ErrorDto',
+    title: 'ErrorDto',
     fields: [{ name: 'message', type: 'string', required: true }],
   });
 
@@ -111,13 +111,13 @@ async function seed(t: TestApp): Promise<void> {
   expect(verified.body.data.verifies, 'fixture: verifies did not land').toHaveLength(3);
 
   await post('/api/ui-views', {
-    name: 'Users',
+    title: 'Users',
     url: '/users/:id',
     params: [{ name: 'id', in: 'path' }],
   });
 
   await post('/api/design-systems', {
-    name: 'Smoke DS',
+    title: 'Smoke DS',
     groups: [
       {
         name: 'Core',
@@ -133,7 +133,7 @@ async function seed(t: TestApp): Promise<void> {
     ],
   });
 
-  await post('/api/diagrams', { source: 'graph TD; A-->B;', caption: 'Flow' });
+  await post('/api/diagrams', { source: 'graph TD; A-->B;', title: 'Flow' });
 }
 
 function capture(t: TestApp): Record<string, unknown> {
