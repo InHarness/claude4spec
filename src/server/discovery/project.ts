@@ -1,0 +1,157 @@
+/**
+ * M39 — `select`, the projection that replaced the `view` axis.
+ *
+ * The shape of a read used to be a closed list of variants each TYPE declared:
+ * a caller asked for `detail` or `element_list_item` and got whatever that type
+ * decided those meant. The shape of a read is now a function of the schema and
+ * of what the CALLER asked for — `f(schema, select)` — computed here, once, for
+ * every type at once.
+ *
+ * That is why this file has no per-type anything in it. It reads the flat key
+ * set of `data.schema` and the flags on those keys, so a type contributed by a
+ * plugin the host has never heard of projects by exactly the same rule as `ac`.
+ * A projection function that had to learn about types would put the old problem
+ * back one layer down.
+ *
+ * WHERE IT SITS: `serialize → project → budget`. After serialization, because a
+ * projection cuts what has been produced rather than telling the producer what
+ * to make; before the budget, because the budget's "first item is never
+ * degraded" guarantee is a promise about the item the caller will actually
+ * receive, and measuring it before the cut would measure something else.
+ */
+
+import {
+  IDENTITY_FIELDS,
+  RESERVED_TITLE_FIELD,
+  contentBearingKeys,
+  contentBytes,
+  contentOperationOf,
+  selectableFieldsOf,
+  type FieldNode,
+} from '../../shared/plugin-host/data-schema.js';
+import { invalidArgument } from './errors.js';
+
+type Schema = Readonly<Record<string, FieldNode>>;
+
+/**
+ * Reject a `select` this host cannot honour, and say what it could have been.
+ *
+ * ONE LEVEL ONLY, and the reason is semantic rather than transport. A
+ * `collection: 'value'` is declared opaque — it is read whole and replaced whole
+ * — so answering `columns[].name` would hand back a piece of something the
+ * declaration says has no pieces. A type that wants partial reads of a
+ * collection declares it `'keyed'` and gets a windowed operation instead.
+ *
+ * The message carries the flat list of legal names rather than just refusing.
+ * It is the same list `describe_*` publishes as `selectableFields`, so a caller
+ * that guessed wrong can fix the call from the error alone.
+ */
+export function validateSelect(select: readonly string[] | undefined, schema: Schema): void {
+  if (!select) return;
+  const legal = selectableFieldsOf(schema);
+  for (const name of select) {
+    const bad =
+      typeof name !== 'string' || name.includes('.') || name.includes('[') || !legal.includes(name);
+    if (!bad) continue;
+    throw invalidArgument(
+      `select does not descend into nested values; name a top-level field (got ${JSON.stringify(name)})`,
+      `legal names for this type: ${legal.join(', ')}`,
+    );
+  }
+}
+
+/**
+ * Cut a serialized record down to what the caller asked for.
+ *
+ * The four cases of the contract, in one place:
+ *
+ *   - `select` ABSENT — every schema field except the content-bearing ones. The
+ *     useful default: everything that travels cheaply.
+ *   - `select: []` — the identity skeleton alone. Not an empty answer: `slug`,
+ *     `title` and `tags` are what a caller needs to render a link, and asking
+ *     for nothing else is a legitimate, and cheap, request.
+ *   - `select: ['a','b']` — those fields, plus identity.
+ *   - a CONTENT-BEARING name in `select` — not an error, and deliberately so.
+ *     The reply is the field's descriptor plus the operation that will hand over
+ *     the content, which tells the caller what to do next; a refusal would only
+ *     tell them they were wrong.
+ *
+ * Identity fields survive every case because they do not come from `data` — they
+ * come from the envelope around it. A projection cannot remove the row's own
+ * identity, and a caller never has to remember to ask for it.
+ */
+export function project(
+  data: unknown,
+  select: readonly string[] | undefined,
+  schema: Schema,
+): unknown {
+  if (data === null || typeof data !== 'object' || Array.isArray(data)) return data;
+  const row = data as Record<string, unknown>;
+  const wanted = select ? new Set(select) : null;
+
+  const out: Record<string, unknown> = {};
+  // Identity first, so it is present even for a type whose serialized payload
+  // omitted one of them — and in a stable position in the emitted object.
+  for (const key of IDENTITY_FIELDS) {
+    if (key in row) out[key] = row[key];
+  }
+  // `type` and the `_generic` / `_error` markers are envelope facts about the
+  // record, not fields of it. They survive projection for the same reason
+  // identity does: a consumer that cannot tell a host-shaped row from a
+  // type-computed one will read the second as the first.
+  for (const key of ['type', '_generic', '_type', '_error', '_brokenRefs']) {
+    if (key in row) out[key] = row[key];
+  }
+
+  for (const [name, node] of Object.entries(schema)) {
+    if (node.transientInput || node.localSurrogate) continue;
+    if (wanted && !wanted.has(name)) continue;
+    if (IDENTITY_FIELDS.includes(name as (typeof IDENTITY_FIELDS)[number])) continue;
+
+    if (node.contentBearing) {
+      /**
+       * The descriptor, whether or not the caller named the field.
+       *
+       * `has`/`bytes` may already be present — the generic payload builder emits
+       * them — but a type computing its own views need not, and the answer must
+       * not depend on which of those produced the row. Recomputing from the
+       * value when it is still there, and trusting the emitted keys when it is
+       * not, makes both paths agree.
+       */
+      const keys = contentBearingKeys(name);
+      const bytes = name in row ? contentBytes(row[name]) : Number(row[keys.bytes] ?? 0);
+      out[keys.has] = bytes > 0;
+      out[keys.bytes] = bytes;
+      out[`${name}Operation`] = contentOperationOf(node);
+      continue;
+    }
+
+    if (name in row) out[name] = row[name];
+  }
+
+  return out;
+}
+
+/**
+ * The fields a projected record actually carries, echoed in the envelope.
+ *
+ * Symmetric to `searchedFields`, and there for the same reason: without it a
+ * NARROW record is indistinguishable from an entity that happens to hold little
+ * data, and a consumer reading the first as the second reports fields as absent
+ * that were merely not requested.
+ */
+export function selectedFieldsOf(select: readonly string[] | undefined, schema: Schema): string[] {
+  const identity = [...IDENTITY_FIELDS];
+  if (select) return [...new Set([...identity, ...select])];
+  return [
+    ...new Set([
+      ...identity,
+      ...selectableFieldsOf(schema).filter((name) => !schema[name]?.contentBearing),
+    ]),
+  ];
+}
+
+/** True when the schema declares the reserved title — every registered type does. */
+export function hasTitle(schema: Schema): boolean {
+  return RESERVED_TITLE_FIELD in schema;
+}

@@ -165,7 +165,6 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       // `offset` is read with the non-negative parser: 0 is a legitimate offset
       // and a meaningless limit, and the exhaustive sweeps page from 0.
       const offset = nonNegativeInt(req.query.offset);
-      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
       /**
        * 0.2.13 (tier C) — `fields` and `mode` joined the wire.
        *
@@ -182,7 +181,6 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const result = discovery.searchEntities({
         type,
         query: q,
-        ...(view ? { view: view as never } : {}),
         ...(fields ? { fields } : {}),
         ...(mode ? { mode } : {}),
         ...(limit !== undefined ? { limit } : {}),
@@ -199,8 +197,9 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
    *
    * NOT the entity list route the UI calls. `generatedCrudRouter` answers
    * `GET /api/<type>` with the projection a list page renders and a page size
-   * chosen for it; this is the CATALOG operation, with the core's own `view`,
-   * `mode`, paging and sort determinism, identical in all four channels.
+   * chosen for it; this is the CATALOG operation, with the core's own `mode`,
+   * paging and sort determinism, identical in all four channels. The row is
+   * frozen to `{ slug, title }` — there is no width parameter to pass on.
    *
    * `filters`/`applyDefaultPredicate` are deliberately NOT on the wire here.
    * The first is a nested object with no settled query-string spelling, and the
@@ -212,8 +211,12 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
     try {
       const type = assertActiveType(host, req.params.type);
       const tags = commaList(req.query.tags);
-      const filter = req.query.filter === 'and' ? 'and' : req.query.filter === 'or' ? 'or' : undefined;
-      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
+      // 0.2.22 — `tagFilter`, the spelling every other surface already used.
+      const tagFilter =
+        req.query.tagFilter === 'and' ? 'and' : req.query.tagFilter === 'or' ? 'or' : undefined;
+      const sort =
+        req.query.sort === 'title' ? 'title' : req.query.sort === 'slug' ? 'slug' : req.query.sort === 'createdAt' ? 'createdAt' : undefined;
+      const dir = req.query.dir === 'desc' ? 'desc' : req.query.dir === 'asc' ? 'asc' : undefined;
       const mode = req.query.mode === 'count' ? 'count' : req.query.mode === 'items' ? 'items' : undefined;
       const limit = positiveInt(req.query.limit);
       const offset = nonNegativeInt(req.query.offset);
@@ -221,8 +224,9 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
         discovery.listEntities({
           type,
           ...(tags ? { tags } : {}),
-          ...(filter ? { filter } : {}),
-          ...(view ? { view: view as never } : {}),
+          ...(tagFilter ? { tagFilter } : {}),
+          ...(sort ? { sort } : {}),
+          ...(dir ? { dir } : {}),
           ...(mode ? { mode } : {}),
           ...(limit !== undefined ? { limit } : {}),
           ...(offset !== undefined ? { offset } : {}),
@@ -234,8 +238,8 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
   });
 
   /**
-   * 0.2.13 (tier C) — the `rest` rendering of `get_entities`: fetch by key, any
-   * view, several slugs in one call.
+   * 0.2.13 (tier C) — the `rest` rendering of `get_entities`: fetch by key,
+   * several slugs in one call, width chosen by `select`.
    *
    * Takes no `limit`/`offset` — the caller already named the rows, so the valve
    * is the input length plus the core's response budget, not a window. A slug
@@ -249,8 +253,12 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       if (!slugs || slugs.length === 0) {
         throw new DomainError('VALIDATION', 'slugs query param required (comma-separated)');
       }
-      const view = typeof req.query.view === 'string' ? req.query.view : undefined;
-      res.json(discovery.getEntities({ type, slugs, ...(view ? { view: view as never } : {}) }));
+      // 0.2.22 — `view` off the wire, `select` on it. Absent means the full
+      // record minus content-bearing fields; an empty `select=` means the
+      // identity skeleton, which is why this distinguishes the two rather than
+      // folding an empty string into `undefined`.
+      const select = typeof req.query.select === 'string' ? commaList(req.query.select) ?? [] : undefined;
+      res.json(discovery.getEntities({ type, slugs, ...(select ? { select } : {}) }));
     } catch (err) {
       next(err);
     }

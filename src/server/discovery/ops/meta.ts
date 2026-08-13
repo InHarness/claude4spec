@@ -15,7 +15,11 @@
 
 import type { DiscoveryDeps, DescribeTypesInput, DescribeTypesResult, OverviewResult } from '../types.js';
 import { invalidType } from '../errors.js';
-import { optionalView } from '../views.js';
+import {
+  constraintsOf,
+  contentFieldsOf,
+  selectableFieldsOf,
+} from '../../../shared/plugin-host/data-schema.js';
 import { PageSource } from '../page-source.js';
 import { RootSet } from '../roots.js';
 import { resolveSearchFields } from '../search/fields.js';
@@ -65,11 +69,6 @@ export function describeTypes(deps: DiscoveryDeps, input: DescribeTypesInput = {
   const activeTypes = active.map((m) => m.type);
   const wanted = input.types?.length ? input.types : activeTypes;
 
-  // The view vocabulary is checked ONCE, before any type is touched: an unknown
-  // view is a bad call, not a per-type outcome, and it must answer the same way
-  // whether the caller named one type or none.
-  const view = optionalView(input.view);
-
   const types: DescribeTypesResult['types'] = [];
   for (const type of wanted) {
     const module = deps.host.getEntity(type);
@@ -77,16 +76,26 @@ export function describeTypes(deps: DiscoveryDeps, input: DescribeTypesInput = {
     // list attached — never a silent fall-back to raw JSON, which would make a
     // deactivated type look half-alive.
     if (!module) throw invalidType(type, activeTypes);
-    const described = deps.serialization.describe(type, view);
+    const described = deps.serialization.describe(type);
     if (!described) throw invalidType(type, activeTypes);
+    const schema = module.data?.schema ?? {};
     types.push({
       type,
       label: module.label,
       payloadVersion: described.payloadVersion,
-      views: described.views,
       schemas: described.schemas,
-      // The answer to "what will search cover for this type" belongs with the
-      // answer to "what shape is it" — one call, not two.
+      /**
+       * Four lists, all DERIVED by the host and none declared by the type.
+       *
+       * `views` used to sit here and no longer does: a caller cannot choose one,
+       * so publishing the repertoire advertised a decision that is not theirs.
+       * What replaced it answers the questions a caller now actually has before
+       * a READ — what may I project, what will search cover, what is content and
+       * how do I fetch it, and what values will be refused on write.
+       */
+      constraints: constraintsOf(schema),
+      contentFields: contentFieldsOf(schema),
+      selectableFields: selectableFieldsOf(schema),
       searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
     });
   }
