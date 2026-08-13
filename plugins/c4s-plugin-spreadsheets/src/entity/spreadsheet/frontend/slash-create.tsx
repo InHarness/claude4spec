@@ -77,7 +77,7 @@ export function SpreadsheetSlashCreatePopover({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: name.trim(),
+        title: name.trim(),
         nRows: clamp(rows, DEFAULT_ROWS),
         nCols: clamp(cols, DEFAULT_COLS),
         headerRow: true,
@@ -87,12 +87,12 @@ export function SpreadsheetSlashCreatePopover({
       const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
       throw new Error(body?.error?.message ?? `Could not create the spreadsheet (${res.status})`);
     }
-    const body = (await res.json()) as { data?: { slug: string; name?: string } };
+    const body = (await res.json()) as { data?: { slug: string; title?: string } };
     const created = body.data;
     if (!created?.slug) throw new Error('The server created the spreadsheet but returned no slug');
 
     insertSpreadsheet(editor, created.slug);
-    toast.success(`Spreadsheet ${created.name ?? created.slug} created`);
+    toast.success(`Spreadsheet ${created.title ?? created.slug} created`);
     onClose();
     return created;
   });

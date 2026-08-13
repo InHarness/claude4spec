@@ -36,7 +36,7 @@ interface Props {
 }
 
 interface Draft {
-  name: string;
+  title: string;
   description: string;
   groups: TokenGroup[];
   modes: DesignMode[];
@@ -65,7 +65,7 @@ const BASE_MODE = 'Base';
 
 function toDraft(ds: DesignSystem): Draft {
   return {
-    name: ds.name,
+    title: ds.title,
     description: ds.description ?? '',
     groups: ds.groups,
     modes: ds.modes,
@@ -119,7 +119,7 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
       const updated = await update.mutateAsync({
         slug: entity.slug,
         input: {
-          name: current.name,
+          title: current.title,
           description: current.description || null,
           groups: current.groups,
           modes: current.modes,
@@ -154,14 +154,14 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
     if (!ds) return;
     const refCount = refs.length;
     const body = refCount
-      ? `Delete design system "${ds.name}"? ${refCount} page${refCount === 1 ? '' : 's'} reference it and will become broken. UI views pointing at it will show a broken chip.`
-      : `Delete design system "${ds.name}"? UI views pointing at it will show a broken chip. This cannot be undone.`;
+      ? `Delete design system "${ds.title}"? ${refCount} page${refCount === 1 ? '' : 's'} reference it and will become broken. UI views pointing at it will show a broken chip.`
+      : `Delete design system "${ds.title}"? UI views pointing at it will show a broken chip. This cannot be undone.`;
     const ok = await confirmDestructive({ title: 'Delete design system?', body, confirmLabel: 'Delete' });
     if (!ok) return;
     try {
       await remove.mutateAsync(ds.slug);
       onDeleted();
-      toast.success(`Design system ${ds.name} deleted`);
+      toast.success(`Design system ${ds.title} deleted`);
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -308,8 +308,8 @@ export function DesignSystemDetail({ slug, onDeleted, onRenamed, onOpenEntity }:
         <div className="flex items-center gap-2 mt-2 mb-1">
           <Palette size={22} style={{ color: 'var(--c-accent)' }} />
           <input
-            value={draft.name}
-            onChange={(e) => patch({ name: e.target.value })}
+            value={draft.title}
+            onChange={(e) => patch({ title: e.target.value })}
             className="flex-1 bg-transparent outline-none"
             style={{ fontSize: 26, fontWeight: 600, color: 'var(--c-ink)' }}
             placeholder="Design System Name"

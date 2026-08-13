@@ -198,30 +198,39 @@ export type DiagramFormat = 'mermaid' | 'd2';
 
 export interface Diagram {
   slug: string;
+  /** 0.2.22 — the reserved label. This type had none before; chips showed the slug. */
+  title: string;
   format: DiagramFormat;
-  /** Literal DSL body (no trim). May be empty — a legal placeholder state. */
+  /**
+   * Literal DSL body (no trim). May be empty — a legal placeholder state.
+   *
+   * `contentBearing` since 0.2.22: it does NOT arrive with the entity from any
+   * generic read. A reader gets `hasSource`/`sourceBytes` and fetches the body
+   * from `GET /api/entities/diagram/:slug/content/source`. Kept on this
+   * interface because the type still describes the whole entity — what changed
+   * is which reads populate it.
+   */
   source: string;
+  hasSource?: boolean;
+  sourceBytes?: number;
   tags: string[];
   createdAt: string;
   updatedAt: string;
 }
 
 export interface DiagramCreateInput {
+  /** The reserved label, and the slug source. Required since 0.2.22. */
+  title: string;
   /** DSL body (mermaid). Optional/empty = placeholder. */
   source?: string;
   format?: DiagramFormat;
-  /**
-   * Transient caption — used ONLY to seed the slug (`slugify(caption)`) when no
-   * explicit `slug` is given. Never persisted on the entity (no column / file
-   * field); on a page it lives solely as the `<diagram caption="…"/>` attribute.
-   */
-  caption?: string;
   /** Optional explicit slug — also used by M17 restore to preserve identity. */
   slug?: string;
   tags?: string[];
 }
 
 export interface DiagramUpdateInput {
+  title?: string;
   source?: string;
   format?: DiagramFormat;
   tags?: string[];
@@ -440,6 +449,8 @@ export interface AcBrokenVerify extends AcVerifyRef {
 
 export interface Ac {
   slug: string;
+  /** 0.2.22 — the reserved label. Defaults to the first 200 characters of `text`. */
+  title: string;
   text: string;
   kind: AcKind;
   status: AcStatus;
@@ -454,6 +465,8 @@ export interface Ac {
 
 export interface AcCreateInput {
   text: string;
+  /** Omit to derive it from `text`. */
+  title?: string;
   kind?: AcKind;
   status?: AcStatus;
   verifies?: AcVerifyRef[];

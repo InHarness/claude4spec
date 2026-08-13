@@ -52,7 +52,7 @@ export const DatabaseTableRow: FC<EntityRowProps<DatabaseTable>> = ({ entity, ac
   >
     <div className="flex items-center gap-2">
       <span className="text-[14px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-        {entity.name ?? entity.slug}
+        {entity.title ?? entity.slug}
       </span>
     </div>
     <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>

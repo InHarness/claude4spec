@@ -44,7 +44,8 @@ export interface UiViewParam {
 
 export interface UiView {
   slug: string;
-  name: string;
+  /** 0.2.22 — the reserved label, formerly `name`. `params[].name` is a parameter name and stays. */
+  title: string;
   url: string | null;
   description: string | null;
   params: UiViewParam[];
@@ -56,7 +57,7 @@ export interface UiView {
 }
 
 export interface UiViewCreateInput {
-  name: string;
+  title: string;
   url?: string | null;
   description?: string;
   params?: UiViewParam[];
@@ -67,7 +68,7 @@ export interface UiViewCreateInput {
 }
 
 export interface UiViewUpdateInput {
-  name?: string;
+  title?: string;
   url?: string | null;
   description?: string | null;
   params?: UiViewParam[];
@@ -144,7 +145,8 @@ export interface DesignMode {
 
 export interface DesignSystem {
   slug: string;
-  name: string;
+  /** 0.2.22 — the reserved label, formerly `name`. Token/group/mode names are unaffected. */
+  title: string;
   description: string | null;
   groups: TokenGroup[];
   modes: DesignMode[];
@@ -154,7 +156,7 @@ export interface DesignSystem {
 }
 
 export interface DesignSystemCreateInput {
-  name: string;
+  title: string;
   description?: string;
   groups?: TokenGroup[];
   modes?: DesignMode[];
@@ -164,7 +166,7 @@ export interface DesignSystemCreateInput {
 }
 
 export interface DesignSystemUpdateInput {
-  name?: string;
+  title?: string;
   description?: string | null;
   /** Full replace of the array (not per-token patch). */
   groups?: TokenGroup[];

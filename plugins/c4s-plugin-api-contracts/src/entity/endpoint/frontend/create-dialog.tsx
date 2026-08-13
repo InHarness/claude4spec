@@ -43,7 +43,7 @@ export function EndpointCreateDialog({ onClose, onCreated }: Props) {
         tags: tagList.length ? tagList : undefined,
       });
       onCreated(ep.slug);
-      toast.success(`Endpoint ${ep.method} ${ep.path} created`);
+      toast.success(`Endpoint ${ep.title} created`);
     } catch (err) {
       setFormError((err as Error).message || 'Failed to create endpoint');
     }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { EntityDetailProps } from '../registry.js';
-import { useDiagram, useUpdateDiagram, useDeleteDiagram } from '../../hooks/useDiagrams.js';
+import { useDiagram, useDiagramSource, useUpdateDiagram, useDeleteDiagram } from '../../hooks/useDiagrams.js';
 import {
   renderDiagram,
   hashSource,
@@ -27,10 +27,19 @@ export function DiagramDetail({ slug, onDeleted, onBack }: EntityDetailProps) {
   const deleteDiagram = useDeleteDiagram();
   const { data: refs = [] } = useReferences('diagram', slug || null);
 
+  /**
+   * 0.2.22 — the editor loads the body through the content operation.
+   *
+   * `source` is content-bearing, so `useDiagram` no longer carries it; it
+   * carries `hasSource`/`sourceBytes`. This is the editor of that body, so it is
+   * exactly the caller the operation exists for — and it uses the same route the
+   * CLI and MCP do, with no UI shortcut.
+   */
+  const { data: stored = '' } = useDiagramSource(slug || null);
   const [draft, setDraft] = useState<string | null>(null);
-  const source = draft ?? diagram?.source ?? '';
+  const source = draft ?? stored;
   const format = diagram?.format ?? 'mermaid';
-  const dirty = draft !== null && draft !== (diagram?.source ?? '');
+  const dirty = draft !== null && draft !== stored;
 
   const { effectiveTheme } = useTheme();
 

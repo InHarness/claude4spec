@@ -173,6 +173,16 @@ function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[]
   const visit = (node: FieldNode, path: string, depth: number): void => {
     if (depth > MAX_PROJECTION_DEPTH) return;
     if (node.transientInput || node.localSurrogate || node.systemManaged) return;
+    /**
+     * 0.2.22 — a `contentBearing` field is outside the scanning scope.
+     *
+     * The flag's whole claim is that this field's value does not travel with the
+     * entity; scanning it would mean loading every body of every entity of the
+     * type on every query, to rank against text no read will return. It would
+     * also make `searchedFields` advertise a path whose matches a caller cannot
+     * see without a second call per hit.
+     */
+    if (node.contentBearing) return;
     if (node.kind === 'string' || node.kind === 'enum') {
       push(path);
       return;

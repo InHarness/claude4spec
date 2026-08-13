@@ -59,7 +59,7 @@ function DesignSystemDetailRoute() {
     // RouteBody, not Pane: the detail panel renders a DocEditor for the
     // description, and the chips inside it need the host's editor bridge.
     <RouteBody navigate={navigate}>
-      <EntityBreadcrumbBar type={DESIGN_SYSTEM_TYPE} slug={slug} name={ds?.name} view="details" />
+      <EntityBreadcrumbBar type={DESIGN_SYSTEM_TYPE} slug={slug} name={ds?.title} view="details" />
       <DesignSystemDetail
         key={slug}
         slug={slug}

@@ -17,7 +17,7 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  */
 export type DesignSystemListItem = Pick<
   DesignSystem,
-  'slug' | 'name' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
+  'slug' | 'title' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
 > & { type: 'design-system'; groupCount: number; tokenCount: number };
 
 export const designSystemsApi = {

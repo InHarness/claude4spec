@@ -8,7 +8,7 @@ import {
   isSupportedFormat,
 } from '../../tiptap/extensions/diagramRender.js';
 import { DiagramFullscreen } from '../../components/DiagramFullscreen.js';
-import { useDiagram, useUpdateDiagram } from '../../hooks/useDiagrams.js';
+import { useDiagram, useDiagramSource, useUpdateDiagram } from '../../hooks/useDiagrams.js';
 import { openPopover, toast } from '../../ui/events.js';
 import type { DiagramFormat } from '../../../shared/entities.js';
 import { useTheme } from '../../state/tweaks.js';
@@ -61,7 +61,16 @@ type RenderState =
 export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<Diagram>) {
   const { effectiveTheme } = useTheme();
   const format = entity?.format ?? 'mermaid';
-  const source = entity?.source ?? '';
+  /**
+   * 0.2.22 — the body comes from its own operation, not from the entity.
+   *
+   * `source` is content-bearing, so `entity` carries `hasSource`/`sourceBytes`
+   * and nothing else. Fetching it here means a card renders in two steps, which
+   * is the honest cost of not shipping kilobytes of DSL to every surface that
+   * merely LISTS diagrams.
+   */
+  const sourceQuery = useDiagramSource(entity ? slug : null);
+  const source = sourceQuery.data ?? '';
   const [state, setState] = useState<RenderState>({ status: 'loading' });
   const figureRef = useRef<HTMLElement>(null);
   const updateDiagram = useUpdateDiagram();
@@ -77,12 +86,15 @@ export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<D
     const result = await openPopover(
       'diagram',
       { x: e?.clientX ?? rect?.left ?? 100, y: e?.clientY ?? (rect?.bottom ?? 100) + 4 },
-      { mode: 'edit', initial: { format, caption: caption ?? '', source } },
+      { mode: 'edit', initial: { format, title: entity?.title ?? '', caption: caption ?? '', source } },
     );
     if (!result || '__action' in result) return;
-    if (result.source === source && result.format === format) return;
+    if (result.source === source && result.format === format && result.title === entity?.title) return;
     updateDiagram.mutate(
-      { slug, input: { source: result.source, format: result.format as DiagramFormat } },
+      {
+        slug,
+        input: { title: result.title, source: result.source, format: result.format as DiagramFormat },
+      },
       { onError: (err) => toast.error((err as Error).message) },
     );
   }

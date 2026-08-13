@@ -44,7 +44,7 @@ export function UiViewsList({
         count={views.length}
         search={search}
         onSearchChange={onSearchChange}
-        searchPlaceholder="Search name, slug, url, description…"
+        searchPlaceholder="Search title, slug, url, description…"
         createLabel="New View"
         onCreate={handleCreate}
       />
@@ -67,7 +67,7 @@ export function UiViewsList({
           >
             <div className="flex items-center gap-2">
               <span className="text-[13.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-                {v.name}
+                {v.title}
               </span>
               {v.url && (
                 <span

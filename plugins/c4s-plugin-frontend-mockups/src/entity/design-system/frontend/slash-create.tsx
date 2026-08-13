@@ -51,12 +51,12 @@ function DesignSystemSlashCreateForm({
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Name is required');
     const ds = await create.mutateAsync({
-      name: trimmed,
+      title: trimmed,
       description: description.trim() || undefined,
     });
     void qc.invalidateQueries({ queryKey: designSystemKeys.all });
     insertEmbed(editor, DESIGN_SYSTEM_TYPE, ds.slug);
-    toast.success(`${DESIGN_SYSTEM_LABEL} ${ds.slug} created`);
+    toast.success(`${DESIGN_SYSTEM_LABEL} ${ds.title} created`);
     onClose();
     return ds;
   });

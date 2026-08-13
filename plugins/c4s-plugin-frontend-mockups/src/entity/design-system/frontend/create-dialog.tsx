@@ -21,7 +21,7 @@ export function DesignSystemCreateDialog({ onClose, onCreated }: Props) {
     }
     try {
       const ds = await create.mutateAsync({
-        name: trimmed,
+        title: trimmed,
         description: description.trim() || undefined,
       });
       onCreated(ds.slug);

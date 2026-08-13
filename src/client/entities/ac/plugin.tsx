@@ -15,11 +15,6 @@ import { AcDetail } from './detail-panel.js';
 import { acRoutes } from './routes.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
 
-function truncate(s: string, n: number): string {
-  if (s.length <= n) return s;
-  return `${s.slice(0, n).trimEnd()}…`;
-}
-
 function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
   const deprecated = entity.status === 'deprecated';
   return (
@@ -40,7 +35,7 @@ function AcRow({ entity, active, onOpen }: EntityRowProps<Ac>) {
       <CheckSquare size={14} style={{ color: 'var(--c-accent)' }} />
       <span className="flex-1 min-w-0">
         <span className="block text-[13px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {truncate(entity.text, 80)}
+          {entity.title}
         </span>
         <span className="block text-[10.5px] font-mono uppercase tracking-wider" style={{ color: 'var(--c-subtle)' }}>
           {entity.kind}
@@ -94,7 +89,13 @@ function AcChip({ slug, entity, onOpen }: EntityChipProps<Ac>) {
       title={entity.text}
     >
       <CheckSquare size={11} style={{ color: 'var(--c-accent)' }} />
-      <span style={{ color: 'var(--c-ink)' }}>{truncate(entity.text, 50)}</span>
+      {/*
+        0.2.22 — no second truncation here. `title` is bounded at 200 characters
+        by the host, so the chip renders it as stored; shortening it again was a
+        per-type guess at a limit the declaration now states once. The full
+        criterion is still one hover away in the `title` attribute.
+      */}
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
     </button>
   );
 }
@@ -137,7 +138,7 @@ function AcCard({ slug, entity, onOpen }: EntityCardProps<Ac>) {
             textDecoration: deprecated ? 'line-through' : undefined,
           }}
         >
-          {entity.text}
+          {entity.title}
         </span>
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)', marginTop: 2 }} />
       </div>

@@ -22,7 +22,7 @@ export function UiViewCreateDialog({ onClose, onCreated }: Props) {
     }
     try {
       const view = await create.mutateAsync({
-        name: trimmed,
+        title: trimmed,
         url: url.trim() || null,
         description: description.trim() || undefined,
       });

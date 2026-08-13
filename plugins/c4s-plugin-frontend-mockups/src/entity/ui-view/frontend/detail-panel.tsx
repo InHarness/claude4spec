@@ -36,7 +36,7 @@ interface Props {
 }
 
 interface Draft {
-  name: string;
+  title: string;
   url: string;
   description: string;
   params: UiViewParam[];
@@ -64,7 +64,7 @@ const PATH_PARAM_RE = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
 
 function toDraft(v: UiView): Draft {
   return {
-    name: v.name,
+    title: v.title,
     url: v.url ?? '',
     description: v.description ?? '',
     params: v.params,
@@ -117,7 +117,7 @@ export function UiViewDetail({
       const updated = await update.mutateAsync({
         slug: v.slug,
         input: {
-          name: current.name,
+          title: current.title,
           url: current.url.trim() ? current.url.trim() : null,
           description: current.description || null,
           params: current.params,
@@ -139,8 +139,8 @@ export function UiViewDetail({
     if (!view) return;
     const refCount = refs.length;
     const body = refCount
-      ? `Delete UI view "${view.name}"? ${refCount} page${refCount === 1 ? '' : 's'} reference this view and will become broken.`
-      : `Delete UI view "${view.name}"? This cannot be undone.`;
+      ? `Delete UI view "${view.title}"? ${refCount} page${refCount === 1 ? '' : 's'} reference this view and will become broken.`
+      : `Delete UI view "${view.title}"? This cannot be undone.`;
     const ok = await confirmDestructive({
       title: 'Delete UI view?',
       body,
@@ -150,7 +150,7 @@ export function UiViewDetail({
     try {
       await remove.mutateAsync(view.slug);
       onDeleted();
-      toast.success(`View ${view.name} deleted`);
+      toast.success(`View ${view.title} deleted`);
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -252,8 +252,8 @@ export function UiViewDetail({
         <div className="flex items-center gap-2 mt-2 mb-1">
           <Monitor size={22} style={{ color: 'var(--c-accent)' }} />
           <input
-            value={draft.name}
-            onChange={(e) => patch({ name: e.target.value })}
+            value={draft.title}
+            onChange={(e) => patch({ title: e.target.value })}
             className="flex-1 bg-transparent outline-none"
             style={{ fontSize: 26, fontWeight: 600, color: 'var(--c-ink)' }}
             placeholder="Screen Name"
@@ -275,7 +275,7 @@ export function UiViewDetail({
         <FieldRow label="Design System">
           <DesignSystemSelect
             value={draft.designSystemSlug}
-            options={designSystems.map((d) => ({ slug: d.slug, name: d.name }))}
+            options={designSystems.map((d) => ({ slug: d.slug, name: d.title }))}
             onChange={(next) => patch({ designSystemSlug: next })}
             onOpen={onOpenEntity ? (s) => onOpenEntity('design-system', s) : undefined}
           />

@@ -34,6 +34,12 @@ export interface Index {
 
 export interface DatabaseTable {
   slug: string;
+  /**
+   * 0.2.22 — the reserved label, and this type is the only one where it sits
+   * BESIDE `name` rather than replacing it: `name` is the SQL identifier code is
+   * generated from, `title` is what a person reads. It starts as a copy.
+   */
+  title: string;
   name: string;
   description?: string | null;
   columns: Column[];
@@ -49,6 +55,7 @@ export interface DatabaseTable {
  */
 export interface DatabaseTableListItem {
   slug: string;
+  title: string;
   name: string;
   description?: string | null;
   columnCount: number;

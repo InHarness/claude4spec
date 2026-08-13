@@ -44,11 +44,11 @@ export function DtoSlashCreatePopover({
 
   const { error, busy, submit } = useSlashSubmit(async () => {
     const dto = await dtosApi.create({
-      name: name.trim(),
+      title: name.trim(),
       ...(description.trim() ? { description: description.trim() } : {}),
     });
     insertEmbed(editor, DTO_TYPE, dto.slug);
-    toast.success(`DTO ${dto.name} created`);
+    toast.success(`DTO ${dto.title} created`);
     onClose();
     return dto;
   });

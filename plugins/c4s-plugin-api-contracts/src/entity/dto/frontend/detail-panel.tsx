@@ -24,7 +24,7 @@ interface Props {
 }
 
 interface Draft {
-  name: string;
+  title: string;
   description: string;
   fields: DtoField[];
   examples: DtoExample[];
@@ -33,7 +33,7 @@ interface Draft {
 
 function toDraft(d: Dto): Draft {
   return {
-    name: d.name,
+    title: d.title,
     description: d.description ?? '',
     fields: d.fields,
     examples: d.examples,
@@ -61,7 +61,7 @@ export function DtoDetail({
       const updated = await update.mutateAsync({
         slug: d.slug,
         input: {
-          name: current.name,
+          title: current.title,
           description: current.description || null,
           fields: current.fields,
           examples: current.examples,
@@ -77,14 +77,14 @@ export function DtoDetail({
     if (!dto) return;
     const ok = await confirmDestructive({
       title: 'Delete DTO?',
-      body: `Delete DTO ${dto.name}? All references to this DTO will become broken.`,
+      body: `Delete DTO ${dto.title}? All references to this DTO will become broken.`,
       confirmLabel: 'Delete',
     });
     if (!ok) return;
     try {
       await remove.mutateAsync(dto.slug);
       onDeleted();
-      toast.success(`DTO ${dto.name} deleted`);
+      toast.success(`DTO ${dto.title} deleted`);
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -168,8 +168,8 @@ export function DtoDetail({
         <div className="flex items-center gap-2 mt-2 mb-1">
           <Braces size={22} style={{ color: 'var(--c-accent)' }} />
           <input
-            value={draft.name}
-            onChange={(e) => patch({ name: e.target.value })}
+            value={draft.title}
+            onChange={(e) => patch({ title: e.target.value })}
             className="flex-1 bg-transparent outline-none"
             style={{
               fontSize: 28,

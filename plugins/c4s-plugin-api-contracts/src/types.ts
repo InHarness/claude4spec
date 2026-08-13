@@ -29,6 +29,8 @@ export interface EndpointDtoLink {
 
 export interface Endpoint {
   slug: string;
+  /** 0.2.22 — the reserved label; defaults to `"{method} {path}"`. */
+  title: string;
   method: HttpMethod;
   path: string;
   summary: string;
@@ -104,7 +106,8 @@ export interface DtoEndpointLink {
 
 export interface Dto {
   slug: string;
-  name: string;
+  /** 0.2.22 — the reserved label, formerly `name`. Nested `fields[].name` is a member name and stays. */
+  title: string;
   description: string | null;
   fields: DtoField[];
   examples: DtoExample[];
@@ -115,7 +118,7 @@ export interface Dto {
 }
 
 export interface DtoCreateInput {
-  name: string;
+  title: string;
   description?: string;
   fields?: DtoField[];
   examples?: DtoExample[];
@@ -125,7 +128,7 @@ export interface DtoCreateInput {
 }
 
 export interface DtoUpdateInput {
-  name?: string;
+  title?: string;
   description?: string | null;
   fields?: DtoField[];
   examples?: DtoExample[];
