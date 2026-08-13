@@ -323,6 +323,59 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'here and still reported by `syncProjectionTable`, which also DROPS the ' +
       'row — walking both would double-report and then contradict itself.',
   },
+  {
+    release: '0.2.19',
+    slot: 'contributes.skills',
+    kind: 'slot-added',
+    summary:
+      'The fifth manifest slot: `PluginSkillContribution[]`, carrying skills of ' +
+      'either scope. `contributes.writingStyles` becomes sugar over it — each ' +
+      'entry is lowered to `scope: "writing-style"` and routed to the same ' +
+      'SkillRegistry, producing an identical entry and identical selection ' +
+      'behaviour, so the older slot keeps working unchanged. The asymmetry is in ' +
+      'the other scope: a `scope: "contextual"` skill is attached ' +
+      'unconditionally and in full to ALL FOUR context types, with no selector ' +
+      'entry, no config opt-in, no opt-out and no way to narrow it to one type. ' +
+      'Additive to the manifest, so no bump; `skills` joins the versioned ' +
+      'surface beside `entities` / `writingStyles` / `settings` / `commands`.',
+  },
+  {
+    release: '0.2.19',
+    slot: 'FieldFlags.contentBearing',
+    kind: 'slot-added',
+    summary:
+      'A field carrying bulk content rather than a value to compare. The host ' +
+      'excludes it from all five generated views and emits `has<Field>: boolean` ' +
+      '+ `<field>Bytes: number` in its place; the field stays in the snapshot ' +
+      '(it is reproducible from the entity file and the projection invariant ' +
+      'still binds it), and the default diff reports ' +
+      '`<field>_changed: { fromBytes, toBytes }` instead of two payloads nobody ' +
+      'can read side by side. Two rules bind a declaring type: it may NOT also ' +
+      'declare its own `views?` (the flag only has meaning for host-generated ' +
+      'views, so the combination is rejected at load time), and it MUST expose ' +
+      'the content through some declared operation — a field excluded from every ' +
+      'view with no way to read it would be write-only data. Adding a flag to a ' +
+      'closed dictionary is a Host API change precisely because a layer has to ' +
+      'learn to honour it, but it is additive to the declaration shape.',
+  },
+  {
+    release: '0.2.19',
+    slot: 'injection (SKILL.md frontmatter, SkillMetadata, WritingStyleContribution)',
+    kind: 'slot-removed',
+    summary:
+      'Forcing a skill into the prompt was never a property of the skill — it is ' +
+      'a property of the writing-style SLOT, of which there is exactly one per ' +
+      'prompt. With `injection` gone, a prompt carries at most one ' +
+      '`<project_skill/>` block (the active writing style) in each of the four ' +
+      'context types, and every other skill rides `inlineSkills` for the model ' +
+      'to open on demand. Legacy frontmatter carrying `injection` is IGNORED, ' +
+      'not rejected: the field is treated like any other unknown key, so an ' +
+      'existing style neither fails to parse nor drops out of selection. ' +
+      'Formally breaking, absorbed into the baseline under the same ' +
+      'stabilization rule as the 0.2.4 removal above — zero published plugins ' +
+      'means zero possible breakage. Once a third-party plugin is published, ' +
+      'removals go back under the major-bump rule.',
+  },
 ];
 
 /** First numeric component of a semver RANGE (e.g. "^1.4.0" → 1, ">=2.5.0" → 2). */

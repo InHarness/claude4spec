@@ -11,6 +11,7 @@ import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SubagentDefinition } from '@inharness-ai/agent-adapters';
 import { CLAUDE_CODE_READONLY_BUILTINS, CLAUDE_CODE_MUTATING_BUILTINS } from '@inharness-ai/agent-adapters/claude-code';
 import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operations/profiles.js';
+import { INTERACTION_RULES } from './interaction-rules.js';
 
 /* ─────────────────────────── M05 m05ctxreg: context-type registry ───────────────────────────
  * Single code-level constant map (spec `m05ctxreg`), keyed by `context_type`, deciding the five
@@ -34,12 +35,16 @@ import { PROFILES, mcpServerSetForProfile, type McpServerSet } from '../operatio
  */
 export type { McpServerSet } from '../operations/profiles.js';
 
-/** One registry row — the five dimensions spec `m05ctxreg` dispatches per thread. */
+/** One registry row — the six dimensions spec `m05ctxreg` dispatches per thread. */
 export interface ContextTypeEntry {
-  /** Dim 1 — M37: internal skills (contextual, package-only) attached to `inlineSkills`
-   *  on top of `config.writingStyle` (which `resolveForContext` auto-appends to every
-   *  context type — deliberately not listed here). Each slug's own `injection` metadata
-   *  (`forced` | `available`) decides whether it also gets a `<project_skill>` block. */
+  /** Dim 1 — M37: hardcoded contextual skills attached to `inlineSkills` on top of
+   *  `config.writingStyle` (which `resolveForContext` auto-appends to every context
+   *  type — deliberately not listed here) and on top of the unconditional fan-out of
+   *  plugin-contributed contextual skills (likewise not listed: it is the same for
+   *  every row). 0.2.19 emptied this for `brief` and `patch` — a mode's identity is
+   *  dim 6 below, not a skill — leaving exactly one entry in the whole catalogue.
+   *  None of these gets a `<project_skill>` block; that slot belongs to the writing
+   *  style alone. */
   attachInternalSkills: string[];
   /** Dim 2 — which MCP servers mount in `adapter.execute({ mcpServers })`. */
   mcp: McpServerSet;
@@ -51,6 +56,13 @@ export interface ContextTypeEntry {
   /** Dim 5 — builtin posture. `'force-plan'` pins `planMode=true` regardless of the thread's
    *  `plan_mode` flag (read-only peer); `'follow-thread'` tracks the flag. */
   builtinPosture: 'follow-thread' | 'force-plan';
+  /** Dim 6 (0.2.19) — the body of `<interaction_context type="…">`: the domain rules of
+   *  this interaction type. The TEXT is owned by the module that owns the genre (M21
+   *  brief / M23 patch / M11 ask) and lives in `interaction-rules.ts`; M05 only renders
+   *  it. `chat` carries none, and an empty body is a legitimate value — the block is
+   *  emitted regardless, self-closing, because a missing block would be indistinguishable
+   *  from "this concept does not exist". */
+  interactionRules: string;
 }
 
 /**
@@ -65,20 +77,27 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.chat.builtinPosture,
+    interactionRules: INTERACTION_RULES.chat,
   },
   brief: {
-    attachInternalSkills: ['brief-author'],
+    // 0.2.19: was `['brief-author']`, forced. The skill no longer exists: its identity
+    // half became `interactionRules` below, its methodology half belongs to the active
+    // writing style's `workflows/brief.md`.
+    attachInternalSkills: [],
     mcp: mcpServerSetForProfile('brief'),
     uiChrome: 'brief-detail',
     subagent: 'diff-explore',
     builtinPosture: PROFILES.brief.builtinPosture,
+    interactionRules: INTERACTION_RULES.brief,
   },
   patch: {
-    attachInternalSkills: ['patch-implementer'],
+    // 0.2.19: was `['patch-implementer']`, forced — same split as `brief` above.
+    attachInternalSkills: [],
     mcp: mcpServerSetForProfile('patch'),
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.patch.builtinPosture,
+    interactionRules: INTERACTION_RULES.patch,
   },
   ask: {
     // Full `chat` toolset MINUS c4s-tools MINUS transagent-tools (recursion guard: a consulted
@@ -94,6 +113,7 @@ export const CONTEXT_TYPE_REGISTRY: Record<ChatContextType, ContextTypeEntry> = 
     uiChrome: 'overlay',
     subagent: 'spec-explore',
     builtinPosture: PROFILES.ask.builtinPosture,
+    interactionRules: INTERACTION_RULES.ask,
   },
 };
 
@@ -145,23 +165,25 @@ export interface SystemPromptInput {
   /** 0.1.58: workspace name — the `workspace="…"` attr on `<workspace_projects>`. */
   workspaceName?: string;
   /**
-   * M37: force-injected skills for this turn — one `<project_skill>` block per
-   * entry, replacing the old single gated `writingStyle` block. Populated by the
-   * caller from `resolveForContext`'s result, filtered to entries whose registry
-   * metadata has `injection: 'forced'` OR `scope: 'writing-style'` (the active
-   * writing style is always forced regardless of its own `injection` value; an
-   * `available` contextual skill like `writing-style-author` still rides
-   * `inlineSkills`, just with no block here).
+   * M37 (0.2.19): the active writing style, or `null`. Zero or one — NOT a list.
+   * This is the sole source of the prompt's `<project_skill>` block, and there is
+   * therefore at most one such block in every one of the four context types.
+   *
+   * It replaces `forcedSkills: {slug,title}[]`, which was a list because forcing
+   * was modelled as a property of a SKILL (`injection: 'forced'`) rather than of
+   * the writing-style SLOT. Every other skill — the hardcoded contextual ones and
+   * the plugin fan-out — rides `inlineSkills` alone, and the model opens it via
+   * `Skill(<slug>)` if the description warrants it.
    */
-  forcedSkills?: { slug: string; title: string }[];
+  writingStyleSkill?: { slug: string; title: string } | null;
   /**
-   * M37: the active writing style specifically (a subset of `forcedSkills`,
-   * when present) — passed through explicitly rather than re-derived from
-   * `forcedSkills` by excluding a known slug, so `buildBriefSystemPrompt` can
-   * key the `<writing_style_brief_workflow>` addendum off it unambiguously
-   * even if a future context type ever forces more than one internal skill.
+   * 0.2.19: body of the `<interaction_context type="…">` block — the domain rules of
+   * this thread's interaction type, owned by the genre's module (M21/M23/M11) and
+   * supplied by the caller from `CONTEXT_TYPE_REGISTRY[contextType].interactionRules`.
+   * Empty/absent is legitimate (`chat`) and yields a self-closing block; the block is
+   * never omitted.
    */
-  writingStyle?: { slug: string; title: string } | null;
+  interactionRules?: string;
   /** 0.1.51: config.language — display name; emits `<spec_language>` (chat/patch only, NOT brief). */
   specLanguage?: string;
   /** 0.1.51: config.agent.conversationalLanguage — display name; emits `<conversational_language>` (chat/patch + brief). */
@@ -181,7 +203,8 @@ export interface SystemPromptInput {
     /** 0.2.13 item 28 — read-allowed, write-denied. See `agent-path-scope.ts`. */
     pageRootDirs: string[];
   };
-  /** M21 m05ctxreg: 'chat' = default, 'brief' = brief editorial thread (different toolset, different skill, different chrome). */
+  /** M21 m05ctxreg: one of the four interaction types — `chat` (default), `brief`, `patch`,
+   *  `ask`. Drives the frame, and is echoed verbatim as `<interaction_context type="…">`. */
   contextType?: ChatContextType;
   /** M21: snapshot of the brief attached to this thread (only when contextType='brief'). */
   brief?: Brief | null;
@@ -424,10 +447,11 @@ The peers available in this workspace are listed in \`<workspace_projects/>\`.
 
 /**
  * M21: usage contract for `brief-tools` MCP server (analog `PLAN_TOOLS_USAGE`).
- * Mounted only when this chat thread has `context_type='brief'`. The full
- * editorial doctrine lives in the bundled skill `brief-author` (loaded as
- * project_skill); this block describes the tool surface so the agent knows
- * what is callable in this thread.
+ * Mounted only when this chat thread has `context_type='brief'`. The editorial
+ * doctrine is split in two since 0.2.19: the genre's domain rules arrive in
+ * `<interaction_context type="brief">` (M21), the methodology in the active
+ * writing style's `workflows/brief.md`. This block is neither — it describes the
+ * tool surface, so the agent knows what is callable in this thread.
  */
 const BRIEF_TOOLS_USAGE = `<brief_tools_usage>
 brief-tools MCP server is scoped automatically to this brief (no path param):
@@ -541,7 +565,7 @@ Hard rules:
 - NEVER mutate anything (no create/update/delete; you have no such tools).
 - Report pointers (paths / anchors / slugs), not dumps. The parent decides; you locate.`;
 
-const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a brief-author parent.
+const DIFF_EXPLORE_PROMPT = `You are a read-only explorer of ONE SLICE of a HISTORICAL release diff, working for a parent that is authoring a release brief.
 
 The parent hands you a slice — a \`from\`/\`to\` pair, an optional \`roots\` page-root scope, plus \`entityTypes\` and/or a \`limit\`/\`offset\` window. Your job: call \`release_diff\` for exactly that slice, absorb its heavy \`before\`/\`after\`/\`content\`, and return a CONCISE DISTILLATE: the concrete facts the parent must inline (each changed entity/section by name, its key signatures / field shapes / SQL / view URLs / file paths, and a one-line framing of the change — including deletions). The bulk stays with you; only the distillate goes back, keeping the parent's context small.
 
@@ -664,6 +688,27 @@ function buildWorkspaceProjects(workspaceName: string, peers: PeerProject[]): st
   return lines.join('\n');
 }
 
+/**
+ * 0.2.19: `<interaction_context type="chat|brief|patch|ask">` — the domain rules of the
+ * thread's interaction type. Emitted UNCONDITIONALLY, in every context type including
+ * `chat`, as block #1a (right after `<claude4spec_identity>`) or as block #1 of the brief
+ * frame, where it replaced `<claude4spec_brief_identity>` + `<self_contained_invariant>`.
+ *
+ * With no rules the block still renders, self-closing with just its `type`. That is not a
+ * degenerate case to tidy away: an absent block is indistinguishable from "this host has
+ * no such concept", whereas `<interaction_context type="chat"/>` says the concept exists
+ * and this type carries no extra rules. The `type` attribute alone is worth emitting — it
+ * tells the agent which of the four modes it is in.
+ *
+ * The body is verbatim from `interaction-rules.ts` (owned by M21/M23/M11); this function
+ * deliberately contains no genre text of its own.
+ */
+function buildInteractionContext(contextType: ChatContextType, interactionRules?: string): string {
+  const body = (interactionRules ?? '').trim();
+  if (body === '') return selfClose('interaction_context', attrs({ type: contextType }));
+  return [`<interaction_context ${attrs({ type: contextType })}>`, body, `</interaction_context>`].join('\n');
+}
+
 function buildProjectSkill(ws: { slug: string; title: string }): string {
   return [
     `<project_skill ${attrs({ slug: ws.slug, title: ws.title })}>`,
@@ -773,67 +818,37 @@ function isInside(parent: string, child: string): boolean {
 }
 
 /**
- * M21 brief-context system prompt. Minimal frame: identity, brief-tools usage,
- * brief-author skill (genre — bundled), writing-style skill (methodology —
- * supplies workflows/brief.md), brief snapshot, optional annotations.
- * Excludes pluginHost tooling, plan tools, entity counters — agent operates
- * on a single artifact with a reduced surface.
+ * M21 brief-context system prompt. Minimal frame: interaction context (identity +
+ * self-containment invariant, from M21's own rules), brief-tools usage, the active
+ * writing-style skill (methodology — supplies `workflows/brief.md`, which the agent
+ * reads itself), brief snapshot, optional annotations. Excludes pluginHost tooling,
+ * plan tools, entity counters — agent operates on a single artifact with a reduced
+ * surface.
+ *
+ * 0.2.19 removed three blocks from this frame: `<claude4spec_brief_identity>` and
+ * `<self_contained_invariant>` (both folded into `<interaction_context type="brief">`,
+ * whose body M21 owns) and `<writing_style_brief_workflow>` (the host no longer points
+ * at a style's internal file layout — every package file rides `InlineSkill.files` and
+ * the agent navigates its own style).
  */
 function buildBriefSystemPrompt(input: {
   projectName: string;
   cwd: string;
   brief: Brief | null;
   annotations: Annotation[];
-  forcedSkills: { slug: string; title: string }[];
-  writingStyle: { slug: string; title: string } | null;
+  writingStyleSkill: { slug: string; title: string } | null;
+  interactionRules?: string;
   conversationalLanguage?: string;
 }): string {
   const parts: string[] = [];
-  parts.push(
-    [
-      `<claude4spec_brief_identity>`,
-      `You are operating in BRIEF mode for project "${input.projectName}".`,
-      `cwd: ${input.cwd}`,
-      `Your sole task is editorial work on a single brief artifact (markdown narrative summarising what changed between two releases).`,
-      `Use brief-tools (get_brief / update_brief) and read-only release-tools.`,
-      `You have NO filesystem access (no Read/Write/Edit/Glob/Grep/Bash) and NO plan/entity tools.`,
-      `</claude4spec_brief_identity>`,
-    ].join('\n'),
-  );
-
-  parts.push(
-    [
-      `<self_contained_invariant>`,
-      `The brief file is consumed by TWO audiences with very different capabilities:`,
-      ``,
-      `  1. Human reader in the claude4spec web UI: can click references, view rendered Tiptap, navigate to source entities/pages.`,
-      `  2. Coding agent in some OTHER terminal (Claude Code, Cursor, plain \`cat brief.md | llm\`, agent in another repo, CI bot reading the file).`,
-      `     Has ONLY the raw bytes of this file. NO database, NO MCP server, NO claude4spec UI, NO claude4spec CLI assumed.`,
-      ``,
-      `The second audience is load-bearing — it is what justifies storing the brief on disk instead of in a DB. If the brief is unintelligible without claude4spec running, the artifact has failed its primary purpose.`,
-      ``,
-      `Therefore the brief MUST be self-contained. The output of update_brief is binding regardless of audience:`,
-      ``,
-      `  - INLINE the actual content of every change. Show field names, types, before/after fragments verbatim. Never write "the User DTO got a new field" without showing the field. Never write "see release diff" — quote the diff fragment.`,
-      `  - DO NOT use claude4spec-internal reference grammar (\`<single_element>\`, \`<inline_mention>\`, \`<element_list>\`, \`<tagged_list>\`, \`<tagged_list_mixed>\`, \`@page.md\` mentions). Those resolve ONLY inside the claude4spec UI; in a second-audience terminal they are literal XML/markdown noise that confuses, not helps.`,
-      `  - Use plain prose when naming things: "the \`auth/login\` endpoint (POST)", "the \`User\` DTO field \`email: string\`", "page \`pages/auth/flow.md\`".`,
-      `  - Write file paths, function signatures, SQL fragments, and code snippets verbatim where relevant. The reader cannot fetch them on demand.`,
-      `  - The "For implementers" section must list CONCRETE edit targets: file paths, function names, SQL/migration snippets — actionable without further investigation.`,
-      ``,
-      `**Describe the SYSTEM, not the spec edits.** The brief is about how the specified system behaves now vs. before — not about which markdown files gained/lost sections. Editorial mechanics belong in version history, not in the brief:`,
-      ``,
-      `  - GOOD: "Brief threads whitelist their toolset — only \`brief-tools\` and \`release-tools\` are mounted; plan/entity MCPs are silently omitted to keep the editorial agent on its lane."`,
-      `  - BAD: "Section 'Tool whitelist' was added to \`m05-chat-agent.md\` between 'Context registry' and 'System prompt builder'."`,
-      ``,
-      `  - GOOD: "New \`chat_thread.context_type\` column (\`CHECK chat|brief\`, default \`'chat'\`). Existing threads backfill to \`'chat'\` on migration."`,
-      `  - BAD: "Migration 022 was added under \`db/migrations/\`."`,
-      ``,
-      `If a diff is purely editorial — anchor added, section reordered without content change, typo fix, formatting, prose smoothing, comment moved, heading renamed without semantic shift — DROP it from the brief. It does not earn space. The reader does not care that page X gained a \`<!-- anchor -->\` line; they care what the system now does differently.`,
-      ``,
-      `When this invariant conflicts with brevity, choose self-containment. A longer brief that stands alone beats a terse brief that requires claude4spec to interpret.`,
-      `</self_contained_invariant>`,
-    ].join('\n'),
-  );
+  // Block #1 — where the chat/patch/ask frame has `<claude4spec_identity>` then this,
+  // the brief frame opens with it: in brief mode the interaction rules ARE the identity.
+  parts.push(buildInteractionContext('brief', input.interactionRules));
+  // The retired `<claude4spec_brief_identity>` block carried the project name and cwd
+  // alongside the rules. The rules moved to M21; these two are project facts, not genre
+  // rules, so they stay in the frame — as the same `<project/>` self-close the other
+  // frame uses, minus every counter a brief thread has no access to.
+  parts.push(selfClose('project', attrs({ name: input.projectName, cwd: input.cwd })));
 
   parts.push(
     [
@@ -849,28 +864,12 @@ function buildBriefSystemPrompt(input: {
   if (input.conversationalLanguage) {
     parts.push(buildConversationalLanguage(input.conversationalLanguage));
   }
-  // M37: one <project_skill> block per forced skill — `brief-author` (genre,
-  // always present) plus the active writing style (methodology), if forced.
-  for (const skill of input.forcedSkills) {
-    parts.push(buildProjectSkill(skill));
-  }
-
-  // Writing-style skill supplies methodology-specific brief guidance
-  // (filter rules, inlining patterns, "For implementers" structure)
-  // via its `workflows/brief.md`. Passed explicitly (not derived from
-  // `forcedSkills` by excluding `brief-author`) so this stays correct even if a
-  // future context type ever forces more than one internal skill; absent when
-  // no writing style is active, in which case the agent uses brief-author
-  // genre rules alone — generic but free of writing-style-specific leakage.
-  if (input.writingStyle) {
-    const writingStyle = input.writingStyle;
-    parts.push(
-      [
-        `<writing_style_brief_workflow ${attrs({ slug: writingStyle.slug })}>`,
-        `For brief generation in this writing style, read \`workflows/brief.md\` within Skill("${writingStyle.slug}") if present. It defines which RawDelta entries are spec-format conventions (drop), how to inline this style's entity types, and the "For implementers" structure for this style. Read it after Skill("brief-author").`,
-        `</writing_style_brief_workflow>`,
-      ].join('\n'),
-    );
+  // M37 (0.2.19): at most ONE <project_skill> block, for the active writing style — the
+  // sole occupant of that slot. With no style selected the agent has no methodology for
+  // the genre, but it still has its identity, its posture and the self-containment
+  // invariant, all of which arrived in the interaction context above.
+  if (input.writingStyleSkill) {
+    parts.push(buildProjectSkill(input.writingStyleSkill));
   }
 
   if (input.brief) {
@@ -1007,8 +1006,8 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     c4sToolsAvailable = false,
     workspaceProjects = [],
     workspaceName,
-    forcedSkills = [],
-    writingStyle = null,
+    writingStyleSkill = null,
+    interactionRules,
     specLanguage,
     conversationalLanguage,
     agentPathScope,
@@ -1019,15 +1018,28 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
 
   // M05 m05ctxreg: the brief context (uiChrome='brief-detail' in the registry) uses a
   // completely different prompt frame — no plugin tooling, no entity counters, no plan
-  // tools. Just identity, brief-tools usage, brief-author skill (genre) + writing-style
-  // skill (methodology, supplies workflows/brief.md), and the brief snapshot.
+  // tools. Just the interaction context (M21's rules: identity, posture, the
+  // self-containment invariant), brief-tools usage, the active writing style if any
+  // (methodology, via its own workflows/brief.md), and the brief snapshot.
   if (CONTEXT_TYPE_REGISTRY[contextType].uiChrome === 'brief-detail') {
-    return buildBriefSystemPrompt({ projectName, cwd, brief, annotations, forcedSkills, writingStyle, conversationalLanguage });
+    return buildBriefSystemPrompt({
+      projectName,
+      cwd,
+      brief,
+      annotations,
+      writingStyleSkill,
+      interactionRules,
+      conversationalLanguage,
+    });
   }
 
   const parts: string[] = [];
 
   parts.push(buildIdentity(host, projectName));
+
+  // Block #1a (0.2.19) — immediately after identity: WHO the agent is in general, then
+  // what this particular interaction type asks of it. Unconditional, `chat` included.
+  parts.push(buildInteractionContext(contextType, interactionRules));
 
   // Project self-close — env metadata (cwd, roots) before counters, then
   // entity attrs in displayOrder, with `tags` last:
@@ -1071,12 +1083,12 @@ export function buildSystemPrompt(input: SystemPromptInput): string {
     parts.push(buildWorkspaceProjects(workspaceName ?? '', workspaceProjects));
   }
 
-  // M37: one <project_skill> block per forced skill (e.g. `patch-implementer`
-  // for patch threads, plus the active writing style if one is selected).
-  // `available` skills (e.g. `writing-style-author`) are NOT in this list —
-  // they ride `inlineSkills` only, with no forced system-prompt block.
-  for (const skill of forcedSkills) {
-    parts.push(buildProjectSkill(skill));
+  // M37 (0.2.19): at most ONE <project_skill> block, and only ever for the active
+  // writing style. Every other skill of this turn — the hardcoded contextual ones and
+  // the unconditional plugin fan-out — rides `inlineSkills` alone; whether to open one
+  // is the model's call, made from its description via `Skill(<slug>)`.
+  if (writingStyleSkill) {
+    parts.push(buildProjectSkill(writingStyleSkill));
   }
 
   // 0.1.51 step 6a/6b: language directives, right after the project skill and before

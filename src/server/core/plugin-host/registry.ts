@@ -23,23 +23,24 @@ import type {
   PluginCommandContribution,
   PluginManifest,
   PluginSettingsModule,
-  WritingStyleContribution,
+  PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import { ProjectPluginHostImpl } from './project-host.js';
 import {
   PluginManifestError,
   lowerEntityContribution,
   synthesizeMount,
+  validateSkillContribution,
   validateWritingStyle,
   assertSerializationContribution,
 } from './manifest-adapter.js';
 import { attachComposition } from './composition-validation.js';
 
-/** Internal record: the public one plus the styles + the registered module
- *  instances, so unregister can drop styles and delete ONLY the modules this
+/** Internal record: the public one plus the skills + the registered module
+ *  instances, so unregister can drop skills and delete ONLY the modules this
  *  plugin still owns (identity check). */
 interface InternalPluginRecord extends RegisteredPluginRecord {
-  styles: WritingStyleContribution[];
+  skills: PluginSkillContribution[];
   entityModules: BackendModule[];
 }
 
@@ -51,8 +52,8 @@ interface LoweredPlugin {
 export class PluginRegistryImpl implements PluginRegistry {
   private modules = new Map<string, BackendModule>();
   // M33: base-layer plugins by name, in registration order. The source
-  // of truth for `listWritingStyles` / `listPluginRecords` so a hot-reload that
-  // calls `unregisterPlugin` cleanly drops the old version's styles too.
+  // of truth for `listSkills` / `listPluginRecords` so a hot-reload that
+  // calls `unregisterPlugin` cleanly drops the old version's skills too.
   private plugins = new Map<string, InternalPluginRecord>();
 
   registerEntityModule(module: BackendModule): void {
@@ -126,7 +127,14 @@ export class PluginRegistryImpl implements PluginRegistry {
         batch.push(validated);
         return validated;
       });
-    const styles = (manifest.contributes.writingStyles ?? []).map(validateWritingStyle);
+    // 0.2.19 — both skill slots land in one list, validated identically: the
+    // primary `skills` first, then `writingStyles` lowered to `scope:
+    // 'writing-style'`. Order matters only for the first-wins slug rule applied
+    // downstream, and the primary slot reasonably wins its own manifest.
+    const skills: PluginSkillContribution[] = [
+      ...(manifest.contributes.skills ?? []).map(validateSkillContribution),
+      ...(manifest.contributes.writingStyles ?? []).map(validateWritingStyle),
+    ];
 
     // `onUnregister` is a required slot from the HOST_API 1.0.0 baseline. A
     // runtime manifest missing it is not crashed over — warn (parity with L8
@@ -150,7 +158,7 @@ export class PluginRegistryImpl implements PluginRegistry {
         contributedTypes: entityModules.map((m) => m.type),
         settings,
         commands,
-        styles,
+        skills,
         entityModules,
         onUnregister,
       },
@@ -163,12 +171,12 @@ export class PluginRegistryImpl implements PluginRegistry {
 
   registerPlugin(manifest: PluginManifest): void {
     const { record } = this.validateAndLower(manifest);
-    // 0.2.15 — the fan-out is exactly four branches, and none of them reaches
-    // the M19 reference registry: entities → registerEntityModule (here),
-    // writingStyles → SkillRegistry, settings → the settings registry, and
-    // commands → registerEditorExtension (the last three read off the record by
-    // their own consumers). The reference-type pre-validation pass that used to
-    // guard Slot A + Slot B atomically is gone with the slots themselves.
+    // 0.2.19 — the fan-out is FIVE branches over four real capability kinds, and
+    // none of them reaches the M19 reference registry: entities →
+    // registerEntityModule (here), skills → SkillRegistry (M37), writingStyles →
+    // the same SkillRegistry via the sugar lowering above, settings → the
+    // settings registry, and commands → registerEditorExtension (the last four
+    // read off the record by their own consumers).
     for (const module of record.entityModules) {
       this.registerEntityModule(module);
     }
@@ -208,8 +216,8 @@ export class PluginRegistryImpl implements PluginRegistry {
     }));
   }
 
-  listWritingStyles(): WritingStyleContribution[] {
-    return Array.from(this.plugins.values()).flatMap((r) => r.styles);
+  listSkills(): PluginSkillContribution[] {
+    return Array.from(this.plugins.values()).flatMap((r) => r.skills);
   }
 
   listAvailable(): BackendModule[] {

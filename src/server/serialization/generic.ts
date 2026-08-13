@@ -1,5 +1,10 @@
 import type { RawEntity, RawSection } from '../discovery/raw-entity-reader.js';
-import { columnOf, type FieldNode } from '../../shared/plugin-host/data-schema.js';
+import {
+  columnOf,
+  contentBearingKeys,
+  contentBytes,
+  type FieldNode,
+} from '../../shared/plugin-host/data-schema.js';
 import type { ViewKind } from './types.js';
 
 /**
@@ -61,7 +66,33 @@ function byFieldName(
 
   const out: Record<string, unknown> = {};
   for (const [column, value] of Object.entries(data)) {
-    out[fieldByColumn.get(column) ?? column] = value;
+    const field = fieldByColumn.get(column) ?? column;
+    const node = schema[field];
+    // 0.2.19 — a `contentBearing` field never travels in a view. What the caller
+    // gets instead answers the two questions a view can honestly answer about a
+    // body it is not carrying: is there one, and how big. The content itself is
+    // read through the type's own operation.
+    if (node?.contentBearing) {
+      const keys = contentBearingKeys(field);
+      const bytes = contentBytes(value);
+      out[keys.has] = bytes > 0;
+      out[keys.bytes] = bytes;
+      continue;
+    }
+    out[field] = value;
+  }
+
+  // The two derived keys come from the SCHEMA, not from the row's key set: the
+  // derived JSON Schema declares both `required` unconditionally, and a row
+  // hydrated without the content column (or written before the field existed)
+  // would otherwise produce a payload that fails its own schema. "No body" is
+  // `false`/`0`, which is what the loop above already says for a null column.
+  for (const [field, node] of Object.entries(schema)) {
+    if (!node.contentBearing) continue;
+    const keys = contentBearingKeys(field);
+    if (keys.has in out) continue;
+    out[keys.has] = false;
+    out[keys.bytes] = 0;
   }
   return out;
 }

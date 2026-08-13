@@ -99,7 +99,7 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
       c4sToolsAvailable: true,
       workspaceProjects: PEERS,
       workspaceName: 'acme',
-      forcedSkills: [{ slug: 'house-style', title: 'House Style' }],
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
     });
     const c4sIdx = out.indexOf('<c4s_tools_usage>');
     const wsIdx = out.indexOf('<workspace_projects');
@@ -132,65 +132,95 @@ describe('buildSystemPrompt — <workspace_projects> (0.1.58)', () => {
   });
 });
 
-describe('buildSystemPrompt — M37 forcedSkills (multi-skill <project_skill>)', () => {
-  it('brief frame: emits one <project_skill> block per forced skill, and renders the writing-style workflow addendum from the explicit writingStyle param', () => {
+describe('buildSystemPrompt — M37 <project_skill> is the writing-style slot (0.2.19)', () => {
+  it('brief frame: emits exactly one block, for the active writing style', () => {
     const out = build({
       contextType: 'brief',
       brief: null,
-      forcedSkills: [
-        { slug: 'brief-author', title: 'Brief Author' },
-        { slug: 'house-style', title: 'House Style' },
-      ],
-      writingStyle: { slug: 'house-style', title: 'House Style' },
-    });
-    expect(out.match(/<project_skill /g)?.length).toBe(2);
-    expect(out).toContain('<project_skill slug="brief-author" title="Brief Author">');
-    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
-    expect(out).toContain('<writing_style_brief_workflow slug="house-style">');
-  });
-
-  it('brief frame: omits the writing-style workflow addendum when writingStyle is null (no active style), even with other forced skills present', () => {
-    const out = build({
-      contextType: 'brief',
-      brief: null,
-      forcedSkills: [{ slug: 'brief-author', title: 'Brief Author' }],
-      writingStyle: null,
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
     });
     expect(out.match(/<project_skill /g)?.length).toBe(1);
+    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+  });
+
+  it('brief frame: emits no block at all when no writing style is active', () => {
+    // Pre-0.2.19 this frame always carried `brief-author`, so the block count
+    // never reached zero here. The genre rules that skill used to carry now
+    // arrive in <interaction_context>, which is what makes an empty slot safe.
+    const out = build({ contextType: 'brief', brief: null, writingStyleSkill: null });
+    expect(out).not.toContain('<project_skill');
+  });
+
+  it('brief frame: no longer points at the style\'s internal file layout', () => {
+    // The host does not know a style's directory structure; every package file
+    // rides InlineSkill.files and the agent navigates its own style.
+    const out = build({
+      contextType: 'brief',
+      brief: null,
+      writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+    });
     expect(out).not.toContain('<writing_style_brief_workflow');
   });
 
-  it('brief frame: keys the workflow addendum off writingStyle even if a second forced skill (not the style) were ever added, unlike deriving it by excluding brief-author', () => {
-    const out = build({
-      contextType: 'brief',
-      brief: null,
-      forcedSkills: [
-        { slug: 'brief-author', title: 'Brief Author' },
-        { slug: 'some-other-forced-skill', title: 'Some Other Forced Skill' },
-        { slug: 'house-style', title: 'House Style' },
-      ],
-      writingStyle: { slug: 'house-style', title: 'House Style' },
-    });
-    expect(out).toContain('<writing_style_brief_workflow slug="house-style">');
-    expect(out).not.toContain('<writing_style_brief_workflow slug="some-other-forced-skill">');
+  it('non-brief frame: at most one block, whatever the context type', () => {
+    for (const contextType of ['chat', 'patch', 'ask'] as const) {
+      const out = build({
+        contextType,
+        writingStyleSkill: { slug: 'house-style', title: 'House Style' },
+      });
+      expect(out.match(/<project_skill /g)?.length).toBe(1);
+      expect(out).toContain('<project_skill slug="house-style" title="House Style">');
+    }
   });
 
-  it('non-brief frame (chat/patch/ask): emits one <project_skill> block per forced skill', () => {
-    const out = build({
-      contextType: 'patch',
-      forcedSkills: [
-        { slug: 'patch-implementer', title: 'Patch Implementer' },
-        { slug: 'house-style', title: 'House Style' },
-      ],
-    });
-    expect(out.match(/<project_skill /g)?.length).toBe(2);
-    expect(out).toContain('<project_skill slug="patch-implementer" title="Patch Implementer">');
-    expect(out).toContain('<project_skill slug="house-style" title="House Style">');
-  });
-
-  it('non-brief frame: renders nothing when forcedSkills is empty', () => {
+  it('non-brief frame: renders nothing when no writing style is active', () => {
     const out = build({ contextType: 'ask' });
     expect(out).not.toContain('<project_skill');
+  });
+});
+
+describe('buildSystemPrompt — <interaction_context> (0.2.19)', () => {
+  it('is emitted in every context type, carrying the type as an attribute', () => {
+    for (const contextType of ['chat', 'brief', 'patch', 'ask'] as const) {
+      const out = build({ contextType, brief: null, interactionRules: 'RULES FOR ' + contextType });
+      expect(out).toContain(`<interaction_context type="${contextType}">`);
+      expect(out).toContain('RULES FOR ' + contextType);
+    }
+  });
+
+  it('self-closes rather than disappearing when there are no rules', () => {
+    // An absent block would be indistinguishable from "this host has no such
+    // concept"; the `type` attribute alone still tells the agent which mode it is in.
+    const out = build({ contextType: 'chat', interactionRules: '' });
+    expect(out).toContain('<interaction_context type="chat"/>');
+    expect(out).not.toContain('<interaction_context type="chat">');
+  });
+
+  it('is emitted even when the caller passes no rules at all', () => {
+    const out = build({ contextType: 'patch' });
+    expect(out).toContain('<interaction_context type="patch"/>');
+  });
+
+  it('sits immediately after <claude4spec_identity> in the chat frame', () => {
+    const out = build({ contextType: 'chat', interactionRules: 'rules' });
+    const identityEnd = out.indexOf('</claude4spec_identity>');
+    const ctxIdx = out.indexOf('<interaction_context');
+    const projectIdx = out.indexOf('<project name="My Spec"');
+    expect(identityEnd).toBeGreaterThanOrEqual(0);
+    expect(ctxIdx).toBeGreaterThan(identityEnd);
+    expect(projectIdx).toBeGreaterThan(ctxIdx);
+  });
+
+  it('opens the brief frame, replacing the two blocks it absorbed', () => {
+    const out = build({ contextType: 'brief', brief: null, interactionRules: 'BRIEF RULES' });
+    expect(out.indexOf('<interaction_context type="brief">')).toBe(0);
+    expect(out).not.toContain('<claude4spec_brief_identity>');
+    expect(out).not.toContain('<self_contained_invariant>');
+  });
+
+  it('brief frame: still names the project and cwd, which were never genre rules', () => {
+    const out = build({ contextType: 'brief', brief: null });
+    expect(out).toContain('<project name="My Spec" cwd="/tmp/my-spec"/>');
   });
 });
 

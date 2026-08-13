@@ -48,6 +48,9 @@ export type {
   PluginManifest,
   PluginEngines,
   EntityContribution,
+  // 0.2.19 (M37): the fifth manifest slot's shape. `WritingStyleContribution`
+  // stays exported beside it — it is sugar, not a deprecation.
+  PluginSkillContribution,
   WritingStyleContribution,
   PluginSettingField,
   PluginSettingsModule,

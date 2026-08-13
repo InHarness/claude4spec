@@ -93,9 +93,10 @@ The spec lives in the directory where the agent is invoked (CWD). The subdirecto
 
 ## 4. Workflows
 
-There are three workflows. **Pick the right one before doing anything else:**
+There are four workflows. **Pick the right one before doing anything else** — the system prompt's `<interaction_context type="…">` block names the interaction type, which decides the first two:
 
-- **Active context is a brief thread** (system prompt indicates `BRIEF mode` and loads `brief-author` alongside this skill) → follow `workflows/brief.md`. You are not editing the spec; you are composing a self-contained release brief. The workflow defines what counts as feature substance vs. spec-format convention in this style's `RawDelta`, plus inlining patterns and the "For implementers" structure specific to this style. Brief workflow takes precedence over the two below — do not also run daily / bootstrap.
+- **`type="brief"`** → follow `workflows/brief.md`. You are not editing the spec; you are composing a self-contained release brief. The workflow defines the two operating branches, how to partition a heavy release diff across subagents, what counts as feature substance vs. spec-format convention in this style's `RawDelta`, plus inlining patterns and the "For implementers" structure. It takes precedence over the two below — do not also run daily / bootstrap.
+- **`type="patch"`** → follow `workflows/patch.md`. One filed deviation, folded back into the live spec: where a fix lands in this layered layout, how to verify it, and how to report what you did not implement.
 - **No `<index>` file in CWD?** → follow `workflows/bootstrap.md`. The spec does not yet exist; you'll discover the project, propose layers and modules, then generate skeleton and content over six phases.
 - **`<index>` file already in CWD?** → follow `workflows/daily.md`. The spec exists; you are extending or editing it. Hear the user's intent first, classify the request (explicit edit / idea / inconsistency), translate, edit, drift-check, stop.
 

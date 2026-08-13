@@ -29,6 +29,7 @@ import {
   stripSystemFields,
   type SystemStamp,
 } from './system-fields.js';
+import { contentBytes, type FieldNode } from '../../shared/plugin-host/data-schema.js';
 
 /**
  * 0.2.4 — the `createdAt`/`updatedAt` envelope is attached here and NOWHERE
@@ -134,7 +135,10 @@ export function diffEntity(
     return defaultDeepDiff(type, slug, lhs, rhs);
   }
   const fn = module.serializer.diff;
-  if (!fn) return defaultDeepDiff(type, slug, lhs, rhs);
+  // 0.2.19: the declaration goes with it, so `contentBearing` fields report bytes
+  // rather than bodies. A type computing its own `diff` is on its own here — the
+  // same reason such a type may not declare `contentBearing` alongside its own views.
+  if (!fn) return defaultDeepDiff(type, slug, lhs, rhs, module.data.schema);
   return fn(lhs, rhs, slug);
 }
 
@@ -171,15 +175,72 @@ export function defaultDeepDiff(
   type: string,
   slug: string,
   aIn: SnapshotData,
-  bIn: SnapshotData
+  bIn: SnapshotData,
+  /**
+   * 0.2.19 — the declaring type's schema, when the caller has it. Only
+   * `contentBearing` fields are read from it: their value never appears in a
+   * diff, and a `<field>_changed: { fromBytes, toBytes }` entry appears instead.
+   * Optional because this function is also called for an INACTIVE type, where
+   * there is no module and hence no schema — and a diff that degrades to raw
+   * values is better than no diff at all.
+   */
+  schema?: Readonly<Record<string, FieldNode>>
 ): EntityDiff {
   const a = stripSystemFields(aIn);
   const b = stripSystemFields(bIn);
   if (a == null && b == null) return { type, slug, op: 'noop' };
-  if (a == null) return { type, slug, op: 'created', raw: deepDiffPartition(undefined, b) };
-  if (b == null) return { type, slug, op: 'deleted', raw: deepDiffPartition(a, undefined) };
+  const fields = contentBearingFields(schema);
+  // The field is removed BEFORE partitioning, not filtered out of the result
+  // afterwards. On `created`/`deleted` the partition reports the whole entity
+  // under a single `/` key, so no key-name filter can reach the body inside it —
+  // and a newly added entity is exactly the case where a body is largest.
+  const raw = (x: unknown, y: unknown) =>
+    withContentBearingEntries(deepDiffPartition(withoutFields(x, fields), withoutFields(y, fields)), x, y, fields);
+  if (a == null) return { type, slug, op: 'created', raw: raw(undefined, b) };
+  if (b == null) return { type, slug, op: 'deleted', raw: raw(a, undefined) };
   if (deepEqual(a, b)) return { type, slug, op: 'noop' };
-  return { type, slug, op: 'modified', raw: deepDiffPartition(a, b) };
+  return { type, slug, op: 'modified', raw: raw(a, b) };
+}
+
+/** The declared `contentBearing` field names, or `[]` when the caller had no schema. */
+function contentBearingFields(schema?: Readonly<Record<string, FieldNode>>): string[] {
+  if (!schema) return [];
+  return Object.entries(schema)
+    .filter(([, node]) => node.contentBearing)
+    .map(([field]) => field);
+}
+
+/** A shallow copy without the named top-level keys; `undefined`/non-object passes through. */
+function withoutFields(value: unknown, fields: string[]): unknown {
+  if (fields.length === 0 || !isObj(value)) return value;
+  const out: Record<string, unknown> = {};
+  for (const [key, v] of Object.entries(value)) if (!fields.includes(key)) out[key] = v;
+  return out;
+}
+
+/**
+ * Add one `<field>_changed: { fromBytes, toBytes }` under `changed` per
+ * `contentBearing` field whose content differs.
+ *
+ * Reported under `changed` even when the field was only added or only removed:
+ * for content, "it appeared" and "it grew from nothing" are the same event, and
+ * `{ fromBytes: 0, toBytes: 4096 }` says it in the one shape a reader has to
+ * learn. The alternative — a body-sized payload in `added` — is precisely the
+ * output the flag exists to prevent.
+ */
+function withContentBearingEntries(
+  raw: { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> },
+  a: unknown,
+  b: unknown,
+  fields: string[]
+): { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> } {
+  for (const field of fields) {
+    const from = isObj(a) ? a[field] : undefined;
+    const to = isObj(b) ? b[field] : undefined;
+    if (deepEqual(from, to)) continue;
+    raw.changed[`${field}_changed`] = { fromBytes: contentBytes(from), toBytes: contentBytes(to) };
+  }
+  return raw;
 }
 
 function deepDiffPartition(

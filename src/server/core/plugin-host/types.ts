@@ -24,7 +24,7 @@ import type {
   PluginCommandContribution,
   PluginManifest,
   PluginSettingsSection,
-  WritingStyleContribution,
+  PluginSkillContribution,
 } from '../../../shared/plugin-host/manifest.js';
 import type {
   EntityDiff,
@@ -416,12 +416,13 @@ export interface PluginRegistry {
   getAvailable(type: string): BackendModule | null;
 
   /**
-   * M15: writing styles contributed by base-layer (workspace/npm)
-   * plugins, collected during `registerPlugin`. Pushed into each project's
-   * SkillRegistry as `source: "plugin"` at context build (project-local overlay
-   * styles are pushed separately, behind the trust gate).
+   * M15/M37: skills contributed by base-layer (workspace/npm) plugins — both
+   * `contributes.skills` and the `contributes.writingStyles` sugar, already
+   * lowered to one shape — collected during `registerPlugin`. Pushed into each
+   * project's SkillRegistry as `source: "plugin"` at context build (project-local
+   * overlay skills are pushed separately, behind the trust gate).
    */
-  listWritingStyles(): WritingStyleContribution[];
+  listSkills(): PluginSkillContribution[];
 
   /**
    * Derive a per-project host. The effective pool is `base ∪ overlay`

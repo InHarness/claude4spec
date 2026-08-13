@@ -389,13 +389,29 @@ async function buildInner(
     }));
   }
 
-  // M15 phase 2: fan plugin-contributed writing styles into this project's
+  // M15 phase 2 / M37: fan plugin-contributed skills into this project's
   // SkillRegistry as `source: "plugin"` (precedence project > global > plugin >
-  // bundled). Base (workspace/npm) styles always; project-local overlay styles
+  // bundled). Base (workspace/npm) skills always; project-local overlay skills
   // only on the trusted path (overlayResult is set only when trust === true),
-  // so an untrusted plugin contributes no style — exactly as for its entities.
-  for (const style of deps.pluginRegistry.listWritingStyles()) skillRegistry.addPluginStyle(style);
-  for (const style of overlayResult?.writingStyles ?? []) skillRegistry.addPluginStyle(style);
+  // so an untrusted plugin contributes no skill — exactly as for its entities.
+  //
+  // 0.2.19: a slug claimed by two plugins is a WARNING plus first-wins by
+  // discovery order — never an abort. The loser's whole plugin keeps loading;
+  // only that one skill is dropped. The warning is emitted here rather than in
+  // the registry because this is the layer that knows which two plugins collided
+  // and in what order they were discovered.
+  for (const skill of [
+    ...deps.pluginRegistry.listSkills(),
+    ...(overlayResult?.skills ?? []),
+  ]) {
+    if (skillRegistry.hasPluginSkill(skill.slug)) {
+      console.warn(
+        `[skill] plugin skill slug "${skill.slug}" is contributed more than once; keeping the first by discovery order and skipping this one`,
+      );
+      continue;
+    }
+    skillRegistry.addPluginSkill(skill);
+  }
 
   const pluginHost: ProjectPluginHost = deps.pluginRegistry.consolidate(
     { entities: bootConfig.entities },

@@ -96,17 +96,46 @@ describe('SkillRegistry — plugin writing styles (M15 phase 2)', () => {
     expect(registry.isSelectable('terse')).toBe(true);
   });
 
-  it('does not clobber a same-slug bundled contextual skill', () => {
-    // A bundled contextual skill is kept (only user-root contextual skills drop).
+  it('overrides a same-slug BUNDLED skill of either scope — plugin outranks bundled, full stop', () => {
+    // 0.2.19: the old guard here refused to let a plugin displace a bundled
+    // CONTEXTUAL skill. It was written when a plugin could only contribute
+    // styles, so such a landing could only be an accident; with
+    // `contributes.skills` it is a legitimate contribution, and refusing it
+    // would silently drop the plugin's own skill.
     const bundledRoot = writeSkill(path.join(tmp, 'bundled'), 'terse', 'bundled', 'Ctx', 'contextual');
     const registry = SkillRegistry.load([bundledRoot]);
-    registry.addPluginStyle(style({ title: 'Plugin Terse' }));
+    registry.addPluginSkill({ ...style({ title: 'Plugin Terse' }), scope: 'contextual' });
 
     const meta = registry.list().find((s) => s.slug === 'terse');
-    // The contextual skill survives — not flipped to a selectable writing-style.
+    expect(meta?.source).toBe('plugin');
+    expect(meta?.title).toBe('Plugin Terse');
+    // Still contextual, so still not offered in the writing-style selector.
     expect(meta?.scope).toBe('contextual');
-    expect(meta?.source).toBe('bundled');
     expect(registry.isSelectable('terse')).toBe(false);
-    expect(registry.listSelectable().some((s) => s.slug === 'terse')).toBe(false);
+  });
+
+  it('but never RECLASSIFIES a bundled slug: a contextual contribution leaves a bundled writing style alone', () => {
+    // Taking the slug over at a different scope would drop it out of
+    // `listSelectable()` and make `resolve()` return nothing for a project that
+    // has it selected — the project loses its writing style to a plugin it merely
+    // installed. Overriding content is the contract; reclassifying is not.
+    const bundledRoot = writeSkill(path.join(tmp, 'bundled'), 'terse', 'bundled', 'Bundled Terse', 'writing-style');
+    const registry = SkillRegistry.load([bundledRoot]);
+    registry.addPluginSkill({ ...style({ title: 'Plugin Terse' }), scope: 'contextual' });
+
+    const meta = registry.list().find((s) => s.slug === 'terse');
+    expect(meta?.source).toBe('bundled');
+    expect(meta?.scope).toBe('writing-style');
+    expect(registry.isSelectable('terse')).toBe(true);
+  });
+
+  it('a plugin CONTEXTUAL skill never displaces a user-authored skill of the same slug', () => {
+    const userRoot = writeSkill(path.join(tmp, 'user'), 'terse', 'user', 'User Terse');
+    const registry = SkillRegistry.load([userRoot]);
+    registry.addPluginSkill({ ...style({ title: 'Plugin Terse' }), scope: 'contextual' });
+
+    const meta = registry.list().find((s) => s.slug === 'terse');
+    expect(meta?.source).toBe('user');
+    expect(registry.resolve('terse').content).toContain('body from user');
   });
 });

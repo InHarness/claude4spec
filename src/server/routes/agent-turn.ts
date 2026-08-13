@@ -502,28 +502,18 @@ export async function runAgentTurn(
       }
     }
 
-    // M37: per-context skill resolution — attachInternalSkills (M05 m05ctxreg dim 1)
-    // plus the active writing style (config.writingStyle), auto-appended to every
-    // context type by resolveForContext itself.
-    const inlineSkills = deps.skillResolver.resolveForContext(ctx.attachInternalSkills);
+    // M37: per-context skill resolution — the resolver takes the context type itself and
+    // unions the three sources (hardcoded contextual slugs from M05 dim 1, the
+    // unconditional fan-out of plugin contextual skills, the active writing style).
+    const inlineSkills = deps.skillResolver.resolveForContext(thread.contextType);
     // The active writing style is identified by `scope: 'writing-style'` — an
-    // unambiguous signal independent of list position, so a future context type
-    // with >1 attachInternalSkills entry can't misidentify the wrong one as "the
-    // style" (unlike deriving it by excluding a known slug like 'brief-author').
-    const writingStyleSkill = inlineSkills.find((s) => s.metadata?.scope === 'writing-style');
-    const writingStyle = writingStyleSkill
-      ? { slug: writingStyleSkill.name, title: String(writingStyleSkill.metadata?.title ?? writingStyleSkill.name) }
+    // unambiguous signal independent of list position. It is the ONE skill that earns a
+    // <project_skill> block; everything else in `inlineSkills` is opened by the model on
+    // demand via Skill(slug), so there is nothing else to classify here.
+    const resolvedStyle = inlineSkills.find((s) => s.metadata?.scope === 'writing-style');
+    const writingStyleSkill = resolvedStyle
+      ? { slug: resolvedStyle.name, title: String(resolvedStyle.metadata?.title ?? resolvedStyle.name) }
       : null;
-    // Force-injected skills get a <project_skill> system-prompt block on top of their
-    // inlineSkills entry; `available` skills (e.g. writing-style-author) are already in
-    // inlineSkills above but excluded here — the model opens them via Skill(slug) instead.
-    // The active writing style is ALWAYS forced once selected, regardless of its own
-    // `injection` value (that field only governs contextual, package-only skills) — reading
-    // `injection` straight off each already-resolved InlineSkill's metadata, no second
-    // registry.resolve() call (that would re-read SKILL.md + walk its files/ dirs per skill).
-    const forcedSkills = inlineSkills
-      .filter((s) => s.metadata?.injection === 'forced' || s.metadata?.scope === 'writing-style')
-      .map((s) => ({ slug: s.name, title: String(s.metadata?.title ?? s.name) }));
 
     const pageCount = isBriefFrame ? 0 : countPages(await deps.pagesService.listTree());
     // 0.1.51: language directives travel the same path as writingStyle — read from
@@ -575,8 +565,10 @@ export async function runAgentTurn(
       // disk reads when c4s-tools is absent (the block would be gated out anyway).
       workspaceProjects: ctx.mcp.c4sTools ? (deps.listWorkspacePeers?.() ?? []) : [],
       workspaceName: deps.workspaceName,
-      forcedSkills,
-      writingStyle,
+      writingStyleSkill,
+      // M05 m05ctxreg dim 6 (0.2.19): domain rules of this interaction type, owned by
+      // the genre's module and rendered verbatim as <interaction_context type="…">.
+      interactionRules: ctx.interactionRules,
       specLanguage: cfg.language ?? undefined,
       conversationalLanguage: cfg.agent?.conversationalLanguage ?? undefined,
       // 0.1.90 soft layer: config-level lists drive the <agent_path_scope> block's
