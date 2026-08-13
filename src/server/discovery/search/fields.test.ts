@@ -33,7 +33,8 @@ const paths = (data: DataDeclaration | undefined): string[] =>
 /** `design-system`'s token shape, reproduced: named leaves around an opaque one. */
 const opaqueValueData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true },
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
     groups: {
       kind: 'collection',
       collection: 'value',
@@ -73,7 +74,8 @@ describe('hostDefaultFields', () => {
      */
     const out = paths({
       schema: {
-        labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
         composites: {
           kind: 'record',
           key: { kind: 'string' },
@@ -122,7 +124,8 @@ describe('hostDefaultFields', () => {
   it('excludes a transient subtree by PREFIX, not just its root', () => {
     const out = paths({
       schema: {
-        name: { kind: 'string', required: true },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
         upload: {
           kind: 'object',
           transientInput: true,

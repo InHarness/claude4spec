@@ -31,7 +31,8 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
-      label: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+label: { kind: 'string', required: true },
       links: {
         kind: 'collection',
         collection: 'value',

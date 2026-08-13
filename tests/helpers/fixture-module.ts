@@ -28,7 +28,12 @@ export interface FixtureModuleOpts {
  * built-in type has.
  */
 export const FIXTURE_DATA: DataDeclaration = {
-  schema: { title: { kind: 'string', required: true, maxLength: 200 } },
+  schema: {
+    // `default` so a fixture's write payloads stay about whatever they are
+    // testing: `title` is required on every type now, and threading a label
+    // through a hundred collection/projection assertions would say nothing.
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+  },
 };
 
 export const FIXTURE_SLUG_PATTERN: SlugPattern = [{ op: 'slugify', field: 'title' }];

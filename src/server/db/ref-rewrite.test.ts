@@ -24,7 +24,8 @@ const viewer: ProjectableModule = {
   type: 'viewer',
   data: {
     schema: {
-      name: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
       themeSlug: { kind: 'string', ref: 'theme', onMissing: 'warn', onDelete: 'leave-dangling' },
     },
   },
@@ -35,7 +36,8 @@ const route: ProjectableModule = {
   type: 'route',
   data: {
     schema: {
-      name: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
       payloads: {
         kind: 'collection',
         collection: 'value',
@@ -62,7 +64,8 @@ const roster: ProjectableModule = {
   type: 'roster',
   data: {
     schema: {
-      name: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
       // Embedded JSON: `["user-dto", "order-dto"]`.
       members: {
         kind: 'collection',
@@ -81,8 +84,8 @@ const roster: ProjectableModule = {
 };
 
 /** The referenced types, so the generated FKs have something to point at. */
-const theme: ProjectableModule = { type: 'theme', data: { schema: { name: { kind: 'string', required: true } } } };
-const shape: ProjectableModule = { type: 'shape', data: { schema: { name: { kind: 'string', required: true } } } };
+const theme: ProjectableModule = { type: 'theme', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { kind: 'string', required: true } } } };
+const shape: ProjectableModule = { type: 'shape', data: { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { kind: 'string', required: true } } } };
 const ac: ProjectableModule = { type: 'ac', data: acData };
 
 function projectDb(modules: ProjectableModule[]): Database.Database {

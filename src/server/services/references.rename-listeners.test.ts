@@ -26,7 +26,8 @@ import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/pl
 /** `FIXTURE_DATA` plus one scalar reference to `dto` — the minimum that earns a listener. */
 const REFERENCING_DATA: DataDeclaration = {
   schema: {
-    ...FIXTURE_DATA.schema,
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...FIXTURE_DATA.schema,
     dtoSlug: { kind: 'string', ref: 'dto', onMissing: 'warn', onDelete: 'leave-dangling' },
   },
 };

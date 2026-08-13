@@ -37,7 +37,8 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
-      label: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+label: { kind: 'string', required: true },
       size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
       active: { kind: 'boolean', default: true },
       meta: { kind: 'object', fields: { note: { kind: 'string' } } },
@@ -214,7 +215,8 @@ describe('keyed collections', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        name: { kind: 'string', required: true },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
         nRows: { kind: 'number', column: 'n_rows', default: 0 },
         nCols: { kind: 'number', column: 'n_cols', default: 0 },
         cells: {
@@ -287,7 +289,8 @@ describe('keyed collections', () => {
       ...grid,
       data: {
         schema: {
-          ...grid.data!.schema,
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...grid.data!.schema,
           cells: {
             ...(grid.data!.schema.cells as never as Record<string, unknown>),
             item: {
@@ -517,7 +520,8 @@ describe('keyed collections', () => {
     ...grid,
     data: {
       schema: {
-        ...grid.data!.schema,
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...grid.data!.schema,
         cells: {
           kind: 'collection',
           collection: 'keyed',
@@ -794,7 +798,8 @@ describe('the generic junction door keeps the per-type guarantees', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        label: { kind: 'string', required: true },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+label: { kind: 'string', required: true },
         links: {
           kind: 'collection',
           collection: 'value',
@@ -876,7 +881,8 @@ describe('dangling refs — anywhere the declaration puts one', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        name: { kind: 'string', required: true },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
         columns: {
           kind: 'collection',
           collection: 'value',
@@ -965,7 +971,8 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          label: { kind: 'string', required: true },
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+label: { kind: 'string', required: true },
           links: {
             kind: 'collection',
             collection: 'value',
@@ -1003,7 +1010,8 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          label: { kind: 'string', required: true },
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+label: { kind: 'string', required: true },
           designSystemSlug: {
             kind: 'string',
             column: 'design_system_slug',
@@ -1039,7 +1047,8 @@ describe('dangling refs — polymorphic refs are excluded', () => {
     payloadVersion: 1,
     data: {
       schema: {
-        text: { kind: 'string', required: true },
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+text: { kind: 'string', required: true },
         verifies: {
           kind: 'collection',
           collection: 'value',
@@ -1073,7 +1082,8 @@ describe('dangling refs — polymorphic refs are excluded', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          ...acLike.data!.schema,
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...acLike.data!.schema,
           owner: { kind: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
         },
       },

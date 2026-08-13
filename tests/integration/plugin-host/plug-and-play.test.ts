@@ -30,7 +30,8 @@ import type { Root } from '../../../src/shared/types.js';
 
 const sprocketData: DataDeclaration = {
   schema: {
-    name: { kind: 'string', required: true, description: 'What the sprocket is called.' },
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true, description: 'What the sprocket is called.' },
     // An enum with a default — the host owes it both a CHECK-shaped validation
     // and the default on create.
     grade: { kind: 'enum', values: ['draft', 'shipped', 'retired'], default: 'draft' },

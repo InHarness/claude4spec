@@ -26,7 +26,8 @@ const grid = {
   payloadVersion: 1,
   data: {
     schema: {
-      name: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+name: { kind: 'string', required: true },
       nRows: { kind: 'number', column: 'n_rows', default: 0 },
       nCols: { kind: 'number', column: 'n_cols', default: 0 },
       cells: {
