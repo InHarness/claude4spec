@@ -124,7 +124,7 @@ export interface EntityContribution extends EntityModuleManifest {
   backend?: {
     /**
      * ESCAPE HATCH — full-power imperative mount hook (server `PluginMountFn`).
-     * A typical plugin does not write this; declare `service`/`crud`/`routes`/
+     * A typical plugin does not write this; declare `service`/`routes`/
      * `mcpServer` instead and the host synthesizes an equivalent mount. When
      * present, `mount` takes precedence over the declarative slots below (they
      * are ignored).
@@ -147,7 +147,7 @@ export interface EntityContribution extends EntityModuleManifest {
      * ignored while this type went on advertising it to plugin authors.
      */
     /**
-     * A factory receiving the SAME service instance as `crud`/`mcpServer`
+     * A factory receiving the SAME service instance as `mcpServer`
      * (server `(service, ctx) => Router`), mounted at `pathPrefix`. ALWAYS a
      * factory — never a bare Router (express's `Router` type is itself
      * callable, so a `Router | (fn)` union can't be discriminated at

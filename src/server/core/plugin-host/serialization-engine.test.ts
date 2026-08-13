@@ -69,9 +69,15 @@ describe('SerializationEngine.serializeEntity — the three lookup outcomes', ()
 
   it('[ac:ac-helper-serialize-host-type-view-entit] resolves the type through the host, marking an unknown one instead of passing it off as a normal generic view', () => {
     // The engine reports `unknown_type`; the discovery core turns that into
-    // INVALID_TYPE (see discovery.test.ts). What matters here is that a
-    // deactivated type is DISTINGUISHABLE from a type that merely left a view
-    // undeclared — both are `generic: true`, only one carries the marker.
+    // INVALID_TYPE (see discovery.test.ts). What matters here is that a type
+    // the host cannot resolve AT ALL is DISTINGUISHABLE from a type that merely
+    // left a view undeclared — both are `generic: true`, only one carries the
+    // marker.
+    //
+    // Not the same gate as deactivation: the engine resolves through
+    // `getAvailable`, which still answers for a loaded-but-inactive type, so a
+    // deactivated type reaches a normal view here. Refusing it is the discovery
+    // core's `requireActiveType` (which goes through `getEntity`).
     const engine = new SerializationEngine(hostWith([]));
 
     const out = engine.serializeEntity('widget', 'detail', ENTITY, reader);
