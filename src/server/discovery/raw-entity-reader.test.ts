@@ -167,10 +167,10 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
 
   function seeded(): Database.Database {
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, text TEXT, status TEXT);`);
-    const insert = db.prepare('INSERT INTO ac (slug, title, text, status) VALUES (?, ?, ?)');
-    for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 'active');
-    for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 'deprecated');
+    db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, title TEXT, text TEXT, status TEXT);`);
+    const insert = db.prepare('INSERT INTO ac (slug, title, text, status) VALUES (?, ?, ?, ?)');
+    for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 't', 'active');
+    for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 't', 'deprecated');
     return db;
   }
 

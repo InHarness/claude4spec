@@ -48,7 +48,7 @@ describe('ProjectPluginHost.entityExists', () => {
       expect(host.getEntityService('diagram')).toBeNull();
 
       expect(host.entityExists('diagram', 'flow')).toBe(false);
-      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
       expect(host.entityExists('diagram', 'flow')).toBe(true);
     } finally {
       db.close();
@@ -73,7 +73,7 @@ describe('classifyVerifies', () => {
   it('accepts a reference to an indexed entity whose type has no entity service', () => {
     const db = createTestDb();
     try {
-      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
       expect(classifyVerifies(hostOver(db), [{ type: 'diagram', slug: 'flow' }])).toEqual([]);
     } finally {
       db.close();
@@ -103,7 +103,7 @@ describe('classifyVerifies', () => {
       const host = registry.consolidate({ entities: ['ac'] } as never);
       host.setRawReader(new RawEntityReader(db, host));
 
-      db.prepare("INSERT INTO diagram (slug, source) VALUES ('flow', 'graph TD')").run();
+      db.prepare("INSERT INTO diagram (slug, title, source) VALUES ('flow', 'flow', 'graph TD')").run();
       expect(classifyVerifies(host, [{ type: 'diagram', slug: 'flow' }])).toEqual([
         { type: 'diagram', slug: 'flow', reason: 'inactive' },
       ]);
