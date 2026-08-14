@@ -114,11 +114,20 @@ describe('tier K left nothing to grow back (item 62)', () => {
     expect(named(/^services?\.ts$/)).toEqual([]);
   });
 
-  it('every type spells its computed views `views.ts`, and none says `serializer.ts`', () => {
-    expect(named(/^serializer\.ts$/)).toEqual([]);
-    // Sanity: the scan reaches the types at all. Without this the two
-    // assertions above pass just as well against an empty file list.
-    expect(named(/^views\.ts$/).length).toBeGreaterThanOrEqual(6);
+  it('no type ships a `views.ts` — there are no views left to put in one', () => {
+    /**
+     * The convention INVERTED in 0.2.23, and the file name is the signal.
+     *
+     * `views.ts` was the vertical slice's home for computed read code, and this
+     * case used to insist on the name so a type could not smuggle the same code
+     * in under a blander one. The slot is gone from the contract, so the honest
+     * assertion is the opposite: what remains per type is a payload timeline and
+     * an optional diff, which live in `serializer.ts`.
+     */
+    expect(named(/^views\.ts$/)).toEqual([]);
+    // Sanity: the scan reaches the types at all. Without this the assertion
+    // above passes just as well against an empty file list.
+    expect(named(/^serializer\.ts$/).length).toBeGreaterThanOrEqual(6);
   });
 
   it('the createCrudRouter helper stays gone', () => {

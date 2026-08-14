@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { genericEntity } from './generic.js';
 import { defaultDeepDiff } from './snapshot.js';
 import { snapshotFromSchema } from './schema-snapshot.js';
-import { viewSchema } from '../../shared/plugin-host/json-schema.js';
+import { recordSchema } from '../../shared/plugin-host/json-schema.js';
 import { attachComposition } from '../core/plugin-host/composition-validation.js';
 import type { FieldNode } from '../../shared/plugin-host/data-schema.js';
 import type { RawEntity } from '../discovery/raw-entity-reader.js';
@@ -28,7 +28,7 @@ function entity(data: Record<string, unknown>): RawEntity {
 
 describe('contentBearing — the generated view payload', () => {
   it('replaces the field with has<Field> + <field>Bytes', () => {
-    const out = genericEntity(entity({ title: 'T', body: 'hello' }), 'detail', SCHEMA);
+    const out = genericEntity(entity({ title: 'T', body: 'hello' }), SCHEMA);
     expect(out).not.toHaveProperty('body');
     expect(out.hasBody).toBe(true);
     expect(out.bodyBytes).toBe(5);
@@ -39,7 +39,7 @@ describe('contentBearing — the generated view payload', () => {
     // The derived schema declares both `required`, so a row hydrated without the
     // content column (or written before the field existed) must not produce a
     // payload that fails its own schema.
-    const out = genericEntity(entity({ title: 'T' }), 'detail', SCHEMA);
+    const out = genericEntity(entity({ title: 'T' }), SCHEMA);
     expect(out.hasBody).toBe(false);
     expect(out.bodyBytes).toBe(0);
   });
@@ -47,25 +47,20 @@ describe('contentBearing — the generated view payload', () => {
   it('reports an absent body as false / 0 rather than omitting the keys', () => {
     // The keys are part of the view's shape; a consumer must not have to
     // distinguish "no body" from "this host predates the flag".
-    const out = genericEntity(entity({ title: 'T', body: null }), 'inline_mention', SCHEMA);
+    const out = genericEntity(entity({ title: 'T', body: null }), SCHEMA);
     expect(out.hasBody).toBe(false);
     expect(out.bodyBytes).toBe(0);
   });
 
   it('counts UTF-8 BYTES, not characters', () => {
-    const out = genericEntity(entity({ title: 'T', body: 'ąę' }), 'detail', SCHEMA);
+    const out = genericEntity(entity({ title: 'T', body: 'ąę' }), SCHEMA);
     expect(out.bodyBytes).toBe(4);
   });
 });
 
 describe('contentBearing — the derived JSON Schema', () => {
   it('describes the two derived keys, and neither declares the field itself', () => {
-    const schema = viewSchema({
-      type: 'doc',
-      data: { schema: SCHEMA },
-      view: 'detail',
-      computed: false,
-    });
+    const schema = recordSchema({ type: 'doc', data: { schema: SCHEMA } });
     const props = schema.properties as Record<string, unknown>;
     expect(props).not.toHaveProperty('body');
     expect(props.hasBody).toEqual({ type: 'boolean' });

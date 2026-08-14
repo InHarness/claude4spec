@@ -7,7 +7,7 @@ import {
   UI_VIEW_PATH_PREFIX,
   UI_VIEW_TYPE,
 } from '../../identity.js';
-import { uiViewSerializer } from './views.js';
+import { uiViewSerializer } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewData, uiViewSlugPattern } from './schema.js';
 

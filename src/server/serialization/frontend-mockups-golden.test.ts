@@ -30,16 +30,8 @@ import { describe, expect, it } from 'vitest';
 import { createTestApp } from '../../../tests/helpers/test-app.js';
 import { canonicalize } from './snapshot.js';
 import { genericEntity } from './generic.js';
-import type { ViewKind, ViewSet } from './types.js';
 
 const GOLDEN_DIR = path.join(import.meta.dirname, '__goldens__');
-const VIEWS: ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
 
 /**
  * Built through REST, not through `requireService` — neither type registers a
@@ -149,8 +141,6 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
   for (const type of ['design-system', 'ui-view']) {
     const module = app.host.getEntity(type);
     if (!module) throw new Error(`fixture: type '${type}' is not registered`);
-    const serializer = module.serializer as Record<string, unknown>;
-    const views = serializer.views as ViewSet<unknown> | undefined;
     const slugs = (
       app.db
         .prepare(`SELECT slug FROM ${compositionOf(module).mainTable} ORDER BY slug`)
@@ -169,19 +159,27 @@ function projections(app: Awaited<ReturnType<typeof buildFixture>>) {
         unknown
       >;
       out[`${type}/${slug}/snapshot`] = canonicalize(snap);
-      for (const view of VIEWS) {
-        const fn = views?.[view];
-        // Falls back to `genericEntity` rather than recording `null`, and passes
-        // the SCHEMA as `SerializationEngine` does — without it `genericEntity`
-        // short-circuits its column→field re-keying and the golden would record
-        // a snake_case shape the engine never emits.
-        //
-        // NOT canonicalized: view projections are handed to the client as-is, so
-        // their key order is part of the contract in a way the snapshot's is not.
-        out[`${type}/${slug}/${view}`] = fn
-          ? fn(raw, reader)
-          : genericEntity(raw, view, module.data?.schema);
-      }
+      /**
+       * ONE record per entity, not five view projections.
+       *
+       * The golden's job is "what does a client receive", and until 0.2.23 that
+       * had five answers per entity — a computed view where the type wrote one,
+       * `genericEntity` where it did not. There is one answer now, so recording
+       * five copies of it would be padding rather than coverage.
+       *
+       * The SCHEMA is passed, as `SerializationEngine` does. Without it
+       * `genericEntity` short-circuits its column→field re-keying and the golden
+       * records a snake_case shape the engine never emits — a regression in
+       * `byFieldName` (the bug this fixture exists to catch) would leave every
+       * golden green. The READER is passed for the same class of reason: it is
+       * what materialises a collection living in its own projection table, and
+       * `endpoint.linkedDtos` is exactly one of those.
+       *
+       * NOT canonicalized: a record is handed to the client as-is, so its key
+       * order is part of the contract in a way the snapshot's is not.
+       */
+      out[`${type}/${slug}/record`] = genericEntity(raw, module.data?.schema, reader);
+
     }
   }
   return out;

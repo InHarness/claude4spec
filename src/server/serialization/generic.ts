@@ -3,6 +3,8 @@ import {
   columnOf,
   contentBearingKeys,
   contentBytes,
+  isEmbedded,
+  isKeyed,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
 
@@ -22,13 +24,59 @@ import {
 export function genericEntity(
   entity: RawEntity,
   schema?: Readonly<Record<string, FieldNode>>,
+  /**
+   * Reads the collections that live in their OWN projection table.
+   *
+   * `hydrate` copies the entity's own row and nothing else, so a collection with
+   * a `projectionTable` is simply absent from `entity.data`. Until 0.2.23 that
+   * did not show, because the types owning one fetched it in their own `detail`
+   * view — `endpoint`'s read its `endpoint_dto` junction by hand. With the views
+   * gone the host has to do it, or a declared field silently stops being read.
+   *
+   * Optional because two callers have no reader to give (snapshot generation
+   * reads collections its own way, and the CLI engine builds records without
+   * one); an absent reader means the record carries only what the row holds.
+   */
+  collections?: CollectionReader,
 ): Record<string, unknown> {
   return {
     type: entity.type,
     slug: entity.slug,
     tags: entity.tags,
     ...byFieldName(entity.data, schema),
+    ...projectedCollections(entity, schema, collections),
   };
+}
+
+export interface CollectionReader {
+  readCollection(type: string, slug: string, field: string): unknown[];
+}
+
+/**
+ * The declared collections that are not on the entity's row.
+ *
+ * Two kinds, two answers, and the difference is the declaration's:
+ *
+ *   - a VALUE collection is opaque and read whole, so it travels inline;
+ *   - a KEYED collection is addressed by key and read in windows, so the record
+ *     carries only its OVERVIEW — never a full materialisation. An overview of a
+ *     keyed collection is its shape, not a sample of its contents, which is why
+ *     `count` is all of it: a 200x40 spreadsheet must not put 8 000 cells into
+ *     a record nobody asked to be that wide.
+ */
+function projectedCollections(
+  entity: RawEntity,
+  schema: Readonly<Record<string, FieldNode>> | undefined,
+  collections: CollectionReader | undefined,
+): Record<string, unknown> {
+  if (!schema || !collections) return {};
+  const out: Record<string, unknown> = {};
+  for (const [name, node] of Object.entries(schema)) {
+    if (node.kind !== 'collection' || isEmbedded(node)) continue;
+    const rows = collections.readCollection(entity.type, entity.slug, name);
+    out[name] = isKeyed(node) ? { count: rows.length } : rows;
+  }
+  return out;
 }
 
 /**

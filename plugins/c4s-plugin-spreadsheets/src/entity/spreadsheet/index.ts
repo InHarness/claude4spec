@@ -8,7 +8,7 @@ import {
   SPREADSHEET_TYPE,
 } from '../../identity.js';
 import { spreadsheetData, spreadsheetSlugPattern } from './schema.js';
-import { spreadsheetSerializer } from './views.js';
+import { spreadsheetSerializer } from './serializer.js';
 import { spreadsheetSystemPrompt } from './system-prompt.js';
 import { createSpreadsheetMcpServer } from './mcp.js';
 

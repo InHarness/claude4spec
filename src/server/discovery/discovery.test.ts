@@ -26,7 +26,7 @@ import {
 import { DEFAULT_BUDGET_CHARS } from './budget.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../serialization/serializers/section.js';
+import { serializeSection } from '../serialization/serializers/section.js';
 import type { DiscoveryCore, SectionResultItem } from './types.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Root } from '../../shared/types.js';
@@ -126,7 +126,7 @@ describe('discovery core', () => {
       reader,
       db,
       host: pluginHost,
-      serialization: new SerializationEngine(pluginHost, sectionSerializer),
+      serialization: new SerializationEngine(pluginHost),
       roots,
       projectDir: cwd,
       packageVersion: 'test',
@@ -375,36 +375,34 @@ describe('discovery core', () => {
     );
   });
 
-  it('[ac:ac-operacja-overview-zwraca-per-aktywny] describe_types answers every view, computed or generic', () => {
-    // "Generic is the rule": a type that computes ONE view still answers all
-    // five, and must not read as supporting only the one — which is what the old
-    // presence-check chain reported. The fixture computes `single_element` only.
+  it('[ac:ac-operacja-overview-zwraca-per-aktywny] describe_types answers ONE schema per type', () => {
     const c = core([pagesRoot()], [widgetModule()]);
     const described = c.describeTypes({ types: ['widget'] }).types[0]!;
-    // 0.2.22 — `views` is gone from the payload; the five schemas remain, since
-    // they describe shapes the host really can produce. What replaced the list
-    // is `selectableFields`, which answers a question the caller can act on.
+    /**
+     * 0.2.22 removed `views` from the payload; 0.2.23 removes the five schemas
+     * behind it. The old assertion here was "a type that computes ONE view still
+     * answers all five" — a real guarantee while a type could compute one, and
+     * meaningless now that none can. A caller reads one shape and narrows it
+     * with `select`, so one schema is the whole truth about what it can receive.
+     */
     expect(described).not.toHaveProperty('views');
-    expect(Object.keys(described.schemas).sort()).toEqual([
-      'detail',
-      'element_list_item',
-      'inline_mention',
-      'single_element',
-      'tagged_list_item',
-    ]);
+    expect(Object.keys(described.schemas)).toEqual(['record']);
     expect(described.selectableFields).toContain('title');
     expect(described.payloadVersion).toBe(1);
-    // Derived from `data.schema` — no `_auto`, no db reflection, and closed,
-    // because the host builds this payload itself.
-    const generic = described.schemas.inline_mention as Record<string, unknown>;
-    expect(generic._auto).toBeUndefined();
-    expect(generic.additionalProperties).toBe(false);
-    expect((generic.properties as Record<string, unknown>)._view).toEqual({ const: 'inline_mention' });
-    // The computed one is a FLOOR, not a contract — the host cannot introspect
-    // the function that builds it, so the schema stays open and says so.
-    const computed = described.schemas.single_element as Record<string, unknown>;
-    expect(computed.additionalProperties).toBe(true);
-    expect(computed['x-computed']).toBe(true);
+    /**
+     * Derived from `data.schema`, and CLOSED — for every type alike.
+     *
+     * The open `x-computed` variant is gone with the functions it existed for:
+     * a schema had to stop promising `required` when the payload came out of a
+     * function the host could not read. It reads every payload now.
+     */
+    const record = described.schemas.record as Record<string, unknown>;
+    expect(record._auto).toBeUndefined();
+    expect(record.additionalProperties).toBe(false);
+    expect(record['x-computed']).toBeUndefined();
+    const props = record.properties as Record<string, unknown>;
+    expect(props._view).toBeUndefined();
+    expect(props._generic).toBeUndefined();
   });
 
   describe('get_sections returns bodies, and edges when it cannot', () => {
@@ -447,25 +445,23 @@ describe('discovery core', () => {
 
       expect(section).not.toHaveProperty('content_hash');
       expect(section).not.toHaveProperty('contentHash');
-      // Not merely absent from the wire projection — absent from the `detail`
-      // view that feeds it, which is where a re-projection would find it again.
-      const detail = new SerializationEngine(host([widgetModule()]), sectionSerializer).serializeSection(
-        'detail',
-        {
-          rootId: 'pages',
-          anchor: 'abcdef12',
-          pagePath: 'h.md',
-          headingPath: 'S',
-          headingSlug: 's',
-          headingText: 'S',
-          headingLevel: 2,
-          contentHash: 'hash',
-          lineStart: 3,
-          lineEnd: 7,
-        },
-        new RawEntityReader(db, host([widgetModule()])),
-      ).data as Record<string, unknown>;
-      expect(detail).not.toHaveProperty('contentHash');
+      // Not merely absent from the wire projection — absent from the section
+      // serializer that feeds it, which is where a re-projection would find it
+      // again. (0.2.23: a plain function, no longer a `detail` view dispatched
+      // through the entity engine.)
+      const record = serializeSection({
+        rootId: 'pages',
+        anchor: 'abcdef12',
+        pagePath: 'h.md',
+        headingPath: 'S',
+        headingSlug: 's',
+        headingText: 'S',
+        headingLevel: 2,
+        contentHash: 'hash',
+        lineStart: 3,
+        lineEnd: 7,
+      });
+      expect(record).not.toHaveProperty('contentHash');
     });
 
     it('the body is as authored — the XML tag is an edge, not an expansion', async () => {
@@ -1417,7 +1413,7 @@ describe('discovery core', () => {
       reader: new RawEntityReader(db, pluginHost),
       db,
       host: pluginHost,
-      serialization: new SerializationEngine(pluginHost, sectionSerializer),
+      serialization: new SerializationEngine(pluginHost),
       roots: [pagesRoot()],
       projectDir: cwd,
       packageVersion: 'test',
@@ -1474,7 +1470,7 @@ describe('applyPagesOverride, through the core that consumes it', () => {
       reader: new RawEntityReader(db, pluginHost),
       db,
       host: pluginHost,
-      serialization: new SerializationEngine(pluginHost, sectionSerializer),
+      serialization: new SerializationEngine(pluginHost),
       roots,
       projectDir: cwd,
       packageVersion: 'test',

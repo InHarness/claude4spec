@@ -90,13 +90,11 @@ describe('loadWorkspacePlugins', () => {
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
     expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
     /**
-     * The 2 → 3 crossing, which is what makes this record useful: a plugin one
-     * major behind gets the four descriptors naming exactly what it must change
-     * (`title`, `contentBearing`, `select`, the retired `nanoid` step). This
-     * assertion read `toHaveLength(0)` while the changelog was empty at the 1.x
-     * baseline; there is a crossing to describe now.
+     * The 1 → 2 crossing, which is what makes this record useful: a plugin one
+     * major behind gets the six descriptors naming exactly what it must change
+     * — every one a removal, because 2.0.0 is where behaviour left the type.
      */
-    expect(records[0]?.migration?.migrations).toHaveLength(4);
+    expect(records[0]?.migration?.migrations).toHaveLength(6);
     expect(records[0]?.migration?.shimAvailable).toBe(false);
     expect(registry.getAvailable('glossary')).toBeNull();
   });

@@ -27,15 +27,18 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
 
   const link = (body: unknown) => request(t.app).post('/api/endpoints/get-users/dtos').send(body);
   /**
-   * Read back through the endpoint's `single_element` view, which is what a
-   * client sees. Note the THREE spellings of one field this tier leaves in
-   * place: the declaration calls it `linkedDtos[].dto`, the junction column
-   * calls it `dto_slug`, and this view calls it `dtos[].dtoSlug`. Asserting on
-   * the view's is deliberate — it is the contract the detail panel reads.
+   * Read back through the endpoint's read record, which is what a client sees.
+   *
+   * 0.2.23 removed the third spelling. The declaration calls it
+   * `linkedDtos[].dto` and the junction column calls it `dto_slug`; the retired
+   * `single_element` view called it `dtos[].dtoSlug`, and the detail panel read
+   * that. With the view gone the record carries the DECLARED collection
+   * verbatim, so the contract the panel reads and the contract the schema
+   * states are finally the same one.
    */
   const links = async () =>
-    (await request(t.app).get('/api/endpoints/get-users')).body.data.dtos as Array<{
-      dtoSlug: string;
+    (await request(t.app).get('/api/endpoints/get-users')).body.data.linkedDtos as Array<{
+      dto: string;
       relation: string;
       statusCode: number | null;
     }>;
@@ -50,7 +53,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
      */
     expect(res.body).toEqual({ linked: true });
 
-    expect(await links()).toMatchObject([{ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 }]);
+    expect(await links()).toMatchObject([{ dto: 'user-dto', relation: 'response', statusCode: 200 }]);
   });
 
   it('is idempotent — the same link twice is one link', async () => {
@@ -75,7 +78,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     );
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ unlinked: true });
-    expect(await links()).toMatchObject([{ dtoSlug: 'error-dto', relation: 'response', statusCode: 500 }]);
+    expect(await links()).toMatchObject([{ dto: 'error-dto', relation: 'response', statusCode: 500 }]);
   });
 
   it('omitting statusCode removes every link for that dto and relation', async () => {
@@ -84,7 +87,7 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
     await link({ dtoSlug: 'user-dto', relation: 'request' });
 
     await request(t.app).delete('/api/endpoints/get-users/dtos/error-dto/response').expect(200);
-    expect(await links()).toMatchObject([{ dtoSlug: 'user-dto', relation: 'request', statusCode: null }]);
+    expect(await links()).toMatchObject([{ dto: 'user-dto', relation: 'request', statusCode: null }]);
   });
 
   /**

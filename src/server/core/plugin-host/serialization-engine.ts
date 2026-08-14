@@ -102,10 +102,10 @@ export class SerializationEngine {
    * before it ever gets here, so this is the backstop, and M39 maps it to
    * `INVALID_TYPE`.
    */
-  serializeEntity(type: string, entity: RawEntity, _reader: RawEntityReader): SerializeResult {
+  serializeEntity(type: string, entity: RawEntity, reader: RawEntityReader): SerializeResult {
     const m = this.host.getAvailable(type);
     if (!m) throw new SerializerError(type);
-    return { data: genericEntity(entity, m.data?.schema) };
+    return { data: genericEntity(entity, m.data?.schema, reader) };
   }
 
   /**

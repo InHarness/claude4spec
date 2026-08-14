@@ -8,7 +8,7 @@ import {
   DATABASE_TABLE_TYPE,
 } from '../../identity.js';
 import { databaseTableData, databaseTableSlugPattern } from './schema.js';
-import { databaseTableSerializer } from './views.js';
+import { databaseTableSerializer } from './serializer.js';
 import { databaseTableSystemPrompt } from './system-prompt.js';
 
 /**

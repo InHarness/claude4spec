@@ -265,10 +265,11 @@ describe('0.2.4 — the file owns the timestamps', () => {
      * the way in — the one collision the flat top-level envelope is only safe
      * without.
      */
-    // 2.0.0 tier K (item 62): the file is `views.ts` now — computed views and
-    // `diff`, which is all a serializer ever was once snapshot/restore became
-    // the host's. Scanning the old name would have found nothing and passed.
-    const serializers = typePackageFiles(/^views\.ts$/);
+    // 0.2.23: the file is `serializer.ts`. It was `views.ts` for as long as a
+    // serializer's substance was computed views; with those gone it is a payload
+    // timeline and an optional `diff`, and the name follows. Scanning the old
+    // one would find nothing and pass — hence the length floor below.
+    const serializers = typePackageFiles(/^serializer\.ts$/);
     expect(serializers.length).toBeGreaterThan(3);
     expect(hitsIn(serializers, /\bcreatedAt\b|\bupdatedAt\b/)).toEqual([]);
   });

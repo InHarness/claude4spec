@@ -6,7 +6,7 @@ import {
   DESIGN_SYSTEM_PATH_PREFIX,
   DESIGN_SYSTEM_TYPE,
 } from '../../identity.js';
-import { designSystemSerializer } from './views.js';
+import { designSystemSerializer } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemData, designSystemSlugPattern } from './schema.js';
 

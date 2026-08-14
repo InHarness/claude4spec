@@ -26,177 +26,32 @@
     "tags": [],
     "title": "GET /users"
   },
-  "endpoint/get-users/inline_mention": {
+  "endpoint/get-users/record": {
     "type": "endpoint",
     "slug": "get-users",
-    "label": "GET /users",
-    "href": "/endpoints/get-users"
-  },
-  "endpoint/get-users/single_element": {
-    "type": "endpoint",
-    "slug": "get-users",
+    "tags": [],
     "title": "GET /users",
     "method": "GET",
     "path": "/users",
     "summary": "List users",
     "description": null,
-    "tags": [],
-    "dtos": [
+    "linkedDtos": [
       {
-        "dtoSlug": "order-dto",
-        "dtoName": "ZamówienieDto",
-        "relation": "request",
-        "statusCode": null
-      },
-      {
-        "dtoSlug": "user-dto",
-        "dtoName": "UserDto",
+        "dto": "user-dto",
         "relation": "response",
         "statusCode": 200
       },
       {
-        "dtoSlug": "error-dto",
-        "dtoName": "ErrorDto",
+        "dto": "error-dto",
         "relation": "response",
         "statusCode": 404
-      }
-    ]
-  },
-  "endpoint/get-users/element_list_item": {
-    "type": "endpoint",
-    "slug": "get-users",
-    "title": "GET /users",
-    "method": "GET",
-    "path": "/users",
-    "summary": "List users",
-    "description": null,
-    "tags": [],
-    "dtos": [
+      },
       {
-        "dtoSlug": "order-dto",
-        "dtoName": "ZamówienieDto",
+        "dto": "order-dto",
         "relation": "request",
         "statusCode": null
-      },
-      {
-        "dtoSlug": "user-dto",
-        "dtoName": "UserDto",
-        "relation": "response",
-        "statusCode": 200
-      },
-      {
-        "dtoSlug": "error-dto",
-        "dtoName": "ErrorDto",
-        "relation": "response",
-        "statusCode": 404
       }
     ]
-  },
-  "endpoint/get-users/tagged_list_item": {
-    "type": "endpoint",
-    "slug": "get-users",
-    "title": "GET /users",
-    "method": "GET",
-    "path": "/users",
-    "summary": "List users",
-    "description": null,
-    "tags": [],
-    "dtos": [
-      {
-        "dtoSlug": "order-dto",
-        "dtoName": "ZamówienieDto",
-        "relation": "request",
-        "statusCode": null
-      },
-      {
-        "dtoSlug": "user-dto",
-        "dtoName": "UserDto",
-        "relation": "response",
-        "statusCode": 200
-      },
-      {
-        "dtoSlug": "error-dto",
-        "dtoName": "ErrorDto",
-        "relation": "response",
-        "statusCode": 404
-      }
-    ]
-  },
-  "endpoint/get-users/detail": {
-    "type": "endpoint",
-    "slug": "get-users",
-    "title": "GET /users",
-    "method": "GET",
-    "path": "/users",
-    "summary": "List users",
-    "description": null,
-    "tags": [],
-    "dtos": [
-      {
-        "dtoSlug": "order-dto",
-        "dtoName": "ZamówienieDto",
-        "relation": "request",
-        "statusCode": null,
-        "dto": {
-          "slug": "order-dto",
-          "title": "ZamówienieDto",
-          "description": "Zamówienie — pozycja",
-          "fields": [
-            {
-              "name": "nr",
-              "type": "number",
-              "required": false
-            }
-          ],
-          "tags": []
-        }
-      },
-      {
-        "dtoSlug": "user-dto",
-        "dtoName": "UserDto",
-        "relation": "response",
-        "statusCode": 200,
-        "dto": {
-          "slug": "user-dto",
-          "title": "UserDto",
-          "description": "A user",
-          "fields": [
-            {
-              "name": "id",
-              "type": "string",
-              "required": true
-            },
-            {
-              "name": "email",
-              "type": "string",
-              "required": false,
-              "description": "contact"
-            }
-          ],
-          "tags": []
-        }
-      },
-      {
-        "dtoSlug": "error-dto",
-        "dtoName": "ErrorDto",
-        "relation": "response",
-        "statusCode": 404,
-        "dto": {
-          "slug": "error-dto",
-          "title": "ErrorDto",
-          "description": null,
-          "fields": [
-            {
-              "name": "message",
-              "type": "string",
-              "required": false
-            }
-          ],
-          "tags": []
-        }
-      }
-    ],
-    "_references": []
   },
   "endpoint/post-ping/snapshot": {
     "description": null,
@@ -208,56 +63,16 @@
     "tags": [],
     "title": "POST /ping"
   },
-  "endpoint/post-ping/inline_mention": {
+  "endpoint/post-ping/record": {
     "type": "endpoint",
     "slug": "post-ping",
-    "label": "POST /ping",
-    "href": "/endpoints/post-ping"
-  },
-  "endpoint/post-ping/single_element": {
-    "type": "endpoint",
-    "slug": "post-ping",
+    "tags": [],
     "title": "POST /ping",
     "method": "POST",
     "path": "/ping",
     "summary": "",
     "description": null,
-    "tags": [],
-    "dtos": []
-  },
-  "endpoint/post-ping/element_list_item": {
-    "type": "endpoint",
-    "slug": "post-ping",
-    "title": "POST /ping",
-    "method": "POST",
-    "path": "/ping",
-    "summary": "",
-    "description": null,
-    "tags": [],
-    "dtos": []
-  },
-  "endpoint/post-ping/tagged_list_item": {
-    "type": "endpoint",
-    "slug": "post-ping",
-    "title": "POST /ping",
-    "method": "POST",
-    "path": "/ping",
-    "summary": "",
-    "description": null,
-    "tags": [],
-    "dtos": []
-  },
-  "endpoint/post-ping/detail": {
-    "type": "endpoint",
-    "slug": "post-ping",
-    "title": "POST /ping",
-    "method": "POST",
-    "path": "/ping",
-    "summary": "",
-    "description": null,
-    "tags": [],
-    "dtos": [],
-    "_references": []
+    "linkedDtos": []
   },
   "dto.payloadVersion": 2,
   "dto/error-dto/snapshot": {
@@ -274,13 +89,7 @@
     "tags": [],
     "title": "ErrorDto"
   },
-  "dto/error-dto/inline_mention": {
-    "type": "dto",
-    "slug": "error-dto",
-    "label": "ErrorDto",
-    "href": "/dtos/error-dto"
-  },
-  "dto/error-dto/single_element": {
+  "dto/error-dto/record": {
     "type": "dto",
     "slug": "error-dto",
     "tags": [],
@@ -293,71 +102,7 @@
         "required": false
       }
     ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "single_element"
-  },
-  "dto/error-dto/element_list_item": {
-    "type": "dto",
-    "slug": "error-dto",
-    "tags": [],
-    "title": "ErrorDto",
-    "description": null,
-    "fields": [
-      {
-        "name": "message",
-        "type": "string",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "element_list_item"
-  },
-  "dto/error-dto/tagged_list_item": {
-    "type": "dto",
-    "slug": "error-dto",
-    "tags": [],
-    "title": "ErrorDto",
-    "description": null,
-    "fields": [
-      {
-        "name": "message",
-        "type": "string",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "tagged_list_item"
-  },
-  "dto/error-dto/detail": {
-    "type": "dto",
-    "slug": "error-dto",
-    "title": "ErrorDto",
-    "description": null,
-    "fields": [
-      {
-        "name": "message",
-        "type": "string",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "tags": [],
-    "endpoints": [
-      {
-        "endpointSlug": "get-users",
-        "method": "GET",
-        "path": "/users",
-        "relation": "response",
-        "statusCode": 404
-      }
-    ],
-    "_references": []
+    "examples": []
   },
   "dto/order-dto/snapshot": {
     "description": "Zamówienie — pozycja",
@@ -373,13 +118,7 @@
     "tags": [],
     "title": "ZamówienieDto"
   },
-  "dto/order-dto/inline_mention": {
-    "type": "dto",
-    "slug": "order-dto",
-    "label": "ZamówienieDto",
-    "href": "/dtos/order-dto"
-  },
-  "dto/order-dto/single_element": {
+  "dto/order-dto/record": {
     "type": "dto",
     "slug": "order-dto",
     "tags": [],
@@ -392,71 +131,7 @@
         "required": false
       }
     ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "single_element"
-  },
-  "dto/order-dto/element_list_item": {
-    "type": "dto",
-    "slug": "order-dto",
-    "tags": [],
-    "title": "ZamówienieDto",
-    "description": "Zamówienie — pozycja",
-    "fields": [
-      {
-        "name": "nr",
-        "type": "number",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "element_list_item"
-  },
-  "dto/order-dto/tagged_list_item": {
-    "type": "dto",
-    "slug": "order-dto",
-    "tags": [],
-    "title": "ZamówienieDto",
-    "description": "Zamówienie — pozycja",
-    "fields": [
-      {
-        "name": "nr",
-        "type": "number",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "tagged_list_item"
-  },
-  "dto/order-dto/detail": {
-    "type": "dto",
-    "slug": "order-dto",
-    "title": "ZamówienieDto",
-    "description": "Zamówienie — pozycja",
-    "fields": [
-      {
-        "name": "nr",
-        "type": "number",
-        "required": false
-      }
-    ],
-    "examples": [],
-    "tags": [],
-    "endpoints": [
-      {
-        "endpointSlug": "get-users",
-        "method": "GET",
-        "path": "/users",
-        "relation": "request",
-        "statusCode": null
-      }
-    ],
-    "_references": []
+    "examples": []
   },
   "dto/user-dto/snapshot": {
     "description": "A user",
@@ -486,13 +161,7 @@
     "tags": [],
     "title": "UserDto"
   },
-  "dto/user-dto/inline_mention": {
-    "type": "dto",
-    "slug": "user-dto",
-    "label": "UserDto",
-    "href": "/dtos/user-dto"
-  },
-  "dto/user-dto/single_element": {
+  "dto/user-dto/record": {
     "type": "dto",
     "slug": "user-dto",
     "tags": [],
@@ -519,112 +188,6 @@
           "email": null
         }
       }
-    ],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "single_element"
-  },
-  "dto/user-dto/element_list_item": {
-    "type": "dto",
-    "slug": "user-dto",
-    "tags": [],
-    "title": "UserDto",
-    "description": "A user",
-    "fields": [
-      {
-        "name": "id",
-        "type": "string",
-        "required": true
-      },
-      {
-        "name": "email",
-        "type": "string",
-        "required": false,
-        "description": "contact"
-      }
-    ],
-    "examples": [
-      {
-        "name": "minimal",
-        "value": {
-          "id": "1",
-          "email": null
-        }
-      }
-    ],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "element_list_item"
-  },
-  "dto/user-dto/tagged_list_item": {
-    "type": "dto",
-    "slug": "user-dto",
-    "tags": [],
-    "title": "UserDto",
-    "description": "A user",
-    "fields": [
-      {
-        "name": "id",
-        "type": "string",
-        "required": true
-      },
-      {
-        "name": "email",
-        "type": "string",
-        "required": false,
-        "description": "contact"
-      }
-    ],
-    "examples": [
-      {
-        "name": "minimal",
-        "value": {
-          "id": "1",
-          "email": null
-        }
-      }
-    ],
-    "_generic": true,
-    "_type": "dto",
-    "_view": "tagged_list_item"
-  },
-  "dto/user-dto/detail": {
-    "type": "dto",
-    "slug": "user-dto",
-    "title": "UserDto",
-    "description": "A user",
-    "fields": [
-      {
-        "name": "id",
-        "type": "string",
-        "required": true
-      },
-      {
-        "name": "email",
-        "type": "string",
-        "required": false,
-        "description": "contact"
-      }
-    ],
-    "examples": [
-      {
-        "name": "minimal",
-        "value": {
-          "id": "1",
-          "email": null
-        }
-      }
-    ],
-    "tags": [],
-    "endpoints": [
-      {
-        "endpointSlug": "get-users",
-        "method": "GET",
-        "path": "/users",
-        "relation": "response",
-        "statusCode": 200
-      }
-    ],
-    "_references": []
+    ]
   }
 }
