@@ -28,6 +28,12 @@ const PAGE_ROOTS_ABS = [path.resolve(process.cwd(), 'pages')];
 const hoisted = vi.hoisted(() => ({
   events: [] as Array<Record<string, unknown>>,
   lastExecute: null as Record<string, unknown> | null,
+  /**
+   * EVERY execute of the turn, in order. `lastExecute` answers "what did the turn
+   * end up sending"; this answers "what did each SDK query get" — the distinction
+   * the merged-dispatch drain loop made load-bearing (brief `0-2-23-to-next`).
+   */
+  executes: [] as Array<Record<string, unknown>>,
   // 0.1.103: lets tests control cfg.agent.{allowedPaths,disallowedPaths} without
   // a real config.json on disk — undefined mirrors "nothing configured".
   agent: undefined as { allowedPaths?: string[]; disallowedPaths?: string[] } | undefined,
@@ -41,6 +47,7 @@ vi.mock('@inharness-ai/agent-adapters', async (importOriginal) => {
       // eslint-disable-next-line require-yield
       execute: async function* execute(opts: Record<string, unknown>) {
         hoisted.lastExecute = opts;
+        hoisted.executes.push(opts);
         for (const e of hoisted.events) yield e;
       },
     }),
@@ -59,6 +66,7 @@ import { runAgentTurn, type AgentTurnDeps, type AgentTurnInput } from './agent-t
 
 afterEach(() => {
   hoisted.agent = undefined;
+  hoisted.executes = [];
 });
 
 interface Recorded {
@@ -281,6 +289,93 @@ describe('runAgentTurn — entity-tools mcpServers wiring (M13, 0-1-112-to-0-1-1
     const mcpKeys = Object.keys((hoisted.lastExecute?.mcpServers ?? {}) as Record<string, unknown>);
     expect(mcpKeys).not.toContain('entity-tools');
     expect(mcpKeys).toContain('release-tools');
+  });
+});
+
+/**
+ * Brief `0-2-23-to-next` — MCP servers went silent partway through a turn.
+ *
+ * An `McpServer` binds to exactly ONE transport: `Protocol.connect` throws once
+ * an instance holds one, and `_onclose` nulls the binding plus aborts in-flight
+ * request handlers. The Claude Agent SDK swallows that connect rejection into a
+ * debug log and advertises the server anyway, so a shared instance does not fail
+ * loudly — the tool calls of the second query simply never produce a
+ * `tool_result`, for every whitelisted server at once.
+ *
+ * `mcpServers` was built once per TURN, but `adapter.execute` runs once per
+ * QUERY, and the merged-dispatch drain loop issues one query per queued batch.
+ * These tests pin the unit: instance identity must differ between the executes
+ * of a single turn.
+ */
+describe('runAgentTurn — one MCP server set per adapter.execute (0-2-23-to-next)', () => {
+  /** Drains exactly one queued batch, so the turn runs two executes. */
+  function queueOneFollowUp(deps: AgentTurnDeps): void {
+    let drained = false;
+    (deps.chatService as unknown as { popAllQueued: () => Array<{ prompt: string }> }).popAllQueued = () => {
+      if (drained) return [];
+      drained = true;
+      return [{ prompt: 'queued follow-up' }];
+    };
+  }
+
+  function instanceOf(execute: Record<string, unknown> | undefined, server: string): unknown {
+    const servers = (execute?.mcpServers ?? {}) as Record<string, { instance?: unknown }>;
+    return servers[server]?.instance;
+  }
+
+  it('host-owned servers (plan-tools) get a fresh instance for the drain-loop execute', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    queueOneFollowUp(deps);
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.executes).toHaveLength(2);
+    const first = instanceOf(hoisted.executes[0], 'plan-tools');
+    const second = instanceOf(hoisted.executes[1], 'plan-tools');
+    // Present in both — the server is still mounted for the merged turn…
+    expect(first).toBeDefined();
+    expect(second).toBeDefined();
+    // …but never the SAME object. This is the assertion that failed before the fix.
+    expect(second).not.toBe(first);
+  });
+
+  it('plugin-contributed servers are re-built from their factory per execute', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    // Mirrors the real host: every `buildMcpServers()` call invokes the registered
+    // factories, so each call yields brand-new instances.
+    let built = 0;
+    (deps.pluginHost as unknown as { buildMcpServers: () => unknown }).buildMcpServers = () => {
+      built += 1;
+      return [
+        { name: 'entity-tools', server: { config: { type: 'sdk', name: 'entity-tools', instance: { build: built } } } },
+      ];
+    };
+    queueOneFollowUp(deps);
+
+    await runAgentTurn(deps, makeInput());
+
+    expect(hoisted.executes).toHaveLength(2);
+    // The host's factories are re-invoked, not memoized for the turn.
+    expect(built).toBe(2);
+    expect(instanceOf(hoisted.executes[1], 'entity-tools')).not.toBe(
+      instanceOf(hoisted.executes[0], 'entity-tools'),
+    );
+  });
+
+  it('the mounted server SET is unchanged across executes — only the instances differ', async () => {
+    hoisted.events = [{ type: 'text_delta', text: 'ok' }, { type: 'result', sessionId: 's1' }];
+    const { deps } = makeDeps();
+    queueOneFollowUp(deps);
+
+    await runAgentTurn(deps, makeInput());
+
+    const keys = hoisted.executes.map((e) =>
+      Object.keys((e.mcpServers ?? {}) as Record<string, unknown>).sort(),
+    );
+    expect(keys[1]).toEqual(keys[0]);
+    expect(keys[0].length).toBeGreaterThan(0);
   });
 });
 

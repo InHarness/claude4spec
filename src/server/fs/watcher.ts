@@ -175,6 +175,8 @@ export interface ScopedWatchRegistrar {
   subscribe(source: string, handler: WatchSubscriber, opts: SubscribeOptions): void;
   markOrigin(source: string, relPath: string, actor: WatchActor): void;
   suppress(source: string, relPath: string): void;
+  /** Hand a suppress token back when the write it covered failed. */
+  unsuppress(source: string, relPath: string): void;
   flush(source: string, relPath: string, event?: WatchEventKind): Promise<void>;
   broadcast(event: WsEvent): void;
   isMounted(source: string): boolean;
@@ -439,6 +441,30 @@ export class FileWatchRuntime {
   }
 
   /**
+   * Give a suppress token back, for the write that never happened.
+   *
+   * `suppress()` is issued BEFORE the write, so a write that throws leaves a live
+   * token behind with no event of its own to consume it — and the next genuine
+   * edit inside the window is silently swallowed instead. That is the failure the
+   * `fs` suite already documents ("a suppress that never gets its event").
+   *
+   * Deliberately NOT the clear half of a set/clear pair. A token is still
+   * one-shot and still expires on its own; this only lets a caller that KNOWS its
+   * write failed hand the token back early. Calling it after a write that
+   * succeeded would resurrect the echo the suppression exists to eat.
+   *
+   * Not concurrency-safe per key, and cannot be made so here: `pendingSuppress`
+   * holds ONE token per key, so two overlapping writers already collapse into a
+   * single token at `suppress()` time — the second one's echo dispatches as
+   * external whether or not either write fails. Tagging tokens with an id would
+   * not close that; only refcounting would, and a count that outlives its events
+   * is a worse failure than the one it fixes.
+   */
+  unsuppress(scope: WatchScope, source: string, relPath: string): void {
+    this.pendingSuppress.delete(writeKey(scope, source, relPath));
+  }
+
+  /**
    * The actor behind the write currently being dispatched for this key, if it was
    * a server write.
    *
@@ -639,6 +665,7 @@ export class FileWatchRuntime {
       subscribe: (source, handler, opts) => this.subscribe(source, handler, { ...opts, scope }),
       markOrigin: (source, relPath, actor) => this.markOrigin(scope, source, relPath, actor),
       suppress: (source, relPath) => this.suppress(scope, source, relPath),
+      unsuppress: (source, relPath) => this.unsuppress(scope, source, relPath),
       flush: (source, relPath, event) => this.flush(scope, source, relPath, event),
       broadcast: (event) => this.broadcast(scope, event),
       isMounted: (source) => this.isMounted(source, scope),

@@ -622,110 +622,154 @@ export async function runAgentTurn(
       });
     };
 
-    // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
-    // `mcp` descriptor — each server mounts iff its registry flag is set.
-    const planTools = ctx.mcp.planTools
-      ? buildPlanToolsServer({
-          threadId: thread.id,
-          planService: deps.planService,
-          pageVersions: deps.pageVersions,
-        })
-      : null;
-    const briefTools = ctx.mcp.briefTools && thread.briefPath
-      ? buildBriefToolsServer({
-          threadId: thread.id,
-          briefPath: thread.briefPath,
-          briefService: deps.briefService,
-        })
-      : null;
-    /**
-     * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
-     * operation — but NOT the same `thread.briefPath` condition: the brief a
-     * patch is filed against is an argument, not the thread's own binding, so a
-     * brief thread can report drift against any brief it names.
-     */
-    const patchTools = ctx.mcp.briefTools && deps.patchWrite
-      ? createPatchToolsServer(deps.patchWrite)
-      : null;
-    // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
-    // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
-    // workspace (fixes AMBIGUOUS_WORKSPACE when the project lives in N>1 workspaces).
-    // Registry-gated: chat + patch only (brief is intentionally narrow; `ask` is
-    // excluded — a consulted peer cannot consult another).
-    const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
-
-    // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
-    // it — see the note at its mount below. Absent only when the deps were built
-    // without a workspace (the hand-rolled test rigs).
-    const workspaceTools = deps.listWorkspaceProjects
-      ? buildWorkspaceToolsServer(deps.listWorkspaceProjects)
-      : null;
-
-    // 0.1.69 transagent-tools: delegate work to a hidden child banka. Two guards:
-    //   - registry dimension `transagentTools` (chat + patch only — never brief/`ask`).
-    //   - recursion depth 1: never inside a child banka (parentThreadId != null), so a
-    //     banka cannot spawn a banka. This guard is orthogonal to the registry (it depends
-    //     on the thread's lineage, not its context_type), so it stays at the call site.
+    // 0.1.69 Transagents: the dispatcher is turn-scoped, NOT execute-scoped. It is
+    // itself stateless (two injected fields), but the correlation state it reaches —
+    // `takeTransagentToolUse` above — belongs to the turn, and capturing
+    // `input.model`/`input.architectureConfig` once keeps the child-turn posture
+    // identical across every execute of this turn.
     const isChildBanka = thread.parentThreadId != null;
-    const transagentTools = ctx.mcp.transagentTools && !isChildBanka
-      ? buildTransagentToolsServer({
-          parentThreadId: thread.id,
-          dispatcher: new TransagentDispatcher(deps, {
-            model: input.model,
-            architectureConfig: input.architectureConfig,
-            takeToolUseId: takeTransagentToolUse,
-            runTurn: (childInput) => runAgentTurn(deps, childInput),
-          }),
+    const transagentDispatcher = ctx.mcp.transagentTools && !isChildBanka
+      ? new TransagentDispatcher(deps, {
+          model: input.model,
+          architectureConfig: input.architectureConfig,
+          takeToolUseId: takeTransagentToolUse,
+          runTurn: (childInput) => runAgentTurn(deps, childInput),
         })
       : null;
+    /**
+     * Which of the mounted servers are a PLUGIN's own surface. Turn-scoped: plugin
+     * activation cannot change mid-turn (a config change builds a whole new
+     * `ProjectPluginHost`), so this is computed once and handed to every execute.
+     */
+    const pluginServerNames = pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type));
 
     /**
-     * Two gates, coarse then fine.
+     * ONE `McpServer` SET PER `adapter.execute` — NOT per turn.
      *
-     * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
-     * entity-plugin server, 'release-only' narrows to the
-     * BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
+     * An MCP `McpServer` binds to exactly one transport: `Protocol.connect`
+     * (@modelcontextprotocol/sdk 1.29.0) throws `'Already connected to a
+     * transport'` while a binding is live, and `_onclose` both nulls the binding
+     * and aborts every in-flight request handler. So an instance shared by two SDK
+     * queries is a dead instance for at least one of them.
      *
-     * 0.2.13 adds `gateServers`, which then picks TOOLS within the survivors by
-     * the context profile's admitted operation classes. The coarse gate could
-     * never express "this profile gets `get_page` but not `create_tag`" — both
-     * live on `reference-tools` — so `ask` was handed the write tools of every
-     * mounted server and held back only by forced plan mode, which does not
-     * apply to MCP at all. A server left with no admitted tools is dropped
-     * rather than mounted empty.
+     * The failure is SILENT: the Claude Agent SDK's `connectSdkMcpServer` swallows
+     * the `connect()` rejection into a debug log and still advertises the server, so
+     * the symptom is tool calls that complete with no `tool_result` at all — every
+     * whitelisted server at once, terminal for the rest of the turn.
+     *
+     * `consume()` below runs once for the initial prompt AND once per iteration of
+     * the merged-dispatch drain loop, so "per turn" and "per query" stopped
+     * coinciding the moment that loop landed. Rebuilding is cheap — every server is
+     * already registered as a zero-arg factory (`project-context.ts`) and the whole
+     * set measures ~6 ms — and `RuntimeExecuteParams.mcpServers` takes only concrete
+     * configs carrying a live instance, so freshness has to be arranged here.
+     *
+     * Nothing is disposed on the way out. The SDK closes the transports it opened,
+     * an `McpServer` holds no OS resource, and closing a set ourselves would abort
+     * handlers of a query that may still be live (the M17 held-result path, a
+     * transagent child running inside a blocked parent handler) — i.e. reproduce
+     * this very bug from the other side.
      */
-    const pluginMcpEntries = gateServers(
-      thread.contextType,
-      deps.pluginHost
-        .buildMcpServers()
-        .filter(({ name }) =>
-          ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
-        ),
-      // Which of the survivors are a PLUGIN's own surface. For a profile that
-      // admits no writes, an undeclared tool on one of those is denied rather
-      // than waved through — the host cannot vouch for what it never wrote.
-      pluginServerNamesFor(deps.pluginHost.listEntities().map((m) => m.type)),
-    )
-      // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
-      // only forwards it. THIS is the adapter boundary where it is re-widened to
-      // the vendor's config type, and the only place in the host that needs to.
-      .map(({ name, server }) => [name, server.config as McpServerConfig] as const);
-    const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
-    if (planTools) mcpServers['plan-tools'] = planTools.config;
-    if (briefTools) mcpServers['brief-tools'] = briefTools.config;
-    if (patchTools) mcpServers['patch-tools'] = patchTools.config;
-    if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
-    if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
-    /**
-     * 0.2.13 — M31's `list_projects`, mounted for EVERY context type.
-     *
-     * Unconditional because it is a read-class operation, which every profile
-     * admits, and because the alternative homes both carry a gate that has
-     * nothing to do with it: `c4s-tools` is withheld from `ask`/`brief` by the
-     * peer-consultation recursion guard, and the plugin pool is narrowed to
-     * release-tools for `brief`. Workspace discovery must not inherit either.
-     */
-    if (workspaceTools) mcpServers['workspace-tools'] = workspaceTools.config;
+    const buildMcpServersForExecute = (): Record<string, McpServerConfig> => {
+      // M05 m05ctxreg dim 2: per-thread MCP servers are dispatched from the registry's
+      // `mcp` descriptor — each server mounts iff its registry flag is set.
+      const planTools = ctx.mcp.planTools
+        ? buildPlanToolsServer({
+            threadId: thread.id,
+            planService: deps.planService,
+            pageVersions: deps.pageVersions,
+          })
+        : null;
+      const briefTools = ctx.mcp.briefTools && thread.briefPath
+        ? buildBriefToolsServer({
+            threadId: thread.id,
+            briefPath: thread.briefPath,
+            briefService: deps.briefService,
+          })
+        : null;
+      /**
+       * M23 `file_patch`. Same gate as the brief tools — it is a `brief`-class
+       * operation — but NOT the same `thread.briefPath` condition: the brief a
+       * patch is filed against is an argument, not the thread's own binding, so a
+       * brief thread can report drift against any brief it names.
+       */
+      const patchTools = ctx.mcp.briefTools && deps.patchWrite
+        ? createPatchToolsServer(deps.patchWrite)
+        : null;
+      // M24 c4s-tools: cross-cutting MCP exposing the peer-consult flow. Fresh factory
+      // per request; closes over `deps.workspaceName` so `ask` defaults to the caller's
+      // workspace (fixes AMBIGUOUS_WORKSPACE when the project lives in N>1 workspaces).
+      // Registry-gated: chat + patch only (brief is intentionally narrow; `ask` is
+      // excluded — a consulted peer cannot consult another).
+      const c4sTools = ctx.mcp.c4sTools ? buildC4sToolsServer(deps.workspaceName) : null;
+
+      // 0.2.13 workspace-tools: M31's `list_projects`. No registry dimension gates
+      // it — see the note at its mount below. Absent only when the deps were built
+      // without a workspace (the hand-rolled test rigs).
+      const workspaceTools = deps.listWorkspaceProjects
+        ? buildWorkspaceToolsServer(deps.listWorkspaceProjects)
+        : null;
+
+      // 0.1.69 transagent-tools: delegate work to a hidden child banka. Both guards
+      // (registry dimension `transagentTools`, and recursion depth 1 — never inside a
+      // child banka) are folded into `transagentDispatcher` above, which is null when
+      // either says no. Only the SERVER is rebuilt here; the dispatcher is turn-scoped.
+      const transagentTools = transagentDispatcher
+        ? buildTransagentToolsServer({
+            parentThreadId: thread.id,
+            dispatcher: transagentDispatcher,
+          })
+        : null;
+
+      /**
+       * Two gates, coarse then fine.
+       *
+       * Registry `pluginServers` picks whole SERVERS: 'all' mounts every
+       * entity-plugin server, 'release-only' narrows to the
+       * BRIEF_ALLOWED_PLUGIN_MCP whitelist (read-only release-tools).
+       *
+       * 0.2.13 adds `gateServers`, which then picks TOOLS within the survivors by
+       * the context profile's admitted operation classes. The coarse gate could
+       * never express "this profile gets `get_page` but not `create_tag`" — both
+       * live on `reference-tools` — so `ask` was handed the write tools of every
+       * mounted server and held back only by forced plan mode, which does not
+       * apply to MCP at all. A server left with no admitted tools is dropped
+       * rather than mounted empty.
+       */
+      const pluginMcpEntries = gateServers(
+        thread.contextType,
+        deps.pluginHost
+          .buildMcpServers()
+          .filter(({ name }) =>
+            ctx.mcp.pluginServers === 'release-only' ? BRIEF_ALLOWED_PLUGIN_MCP.has(name) : true,
+          ),
+        // Which of the survivors are a PLUGIN's own surface. For a profile that
+        // admits no writes, an undeclared tool on one of those is denied rather
+        // than waved through — the host cannot vouch for what it never wrote.
+        pluginServerNames,
+      )
+        // 0.2.2: `McpServerFactory.config` is deliberately `unknown` — the host
+        // only forwards it. THIS is the adapter boundary where it is re-widened to
+        // the vendor's config type, and the only place in the host that needs to.
+        .map(({ name, server }) => [name, server.config as McpServerConfig] as const);
+      const mcpServers: Record<string, McpServerConfig> = Object.fromEntries(pluginMcpEntries);
+      if (planTools) mcpServers['plan-tools'] = planTools.config;
+      if (briefTools) mcpServers['brief-tools'] = briefTools.config;
+      if (patchTools) mcpServers['patch-tools'] = patchTools.config;
+      if (c4sTools) mcpServers['c4s-tools'] = c4sTools.config;
+      if (transagentTools) mcpServers['transagent-tools'] = transagentTools.config;
+      /**
+       * 0.2.13 — M31's `list_projects`, mounted for EVERY context type.
+       *
+       * Unconditional because it is a read-class operation, which every profile
+       * admits, and because the alternative homes both carry a gate that has
+       * nothing to do with it: `c4s-tools` is withheld from `ask`/`brief` by the
+       * peer-consultation recursion guard, and the plugin pool is narrowed to
+       * release-tools for `brief`. Workspace discovery must not inherit either.
+       */
+      if (workspaceTools) mcpServers['workspace-tools'] = workspaceTools.config;
+      return mcpServers;
+    };
 
     // M05 queue: streaming-input keeps the SDK input channel open across turns so
     // queued messages can be pushed into the LIVE turn (`adapter.pushMessage`).
@@ -749,7 +793,9 @@ export async function runAgentTurn(
       systemPrompt,
       model: input.model,
       cwd: deps.cwd,
-      mcpServers,
+      // NOTE: no `mcpServers` here on purpose — see `buildMcpServersForExecute`.
+      // It is the one execute argument that must NOT be shared across the turn's
+      // queries, so it is built inside `consume` below rather than captured here.
       skills: inlineSkills,
       // 0.1.67 m05ctxreg: inject the per-context read-only explorer subagent. Mapped onto the
       // SDK's `options.agents`; does NOT narrow the parent's toolset (no allowedTools).
@@ -774,6 +820,9 @@ export async function runAgentTurn(
     const consume = async (execPrompt: string): Promise<void> => {
       const stream = adapter.execute({
         ...baseExecuteArgs,
+        // Called HERE, per invocation — never hoisted into a variable this closure
+        // captures. That distinction is the entire fix.
+        mcpServers: buildMcpServersForExecute(),
         prompt: execPrompt,
         resumeSessionId: currentSessionId,
       });

@@ -371,9 +371,10 @@ export function synthesizeMount(module: BackendModule): BackendModule {
     }
     if (mcpServer) {
       // 0.1.133: the slot returns the MCP server HANDLE directly (not a thunk).
-      // Per-turn freshness is host-owned — wrap the slot factory in a thunk so
-      // `buildMcpServers()` re-invokes it each turn for a fresh, connectable
-      // server (an MCP instance can't be re-`connect`ed across turns).
+      // Per-QUERY freshness is host-owned — wrap the slot factory in a thunk so
+      // `buildMcpServers()` re-invokes it for every `adapter.execute()` and gets a
+      // fresh, connectable server (an MCP instance can't be re-`connect`ed, and a
+      // turn issues one query per merged-dispatch drain on top of its first).
       // Thunk auto-unwrapping (pre-0.1.133 contract) and shape validation both
       // live in `ProjectPluginHostImpl.buildMcpServers()` — the single choke
       // point every registered factory passes through, including the ones a

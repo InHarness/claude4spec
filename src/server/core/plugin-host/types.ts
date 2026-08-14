@@ -206,10 +206,15 @@ export interface MountContext {
   entityStore: EntityStore;
   /**
    * Register a *factory* that builds a fresh MCP server instance. The host
-   * invokes it once per agent turn (see `buildMcpServers`) so each
-   * `adapter.execute()` gets its own `McpServer` — sharing one instance across
-   * concurrent turns breaks, because MCP `Protocol.connect` throws once an
-   * instance already holds a transport.
+   * invokes it once per `adapter.execute()` (see `buildMcpServers`) so every SDK
+   * query gets its own `McpServer` — sharing one instance across two queries
+   * breaks, because MCP `Protocol.connect` throws once an instance already holds
+   * a transport, and its `_onclose` nulls the binding the OTHER query is using.
+   *
+   * The unit is the QUERY, not the turn. A turn issues one query for its initial
+   * prompt plus one per merged-dispatch drain (`routes/agent-turn.ts`), so
+   * "per turn" — what this said before brief `0-2-23-to-next` — silently reused
+   * instances and made every whitelisted server stop answering mid-turn.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
   /**
@@ -288,10 +293,11 @@ export interface BackendModule extends EntityModuleManifest {
      * Custom `${type}-tools` server for this type's non-CRUD tools. 0.1.133:
      * the slot returns the MCP server HANDLE directly — the result of
      * `createMcpServer(...)` (published as the opaque C4S `McpServerFactory`) —
-     * NOT a `() => instance` thunk. Per-turn freshness is host-owned: the host
-     * wraps this factory in a per-turn thunk in `synthesizeMount`
-     * (`registerMcpServer`), so `buildMcpServers()` rebuilds a fresh, connectable
-     * server each turn behind the facade.
+     * NOT a `() => instance` thunk. Per-QUERY freshness is host-owned: the host
+     * wraps this factory in a thunk in `synthesizeMount` (`registerMcpServer`),
+     * so `buildMcpServers()` rebuilds a fresh, connectable server for every
+     * `adapter.execute()` behind the facade — see `registerMcpServer` on why the
+     * unit is the query and not the turn.
      */
     mcpServer?: (service: unknown, ctx: MountContext) => McpServerFactory;
     /**
@@ -493,9 +499,11 @@ export interface ProjectPluginHost {
 
   /**
    * Register an MCP server *factory* under a unique name (e.g. "dto-tools").
-   * Stored as a thunk, not an instance: `buildMcpServers` calls it per turn so
-   * each agent run gets a fresh `McpServer` (concurrent turns must not share
-   * one instance — see the MountContext note).
+   * Stored as a thunk, not an instance: `buildMcpServers` calls it once per
+   * `adapter.execute()`, so every SDK query gets a fresh `McpServer` — neither
+   * concurrent turns nor successive queries of ONE turn may share an instance
+   * (see the MountContext note). "Per turn" is precisely the granularity error
+   * that let brief `0-2-23-to-next` survive; do not restate it that way.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 
@@ -517,9 +525,10 @@ export interface ProjectPluginHost {
 
   /**
    * Build a fresh MCP server instance from every registered factory. Called
-   * once per agent turn by the chat handler to wire the adapter. Each call
-   * produces brand-new instances, so concurrent turns never collide on a
-   * shared transport.
+   * once per `adapter.execute()` by the chat handler to wire the adapter — a
+   * turn calls it more than once when the merged-dispatch queue drains. Each
+   * call produces brand-new instances, so neither concurrent turns nor
+   * successive queries of one turn collide on a shared transport.
    */
   buildMcpServers(): Array<{ name: string; server: McpServerFactory }>;
 

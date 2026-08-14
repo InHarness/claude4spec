@@ -87,6 +87,13 @@ export interface SelfWriteMarker {
   /** Run the reaction chain for this path now, and swallow the fs echo. */
   flush(relPath: string, event?: 'add' | 'change' | 'unlink'): Promise<void>;
   suppress(relPath: string): void;
+  /**
+   * Give back a token whose write FAILED — a suppress is issued before the write,
+   * so a throw in between leaves it to swallow the next genuine event instead.
+   * Optional: the many hand-built `{ suppress: () => {} }` fakes are still valid
+   * handles, and a caller that never fails never needs it.
+   */
+  unsuppress?(relPath: string): void;
 }
 
 export type WriteActor = 'user' | 'agent';
@@ -95,6 +102,7 @@ export function boundWriter(
   registrar: {
     markOrigin(source: string, relPath: string, actor: WriteActor): void;
     suppress(source: string, relPath: string): void;
+    unsuppress(source: string, relPath: string): void;
     flush(source: string, relPath: string, event?: 'add' | 'change' | 'unlink'): Promise<void>;
   },
   source: string,
@@ -102,6 +110,7 @@ export function boundWriter(
   return {
     markOrigin: (relPath, actor) => registrar.markOrigin(source, relPath, actor),
     suppress: (relPath) => registrar.suppress(source, relPath),
+    unsuppress: (relPath) => registrar.unsuppress(source, relPath),
     flush: (relPath, event) => registrar.flush(source, relPath, event),
   };
 }
@@ -111,6 +120,7 @@ export const NULL_WRITER: SelfWriteMarker = {
   markOrigin: () => {},
   flush: async () => {},
   suppress: () => {},
+  unsuppress: () => {},
 };
 
 /** Mechanical filters. Markdown drives indexing; `.html` is preview-only (M30). */

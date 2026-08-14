@@ -118,10 +118,40 @@ export function recentResponseSizes(): readonly ResponseSizeRecord[] {
  *
  * Serialized once: the string that goes on the wire is the string that gets
  * measured, so the number in the log cannot drift from what the caller paid for.
+ *
+ * THE PAYLOAD IS GUARDED, because `JSON.stringify` has two ways to turn a
+ * successful operation into a tool call that answers nothing at all:
+ *
+ *   - `undefined` (also a function, also a symbol) serializes to `undefined`,
+ *     producing `{ type: 'text', text: undefined }`. That contradicts this
+ *     module's own `ToolEnvelope`, whose `text` is a `string`, and MCP schema
+ *     validation drops it — so the caller sees no `tool_result`, with nothing
+ *     anywhere saying why.
+ *   - a cyclic value makes it THROW, which in a handler without a `try/catch`
+ *     escapes as an unanswered request.
+ *
+ * A handler that forgot an `await` hits the first case with a Promise, which is
+ * the one worth naming: it is a bug in the caller, and `'{}'` (what a Promise
+ * serializes to) would hide it behind an empty-looking success. Those become an
+ * explicit refusal instead.
  */
 export function toolSuccess(data: unknown, ctx?: ToolCallContext): ToolEnvelope {
-  const text = JSON.stringify(data);
-  recordResponseSize(text?.length ?? 0, ctx);
+  if (typeof (data as { then?: unknown } | null | undefined)?.then === 'function') {
+    return toolError(
+      'INTERNAL',
+      'tool returned a Promise instead of its resolved value',
+      'the operation is async — `await` it before handing the result to toolSuccess',
+    );
+  }
+  let text: string;
+  try {
+    // `?? 'null'` covers undefined/function/symbol: a valid, parseable "no data"
+    // rather than an envelope whose text field does not exist.
+    text = JSON.stringify(data) ?? 'null';
+  } catch (err) {
+    return toolFailure(err);
+  }
+  recordResponseSize(text.length, ctx);
   return { content: [{ type: 'text', text }] };
 }
 
