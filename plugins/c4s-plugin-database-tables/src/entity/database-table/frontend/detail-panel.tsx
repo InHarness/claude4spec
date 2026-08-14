@@ -1,8 +1,8 @@
 /**
- * `detailPanel` — the REQUIRED frontend slot, the only `ViewKind: detail` and the
- * only view that is a SCREEN. Everything else (chip/card/row) is a pure embed and
- * the list is a composition; this panel is the one surface that resolves an
- * entity, holds a draft, calls mutations and draws loading / absent / data
+ * `detailPanel` — the REQUIRED frontend slot, and the only one that is a SCREEN.
+ * Everything else (chip/card/row) is a pure embed and the list is a composition;
+ * this panel is the one surface that resolves an entity, holds a draft, calls
+ * mutations and draws loading / absent / data
  * (`ac-panel-detalu-sam-wola-usegetbyslug-slug`).
  *
  * Props contract: `EntityDetailProps = { slug; onDeleted?; onRenamed? }`. The host
