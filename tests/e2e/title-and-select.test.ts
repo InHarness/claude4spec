@@ -119,7 +119,21 @@ describe.skipIf(!BASE)('0.2.22 — title on screen, select on the wire', () => {
     expect(skeleton.body.results[0].entity.title).toBeDefined();
     // ...and the fields nobody asked for are gone.
     expect(skeleton.body.results[0].entity.text).toBeUndefined();
-    expect(skeleton.body.selectedFields).toEqual(['slug', 'title', 'tags']);
+    expect(skeleton.body.selectedFields).toEqual(['slug', 'title', 'tags', 'href']);
+    /**
+     * `href` is in the SKELETON, which is the width where a chip is rendered.
+     * It is host-generated from the type's `pathPrefix` rather than declared by
+     * any schema — the one thing the retired per-type views contributed that a
+     * projection over the schema could not reproduce.
+     */
+    expect(skeleton.body.results[0].entity.href).toBe(`/acs/${made.ac}`);
+
+    // And the echo can be handed straight back as a `select` — identity names
+    // are legal input, not just guaranteed output.
+    const echoed = await api(
+      `/api/projects/${projectId}/entities/ac/get?slugs=${made.ac}&select=${skeleton.body.selectedFields.join(',')}`,
+    );
+    expect(echoed.status).toBe(200);
   });
 
   it('[ac:ac-select-ze-sciezka-kropkowa-z-w-nazwie] an illegal select names the legal fields instead of guessing', async () => {
