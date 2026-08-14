@@ -44,7 +44,6 @@ import { EntityStore } from '../../src/server/services/entity-store.js';
 import { errorHandler } from '../../src/server/routes/errors.js';
 import { createDiscoveryCore } from '../../src/server/discovery/index.js';
 import { SerializationEngine } from '../../src/server/core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../../src/server/serialization/serializers/section.js';
 import type { WsEmitter } from '../../src/server/ws/project-emitter.js';
 import type { ReleaseService } from '../../src/server/services/release.js';
 import type { BackendModule, ProjectPluginHost } from '../../src/server/core/plugin-host/types.js';
@@ -230,7 +229,7 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
    * generated routes answer with L9 views, so a core without an engine makes
    * every one of them a 500.
    */
-  const serializationEngine = new SerializationEngine(host, sectionSerializer);
+  const serializationEngine = new SerializationEngine(host);
   const discovery = createDiscoveryCore({
     reader: rawReader,
     db,

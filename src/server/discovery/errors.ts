@@ -18,7 +18,6 @@ export type DiscoveryErrorCode =
   | 'SECTION_NOT_FOUND'
   | 'PAGE_NOT_FOUND'
   | 'INVALID_TYPE'
-  | 'INVALID_VIEW'
   | 'INVALID_ARGUMENT'
   | 'AMBIGUOUS_ENTITY'
   | 'AMBIGUOUS_PAGE'
@@ -94,10 +93,6 @@ export function invalidType(type: string, activeTypes: readonly string[]): Disco
     `entity type '${type}' is unknown or not active in this project`,
     `active types: ${sample(activeTypes)}.`,
   );
-}
-
-export function invalidView(view: string, views: readonly string[]): DiscoveryError {
-  return new DiscoveryError('INVALID_VIEW', `unknown view '${view}'`, `known views: ${sample(views)}.`);
 }
 
 /**

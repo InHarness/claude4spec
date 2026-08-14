@@ -54,14 +54,15 @@ export interface DatabaseTable {
  * views project to exactly this; see `views.ts` for why.
  */
 /**
- * 0.2.22 — the derived counts are OPTIONAL now.
+ * 0.2.23 — the derived counts are GONE, not merely optional.
  *
  * A list row used to be the type's own `element_list_item` view, which computed
  * `columnCount`/`indexCount`/`hasPrimaryKey` so a list screen never received the
- * arrays. Record width is the caller's since this release, and the UI list route
- * hydrates through the same projection everyone else gets — so the arrays are
- * present and the counts are derivable from them. Kept in the shape because a
- * type MAY still compute them; read them with a fallback (see `list-row`).
+ * arrays. 0.2.22 made record width the caller's and demoted the three to
+ * optional, on the reasoning that a type MAY still compute them. No type may:
+ * this release removed the read slot entirely, so the arrays are all that ever
+ * arrives and the counts are derived where they are drawn (`countsOf`). A
+ * primary key is read off `column.pk`, which the declaration carries per column.
  */
 export interface DatabaseTableListItem {
   slug: string;
@@ -70,9 +71,6 @@ export interface DatabaseTableListItem {
   description?: string | null;
   columns?: Column[];
   indexes?: Index[];
-  columnCount?: number;
-  indexCount?: number;
-  hasPrimaryKey?: boolean;
   tags?: string[];
   updatedAt?: string;
 }

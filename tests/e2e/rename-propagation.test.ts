@@ -112,13 +112,20 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
     const renamed = `${dto.body.data.slug}-renamed`;
     expect((await patch(p(`/dtos/${dto.body.data.slug}`), { newSlug: renamed })).status).toBeLessThan(400);
 
-    // Read from the DTO side: it is the end the junction does NOT bind, so a
-    // link that survived only as a stale endpoint_slug would not show up here.
-    const after = await api(p(`/dtos/${renamed}?view=detail`));
+    /**
+     * Read the ENDPOINT's link and check it points at the NEW slug.
+     *
+     * This used to read `dto.endpoints` — the reverse join that left with the
+     * computed views in 0.2.23. The claim is the same either way and this is the
+     * sharper half of it: a rename that repointed nothing would leave the old
+     * slug sitting in `linkedDtos`, which `toContain(renamed)` catches, while the
+     * DTO-side read only ever showed that SOMETHING still resolved.
+     */
+    const after = await api(p(`/endpoints/${endpoint.body.data.slug}`));
     expect(after.status).toBe(200);
-    expect(after.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
-      endpoint.body.data.slug,
-    );
+    expect(after.body.data.linkedDtos?.map((l: { dto: string }) => l.dto)).toContain(renamed);
+    // And the DTO really is reachable under its new slug.
+    expect((await api(p(`/dtos/${renamed}`))).status).toBe(200);
   });
 
   it('[ac:ac-pole-z-flaga-ref-typ-jest-rozpoznaw] an endpoint rename repoints ac.verifies[].slug', async () => {

@@ -165,10 +165,6 @@ export function AcDetail({
   }
   if (!ac || !draft) return null;
 
-  const brokenByKey = new Map<string, string>();
-  for (const b of ac.brokenVerifies ?? []) {
-    brokenByKey.set(`${b.type}/${b.slug}`, b.reason);
-  }
   const deprecated = draft.status === 'deprecated';
 
   return (
@@ -250,7 +246,6 @@ export function AcDetail({
           <FieldRow label="Verifies" align="start">
             <VerifiesPanel
               verifies={draft.verifies}
-              brokenByKey={brokenByKey}
               onAdd={addVerify}
               onRemove={removeVerify}
               onOpenEntity={onOpenEntity}
@@ -312,7 +307,6 @@ export function AcDetail({
 
 interface VerifiesPanelProps {
   verifies: AcVerifyRef[];
-  brokenByKey: Map<string, string>;
   onAdd: (type: string, slug: string) => void;
   onRemove: (idx: number) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
@@ -331,7 +325,6 @@ interface VerifiesPanelProps {
  */
 function VerifiesPanel({
   verifies,
-  brokenByKey,
   onAdd,
   onRemove,
   onOpenEntity,
@@ -340,8 +333,9 @@ function VerifiesPanel({
   // locally: a single shared query would filter groups whose own box reads
   // empty, and would offer its literal in all of them.
   const [queries, setQueries] = useState<Record<string, string>>({});
-  // A group's candidates are a whole collection, so they load when its picker
-  // is first opened rather than on every AC the user clicks through.
+  // A group's candidates are a whole collection, so an EMPTY group loads only
+  // when its picker is first opened rather than on every AC the user clicks
+  // through. A group that already holds refs loads eagerly — see `enabled`.
   const [opened, setOpened] = useState<Set<string>>(() => new Set());
 
   const modules = clientPluginHost.listEntities().filter((m) => m.type !== 'ac');
@@ -355,7 +349,20 @@ function VerifiesPanel({
       queryKey: ['verify-candidates', m.type] as const,
       queryFn: () => m.listByTags({ tags: [], filter: 'or' as const }),
       staleTime: 60_000,
-      enabled: opened.has(m.type as string),
+      /**
+       * Opened pickers — and any group this AC ALREADY verifies something in.
+       *
+       * The second half is what keeps the dangling-ref badge visible on load.
+       * It used to arrive precomputed as `ac.brokenVerifies`; 0.2.23 leaves the
+       * type no read code to compute it with, so it is derived here against the
+       * candidate list — and a list that only loads when the user opens a picker
+       * would mark a dead ref only for someone already going looking for it.
+       *
+       * It costs one request per type this AC verifies, not per type that
+       * exists: an AC names one or two, and the queries are shared and cached
+       * across every AC the user clicks through.
+       */
+      enabled: opened.has(m.type as string) || (selected[m.type as string]?.length ?? 0) > 0,
     })),
   });
   const candidateByType = new Map(modules.map((m, i) => [m.type as string, candidates[i]]));
@@ -377,7 +384,28 @@ function VerifiesPanel({
       // candidates failed to load must not read as "nothing to link".
       label: mod ? (result?.isError ? `${mod.label} (failed to load)` : mod.label) : `${type} (inactive)`,
       items: verifyGroupItems(type, groupInput).map((slug) => {
-        const reason = brokenByKey.get(`${type}/${slug}`);
+        /**
+         * A dangling `verifies[]` entry, derived HERE rather than read off the
+         * record.
+         *
+         * `ac.brokenVerifies` was computed by the `ac` detail view; 0.2.23
+         * leaves no read code on a type, so the marker is derived from what this
+         * panel already loaded — the same move `database-table` makes for its
+         * counts. Both halves of the old `classifyVerifies` answer survive: an
+         * unknown or inactive TYPE is visible without loading anything, and a
+         * missing SLUG is visible against the group's candidate list.
+         *
+         * The slug half is claimed only once that list has actually arrived —
+         * candidates load lazily, per opened group, and calling everything
+         * dangling while the fetch is in flight would be worse than saying
+         * nothing.
+         */
+        const loaded = !!mod && !result?.isError && result?.data !== undefined;
+        const reason = !mod
+          ? 'unknown type'
+          : loaded && !fetchedByType[type]!.includes(slug)
+            ? 'missing'
+            : undefined;
         return {
           id: slug,
           label: slug,

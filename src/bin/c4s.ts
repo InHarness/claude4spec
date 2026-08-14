@@ -279,7 +279,6 @@ function codeToExit(code: string): number {
     case 'SECTION_NOT_FOUND':
       return 3;
     case 'INVALID_TYPE':
-    case 'INVALID_VIEW':
     case 'INVALID_ARGS':
     /**
      * 0.2.13 — a `--root-id` that names nothing is the same CLASS of mistake as

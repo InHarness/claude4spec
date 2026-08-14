@@ -82,6 +82,39 @@ export function decodeColumn(node: FieldNode, value: unknown): unknown {
  * restored from before the type existed), and a snapshot that 500s on a whole
  * release restore is a worse answer than one reporting an empty collection.
  */
+/**
+ * How MANY items one entity's projected collection holds — without reading them.
+ *
+ * The record carries a keyed collection as its `{count}` overview, and counting
+ * by `readProjectionCollection(...).length` would decode every row to throw them
+ * all away: a 200x40 spreadsheet materialises 8 000 cell objects to learn the
+ * number 8 000, on every read of that entity, including a list page's.
+ *
+ * Shares the missing-table tolerance of the reader above, for the same reason
+ * and with the same narrowness — a table that has not been applied yet holds
+ * nothing, and any other SQL error is a bug that must not read as zero.
+ */
+export function countProjectionCollection(
+  db: Database,
+  module: ProjectableModule,
+  field: string,
+  node: CollectionNode,
+  slug: string,
+): number {
+  const table = projectionTableOf(module, field, node);
+  const binding = bindingColumnOf(module);
+  try {
+    const row = db
+      .prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE ${binding} = ?`)
+      .get(slug) as { n: number } | undefined;
+    return row?.n ?? 0;
+  } catch (err) {
+    const message = (err as Error).message ?? '';
+    if (/no such table/i.test(message)) return 0;
+    throw err;
+  }
+}
+
 export function readProjectionCollection(
   db: Database,
   module: ProjectableModule,

@@ -20,7 +20,6 @@ import { compareRanked, relevance } from '../ranking.js';
 import { resolveSearchFields, valuesAtPath } from '../search/fields.js';
 import type { RawEntity } from '../raw-entity-reader.js';
 import { columnOf, RESERVED_TITLE_FIELD } from '../../../shared/plugin-host/data-schema.js';
-import type { ViewKind } from '../../serialization/types.js';
 import { project, selectedFieldsOf, validateSelect } from '../project.js';
 import type {
   DiscoveryDeps,
@@ -147,39 +146,26 @@ function applySort(deps: DiscoveryDeps, input: ListEntitiesInput, slugs: string[
  * Takes the ENTITY, not a slug: the caller has already read the row, and reading
  * it twice was the only reason this needed the reader.
  *
- * The outcome flags travel with the payload rather than being flattened away: a
- * consumer that cannot tell "the type computed this" from "the host generated
- * it, because the type's own view threw" will present the second as the first.
- * `generic` is a plain boolean here — every record has an answer — while the
- * wire shape (`SerializedMeta`) keeps it optional, so an unremarkable record is
- * not fattened by `generic: false` on every row of a list.
+ * 0.2.23 removed both the `view` argument and the outcome flags that used to
+ * travel beside the payload. They existed to keep "the type computed this"
+ * distinguishable from "the host generated it because the type's view threw";
+ * with no type-contributed read code, the distinction has no second side.
  */
-function serialize(
-  deps: DiscoveryDeps,
-  type: string,
-  view: ViewKind,
-  entity: RawEntity,
-): { data: unknown; generic: boolean; error?: string; brokenRefs?: string[] } {
-  const result = deps.serialization.serializeEntity(type, view, entity, deps.reader);
-  return {
-    data: result.data,
-    generic: result.generic,
-    ...(result.error ? { error: result.error } : {}),
-    ...(result.brokenRefs ? { brokenRefs: result.brokenRefs } : {}),
-  };
-}
-
-/** `serialize` for a slug that may not resolve — the list/get/search shape. */
 function serializeSlug(
   deps: DiscoveryDeps,
   type: string,
-  view: ViewKind,
   slug: string,
-): { data: unknown; generic?: boolean; error?: string; brokenRefs?: string[] } {
+  /**
+   * Handed down to the serializer, not merely applied afterwards: a collection
+   * with its own projection table costs a query, and `project` discarding it a
+   * moment later would not un-run that query. A list page asking for `select: []`
+   * would otherwise pay one per row.
+   */
+  select?: readonly string[],
+): { data: unknown } {
   const raw = deps.reader.getEntity(type, slug);
   if (!raw) return { data: null };
-  const { generic, ...rest } = serialize(deps, type, view, raw);
-  return { ...rest, ...(generic ? { generic: true } : {}) };
+  return { data: deps.serialization.serializeEntity(type, raw, deps.reader, select).data };
 }
 
 export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEntitiesResult {
@@ -197,34 +183,31 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   const slugs = [...new Set(input.slugs)];
 
   /**
-   * ONE internal view, then a projection.
+   * The record, then a projection.
    *
    * The width of the answer used to depend on how many slugs you asked for —
    * one slug meant `single_element`, several meant the narrower
    * `element_list_item` — which made `["order"]` and `["order","cart"]` return
-   * different shapes for `order`. Width is now the caller's to state, so this
-   * always serializes the WIDEST view (`detail`, the only one guaranteed to be a
-   * superset of the declared fields) and lets `project` cut it down.
+   * different shapes for `order`. 0.2.22 made width the caller's to state by
+   * always serializing the widest view; 0.2.23 removed the views, so there is no
+   * longer a widest one to pick. The host derives one record from the schema and
+   * `project` cuts it down.
    *
    * `project` runs even when `select` is absent, so there is exactly one rule
-   * rather than a rule and an exception: the record is always `f(schema,
-   * select)`, and a field a computed view invented but the schema never declared
-   * does not travel under either.
+   * rather than a rule and an exception: the record is always `f(schema, select)`.
    */
   const schema = module.data?.schema ?? {};
   validateSelect(input.select, schema);
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
-    const { data, ...meta } = serializeSlug(deps, input.type, 'detail', slug);
+    const { data } = serializeSlug(deps, input.type, slug, input.select);
     // The stored row goes in beside the serialized one, so a content-bearing
-    // field's SIZE is knowable even for a type whose own views (correctly) do
-    // not carry it. See `project`.
+    // field's SIZE is knowable even where the record itself (correctly) omits
+    // the value. See `project`.
     const stored = deps.reader.getEntity(input.type, slug)?.data;
     return {
       slug,
-      entity:
-        data === null ? null : project(data, input.select, schema, stored, module.pathPrefix),
-      ...meta,
+      entity: data === null ? null : project(data, input.select, schema, stored, module.pathPrefix),
     };
   });
 

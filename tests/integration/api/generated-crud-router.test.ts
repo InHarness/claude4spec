@@ -402,18 +402,22 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
   });
 
   /**
-   * The joins a detail page needs arrive WITHOUT anyone naming a view.
+   * A declared collection arrives WITHOUT anyone naming a view.
    *
-   * `?view=detail` used to be how a caller reached them, and the parameter was
-   * added because it had been reserved-and-never-read: every GET answered
-   * `single_element`, so the DTO detail page threw on load reading
+   * `?view=detail` used to be how a caller reached a type's joins, and the
+   * parameter was added because it had been reserved-and-never-read: every GET
+   * answered `single_element`, so the DTO detail page threw on load reading
    * `dto.endpoints.length` off a view that never carried `endpoints`.
    *
-   * 0.2.22 removes the parameter and the failure mode with it. A GET serializes
-   * the widest view and projects, so the reverse join is simply there. Pinned on
-   * `dto` because it is the type whose two old views genuinely differed.
+   * 0.2.22 removed the parameter; 0.2.23 removed the views, which changes WHICH
+   * joins survive. A collection the schema DECLARES is read by the host from its
+   * projection table and is simply there — `endpoint.linkedDtos` below. A
+   * reverse join no schema declares is not: `dto.endpoints` was computed by
+   * `dto`'s own `detail` view, the spec describes no operation that replaces it,
+   * and the field is therefore absent rather than quietly reinvented here. See
+   * the patch filed against brief 0-2-22-to-0-2-23.
    */
-  it('serves the reverse join on a plain GET, with no view to ask for', async () => {
+  it('serves a declared collection on a plain GET, and no undeclared reverse join', async () => {
     await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
     await request(t.app)
       .post('/api/endpoints')
@@ -422,11 +426,17 @@ describe('generated CRUD routes for a serviceless declarative type', () => {
       .post('/api/endpoints/get-users/dtos')
       .send({ dtoSlug: 'user-dto', relation: 'response', statusCode: 200 });
 
+    // Forward: declared as `linkedDtos`, stored in `endpoint_dto`, read by the host.
+    const endpoint = await request(t.app).get('/api/endpoints/get-users');
+    expect(endpoint.status).toBe(200);
+    expect(endpoint.body.data.linkedDtos).toEqual([
+      { dto: 'user-dto', relation: 'response', statusCode: 200 },
+    ]);
+
+    // Reverse: not declared anywhere, so not carried.
     const res = await request(t.app).get('/api/dtos/user-dto');
     expect(res.status).toBe(200);
-    expect(res.body.data.endpoints.map((e: { endpointSlug: string }) => e.endpointSlug)).toEqual([
-      'get-users',
-    ]);
+    expect(res.body.data).not.toHaveProperty('endpoints');
     expect(res.body.data.createdAt).toEqual(expect.any(String));
   });
 

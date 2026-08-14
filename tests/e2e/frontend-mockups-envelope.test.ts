@@ -181,7 +181,10 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
     const dsRes = await fetch(`${api}/design-systems`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ slug: dsSlug, name: 'E2E Envelope DS', groups: [], modes: [] }),
+      // `title`, not `name`: 0.2.22 made `title` the reserved display field on
+      // every type, and this write had kept spelling it the old way — a 400 the
+      // suite has been failing on since, unrelated to the junction under test.
+      body: JSON.stringify({ slug: dsSlug, title: 'E2E Envelope DS', groups: [], modes: [] }),
     });
     expect(dsRes.status, 'POST /design-systems').toBe(201);
 
@@ -190,7 +193,7 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         slug,
-        name: 'E2E Envelope View',
+        title: 'E2E Envelope View',
         url: '/e2e',
         params: [],
         designSystemSlug: dsSlug,
@@ -198,13 +201,21 @@ describe.skipIf(!BASE)('c4s-plugin-frontend-mockups envelope', () => {
     });
     expect(viewRes.status, 'POST /ui-views').toBe(201);
 
+    // The ref, in the payload: `designSystemSlug` is what `ui-view` DECLARES,
+    // and 0.2.23 makes the record a function of that declaration alone — so its
+    // presence here is the proof the ref survived, not a view's courtesy.
+    const readBack = await fetch(`${api}/ui-views/${slug}`).then((r) => r.json() as Promise<{ data: { designSystemSlug: string } }>);
+    expect(readBack.data.designSystemSlug, 'ui-view record carries its ref').toBe(dsSlug);
+
     await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}`, { waitUntil: 'networkidle' });
 
-    // The name proves the detail query resolved; the design-system slug proves
-    // the ref survived the move, both in the payload and in the panel that
-    // renders it.
+    // And in the panel: the title proves the detail query resolved, and the
+    // design system's own TITLE proves the picker resolved the ref to a real
+    // entity. It shows the title rather than the slug — the slug is the join
+    // key, not the label — so asserting on the slug here would only pin how the
+    // picker happens to spell a name.
     await expect.poll(() => page.locator('body').innerText()).toContain('E2E Envelope View');
-    await expect.poll(() => page.locator('body').innerText()).toContain(dsSlug);
+    await expect.poll(() => page.locator('body').innerText()).toContain('E2E Envelope DS');
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);

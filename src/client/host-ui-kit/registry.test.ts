@@ -77,7 +77,7 @@ describe('Host UI Kit catalog registry (M34/L12)', () => {
     expect(block?.stability).toBe('experimental');
     // Adding it to the catalog must NOT pull it into `hostApiVersion`.
     expect(STABLE_UI_KIT_COMPONENTS).not.toContain('EntityVersionHistoryView');
-    expect(HOST_API_VERSION).toBe('3.0.0');
+    expect(HOST_API_VERSION).toBe('2.0.0');
   });
 
   it('derived stable set matches the React-free versioned surface (no drift)', () => {

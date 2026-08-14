@@ -5,7 +5,7 @@ import { spreadsheetCommands } from './capabilities/commands.js';
 /**
  * The envelope's manifest.
  *
- * `hostApiVersion: '^3.0.0'` is the whole reason this package exists as a port
+ * `hostApiVersion: '^2.0.0'` is the whole reason this package exists as a port
  * rather than a copy. The published plugin `c4s-plugin-spreadsheets 0.0.6`
  * declared `^1.0.0`, and the loader's version gate `continue`s BEFORE
  * `registerPlugin` — so under 2.0.0 it did not fail loudly, it simply was not
@@ -20,7 +20,7 @@ import { spreadsheetCommands } from './capabilities/commands.js';
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-spreadsheets',
   version: '0.2.12',
-  hostApiVersion: '^3.0.0',
+  hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     entities: [spreadsheetEntity],

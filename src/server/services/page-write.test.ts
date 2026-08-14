@@ -23,7 +23,6 @@ import { createDiscoveryCore, findReferencesAll } from '../discovery/index.js';
 import type { DiscoveryCore } from '../discovery/types.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../serialization/serializers/section.js';
 import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 import { registerExtensionReferenceType } from '../../shared/reference-extensions.js';
 
@@ -197,7 +196,7 @@ describe('the page write primitive', () => {
         reader: new RawEntityReader(db, host),
         db,
         host,
-        serialization: new SerializationEngine(host, sectionSerializer),
+        serialization: new SerializationEngine(host),
         roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
         projectDir: dir,
         packageVersion: 'test',
@@ -305,7 +304,7 @@ describe('update_sections over a real section index', () => {
       reader: new RawEntityReader(db, host),
       db,
       host,
-      serialization: new SerializationEngine(host, sectionSerializer),
+      serialization: new SerializationEngine(host),
       roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
       projectDir: cwd,
       packageVersion: 'test',
@@ -985,7 +984,7 @@ describe('update_sections — the anchor-loss guard', () => {
       reader: new RawEntityReader(db, host),
       db,
       host,
-      serialization: new SerializationEngine(host, sectionSerializer),
+      serialization: new SerializationEngine(host),
       roots: [{ id: 'pages', name: 'Pages', dir: 'pages', builtin: true, ...DEFAULT_PAGES_ROOT_PROPS }],
       projectDir: cwd,
       packageVersion: 'test',

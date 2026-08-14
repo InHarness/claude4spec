@@ -19,7 +19,7 @@ import type { PageSource } from '../page-source.js';
 import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import type { RawEntityReader, RawSection } from '../raw-entity-reader.js';
 import type { RootSet } from '../roots.js';
-import type { SerializationEngine } from '../../core/plugin-host/serialization-engine.js';
+import { serializeSection } from '../../serialization/serializers/section.js';
 import { bodySize, hydrateSection } from '../section-hydrator.js';
 import { applyItemBudget, MAX_ANCHORS_PER_CALL, truncateText } from '../budget.js';
 import type {
@@ -158,7 +158,7 @@ export function toRawSection(row: Record<string, unknown>): RawSection {
 /**
  * 0.2.5 — `get_sections`, the batched successor to `get_section`.
  *
- * The batching lives HERE and nowhere below: the `detail` view (M06) still
+ * The batching lives HERE and nowhere below: the section serializer (M06) still
  * serializes exactly one section, and this loop calls it once per anchor. A
  * serializer that knew about lists would be a second definition of what a
  * section is.
@@ -173,7 +173,6 @@ export async function getSections(
   pages: PageSource,
   roots: RootSet,
   reader: RawEntityReader,
-  serialization: SerializationEngine,
   input: GetSectionsInput,
 ): Promise<GetSectionsResult> {
   const requested = Array.isArray(input.anchors) ? input.anchors : [];
@@ -259,7 +258,7 @@ export async function getSections(
       });
       continue;
     }
-    const fetched = await fetchOne(db, pages, reader, serialization, section, includeSubtree);
+    const fetched = await fetchOne(db, pages, section, includeSubtree);
     items.push(fetched.item);
     edgesByAnchor.set(anchor, fetched.edges);
     if (fetched.hint) textHints.push(fetched.hint);
@@ -290,19 +289,22 @@ const RETRY_HINT =
 async function fetchOne(
   db: Database,
   pages: PageSource,
-  reader: RawEntityReader,
-  serialization: SerializationEngine,
   section: RawSection,
   includeSubtree: boolean,
 ): Promise<{ item: SectionResultItem; edges: SectionEdges; hint?: string }> {
   const hydrated = await hydrateSection(db, pages, section, includeSubtree);
-  // The `detail` view IS the source for this operation — the core does not
-  // hand-roll a second section shape beside the serializer's. What it does own
-  // is the WIRE naming: the operation's contract is snake_case, while the
-  // serializer's camelCase is what the editor and every existing consumer of
-  // `single_element` already compile against. Projecting here keeps one source
-  // of truth without renaming a shipped shape out from under its consumers.
-  const detail = serialization.serializeSection('detail', hydrated, reader).data as Record<string, unknown>;
+  // The section serializer IS the source for this operation — the core does not
+  // hand-roll a second section shape beside it. What it does own is the WIRE
+  // naming: the operation's contract is snake_case, while the serializer's
+  // camelCase is what the editor and every existing consumer already compile
+  // against. Projecting here keeps one source of truth without renaming a
+  // shipped shape out from under its consumers.
+  //
+  // 0.2.23 — a direct call, not a dispatch through the engine. `section` rode
+  // the entity serializer's view registry as a pseudo-type; with the views gone
+  // that registry has one caller and one shape, so the indirection was carrying
+  // nothing.
+  const detail = serializeSection(hydrated) as Record<string, unknown>;
   const edges = (detail.edges as SectionEdges | undefined) ?? hydrated.edges;
 
   /**

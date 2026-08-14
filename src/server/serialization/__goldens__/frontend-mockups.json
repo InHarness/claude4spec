@@ -75,202 +75,81 @@
     "tags": [],
     "title": "Brand2026"
   },
-  "design-system/brand-2026/inline_mention": {
+  "design-system/brand-2026/record": {
     "type": "design-system",
     "slug": "brand-2026",
-    "label": "Brand2026",
-    "href": "/design-systems/brand-2026"
-  },
-  "design-system/brand-2026/single_element": {
-    "type": "design-system",
-    "slug": "brand-2026",
-    "title": "Brand2026",
-    "description": "Podstawowy system — kolory i typografia",
-    "groups": [
-      {
-        "name": "color",
-        "tier": "primitive",
-        "tokens": [
-          {
-            "name": "brand-primary",
-            "type": "color",
-            "value": "#2563eb",
-            "description": "Main brand blue",
-            "resolvedValue": "#2563eb"
-          },
-          {
-            "name": "action",
-            "type": "color",
-            "value": "{brand-primary}",
-            "resolvedValue": "#2563eb"
-          }
-        ]
-      },
-      {
-        "name": "type",
-        "tier": "semantic",
-        "tokens": [
-          {
-            "name": "heading-1",
-            "type": "typography",
-            "value": {
-              "fontSize": "32px",
-              "lineHeight": "1.2",
-              "fontWeight": "700"
-            },
-            "resolvedValue": {
-              "fontSize": "32px",
-              "lineHeight": "1.2",
-              "fontWeight": "700"
-            }
-          },
-          {
-            "name": "size-sm",
-            "type": "fontSize",
-            "value": "12px",
-            "resolvedValue": "12px"
-          },
-          {
-            "name": "size-md",
-            "type": "fontSize",
-            "value": "16px",
-            "resolvedValue": "16px"
-          },
-          {
-            "name": "size-xl",
-            "type": "fontSize",
-            "value": "24px",
-            "resolvedValue": "24px"
-          }
-        ]
-      },
-      {
-        "name": "spacing",
-        "tier": "primitive",
-        "tokens": []
-      }
-    ],
-    "modes": [
-      {
-        "name": "dark",
-        "overrides": [
-          {
-            "token": "brand-primary",
-            "value": "#60a5fa"
-          }
-        ]
-      },
-      {
-        "name": "high-contrast",
-        "overrides": []
-      }
-    ],
-    "tags": []
-  },
-  "design-system/brand-2026/element_list_item": {
-    "type": "design-system",
-    "slug": "brand-2026",
-    "title": "Brand2026",
-    "description": "Podstawowy system — kolory i typografia",
-    "groupCount": 3,
-    "tokenCount": 6,
-    "tags": []
-  },
-  "design-system/brand-2026/tagged_list_item": {
-    "type": "design-system",
-    "slug": "brand-2026",
-    "title": "Brand2026",
-    "description": "Podstawowy system — kolory i typografia",
-    "groupCount": 3,
-    "tokenCount": 6,
-    "tags": []
-  },
-  "design-system/brand-2026/detail": {
-    "type": "design-system",
-    "slug": "brand-2026",
-    "title": "Brand2026",
-    "description": "Podstawowy system — kolory i typografia",
-    "groups": [
-      {
-        "name": "color",
-        "tier": "primitive",
-        "tokens": [
-          {
-            "name": "brand-primary",
-            "type": "color",
-            "value": "#2563eb",
-            "description": "Main brand blue",
-            "resolvedValue": "#2563eb"
-          },
-          {
-            "name": "action",
-            "type": "color",
-            "value": "{brand-primary}",
-            "resolvedValue": "#2563eb"
-          }
-        ]
-      },
-      {
-        "name": "type",
-        "tier": "semantic",
-        "tokens": [
-          {
-            "name": "heading-1",
-            "type": "typography",
-            "value": {
-              "fontSize": "32px",
-              "lineHeight": "1.2",
-              "fontWeight": "700"
-            },
-            "resolvedValue": {
-              "fontSize": "32px",
-              "lineHeight": "1.2",
-              "fontWeight": "700"
-            }
-          },
-          {
-            "name": "size-sm",
-            "type": "fontSize",
-            "value": "12px",
-            "resolvedValue": "12px"
-          },
-          {
-            "name": "size-md",
-            "type": "fontSize",
-            "value": "16px",
-            "resolvedValue": "16px"
-          },
-          {
-            "name": "size-xl",
-            "type": "fontSize",
-            "value": "24px",
-            "resolvedValue": "24px"
-          }
-        ]
-      },
-      {
-        "name": "spacing",
-        "tier": "primitive",
-        "tokens": []
-      }
-    ],
-    "modes": [
-      {
-        "name": "dark",
-        "overrides": [
-          {
-            "token": "brand-primary",
-            "value": "#60a5fa"
-          }
-        ]
-      },
-      {
-        "name": "high-contrast",
-        "overrides": []
-      }
-    ],
     "tags": [],
-    "_references": []
+    "title": "Brand2026",
+    "description": "Podstawowy system — kolory i typografia",
+    "groups": [
+      {
+        "name": "color",
+        "tier": "primitive",
+        "tokens": [
+          {
+            "name": "brand-primary",
+            "type": "color",
+            "value": "#2563eb",
+            "description": "Main brand blue"
+          },
+          {
+            "name": "action",
+            "type": "color",
+            "value": "{brand-primary}"
+          }
+        ]
+      },
+      {
+        "name": "type",
+        "tier": "semantic",
+        "tokens": [
+          {
+            "name": "heading-1",
+            "type": "typography",
+            "value": {
+              "fontSize": "32px",
+              "lineHeight": "1.2",
+              "fontWeight": 700
+            }
+          },
+          {
+            "name": "size-sm",
+            "type": "fontSize",
+            "value": "12px"
+          },
+          {
+            "name": "size-md",
+            "type": "fontSize",
+            "value": "16px"
+          },
+          {
+            "name": "size-xl",
+            "type": "fontSize",
+            "value": "24px"
+          }
+        ]
+      },
+      {
+        "name": "spacing",
+        "tier": "primitive",
+        "tokens": []
+      }
+    ],
+    "modes": [
+      {
+        "name": "dark",
+        "overrides": [
+          {
+            "token": "brand-primary",
+            "value": "#60a5fa"
+          }
+        ]
+      },
+      {
+        "name": "high-contrast",
+        "overrides": []
+      }
+    ]
   },
   "design-system/legacy-tokens/snapshot": {
     "description": null,
@@ -280,48 +159,14 @@
     "tags": [],
     "title": "LegacyTokens"
   },
-  "design-system/legacy-tokens/inline_mention": {
+  "design-system/legacy-tokens/record": {
     "type": "design-system",
     "slug": "legacy-tokens",
-    "label": "LegacyTokens",
-    "href": "/design-systems/legacy-tokens"
-  },
-  "design-system/legacy-tokens/single_element": {
-    "type": "design-system",
-    "slug": "legacy-tokens",
-    "title": "LegacyTokens",
-    "description": null,
-    "groups": [],
-    "modes": [],
-    "tags": []
-  },
-  "design-system/legacy-tokens/element_list_item": {
-    "type": "design-system",
-    "slug": "legacy-tokens",
-    "title": "LegacyTokens",
-    "description": null,
-    "groupCount": 0,
-    "tokenCount": 0,
-    "tags": []
-  },
-  "design-system/legacy-tokens/tagged_list_item": {
-    "type": "design-system",
-    "slug": "legacy-tokens",
-    "title": "LegacyTokens",
-    "description": null,
-    "groupCount": 0,
-    "tokenCount": 0,
-    "tags": []
-  },
-  "design-system/legacy-tokens/detail": {
-    "type": "design-system",
-    "slug": "legacy-tokens",
-    "title": "LegacyTokens",
-    "description": null,
-    "groups": [],
-    "modes": [],
     "tags": [],
-    "_references": []
+    "title": "LegacyTokens",
+    "description": null,
+    "groups": [],
+    "modes": []
   },
   "ui-view.payloadVersion": 2,
   "ui-view/confirm-dialog/snapshot": {
@@ -333,51 +178,15 @@
     "title": "ConfirmDialog",
     "url": null
   },
-  "ui-view/confirm-dialog/inline_mention": {
+  "ui-view/confirm-dialog/record": {
     "type": "ui-view",
     "slug": "confirm-dialog",
-    "label": "ConfirmDialog",
-    "url": null,
-    "href": "/ui-views/confirm-dialog"
-  },
-  "ui-view/confirm-dialog/single_element": {
-    "type": "ui-view",
-    "slug": "confirm-dialog",
-    "title": "ConfirmDialog",
-    "url": null,
-    "description": null,
-    "params": [],
-    "designSystemSlug": null,
-    "tags": []
-  },
-  "ui-view/confirm-dialog/element_list_item": {
-    "type": "ui-view",
-    "slug": "confirm-dialog",
-    "title": "ConfirmDialog",
-    "url": null,
-    "description": null,
-    "paramCount": 0,
-    "tags": []
-  },
-  "ui-view/confirm-dialog/tagged_list_item": {
-    "type": "ui-view",
-    "slug": "confirm-dialog",
-    "title": "ConfirmDialog",
-    "url": null,
-    "description": null,
-    "paramCount": 0,
-    "tags": []
-  },
-  "ui-view/confirm-dialog/detail": {
-    "type": "ui-view",
-    "slug": "confirm-dialog",
-    "title": "ConfirmDialog",
-    "url": null,
-    "description": null,
-    "params": [],
-    "designSystemSlug": null,
     "tags": [],
-    "_references": []
+    "title": "ConfirmDialog",
+    "url": null,
+    "description": null,
+    "params": [],
+    "designSystemSlug": null
   },
   "ui-view/orphan-view/snapshot": {
     "description": null,
@@ -388,51 +197,15 @@
     "title": "OrphanView",
     "url": "/orphan"
   },
-  "ui-view/orphan-view/inline_mention": {
+  "ui-view/orphan-view/record": {
     "type": "ui-view",
     "slug": "orphan-view",
-    "label": "OrphanView",
-    "url": "/orphan",
-    "href": "/ui-views/orphan-view"
-  },
-  "ui-view/orphan-view/single_element": {
-    "type": "ui-view",
-    "slug": "orphan-view",
-    "title": "OrphanView",
-    "url": "/orphan",
-    "description": null,
-    "params": [],
-    "designSystemSlug": "never-existed",
-    "tags": []
-  },
-  "ui-view/orphan-view/element_list_item": {
-    "type": "ui-view",
-    "slug": "orphan-view",
-    "title": "OrphanView",
-    "url": "/orphan",
-    "description": null,
-    "paramCount": 0,
-    "tags": []
-  },
-  "ui-view/orphan-view/tagged_list_item": {
-    "type": "ui-view",
-    "slug": "orphan-view",
-    "title": "OrphanView",
-    "url": "/orphan",
-    "description": null,
-    "paramCount": 0,
-    "tags": []
-  },
-  "ui-view/orphan-view/detail": {
-    "type": "ui-view",
-    "slug": "orphan-view",
-    "title": "OrphanView",
-    "url": "/orphan",
-    "description": null,
-    "params": [],
-    "designSystemSlug": "never-existed",
     "tags": [],
-    "_references": []
+    "title": "OrphanView",
+    "url": "/orphan",
+    "description": null,
+    "params": [],
+    "designSystemSlug": "never-existed"
   },
   "ui-view/user-profile/snapshot": {
     "description": "Ekran profilu — zakładki",
@@ -463,90 +236,34 @@
     "title": "UserProfile",
     "url": "/users/:id"
   },
-  "ui-view/user-profile/inline_mention": {
+  "ui-view/user-profile/record": {
     "type": "ui-view",
     "slug": "user-profile",
-    "label": "UserProfile",
-    "url": "/users/:id",
-    "href": "/ui-views/user-profile"
-  },
-  "ui-view/user-profile/single_element": {
-    "type": "ui-view",
-    "slug": "user-profile",
-    "title": "UserProfile",
-    "url": "/users/:id",
-    "description": "Ekran profilu — zakładki",
-    "params": [
-      {
-        "name": "id",
-        "in": "path",
-        "type": "uuid",
-        "required": true,
-        "description": "User id"
-      },
-      {
-        "name": "tab",
-        "in": "query",
-        "type": "enum",
-        "required": false,
-        "default": "overview"
-      },
-      {
-        "name": "anchor",
-        "in": "hash",
-        "type": "string"
-      }
-    ],
-    "designSystemSlug": "brand-2026",
-    "tags": []
-  },
-  "ui-view/user-profile/element_list_item": {
-    "type": "ui-view",
-    "slug": "user-profile",
-    "title": "UserProfile",
-    "url": "/users/:id",
-    "description": "Ekran profilu — zakładki",
-    "paramCount": 3,
-    "tags": []
-  },
-  "ui-view/user-profile/tagged_list_item": {
-    "type": "ui-view",
-    "slug": "user-profile",
-    "title": "UserProfile",
-    "url": "/users/:id",
-    "description": "Ekran profilu — zakładki",
-    "paramCount": 3,
-    "tags": []
-  },
-  "ui-view/user-profile/detail": {
-    "type": "ui-view",
-    "slug": "user-profile",
-    "title": "UserProfile",
-    "url": "/users/:id",
-    "description": "Ekran profilu — zakładki",
-    "params": [
-      {
-        "name": "id",
-        "in": "path",
-        "type": "uuid",
-        "required": true,
-        "description": "User id"
-      },
-      {
-        "name": "tab",
-        "in": "query",
-        "type": "enum",
-        "required": false,
-        "default": "overview"
-      },
-      {
-        "name": "anchor",
-        "in": "hash",
-        "type": "string"
-      }
-    ],
-    "designSystemSlug": "brand-2026",
     "tags": [],
-    "_references": []
+    "title": "UserProfile",
+    "url": "/users/:id",
+    "description": "Ekran profilu — zakładki",
+    "params": [
+      {
+        "name": "id",
+        "in": "path",
+        "type": "uuid",
+        "required": true,
+        "description": "User id"
+      },
+      {
+        "name": "tab",
+        "in": "query",
+        "type": "enum",
+        "required": false,
+        "default": "overview"
+      },
+      {
+        "name": "anchor",
+        "in": "hash",
+        "type": "string"
+      }
+    ],
+    "designSystemSlug": "brand-2026"
   }
 }

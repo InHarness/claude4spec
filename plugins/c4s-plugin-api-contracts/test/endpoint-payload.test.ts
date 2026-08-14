@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { endpointSerializer } from '../src/entity/endpoint/views.js';
+import { endpointSerializer } from '../src/entity/endpoint/serializer.js';
 import { endpointPayloadV1ToV2 } from '../src/entity/endpoint/upgrades.js';
 import { endpointEntity } from '../src/entity/endpoint/index.js';
 

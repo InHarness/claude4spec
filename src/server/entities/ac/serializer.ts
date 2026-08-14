@@ -1,5 +1,4 @@
-import type { RawEntity, RawEntityReader } from '../../discovery/raw-entity-reader.js';
-import { classifyVerifies } from './classify-verifies.js';
+import type { RawEntity } from '../../discovery/raw-entity-reader.js';
 import { acPayloadUpgrades } from './upgrades.js';
 import type {
   EntityDiff,
@@ -8,25 +7,6 @@ import type {
   SerializationContribution,
 } from '../../serialization/types.js';
 import type { AcKind, AcStatus, AcVerifyRef } from '../../../shared/entities.js';
-
-function baseSingle(entity: RawEntity) {
-  return {
-    type: 'ac',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? '',
-    text: (entity.data.text as string) ?? '',
-    kind: ((entity.data.kind as AcKind) ?? 'requirement') as AcKind,
-    status: ((entity.data.status as AcStatus) ?? 'active') as AcStatus,
-    verifies: ((entity.data.verifies as AcVerifyRef[] | undefined) ?? []),
-    description: (entity.data.description as string | null) ?? null,
-    tags: entity.tags,
-  };
-}
-
-function withBrokenVerifies(entity: RawEntity, reader: RawEntityReader) {
-  const base = baseSingle(entity);
-  return { ...base, brokenVerifies: classifyVerifies(reader.host, base.verifies) };
-}
 
 // ─── M17 Snapshot shape ─────────────────────────────────────────────────────
 
@@ -94,46 +74,5 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 export const acSerializer: SerializationContribution<RawEntity> = {
   payloadVersion: 2,
   payloadUpgrades: acPayloadUpgrades,
-  views: {
-    inline_mention: (entity) => ({
-      type: 'ac',
-      slug: entity.slug,
-      // 0.2.22 — the label is `title`, on every type, with no per-type rule. It
-      // used to be `text`, truncated again by the chip; `title` is already
-      // bounded at 200 characters by the host, so nobody shortens it twice.
-      label: (entity.data.title as string) ?? entity.slug,
-      href: `/acs/${entity.slug}`,
-    }),
-
-    /**
-     * `brokenVerifies` rides the SINGLE views, not the list ones.
-     *
-     * It used to be bolted onto three `acsRouter` handlers, which is why only
-     * REST ever saw it; tier K deleted that router, so it moved to where the
-     * entity is described and every transport gets the same answer. It stays
-     * off `element_list_item` deliberately — classifying costs one host lookup
-     * per ref, and the list row does not render it.
-     */
-    single_element: (entity, reader) => withBrokenVerifies(entity, reader),
-
-    element_list_item: (entity) => baseSingle(entity),
-
-    tagged_list_item: (entity) => baseSingle(entity),
-
-    detail: (entity, reader) => {
-      const base = withBrokenVerifies(entity, reader);
-      const references = reader.findSectionReferences('ac', entity.slug).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return {
-        ...base,
-        _references: references,
-      };
-    },
-  },
-
   diff: acDiff,
 };

@@ -25,7 +25,6 @@ import { PagesService } from '../services/pages.js';
 import { createDiscoveryCore } from './index.js';
 import { RawEntityReader } from './raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../serialization/serializers/section.js';
 import { DEFAULT_PAGES_ROOT_PROPS } from '../../shared/types.js';
 import type { Root } from '../../shared/types.js';
 import type { DiscoveryCore, GetSectionsResult, SectionResultItem } from './types.js';
@@ -75,7 +74,7 @@ describe('discovery core over the real section indexer', () => {
       reader: new RawEntityReader(db, host),
       db,
       host,
-      serialization: new SerializationEngine(host, sectionSerializer),
+      serialization: new SerializationEngine(host),
       roots: [pagesRoot],
       projectDir: cwd,
       packageVersion: 'test',

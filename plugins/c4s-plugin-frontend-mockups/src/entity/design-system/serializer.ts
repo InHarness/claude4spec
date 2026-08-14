@@ -1,4 +1,4 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -33,53 +33,7 @@ export interface DesignSystemSnapshot {
   tags: string[];
 }
 
-function readGroups(entity: RawEntity): TokenGroup[] {
-  return parseGroups(entity.data.groups);
-}
-
-function readModes(entity: RawEntity): DesignMode[] {
-  return parseModes(entity.data.modes);
-}
-
 // ─── view helpers ────────────────────────────────────────────────────────────
-
-function baseSingle(entity: RawEntity) {
-  const groups = readGroups(entity);
-  const modes = readModes(entity);
-  const resolved = resolve(groups, modes); // Base mode
-  return {
-    type: 'design-system',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    description: (entity.data.description as string | null) ?? null,
-    groups: groups.map((g) => ({
-      name: g.name,
-      tier: g.tier,
-      tokens: g.tokens.map((t) => ({
-        name: t.name,
-        type: t.type,
-        value: t.value,
-        ...(t.description !== undefined ? { description: t.description } : {}),
-        resolvedValue: resolved[t.name],
-      })),
-    })),
-    modes,
-    tags: entity.tags,
-  };
-}
-
-function trimItem(entity: RawEntity) {
-  const groups = readGroups(entity);
-  return {
-    type: 'design-system',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    description: (entity.data.description as string | null) ?? null,
-    groupCount: groups.length,
-    tokenCount: groups.reduce((acc, g) => acc + g.tokens.length, 0),
-    tags: entity.tags,
-  };
-}
 
 // ─── snapshot / restore / diff ──────────────────────────────────────────────
 
@@ -210,31 +164,17 @@ function designSystemDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 // ─── schemas ─────────────────────────────────────────────────────────────────
 
+/**
+ * 0.2.23 — `resolve()` stays; the view that called it does not.
+ *
+ * `single_element` emitted each token twice: the raw `value` as authored and a
+ * `resolvedValue` with `{token}` aliases expanded in Base mode. Expanding an
+ * alias is a presentation decision — which mode, at what moment — and the record
+ * now carries the raw value alone. `resolve()` itself is untouched and has the
+ * two callers it always really had: `frontend.renderCard` and the live preview
+ * in the detail panel.
+ */
 export const designSystemSerializer: SerializationContribution<RawEntity> = {
-  views: {
-    inline_mention: (entity) => ({
-      type: 'design-system',
-      slug: entity.slug,
-      label: (entity.data.title as string) ?? entity.slug,
-      href: `/design-systems/${entity.slug}`,
-    }),
-
-    single_element: (entity) => baseSingle(entity),
-    element_list_item: (entity) => trimItem(entity),
-    tagged_list_item: (entity) => trimItem(entity),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const references = (reader.findSectionReferences('design-system', entity.slug) as SectionEntityRef[]).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return { ...base, _references: references };
-    },
-  },
-
   diff: designSystemDiff,
 
   /** v1 files carry a synthesised `description: null` on every token; v2 files spell the label `name`. */

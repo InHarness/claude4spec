@@ -218,7 +218,7 @@ export function EndpointDetail({
               key: rel,
               label: rel,
               items: allDtos.map((d) => {
-                const link = endpoint.dtos.find((l) => l.dtoSlug === d.slug && l.relation === rel);
+                const link = endpoint.linkedDtos.find((l) => l.dto === d.slug && l.relation === rel);
                 return {
                   id: d.slug,
                   label: d.title,
@@ -236,7 +236,7 @@ export function EndpointDetail({
               }),
             }))}
             selected={RELATIONS.reduce<Record<string, string[]>>((acc, rel) => {
-              acc[rel] = endpoint.dtos.filter((l) => l.relation === rel).map((l) => l.dtoSlug);
+              acc[rel] = endpoint.linkedDtos.filter((l) => l.relation === rel).map((l) => l.dto);
               return acc;
             }, {})}
             onAdd={(rel, dtoSlug) => {
@@ -246,7 +246,7 @@ export function EndpointDetail({
             }}
             onRemove={(rel, dtoSlug) => {
               const relation = rel as EndpointDtoRelation;
-              const link = endpoint.dtos.find((l) => l.dtoSlug === dtoSlug && l.relation === relation);
+              const link = endpoint.linkedDtos.find((l) => l.dto === dtoSlug && l.relation === relation);
               unlinkDto.mutate({ slug: endpoint.slug, dtoSlug, relation, statusCode: link?.statusCode ?? null });
             }}
           />

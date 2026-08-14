@@ -3,32 +3,95 @@ import {
   columnOf,
   contentBearingKeys,
   contentBytes,
+  isEmbedded,
+  isKeyed,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
-import type { ViewKind } from './types.js';
 
 /**
- * The payload the host builds when a type does not compute a view itself.
+ * THE read record — the only shape an entity is ever read in.
  *
- * 0.2.9 renamed this from `fallback`: with schemas, snapshot and restore all
- * derived from `data.schema`, a type that computes nothing is fully served
- * rather than degraded. `_generic: true` says "the host shaped this row", which
- * is a fact about provenance — not, as `_fallback` implied, an apology.
+ * 0.2.9 renamed this from `fallback` (a type that declares its data and computes
+ * nothing is fully served, not degraded); 0.2.23 made the name redundant in the
+ * other direction. There is no non-generic payload left to distinguish this
+ * from, so the provenance markers `_generic` / `_type` / `_view` go with the
+ * distinction they described: a flag every row carries identically tells a
+ * consumer nothing.
+ *
+ * Width is not decided here. This produces the widest honest record and
+ * `discovery/project.ts` cuts it to the caller's `select`.
  */
 export function genericEntity(
   entity: RawEntity,
-  view: ViewKind,
   schema?: Readonly<Record<string, FieldNode>>,
+  /**
+   * Reads the collections that live in their OWN projection table.
+   *
+   * `hydrate` copies the entity's own row and nothing else, so a collection with
+   * a `projectionTable` is simply absent from `entity.data`. Until 0.2.23 that
+   * did not show, because the types owning one fetched it in their own `detail`
+   * view — `endpoint`'s read its `endpoint_dto` junction by hand. With the views
+   * gone the host has to do it, or a declared field silently stops being read.
+   *
+   * Optional because two callers have no reader to give (snapshot generation
+   * reads collections its own way, and the CLI engine builds records without
+   * one); an absent reader means the record carries only what the row holds.
+   */
+  collections?: CollectionReader,
+  /**
+   * The caller's `select`, so a collection nobody asked for is never READ.
+   *
+   * Projection happens downstream, in `discovery/project.ts`, and letting it do
+   * all the narrowing would mean a list page paying one junction query per row
+   * for fields it discards — `resolveElementList` passes `select: []` and would
+   * still have queried. Undefined means no `select` at all, which asks for the
+   * whole record; `[]` asks for identity only.
+   */
+  select?: readonly string[],
 ): Record<string, unknown> {
   return {
     type: entity.type,
     slug: entity.slug,
     tags: entity.tags,
     ...byFieldName(entity.data, schema),
-    _generic: true,
-    _type: entity.type,
-    _view: view,
+    ...projectedCollections(entity, schema, collections, select),
   };
+}
+
+export interface CollectionReader {
+  readCollection(type: string, slug: string, field: string): unknown[];
+  countCollection(type: string, slug: string, field: string): number;
+}
+
+/**
+ * The declared collections that are not on the entity's row.
+ *
+ * Two kinds, two answers, and the difference is the declaration's:
+ *
+ *   - a VALUE collection is opaque and read whole, so it travels inline;
+ *   - a KEYED collection is addressed by key and read in windows, so the record
+ *     carries only its OVERVIEW — never a full materialisation. An overview of a
+ *     keyed collection is its shape, not a sample of its contents, which is why
+ *     `count` is all of it: a 200x40 spreadsheet must not put 8 000 cells into
+ *     a record nobody asked to be that wide. It must not READ 8 000 cells to say
+ *     so either, hence `countCollection` rather than `readCollection().length`.
+ */
+function projectedCollections(
+  entity: RawEntity,
+  schema: Readonly<Record<string, FieldNode>> | undefined,
+  collections: CollectionReader | undefined,
+  select: readonly string[] | undefined,
+): Record<string, unknown> {
+  if (!schema || !collections) return {};
+  const out: Record<string, unknown> = {};
+  for (const [name, node] of Object.entries(schema)) {
+    if (node.kind !== 'collection' || isEmbedded(node)) continue;
+    if (select && !select.includes(name)) continue;
+    out[name] = isKeyed(node)
+      ? { count: collections.countCollection(entity.type, entity.slug, name) }
+      : collections.readCollection(entity.type, entity.slug, name);
+  }
+  return out;
 }
 
 /**
@@ -97,7 +160,7 @@ function byFieldName(
   return out;
 }
 
-export function genericSection(section: RawSection, view: ViewKind): Record<string, unknown> {
+export function genericSection(section: RawSection): Record<string, unknown> {
   return {
     type: 'section',
     anchor: section.anchor,
@@ -107,8 +170,5 @@ export function genericSection(section: RawSection, view: ViewKind): Record<stri
     headingLevel: section.headingLevel,
     lineStart: section.lineStart,
     lineEnd: section.lineEnd,
-    _generic: true,
-    _type: 'section',
-    _view: view,
   };
 }

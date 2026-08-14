@@ -291,49 +291,17 @@ export function DtoDetail({
           />
         </div>
 
-        {/* Defensive: `endpoints` comes from the `detail` view only, so a caller
-            that fetched `single_element` must degrade rather than throw. */}
-        {(dto.endpoints?.length ?? 0) > 0 && (
-          <div className="mt-6">
-          <FieldRow label="Used by endpoints" align="start">
-            <ul
-              className="rounded-md"
-              style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
-            >
-              {dto.endpoints?.map((link, i) => (
-                <li
-                  key={`${link.endpointSlug}-${link.relation}-${link.statusCode ?? 'null'}`}
-                  className="px-3 py-1.5 text-[12.5px] flex items-center gap-2"
-                  style={{ borderTop: i === 0 ? 'none' : '1px solid var(--c-hair)' }}
-                >
-                  <span
-                    className="text-[10.5px] uppercase font-mono tracking-wider"
-                    style={{ color: 'var(--c-subtle)', minWidth: 64 }}
-                  >
-                    {link.relation}
-                  </span>
-                  <button
-                    onClick={() => onOpenEntity?.('endpoint', link.endpointSlug)}
-                    className="inline-flex items-center gap-2 hover:underline"
-                    style={{ color: 'var(--c-accent-ink, var(--c-accent))' }}
-                  >
-                    <MethodChip method={link.method} />
-                    <span className="font-mono">{link.path}</span>
-                  </button>
-                  {link.statusCode !== null && (
-                    <span
-                      className="font-mono text-[10.5px] px-1.5 py-0.5 rounded"
-                      style={{ background: 'var(--c-panel)', color: 'var(--c-muted)' }}
-                    >
-                      @ {link.statusCode}
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </FieldRow>
-          </div>
-        )}
+        {/*
+          "Used by endpoints" is NOT rendered here any more.
+          
+          It read `dto.endpoints`, a reverse join the retired `detail` view
+          computed. The spec keeps the endpoint<->DTO edge once, on the endpoint
+          side, and describes the reverse direction as "a derivation of the same
+          projection" — but specifies no operation that derives it. Rather than
+          invent a route, the section is dropped and a patch is filed: the UI
+          position is in the spec (`dto.md`), the surface behind it is not.
+          Reach it from the endpoint side, or via `find_references`.
+        */}
 
         <div className="mt-6">
         <FieldRow label="Find references" align="start">

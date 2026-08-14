@@ -5,7 +5,7 @@ import { databaseTableCommands } from './capabilities/commands.js';
 /**
  * The envelope's manifest.
  *
- * `hostApiVersion: '^3.0.0'` is the entire reason this package exists. BOTH
+ * `hostApiVersion: '^2.0.0'` is the entire reason this package exists. BOTH
  * packages that used to contribute `database-table` declare `^1.0.0`, and the
  * loader's version gate `continue`s BEFORE `registerPlugin` — so under 2.0.0
  * the type did not fail loudly, it simply was not there. No sidebar tab, no
@@ -28,7 +28,7 @@ import { databaseTableCommands } from './capabilities/commands.js';
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-database-tables',
   version: '0.2.12',
-  hostApiVersion: '^3.0.0',
+  hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     entities: [databaseTableEntity],

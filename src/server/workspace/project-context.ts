@@ -110,7 +110,6 @@ import { externalSkillsRouter } from '../routes/external-skills.js';
 import type { PeerProject } from '../services/chat-context.js';
 import type { PluginRegistry, ProjectPluginHost, ProjectPluginOverlay } from '../core/plugin-host/types.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../serialization/serializers/section.js';
 import { pluginHostRouter } from '../core/plugin-host/cross-cutting.js';
 import {
   enumerateOverlayPackages,
@@ -843,7 +842,7 @@ async function buildInner(
   // exactly once per ProjectContext. Hoisted here (rather than at its prior
   // construction site near the return statement) so both this registration and
   // the final `serialization:` field below share one SerializationEngine.
-  const serializationEngine = new SerializationEngine(pluginHost, sectionSerializer);
+  const serializationEngine = new SerializationEngine(pluginHost);
   /**
    * M39: one discovery core per project context, shared by every in-process
    * tool server. The built-in chat agent reaching the spec through the same

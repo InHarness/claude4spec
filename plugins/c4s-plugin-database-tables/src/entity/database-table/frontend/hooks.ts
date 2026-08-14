@@ -61,11 +61,12 @@ export function useCreateDatabaseTable() {
     /**
      * INVALIDATE, do not seed.
      *
-     * The detail query asks for `?view=detail`; a write answers
-     * `single_element`, which for this type is the SUMMARY — counts, no
-     * `columns`. Seeding the detail cache with it would leave the editor
-     * rendering a table with no columns until the next refetch, and because the
-     * editors render from `columns ?? []` it would do so silently.
+     * A write's response and a read's are the same shape since 0.2.23 — one
+     * record, `columns` included — so seeding no longer risks what it used to:
+     * the detail query asked for `?view=detail` while a write answered the
+     * counts-only summary, and seeding that left the editor rendering a table
+     * with no columns, silently, because the editors render `columns ?? []`.
+     * It stays an invalidate because a refetch also picks up concurrent writes.
      */
     onSuccess: (table: DatabaseTable) => {
       qc.invalidateQueries({ queryKey: keys.all });

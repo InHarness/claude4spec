@@ -60,7 +60,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: 'c4s-plugin-api-contracts',
     version: '1.0.0',
-    hostApiVersion: '^3.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('endpoint'), entity('dto')] },
     ...over,

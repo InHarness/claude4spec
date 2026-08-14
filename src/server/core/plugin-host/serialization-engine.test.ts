@@ -1,20 +1,20 @@
 /**
- * L9 dispatch, at the seam where a plugin's code meets the host's.
+ * L9 dispatch, at the seam where a plugin's declaration meets the host's reader.
  *
- * The engine's three lookup outcomes (declared view → computed; undeclared view
- * → generic; unknown type → marker for the core to map) were exercised only
- * indirectly, through the discovery ops that sit on top. The arm that matters
- * most had no test at all: what the host does when a plugin's own view function
- * throws. A bug in one type's `detail` must not take down a `get_entities` call
- * that happens to include that type.
+ * There used to be three lookup outcomes here — declared view → computed,
+ * undeclared view → generic, unknown type → a marker for the core to map — and
+ * a fourth, worst arm where a plugin's own view function threw. 0.2.23 removed
+ * the views, and with them every branch but one: the host derives the record
+ * from `data.schema` for every type alike. What is left to pin is that the one
+ * remaining producer really is schema-driven, and that a type the host cannot
+ * resolve fails LOUDLY rather than coming back as a plausible-looking record.
  */
 
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { fixtureModule, FIXTURE_DATA } from '../../../../tests/helpers/fixture-module.js';
 import { SerializationEngine } from './serialization-engine.js';
 import type { BackendModule, ProjectPluginHost } from './types.js';
 import type { RawEntity, RawEntityReader } from '../../discovery/raw-entity-reader.js';
-import type { ViewSet } from '../../serialization/types.js';
 
 const ENTITY: RawEntity = {
   type: 'widget',
@@ -33,127 +33,164 @@ function hostWith(modules: BackendModule[]): ProjectPluginHost {
   } as unknown as ProjectPluginHost;
 }
 
-function moduleWithViews(views: ViewSet<unknown>): BackendModule {
-  const mod = fixtureModule('widget');
-  return { ...mod, data: FIXTURE_DATA, serializer: { ...mod.serializer, views } };
+function declaredModule(type = 'widget'): BackendModule {
+  const mod = fixtureModule(type);
+  return { ...mod, data: FIXTURE_DATA };
 }
 
 const reader = { count: () => 0 } as unknown as RawEntityReader;
 
-describe('SerializationEngine.serializeEntity — the three lookup outcomes', () => {
-  it('returns the computed result, unflagged, when the type declares the view', () => {
-    const engine = new SerializationEngine(
-      hostWith([moduleWithViews({ detail: () => ({ computed: true }) })]),
-    );
+/**
+ * A type whose collections live in their OWN projection tables — the case the
+ * host had to take over in 0.2.23, since the view that used to fetch them is
+ * gone. `projectionTable` is what puts a collection off the entity's row.
+ */
+const WITH_COLLECTIONS = {
+  schema: {
+    title: { kind: 'string', required: true, default: 'Untitled' },
+    // `keyFields` is what moves a VALUE collection off the row (hasProjectionTable).
+    links: { kind: 'collection', collection: 'value', keyFields: ['name'], item: { kind: 'string' } },
+    cells: { kind: 'collection', collection: 'keyed', item: { kind: 'string' } },
+  },
+} as unknown as BackendModule['data'];
 
-    const out = engine.serializeEntity('widget', 'detail', ENTITY, reader);
+function collectionModule(): BackendModule {
+  return { ...fixtureModule('widget'), data: WITH_COLLECTIONS };
+}
 
-    expect(out.data).toEqual({ computed: true });
-    expect(out.generic).toBe(false);
-    expect(out.error).toBeUndefined();
+const collectionReader = {
+  count: () => 0,
+  readCollection: () => ['a', 'b'],
+  countCollection: () => 7,
+} as unknown as RawEntityReader;
+
+describe('SerializationEngine.serializeEntity — one producer, one shape', () => {
+  it('derives the record from the type"s declared schema, with no provenance markers', () => {
+    const engine = new SerializationEngine(hostWith([declaredModule()]));
+
+    const out = engine.serializeEntity('widget', ENTITY, reader);
+
+    expect(out.data).toMatchObject({ type: 'widget', slug: 'w1', tags: ['t'] });
+    /**
+     * `_generic` / `_type` / `_view` are gone, and their absence is the point of
+     * the release rather than tidying. Each marked which of two producers built
+     * the payload; with one producer they said the same thing on every record,
+     * which is to say nothing.
+     */
+    expect(out.data).not.toHaveProperty('_generic');
+    expect(out.data).not.toHaveProperty('_type');
+    expect(out.data).not.toHaveProperty('_view');
   });
 
-  it('[ac:ac-slot-views-zawiera-wylacznie-widoki-o] emits the schema-derived generic view for a view the type left undeclared', () => {
-    // The RULE, not a fallback: `views?` carries computed views only, so a type
-    // declaring one view still answers all five.
-    const engine = new SerializationEngine(
-      hostWith([moduleWithViews({ detail: () => ({ computed: true }) })]),
-    );
+  it('answers the same shape however many times it is asked — there is no width axis left', () => {
+    const engine = new SerializationEngine(hostWith([declaredModule()]));
 
-    const out = engine.serializeEntity('widget', 'single_element', ENTITY, reader);
+    // The `view` argument used to sit between `type` and `entity` and pick one
+    // of five shapes. Two calls that would once have differed now cannot.
+    const a = engine.serializeEntity('widget', ENTITY, reader);
+    const b = engine.serializeEntity('widget', ENTITY, reader);
 
-    expect(out.generic).toBe(true);
-    expect(out.error).toBeUndefined();
-    expect(out.data).toMatchObject({ _generic: true, _type: 'widget', _view: 'single_element' });
+    expect(a.data).toEqual(b.data);
+    // Narrowing is the CALLER's, applied after this by `discovery/project.ts`.
+    expect(a).not.toHaveProperty('generic');
+    expect(a).not.toHaveProperty('brokenRefs');
   });
 
-  it('[ac:ac-helper-serialize-host-type-view-entit] resolves the type through the host, marking an unknown one instead of passing it off as a normal generic view', () => {
-    // The engine reports `unknown_type`; the discovery core turns that into
-    // INVALID_TYPE (see discovery.test.ts). What matters here is that a type
-    // the host cannot resolve AT ALL is DISTINGUISHABLE from a type that merely
-    // left a view undeclared — both are `generic: true`, only one carries the
-    // marker.
-    //
-    // Not the same gate as deactivation: the engine resolves through
-    // `getAvailable`, which still answers for a loaded-but-inactive type, so a
-    // deactivated type reaches a normal view here. Refusing it is the discovery
-    // core's `requireActiveType` (which goes through `getEntity`).
+  it('[ac:ac-helper-serialize-host-type-view-entit] THROWS on a type the host cannot resolve, rather than shaping an apology', () => {
+    /**
+     * The engine used to answer an unknown type with a generic payload plus
+     * `error: 'unknown_type'`, which a caller reading only `data` could not tell
+     * from a real record. It throws now, and M39 maps it to `INVALID_TYPE` —
+     * the ONE code this lookup produces.
+     *
+     * Not the same gate as deactivation: the engine resolves through
+     * `getAvailable`, which still answers for a loaded-but-inactive type, so a
+     * deactivated type is refused earlier, by the discovery core's
+     * `requireActiveType` (which goes through `getEntity`).
+     */
     const engine = new SerializationEngine(hostWith([]));
 
-    const out = engine.serializeEntity('widget', 'detail', ENTITY, reader);
+    expect(() => engine.serializeEntity('widget', ENTITY, reader)).toThrow(/not registered or not active/);
+  });
 
-    expect(out.error).toBe('unknown_type');
-    expect(out.generic).toBe(true);
+  it("does not let one type's absence reach another type in the same batch", () => {
+    const engine = new SerializationEngine(hostWith([declaredModule('gadget')]));
+
+    expect(() => engine.serializeEntity('widget', ENTITY, reader)).toThrow();
+    expect(
+      engine.serializeEntity('gadget', { ...ENTITY, type: 'gadget' }, reader).data,
+    ).toMatchObject({ type: 'gadget', slug: 'w1' });
   });
 });
 
-describe('SerializationEngine — a computed view that throws', () => {
-  it('[ac:ac-widok-obliczeniowy-rzucajacy-wyjatek] is caught by the host, which answers with the generic view plus an error', () => {
-    const boom = vi.fn(() => {
-      throw new Error('bad ref');
-    });
-    const engine = new SerializationEngine(hostWith([moduleWithViews({ detail: boom })]));
+describe('SerializationEngine — the record and its published schema agree', () => {
+  /**
+   * The schema is CLOSED (`additionalProperties: false`), so every key the
+   * record carries must be a key the schema declares — otherwise the host
+   * publishes a contract its own payloads violate on every entity that has a
+   * projected collection.
+   *
+   * This is not hypothetical: the first cut of 0.2.23 taught `genericEntity` to
+   * materialise those collections without teaching `recordSchema` about them, so
+   * `describe_types` promised an `endpoint` shape with no `linkedDtos` while
+   * every endpoint record had one.
+   */
+  it('declares every key the record carries, projected collections included', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
 
-    const out = engine.serializeEntity('widget', 'detail', ENTITY, reader);
+    // Only DECLARED columns on the row: an undeclared one passes through by
+    // design (a table mid-migration), and it is the schema-derived keys this
+    // case is about.
+    const entity = { ...ENTITY, data: { title: 'Widget One' } };
+    const record = engine.serializeEntity('widget', entity, collectionReader).data as Record<string, unknown>;
+    const schema = engine.describe('widget')!.schemas.record!;
+    const declared = Object.keys(schema.properties as Record<string, unknown>);
 
-    expect(boom).toHaveBeenCalled();
-    expect(out.generic).toBe(true);
-    // The host's own vocabulary, which is NOT the `view_threw` the spec states —
-    // see the drift patch filed against this brief.
-    expect(out.error).toMatch(/^serializer_threw: /);
-    expect(out.error).toContain('bad ref');
-    // Still a usable payload: the consumer gets the schema projection, not null.
-    expect(out.data).toMatchObject({ _generic: true, _type: 'widget' });
+    expect(schema.additionalProperties).toBe(false);
+    expect(Object.keys(record).filter((k) => !declared.includes(k))).toEqual([]);
+    expect(declared).toContain('links');
+    expect(declared).toContain('cells');
   });
 
-  it("[ac:ac-widok-obliczeniowy-rzucajacy-wyjatek] does not let one type's bug reach another type in the same batch", () => {
-    const engine = new SerializationEngine(
-      hostWith([
-        moduleWithViews({
-          detail: () => {
-            throw new Error('boom');
-          },
-        }),
-        { ...fixtureModule('gadget'), serializer: { views: { detail: () => ({ ok: true }) } } },
-      ]),
-    );
+  it('carries a value collection inline and a keyed one as its count — and COUNTS the keyed one rather than reading it', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
 
-    const broken = engine.serializeEntity('widget', 'detail', ENTITY, reader);
-    const healthy = engine.serializeEntity(
-      'gadget',
-      'detail',
-      { ...ENTITY, type: 'gadget' },
-      reader,
-    );
+    const record = engine.serializeEntity('widget', ENTITY, collectionReader).data as Record<string, unknown>;
 
-    expect(broken.error).toMatch(/^serializer_threw: /);
-    expect(healthy.error).toBeUndefined();
-    expect(healthy.data).toEqual({ ok: true });
+    expect(record.links).toEqual(['a', 'b']);
+    // 7 comes from `countCollection`; `readCollection` would have said 2. A
+    // 200x40 sheet must not decode 8 000 rows to report how many there are.
+    expect(record.cells).toEqual({ count: 7 });
+  });
+
+  it('does not read a collection the caller did not select', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
+    let reads = 0;
+    const counting = {
+      count: () => 0,
+      readCollection: () => { reads++; return []; },
+      countCollection: () => { reads++; return 0; },
+    } as unknown as RawEntityReader;
+
+    // `select: []` is what a list page's element rendering asks for. Narrowing
+    // downstream would answer the same, but only after paying one query per row.
+    engine.serializeEntity('widget', ENTITY, counting, []);
+
+    expect(reads).toBe(0);
   });
 });
 
-describe('SerializationEngine — broken refs travel on the envelope', () => {
-  it('[ac:ac-widok-obliczeniowy-detail-ma-depth-li] lifts `_brokenRefs` out of a computed detail view instead of throwing', () => {
-    const engine = new SerializationEngine(
-      hostWith([
-        moduleWithViews({
-          detail: () => ({ linked: null, _brokenRefs: ['dto/gone', 'dto/also-gone'] }),
-        }),
-      ]),
-    );
+describe('SerializationEngine.describe — one schema per type', () => {
+  it('publishes a single record schema instead of one per view', () => {
+    const engine = new SerializationEngine(hostWith([declaredModule()]));
 
-    const out = engine.serializeEntity('widget', 'detail', ENTITY, reader);
+    const described = engine.describe('widget');
 
-    expect(out.error).toBeUndefined();
-    expect(out.generic).toBe(false);
-    expect(out.brokenRefs).toEqual(['dto/gone', 'dto/also-gone']);
+    expect(Object.keys(described!.schemas)).toEqual(['record']);
+    expect(described!.schemas.record).toMatchObject({ type: 'object', additionalProperties: false });
   });
 
-  it('leaves `brokenRefs` absent when the view resolved everything', () => {
-    const engine = new SerializationEngine(
-      hostWith([moduleWithViews({ detail: () => ({ linked: { slug: 'd1' } }) })]),
-    );
-
-    expect(engine.serializeEntity('widget', 'detail', ENTITY, reader).brokenRefs).toBeUndefined();
+  it('returns null for a type the host does not have, for the caller to map', () => {
+    expect(new SerializationEngine(hostWith([])).describe('widget')).toBeNull();
   });
 });

@@ -27,10 +27,11 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     // The host consumes TagFilterBar, EntityListRow, Dialog, Popover, useToast,
     // EnumBadgePicker, GroupedRelationPicker and ActionBar — all experimental.
     // None of that is a published contract, so the major cannot have moved.
-    // 3.0.0 since 0.2.22, and for a reason unrelated to the kit: `title` became
-    // a required declaration slot. The claim this case makes is unchanged —
-    // consuming an experimental component moved nothing.
-    expect(HOST_API_VERSION).toBe('3.0.0');
+    // Back on the 2.0.0 baseline: 0.2.22 raised it for `title`, and 0.2.23
+    // reverted that under the stabilisation rule. Either way the claim this
+    // case makes is unchanged — consuming an experimental component moved
+    // nothing.
+    expect(HOST_API_VERSION).toBe('2.0.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
 });
@@ -71,34 +72,20 @@ describe('M33 — Host API versioning helpers', () => {
     // A span that crosses no boundary is empty, in both directions.
     expect(migrationsBetween(1, 1)).toEqual([]);
     expect(migrationsBetween(2, 2)).toEqual([]);
-    // A wider span now contains BOTH crossings.
-    expect(migrationsBetween(0, 9).length).toBe(crossing.length + migrationsBetween(2, 3).length);
+    // 1 → 2 is the ONLY crossing, so a wider span contains exactly it. The
+    // shape changes 0.2.22/0.2.23 landed on top are absorbed into the 2.0.0
+    // baseline under the stabilisation rule rather than opening a second one.
+    expect(migrationsBetween(0, 9).length).toBe(crossing.length);
+    expect(migrationsBetween(2, 3)).toEqual([]);
   });
 
-  /**
-   * 2 → 3 is the second crossing. Where 1 → 2 was all removals — behaviour
-   * leaving the type — this one changes what a declaration must SAY and what a
-   * read of it gives back, so its kinds are mixed.
-   */
-  it('carries the 2 → 3 crossing', () => {
-    const crossing = migrationsBetween(2, 3);
-    expect(crossing.map((m) => m.slot).sort()).toEqual([
-      'FieldFlags.contentBearing',
-      'data.schema.title',
-      'get_entities.view',
-      'slugPattern.nanoid',
-    ]);
-    expect(crossing.find((m) => m.slot === 'data.schema.title')!.kind).toBe('slot-required');
-    expect(migrationsBetween(3, 3)).toEqual([]);
-  });
-
-  it('offers NO shim for a 1.x plugin — it must cross both majors', () => {
+  it('offers NO shim for a 1.x plugin — it must cross into 2.0.0', () => {
     const info = buildMigrationInfo('^1.0.0');
     expect(info).not.toBeNull();
     expect(info!.targetHostApiVersion).toBe(HOST_API_VERSION);
-    // Both crossings, since a 1.x package is two majors behind.
-    expect(info!.migrations).toHaveLength(10);
-    expect(info!.migrations.filter((m) => m.kind === 'slot-removed')).toHaveLength(7);
+    // The one crossing, since a 1.x package is exactly one major behind.
+    expect(info!.migrations).toHaveLength(6);
+    expect(info!.migrations.every((m) => m.kind === 'slot-removed')).toBe(true);
     /**
      * The assertion that matters to a plugin author: there is no compatibility
      * path. Shimming these would mean inferring a logical schema from
@@ -110,23 +97,18 @@ describe('M33 — Host API versioning helpers', () => {
   });
 
   it('returns null when the plugin targets the current major (no migration needed)', () => {
-    expect(buildMigrationInfo('^3.0.0')).toBeNull();
-    expect(buildMigrationInfo('^3.5.0')).toBeNull(); // same major, even if unsatisfiable
+    expect(buildMigrationInfo('^2.0.0')).toBeNull();
+    expect(buildMigrationInfo('^2.5.0')).toBeNull(); // same major, even if unsatisfiable
   });
 
   /**
-   * A 2.x package is exactly one major behind and gets only that crossing —
-   * which is what makes the descriptor useful rather than a wall of history.
+   * A package from the FUTURE gets no descriptor to walk — there is nothing
+   * recorded past the current baseline, and inventing one would be guessing.
    */
-  it('gives a 2.x plugin only the crossing it has to make', () => {
-    const info = buildMigrationInfo('^2.0.0');
+  it('gives a 3.x plugin a descriptor with no crossings to make', () => {
+    const info = buildMigrationInfo('^3.0.0');
     expect(info).not.toBeNull();
-    expect(info!.migrations.map((m) => m.slot).sort()).toEqual([
-      'FieldFlags.contentBearing',
-      'data.schema.title',
-      'get_entities.view',
-      'slugPattern.nanoid',
-    ]);
+    expect(info!.migrations).toEqual([]);
     expect(info!.shimAvailable).toBe(false);
   });
 });

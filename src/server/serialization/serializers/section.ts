@@ -1,6 +1,5 @@
 import type { RawSection } from '../../discovery/raw-entity-reader.js';
 import type { HydratedSection } from '../../discovery/section-hydrator.js';
-import type { ViewSet } from '../types.js';
 
 /**
  * A section is explicitly NOT an entity type: it is not registered with the
@@ -9,19 +8,23 @@ import type { ViewSet } from '../types.js';
  * `slug`, because everything that reads the spec needs one shape for "a piece
  * of a page".
  *
- * M39 turned `detail` from a set of coordinates into the source for
- * `get_section`. Coordinates alone were one of the three gaps the motivating
- * session exposed: an agent that had located the right section still had to go
- * read the file itself. `detail` now carries the BODY and the section's
- * outgoing document edges.
+ * M39 turned this from a set of coordinates into the source for `get_sections`.
+ * Coordinates alone were one of the three gaps the motivating session exposed:
+ * an agent that had located the right section still had to go read the file
+ * itself. The record now carries the BODY and the section's outgoing document
+ * edges.
  *
  * The body is AS AUTHORED — XML tags untouched. A tag is an edge; expanding it
  * would paste a payload into the prose and delete the edge the reader was going
- * to follow. `single_element` is `detail` minus body and edges, i.e. the
- * heading plus its coordinates, which is what an inline reference needs.
+ * to follow.
+ *
+ * 0.2.23: ONE function, not a `ViewSet`. The three variants this file used to
+ * declare — coordinates, a chip, and coordinates-plus-body — were views, and
+ * views are gone. Sections were never affected by the reason views existed
+ * (there is no plugin contributing section code), but they were carried by the
+ * same dispatch, and leaving a one-entry view map behind would have preserved
+ * the machinery for a single hard-coded caller.
  */
-
-const href = (section: RawSection) => `/${section.pagePath}#${section.anchor}`;
 
 const coordinates = (section: RawSection) => ({
   type: 'section' as const,
@@ -31,62 +34,24 @@ const coordinates = (section: RawSection) => ({
   headingPath: section.headingPath,
   headingText: section.headingText,
   headingLevel: section.headingLevel,
-  href: href(section),
+  href: `/${section.pagePath}#${section.anchor}`,
   lineStart: section.lineStart,
   lineEnd: section.lineEnd,
 });
 
 /**
- * 0.2.9: a `ViewSet`, not a full `SerializationContribution`. Section has no
- * manifest and therefore no `payloadVersion` — it is not an entity, it is never
- * snapshotted, and inventing a version for it would be inventing the one field
- * of the contract it cannot honestly answer.
+ * The section read record.
+ *
+ * Hydration (reading the page, slicing the body, parsing the edges) happens in
+ * the discovery core BEFORE this is called, so this stays a pure projection. A
+ * section handed here un-hydrated still serializes — it simply reports an empty
+ * body and no edges, which is the honest answer for "nobody read the page".
  */
-const views: ViewSet<RawSection> = {
-  single_element: (section) => coordinates(section),
-
-  inline_mention: (section) => ({
-    type: 'section',
-    anchor: section.anchor,
-    label: section.headingText,
-    href: href(section),
-  }),
-
-  /**
-   * Hydration (reading the page, slicing the body, parsing the edges) happens
-   * in the discovery core BEFORE this is called, so the serializer stays a pure
-   * projection and the view signature needs no new slot that every installed
-   * plugin would have to compile against. A section handed here un-hydrated
-   * still serializes — it simply reports an empty body and no edges, which is
-   * the honest answer for "nobody read the page".
-   */
-  detail: (section) => {
-    const hydrated = section as Partial<HydratedSection>;
-    return {
-      ...coordinates(section),
-      body: hydrated.body ?? '',
-      edges: hydrated.edges ?? { sectionRefs: [], entityEmbeds: [], pageLinks: [] },
-    };
-  },
-
-  /**
-   * `element_list_item` and `tagged_list_item` are DELIBERATELY absent, and the
-   * reason is domain, not cost. A section has no slug — its identity key is the
-   * anchor, and it will not get one — so it can never be named in an
-   * `<element_list slugs="…"/>`; it carries no tags, so it can never fall into a
-   * `<tagged_list/>`. Neither list can produce a section to project.
-   *
-   * They used to be declared here, returning coordinates, so that a caller who
-   * asked anyway got something shaped rather than the generic envelope. That
-   * inverted the contract: it made the two views look supported to anyone
-   * reading the registry. A caller who asks now falls through to
-   * `genericSection`, which is the honest answer — this serializer does not
-   * implement those views.
-   */
-};
-
-/**
- * M31: exported instead of attached to a singleton — every SerializationEngine
- * instance (per ProjectContext, per CLI process) receives it via constructor.
- */
-export const sectionSerializer = views as ViewSet<unknown>;
+export function serializeSection(section: RawSection): Record<string, unknown> {
+  const hydrated = section as Partial<HydratedSection>;
+  return {
+    ...coordinates(section),
+    body: hydrated.body ?? '',
+    edges: hydrated.edges ?? { sectionRefs: [], entityEmbeds: [], pageLinks: [] },
+  };
+}

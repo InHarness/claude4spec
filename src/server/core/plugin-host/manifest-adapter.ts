@@ -132,16 +132,32 @@ const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
 const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   ['type', 'the manifest already declares it'],
   ['version', 'payloadVersion (an integer, enforced by the upgrade chain)'],
-  ['inlineMention', 'views.inline_mention'],
-  ['singleElement', 'views.single_element'],
-  ['elementListItem', 'views.element_list_item'],
-  ['taggedListItem', 'views.tagged_list_item'],
-  // `detail` is spelled the same in 1.x and inside `views`, which is exactly why
-  // it has to be listed: a half-migrated manifest that moved the other four and
-  // left this one at the top level is the case that reads as "migrated" and
-  // silently loses `_references`, resolved refs and `_brokenRefs` on every
-  // detail read.
-  ['detail', 'views.detail'],
+  /**
+   * The five view callbacks.
+   *
+   * They pointed at `views.*` while that slot existed; 0.2.23 removed it, so the
+   * answer for all five is the same and it is not a move: the host derives the
+   * record from `data.schema`, and a caller narrows it with `select`. They stay
+   * listed because a package still shipping one is describing a read shape this
+   * host will not honour, and finding that out at registration beats finding it
+   * out from a payload that quietly lost fields.
+   */
+  /**
+   * The 2.x spelling — the map the five callbacks moved INTO in 2.0.0, and the
+   * only one a plugin written against this host could plausibly still ship.
+   *
+   * It has to be listed precisely because the baseline stays at `2.0.0`: a
+   * package declaring `hostApiVersion: '^2.0.0'` and carrying a `views` map
+   * passes the semver gate, so without this line it would register clean and
+   * have its read code ignored — the exact silent-loss failure the flat 1.x
+   * entries below exist to prevent.
+   */
+  ['views', 'nothing — the record is derived from data.schema, narrowed by select'],
+  ['inlineMention', 'nothing — the record is derived from data.schema, narrowed by select'],
+  ['singleElement', 'nothing — the record is derived from data.schema, narrowed by select'],
+  ['elementListItem', 'nothing — the record is derived from data.schema, narrowed by select'],
+  ['taggedListItem', 'nothing — the record is derived from data.schema, narrowed by select'],
+  ['detail', 'nothing — the record is derived from data.schema, narrowed by select'],
   ['schema', 'nothing — schemas are derived from data.schema'],
   // Removed in tier B PR2. A manifest that still carries either one is not
   // merely out of date: its snapshot would be IGNORED while the host generated a

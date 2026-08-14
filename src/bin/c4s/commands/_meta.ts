@@ -1,30 +1,18 @@
-import type { EntityRow, GetEntitiesResult, SerializedMeta } from '../../../server/discovery/index.js';
+import type { EntityRow, GetEntitiesResult } from '../../../server/discovery/index.js';
 import { CliError } from '../errors.js';
 
 /**
- * The CLI's own presentation of a serialized record: the payload, plus the
- * serializer's outcome flags underscore-prefixed so they cannot collide with a
- * field the entity itself declares.
+ * Unwrap a record off the wire.
  *
- * M39 — the flags now arrive from the discovery core rather than from a
- * `SerializeResult` the command built itself. The CLI is a transport: it
- * formats, it does not serialize.
+ * 0.2.23 emptied this of everything else. It used to append the serializer's
+ * outcome flags (`_generic`, `_error`) to the payload, underscore-prefixed so
+ * they could not collide with a declared field. Both described a fork between a
+ * host-generated record and a type-computed one, and there is no longer a second
+ * branch for them to point at — a marker every record carries identically is
+ * noise on every record.
  */
-export function withMeta(record: { data?: unknown; entity?: unknown } & SerializedMeta): unknown {
-  const data = 'entity' in record ? record.entity : record.data;
-  if (!record.generic && !record.error) return data;
-  if (typeof data === 'object' && data !== null) {
-    return {
-      ...(data as object),
-      // The generic payload already carries `_generic` inside it (see
-      // `serialization/generic.ts`); re-stating it here is what keeps the flag
-      // present when the record came back generic for the other reason — the
-      // type's own view threw and the host answered in its place.
-      ...(record.generic ? { _generic: true } : {}),
-      ...(record.error ? { _error: record.error } : {}),
-    };
-  }
-  return data;
+export function unwrapEntity(record: { data?: unknown; entity?: unknown }): unknown {
+  return 'entity' in record ? record.entity : record.data;
 }
 
 /**
@@ -42,7 +30,7 @@ export function pickEntityPage(payload: unknown): {
   /**
    * 0.2.22 — the row is `{ slug, title }` and carries no payload and no
    * serializer flags, so it is the answer rather than something to unwrap.
-   * Running it through `withMeta` — which reads `record.entity ?? record.data`
+   * Running it through `unwrapEntity` — which reads `record.entity ?? record.data`
    * — printed a list of `null`s, a whole command emptied out by a shape change
    * one layer down.
    */
@@ -62,5 +50,5 @@ export function pickEntityPage(payload: unknown): {
 export function firstEntity(result: GetEntitiesResult, type: string, slug: string): unknown {
   const first = result.results[0];
   if (!first || first.entity === null) throw new CliError('ENTITY_NOT_FOUND', `${type}/${slug}`);
-  return withMeta(first);
+  return unwrapEntity(first);
 }

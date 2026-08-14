@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { designSystemSerializer, type DesignSystemSnapshot } from '../src/entity/design-system/views.js';
+import { designSystemSerializer, type DesignSystemSnapshot } from '../src/entity/design-system/serializer.js';
 import { designSystemEntity } from '../src/entity/design-system/index.js';
 import { canonicalize } from '../../../src/server/serialization/snapshot.js';
 import { snapshotFromSchema } from '../../../src/server/serialization/schema-snapshot.js';
 import type { RawEntity } from '../src/host-kit/host-types.js';
+import { resolve } from '../src/design-system-domain.js';
 
 /**
  * 0.2.9 — the snapshot is GENERATED. What stays design-system-specific, and is
@@ -55,21 +56,30 @@ describe('design-system serializer', () => {
     expect(action.value).toBe('{blue-500}');
   });
 
-  it('single_element injects a resolvedValue (Base) per token', () => {
-    const e = rawEntity({
-      slug: 'brand',
-      name: 'Brand',
-      groups: [
-        { name: 'Brand', tier: 'primitive', tokens: [{ name: 'blue-500', type: 'color', value: '#2563eb' }] },
-        { name: 'Roles', tier: 'semantic', tokens: [{ name: 'action', type: 'color', value: '{blue-500}' }] },
-      ],
-      modes: [],
-    });
-    const single = designSystemSerializer.views!.single_element!(e, reader) as {
-      groups: Array<{ tokens: Array<{ name: string; resolvedValue: unknown }> }>;
-    };
-    const action = single.groups.flatMap((g) => g.tokens).find((t) => t.name === 'action')!;
-    expect(action.resolvedValue).toBe('#2563eb');
+  it('the READ keeps the alias; resolving it is the consumer\'s job', () => {
+    /**
+     * `single_element` used to inject a `resolvedValue` beside every token's
+     * raw `value` — the design-system's one genuinely computed view, and the
+     * reason this file is named after views at all.
+     *
+     * 0.2.23 removes it. Expanding `{blue-500}` is a presentation decision (in
+     * which mode? at what moment?), so the record carries what was authored and
+     * `resolve()` — unchanged, and still the only implementation — is called by
+     * `frontend.renderCard` and by the detail panel's live preview.
+     */
+    const groups = [
+      { name: 'Brand', tier: 'primitive' as const, tokens: [{ name: 'blue-500', type: 'color' as const, value: '#2563eb', description: null }] },
+      { name: 'Roles', tier: 'semantic' as const, tokens: [{ name: 'action', type: 'color' as const, value: '{blue-500}', description: null }] },
+    ];
+
+    // The read: the alias survives as an alias.
+    const record = snapshot(rawEntity({ slug: 'brand', title: 'Brand', groups, modes: [] })) as DesignSystemSnapshot;
+    const authored = record.groups.find((g) => g.name === 'Roles')!.tokens[0]!;
+    expect(authored.value).toBe('{blue-500}');
+    expect(authored).not.toHaveProperty('resolvedValue');
+
+    // The consumer: `resolve()` still expands it, in Base mode.
+    expect(resolve(groups, [])['action']).toBe('#2563eb');
   });
 
   it('diff reports token add/remove/modify and ignores group reorder (noop)', () => {

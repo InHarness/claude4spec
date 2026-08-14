@@ -1,5 +1,4 @@
 import { type RawEntityType } from '../../server/discovery/raw-entity-reader.js';
-import { VIEW_KINDS, type ViewKind } from '../../server/serialization/types.js';
 import { CliError } from './errors.js';
 
 /** An entity type id is kebab-case: lowercase alphanumerics joined by hyphens. */
@@ -34,16 +33,4 @@ export function normalizeEntityType(raw: string): RawEntityType {
     );
   }
   return raw;
-}
-
-/** Validates a view kind, throwing INVALID_VIEW when outside the ViewKind enum. */
-export function normalizeViewKind(raw: string): ViewKind {
-  if (!VIEW_KINDS.includes(raw as ViewKind)) {
-    throw new CliError(
-      'INVALID_VIEW',
-      `unknown view '${raw}'`,
-      `allowed: ${VIEW_KINDS.join(', ')}`
-    );
-  }
-  return raw as ViewKind;
 }

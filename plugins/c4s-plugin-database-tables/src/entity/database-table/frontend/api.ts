@@ -16,10 +16,11 @@ import type {
  *
  *  1. THE ENVELOPE. Every generated route answers `{ data }` / `{ data, total }`,
  *     never a per-type key like `{ databaseTables }`.
- *  2. THE VIEW. `GET /:slug` answers `single_element`, which for this type is the
- *     SUMMARY — counts, no arrays. The detail page needs the columns, so it has
- *     to ask for `?view=detail`. The retired router served the full record from
- *     the bare GET and the distinction never arose.
+ *  2. THE WIDTH. `GET /:slug` answers the whole record — schema fields, columns
+ *     and indexes included. It used to answer a counts-only summary and the
+ *     detail page had to ask for `?view=detail`; 0.2.23 removed the views, so
+ *     there is one shape and nothing to ask for. A caller that wants LESS says
+ *     so with `select`.
  *
  * `apiFetch` applies the `/api/projects/<id>` prefix; nothing here builds it.
  */
@@ -38,9 +39,8 @@ export const databaseTablesApi = {
     return unwrapList<DatabaseTableListItem>(await apiFetch(`${BASE}${q}`));
   },
 
-  /** `?view=detail` — the summary view carries counts, and this page needs the columns. */
   async get(slug: string): Promise<DatabaseTable> {
-    return unwrap<DatabaseTable>(await apiFetch(`${one(slug)}?view=detail`));
+    return unwrap<DatabaseTable>(await apiFetch(one(slug)));
   },
 
   async create(input: DatabaseTableCreateInput): Promise<DatabaseTable> {

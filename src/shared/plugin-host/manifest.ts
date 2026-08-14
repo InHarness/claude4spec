@@ -98,31 +98,31 @@ import type { EntityModuleManifest, SystemPromptContribution } from './types.js'
  *     removal above: zero published plugins, so nothing can break. Once a first
  *     third-party plugin is published, removals go back under the major rule.
  *
- * 0.2.22 — `3.0.0`, and the qualification rule is TIGHTENED by this release.
+ * 0.2.22 / 0.2.23 — the baseline STAYS at `2.0.0`, and this is the correction.
  *
- * The 0.2.19 reasoning above ("adding a flag is additive to the declaration
- * shape") stops applying to two kinds of change, both of which appear here:
- *   - a NEW REQUIRED FIELD in the input schema. `title` is mandatory on every
- *     type: a manifest without it is rejected at registration, exactly as one
- *     without `data.schema` is. That is not additive by any reading — every
- *     existing declaration stops loading until it is edited.
- *   - a REDEFINED flag. `contentBearing` did not gain a meaning, it changed one:
- *     what used to be "excluded from the five generated views" is now "issued by
- *     no generic read on any surface, even a `select` naming it", with a
- *     generated operation behind it and the views-versus-flag ban lifted. A
- *     plugin that read the old rule correctly reads the new one wrongly.
+ * 0.2.22 raised it to `3.0.0` on the reasoning that two of its changes were not
+ * additive by any reading: `title` became a required field (a manifest without
+ * one stops loading) and `contentBearing` was REDEFINED rather than extended.
+ * Both readings are right about the shape and wrong about the conclusion. The
+ * stabilisation rule that absorbed 0.2.4's and 0.2.19's removals applies here
+ * unchanged: `2.0.0` is not published and has not one external plugin consumer,
+ * so a major bump protects nobody and only rejects the packages in this repo.
+ * The specification names `2.0.0` as the current baseline in every place it
+ * mentions one; the bump was implementation invention, and it is reverted.
  *
- * Also entering the versioned surface: the VALUE CONSTRAINT vocabulary (`enum` +
- * `values`, `maxLength`), and the fact that the `slugPattern` grammar is now
- * SHARED with `computedDefault` — with `nanoid(n)` removed from it.
+ * Absorbed into the baseline, therefore, rather than raising it: the reserved
+ * `title`; the redefined `contentBearing` (and the lifted ban on a type
+ * declaring its own views beside the flag, which 0.2.23 makes moot by removing
+ * views entirely); the `select` projection in place of the `view` axis; the
+ * VALUE CONSTRAINT vocabulary (`enum` + `values`, `maxLength`); the
+ * `slugPattern` grammar being SHARED with `computedDefault`, minus `nanoid(n)`;
+ * and the removal of the `views?` slot itself.
  *
- * Unlike 0.2.4's removal, this one is not absorbed into the baseline. The whole
- * asymmetry argument above ("raising the major rejects every external package
- * wholesale") is the DESIRED outcome here: a 2.x plugin genuinely cannot serve
- * this contract, so being skipped with a migration descriptor is the honest
- * answer rather than half-registering and failing at the first read.
+ * Once a first third-party plugin is published, all of this goes back under the
+ * major rule — that is the condition the stabilisation window depends on, not a
+ * property of the changes.
  */
-export const HOST_API_VERSION = '3.0.0';
+export const HOST_API_VERSION = '2.0.0';
 
 /** Node/host engine constraints — checked by the loader before registration. */
 export interface PluginEngines {

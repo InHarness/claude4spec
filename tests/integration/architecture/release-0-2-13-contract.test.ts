@@ -327,7 +327,7 @@ describe('the CLI holds no handle on the specification', () => {
     expect(four, 'no exit-4 group found in codeToExit').toBeTruthy();
     const codes = [...four![1].matchAll(/case '([A-Z_]+)':/g)].map((m) => m[1]);
     expect(codes).toEqual(
-      expect.arrayContaining(['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGS', 'INVALID_ARGUMENT', 'VALIDATION']),
+      expect.arrayContaining(['INVALID_TYPE', 'INVALID_ARGS', 'INVALID_ARGUMENT', 'VALIDATION']),
     );
   });
 

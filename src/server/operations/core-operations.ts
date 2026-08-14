@@ -73,13 +73,15 @@ const paging = {
 };
 
 /**
- * Every M39 read operation can answer with these.
+ * Every M39 read operation can answer with these — and this is the COMPLETE set.
  *
- * `INVALID_VIEW` left the list in 0.2.22. It is still in the core taxonomy —
- * surfaces that pick a view INTERNALLY (the XML-tag CLI commands, the page
- * renderer) can still name one that does not exist — but no read operation takes
- * a view from a caller any more, so no read operation can produce it. Leaving it
- * declared would have advertised a failure mode that cannot occur.
+ * `INVALID_VIEW` left the list in 0.2.22, when no read operation took a view
+ * from a caller any more, and left the taxonomy entirely in 0.2.23 along with
+ * the internal surfaces that could still name one. `SERIALIZER_THREW` went the
+ * same way: it reported a type's own read code failing, and there is none.
+ * A type that is unknown or deactivated answers `INVALID_TYPE`; an illegal name
+ * in `select` answers `INVALID_ARGUMENT`. There is no third code, because a
+ * type that is active always yields a record derived from its logical schema.
  */
 const READ_CODES = ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_NOT_MATERIALIZED'] as const;
 

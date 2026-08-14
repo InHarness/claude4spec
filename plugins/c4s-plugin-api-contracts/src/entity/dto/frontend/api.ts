@@ -19,7 +19,7 @@ export const dtosApi = {
   },
 
   /**
-   * `?view=detail`, because the detail PAGE is what this feeds.
+   * The whole record — since 0.2.23 there is one shape and no view to ask for.
    *
    * `endpoints` — which endpoints reference this DTO — is a reverse join, so it
    * lives in the `detail` view and not in `single_element`. Until tier K, `dto`
@@ -28,7 +28,7 @@ export const dtosApi = {
    * unless asked, so the page has to ask.
    */
   async get(slug: string): Promise<Dto> {
-    return unwrap<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}?view=detail`));
+    return unwrap<Dto>(await apiFetch(`/api/dtos/${encodeURIComponent(slug)}`));
   },
 
   async create(input: DtoCreateInput): Promise<Dto> {

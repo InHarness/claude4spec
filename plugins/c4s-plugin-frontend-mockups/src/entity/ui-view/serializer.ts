@@ -1,4 +1,4 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -7,61 +7,6 @@ import type {
 } from '@c4s/plugin-runtime';
 import type { UiViewParam, UiViewParamLocation } from '../../types.js';
 import { uiViewPayloadUpgrades } from './upgrades.js';
-
-interface ParamShape {
-  name: string;
-  in: string;
-  type?: string;
-  required?: boolean;
-  default?: string;
-  description?: string;
-}
-
-function readParams(entity: RawEntity): ParamShape[] {
-  const raw = entity.data.params;
-  if (!Array.isArray(raw)) return [];
-  return (raw as unknown[])
-    .filter((p): p is Record<string, unknown> => p !== null && typeof p === 'object')
-    .map((p) => ({
-      name: String(p.name ?? ''),
-      in: String(p.in ?? ''),
-      ...(typeof p.type === 'string' ? { type: p.type } : {}),
-      ...(typeof p.required === 'boolean' ? { required: p.required } : {}),
-      ...(typeof p.default === 'string' ? { default: p.default } : {}),
-      ...(typeof p.description === 'string' ? { description: p.description } : {}),
-    }));
-}
-
-function readDesignSystemSlug(entity: RawEntity): string | null {
-  const raw = entity.data.design_system_slug ?? entity.data.designSystemSlug;
-  return typeof raw === 'string' && raw ? raw : null;
-}
-
-function baseSingle(entity: RawEntity) {
-  return {
-    type: 'ui-view',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    description: (entity.data.description as string | null) ?? null,
-    params: readParams(entity),
-    designSystemSlug: readDesignSystemSlug(entity),
-    tags: entity.tags,
-  };
-}
-
-function trimItem(entity: RawEntity) {
-  const params = readParams(entity);
-  return {
-    type: 'ui-view',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    description: (entity.data.description as string | null) ?? null,
-    paramCount: params.length,
-    tags: entity.tags,
-  };
-}
 
 // ─── M17 Snapshot shape (entities/ui-view.md `uvsn0sho`) ────────────────────
 
@@ -170,36 +115,6 @@ export const uiViewSerializer: SerializationContribution<RawEntity> = {
   payloadVersion: 2,
   /** v1 files spell the label `name`. */
   payloadUpgrades: uiViewPayloadUpgrades,
-  views: {
-    inline_mention: (entity) => ({
-      type: 'ui-view',
-      slug: entity.slug,
-      label: (entity.data.title as string) ?? entity.slug,
-      url: (entity.data.url as string | null) ?? null,
-      href: `/ui-views/${entity.slug}`,
-    }),
-
-    single_element: (entity) => baseSingle(entity),
-
-    element_list_item: (entity) => trimItem(entity),
-
-    tagged_list_item: (entity) => trimItem(entity),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const references = (reader.findSectionReferences('ui-view', entity.slug) as SectionEntityRef[]).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return {
-        ...base,
-        _references: references,
-      };
-    },
-  },
-
   // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   diff: uiViewDiff,
 };

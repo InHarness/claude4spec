@@ -459,8 +459,15 @@ export interface Ac {
   tags: string[];
   createdAt: string;
   updatedAt: string;
-  /** Populated by routes when verifies refs do not resolve. */
-  brokenVerifies?: AcBrokenVerify[];
+  /**
+   * 0.2.23 — no `brokenVerifies` here.
+   *
+   * It was filled by the `ac` detail view, and a type contributes no read code
+   * now: the record is its `data.schema` and nothing else. The AC panel derives
+   * the marker from the candidate lists it already loads, and `classifyVerifies`
+   * remains the server-side answer for `check_consistency`, which is a
+   * project-wide report rather than a field on one record.
+   */
 }
 
 export interface AcCreateInput {

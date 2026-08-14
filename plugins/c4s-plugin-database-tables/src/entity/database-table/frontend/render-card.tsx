@@ -43,24 +43,23 @@ import { DatabaseTableIcon } from './icon.js';
 const MAX_VISIBLE_COLUMNS = 6;
 
 /**
- * The two shapes a render slot can be handed, reconciled.
+ * The shape summary's two numbers, counted where they are DISPLAYED.
  *
- * A LIST view (`element_list_item` / `tagged_list_item`, and `listByTags`)
- * carries `columnCount` / `indexCount` and no arrays at all — sending 186
- * column objects to a screen that draws one line each is pure waste.
- * `single_element` carries the arrays. A slot that reads only the arrays
- * therefore renders "0 columns · 0 indexes" for every row of a
- * `<tagged_list/>`, which is what this reconciliation exists to prevent.
+ * This used to reconcile two payloads: a list view carried `columnCount` /
+ * `indexCount` and no arrays, a `single_element` carried the arrays, and a slot
+ * reading only the arrays drew "0 columns · 0 indexes" on every list row.
+ *
+ * 0.2.23 leaves one payload. A type computes nothing, so the counts are not sent
+ * and cannot be — the arrays are what the schema declares, and `select` is how a
+ * caller says it wants less. Counting them here is the whole of it.
  */
 export function countsOf(entity: {
   columns?: unknown[];
   indexes?: unknown[];
-  columnCount?: number;
-  indexCount?: number;
 }): { columns: number; indexes: number } {
   return {
-    columns: entity.columnCount ?? entity.columns?.length ?? 0,
-    indexes: entity.indexCount ?? entity.indexes?.length ?? 0,
+    columns: entity.columns?.length ?? 0,
+    indexes: entity.indexes?.length ?? 0,
   };
 }
 

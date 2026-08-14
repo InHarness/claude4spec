@@ -20,9 +20,18 @@ export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 export type EndpointDtoRelation = 'request' | 'response' | 'error';
 
+/**
+ * One row of the endpoint's `linkedDtos` collection, spelled as the SCHEMA
+ * declares it.
+ *
+ * 0.2.23 — this used to be `{dtoSlug, dtoName, ...}`, the shape the retired
+ * `detail` view built. The record now carries the declared collection verbatim,
+ * so the field is `dto` (a slug) and there is no `dtoName`: a `ref` field stays
+ * a slug on every surface, and a consumer that wants the DTO's label reads it
+ * off the DTO.
+ */
 export interface EndpointDtoLink {
-  dtoSlug: string;
-  dtoName: string;
+  dto: string;
   relation: EndpointDtoRelation;
   statusCode: number | null;
 }
@@ -36,7 +45,7 @@ export interface Endpoint {
   summary: string;
   description: string | null;
   tags: string[];
-  dtos: EndpointDtoLink[];
+  linkedDtos: EndpointDtoLink[];
   createdAt: string;
   updatedAt: string;
 }
@@ -112,7 +121,13 @@ export interface Dto {
   fields: DtoField[];
   examples: DtoExample[];
   tags: string[];
-  endpoints: DtoEndpointLink[];
+  /**
+   * 0.2.23 — NOT carried by any read. Kept as an optional so a consumer that
+   * still names it compiles, and so the shape is here to receive the reverse
+   * join if the spec ever grows an operation for it. See the note in
+   * `dto/frontend/detail-panel.tsx`.
+   */
+  endpoints?: DtoEndpointLink[];
   createdAt: string;
   updatedAt: string;
 }

@@ -6,9 +6,12 @@
  * it only asks the host three questions about the entity each ref points AT.
  * Living on the service is what made `ac` look like it still needed one.
  *
- * Its two callers are now the `ac` views (so `brokenVerifies` travels with the
- * entity on every transport instead of being bolted onto three REST handlers)
- * and the consistency check.
+ * 0.2.23 leaves it ONE caller: the consistency check. The other was the `ac`
+ * detail view, and a type contributes no read code any more — so `brokenVerifies`
+ * stops riding along on the record. That is not a capability lost, it is the
+ * answer moving to the two places that can give it honestly: `check_consistency`
+ * for the project-wide report, and the AC panel for one AC's own chips, derived
+ * from the candidate lists it already has.
  *
  * 2.0.0 (brief item 25): `host.entityExists` used to resolve the type's
  * registered service and call `getBySlug`, so a type with rows in its table but

@@ -37,41 +37,6 @@ function readSource(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
-// ─── view helpers ────────────────────────────────────────────────────────────
-
-/**
- * The shape every diagram view starts from.
- *
- * `source` is NOT here any more. It used to be spread into `single_element` and
- * `detail`, which is precisely what `contentBearing` now forbids — and the field
- * does not need removing per view, because `project()` cuts it after
- * serialization on the strength of the schema flag. It is left out anyway, so
- * this file says the same thing the declaration does instead of relying on
- * something downstream to correct it.
- */
-function baseSingle(entity: RawEntity) {
-  return {
-    type: 'diagram',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    format: readFormat(entity.data.format),
-    tags: entity.tags,
-  };
-}
-
-/**
- * 0.2.22 dropped `sourceLines`.
- *
- * It was a COMPUTED field on a list row — a measurement of a body the row did
- * not carry, invented by this type alone, in a system whose declared position is
- * that types compute no such thing. Its replacement, `sourceBytes`, comes from
- * the host's `contentBearing` rule and appears on every read of every
- * content-bearing field, spelled the same way for all of them.
- */
-function trimItem(entity: RawEntity) {
-  return baseSingle(entity);
-}
-
 // ─── snapshot / restore / diff ──────────────────────────────────────────────
 
 function coerce(raw: unknown): DiagramSnapshot {
@@ -120,30 +85,5 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 export const diagramSerializer: SerializationContribution<RawEntity> = {
   payloadVersion: 2,
   payloadUpgrades: diagramPayloadUpgrades,
-  views: {
-    inline_mention: (entity) => ({
-      type: 'diagram',
-      slug: entity.slug,
-      // Was the slug — this type had no other name to show. It has one now.
-      label: (entity.data.title as string) ?? entity.slug,
-      href: `/diagrams/${entity.slug}`,
-    }),
-
-    single_element: (entity) => baseSingle(entity),
-    element_list_item: (entity) => trimItem(entity),
-    tagged_list_item: (entity) => trimItem(entity),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const references = reader.findSectionReferences('diagram', entity.slug).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return { ...base, _references: references };
-    },
-  },
-
   diff: diagramDiff,
 };
