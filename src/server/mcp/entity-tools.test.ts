@@ -12,7 +12,7 @@ import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types
 
 interface Widget {
   slug: string;
-  name: string;
+  title: string;
 }
 
 function widgetModule(overrides: Partial<BackendModule> = {}): BackendModule {
@@ -118,7 +118,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
    * own through the tool — this is only here so `list`/`search` have something
    * to answer with, which is what the retired fake service's constructor did.
    */
-  db.prepare(`INSERT INTO widget (slug, name) VALUES ('widget-existing', 'existing')`).run();
+  db.prepare(`INSERT INTO widget (slug, title) VALUES ('widget-existing', 'existing')`).run();
   const reader = new RawEntityReader(db, host);
   const tagsService = new TagsService(db, host);
   const versionService = new VersionService(db);
@@ -129,7 +129,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
   // Seeded through the same door the tools use, so the fixture cannot drift
   // from what a create actually produces.
   const rows = (): Widget[] =>
-    db.prepare(`SELECT slug, name FROM widget ORDER BY slug`).all() as Widget[];
+    db.prepare(`SELECT slug, title FROM widget ORDER BY slug`).all() as Widget[];
 
   const deps: EntityToolsDeps = {
     host,
@@ -148,7 +148,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
           payloadVersion: 1,
           views: ['inline_mention', 'single_element', 'element_list_item', 'tagged_list_item', 'detail'],
           schemas: {},
-          searchableFields: [`${type}.name`],
+          searchableFields: [`${type}.title`],
         })),
       }),
       listEntities: vi.fn(({ mode }: { mode?: 'items' | 'count' }) => {
@@ -175,8 +175,8 @@ function fakeDeps(extraActive: BackendModule[] = []): {
        * parameter and still pass.
        */
       searchEntities: vi.fn(({ type, query, mode }: { type: string; query: string; mode?: 'hits' | 'count' }) => {
-        const hits = rows().filter((w) => w.name.includes(query));
-        const searchedFields = [`${type}.name`];
+        const hits = rows().filter((w) => w.title.includes(query));
+        const searchedFields = [`${type}.title`];
         if (mode === 'count') return { mode: 'count', total: hits.length, searchedFields };
         return {
           mode: 'hits',
@@ -199,7 +199,7 @@ function fakeDeps(extraActive: BackendModule[] = []): {
 
 /** Create through the tool under test, so a seed cannot drift from a real create. */
 async function seed(deps: EntityToolsDeps, ...names: string[]): Promise<void> {
-  await tool(deps, 'create_entities').handler({ type: 'widget', items: names.map((name) => ({ name })) });
+  await tool(deps, 'create_entities').handler({ type: 'widget', items: names.map((title) => ({ title })) });
 }
 
 function tool(deps: EntityToolsDeps, name: string) {
@@ -247,12 +247,12 @@ describe('entity-tools: type validation', () => {
 
 describe('entity-tools: batch partial-success', () => {
   it('create_entities: one rejected item does not roll back the others, envelope preserves input order', async () => {
-    // The middle item omits the required `name`, so the generated create schema
+    // The middle item omits the required `title`, so the generated create schema
     // rejects it before the write door is reached.
     const { deps, rows } = fakeDeps();
     const result = await tool(deps, 'create_entities').handler({
       type: 'widget',
-      items: [{ name: 'a' }, {}, { name: 'b' }],
+      items: [{ title: 'a' }, {}, { title: 'b' }],
     });
     expect(result.isError).toBeUndefined();
     const { results } = parse(result) as { results: Array<Record<string, unknown>> };
@@ -283,7 +283,7 @@ describe('entity-tools: update_entities rename', () => {
     const { deps, rows } = fakeDeps();
     const result = await tool(deps, 'update_entities').handler({
       type: 'widget',
-      updates: [{ slug: 'widget-existing', data: { name: 'renamed' }, newSlug: 'widget-renamed' }],
+      updates: [{ slug: 'widget-existing', data: { title: 'renamed' }, newSlug: 'widget-renamed' }],
     });
     const { results } = parse(result) as { results: Array<Record<string, unknown>> };
     expect(results[0]).toEqual({ slug: 'widget-renamed' });
@@ -306,9 +306,9 @@ describe('entity-tools: filters (list_entities/search_entities)', () => {
    */
   it('forwards `filters` to the core, which is the only thing that can apply them', async () => {
     const { deps } = fakeDeps();
-    await tool(deps, 'list_entities').handler({ type: 'widget', filters: { name: 'a' } });
+    await tool(deps, 'list_entities').handler({ type: 'widget', filters: { title: 'a' } });
     expect(deps.discovery.listEntities).toHaveBeenCalledWith(
-      expect.objectContaining({ filters: { name: 'a' } }),
+      expect.objectContaining({ filters: { title: 'a' } }),
     );
   });
 
@@ -328,11 +328,11 @@ describe('entity-tools: filters (list_entities/search_entities)', () => {
     const result = await tool(deps, 'search_entities').handler({
       type: 'widget',
       query: 'a',
-      filters: { name: 'a' },
+      filters: { title: 'a' },
     });
     expect(result.isError).toBeFalsy();
     expect(deps.discovery.searchEntities).toHaveBeenCalledWith(
-      expect.objectContaining({ filters: { name: 'a' } }),
+      expect.objectContaining({ filters: { title: 'a' } }),
     );
   });
 });
@@ -383,7 +383,7 @@ describe('entity-tools: search_entities requires one type', () => {
       query: 'existing',
       fields: ['name'],
     });
-    expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
+    expect(parse(result)).toMatchObject({ searchedFields: ['widget.title'] });
   });
 
   /**
@@ -396,7 +396,7 @@ describe('entity-tools: search_entities requires one type', () => {
   it('answers from the core, whose searchedFields is exactly what it searched', async () => {
     const { deps } = fakeDeps();
     const result = await tool(deps, 'search_entities').handler({ type: 'widget', query: 'existing' });
-    expect(parse(result)).toMatchObject({ searchedFields: ['widget.name'] });
+    expect(parse(result)).toMatchObject({ searchedFields: ['widget.title'] });
   });
 
   it('an active type without CRUD is searchable — reading is not writing', async () => {
@@ -451,7 +451,7 @@ describe('entity-tools: describe_entity_type', () => {
     expect(types[0]).toMatchObject({ type: 'widget', crudSupported: true });
     expect(types[0]).not.toHaveProperty('searchSupported');
     // Derived from the create schema — the only source of scope since 0.2.4.
-    expect(types[0]!.searchableFields).toEqual(expect.arrayContaining(['name']));
+    expect(types[0]!.searchableFields).toEqual(expect.arrayContaining(['title']));
   });
 
   /**

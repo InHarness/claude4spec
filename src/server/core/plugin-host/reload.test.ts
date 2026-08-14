@@ -9,7 +9,7 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
   return {
     name: '@c4s/reloadable',
     version,
-    hostApiVersion: '^2.0.0',
+    hostApiVersion: '^3.0.0',
     onUnregister,
     contributes: {
       entities: [
@@ -107,11 +107,12 @@ describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
     // A different MAJOR than the host's (2.0.0) — `^3.0.0`, not `^1.0.0`, so the
     // case keeps testing a forward mismatch rather than becoming the 1→2
     // migration every real plugin now has to make.
-    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^3.0.0' };
+    // One major behind the host (3.0.0) — the shape a stale package really has.
+    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^2.0.0' };
     const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: incompatible }));
 
     expect(rec).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(rec.migration?.targetHostApiVersion).toBe('2.0.0');
+    expect(rec.migration?.targetHostApiVersion).toBe('3.0.0');
     expect(oldTeardown).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()[0]?.version).toBe('1.0.0');
     warn.mockRestore();

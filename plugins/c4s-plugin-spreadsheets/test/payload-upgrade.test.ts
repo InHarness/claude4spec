@@ -43,7 +43,7 @@ describe('dense → sparse payload upgrade', () => {
   it('is the only step, and matches the declared payloadVersion of 2', () => {
     // Registration refuses `payloadVersion: n` without exactly n-1 steps, so
     // this pins the pair that must move together.
-    expect(spreadsheetPayloadUpgrades).toHaveLength(1);
+    expect(spreadsheetPayloadUpgrades).toHaveLength(2);
   });
 
   it('turns a real v1 file into 1-based keyed cells', () => {

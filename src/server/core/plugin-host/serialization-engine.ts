@@ -54,13 +54,15 @@ export interface DescribeResult {
   type: string;
   payloadVersion: number;
   /**
-   * 0.2.9: EVERY view kind, for every active type — a type answers all five,
-   * computing some and letting the host generate the rest. The old list held
-   * only the kinds a serializer implemented, which made a type that declared its
-   * data and computed nothing read as supporting no views at all. Which view is
-   * computed and which is generic is carried inside each schema (`x-computed`).
+   * Keyed by view kind, all five, for every active type.
+   *
+   * 0.2.22 removed the sibling `views: ViewKind[]`. It listed the kinds as a
+   * CHOICE, and there is no longer a choice to make — a caller states a `select`
+   * and the host decides internally what to serialize before projecting. These
+   * schemas stay because they describe shapes this host really can produce;
+   * which of them is computed and which is generic is carried inside each one
+   * (`x-computed`).
    */
-  views: ViewKind[];
   schemas: Record<string, JsonSchema>;
 }
 
@@ -202,15 +204,22 @@ export class SerializationEngine {
    * every view is returned, because every type answers every view. Schemas are
    * derived from `data.schema` — see {@link getSchema}.
    */
-  describe(type: string, view: ViewKind | undefined): DescribeResult | null {
+  /**
+   * 0.2.22 — no `view` parameter, and no `views` in the answer.
+   *
+   * The five schemas are still emitted: a view remains an INTERNAL shape, and
+   * the schema of each is a real fact about what this host can produce. What
+   * disappears is the caller's ability to ask for one of them, and the list that
+   * implied they had a choice.
+   */
+  describe(type: string): DescribeResult | null {
     const m = this.host.listEntities().find((e) => e.type === type);
     if (!m) return null;
-    const targetViews: ViewKind[] = view ? [view] : [...VIEW_KINDS];
     const schemas: Record<string, JsonSchema> = {};
-    for (const v of targetViews) {
+    for (const v of VIEW_KINDS) {
       schemas[v] = this.getSchema(type, v);
     }
-    return { type, payloadVersion: m.payloadVersion, views: [...VIEW_KINDS], schemas };
+    return { type, payloadVersion: m.payloadVersion, schemas };
   }
 }
 

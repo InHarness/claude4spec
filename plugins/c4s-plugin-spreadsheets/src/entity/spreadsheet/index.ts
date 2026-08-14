@@ -52,7 +52,7 @@ export const spreadsheetEntity: EntityContribution = {
    * `cells: string[][]` v1 wrote. See `upgrades.ts`; registration refuses this
    * number without exactly one upgrade step behind it.
    */
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: SPREADSHEET_LABEL,
   labelPlural: SPREADSHEET_LABEL_PLURAL,
   displayOrder: SPREADSHEET_DISPLAY_ORDER,

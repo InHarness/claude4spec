@@ -91,14 +91,14 @@ export function EndpointDetail({
     if (!endpoint) return;
     const ok = await confirmDestructive({
       title: 'Delete endpoint?',
-      body: `Delete ${endpoint.method} ${endpoint.path}? All references to this endpoint will become broken.`,
+      body: `Delete ${endpoint.title}? All references to this endpoint will become broken.`,
       confirmLabel: 'Delete',
     });
     if (!ok) return;
     try {
       await remove.mutateAsync(endpoint.slug);
       onDeleted();
-      toast.success(`Endpoint ${endpoint.method} ${endpoint.path} deleted`);
+      toast.success(`Endpoint ${endpoint.title} deleted`);
     } catch (err) {
       toast.error((err as Error).message);
     }
@@ -221,7 +221,7 @@ export function EndpointDetail({
                 const link = endpoint.dtos.find((l) => l.dtoSlug === d.slug && l.relation === rel);
                 return {
                   id: d.slug,
-                  label: d.name,
+                  label: d.title,
                   badge:
                     rel === 'request' ? undefined : (
                       <StatusBadge

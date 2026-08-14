@@ -37,6 +37,7 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
       label: { kind: 'string', required: true },
       size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
       active: { kind: 'boolean', default: true },
@@ -214,6 +215,7 @@ describe('keyed collections', () => {
     payloadVersion: 1,
     data: {
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         name: { kind: 'string', required: true },
         nRows: { kind: 'number', column: 'n_rows', default: 0 },
         nCols: { kind: 'number', column: 'n_cols', default: 0 },
@@ -287,7 +289,8 @@ describe('keyed collections', () => {
       ...grid,
       data: {
         schema: {
-          ...grid.data!.schema,
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...grid.data!.schema,
           cells: {
             ...(grid.data!.schema.cells as never as Record<string, unknown>),
             item: {
@@ -517,7 +520,8 @@ describe('keyed collections', () => {
     ...grid,
     data: {
       schema: {
-        ...grid.data!.schema,
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...grid.data!.schema,
         cells: {
           kind: 'collection',
           collection: 'keyed',
@@ -794,6 +798,7 @@ describe('the generic junction door keeps the per-type guarantees', () => {
     payloadVersion: 1,
     data: {
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         label: { kind: 'string', required: true },
         links: {
           kind: 'collection',
@@ -876,6 +881,7 @@ describe('dangling refs — anywhere the declaration puts one', () => {
     payloadVersion: 1,
     data: {
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         name: { kind: 'string', required: true },
         columns: {
           kind: 'collection',
@@ -965,6 +971,7 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
           label: { kind: 'string', required: true },
           links: {
             kind: 'collection',
@@ -1003,6 +1010,7 @@ describe('dangling refs — anywhere the declaration puts one', () => {
       payloadVersion: 1,
       data: {
         schema: {
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
           label: { kind: 'string', required: true },
           designSystemSlug: {
             kind: 'string',
@@ -1039,6 +1047,7 @@ describe('dangling refs — polymorphic refs are excluded', () => {
     payloadVersion: 1,
     data: {
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         text: { kind: 'string', required: true },
         verifies: {
           kind: 'collection',
@@ -1073,7 +1082,8 @@ describe('dangling refs — polymorphic refs are excluded', () => {
       payloadVersion: 1,
       data: {
         schema: {
-          ...acLike.data!.schema,
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...acLike.data!.schema,
           owner: { kind: 'string', column: 'owner', ref: 'aclike', onMissing: 'warn' },
         },
       },

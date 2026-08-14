@@ -52,3 +52,27 @@ export function endpointPayloadV1ToV2(payload: SnapshotData): SnapshotData {
 
   return p;
 }
+
+/**
+ * v2 → v3: the endpoint gains the reserved `title`.
+ *
+ * `title := "{method} {path}"` — the same string four renderers used to build
+ * for themselves, now stored once. `method` and `path` stay: they are how a
+ * route is addressed and filtered, and the title is a label over them, not a
+ * replacement for them.
+ *
+ * The slug is unaffected. `slugify("GET /api/users/:id")` and the retired
+ * `{method}-{slugify(path)}` produce the same string, so nothing re-slugs.
+ *
+ * Idempotent: a payload already carrying a title is returned untouched.
+ */
+export function endpointPayloadV2ToV3(payload: SnapshotData): SnapshotData {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const p = { ...(payload as Record<string, unknown>) };
+  if (typeof p.title === 'string' && p.title.trim() !== '') return p;
+  // Bounded at the field's own `maxLength`, exactly as the `computedDefault`
+  // does on the create path. An upgrade that produced a value the declaration
+  // refuses would leave the entity unwritable until somebody retitled it.
+  p.title = `${String(p.method ?? '')} ${String(p.path ?? '')}`.trim().slice(0, 200);
+  return p;
+}

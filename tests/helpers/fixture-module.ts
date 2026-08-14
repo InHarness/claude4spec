@@ -17,16 +17,26 @@ export interface FixtureModuleOpts {
 }
 
 /**
- * The schema every fixture type declares unless it says otherwise: one required
- * `name`, which is also what its slug pattern reads. Minimal on purpose — a
+ * The schema every fixture type declares unless it says otherwise: the reserved
+ * `title`, which is also what its slug pattern reads. Minimal on purpose — a
  * fixture exists to prove the host treats a plugin-contributed type exactly like
  * a built-in one, so the less it declares the stronger that claim is.
+ *
+ * 0.2.22 — this was a required `name`. It could not stay: `title` is required on
+ * every registered type, so a fixture without one no longer registers, and
+ * keeping an unused `name` beside it would have the fixture declaring a field no
+ * built-in type has.
  */
 export const FIXTURE_DATA: DataDeclaration = {
-  schema: { name: { kind: 'string', required: true } },
+  schema: {
+    // `default` so a fixture's write payloads stay about whatever they are
+    // testing: `title` is required on every type now, and threading a label
+    // through a hundred collection/projection assertions would say nothing.
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+  },
 };
 
-export const FIXTURE_SLUG_PATTERN: SlugPattern = [{ op: 'slugify', field: 'name' }];
+export const FIXTURE_SLUG_PATTERN: SlugPattern = [{ op: 'slugify', field: 'title' }];
 
 /**
  * A minimal, real (non-core) plugin module — distinct from every

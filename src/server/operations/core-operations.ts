@@ -10,9 +10,9 @@
  * `DiscoveryCore` method, and none of them re-derives its behaviour. Where that
  * is checkable it is checked — see `catalog.test.ts`.
  *
- * ## M39 read core — 14 operations, full four-channel parity
+ * ## M39 read core — 15 operations, full four-channel parity
  *
- * All 14 are `project` scope, `direct` mediation, `direct` in all four channels,
+ * All 15 are `project` scope, `direct` mediation, `direct` in all four channels,
  * ZERO `n/a` cells. Three of them (`check_consistency`, `search_entities`,
  * `resolve_identity`) had no `rest` rendering before 0.2.13; this release adds
  * it, which is what makes the parity claim true rather than aspirational.
@@ -20,7 +20,7 @@
  * The `cli` cells say `direct` because M11 renders the whole catalog as CLI
  * commands. Parity there is OPERATIONAL, not nominal: five XML-tag reader
  * commands may front one `get_entities` operation, exactly as MCP fronts it with
- * one tool and a `view` parameter. Note the CLI's own migration to
+ * one tool and a `select` parameter. Note the CLI's own migration to
  * server-delegating execution is a later tier — the cell describes the contract,
  * and the command's execution mode is a separate property of L14.
  *
@@ -46,12 +46,24 @@
 import { z } from 'zod';
 import { CATALOG, direct, na, via, type OperationDeclaration } from './catalog.js';
 
-/** Shared by every operation that projects an entity through the serialization layer. */
-const viewParam = {
-  view: z
-    .enum(['inline_mention', 'single_element', 'element_list_item', 'detail', 'full'])
+/**
+ * The field projection, on the operations that return whole records.
+ *
+ * 0.2.22 — this replaces `viewParam`, and the difference is who decides. A view
+ * was a shape the TYPE declared and the caller picked from; a projection is a
+ * shape the CALLER states and the host computes from the schema. Which is why
+ * the parameter appears on `get_entities` alone: the discovery operations
+ * (`list_entities`, `search_entities`) have frozen rows, and page operations
+ * have no logical schema to project from at all.
+ */
+const selectParam = {
+  select: z
+    .array(z.string())
     .optional()
-    .describe('Projection kind. Defaults to the operation\'s natural view.'),
+    .describe(
+      'Top-level field names to return, plus slug/title/tags always. Omit for every field except ' +
+        'content-bearing ones; [] for the identity skeleton alone.',
+    ),
 };
 
 /** Shared paging vocabulary — same names in every channel. */
@@ -60,8 +72,16 @@ const paging = {
   offset: z.number().int().nonnegative().optional(),
 };
 
-/** Every M39 read operation can answer with these. */
-const READ_CODES = ['INVALID_TYPE', 'INVALID_VIEW', 'INVALID_ARGUMENT', 'INDEX_NOT_MATERIALIZED'] as const;
+/**
+ * Every M39 read operation can answer with these.
+ *
+ * `INVALID_VIEW` left the list in 0.2.22. It is still in the core taxonomy —
+ * surfaces that pick a view INTERNALLY (the XML-tag CLI commands, the page
+ * renderer) can still name one that does not exist — but no read operation takes
+ * a view from a caller any more, so no read operation can produce it. Leaving it
+ * declared would have advertised a failure mode that cannot occur.
+ */
+const READ_CODES = ['INVALID_TYPE', 'INVALID_ARGUMENT', 'INDEX_NOT_MATERIALIZED'] as const;
 
 /** All four channels render it themselves — the M39 parity shape. */
 const fullParity = () => ({
@@ -102,12 +122,10 @@ export function registerCoreOperations(): void {
   if (seeded) return;
   seeded = true;
 
-  // ── M39 read core (14) ────────────────────────────────────────────────────
+  // ── M39 read core (15) ────────────────────────────────────────────────────
 
   CATALOG.register(
-    coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {
-      ...viewParam,
-    }),
+    coreRead('overview', 'Entry point to a specification: page roots with their properties, active entity types with counts and payload versions, tag count, claude4spec version.', {}),
   );
 
   CATALOG.register(
@@ -116,7 +134,6 @@ export function registerCoreOperations(): void {
     // `config.entities`, and it greps string literals too.
     coreRead('describe_types', "Schemas of the active entity types. Without a type argument, all of them; a type outside the project's activation set is INVALID_TYPE, never a silent fallback.", {
       types: z.array(z.string()).optional().describe('Restrict to these type ids. Omit for every active type.'),
-      ...viewParam,
     }),
   );
 
@@ -156,29 +173,38 @@ export function registerCoreOperations(): void {
   );
 
   CATALOG.register(
-    coreRead('search_entities', 'Ranked search over one entity type. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched.', {
+    coreRead('search_entities', 'Ranked search over one entity type. Hits are `{slug, title, score}`. Returns `searchedFields`, so an empty result is distinguishable from a field that was never searched. Content-bearing fields are outside the scanning scope.', {
       type: z.string(),
       query: z.string(),
       fields: z.array(z.string()).optional(),
-      ...viewParam,
       ...paging,
     }),
   );
 
   CATALOG.register(
-    coreRead('list_entities', 'Entities of one type in the reader\'s order, paged.', {
+    coreRead('list_entities', 'Entities of one type, paged. Rows are `{slug, title}` — discovery answers with keys; ask `get_entities` for content. The `createdAt` order is the only one whose offset window is stable under concurrent writes.', {
       type: z.string(),
-      ...viewParam,
+      tagFilter: z.enum(['and', 'or']).optional().describe("How to combine `tags`. Default 'and'."),
+      sort: z.enum(['createdAt', 'title', 'slug']).optional(),
+      dir: z.enum(['asc', 'desc']).optional(),
       ...paging,
     }),
   );
 
   CATALOG.register(
-    coreRead('get_entities', 'Several entities of one type by slug, in ONE call.', {
+    coreRead('get_entities', 'Several entities of one type by slug, in ONE call. Width is the caller\'s: see `select`.', {
       type: z.string(),
       slugs: z.array(z.string()).min(1),
-      ...viewParam,
-    }, ['ENTITY_NOT_FOUND', 'AMBIGUOUS_ENTITY']),
+      ...selectParam,
+    }, ['ENTITY_NOT_FOUND', 'AMBIGUOUS_ENTITY', 'INVALID_ARGUMENT']),
+  );
+
+  CATALOG.register(
+    coreRead('get_field_content', 'The content of ONE content-bearing field, by (type, slug, field). Such a field is issued by no generic read; this is how it is fetched — on every channel, including the REST layer behind the UI.', {
+      type: z.string(),
+      slug: z.string(),
+      field: z.string(),
+    }, ['ENTITY_NOT_FOUND', 'INVALID_ARGUMENT']),
   );
 
   CATALOG.register(

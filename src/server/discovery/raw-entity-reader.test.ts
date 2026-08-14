@@ -149,6 +149,7 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
       type: 'ac',
       data: {
         schema: {
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
           text: { kind: 'string', required: true },
           status: { kind: 'enum', values: ['active', 'deprecated'], default: 'active' },
           caption: { kind: 'string', transientInput: true },
@@ -166,10 +167,10 @@ describe('RawEntityReader.count — the declared predicate, resolved internally'
 
   function seeded(): Database.Database {
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, text TEXT, status TEXT);`);
-    const insert = db.prepare('INSERT INTO ac (slug, text, status) VALUES (?, ?, ?)');
-    for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 'active');
-    for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 'deprecated');
+    db.exec(`CREATE TABLE ac (slug TEXT PRIMARY KEY, title TEXT, text TEXT, status TEXT);`);
+    const insert = db.prepare('INSERT INTO ac (slug, title, text, status) VALUES (?, ?, ?, ?)');
+    for (let i = 0; i < 9; i += 1) insert.run(`a${i}`, 't', 't', 'active');
+    for (let i = 0; i < 3; i += 1) insert.run(`d${i}`, 't', 't', 'deprecated');
     return db;
   }
 
@@ -272,6 +273,7 @@ describe('hydrate — decoding is driven by the declared kind', () => {
       type: 'diagram',
       data: {
         schema: {
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
           format: { kind: 'enum', values: ['mermaid', 'd2'], default: 'mermaid' },
           source: { kind: 'string', required: true },
           params: { kind: 'collection', collection: 'value', item: { kind: 'string' } },

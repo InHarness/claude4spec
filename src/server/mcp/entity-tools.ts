@@ -192,8 +192,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   ): { items: Array<{ slug: string }>; total: number } => {
     const page = deps.discovery.listEntities({
       type,
-      view: 'element_list_item',
-      ...(tags?.length ? { tags, filter: tagFilter } : {}),
+      ...(tags?.length ? { tags, tagFilter } : {}),
       ...(filters ? { filters } : {}),
       // The transports inherit a type's declared default (`ac` → active only);
       // page rendering does not. See `ListEntitiesInput.applyDefaultPredicate`.
@@ -246,22 +245,64 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── get_entities ─────────────────────────────────────────────────────────
   const getEntities = mcpTool(
     'get_entities',
-    'Fetch multiple entities of the same type by slug. Missing slugs come back as { slug, entity: null } WITHOUT `truncated`, not an error. The response has a size budget: nothing you named is dropped, but an item past the budget comes back with `entity: null` AND `truncated: true` — which is what keeps "no such entity" distinguishable from "cut for size" — while the envelope\'s `message` says how to retry. The FIRST item is never degraded that way; a one-slug call is already the smallest retry, so it is emitted whole. Returns the full L9 detail view per entity.',
+    'Fetch multiple entities of the same type by slug. Missing slugs come back as { slug, entity: null } WITHOUT `truncated`, not an error. The response has a size budget: nothing you named is dropped, but an item past the budget comes back with `entity: null` AND `truncated: true` — which is what keeps "no such entity" distinguishable from "cut for size" — while the envelope\'s `message` says how to retry. The FIRST item is never degraded that way; a one-slug call is already the smallest retry, so it is emitted whole. Record width is yours to choose with `select`; the envelope echoes `selectedFields`, so a narrow record is distinguishable from an entity holding little data. Content-bearing fields never travel here — fetch them with get_field_content. Does NOT expand embedded mentions and does NOT take a view.',
     {
       type: z.string().describe('Entity type, e.g. "endpoint"'),
       slugs: z.array(z.string()),
+      select: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Top-level field names to return; slug, title and tags always come back. Omit for every ' +
+            'field except content-bearing ones. [] for the identity skeleton alone. A dotted path, ' +
+            'a [] suffix or an unknown name is INVALID_ARGUMENT with the legal names attached. ' +
+            'Naming a content-bearing field is allowed and answers with its descriptor plus the ' +
+            'operation that issues the content. Call describe_entity_type for selectableFields.',
+        ),
     },
     async (args) => {
       const type = String(args.type);
       const resolved = resolveType(type);
       if (!resolved.ok) return resolved.response;
       const slugs = (args.slugs as string[]).map(String);
+      const select = args.select === undefined ? undefined : (args.select as string[]).map(String);
 
       // M39: the read goes through the discovery core, which owns the slug-list
       // limit and the response budget. A missing slug still comes back as
       // `{ slug, entity: null }` rather than an error — absence is an answer.
-      const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'detail' });
-      return ok({ type, results: results.map((r) => ({ slug: r.slug, entity: r.entity })) });
+      const { results, selectedFields } = getEntitiesAll(deps.discovery, {
+        type,
+        slugs,
+        ...(select ? { select } : {}),
+      });
+      return ok({
+        type,
+        selectedFields,
+        results: results.map((r) => ({ slug: r.slug, entity: r.entity })),
+      });
+    },
+  );
+
+  // ─── get_field_content ────────────────────────────────────────────────────
+  const getFieldContent = mcpTool(
+    'get_field_content',
+    'Fetch the content of ONE content-bearing field of one entity. Such a field never travels in get_entities or list_entities — you get `has<Field>`/`<field>Bytes` and this operation\'s name instead — so this is how you read a diagram body or any other field measured in kilobytes. Call describe_entity_type for the type\'s `contentFields`. A field that is not content-bearing is INVALID_ARGUMENT with the covered fields listed; an unknown slug is NOT_FOUND. No side effects; write the field with update_entities as usual.',
+    {
+      type: z.string().describe('Entity type, e.g. "diagram"'),
+      slug: z.string(),
+      field: z.string().describe('A content-bearing field of that type, e.g. "source"'),
+    },
+    async (args) => {
+      const type = String(args.type);
+      const resolved = resolveType(type);
+      if (!resolved.ok) return resolved.response;
+      return ok(
+        deps.discovery.getFieldContent({
+          type,
+          slug: String(args.slug),
+          field: String(args.field),
+        }),
+      );
     },
   );
 
@@ -363,7 +404,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     // getEntitiesAll: the service decided how many slugs this page has (the
     // caller's own `limit`), so refusing to serialize them past 50 would turn a
     // documented `list_entities({ limit: 100 })` into a thrown error.
-    getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' })
+    getEntitiesAll(deps.discovery, { type, slugs }).results
       .filter((r) => r.entity !== null)
       .map((r) => r.entity);
 
@@ -479,7 +520,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       return ok({
         type,
         mode: 'hits',
-        items: page.items.map((item) => item.data),
+        items: page.items,
         total: page.total,
         hasMore: page.hasMore,
         searchedFields: page.searchedFields,
@@ -490,7 +531,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
   // ─── describe_entity_type ─────────────────────────────────────────────────
   const describeEntityType = mcpTool(
     'describe_entity_type',
-    'Introspect one or all active entity types: createSchema/updateSchema (JSON Schema), whether CRUD is supported, the paths search covers (`searchableFields`), L9 views, and the custom server\'s tool line (if any). `searchableFields` is DERIVED from the type\'s declared data schema, not declared by the type — it is what a search_entities call would actually consult, and it is never empty for an active type. Omit `type` for all active types.',
+    'Introspect one or all active entity types. Call it before a WRITE to learn createSchema/updateSchema and the value `constraints` a write must satisfy — and before a READ to learn `selectableFields` (the names get_entities `select` accepts), `contentFields` (fields no generic read carries, each with the operation that issues its content) and `searchableFields` (the dotted paths search consults). All four are DERIVED from the type\'s declared data schema rather than declared by the type, so what a type advertises and what the host enforces cannot drift. Omit `type` for all active types.',
     {
       type: z.string().optional(),
     },
@@ -503,13 +544,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        * ONE core call for the whole batch.
        *
        * It used to run per type inside the map below, deriving five JSON Schemas
-       * per type and discarding all of them to read `views` — which is now the
-       * same five kinds for everyone, so the field carried no information at all.
-       * The distinction that DOES matter moved into the schemas: `x-computed`
-       * marks a view the type builds itself, as opposed to one the host projects
-       * from the row. That is what `computedViews` reports.
+       * per type and discarding all of them to read `views`. What the batch is
+       * read for now are the three derived lists this release replaced `views`
+       * with — `constraints`, `contentFields` and `selectableFields`.
        */
-      type Described = { type: string; views?: string[]; schemas?: Record<string, unknown> };
+      type Described = {
+        type: string;
+        schemas?: Record<string, unknown>;
+        constraints?: unknown[];
+        contentFields?: Array<{ field: string; operation: string }>;
+        selectableFields?: string[];
+      };
       const describedByType = new Map<string, Described>();
       let batched = true;
       try {
@@ -547,7 +592,6 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
           const described = batched
             ? describedByType.get(module.type)
             : (deps.discovery.describeTypes({ types: [module.type] }).types[0] as Described | undefined);
-          const schemas = (described?.schemas ?? {}) as Record<string, { 'x-computed'?: boolean }>;
           return {
             type: module.type,
             label: module.label,
@@ -563,17 +607,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
              */
             searchableFields: resolveSearchFields(module, undefined).map((f) => f.path),
             crudSupported,
-            views: described?.views ?? [],
             /**
-             * The subset the TYPE builds itself. Asking for a view a type does
-             * not compute is not an error — the host projects the row — but it
-             * returns nothing the cheaper list view would not, which is exactly
-             * what a caller deciding whether `detail` is worth fetching needs to
-             * know.
+             * 0.2.22 — `views` and `computedViews` are GONE from this output.
+             *
+             * They told a caller which of five shapes a type built itself, so
+             * that it could decide whether asking for `detail` was worth it.
+             * There is no such decision left to make: width is `select`'s, and
+             * these three lists are what a caller now needs before a read.
              */
-            computedViews: Object.entries(schemas)
-              .filter(([, schema]) => schema?.['x-computed'] === true)
-              .map(([view]) => view),
+            constraints: described?.constraints ?? [],
+            contentFields: described?.contentFields ?? [],
+            selectableFields: described?.selectableFields ?? [],
             customToolsLine: module.systemPrompt.mcpToolsLine,
           };
         } catch (err) {
@@ -584,9 +628,17 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
+  /**
+   * Order is the reading order of the surface rather than an accident: create,
+   * read, read-the-content-a-read-will-not-carry, then the mutations, then
+   * discovery, then introspection. `getFieldContent` sits beside `getEntities`
+   * because the two are halves of one contract — the second hands over exactly
+   * what the first deliberately withholds.
+   */
   return [
     createEntities,
     getEntities,
+    getFieldContent,
     updateEntities,
     deleteEntities,
     listEntities,

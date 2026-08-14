@@ -155,6 +155,12 @@ async function baselineDb(): Promise<Database.Database> {
  *     (`idx_endpoint_dto_endpoint` → `idx_endpoint_dto_endpoint_slug`, likewise
  *     for `_dto`). They cover the same columns; an index name is not a contract
  *     surface, since nothing queries by it.
+ *  3. 0.2.22 — every entity table gains the reserved `title` column, and `dto`
+ *     loses the `name` it replaced. A legacy database reaches the same shape
+ *     through `reconcileColumns`, which ADDs the column at boot (nullable, since
+ *     SQLite refuses `ADD COLUMN NOT NULL` without a default) and lets the
+ *     rebuild fill it from the files. This delta is applied to the LEGACY side
+ *     so the rest of each table still compares strictly.
  */
 const RENAMED_INDEXES: Record<string, string> = {
   idx_endpoint_dto_endpoint: 'idx_endpoint_dto_endpoint_slug',
@@ -192,7 +198,20 @@ const NEW_SINCE_LEGACY = new Set(['spreadsheet', 'spreadsheet_cells']);
 const withoutNewTables = (schema: Record<string, TableShape>): Record<string, TableShape> =>
   Object.fromEntries(Object.entries(schema).filter(([table]) => !NEW_SINCE_LEGACY.has(table)));
 
-/** Apply the two known deltas to the LEGACY snapshot so the rest compares strictly. */
+/**
+ * The reserved column, in the position the generator emits it: first among the
+ * declared fields, i.e. straight after `slug`.
+ */
+const TITLE_COLUMN = { name: 'title', type: 'TEXT', notnull: 1, dflt_value: null, pk: 0 };
+
+/**
+ * The types whose legacy `name` column was REPLACED by `title` rather than
+ * joined by it. `database_table` is deliberately absent — it is the one type
+ * where the two coexist, because its `name` is a SQL identifier.
+ */
+const RENAMED_TO_TITLE = new Set(['dto', 'design_system', 'ui_view']);
+
+/** Apply the known deltas to the LEGACY snapshot so the rest compares strictly. */
 function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string, TableShape> {
   const out: Record<string, TableShape> = {};
   for (const [table, shape] of Object.entries(schema)) {
@@ -200,11 +219,21 @@ function applyExpectedDeltas(schema: Record<string, TableShape>): Record<string,
       out[table] = shape;
       continue;
     }
+    const withoutRenamed = RENAMED_TO_TITLE.has(table)
+      ? shape.columns.filter((c) => (c as { name: string }).name !== 'name')
+      : shape.columns;
+    // `endpoint_dto` is a junction, not an entity: it has no title.
+    const withTitle =
+      table === 'endpoint_dto'
+        ? withoutRenamed
+        : [withoutRenamed[0], TITLE_COLUMN, ...withoutRenamed.slice(1)];
     out[table] = {
       ...shape,
-      columns: shape.columns.map((c) => {
+      columns: withTitle.map((c, cid) => {
         const col = c as { pk: number; notnull: number };
-        return col.pk === 1 ? { ...col, notnull: 1 } : col;
+        // `cid` is positional and every insertion shifts it, so it is restamped
+        // rather than compared as authored.
+        return { ...col, cid, ...(col.pk === 1 ? { notnull: 1 } : {}) };
       }),
       indexes: shape.indexes
         .map((i) => {

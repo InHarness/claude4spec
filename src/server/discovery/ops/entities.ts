@@ -19,10 +19,12 @@ import { DEFAULT_LIMITS, paginate } from '../pagination.js';
 import { compareRanked, relevance } from '../ranking.js';
 import { resolveSearchFields, valuesAtPath } from '../search/fields.js';
 import type { RawEntity } from '../raw-entity-reader.js';
+import { columnOf, RESERVED_TITLE_FIELD } from '../../../shared/plugin-host/data-schema.js';
 import type { ViewKind } from '../../serialization/types.js';
-import { requireView } from '../views.js';
+import { project, selectedFieldsOf, validateSelect } from '../project.js';
 import type {
   DiscoveryDeps,
+  EntityRow,
   GetEntitiesInput,
   GetEntitiesResult,
   ListEntitiesInput,
@@ -41,7 +43,7 @@ function requireActiveType(deps: DiscoveryDeps, type: string) {
 
 export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): ListEntitiesResult {
   requireActiveType(deps, input.type);
-  const filter = input.filter ?? 'and';
+  const tagFilter = input.tagFilter ?? 'and';
 
   /**
    * An ABSENT `tags` is "no tag filter"; an EMPTY `tags` is "filter by nothing",
@@ -55,7 +57,9 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
       ? deps.reader.listSlugs(input.type)
       : input.tags.length === 0
         ? []
-        : deps.reader.findByTag({ type: input.type, tags: input.tags, filter }).map((e) => e.slug);
+        : deps.reader
+            .findByTag({ type: input.type, tags: input.tags, filter: tagFilter })
+            .map((e) => e.slug);
   /**
    * 0.2.4 — NO re-sort here. The reader owns the order (`created_at, slug`,
    * `RawEntityReader.orderClause`) and it is the same order the REST and UI
@@ -76,15 +80,65 @@ export function listEntities(deps: DiscoveryDeps, input: ListEntitiesInput): Lis
 
   // "How many entities carry tag X" without walking them: the count mode exists
   // so measurement never costs a full traversal.
-  if (input.mode === 'count') return { mode: 'count', total: sorted.length };
+  if (input.mode === 'count') return { mode: 'count', type: input.type, total: sorted.length };
 
-  // The minimal view is the default on purpose — it kills both the bare-slug
-  // list and the N+1 that followed it, since `detail` carries `tags[]` and so
-  // the tag↔entity relation needs no second call.
-  const view = requireView(input.view, 'element_list_item');
-  const page = paginate(sorted, input, DEFAULT_LIMITS.listEntities);
-  const items = page.items.map((slug) => ({ slug, ...serializeSlug(deps, input.type, view, slug) }));
-  return { ...page, items, mode: 'items' };
+  const ordered = applySort(deps, input, sorted);
+  const page = paginate(ordered, input, DEFAULT_LIMITS.listEntities);
+  /**
+   * The row is built HERE, off the raw entity, and never serialized.
+   *
+   * 0.2.22 froze it to `{ slug, title }`, which means the type's own view
+   * functions have nothing left to contribute to a list — and that is a
+   * robustness gain as much as a contract one: a throwing per-type view can no
+   * longer take down an enumeration, which is the operation everything else
+   * falls back to when search or tags come up empty.
+   */
+  const items = page.items.map((slug) => rowFor(deps, input.type, slug));
+  return { mode: 'items', type: input.type, items, total: page.total, hasMore: page.hasMore };
+}
+
+/** The frozen discovery row. `title` is reserved, so every type has one. */
+function rowFor(deps: DiscoveryDeps, type: string, slug: string): EntityRow {
+  const raw = deps.reader.getEntity(type, slug);
+  return { slug, title: titleOf(deps, type, raw) };
+}
+
+/**
+ * An entity's label, read straight off the row.
+ *
+ * Falls back to the slug rather than to an empty string: a row read while the
+ * index is mid-rebuild may not carry `title` yet, and a list of blank labels is
+ * a worse answer than a list of slugs — which is what this all looked like
+ * before the reserved field existed.
+ */
+function titleOf(deps: DiscoveryDeps, type: string, raw: RawEntity | null | undefined): string {
+  if (!raw) return '';
+  const column = columnOf(RESERVED_TITLE_FIELD, deps.host.getEntity(type)?.data?.schema?.title ?? { kind: 'string' });
+  const value = raw.data[RESERVED_TITLE_FIELD] ?? raw.data[column];
+  return typeof value === 'string' && value !== '' ? value : raw.slug;
+}
+
+/**
+ * Order the slug list.
+ *
+ * The default is the READER's order (`created_at, slug`) and is left completely
+ * alone — no re-sort, not even a stable one — because that order is what every
+ * other surface sees and what makes an `offset` window survive a concurrent
+ * write: a new entity lands at the end rather than displacing a page boundary.
+ *
+ * `title` and `slug` re-sort the whole set and carry no such promise. `slug`
+ * breaks ties in both, so paging is at least deterministic in the absence of
+ * writes.
+ */
+function applySort(deps: DiscoveryDeps, input: ListEntitiesInput, slugs: string[]): string[] {
+  const dir = input.dir === 'desc' ? -1 : 1;
+  if (!input.sort || input.sort === 'createdAt') return dir === 1 ? slugs : [...slugs].reverse();
+  if (input.sort === 'slug') return [...slugs].sort((a, b) => a.localeCompare(b) * dir);
+  const byTitle = new Map(slugs.map((slug) => [slug, rowFor(deps, input.type, slug).title]));
+  return [...slugs].sort(
+    (a, b) =>
+      ((byTitle.get(a) ?? '').localeCompare(byTitle.get(b) ?? '') || a.localeCompare(b)) * dir,
+  );
 }
 
 /**
@@ -129,7 +183,7 @@ function serializeSlug(
 }
 
 export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEntitiesResult {
-  requireActiveType(deps, input.type);
+  const module = requireActiveType(deps, input.type);
   if (input.slugs.length > MAX_SLUGS_PER_CALL) {
     throw invalidArgument(
       `get_entities accepts at most ${MAX_SLUGS_PER_CALL} slugs (got ${input.slugs.length})`,
@@ -143,27 +197,35 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   const slugs = [...new Set(input.slugs)];
 
   /**
-   * The default WIDENS with the size of the request, because the two shapes of
-   * this call want different things: one slug is a lookup and wants the whole
-   * record, many slugs are a list and want a row each.
+   * ONE internal view, then a projection.
    *
-   * A flat `single_element` default made a view-less batch of forty slugs
-   * forty times wider than the `element_list_item` the tag it resolves
-   * (`<element_list slugs="a,b,…"/>`) has always rendered — enough to hit the
-   * response budget and come back `truncated`, where the identical call used to
-   * return everything.
+   * The width of the answer used to depend on how many slugs you asked for —
+   * one slug meant `single_element`, several meant the narrower
+   * `element_list_item` — which made `["order"]` and `["order","cart"]` return
+   * different shapes for `order`. Width is now the caller's to state, so this
+   * always serializes the WIDEST view (`detail`, the only one guaranteed to be a
+   * superset of the declared fields) and lets `project` cut it down.
    *
-   * Measured AFTER de-duplication, or `["order", "order"]` — which answers with
-   * exactly one entity, the same one `["order"]` answers with — would come back
-   * in the narrow list projection while the identical de-duplicated request
-   * comes back whole. A consumer reading the thin row as the complete record
-   * then reports fields as absent that are merely not in that view.
+   * `project` runs even when `select` is absent, so there is exactly one rule
+   * rather than a rule and an exception: the record is always `f(schema,
+   * select)`, and a field a computed view invented but the schema never declared
+   * does not travel under either.
    */
-  const view = requireView(input.view, slugs.length > 1 ? 'element_list_item' : 'single_element');
+  const schema = module.data?.schema ?? {};
+  validateSelect(input.select, schema);
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
-    const { data, ...meta } = serializeSlug(deps, input.type, view, slug);
-    return { slug, entity: data, ...meta };
+    const { data, ...meta } = serializeSlug(deps, input.type, 'detail', slug);
+    // The stored row goes in beside the serialized one, so a content-bearing
+    // field's SIZE is knowable even for a type whose own views (correctly) do
+    // not carry it. See `project`.
+    const stored = deps.reader.getEntity(input.type, slug)?.data;
+    return {
+      slug,
+      entity:
+        data === null ? null : project(data, input.select, schema, stored, module.pathPrefix),
+      ...meta,
+    };
   });
 
   /**
@@ -177,10 +239,13 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
    * back meta-only. The first item is never degraded, because a single-slug call
    * is already the smallest possible retry.
    */
+  // AFTER the projection, deliberately: the budget's promise is about the bytes
+  // the caller receives, and a `select: []` call that fits comfortably would
+  // otherwise be cut on the strength of a payload nobody was ever going to see.
   const budgeted = applyItemBudget(results, metaOnly, RETRY_HINT);
   return {
     type: input.type,
-    view,
+    selectedFields: selectedFieldsOf(input.select, schema),
     results: budgeted.items,
     ...(budgeted.truncated ? { truncated: true, message: budgeted.truncationHint ?? RETRY_HINT } : {}),
   };
@@ -239,7 +304,7 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
           input.tags.length === 0
             ? []
             : deps.reader
-                .findByTag({ type: input.type, tags: input.tags, filter: input.filter ?? 'and' })
+                .findByTag({ type: input.type, tags: input.tags, filter: input.tagFilter ?? 'and' })
                 .map((e) => e.slug),
         );
 
@@ -260,15 +325,13 @@ export function searchEntities(deps: DiscoveryDeps, input: SearchEntitiesInput):
 
   if (input.mode === 'count') return { mode: 'count', total: scored.length, searchedFields };
 
-  const view = requireView(input.view, 'element_list_item');
   const page = paginate(scored, input, DEFAULT_LIMITS.searchEntities);
   return {
     ...page,
-    items: page.items.map((hit) => ({
-      slug: hit.slug,
-      score: hit.score,
-      ...serializeSlug(deps, input.type, view, hit.slug),
-    })),
+    // The frozen row plus its score — search is discovery, and discovery
+    // answers with keys. A caller who wants content follows up with
+    // `get_entities` and states a projection.
+    items: page.items.map((hit) => ({ ...rowFor(deps, input.type, hit.slug), score: hit.score })),
     mode: 'hits',
     searchedFields,
   };
@@ -286,14 +349,16 @@ export function resolveIdentity(deps: DiscoveryDeps, input: ResolveIdentityInput
   const types = input.types?.length ? input.types : active;
   for (const type of types) if (!active.includes(type)) throw invalidType(type, active);
 
-  const candidates: Array<{ type: string; slug: string; label: string; score: number; key: string }> = [];
+  const candidates: Array<{ type: string; slug: string; title: string; score: number; key: string }> = [];
   for (const type of types) {
     for (const slug of deps.reader.listSlugs(type)) {
       const raw = deps.reader.getEntity(type, slug);
       if (!raw) continue;
-      const label = String(raw.data.name ?? raw.data.label ?? raw.data.title ?? slug);
-      const score = relevance(input.query, [slug, label]);
-      if (score > 0) candidates.push({ type, slug, label, score, key: `${type}/${slug}` });
+      // 0.2.22 — one field, not a `name ?? label ?? title` guess across three
+      // spellings none of which every type declared.
+      const title = titleOf(deps, type, raw);
+      const score = relevance(input.query, [slug, title]);
+      if (score > 0) candidates.push({ type, slug, title, score, key: `${type}/${slug}` });
     }
   }
   candidates.sort(compareRanked);
@@ -310,7 +375,7 @@ export function resolveIdentity(deps: DiscoveryDeps, input: ResolveIdentityInput
    */
   const limit = input.limit ?? DEFAULT_LIMITS.resolveIdentity;
   return {
-    candidates: candidates.slice(0, limit).map(({ type, slug, label, score }) => ({ type, slug, label, score })),
+    candidates: candidates.slice(0, limit).map(({ type, slug, title, score }) => ({ type, slug, title, score })),
     truncated: candidates.length > limit,
   };
 }

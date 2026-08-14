@@ -1,9 +1,23 @@
 import type { DataDeclaration } from '../../plugin-host/data-schema.js';
 import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
 
-/** Host API 2.0.0 — what `diagram` IS. */
+/** Host API 3.0.0 — what `diagram` IS. */
 export const diagramData: DataDeclaration = {
   schema: {
+    /**
+     * The reserved label, and `diagram`'s FIRST one — until 0.2.22 this type had
+     * no name at all, so every chip, row and card showed the raw slug.
+     *
+     * No `computedDefault`: there is nothing honest to derive it from. `source`
+     * is a DSL body, and the retired slug chain's guess at "the first identifier
+     * in the source" made a passable slug but would make a poor title.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      description: 'Label, e.g. "Checkout sequence".',
+    },
     /**
      * An `enum` node, so the generic write path REJECTS an unknown format rather
      * than coercing it. The retired read path mapped every value other than
@@ -19,58 +33,59 @@ export const diagramData: DataDeclaration = {
       default: 'mermaid',
       description: "Diagram language (default 'mermaid').",
     },
+    /**
+     * The FIRST `contentBearing` field in the specification, and the reason the
+     * flag was defined before anything used it.
+     *
+     * A diagram body is measured in kilobytes and is read by a renderer, not
+     * compared field-by-field by an agent listing diagrams. So it travels in no
+     * generic read — callers get `hasSource` / `sourceBytes` and the name of the
+     * operation that hands it over — while still being written normally,
+     * snapshotted normally, and stored verbatim in the entity file.
+     */
     source: {
       kind: 'string',
       required: true,
       default: '',
-      description: 'DSL body (mermaid). May be empty (placeholder).',
+      contentBearing: true,
+      description:
+        'DSL body (mermaid). May be empty (placeholder). Content-bearing: read it with ' +
+        'get_field_content, not through get_entities.',
     },
     createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
     updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
-    /**
-     * Seeds the slug and is never persisted — the declarative spelling of what
-     * `diagramCreateSchema` documented in prose ("Transient — seeds the slug
-     * only; NOT persisted on the entity"). No column, no snapshot entry.
-     */
-    caption: {
-      kind: 'string',
-      transientInput: true,
-      description: 'Transient — seeds the slug only (slugify(caption)); NOT persisted on the entity.',
-    },
-    /**
-     * The second fallback's source: the first identifier appearing in `source`
-     * (a mermaid node id, a d2 shape name). Derived by the write path from
-     * `source` immediately before the pattern is evaluated, never supplied by a
-     * caller and never persisted — which is exactly what `transientInput` means.
-     * Declared here because a pattern may only read fields the schema names.
-     */
-    firstSourceIdentifier: {
-      kind: 'string',
-      transientInput: true,
-      /**
-       * The description is load-bearing here rather than decorative: item 27
-       * puts every `transientInput` field on the create schema (that is how
-       * `caption` reaches the slug), and this one is host-derived. There is no
-       * flag for "transient AND host-derived", so the shape admits a field a
-       * caller should not send — say so where the caller reads it. Raised in
-       * the same `missing` patch as the `description` slot itself.
-       */
-      description:
-        'Derived by the write path from `source` before the slug pattern runs. Ignored if supplied.',
-    },
   },
 };
 
-/**
- * The three-step fallback, unchanged in behaviour: slugify(caption) →
- * slugify(the first identifier in the source) → `diagram-<nanoid(8)>`.
+/*
+ * 0.2.22 removed `caption` and `firstSourceIdentifier` from this schema.
  *
- * An explicit `slug` on the create payload still wins over all three — that is
- * the write path's rule, applied before a pattern is ever evaluated, not one of
- * the pattern's alternatives.
+ * Both existed only to feed the three-alternative slug chain, which collapsed
+ * into `slugify(title)` once every type gained a title. `firstSourceIdentifier`
+ * has no successor — guessing a name out of a mermaid body was always a
+ * fallback, and there is nothing left to fall back FROM.
+ *
+ * `caption` survives OUTSIDE the entity: the create popover still asks for one,
+ * and it is written as an attribute of the markdown reference
+ * (`<single_element type="diagram" slug="…" caption="…"/>`). That is where it
+ * always belonged — a caption describes a diagram AT A PLACE IN A DOCUMENT, and
+ * the same diagram embedded twice may deserve two different ones. What changes
+ * is that it no longer pretends to be a property of the entity.
+ */
+
+/**
+ * One rule where there were three: `slugify(title)`, truncated.
+ *
+ * The retired chain ended in `diagram-<nanoid(8)>`, which meant two diagrams
+ * captioned the same silently became two entities with unrelated slugs. Under
+ * `slugConflict: 'reject'` the second one now fails loudly with `SLUG_CONFLICT`.
+ * That is the trade the release takes deliberately: a noisy collision is better
+ * than two entities nobody knows were meant to be one.
+ *
+ * An explicit `slug` on the create payload still wins — the write path's rule,
+ * applied before a pattern is ever evaluated.
  */
 export const diagramSlugPattern: SlugPattern = [
-  [{ op: 'slugify', field: 'caption' }],
-  [{ op: 'slugify', field: 'firstSourceIdentifier' }],
-  [{ op: 'literal', value: 'diagram-' }, { op: 'nanoid', n: 8 }],
+  { op: 'slugify', field: 'title' },
+  { op: 'truncate', n: 60 },
 ];

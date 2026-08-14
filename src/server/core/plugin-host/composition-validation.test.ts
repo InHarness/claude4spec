@@ -30,7 +30,7 @@ import { compositionOf } from '../../../shared/plugin-host/composition.js';
 import type { BackendModule } from './types.js';
 import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js';
 
-const BASE_DATA: DataDeclaration = { schema: { name: { kind: 'string', required: true } } };
+const BASE_DATA: DataDeclaration = { schema: { title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' }, name: { kind: 'string', required: true } } };
 
 function mod(type: string, data: DataDeclaration = BASE_DATA): BackendModule {
   return {
@@ -51,6 +51,7 @@ function mod(type: string, data: DataDeclaration = BASE_DATA): BackendModule {
 function withJunction(type: string, projectionTable?: string): BackendModule {
   return mod(type, {
     schema: {
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
       name: { kind: 'string', required: true },
       links: {
         kind: 'collection',
@@ -130,6 +131,7 @@ describe('composition descriptor — derived from data.schema', () => {
     registry.registerEntityModule(
       mod('widget', {
         schema: {
+          title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
           name: { kind: 'string', required: true },
           notes: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
         },

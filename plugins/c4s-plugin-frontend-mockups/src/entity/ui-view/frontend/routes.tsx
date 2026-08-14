@@ -60,7 +60,7 @@ function UiViewDetailRoute() {
     // RouteBody, not Pane: the detail panel renders a DocEditor for the
     // description, and the chips inside it need the host's editor bridge.
     <RouteBody navigate={navigate}>
-      <EntityBreadcrumbBar type={UI_VIEW_TYPE} slug={slug} name={uiView?.name} view="details" />
+      <EntityBreadcrumbBar type={UI_VIEW_TYPE} slug={slug} name={uiView?.title} view="details" />
       <UiViewDetail
         // Resets the draft when navigating straight between two views.
         key={slug}

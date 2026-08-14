@@ -147,7 +147,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   });
 
   it('does not flag a valid diagram reference, and marks the diagram as referenced', async () => {
-    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('flow', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('flow', 'flow', 'mermaid', 'graph TD; A-->B')`).run();
     await pagesService.write('page.md', {
       body: '# Page\n\n<single_element type="diagram" slug="flow" caption="x"/>\n',
     });
@@ -196,7 +196,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
   });
 
   it('an unreferenced diagram entity is reported as unreferenced', async () => {
-    db.prepare(`INSERT INTO diagram (slug, format, source) VALUES ('orphan', 'mermaid', 'graph TD; A-->B')`).run();
+    db.prepare(`INSERT INTO diagram (slug, title, format, source) VALUES ('orphan', 'orphan', 'mermaid', 'graph TD; A-->B')`).run();
     const client = await connectClient(deps());
 
     const result = await checkConsistency(client);

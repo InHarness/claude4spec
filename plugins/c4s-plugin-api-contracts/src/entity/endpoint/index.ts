@@ -24,7 +24,7 @@ export const endpointEntity: EntityContribution = {
    * spelled it in column names, and stops coercing an empty `summary` to null.
    * See `./upgrades.ts`.
    */
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: 'Endpoint',
   labelPlural: 'Endpoints',
   displayOrder: ENDPOINT_DISPLAY_ORDER,

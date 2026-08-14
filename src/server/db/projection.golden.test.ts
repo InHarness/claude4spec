@@ -31,11 +31,19 @@ import { applyProjection, generateProjectionDDL, type ProjectableModule } from '
 import { acData } from '../../shared/entities/ac/schema.js';
 import { diagramData } from '../../shared/entities/diagram/schema.js';
 
-/** The DDL as the deleted `migrations.ts` files wrote it, byte for byte. */
+/**
+ * The DDL as the deleted `migrations.ts` files wrote it — plus the one column
+ * 0.2.22 adds to every table, spelled out rather than silently regenerated.
+ *
+ * `title` is reserved on every type, so it is a column on every projection. The
+ * rest of each table still has to match what the hand-written migration wrote:
+ * order, nullability, defaults, indexes.
+ */
 const RETIRED_DDL: Record<string, string> = {
   ac: `
     CREATE TABLE IF NOT EXISTS ac (
       slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
       text TEXT NOT NULL,
       kind TEXT NOT NULL DEFAULT 'requirement',
       status TEXT NOT NULL DEFAULT 'active',
@@ -50,6 +58,7 @@ const RETIRED_DDL: Record<string, string> = {
   diagram: `
     CREATE TABLE IF NOT EXISTS diagram (
       slug       TEXT NOT NULL PRIMARY KEY,
+      title      TEXT NOT NULL,
       format     TEXT NOT NULL DEFAULT 'mermaid',
       source     TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -159,7 +168,7 @@ describe('projection generator — reconciling an existing database', () => {
   it('adds a computedDefault column to a POPULATED table without a non-constant default', () => {
     const db = new Database(':memory:');
     applyProjection(db, MODULES);
-    db.prepare(`INSERT INTO ac (slug, text) VALUES ('a', 'something holds')`).run();
+    db.prepare(`INSERT INTO ac (slug, title, text) VALUES ('a', 'something holds', 'something holds')`).run();
 
     const widened = {
       type: 'ac',

@@ -1,5 +1,5 @@
 /**
- * Host API 2.0.0 — the LOGICAL SCHEMA an entity type declares.
+ * Host API 3.0.0 — the LOGICAL SCHEMA an entity type declares.
  *
  * Before this, a type shipped its own DDL (`backend.migrations`), its own slug
  * function (`slugFrom`), its own MCP input schemas (`backend.crud.*`) and its
@@ -20,6 +20,8 @@
  * from both the snapshot and the rebuild comparison.
  */
 
+import type { SlugPattern } from './slug-pattern.js';
+
 /**
  * Flags carried by every field node.
  *
@@ -36,13 +38,24 @@ export interface FieldFlags {
    */
   default?: string | number | boolean;
   /**
-   * Named host routine filling the field when it is absent AND no `default`
-   * applies — today only `'now'` (an ISO timestamp). Distinct from `default`
-   * because the value is computed per write, not baked into the DDL.
+   * How the host fills the field when it is absent AND no `default` applies.
+   * Distinct from `default` because the value is computed per write, not baked
+   * into the DDL. Also the degradation path for an unambiguous payload-upgrade
+   * gap (tier B).
    *
-   * Also the degradation path for an unambiguous payload-upgrade gap (tier B).
+   * Two spellings:
+   *   - `'now'` — an ISO timestamp, for `createdAt`/`updatedAt`.
+   *   - a `SlugPattern` — DERIVED FROM OTHER FIELDS of the same payload, using
+   *     the grammar `slugPattern` already uses (`./slug-pattern`). 0.2.22 adds
+   *     this so a type can say where its reserved `title` comes from when the
+   *     author supplies none: `ac` truncates its `text`, `endpoint` concatenates
+   *     `method` and `path`, `database-table` copies its SQL `name`.
+   *
+   * Derivation is ONCE, at create — exactly like the slug. Editing `path` later
+   * does not move the title, for the same reason it does not move the slug: a
+   * value that silently follows another value is a value nobody can rely on.
    */
-  computedDefault?: 'now';
+  computedDefault?: 'now' | SlugPattern;
   /**
    * The ONLY fields an update may set to `null` (tri-state: omitted = no change,
    * `null` = clear, value = replace). Update input schemas derive the nullable
@@ -88,25 +101,42 @@ export interface FieldFlags {
    *
    * The host treats it as content everywhere at once, which is the point of
    * making it a flag rather than a per-type convention:
-   *   - it is EXCLUDED from all five generated views, and `has<Field>: boolean`
-   *     + `<field>Bytes: number` are emitted in its place;
+   *   - it is issued by NO generic read, on NO surface — not in a generated
+   *     view, not under an explicit `select` naming it. What comes back instead
+   *     is `has<Field>: boolean`, `<field>Bytes: number` and the NAME of the
+   *     operation that will hand over the content;
    *   - it stays in the SNAPSHOT — it is reproducible from the entity file, so
    *     the projection invariant binds it exactly like any other field;
    *   - the default diff reports `<field>_changed: { fromBytes, toBytes }`
-   *     instead of two payloads no reader can compare side by side.
+   *     instead of two payloads no reader can compare side by side;
+   *   - it is out of `search_entities`' scanning scope.
    *
-   * Two rules bind a type that declares one:
-   *   1. It may NOT also declare its own `views?`. The flag's meaning is
-   *      derivable only from views the HOST generates — a type computing its own
-   *      views decides for itself what they carry, and the host has no way to
-   *      honour the exclusion. Rejected at load time.
-   *   2. It MUST declare an operation that exposes the content. A field excluded
-   *      from every view with no way to read it is write-only data, which is not
-   *      a thing this system should be able to declare. Not mechanically
-   *      enforced today (the operation catalog is not part of the entity
-   *      contribution) — it is on the type's author.
+   * 0.2.22 sharpened the first bullet. It used to read "excluded from the five
+   * generated views", which left two holes: a type computing its own views could
+   * serve the field anyway (so such types were banned from the flag outright),
+   * and the REST layer feeding the UI was assumed to be exempt. Both are gone.
+   * Exclusion is now a property of the READ, not of the view, so the ban is
+   * lifted and there is no UI exception: a React component fetches a body
+   * through the same operation an agent does.
+   *
+   * The remaining rule: the content must be REACHABLE. The host generates
+   * `get_field_content(type, slug, field)` for every flagged field, on all three
+   * channels, so this holds by default. A type wanting something richer than
+   * "return the whole value" — a windowed read, say — names its own operation in
+   * `contentOperation`, and registration rejects a name that does not resolve.
+   * A field excluded from every read with no operation behind it would be
+   * write-only data, which is not a thing this system should be able to declare.
    */
   contentBearing?: boolean;
+  /**
+   * Overrides the host-generated `get_field_content` for THIS field.
+   *
+   * Only meaningful alongside `contentBearing`. The name must resolve in the
+   * operation catalog at registration — see `data-schema-validation` — because
+   * an unreachable operation is exactly the write-only-data case the flag's
+   * reachability rule exists to prevent.
+   */
+  contentOperation?: string;
   /**
    * Projection column name. Defaults to `snakeCase(fieldName)`; declared only
    * where a type's payload name and its historical column name diverge.
@@ -149,6 +179,32 @@ export interface ScalarNode extends FieldFlags {
   min?: number;
   /** NUMBER ONLY — inclusive upper bound. */
   max?: number;
+  /**
+   * STRING ONLY — the value may be at most `n` characters. Enforced ON WRITE
+   * ONLY (`VALIDATION_ERROR`, per item); a read never checks it and never
+   * shortens a value it was given.
+   *
+   * 0.2.22 introduces it as a VALUE CONSTRAINT — a second declaration axis
+   * beside the closed flag vocabulary above, published by `describe_*` under
+   * `constraints` so a caller can see the rule before it trips over it.
+   *
+   * NOT part of `data.integrity`. That vocabulary drives projection and DDL and
+   * excludes CHECK-shaped rules on purpose; a length bound is a domain truth
+   * about the value, not a shape the table has to enforce.
+   *
+   * Three truncations exist in this system and they do not overlap:
+   *   - `maxLength` — domain truth, at write time, refuses;
+   *   - `truncate(n)` inside `slugPattern`/`computedDefault` — derivation, at
+   *     write time, shortens;
+   *   - the read budget's `truncated` flag — protects the CALLER's context
+   *     window, at read time, and says so in the envelope.
+   *
+   * DECLARING OR NARROWING one over existing longer values is a breaking change
+   * and must go through a `payloadUpgrades` step that either truncates
+   * explicitly or refuses and names the offending slugs. Never silently, and
+   * never as a validation error on some later unrelated write.
+   */
+  maxLength?: number;
   /**
    * STRING ONLY — a regex the value must match.
    *
@@ -427,12 +483,113 @@ export function contentBearingKeys(name: string): { has: string; bytes: string }
   return { has: `has${name.charAt(0).toUpperCase()}${name.slice(1)}`, bytes: `${name}Bytes` };
 }
 
+/**
+ * The reserved field EVERY registered type must declare, spelled once.
+ *
+ * 0.2.22 — one source for the label, the slug and the identity end of the search
+ * scope. Before it, each type named itself differently (`ac.text`, `dto.name`,
+ * `endpoint.method + path`, `diagram` not at all), and the consequence was not
+ * cosmetic: the read contract promised `inline_mention.label` without saying
+ * which field fed it, so types overrode whole view sets purely to show a name
+ * instead of a slug, and `resolve_identity` had to guess through a
+ * `name ?? label ?? title` chain.
+ *
+ * `maxLength: 200` is declared by the HOST, not by the type, which is what makes
+ * "a title never needs shortening at read time" a fact rather than a hope.
+ *
+ * Exported as data so the validator, the scaffold and the tests all compare
+ * against the same object instead of three transcriptions of it.
+ */
+export const RESERVED_TITLE_FIELD = 'title';
+export const TITLE_MAX_LENGTH = 200;
+export const RESERVED_TITLE_DECLARATION: ScalarNode = {
+  kind: 'string',
+  required: true,
+  maxLength: TITLE_MAX_LENGTH,
+};
+
+/**
+ * The identity fields present on EVERY record, whatever `select` asked for.
+ *
+ * They come from the envelope rather than from `data` — `slug` is the row's
+ * identity, `tags` are a cross-cutting relation, and `title` is reserved — so a
+ * projection cannot remove them and a caller never has to ask for them.
+ *
+ * `href` joins them as the one identity field the host GENERATES, from the
+ * type's `pathPrefix` and the slug (`/endpoints/get-users`). It is the reason a
+ * chip can still be a link now that no per-type view contributes one: an
+ * informational path to the entity's page in the web UI, not a claim that a
+ * server is answering on it.
+ */
+export const IDENTITY_FIELDS = ['slug', RESERVED_TITLE_FIELD, 'tags', 'href'] as const;
+
 /** UTF-8 size of a content-bearing value; absent/null counts as 0. */
 export function contentBytes(value: unknown): number {
   if (value == null) return 0;
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   // `Buffer` is unavailable in the client bundle, and this module is shared.
   return new TextEncoder().encode(text ?? '').length;
+}
+
+/** The host-generated operation that issues a `contentBearing` field's content. */
+export const DEFAULT_CONTENT_OPERATION = 'get_field_content';
+
+/** Which operation hands over THIS field's content — the type's override, or the host's. */
+export function contentOperationOf(node: FieldNode): string {
+  return node.contentOperation ?? DEFAULT_CONTENT_OPERATION;
+}
+
+/**
+ * The flat list of names legal in `get_entities`' `select`.
+ *
+ * TOP-LEVEL ONLY, and that is a semantic limit rather than a transport one: a
+ * `collection: 'value'` is declared opaque and read whole, so descending into
+ * `columns[].name` would break the property that makes it opaque. A type wanting
+ * partial reads declares the collection `'keyed'` and gets a windowed operation.
+ *
+ * `contentBearing` fields ARE included. Naming one is not an error — it answers
+ * with the field's descriptor and the operation that issues it, which is a more
+ * useful reply than a refusal.
+ *
+ * Transient inputs are excluded: they never reach a stored entity, so there is
+ * nothing to project.
+ */
+export function selectableFieldsOf(schema: Readonly<Record<string, FieldNode>>): string[] {
+  return Object.entries(schema)
+    .filter(([, node]) => !node.transientInput && !node.localSurrogate)
+    .map(([name]) => name);
+}
+
+/** A value constraint as `describe_*` publishes it. */
+export type FieldConstraint =
+  | { field: string; type: 'enum'; values: readonly string[] }
+  | { field: string; type: 'maxLength'; maxLength: number };
+
+/**
+ * Every value constraint the schema declares, flattened for `describe_*`.
+ *
+ * Published so a caller learns the rule BEFORE a write trips over it. Read from
+ * the same declaration the write path enforces, so the advertisement and the
+ * enforcement cannot drift.
+ */
+export function constraintsOf(schema: Readonly<Record<string, FieldNode>>): FieldConstraint[] {
+  const out: FieldConstraint[] = [];
+  for (const [field, node] of Object.entries(schema)) {
+    if (node.kind === 'enum') out.push({ field, type: 'enum', values: node.values });
+    if (node.kind === 'string' && node.maxLength !== undefined) {
+      out.push({ field, type: 'maxLength', maxLength: node.maxLength });
+    }
+  }
+  return out;
+}
+
+/** The `contentBearing` fields, each with the operation that issues its content. */
+export function contentFieldsOf(
+  schema: Readonly<Record<string, FieldNode>>,
+): Array<{ field: string; operation: string }> {
+  return Object.entries(schema)
+    .filter(([, node]) => node.contentBearing)
+    .map(([field, node]) => ({ field, operation: contentOperationOf(node) }));
 }
 
 /**

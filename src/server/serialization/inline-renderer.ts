@@ -1,7 +1,13 @@
 export function renderInlineMention(data: unknown): string {
   const obj = asObject(data);
   if (!obj) return String(data);
-  const label = pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'unknown';
+  /**
+   * 0.2.22 — `title` is the label, on every type, with no per-type view left to
+   * supply one. `label` stays ahead of `slug` in the chain for the SECTION chip,
+   * which is not an entity and carries its own.
+   */
+  const label =
+    pickString(obj, 'title') ?? pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'unknown';
   const href = pickString(obj, 'href') ?? '';
   return href ? `[${label}](${href})` : `**${label}**`;
 }
@@ -68,44 +74,26 @@ export function renderSingleElement(data: unknown): string {
   return lines.join('\n');
 }
 
+/**
+ * One table, two columns, every type.
+ *
+ * 0.2.22 collapsed three layouts into this. The old code chose between a
+ * method/path table, a name/description table and a type/slug/label table by
+ * SNIFFING the first item's shape — which was the only way to render a row
+ * before every type had a label, and which meant the same list rendered
+ * differently depending on which entity happened to sort first.
+ *
+ * A list row is now `{ slug, title }` on every surface, so there is nothing to
+ * sniff and nothing to choose. A reader wanting a summary or a method follows
+ * the link.
+ */
 export function renderElementList(items: unknown[]): string {
   if (!items.length) return '_empty list_';
-  const first = asObject(items[0]);
-  // Pick the table layout from the *shape* of the first item, not its type
-  // discriminator — keeps this generic across plugins.
-  const hasMethodPath = first && pickString(first, 'method') !== undefined;
-  const hasNameDescription = first && pickString(first, 'name') !== undefined;
-  const lines: string[] = [];
-  if (hasMethodPath) {
-    lines.push('| Method | Path | Summary | Tags |');
-    lines.push('| ------ | ---- | ------- | ---- |');
-    for (const item of items) {
-      const row = asObject(item);
-      if (!row) continue;
-      lines.push(
-        `| ${pickString(row, 'method') ?? ''} | \`${pickString(row, 'path') ?? ''}\` | ${pickString(row, 'summary') ?? ''} | ${tagsAsText(row.tags)} |`
-      );
-    }
-  } else if (hasNameDescription) {
-    lines.push('| Slug | Name | Description | Tags |');
-    lines.push('| ---- | ---- | ----------- | ---- |');
-    for (const item of items) {
-      const row = asObject(item);
-      if (!row) continue;
-      lines.push(
-        `| \`${pickString(row, 'slug') ?? ''}\` | ${pickString(row, 'name') ?? ''} | ${firstLine(pickString(row, 'description'))} | ${tagsAsText(row.tags)} |`
-      );
-    }
-  } else {
-    lines.push('| Type | Slug | Label |');
-    lines.push('| ---- | ---- | ----- |');
-    for (const item of items) {
-      const row = asObject(item);
-      if (!row) continue;
-      lines.push(
-        `| ${pickString(row, 'type') ?? ''} | \`${pickString(row, 'slug') ?? ''}\` | ${pickString(row, 'name') ?? pickString(row, 'label') ?? ''} |`
-      );
-    }
+  const lines: string[] = ['| Slug | Title |', '| ---- | ----- |'];
+  for (const item of items) {
+    const row = asObject(item);
+    if (!row) continue;
+    lines.push(`| \`${pickString(row, 'slug') ?? ''}\` | ${titleFor(row)} |`);
   }
   return lines.join('\n');
 }
@@ -119,13 +107,22 @@ export function renderTaggedListMixed(groups: Record<string, unknown[]>): string
   return parts.length ? parts.join('\n') : '_no matches_';
 }
 
+/**
+ * The heading for a rendered record.
+ *
+ * 0.2.22 — `title` first, and for every entity that is the end of it. The chain
+ * below survives for the two shapes that are not entities: a SECTION carries
+ * `headingText`, and a chip payload carries `label`. `slug` remains the last
+ * resort for a row read mid-rebuild.
+ */
 function titleFor(obj: Record<string, unknown>): string {
-  const name = pickString(obj, 'name') ?? pickString(obj, 'headingText');
-  if (name) return name;
-  const method = pickString(obj, 'method');
-  const path = pickString(obj, 'path');
-  if (method && path) return `${method} ${path}`;
-  return pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'Entity';
+  return (
+    pickString(obj, 'title') ??
+    pickString(obj, 'headingText') ??
+    pickString(obj, 'label') ??
+    pickString(obj, 'slug') ??
+    'Entity'
+  );
 }
 
 function tagsAsText(tags: unknown): string {

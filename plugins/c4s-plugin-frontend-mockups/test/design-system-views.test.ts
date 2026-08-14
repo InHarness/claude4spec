@@ -123,7 +123,7 @@ describe('design-system serializer', () => {
     // manifest is ever read for, so it is not written twice.
     // 2 since 0.2.9 — v1 files carry a synthesised `description: null` on every
     // token that the generated snapshot does not reproduce. See `./upgrades.ts`.
-    expect(designSystemEntity.payloadVersion).toBe(2);
+    expect(designSystemEntity.payloadVersion).toBe(3);
     expect(designSystemSerializer.payloadVersion).toBeUndefined();
   });
 });

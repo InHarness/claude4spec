@@ -43,8 +43,8 @@ const insert = (
   verifies: unknown,
 ) =>
   db
-    .prepare('INSERT INTO ac (slug, text, kind, status, verifies) VALUES (?, ?, ?, ?, ?)')
-    .run(slug, text, 'requirement', status, JSON.stringify(verifies));
+    .prepare('INSERT INTO ac (slug, title, text, kind, status, verifies) VALUES (?, ?, ?, ?, ?, ?)')
+    .run(slug, text, text, 'requirement', status, JSON.stringify(verifies));
 
 describe('readActiveAcs', () => {
   it('reads the embedded verifies collection off the row', () => {

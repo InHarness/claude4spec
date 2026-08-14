@@ -146,7 +146,7 @@ export const DatabaseTableCard: FC<EntityCardProps<DatabaseTable>> = ({ slug, en
       <div className="flex items-center gap-2">
         <DatabaseTableIcon size={14} style={{ color: 'var(--c-accent)' }} />
         <span className="c4s-card__title text-[15px]" style={{ color: 'var(--c-ink)', fontWeight: 600 }}>
-          {entity.name}
+          {entity.title}
         </span>
         <span className="flex-1" />
         <ChevronRightGlyph size={14} />

@@ -30,11 +30,12 @@ const V2 = {
 };
 
 describe('endpoint payload v1 → v2', () => {
-  it('declares exactly one upgrade step for its declared version', () => {
+  it('declares exactly one upgrade step per version it has crossed', () => {
     // Registration enforces this too; asserting it here is what makes a future
     // bump-without-a-step fail in the package that owns both.
-    expect(endpointEntity.payloadVersion).toBe(2);
-    expect(endpointSerializer.payloadUpgrades).toHaveLength(1);
+    expect(endpointEntity.payloadVersion).toBe(3);
+    // Two since 0.2.22: the junction reshape, then the reserved `title`.
+    expect(endpointSerializer.payloadUpgrades).toHaveLength(2);
   });
 
   it('renames the junction from column names to declared field names', () => {

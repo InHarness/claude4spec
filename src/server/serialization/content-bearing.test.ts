@@ -18,7 +18,7 @@ import type { RawEntity } from '../discovery/raw-entity-reader.js';
 import type { BackendModule } from '../core/plugin-host/types.js';
 
 const SCHEMA: Record<string, FieldNode> = {
-  title: { kind: 'string', required: true },
+  title: { kind: 'string', required: true, maxLength: 200 },
   body: { kind: 'string', contentBearing: true },
 };
 
@@ -150,11 +150,37 @@ describe('contentBearing — load-time validation', () => {
     } as unknown as BackendModule;
   }
 
-  it('rejects a type that declares its own views AND a contentBearing field', () => {
-    expect(() => attachComposition(moduleWith({ detail: () => ({}) }), [])).toThrow(/contentBearing/);
+  /**
+   * 0.2.22 REVERSED this pair.
+   *
+   * The rule was: a type may not compute its own `views` AND declare a
+   * contentBearing field, because exclusion was a property of the VIEW and the
+   * host could not honour it inside a function it cannot read. Exclusion is a
+   * property of the READ now — `project()` runs after serialization, over the
+   * schema, whoever produced the payload — so the conflict cannot arise and the
+   * ban is gone. `diagram` is the type that needed it lifted: it computes views
+   * and its `source` is the first content-bearing field in the specification.
+   */
+  it('accepts a type that declares its own views AND a contentBearing field', () => {
+    expect(() => attachComposition(moduleWith({ detail: () => ({}) }), [])).not.toThrow();
   });
 
-  it('accepts the same type once it stops computing views', () => {
+  it('accepts one that computes no views either', () => {
     expect(() => attachComposition(moduleWith(null), [])).not.toThrow();
+  });
+
+  /**
+   * What replaced the ban: the content must be REACHABLE. A type naming its own
+   * operation is checked against the operation catalog, because a field excluded
+   * from every generic read with nothing behind it is write-only data.
+   */
+  it('rejects a contentOperation that resolves to no operation', () => {
+    const module = moduleWith(null);
+    (module.data!.schema as Record<string, FieldNode>).body = {
+      kind: 'string',
+      contentBearing: true,
+      contentOperation: 'read_the_body',
+    };
+    expect(() => attachComposition(module, [])).toThrow(/resolves to no operation/);
   });
 });

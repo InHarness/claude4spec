@@ -28,7 +28,7 @@ describe('design-system REST + ui-view relation', () => {
     const res = await request(t.app)
       .post('/api/design-systems')
       .send({
-        name: 'Brand 2026',
+        title: 'Brand 2026',
         groups: [
           { name: 'Roles', tier: 'semantic', tokens: [{ name: 'x', type: 'color', value: '{missing}' }] },
         ],
@@ -39,7 +39,7 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('lists, gets, and full-replaces groups on update', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
 
     const list = await request(t.app).get('/api/design-systems');
     expect(list.status).toBe(200);
@@ -58,28 +58,28 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('ui-view accepts designSystemSlug (incl. a dangling one) and round-trips it', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
 
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
     expect(view.status).toBe(201);
     expect(view.body.data.designSystemSlug).toBe('brand');
 
     // dangling reference is allowed (no FK) — write succeeds, value persists
     const dangling = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Ghost', designSystemSlug: 'does-not-exist' });
+      .send({ title: 'Ghost', designSystemSlug: 'does-not-exist' });
     expect(dangling.status).toBe(201);
     const gv = await request(t.app).get(`/api/ui-views/${dangling.body.data.slug}`);
     expect(gv.body.data.designSystemSlug).toBe('does-not-exist');
   });
 
   it('delete reports ui-views that become dangling', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     const del = await request(t.app).delete('/api/design-systems/brand');
     expect(del.status).toBe(200);
@@ -102,10 +102,10 @@ describe('design-system REST + ui-view relation', () => {
   });
 
   it('renaming a design-system propagates to ui-view.designSystemSlug', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     const renamed = await request(t.app)
       .patch('/api/design-systems/brand')
@@ -117,19 +117,20 @@ describe('design-system REST + ui-view relation', () => {
     expect(gv.body.data.designSystemSlug).toBe('brand-2026');
   });
 
-  it('ui-view and design-system declare payload version 1, and the snapshot carries designSystemSlug', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand', groups: sampleGroups });
+  it('ui-view and design-system declare their payload versions, and the snapshot carries designSystemSlug', async () => {
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand', groups: sampleGroups });
     const view = await request(t.app)
       .post('/api/ui-views')
-      .send({ name: 'Profile', designSystemSlug: 'brand' });
+      .send({ title: 'Profile', designSystemSlug: 'brand' });
 
     // 0.2.9 (item 13): an integer payload version on the MANIFEST, not a
     // per-serializer semver. The semver was advisory and unenforced; this one
     // is what the upgrade chain acts on.
-    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(1);
-    // design-system is at 2 as of tier B PR2: v1 files carry a `description:
-    // null` on every token that only ever existed in the file.
-    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(2);
+    // Both moved in 0.2.22, when `name` became the reserved `title`: ui-view
+    // 1 → 2, design-system 2 → 3 (its v1 step is the token `description: null`
+    // that only ever existed in the file).
+    expect(t.host.getEntity('ui-view')?.payloadVersion).toBe(2);
+    expect(t.host.getEntity('design-system')?.payloadVersion).toBe(3);
 
     const snap = t.host.snapshot('ui-view', t.rawReader.getEntity('ui-view', view.body.data.slug), t.rawReader) as {
       designSystemSlug: string | null;
@@ -150,8 +151,8 @@ describe('design-system REST + ui-view relation', () => {
    * takes the default.
    */
   it('refuses a duplicate name rather than minting a second design system', async () => {
-    await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
-    const dup = await request(t.app).post('/api/design-systems').send({ name: 'Brand' });
+    await request(t.app).post('/api/design-systems').send({ title: 'Brand' });
+    const dup = await request(t.app).post('/api/design-systems').send({ title: 'Brand' });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('SLUG_CONFLICT');
   });

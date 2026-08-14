@@ -35,6 +35,9 @@ import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 // ─── FROZEN: the retired hand-written shapes, verbatim ──────────────────────
 
 const acCreateSchema: ZodRawShape = {
+  // Optional on create despite being required on the entity: `computedDefault`
+  // derives it from `text`, which is the whole point of asking the author once.
+  title: z.string().optional().describe('Label. Defaults to the first 200 characters of `text`.'),
   text: z.string().describe('Observable behavior the AC asserts. One sentence is best.'),
   kind: z.enum(['requirement', 'edge-case']).optional().describe('requirement (default) | edge-case'),
   status: z.enum(['active', 'deprecated']).optional(),
@@ -51,6 +54,7 @@ const acCreateSchema: ZodRawShape = {
 };
 
 const acUpdateSchema: ZodRawShape = {
+  title: z.string().optional(),
   text: z.string().optional(),
   kind: z.enum(['requirement', 'edge-case']).optional(),
   status: z.enum(['active', 'deprecated']).optional(),
@@ -60,17 +64,18 @@ const acUpdateSchema: ZodRawShape = {
 };
 
 const diagramCreateSchema: ZodRawShape = {
+  // 0.2.22 — `title` arrives, `caption` leaves. The caption was a transient that
+  // existed only to seed the slug; the slug comes from the title now, and the
+  // caption survives outside the entity as an attribute of the reference tag.
+  title: z.string().describe('Label, e.g. "Checkout sequence".'),
   source: z.string().optional().describe('DSL body (mermaid). May be empty (placeholder).'),
   format: z.enum(['mermaid', 'd2']).optional().describe("Diagram language (default 'mermaid')."),
-  caption: z
-    .string()
-    .optional()
-    .describe('Transient — seeds the slug only (slugify(caption)); NOT persisted on the entity.'),
   slug: z.string().optional().describe('Explicit slug; collisions get a -2/-3 suffix.'),
   tags: z.array(z.string()).optional().describe('Tag slugs; non-existent tags are auto-created.'),
 };
 
 const diagramUpdateSchema: ZodRawShape = {
+  title: z.string().optional(),
   source: z.string().optional(),
   format: z.enum(['mermaid', 'd2']).optional(),
   tags: z.array(z.string()).optional(),
@@ -156,13 +161,10 @@ const CASES: Case[] = [
     create: diagramCreateSchema,
     update: diagramUpdateSchema,
     /**
-     * `firstSourceIdentifier` is `transientInput` — declared so the slug
-     * pattern may read it, host-derived from `source`, and therefore on the
-     * create shape by the same rule that puts `caption` there. There is no flag
-     * for "transient AND host-derived"; its `description` says so instead, and
-     * the gap is filed as a `missing` patch.
+     * `firstSourceIdentifier` went with `caption` in 0.2.22 — both were
+     * transients feeding a slug chain that collapsed to `slugify(title)`.
      */
-    createAdds: ['firstSourceIdentifier'],
+    createAdds: [],
     updateAdds: [],
   },
 ];
@@ -209,8 +211,8 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     // `diagram.format` is the case the brief names: the retired read path
     // mapped everything that was not `d2` onto `mermaid`, silently.
     const create = z.object(buildCreateShape(diagramData));
-    expect(create.safeParse({ source: 'graph TD', format: 'graphviz' }).success).toBe(false);
-    expect(create.safeParse({ source: 'graph TD', format: 'd2' }).success).toBe(true);
+    expect(create.safeParse({ title: 'Flow', source: 'graph TD', format: 'graphviz' }).success).toBe(false);
+    expect(create.safeParse({ title: 'Flow', source: 'graph TD', format: 'd2' }).success).toBe(true);
   });
 
   it('omits systemManaged timestamps from both shapes', () => {

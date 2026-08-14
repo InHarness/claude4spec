@@ -28,7 +28,7 @@ function DtoRow({ entity, active, onOpen }: EntityRowProps<Dto>) {
       <Braces size={14} style={{ color: 'var(--c-accent)' }} />
       <span className="flex-1 min-w-0">
         <span className="block text-[13px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {entity.name}
+          {entity.title}
         </span>
         {entity.description && (
           <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-subtle)' }}>
@@ -76,7 +76,7 @@ function DtoChip({ slug, entity, onOpen }: EntityChipProps<Dto>) {
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
       <Braces size={11} style={{ color: 'var(--c-accent)' }} />
-      <span style={{ color: 'var(--c-ink)' }}>{entity.name}</span>
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
     </button>
   );
 }
@@ -107,7 +107,7 @@ function DtoCard({ slug, entity, onOpen }: EntityCardProps<Dto>) {
       <div className="flex items-center gap-2">
         <Braces size={14} style={{ color: 'var(--c-accent)' }} />
         <span className="text-[15px]" style={{ color: 'var(--c-ink)', fontWeight: 600 }}>
-          {entity.name}
+          {entity.title}
         </span>
         <span className="flex-1" />
         <ChevronRight size={14} style={{ color: 'var(--c-subtle)' }} />

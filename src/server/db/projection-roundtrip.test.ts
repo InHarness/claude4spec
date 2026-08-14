@@ -32,6 +32,7 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
       label: { kind: 'string', required: true },
       size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
       active: { kind: 'boolean', default: true },
@@ -158,6 +159,7 @@ describe('the write path agrees with the DDL generator', () => {
     const withComputed: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         label: { kind: 'string', required: true },
         lastSeenAt: { kind: 'string', computedDefault: 'now' },
       } },
@@ -186,6 +188,7 @@ describe('the write path agrees with the DDL generator', () => {
     const camel: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         label: { kind: 'string', required: true },
         designSystemSlug: { kind: 'string' },
       } },
@@ -220,6 +223,7 @@ describe('the write path agrees with the DDL generator', () => {
     const nullable: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         label: { kind: 'string', required: true },
         note: { kind: 'string', clearable: true },
       } },
@@ -239,6 +243,7 @@ describe('system fields', () => {
     const renamed: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         label: { kind: 'string', required: true },
         createdAt: { kind: 'string', column: 'made_at', systemManaged: true, computedDefault: 'now' },
         updatedAt: { kind: 'string', column: 'touched_at', systemManaged: true, computedDefault: 'now' },
@@ -282,6 +287,7 @@ describe('dangling refs warn, they do not abort', () => {
   const linker: WritableModule = {
     type: 'widget', payloadVersion: 1,
     data: { schema: {
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
       label: { kind: 'string', required: true },
       links: {
         kind: 'collection', collection: 'value', keyFields: ['target'],

@@ -68,6 +68,8 @@ describe.skipIf(!BASE)('generic entity embed — a hidden type renders and opens
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         slug: DIAGRAM_SLUG,
+        // Required on every type since 0.2.22.
+        title: 'Generic embed probe',
         format: 'mermaid',
         source: 'graph TD; Alpha-->Beta;',
       }),

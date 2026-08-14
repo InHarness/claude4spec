@@ -40,3 +40,24 @@ export function designSystemPayloadV1ToV2(payload: SnapshotData): SnapshotData {
 
   return p;
 }
+
+/**
+ * v2 → v3: `name` becomes the reserved `title`.
+ *
+ * A move, not a copy — two fields holding one label is exactly the drift the
+ * reserved field exists to end.
+ *
+ * Only the ENTITY's name moves. `groups[].name`, `groups[].tokens[].name` and
+ * `modes[].name` are left untouched: they identify members of the structure, and
+ * renaming one of them here would rewrite the token vocabulary every mockup
+ * refers to by name.
+ *
+ * Idempotent: a payload already carrying a `title` keeps it.
+ */
+export function designSystemPayloadV2ToV3(payload: SnapshotData): SnapshotData {
+  if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const p = { ...(payload as Record<string, unknown>) };
+  if (typeof p.title !== 'string' || p.title.trim() === '') p.title = String(p.name ?? '');
+  delete p.name;
+  return p;
+}

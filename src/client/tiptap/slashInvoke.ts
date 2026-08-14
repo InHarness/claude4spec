@@ -124,17 +124,24 @@ async function runDiagram(editor: Editor, deps: SlashInvokeDeps): Promise<void> 
   if (!result) return;
   if ('__action' in result) return;
   try {
-    // v0.1.64: the DSL `source` is the truth — create the diagram entity, then
-    // insert a reference to it on the page. `caption` seeds the slug (slugify)
-    // but is NOT persisted on the entity.
-    //
-    // 0.2.15: that reference is now the GENERIC block tag, not a `<diagram/>`
-    // of its own — `<single_element type="diagram" slug caption/>`. `caption` is
-    // omitted entirely when empty, so the tag never round-trips a `caption=""`.
+    /**
+     * v0.1.64: the DSL `source` is the truth — create the diagram entity, then
+     * insert a reference to it on the page.
+     *
+     * 0.2.15: that reference is the GENERIC block tag rather than a `<diagram/>`
+     * of its own — `<single_element type="diagram" slug caption/>`.
+     *
+     * 0.2.22: `title` and `caption` are now two different things, asked for
+     * separately. `title` names the ENTITY and seeds its slug; `caption`
+     * describes this EMBEDDING of it and lives only as an attribute of the tag,
+     * which is why the same diagram referenced on two pages can carry two
+     * captions. Before this, `caption` did both jobs and the entity ended up
+     * with no name of its own.
+     */
     const diagram = await diagramsApi.create({
+      title: result.title,
       source: result.source,
       format: result.format as DiagramFormat,
-      caption: result.caption,
     });
     deps.qc.invalidateQueries({ queryKey: ['diagrams'] });
     editor

@@ -57,7 +57,7 @@ function DesignSystemRow({ entity, active, onOpen }: EntityRowProps<DesignSystem
       <Palette size={14} style={{ color: 'var(--c-accent)' }} />
       <span className="flex-1 min-w-0">
         <span className="block text-[12.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-          {entity.name}
+          {entity.title}
         </span>
         {entity.description && (
           <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-subtle)' }}>
@@ -106,7 +106,7 @@ function DesignSystemChip({ slug, entity, onOpen }: EntityChipProps<DesignSystem
       >
         DS
       </span>
-      <span style={{ color: 'var(--c-ink)' }}>{entity.name}</span>
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
     </button>
   );
 }
@@ -145,7 +145,7 @@ function DesignSystemCard({ slug, entity, onOpen }: EntityCardProps<DesignSystem
       <div className="flex items-center gap-2">
         <Palette size={14} style={{ color: 'var(--c-accent)' }} />
         <span className="text-[14.5px]" style={{ color: 'var(--c-ink)', fontWeight: 600 }}>
-          {entity.name}
+          {entity.title}
         </span>
         <span
           className="font-mono text-[11px] px-1.5 py-0.5 rounded"

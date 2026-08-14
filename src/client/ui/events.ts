@@ -129,13 +129,23 @@ export interface SectionResult {
 }
 export type EditChipAttrs = Record<string, unknown>;
 
+/**
+ * `title` and `caption` are two different facts, not one field spelled twice.
+ *
+ * `title` belongs to the ENTITY — it is the label every chip and row shows, and
+ * it seeds the slug. `caption` belongs to THIS EMBEDDING and is written as an
+ * attribute of the reference tag, so one diagram referenced on two pages may be
+ * captioned differently on each. Until 0.2.22 `caption` did both jobs, which is
+ * how the diagram type ended up as the only one with no name of its own.
+ */
 export interface DiagramInitial {
   format: string;
+  title: string;
   caption: string;
   source: string;
 }
 export type DiagramResult =
-  | { format: string; caption: string; source: string }
+  | { format: string; title: string; caption: string; source: string }
   | { __action: 'remove' };
 
 export type PopoverMap = {

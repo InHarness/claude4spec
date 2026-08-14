@@ -25,7 +25,7 @@ describe('spreadsheet — the shipped type', () => {
 
   beforeEach(async () => {
     t = await createTestApp();
-    await t.crud.create('spreadsheet', { name: 'Q1 revenue', nRows: 4, nCols: 3, headerRow: true }, 'user');
+    await t.crud.create('spreadsheet', { title: 'Q1 revenue', nRows: 4, nCols: 3, headerRow: true }, 'user');
     t.broadcasts.length = 0;
   });
   afterEach(() => t.cleanup());
@@ -51,7 +51,7 @@ describe('spreadsheet — the shipped type', () => {
 
   it('slugifies the name, and suffixes a collision rather than refusing it', async () => {
     // Two sheets sharing a title is ordinary — people name things.
-    const again = await t.crud.create('spreadsheet', { name: 'Q1 revenue', nRows: 1, nCols: 1 }, 'user');
+    const again = await t.crud.create('spreadsheet', { title: 'Q1 revenue', nRows: 1, nCols: 1 }, 'user');
     expect(again.slug).toBe('q1-revenue-2');
   });
 
@@ -90,8 +90,10 @@ describe('spreadsheet — the shipped type', () => {
     ]);
   });
 
-  it('carries the payload version marker, so a v1 file is distinguishable from a v2 one', () => {
-    expect(entityFile().payloadVersion).toBe(2);
+  it('carries the payload version marker, so an older file is distinguishable', () => {
+    // v3 since 0.2.22: `name` became the reserved `title`, truncated to the
+    // host's 200-character bound on the way through.
+    expect(entityFile().payloadVersion).toBe(3);
   });
 
   it('clearing the last cell does not shrink the sheet', async () => {

@@ -6,6 +6,7 @@ import type {
   SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { UiViewParam, UiViewParamLocation } from '../../types.js';
+import { uiViewPayloadUpgrades } from './upgrades.js';
 
 interface ParamShape {
   name: string;
@@ -40,7 +41,7 @@ function baseSingle(entity: RawEntity) {
   return {
     type: 'ui-view',
     slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
+    title: (entity.data.title as string) ?? entity.slug,
     url: (entity.data.url as string | null) ?? null,
     description: (entity.data.description as string | null) ?? null,
     params: readParams(entity),
@@ -54,7 +55,7 @@ function trimItem(entity: RawEntity) {
   return {
     type: 'ui-view',
     slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
+    title: (entity.data.title as string) ?? entity.slug,
     url: (entity.data.url as string | null) ?? null,
     description: (entity.data.description as string | null) ?? null,
     paramCount: params.length,
@@ -66,7 +67,7 @@ function trimItem(entity: RawEntity) {
 
 export interface UiViewSnapshot {
   slug: string;
-  name: string;
+  title: string;
   url: string | null;
   description: string | null;
   params: UiViewParam[];
@@ -79,7 +80,7 @@ function coerceUiView(raw: unknown): UiViewSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     slug: String(r.slug ?? ''),
-    name: String(r.name ?? ''),
+    title: String(r.title ?? ''),
     url: (r.url as string | null) ?? null,
     description: (r.description as string | null) ?? null,
     params: Array.isArray(r.params) ? (r.params as UiViewParam[]) : [],
@@ -98,7 +99,7 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   const changes: Record<string, unknown> = {};
 
   const metaChanges: Array<{ field: string; from: unknown; to: unknown }> = [];
-  if (sa.name !== sb.name) metaChanges.push({ field: 'name', from: sa.name, to: sb.name });
+  if (sa.title !== sb.title) metaChanges.push({ field: 'title', from: sa.title, to: sb.title });
   if (sa.url !== sb.url) metaChanges.push({ field: 'url', from: sa.url, to: sb.url });
   if (sa.description !== sb.description) metaChanges.push({ field: 'description', from: sa.description, to: sb.description });
   // v0.1.59: null ↔ slug = assigning / detaching a design system (atomic field change).
@@ -166,11 +167,14 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 export const uiViewSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 2,
+  /** v1 files spell the label `name`. */
+  payloadUpgrades: uiViewPayloadUpgrades,
   views: {
     inline_mention: (entity) => ({
       type: 'ui-view',
       slug: entity.slug,
-      label: (entity.data.name as string) ?? entity.slug,
+      label: (entity.data.title as string) ?? entity.slug,
       url: (entity.data.url as string | null) ?? null,
       href: `/ui-views/${entity.slug}`,
     }),

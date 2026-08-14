@@ -23,6 +23,25 @@ export const diagramsApi = {
     return unwrap<Diagram>(await apiFetch(`/api/diagrams/${encodeURIComponent(slug)}`));
   },
 
+  /**
+   * The DSL body, fetched by its own operation.
+   *
+   * 0.2.22 made `source` content-bearing, so it arrives from NO generic read —
+   * `get`/`list` above answer with `hasSource` and `sourceBytes` instead. There
+   * is deliberately no exception for the browser: this component fetches the
+   * body through exactly the route an agent or the CLI would use, because the
+   * width of a record is one question with one answer, not one answer per
+   * audience.
+   *
+   * The response is the operation's envelope, not a bare string — `bytes` beside
+   * `content` is what lets a caller check it received the whole thing.
+   */
+  async source(slug: string): Promise<string> {
+    const res = await apiFetch(`/api/entities/diagram/${encodeURIComponent(slug)}/content/source`);
+    const payload = await handle<{ content: string; bytes: number }>(res);
+    return payload.content;
+  },
+
   async create(input: DiagramCreateInput): Promise<Diagram> {
     return unwrap<Diagram>(
       await apiFetch('/api/diagrams', {

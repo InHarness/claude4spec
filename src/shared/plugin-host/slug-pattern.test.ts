@@ -25,11 +25,13 @@ import { diagramSlugPattern } from '../entities/diagram/schema.js';
  */
 const nameSlugPattern: SlugPattern = [{ op: 'slugify', field: 'name', splitCamelCase: true }];
 
-/** Deterministic stand-in so a chain ending in `nanoid` is assertable. */
-const fixedNanoid = (n: number) => 'z'.repeat(n);
-
+/**
+ * 0.2.22 — the evaluator takes no random source. `nanoid(n)` left the grammar,
+ * so every pattern is a pure function of the payload and the stand-in this
+ * helper used to inject has nothing left to stand in for.
+ */
 const evaluate = (pattern: SlugPattern, data: Record<string, unknown>) =>
-  evaluateSlugPattern(pattern, data, fixedNanoid);
+  evaluateSlugPattern(pattern, data);
 
 /** The retired `uiViewSlug` / `designSystemSlug` / `dtoSlug` — one function, three names. */
 function retiredNameSlug(name: string): string {
@@ -61,7 +63,10 @@ describe('slugPattern — parity with the retired per-type helpers', () => {
 
 describe('slugPattern — the grammar', () => {
   it('concatenates literal, slugify and truncate in declaration order', () => {
-    expect(evaluate(acSlugPattern, { text: 'The list must stay sorted' })).toBe(
+    // `ac` slugifies its TITLE since 0.2.22, and `title` defaults to the first
+    // 200 characters of `text` — so for any text this short the slug is
+    // unchanged, which is the point of deriving rather than replacing.
+    expect(evaluate(acSlugPattern, { title: 'The list must stay sorted' })).toBe(
       'ac-the-list-must-stay-sorted',
     );
   });
@@ -75,17 +80,28 @@ describe('slugPattern — the grammar', () => {
    * accident.
    */
   it('truncates the accumulated result, not one field of input', () => {
-    const text = 'The projection generator must be idempotent across every boot of the server';
-    const slug = evaluate(acSlugPattern, { text });
+    const title = 'The projection generator must be idempotent across every boot of the server';
+    const slug = evaluate(acSlugPattern, { title });
 
     expect(slug).toHaveLength(40);
     expect(slug.startsWith('ac-the-projection-generator')).toBe(true);
   });
 
+  /**
+   * 0.2.22 — `diagram` no longer HAS a chain. Its three alternatives existed
+   * because it had no name of its own: a transient caption, then a guess at the
+   * first identifier in the DSL, then a random suffix. It slugifies `title` now,
+   * so a fallback chain is asserted on a pattern written here instead.
+   */
   it('takes the first non-empty alternative of a fallback chain', () => {
-    expect(evaluate(diagramSlugPattern, { caption: 'Auth Flow' })).toBe('auth-flow');
-    expect(evaluate(diagramSlugPattern, { firstSourceIdentifier: 'graph_TD' })).toBe('graph-td');
-    expect(evaluate(diagramSlugPattern, {})).toBe('diagram-zzzzzzzz');
+    const chain: SlugPattern = [
+      [{ op: 'slugify', field: 'preferred' }],
+      [{ op: 'slugify', field: 'fallback' }],
+      [{ op: 'literal', value: 'unnamed' }],
+    ];
+    expect(evaluate(chain, { preferred: 'Auth Flow' })).toBe('auth-flow');
+    expect(evaluate(chain, { fallback: 'graph_TD' })).toBe('graph-td');
+    expect(evaluate(chain, {})).toBe('unnamed');
   });
 
   /**
@@ -97,12 +113,16 @@ describe('slugPattern — the grammar', () => {
    * case falls through to the next alternative.
    */
   it('skips an absent field but keeps a present one that transliterates to nothing', () => {
-    expect(evaluate(diagramSlugPattern, { caption: '' })).toBe('diagram-zzzzzzzz');
-    expect(evaluate(diagramSlugPattern, { caption: '!!!' })).toMatch(/^x-[a-z0-9]+$/);
+    const chain: SlugPattern = [
+      [{ op: 'slugify', field: 'caption' }],
+      [{ op: 'literal', value: 'unnamed' }],
+    ];
+    expect(evaluate(chain, { caption: '' })).toBe('unnamed');
+    expect(evaluate(chain, { caption: '!!!' })).toMatch(/^x-[a-z0-9]+$/);
   });
 
   it('trims dangling separators rather than making each pattern encode the cleanup', () => {
-    expect(evaluate(acSlugPattern, { text: '' })).toBe('ac');
+    expect(evaluate(acSlugPattern, { title: '' })).toBe('ac');
     expect(
       evaluate([{ op: 'slugify', field: 'method' }, { op: 'literal', value: '-' }, { op: 'slugify', field: 'path' }], {
         method: 'GET',
@@ -130,9 +150,16 @@ describe('previewSlugPattern', () => {
    * guaranteed wrong — a different value every keystroke, none of them the one
    * stored — so the placeholder says "the host fills this in" instead.
    */
-  it('substitutes a stable placeholder for nanoid instead of a random value', () => {
-    expect(previewSlugPattern(diagramSlugPattern, {})).toBe('diagram-########');
-    expect(previewSlugPattern(diagramSlugPattern, {})).toBe(previewSlugPattern(diagramSlugPattern, {}));
+  /**
+   * The preview used to substitute `########` for a random step. With `nanoid`
+   * out of the grammar there is no random step to substitute for, so preview and
+   * evaluation are the same function — asserted on the type whose pattern was
+   * the only consumer.
+   */
+  it('matches evaluation for the pattern that used to carry a random step', () => {
+    expect(previewSlugPattern(diagramSlugPattern, { title: 'Auth Flow' })).toBe(
+      evaluate(diagramSlugPattern, { title: 'Auth Flow' }),
+    );
   });
 
   it('is identical to full evaluation for a pattern with no random step', () => {

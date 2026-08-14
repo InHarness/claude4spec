@@ -11,6 +11,24 @@ import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
  */
 export const acData: DataDeclaration = {
   schema: {
+    /**
+     * Derived from `text`, because an AC's name IS its text — asking an author
+     * for both would be asking the same question twice.
+     *
+     * `text` STAYS beside it rather than being replaced: the full criterion is
+     * the thing being asserted and may run well past 200 characters, while a
+     * title is a label. Collapsing them would truncate the criterion itself.
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      computedDefault: [
+        { op: 'raw', field: 'text' },
+        { op: 'truncate', n: 200 },
+      ],
+      description: 'Label. Defaults to the first 200 characters of `text`.',
+    },
     text: {
       kind: 'string',
       required: true,
@@ -56,13 +74,17 @@ export const acData: DataDeclaration = {
 };
 
 /**
- * `ac-` + slugify(text) + truncate(40).
+ * `ac-` + slugify(title) + truncate(40).
  *
- * Two behaviour changes from the retired `acSlug`, both taken from the brief
- * deliberately and both affecting only entities created from here on (a slug is
- * computed once, at create, and never recomputed):
- *   - truncation now applies to the finished slug rather than to the first 40
- *     characters of the source text, so long AC text yields a longer, more
+ * 0.2.22 moves the source from `text` to `title`. In practice the slug does not
+ * change: `title` defaults to the first 200 characters of `text`, and 40
+ * characters of slug never reach past that — so an AC created before and after
+ * this release from the same text gets the same slug.
+ *
+ * Two older behaviour notes still hold, both affecting only entities created
+ * from here on (a slug is computed once, at create, and never recomputed):
+ *   - truncation applies to the finished slug rather than to the first 40
+ *     characters of the source, so long AC text yields a longer, more
  *     distinguishable slug;
  *   - the "text already starts with ac-" special case is gone, so such text
  *     yields `ac-ac-…`. The grammar has no conditional, and adding one would be
@@ -70,6 +92,6 @@ export const acData: DataDeclaration = {
  */
 export const acSlugPattern: SlugPattern = [
   { op: 'literal', value: 'ac-' },
-  { op: 'slugify', field: 'text' },
+  { op: 'slugify', field: 'title' },
   { op: 'truncate', n: 40 },
 ];

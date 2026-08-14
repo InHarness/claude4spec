@@ -96,10 +96,18 @@ interface ResolveOutcome {
 
 function resolveTag(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
   switch (tag.kind) {
+    /**
+     * 0.2.22 — the tag kind picks a PROJECTION, not a view.
+     *
+     * A chip needs a label and a link, so it asks for the identity skeleton and
+     * nothing else. A `single_element` renders the whole record, so it names no
+     * projection and takes the default. Calls are grouped per (type, projection)
+     * for the same reason they used to be grouped per (type, view).
+     */
     case 'inline_mention':
-      return resolveSingle(tag, deps, 'inline_mention', renderInlineMention);
+      return resolveSingle(tag, deps, [], renderInlineMention);
     case 'single_element':
-      return resolveSingle(tag, deps, 'single_element', renderSingleElement);
+      return resolveSingle(tag, deps, undefined, renderSingleElement);
     case 'element_list':
       return resolveElementList(tag, deps);
     case 'tagged_list':
@@ -116,7 +124,7 @@ function resolveTag(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
 function resolveSingle(
   tag: XmlTag,
   deps: ResolvePageDeps,
-  view: 'inline_mention' | 'single_element',
+  select: string[] | undefined,
   render: (data: unknown) => string,
 ): ResolveOutcome {
   const typeRaw = tag.attrs.type ?? '';
@@ -138,7 +146,11 @@ function resolveSingle(
       error: 'unknown_type',
     };
   }
-  const record = deps.discovery.getEntities({ type, slugs: [slug], view }).results[0];
+  const record = deps.discovery.getEntities({
+    type,
+    slugs: [slug],
+    ...(select ? { select } : {}),
+  }).results[0];
   if (!record || record.entity === null) {
     return {
       data: null,
@@ -174,7 +186,9 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
   // getEntitiesAll, not getEntities: the agent-facing op caps its slug list, and
   // an author who wrote 51 slugs on a page must still see 51 entities rendered
   // rather than an error comment where the list was.
-  const results = getEntitiesAll(deps.discovery, { type, slugs, view: 'element_list_item' });
+  // `select: []` — a list row is a link and a label, which is exactly the
+  // identity skeleton. Anything wider was a view's idea of what a row wanted.
+  const { results } = getEntitiesAll(deps.discovery, { type, slugs, select: [] });
   const items = results.filter((r) => r.entity !== null).map((r) => withMeta(r.entity, r));
   /**
    * `entity: null` alone is NOT "missing" — since 0.2.6 it also marks a row the
@@ -255,13 +269,21 @@ function itemsFor(
   deps: ResolvePageDeps,
   type: string,
   tags: string[],
-  filter: 'and' | 'or',
+  tagFilter: 'and' | 'or',
 ): unknown[] {
-  // A rendered tagged list is complete or it is wrong: a reader cannot tell a
-  // truncated list from a short one, so this exhausts the pages.
-  return listEntitiesAll(deps.discovery, { type, tags, filter, view: 'tagged_list_item' }).map((item) =>
-    withMeta(item.data, item),
-  );
+  /**
+   * A rendered tagged list is complete or it is wrong: a reader cannot tell a
+   * truncated list from a short one, so this exhausts the pages.
+   *
+   * The discovery row IS the rendered row now — `{ slug, title }` — so there is
+   * no second call to widen it. That is the same projection the chip asks for,
+   * arrived at from the other direction.
+   */
+  return listEntitiesAll(deps.discovery, { type, tags, tagFilter }).map((row) => ({
+    type,
+    slug: row.slug,
+    title: row.title,
+  }));
 }
 
 function normalizeType(raw: string, deps: ResolvePageDeps): string | null {

@@ -27,7 +27,10 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     // The host consumes TagFilterBar, EntityListRow, Dialog, Popover, useToast,
     // EnumBadgePicker, GroupedRelationPicker and ActionBar — all experimental.
     // None of that is a published contract, so the major cannot have moved.
-    expect(HOST_API_VERSION).toBe('2.0.0');
+    // 3.0.0 since 0.2.22, and for a reason unrelated to the kit: `title` became
+    // a required declaration slot. The claim this case makes is unchanged —
+    // consuming an experimental component moved nothing.
+    expect(HOST_API_VERSION).toBe('3.0.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
 });
@@ -68,16 +71,34 @@ describe('M33 — Host API versioning helpers', () => {
     // A span that crosses no boundary is empty, in both directions.
     expect(migrationsBetween(1, 1)).toEqual([]);
     expect(migrationsBetween(2, 2)).toEqual([]);
-    // A wider span still only contains the one crossing that exists.
-    expect(migrationsBetween(0, 9)).toEqual(crossing);
+    // A wider span now contains BOTH crossings.
+    expect(migrationsBetween(0, 9).length).toBe(crossing.length + migrationsBetween(2, 3).length);
   });
 
-  it('offers NO shim for a 1.x plugin — every 2.0.0 change is a removal', () => {
+  /**
+   * 2 → 3 is the second crossing. Where 1 → 2 was all removals — behaviour
+   * leaving the type — this one changes what a declaration must SAY and what a
+   * read of it gives back, so its kinds are mixed.
+   */
+  it('carries the 2 → 3 crossing', () => {
+    const crossing = migrationsBetween(2, 3);
+    expect(crossing.map((m) => m.slot).sort()).toEqual([
+      'FieldFlags.contentBearing',
+      'data.schema.title',
+      'get_entities.view',
+      'slugPattern.nanoid',
+    ]);
+    expect(crossing.find((m) => m.slot === 'data.schema.title')!.kind).toBe('slot-required');
+    expect(migrationsBetween(3, 3)).toEqual([]);
+  });
+
+  it('offers NO shim for a 1.x plugin — it must cross both majors', () => {
     const info = buildMigrationInfo('^1.0.0');
     expect(info).not.toBeNull();
     expect(info!.targetHostApiVersion).toBe(HOST_API_VERSION);
-    expect(info!.migrations).toHaveLength(6);
-    expect(info!.migrations.every((m) => m.kind === 'slot-removed')).toBe(true);
+    // Both crossings, since a 1.x package is two majors behind.
+    expect(info!.migrations).toHaveLength(10);
+    expect(info!.migrations.filter((m) => m.kind === 'slot-removed')).toHaveLength(7);
     /**
      * The assertion that matters to a plugin author: there is no compatibility
      * path. Shimming these would mean inferring a logical schema from
@@ -89,7 +110,23 @@ describe('M33 — Host API versioning helpers', () => {
   });
 
   it('returns null when the plugin targets the current major (no migration needed)', () => {
-    expect(buildMigrationInfo('^2.0.0')).toBeNull();
-    expect(buildMigrationInfo('^2.5.0')).toBeNull(); // same major, even if unsatisfiable
+    expect(buildMigrationInfo('^3.0.0')).toBeNull();
+    expect(buildMigrationInfo('^3.5.0')).toBeNull(); // same major, even if unsatisfiable
+  });
+
+  /**
+   * A 2.x package is exactly one major behind and gets only that crossing —
+   * which is what makes the descriptor useful rather than a wall of history.
+   */
+  it('gives a 2.x plugin only the crossing it has to make', () => {
+    const info = buildMigrationInfo('^2.0.0');
+    expect(info).not.toBeNull();
+    expect(info!.migrations.map((m) => m.slot).sort()).toEqual([
+      'FieldFlags.contentBearing',
+      'data.schema.title',
+      'get_entities.view',
+      'slugPattern.nanoid',
+    ]);
+    expect(info!.shimAvailable).toBe(false);
   });
 });

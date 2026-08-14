@@ -1,5 +1,6 @@
 import type { RawEntity, RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { classifyVerifies } from './classify-verifies.js';
+import { acPayloadUpgrades } from './upgrades.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -12,6 +13,7 @@ function baseSingle(entity: RawEntity) {
   return {
     type: 'ac',
     slug: entity.slug,
+    title: (entity.data.title as string) ?? '',
     text: (entity.data.text as string) ?? '',
     kind: ((entity.data.kind as AcKind) ?? 'requirement') as AcKind,
     status: ((entity.data.status as AcStatus) ?? 'active') as AcStatus,
@@ -30,6 +32,7 @@ function withBrokenVerifies(entity: RawEntity, reader: RawEntityReader) {
 
 export interface AcSnapshot {
   slug: string;
+  title: string;
   text: string;
   kind: AcKind;
   status: AcStatus;
@@ -45,6 +48,7 @@ function coerceAc(raw: unknown): AcSnapshot {
     : [];
   return {
     slug: String(r.slug ?? ''),
+    title: String(r.title ?? ''),
     text: String(r.text ?? ''),
     kind: ((r.kind as AcKind) ?? 'requirement') as AcKind,
     status: ((r.status as AcStatus) ?? 'active') as AcStatus,
@@ -62,6 +66,7 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   const sb = coerceAc(b);
   const changes: Record<string, unknown> = {};
 
+  if (sa.title !== sb.title) changes.title_changed = { from: sa.title, to: sb.title };
   if (sa.text !== sb.text) changes.text_changed = { from: sa.text, to: sb.text };
   if (sa.kind !== sb.kind) changes.kind_changed = { from: sa.kind, to: sb.kind };
   if (sa.status !== sb.status) changes.status_changed = { from: sa.status, to: sb.status };
@@ -87,11 +92,16 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 export const acSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 2,
+  payloadUpgrades: acPayloadUpgrades,
   views: {
     inline_mention: (entity) => ({
       type: 'ac',
       slug: entity.slug,
-      label: (entity.data.text as string) ?? entity.slug,
+      // 0.2.22 — the label is `title`, on every type, with no per-type rule. It
+      // used to be `text`, truncated again by the chip; `title` is already
+      // bounded at 200 characters by the host, so nobody shortens it twice.
+      label: (entity.data.title as string) ?? entity.slug,
       href: `/acs/${entity.slug}`,
     }),
 

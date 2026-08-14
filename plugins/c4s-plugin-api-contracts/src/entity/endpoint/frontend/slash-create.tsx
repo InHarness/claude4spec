@@ -59,7 +59,7 @@ export function EndpointSlashCreatePopover({
       ...(summary.trim() ? { summary: summary.trim() } : {}),
     });
     insertEmbed(editor, ENDPOINT_TYPE, ep.slug);
-    toast.success(`Endpoint ${ep.method} ${ep.path} created`);
+    toast.success(`Endpoint ${ep.title} created`);
     onClose();
     return ep;
   });

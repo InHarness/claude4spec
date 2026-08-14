@@ -31,7 +31,7 @@ const RETIRED_DDL: Record<string, string> = {
   'ui-view': `
     CREATE TABLE IF NOT EXISTS ui_view (
       slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
+      title TEXT NOT NULL,
       url TEXT,
       description TEXT,
       params TEXT NOT NULL DEFAULT '[]',
@@ -43,7 +43,7 @@ const RETIRED_DDL: Record<string, string> = {
   'design-system': `
     CREATE TABLE IF NOT EXISTS design_system (
       slug        TEXT PRIMARY KEY,
-      name        TEXT NOT NULL,
+      title       TEXT NOT NULL,
       description TEXT,
       groups      TEXT NOT NULL DEFAULT '[]',
       modes       TEXT NOT NULL DEFAULT '[]',

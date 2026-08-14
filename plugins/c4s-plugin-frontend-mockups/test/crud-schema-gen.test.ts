@@ -45,7 +45,7 @@ const paramSchema = z.object({
 });
 
 const uiViewCreateSchema: ZodRawShape = {
-  name: z.string().describe('Display name (e.g. "User Profile Screen")'),
+  title: z.string().describe('Display name (e.g. "User Profile Screen")'),
   url: z
     .string()
     .nullable()
@@ -63,7 +63,7 @@ const uiViewCreateSchema: ZodRawShape = {
 };
 
 const uiViewUpdateSchema: ZodRawShape = {
-  name: z.string().optional(),
+  title: z.string().optional(),
   url: z.string().nullable().optional(),
   description: z.string().nullable().optional(),
   params: z.array(paramSchema).optional(),
@@ -101,7 +101,7 @@ const modeSchema = z.object({
 });
 
 const designSystemCreateSchema: ZodRawShape = {
-  name: z.string().describe('Display name (e.g. "Brand 2026")'),
+  title: z.string().describe('Display name (e.g. "Brand 2026")'),
   description: z.string().optional(),
   groups: z.array(groupSchema).optional().describe('Token groups (default []).'),
   modes: z.array(modeSchema).optional().describe('Theme modes — token override sets (default []).'),
@@ -110,7 +110,7 @@ const designSystemCreateSchema: ZodRawShape = {
 };
 
 const designSystemUpdateSchema: ZodRawShape = {
-  name: z.string().optional(),
+  title: z.string().optional(),
   description: z.string().nullable().optional(),
   groups: z.array(groupSchema).optional(),
   modes: z.array(modeSchema).optional(),
@@ -226,7 +226,7 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     const create = z.object(buildCreateShape(designSystemData));
     expect(
       create.safeParse({
-        name: 'Brand',
+        title: 'Brand',
         groups: [
           {
             name: 'color',
@@ -239,7 +239,7 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
 
     expect(
       create.safeParse({
-        name: 'Brand',
+        title: 'Brand',
         groups: [
           {
             name: 'type',
@@ -261,7 +261,7 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
     const update = z.object(buildUpdateShape(uiViewData));
     // `designSystemSlug` is `clearable` — null means detach.
     expect(update.safeParse({ designSystemSlug: null }).success).toBe(true);
-    // `name` is not, so null is a type error and not a way to blank the row.
-    expect(update.safeParse({ name: null }).success).toBe(false);
+    // `title` is not, so null is a type error and not a way to blank the row.
+    expect(update.safeParse({ title: null }).success).toBe(false);
   });
 });

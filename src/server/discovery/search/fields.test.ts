@@ -33,6 +33,7 @@ const paths = (data: DataDeclaration | undefined): string[] =>
 /** `design-system`'s token shape, reproduced: named leaves around an opaque one. */
 const opaqueValueData: DataDeclaration = {
   schema: {
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
     name: { kind: 'string', required: true },
     groups: {
       kind: 'collection',
@@ -73,6 +74,7 @@ describe('hostDefaultFields', () => {
      */
     const out = paths({
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
         composites: {
           kind: 'record',
@@ -122,6 +124,7 @@ describe('hostDefaultFields', () => {
   it('excludes a transient subtree by PREFIX, not just its root', () => {
     const out = paths({
       schema: {
+        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
         name: { kind: 'string', required: true },
         upload: {
           kind: 'object',
@@ -147,9 +150,10 @@ describe('hostDefaultFields', () => {
   it('boosts an identity path the type actually declares, and invents none', () => {
     const withName = hostDefaultFields(moduleWith({ schema: { name: { kind: 'string' } } }));
     expect(withName).toContainEqual({ path: 'name', weight: 3 });
-    // `ac` has no `name`/`label`/`title`; advertising one would be a path that
-    // cannot match.
-    expect(paths(acData)).not.toContain('title');
+    // Since 0.2.22 EVERY type declares `title`, so the boost always applies —
+    // what the rule still forbids is inventing a path the schema lacks.
+    expect(hostDefaultFields(moduleWith(acData))).toContainEqual({ path: 'title', weight: 3 });
+    expect(paths(acData)).not.toContain('label');
   });
 
   it('degrades to the identity fallback rather than throwing, when the slot throws', () => {

@@ -38,7 +38,7 @@ function UiViewRow({ entity, active, onOpen }: EntityRowProps<UiView>) {
           className="block text-[12.5px]"
           style={{ color: 'var(--c-ink)', fontWeight: 500 }}
         >
-          {entity.name}
+          {entity.title}
         </span>
         {entity.description && (
           <span className="block text-[11.5px] truncate" style={{ color: 'var(--c-subtle)' }}>
@@ -88,7 +88,7 @@ function UiViewChip({ slug, entity, onOpen }: EntityChipProps<UiView>) {
       onMouseLeave={(e) => (e.currentTarget.style.borderColor = 'var(--c-hair)')}
     >
       <Monitor size={11} style={{ color: 'var(--c-accent)' }} />
-      <span style={{ color: 'var(--c-ink)' }}>{entity.name}</span>
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
       {entity.url && (
         <span className="font-mono text-[11px]" style={{ color: 'var(--c-subtle)' }}>
           ({entity.url})
@@ -132,7 +132,7 @@ function UiViewCard({ slug, entity, onOpen }: EntityCardProps<UiView>) {
           className="text-[14.5px]"
           style={{ color: 'var(--c-ink)', fontWeight: 600 }}
         >
-          {entity.name}
+          {entity.title}
         </span>
         {entity.url && (
           <span

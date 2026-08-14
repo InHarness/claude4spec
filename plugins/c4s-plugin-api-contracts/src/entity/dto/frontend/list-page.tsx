@@ -37,10 +37,10 @@ export function DtosList({
   function handleCreate() {
     setCreateOpen(true);
   }
-  function handleCreated(dto: { slug: string; name: string }) {
+  function handleCreated(dto: { slug: string; title: string }) {
     setCreateOpen(false);
     onSelect(dto.slug);
-    toast.success(`DTO ${dto.name} created`);
+    toast.success(`DTO ${dto.title} created`);
   }
 
   return (
@@ -51,7 +51,7 @@ export function DtosList({
         count={dtos.length}
         search={search}
         onSearchChange={onSearchChange}
-        searchPlaceholder="Search name, slug, description…"
+        searchPlaceholder="Search title, slug, description…"
         createLabel="New DTO"
         onCreate={handleCreate}
       />
@@ -74,7 +74,7 @@ export function DtosList({
           >
             <div className="flex items-center gap-2">
               <span className="text-[14px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-                {d.name}
+                {d.title}
               </span>
             </div>
             {d.description && (

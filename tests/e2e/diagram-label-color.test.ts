@@ -101,6 +101,9 @@ async function pageWithEmbeddedDiagram(projectId: string): Promise<string> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       slug: PROBE_DIAGRAM,
+      // `title` is required on every type since 0.2.22 — a create without one is
+      // a 400, which surfaced here as an embed that never rendered.
+      title: 'Label colour probe',
       format: 'mermaid',
       source: 'graph TD; Alpha-->Beta; Beta-->Gamma;',
     }),

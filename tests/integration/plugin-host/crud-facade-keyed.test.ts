@@ -25,7 +25,7 @@ const grid = fixtureModule('grid', {
   withEntityService: true,
   data: {
     schema: {
-      name: { kind: 'string', required: true },
+      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
       nRows: { kind: 'number', column: 'n_rows', default: 0 },
       nCols: { kind: 'number', column: 'n_cols', default: 0 },
       cells: {
@@ -55,7 +55,7 @@ describe('ctx.crud — the keyed collection write door a plugin is handed', () =
 
   beforeEach(async () => {
     t = await createTestApp({ extraModules: [grid] });
-    await t.crud.create('grid', { name: 'Sheet', nRows: 3, nCols: 3 }, 'user');
+    await t.crud.create('grid', { title: 'Sheet', nRows: 3, nCols: 3 }, 'user');
     t.broadcasts.length = 0;
   });
   afterEach(() => t.cleanup());

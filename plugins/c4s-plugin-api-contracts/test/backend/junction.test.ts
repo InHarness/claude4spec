@@ -68,10 +68,10 @@ function reader(handle: Database.Database): JunctionReader {
 
 function seed(handle: Database.Database): void {
   handle.exec(`
-    INSERT INTO dto (slug, name, created_at, updated_at) VALUES
+    INSERT INTO dto (slug, title, created_at, updated_at) VALUES
       ('b-dto', 'Bravo', '', ''), ('a-dto', 'Alpha', '', '');
-    INSERT INTO endpoint (slug, method, path, created_at, updated_at) VALUES
-      ('get-users', 'GET', '/users', '', '');
+    INSERT INTO endpoint (slug, title, method, path, created_at, updated_at) VALUES
+      ('get-users', 'GET /users', 'GET', '/users', '', '');
     INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation, status_code) VALUES
       ('get-users', 'b-dto', 'response', 200),
       ('get-users', 'a-dto', 'response', 200),
@@ -107,9 +107,9 @@ describe('junction reads', () => {
     const handle = db();
     try {
       handle.exec(`
-        INSERT INTO dto (slug, name, created_at, updated_at) VALUES ('d', 'D', '', '');
-        INSERT INTO endpoint (slug, method, path, created_at, updated_at)
-          VALUES ('e', 'GET', '/e', '', '');
+        INSERT INTO dto (slug, title, created_at, updated_at) VALUES ('d', 'D', '', '');
+        INSERT INTO endpoint (slug, title, method, path, created_at, updated_at)
+          VALUES ('e', 'GET /e', 'GET', '/e', '', '');
         INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation, status_code) VALUES
           ('e', 'd', 'response', 500),
           ('e', 'd', 'response', NULL),
@@ -136,8 +136,8 @@ describe('junction reads', () => {
     const handle = db();
     try {
       handle.exec(`
-        INSERT INTO endpoint (slug, method, path, created_at, updated_at)
-          VALUES ('e', 'GET', '/e', '', '');
+        INSERT INTO endpoint (slug, title, method, path, created_at, updated_at)
+          VALUES ('e', 'GET /e', 'GET', '/e', '', '');
       `);
       expect(() =>
         handle.exec(`

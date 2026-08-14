@@ -64,8 +64,8 @@ describe.skipIf(!BASE)('hoisted entity routes — list and detail pages still re
     });
 
     await post('acs', { slug: AC_SLUG, text: AC_TEXT });
-    await post('ui-views', { slug: UI_VIEW_SLUG, name: UI_VIEW_NAME });
-    await post('design-systems', { slug: DS_SLUG, name: DS_NAME });
+    await post('ui-views', { slug: UI_VIEW_SLUG, title: UI_VIEW_NAME });
+    await post('design-systems', { slug: DS_SLUG, title: DS_NAME });
 
     page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     // Same-origin only: a sandboxed container has no route to a web-font CDN,

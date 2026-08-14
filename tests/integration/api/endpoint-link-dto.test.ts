@@ -17,8 +17,8 @@ describe('endpoint ↔ dto links (generic collection writes)', () => {
   let t: TestApp;
   beforeEach(async () => {
     t = await createTestApp();
-    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', name: 'UserDto', fields: [] });
-    await request(t.app).post('/api/dtos').send({ slug: 'error-dto', name: 'ErrorDto', fields: [] });
+    await request(t.app).post('/api/dtos').send({ slug: 'user-dto', title: 'UserDto', fields: [] });
+    await request(t.app).post('/api/dtos').send({ slug: 'error-dto', title: 'ErrorDto', fields: [] });
     await request(t.app)
       .post('/api/endpoints')
       .send({ slug: 'get-users', method: 'GET', path: '/users', summary: 'List users' });

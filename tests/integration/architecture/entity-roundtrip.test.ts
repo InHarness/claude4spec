@@ -48,7 +48,7 @@ function readAllFiles(t: TestApp): Map<string, string> {
 
 /** A few entities across several types, created through the real REST surface. */
 async function seed(t: TestApp): Promise<void> {
-  const dto = await request(t.app).post('/api/dtos').send({ name: 'UserDto', fields: [] });
+  const dto = await request(t.app).post('/api/dtos').send({ title: 'UserDto', fields: [] });
   expect(dto.status).toBe(201);
   const endpoint = await request(t.app)
     .post('/api/endpoints')
@@ -56,7 +56,7 @@ async function seed(t: TestApp): Promise<void> {
   expect(endpoint.status).toBe(201);
   const ac = await request(t.app).post('/api/acs').send({ text: 'the list is ordered' });
   expect(ac.status).toBe(201);
-  const uiView = await request(t.app).post('/api/ui-views').send({ name: 'Users' });
+  const uiView = await request(t.app).post('/api/ui-views').send({ title: 'Users' });
   expect(uiView.status, JSON.stringify(uiView.body)).toBe(201);
 }
 

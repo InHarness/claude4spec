@@ -19,7 +19,7 @@ import { handle, apiFetch, unwrap, unwrapList } from '../../../frontend-kit/api-
  */
 export type UiViewListItem = Pick<
   UiView,
-  'slug' | 'name' | 'url' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
+  'slug' | 'title' | 'url' | 'description' | 'tags' | 'createdAt' | 'updatedAt'
 > & { type: 'ui-view'; paramCount: number };
 
 export const uiViewsApi = {

@@ -49,7 +49,7 @@ function DtoDetailRoute() {
     // RouteBody, not Pane — see the endpoint side: the description's DocEditor
     // needs the editor bridge, and a missing one is silent.
     <RouteBody navigate={navigate}>
-      <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.name} view="details" hasHistory />
+      <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.title} view="details" hasHistory />
       <DtoDetail
         key={slug}
         slug={slug}
@@ -70,7 +70,7 @@ function DtoHistoryRoute() {
   const { data: dto } = useDto(slug);
   return (
     <Pane>
-      <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.name} view="history" hasHistory />
+      <EntityBreadcrumbBar type={DTO_TYPE} slug={slug} name={dto?.title} view="history" hasHistory />
       <EntityVersionHistoryView type={DTO_TYPE} slug={slug} />
     </Pane>
   );

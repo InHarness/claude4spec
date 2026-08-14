@@ -1,6 +1,7 @@
 import type { SerializationContribution } from '@c4s/plugin-runtime';
 import type { RawEntity } from '../../host-kit/host-types.js';
 import { DATABASE_TABLE_PATH_PREFIX, DATABASE_TABLE_TYPE } from '../../identity.js';
+import { databaseTablePayloadUpgrades } from './upgrades.js';
 
 /** One column of the table, as the inherited file format writes it. */
 interface Column {
@@ -34,7 +35,7 @@ function summary(entity: RawEntity) {
   return {
     type: DATABASE_TABLE_TYPE,
     slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
+    name: (entity.data.title as string) ?? entity.slug,
     description: (entity.data.description as string | null) ?? null,
     columnCount: columns.length,
     indexCount: indexCountOf(entity),
@@ -44,19 +45,24 @@ function summary(entity: RawEntity) {
 }
 
 export const databaseTableSerializer: SerializationContribution<RawEntity> = {
+  payloadVersion: 2,
+  /** v1 files predate the reserved `title`; it starts life as a copy of `name`. */
+  payloadUpgrades: databaseTablePayloadUpgrades,
   views: {
     /**
-     * Labelled by `name`, NOT by slug.
+     * Labelled by `title`, like every other type since 0.2.22.
      *
-     * The slug is kebab (`order-items`); the name is the actual SQL identifier
-     * (`order_items`), and that is what a reader following a mention into a
-     * schema needs to match against. The retired serializer made the same
-     * choice and it is the one visible difference from the generic view.
+     * The reasoning that used to single this type out — "show the SQL
+     * identifier, not the kebab slug, because that is what a reader matches
+     * against a schema" — is now served by the default: `title` starts as a copy
+     * of `name`, so an untouched table still shows `order_items`. What changes
+     * is that a table somebody deliberately titled "Order line items" shows
+     * that, instead of the identifier overriding the author.
      */
     inline_mention: (entity) => ({
       type: DATABASE_TABLE_TYPE,
       slug: entity.slug,
-      label: (entity.data.name as string) ?? entity.slug,
+      label: (entity.data.title as string) ?? entity.slug,
       href: `${DATABASE_TABLE_PATH_PREFIX}/${entity.slug}`,
     }),
 

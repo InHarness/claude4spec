@@ -39,60 +39,45 @@ describe('database-table — serializer views', () => {
   afterEach(() => t.cleanup());
 
   const list = async () => (await request(t.app).get('/api/database-tables')).body.data as Array<Record<string, unknown>>;
-  /** The bare GET is `single_element` — the summary. `?view=detail` is the full record. */
+  /** Since 0.2.22 there is one shape: `?view=` is gone and a GET is the record. */
   const one = async (slug: string) =>
     (await request(t.app).get(`/api/database-tables/${slug}`)).body.data as Record<string, unknown>;
-  const detail = async (slug: string) =>
-    (await request(t.app).get(`/api/database-tables/${slug}?view=detail`)).body.data as Record<
-      string,
-      unknown
-    >;
 
-  it('projects a list row to counts, not to the arrays themselves', async () => {
+  /**
+   * 0.2.22 — a UI list row carries the SAME projection as every other read.
+   *
+   * This used to assert the opposite: the type computed `columnCount` /
+   * `indexCount` / `hasPrimaryKey` for its `element_list_item` view precisely so
+   * that a list screen never received the arrays. That kind of per-type computed
+   * list field is what the release retires — `diagram.sourceLines` was removed
+   * by name for the same reason — because width is now the caller's to state and
+   * a type inventing a narrower shape puts the choice back where it was.
+   *
+   * The counts are still available to the screen: they are `columns.length`, and
+   * the row renderer derives them. A field genuinely too big to travel says so
+   * with `contentBearing`, which is the mechanism that replaces the guesswork.
+   */
+  it('carries the declared collections in a list row, counts derivable from them', async () => {
     const rows = await list();
     const row = rows.find((r) => r.slug === 'order-items')!;
-    expect(row.columnCount).toBe(3);
-    expect(row.indexCount).toBe(2);
+    expect(row.columns).toHaveLength(3);
+    expect(row.indexes).toHaveLength(2);
     expect(row.name).toBe('order_items');
+    expect(row.title).toBe('order_items');
   });
 
   /**
-   * THE ONE THAT MATTERS. If this passes while the view is the generic one, it
-   * is because someone deleted the override and the list is now shipping the
-   * whole schema to a screen that renders a single line from it.
-   */
-  it('never ships the collections themselves in a list row', async () => {
-    const row = (await list()).find((r) => r.slug === 'order-items')!;
-    expect(row).not.toHaveProperty('columns');
-    expect(row).not.toHaveProperty('indexes');
-  });
-
-  it('derives hasPrimaryKey, which is a predicate and not a field', async () => {
-    const rows = await list();
-    expect(rows.find((r) => r.slug === 'order-items')!.hasPrimaryKey).toBe(true);
-    expect(rows.find((r) => r.slug === 'keyless')!.hasPrimaryKey).toBe(false);
-  });
-
-  /**
-   * `single_element` carries the FULL record, counts included.
+   * A GET carries the FULL record.
    *
-   * It was a counts-only summary, which read fine for an inline page embed and
-   * was wrong for the other consumer: `single_element` is the DEFAULT view of
-   * the MCP `read_entities` tool for a single slug, so an agent resolving a
-   * table before writing a migration got a column COUNT and no column names,
-   * types or foreign keys — with no way to ask for `detail` from a page tag.
+   * It was once a counts-only summary, which read fine for an inline page embed
+   * and was wrong for the other consumer: an agent resolving a table before
+   * writing a migration got a column COUNT and no column names, types or foreign
+   * keys. Since 0.2.22 there is no narrower default to fall into.
    */
-  it('carries the collections on single_element, and the derived counts with them', async () => {
+  it('carries the collections on a plain GET', async () => {
     const summary = await one('order-items');
-    expect(summary.columnCount).toBe(3);
-    expect(summary.indexCount).toBe(2);
-    expect(summary.hasPrimaryKey).toBe(true);
     expect(summary.columns).toHaveLength(3);
     expect(summary.indexes).toHaveLength(2);
-
-    const full = await detail('order-items');
-    expect(full.columns).toHaveLength(3);
-    expect(full.indexes).toHaveLength(2);
   });
 
   describe('deriveIndexName', () => {
@@ -111,7 +96,7 @@ describe('database-table — serializer views', () => {
      * version history rests on — so the stored index keeps its missing `name`.
      */
     it('does not write the derived name back into the entity', async () => {
-      const full = await detail('order-items');
+      const full = await one('order-items');
       const [first] = full.indexes as Array<Record<string, unknown>>;
       expect(first).not.toHaveProperty('name');
     });

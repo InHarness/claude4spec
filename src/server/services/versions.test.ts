@@ -27,7 +27,7 @@ describe('VersionService.restore', () => {
      * projection door, so the fake `dto` type needs the table its fake
      * declaration describes.
      */
-    db.exec(`CREATE TABLE dto (slug TEXT NOT NULL PRIMARY KEY, name TEXT)`);
+    db.exec(`CREATE TABLE dto (slug TEXT NOT NULL PRIMARY KEY, title TEXT)`);
     versions = new VersionService(db);
 
     hostRestore = vi.fn(() => ({ op: 'updated' as const, entity: null }));
@@ -75,14 +75,14 @@ describe('VersionService.restore', () => {
   });
 
   it('restores to the target snapshot and captures a new update version', () => {
-    versions.createVersion('dto', 'my-dto', { name: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
+    versions.createVersion('dto', 'my-dto', { title: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
     versions.createVersion('dto', 'my-dto', { name: 'Bar' }, 'user', 'Renamed', 'update', '1.1.0');
 
     const result = versions.restore('dto', 'my-dto', 1, 'user');
 
     expect(hostRestore).toHaveBeenCalledWith(
       'dto',
-      { name: 'Foo' },
+      { title: 'Foo' },
       expect.objectContaining({ releaseId: null, actor: 'user' }),
     );
     expect(storePersist).toHaveBeenCalledWith('dto', 'my-dto');
@@ -95,8 +95,8 @@ describe('VersionService.restore', () => {
     // A real row, because the delete now goes through the projection: with no
     // row there is nothing to delete and nothing to capture, and the test would
     // pass for the wrong reason.
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
-    versions.createVersion('dto', 'my-dto', { name: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('my-dto', 'Foo')`).run();
+    versions.createVersion('dto', 'my-dto', { title: 'Foo' }, 'user', 'Created', 'create', '1.1.0');
     versions.createVersion('dto', 'my-dto', null, 'user', 'Deleted', 'delete', '1.1.0');
 
     const result = versions.restore('dto', 'my-dto', 2, 'user');
@@ -113,7 +113,7 @@ describe('VersionService.restore', () => {
     // Pre-M17 rows have no `op` column value at all — VersionDetail.op comes
     // back undefined (toDetail omits it when falsy), so the guard must not
     // rely on `op === 'delete'` alone; `data === null` must also trigger it.
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('my-dto', 'Foo')`).run();
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('my-dto', 'Foo')`).run();
     db.prepare(
       `INSERT INTO entity_version (entity_type, entity_slug, version, data, changed_by, op)
        VALUES ('dto', 'my-dto', 1, 'null', 'user', NULL)`,
@@ -161,7 +161,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
 
   it('captures an entity_version row for a type outside the core RawEntityType union', () => {
     const { db, versions } = setupHost('widget');
-    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+    db.prepare(`INSERT INTO widget (slug, title) VALUES ('my-widget', 'Hello')`).run();
 
     const result = versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created', '1.0.0');
 
@@ -172,7 +172,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
       )
       .get() as { entity_type: string; entity_slug: string; data: string };
     expect(row.entity_type).toBe('widget');
-    expect(JSON.parse(row.data)).toMatchObject({ slug: 'my-widget', name: 'Hello' });
+    expect(JSON.parse(row.data)).toMatchObject({ slug: 'my-widget', title: 'Hello' });
   });
 
   /**
@@ -184,7 +184,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
    */
   it('records the manifest payloadVersion when the caller passes no version', () => {
     const { db, versions } = setupHost('widget');
-    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+    db.prepare(`INSERT INTO widget (slug, title) VALUES ('my-widget', 'Hello')`).run();
 
     versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created');
 
@@ -196,7 +196,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
 
   it('lists a captured plugin-type version through the same generic path GET /versions uses', () => {
     const { db, versions } = setupHost('widget');
-    db.prepare(`INSERT INTO widget (slug, name) VALUES ('my-widget', 'Hello')`).run();
+    db.prepare(`INSERT INTO widget (slug, title) VALUES ('my-widget', 'Hello')`).run();
     versions.captureEntitySnapshot('widget', 'my-widget', 'create', 'user', 'Created', '1.0.0');
 
     const list = versions.listVersions('widget', 'my-widget');
@@ -206,7 +206,7 @@ describe('VersionService.captureEntitySnapshot — generic plugin types (M17)', 
 
   it('never silently swallows a capture failure — logs and rethrows, and no row is inserted', () => {
     const { db, versions } = setupHost('brokenwidget', { snapshotThrows: true });
-    db.prepare(`INSERT INTO brokenwidget (slug, name) VALUES ('oops', 'X')`).run();
+    db.prepare(`INSERT INTO brokenwidget (slug, title) VALUES ('oops', 'X')`).run();
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     expect(() =>

@@ -7,7 +7,7 @@ import type {
 } from '@c4s/plugin-runtime';
 import type { DesignMode, TokenGroup, TokenValue } from '../../types.js';
 import { parseGroups, parseModes, resolve } from '../../design-system-domain.js';
-import { designSystemPayloadV1ToV2 } from './upgrades.js';
+import { designSystemPayloadV1ToV2, designSystemPayloadV2ToV3 } from './upgrades.js';
 
 // ─── snapshot shape (committed file format) ─────────────────────────────────
 
@@ -26,7 +26,7 @@ export interface DesignSystemSnapshotGroup {
 
 export interface DesignSystemSnapshot {
   slug: string;
-  name: string;
+  title: string;
   description: string | null;
   groups: DesignSystemSnapshotGroup[];
   modes: Array<{ name: string; overrides: Array<{ token: string; value: TokenValue }> }>;
@@ -50,7 +50,7 @@ function baseSingle(entity: RawEntity) {
   return {
     type: 'design-system',
     slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
+    title: (entity.data.title as string) ?? entity.slug,
     description: (entity.data.description as string | null) ?? null,
     groups: groups.map((g) => ({
       name: g.name,
@@ -73,7 +73,7 @@ function trimItem(entity: RawEntity) {
   return {
     type: 'design-system',
     slug: entity.slug,
-    name: (entity.data.name as string) ?? entity.slug,
+    title: (entity.data.title as string) ?? entity.slug,
     description: (entity.data.description as string | null) ?? null,
     groupCount: groups.length,
     tokenCount: groups.reduce((acc, g) => acc + g.tokens.length, 0),
@@ -87,7 +87,7 @@ function coerce(raw: unknown): DesignSystemSnapshot {
   const r = (raw ?? {}) as Record<string, unknown>;
   return {
     slug: String(r.slug ?? ''),
-    name: String(r.name ?? ''),
+    title: String(r.title ?? ''),
     description: (r.description as string | null) ?? null,
     groups: parseGroups(r.groups).map((g) => ({
       name: g.name,
@@ -118,7 +118,7 @@ function designSystemDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
   // meta
   const metaChanges: Array<{ field: string; from: unknown; to: unknown }> = [];
-  if (sa.name !== sb.name) metaChanges.push({ field: 'name', from: sa.name, to: sb.name });
+  if (sa.title !== sb.title) metaChanges.push({ field: 'title', from: sa.title, to: sb.title });
   if (sa.description !== sb.description)
     metaChanges.push({ field: 'description', from: sa.description, to: sb.description });
   if (metaChanges.length) changes.meta_changes = metaChanges;
@@ -215,7 +215,7 @@ export const designSystemSerializer: SerializationContribution<RawEntity> = {
     inline_mention: (entity) => ({
       type: 'design-system',
       slug: entity.slug,
-      label: (entity.data.name as string) ?? entity.slug,
+      label: (entity.data.title as string) ?? entity.slug,
       href: `/design-systems/${entity.slug}`,
     }),
 
@@ -237,6 +237,6 @@ export const designSystemSerializer: SerializationContribution<RawEntity> = {
 
   diff: designSystemDiff,
 
-  /** v1 files carry a synthesised `description: null` on every token. */
-  payloadUpgrades: [designSystemPayloadV1ToV2],
+  /** v1 files carry a synthesised `description: null` on every token; v2 files spell the label `name`. */
+  payloadUpgrades: [designSystemPayloadV1ToV2, designSystemPayloadV2ToV3],
 };

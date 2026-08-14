@@ -56,12 +56,21 @@ describe('diagram serializer', () => {
     const d = diagramSerializer.diff!(a, b, 'd');
     expect(d.op).toBe('modified');
     const changes = d.changes as Record<string, unknown>;
-    expect(changes.source_changed).toBe(true);
+    /**
+     * 0.2.22 — a content-bearing field diffs by SIZE. `source_changed: true`
+     * said only that something moved; two byte counts say how much and in which
+     * direction, which is the most a reader can act on without opening bodies
+     * the flag exists to keep out of a diff.
+     */
+    expect(changes.source_changed).toEqual({ fromBytes: 15, toBytes: 15 });
     expect(changes.tag_added).toEqual(['y']);
   });
 
-  it('declares its payload version on the MANIFEST, not on the contribution', () => {
-    expect(diagramBackendModule.payloadVersion).toBe(1);
-    expect(diagramSerializer.payloadVersion).toBeUndefined();
+  it('carries its payload version on the manifest and on the contribution alike', () => {
+    // The chain-length check compares the two, so a bump that touches only one
+    // of them does not register at all.
+    expect(diagramBackendModule.payloadVersion).toBe(2);
+    expect(diagramSerializer.payloadVersion).toBe(2);
+    expect(diagramSerializer.payloadUpgrades).toHaveLength(1);
   });
 });

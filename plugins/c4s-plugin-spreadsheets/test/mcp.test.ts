@@ -51,9 +51,9 @@ describe('metaOf — reading the row the generic reader actually hands over', ()
      * a 0×0 sheet with both header flags false — which renders as an empty grid
      * rather than as an error.
      */
-    expect(metaOf(row({ name: 'S', n_rows: 4, n_cols: 3, header_row: 1, header_col: 0 }))).toEqual({
+    expect(metaOf(row({ title: 'S', n_rows: 4, n_cols: 3, header_row: 1, header_col: 0 }))).toEqual({
       slug: 'sheet',
-      name: 'S',
+      title: 'S',
       nRows: 4,
       nCols: 3,
       headerRow: true,
@@ -62,7 +62,7 @@ describe('metaOf — reading the row the generic reader actually hands over', ()
   });
 
   it('accepts the declaration spelling too, for a caller holding a snapshot', () => {
-    expect(metaOf(row({ name: 'S', nRows: 2, nCols: 2, headerRow: true }))).toMatchObject({
+    expect(metaOf(row({ title: 'S', nRows: 2, nCols: 2, headerRow: true }))).toMatchObject({
       nRows: 2,
       nCols: 2,
       headerRow: true,
@@ -72,7 +72,7 @@ describe('metaOf — reading the row the generic reader actually hands over', ()
   it('degrades a missing field rather than throwing', () => {
     expect(metaOf(row({}))).toEqual({
       slug: 'sheet',
-      name: '',
+      title: '',
       nRows: 0,
       nCols: 0,
       headerRow: false,

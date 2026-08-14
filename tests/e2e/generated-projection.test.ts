@@ -71,23 +71,24 @@ const post = (path: string, payload: unknown) =>
  * One create per type, chosen to exercise the parts of a schema the generator
  * has to get right rather than just "a row exists": an embedded value collection
  * (`dto.fields`, `ui-view.params`, `design-system.groups`), an enum with a
- * default (`diagram.format`), and a transient input that must NOT be persisted
- * (`diagram.caption`).
+ * default (`diagram.format`), and — since 0.2.22 — the reserved `title` every
+ * type now requires, plus a content-bearing field that must NOT come back in a
+ * generic read (`diagram.source`).
  */
 function payloads(stamp: number) {
   return {
-    dto: ['/dtos', { name: `SmokeDto${stamp}`, fields: [{ name: 'id', type: 'string', required: true }] }],
+    dto: ['/dtos', { title: `SmokeDto${stamp}`, fields: [{ name: 'id', type: 'string', required: true }] }],
     endpoint: ['/endpoints', { method: 'GET', path: `/smoke/${stamp}`, summary: 'projection smoke' }],
-    'ui-view': ['/ui-views', { name: `Smoke View ${stamp}`, url: '/smoke/:id', params: [{ name: 'id', in: 'path' }] }],
+    'ui-view': ['/ui-views', { title: `Smoke View ${stamp}`, url: '/smoke/:id', params: [{ name: 'id', in: 'path' }] }],
     ac: ['/acs', { text: `Projection smoke ${stamp}`, kind: 'requirement', status: 'active' }],
     'design-system': [
       '/design-systems',
       {
-        name: `Smoke DS ${stamp}`,
+        title: `Smoke DS ${stamp}`,
         groups: [{ name: 'Core', tier: 'primitive', tokens: [{ name: 'brand', type: 'color', value: '#2563eb' }] }],
       },
     ],
-    diagram: ['/diagrams', { source: 'graph TD; A-->B;', format: 'mermaid', caption: `Smoke ${stamp}` }],
+    diagram: ['/diagrams', { title: `Smoke ${stamp}`, source: 'graph TD; A-->B;', format: 'mermaid' }],
   } as Record<(typeof ALL_TYPES)[number], [string, Record<string, unknown>]>;
 }
 
@@ -131,12 +132,36 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
     expect(res.body.data.slug).toBe(entity!.slug);
   });
 
-  it('a diagram does not persist its transient slug input', async () => {
-    // `caption` carries `transientInput`, so it seeds the slug and never reaches
-    // a column. A generator that projected it would round-trip it here.
+  it('[ac:ac-pole-z-flaga-contentbearing-nie-jest] a diagram reports its body’s size, never the body', async () => {
+    /**
+     * 0.2.22 — `source` is content-bearing, so a generic read answers with the
+     * descriptor and nothing else. This is the assertion `curl` cannot make for
+     * you: a read that wrongly INCLUDED the body would still be a 200.
+     *
+     * `caption` is checked in the same breath because it left the schema in this
+     * release — it was a transient that seeded the slug, and the slug comes from
+     * `title` now.
+     */
     const entity = created.diagram!;
     const res = await api(`/api/projects/${projectId}/diagrams/${entity.slug}`);
+    expect(res.body.data.source).toBeUndefined();
     expect(res.body.data.caption).toBeUndefined();
+    expect(res.body.data.hasSource).toBe(true);
+    expect(res.body.data.sourceBytes).toBe('graph TD; A-->B;'.length);
+  });
+
+  it('[ac:ac-host-generuje-domyslna-operacje-wydaj] the content route hands the body over', async () => {
+    const entity = created.diagram!;
+    const res = await api(`/api/projects/${projectId}/entities/diagram/${entity.slug}/content/source`);
+    expect(res.status).toBe(200);
+    expect(res.body.content).toBe('graph TD; A-->B;');
+    expect(res.body.bytes).toBe('graph TD; A-->B;'.length);
+  });
+
+  it('a field that is not content-bearing is a 404 on that route, not a 200 with nothing', async () => {
+    const entity = created.diagram!;
+    const res = await api(`/api/projects/${projectId}/entities/diagram/${entity.slug}/content/format`);
+    expect(res.status).toBe(404);
   });
 
   it('links a DTO to an endpoint through the endpoint_dto projection', async () => {

@@ -58,7 +58,13 @@ function DiagramChip({ slug, entity, onOpen }: EntityChipProps<Diagram>) {
       title={`diagram: ${entity.slug}`}
     >
       <Share2 size={11} style={{ color: 'var(--c-accent)' }} />
-      <span className="font-mono" style={{ color: 'var(--c-ink)' }}>{entity.slug}</span>
+      {/*
+        0.2.22 — the label is `title`, and this chip is where the reserved field
+        shows most plainly: `diagram` had no name at all, so a chip could only
+        ever render a kebab slug in a monospace face. It renders prose now, so
+        the monospace goes with the slug it was there for.
+      */}
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title || entity.slug}</span>
     </button>
   );
 }

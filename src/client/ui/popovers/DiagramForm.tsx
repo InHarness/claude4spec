@@ -25,6 +25,16 @@ type PreviewState =
 export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
   const { mode, initial } = request.props;
   const [format, setFormat] = useState<string>(initial?.format || 'mermaid');
+  /**
+   * 0.2.22 — TWO fields where there was one.
+   *
+   * `title` names the entity: it is what every chip, row and card shows, and it
+   * seeds the slug. `caption` describes THIS embedding of the diagram and is
+   * written as an attribute of the reference tag, so the same diagram embedded
+   * on two pages can carry two captions. They used to be one field doing both
+   * jobs, which is why a diagram had no name of its own.
+   */
+  const [title, setTitle] = useState<string>(initial?.title ?? '');
   const [caption, setCaption] = useState<string>(initial?.caption ?? '');
   const [source, setSource] = useState<string>(initial?.source ?? '');
   const [preview, setPreview] = useState<PreviewState>({ status: 'idle' });
@@ -61,15 +71,22 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
 
   const dirty =
     mode === 'create'
-      ? source.trim().length > 0
+      ? source.trim().length > 0 || title.trim().length > 0
       : format !== initial?.format ||
+        title !== (initial?.title ?? '') ||
         caption !== (initial?.caption ?? '') ||
         source !== (initial?.source ?? '');
-  const canSubmit = source.trim().length > 0 && preview.status !== 'error' && (mode === 'create' || dirty);
+  // `title` joins `source` as a precondition: it is required on the entity, and
+  // a create that would be refused by the server is better refused here.
+  const canSubmit =
+    source.trim().length > 0 &&
+    title.trim().length > 0 &&
+    preview.status !== 'error' &&
+    (mode === 'create' || dirty);
 
   function submit() {
     if (!canSubmit) return;
-    onClose({ format, caption: caption.trim(), source });
+    onClose({ format, title: title.trim(), caption: caption.trim(), source });
   }
 
   function handleTextareaKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -130,8 +147,16 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
               </SelectInput>
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
+              <FieldLabel>Title</FieldLabel>
+              <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Auth flow" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <FieldLabel>Caption (optional)</FieldLabel>
-              <TextInput value={caption} onChange={(e) => setCaption(e.target.value)} placeholder="Auth flow" />
+              <TextInput
+                value={caption}
+                onChange={(e) => setCaption(e.target.value)}
+                placeholder="Shown under this embed"
+              />
             </div>
             <button
               onClick={() => setFullscreen((f) => !f)}

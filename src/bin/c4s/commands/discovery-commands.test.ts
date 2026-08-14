@@ -17,7 +17,7 @@
  *      the only way to catch a parameter that is parsed and then dropped.
  *   2. That the payload is printed AS RECEIVED. The CLI does not serialize,
  *      re-shape or re-order; where it does project (the tag commands' buckets,
- *      `list-slugs`), the projection is asserted.
+ *      `detail`), the projection is asserted.
  *   3. That the CLI's OWN guards still refuse before a request is made — a flag
  *      the command does not accept must not reach the server at all.
  *
@@ -46,13 +46,14 @@ import { runResolveIdentity } from './resolve-identity.js';
 import { runCheckConsistency } from './check-consistency.js';
 import { runListEntities } from './list-entities.js';
 import { runGetEntities } from './get-entities.js';
-import { runListSlugs } from './list-slugs.js';
 import { runFindReferences } from './find-references.js';
 import { runTaggedList } from './tagged-list.js';
 import { runCatalog } from './catalog.js';
 import { runDescribe } from './describe.js';
 import { runListTags } from './list-tags.js';
 import { runInlineMention } from './inline-mention.js';
+import { runSingleElement } from './single-element.js';
+import { runDetail } from './detail.js';
 import { runElementList } from './element-list.js';
 
 /** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
@@ -138,8 +139,8 @@ describe('discovery commands on the CLI', () => {
       seen = [];
       stdout = '';
       reply = { types: [{ type: 'ac' }] };
-      await runDescribe(args('describe', '--type', 'ac', '--view', 'detail'));
-      expect(called()).toBe('/_meta/types?type=ac&view=detail');
+      await runDescribe(args('describe', '--type', 'ac'));
+      expect(called()).toBe('/_meta/types?type=ac');
 
       seen = [];
       stdout = '';
@@ -153,17 +154,19 @@ describe('discovery commands on the CLI', () => {
     it('the entity operations carry every flag they accept', async () => {
       reply = { items: [], total: 0, hasMore: false };
       await runListEntities(
-        args('list-entities', '--type', 'ac', '--tags', 'a,b', '--filter', 'and', '--view', 'detail', '--mode', 'items', '--limit', '5', '--offset', '10'),
+        args('list-entities', '--type', 'ac', '--tags', 'a,b', '--tag-filter', 'and', '--sort', 'title', '--dir', 'desc', '--mode', 'items', '--limit', '5', '--offset', '10'),
       );
-      expect(called()).toBe('/entities/ac/list?tags=a%2Cb&filter=and&view=detail&mode=items&limit=5&offset=10');
+      expect(called()).toBe(
+        '/entities/ac/list?tags=a%2Cb&tagFilter=and&sort=title&dir=desc&mode=items&limit=5&offset=10',
+      );
 
       seen = [];
       stdout = '';
-      reply = { type: 'ac', view: 'detail', results: [] };
-      await runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'beta,alpha', '--view', 'detail'));
+      reply = { type: 'ac', selectedFields: ['slug', 'title', 'tags'], results: [] };
+      await runGetEntities(args('get-entities', '--type', 'ac', '--slugs', 'beta,alpha', '--select', 'text,kind'));
       // Input ORDER is preserved on the wire — the core answers in the order the
       // caller named, and a transport that sorted would lose that.
-      expect(called()).toBe('/entities/ac/get?slugs=beta%2Calpha&view=detail');
+      expect(called()).toBe('/entities/ac/get?slugs=beta%2Calpha&select=text%2Ckind');
 
       seen = [];
       stdout = '';
@@ -243,30 +246,41 @@ describe('discovery commands on the CLI', () => {
   });
 
   describe('the aliases and the projections', () => {
-    it('inline_mention is get_entities with a fixed view, unwrapped to the one row', async () => {
-      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: { title: 'A' } }] };
+    /**
+     * The alias carries a fixed PROJECTION now, and asserting the URL is the
+     * point: `view=inline_mention` did not fail once the route stopped reading
+     * it — it was accepted and ignored, so the narrowest command in the CLI
+     * silently returned the widest record.
+     */
+    it('inline_mention is get_entities with a fixed projection, unwrapped to the one row', async () => {
+      reply = { type: 'ac', results: [{ slug: 'a', entity: { slug: 'a', title: 'A', href: '/acs/a' } }] };
       await runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'));
-      expect(called()).toBe('/entities/ac/get?slugs=a&view=inline_mention');
-      expect(printed()).toEqual({ title: 'A' });
+      // `select=` — present and empty, which the route reads as `[]`.
+      expect(called()).toBe('/entities/ac/get?slugs=a&select=');
+      expect(printed()).toEqual({ slug: 'a', title: 'A', href: '/acs/a' });
+    });
+
+    /**
+     * `single_element` and `detail` make the SAME call — the two differed only
+     * by a `view`, and there is no view axis left. Both keep their names: one
+     * matches an XML tag an agent reads off a page, the other is the name for
+     * "the whole record" with no tag behind it.
+     */
+    it('single_element and detail both ask for the default projection', async () => {
+      reply = { type: 'ac', results: [{ slug: 'a', entity: { slug: 'a', title: 'A' } }] };
+      await runSingleElement(args('single_element', '--type', 'ac', '--slug', 'a'));
+      await runDetail(args('detail', '--type', 'ac', '--slug', 'a'));
+      const urls = seen.map((s) => s.url.replace(/^\/api\/projects\/[^/]+/, ''));
+      expect(urls).toEqual(['/entities/ac/get?slugs=a', '/entities/ac/get?slugs=a']);
     });
 
     it('a missing entity becomes ENTITY_NOT_FOUND — the null row the list operation reports', async () => {
-      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: null }] };
+      reply = { type: 'ac', results: [{ slug: 'a', entity: null }] };
       await expect(runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'))).rejects.toMatchObject({
         code: 'ENTITY_NOT_FOUND',
       });
     });
 
-    it('list-slugs sweeps and projects down to the slugs', async () => {
-      reply = { items: [{ slug: 'a', data: {} }, { slug: 'b', data: {} }], total: 2, hasMore: false };
-      await runListSlugs(args('list-slugs', '--type', 'ac'));
-      // `limit=1000` is the sweep's page size, asked for explicitly. The core
-      // helpers this replaced passed `MAX_LIMIT`; omitting it let the server
-      // apply the 50-row agent default, which cut the sweep's completeness
-      // ceiling ~40x and multiplied the round-trips for the same answer by 20.
-      expect(called()).toBe('/entities/ac/list?limit=1000&view=inline_mention&offset=0');
-      expect(printed()).toEqual({ type: 'ac', slugs: ['a', 'b'], hasMore: false });
-    });
   });
 
   /**
@@ -279,7 +293,7 @@ describe('discovery commands on the CLI', () => {
   describe('element_list keeps what the raw operation does not promise', () => {
     const replyFor = (slugs: string[], truncate: string[] = []) => ({
       type: 'ac',
-      view: 'element_list_item',
+      selectedFields: ['slug', 'title', 'tags'],
       results: slugs.map((slug) =>
         truncate.includes(slug)
           ? { slug, entity: null, truncated: true }
@@ -358,10 +372,12 @@ describe('discovery commands on the CLI', () => {
    */
   describe('the exhaustive sweeps page to the end', () => {
     it('tagged_list follows hasMore across pages and returns every row', async () => {
+      // 0.2.22 — the row IS `{ slug, title }`. It used to be unwrapped from a
+      // `data` key that no longer exists, which printed a list of `null`s.
       const pages = [
-        { items: [{ slug: 'a', data: 1 }], total: 3, hasMore: true },
-        { items: [{ slug: 'b', data: 2 }], total: 3, hasMore: true },
-        { items: [{ slug: 'c', data: 3 }], total: 3, hasMore: false },
+        { items: [{ slug: 'a', title: 'A' }], total: 3, hasMore: true },
+        { items: [{ slug: 'b', title: 'B' }], total: 3, hasMore: true },
+        { items: [{ slug: 'c', title: 'C' }], total: 3, hasMore: false },
       ];
       let n = 0;
       server.removeAllListeners('request');
@@ -377,12 +393,22 @@ describe('discovery commands on the CLI', () => {
       expect(seen).toHaveLength(3);
       // The offset advances by what was actually returned, not by a page size
       // the transport assumed.
+      /**
+       * `tagFilter`, not `filter` — and this line is the whole reason to assert
+       * a URL rather than a result. The server reads `tagFilter` and applies its
+       * own default when it is absent, so the retired spelling did not fail: it
+       * turned a `--filter or` into an AND and answered confidently.
+       */
       expect(seen.map((s) => s.url.replace(/^.*\?/, ''))).toEqual([
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=0',
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=1',
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=2',
+        'limit=1000&tags=x&tagFilter=or&offset=0',
+        'limit=1000&tags=x&tagFilter=or&offset=1',
+        'limit=1000&tags=x&tagFilter=or&offset=2',
       ]);
-      expect(printed().items).toEqual([1, 2, 3]);
+      expect(printed().items).toEqual([
+        { slug: 'a', title: 'A' },
+        { slug: 'b', title: 'B' },
+        { slug: 'c', title: 'C' },
+      ]);
       // A sweep that ran to the end says so.
       expect(printed().hasMore).toBe(false);
     });
@@ -390,7 +416,7 @@ describe('discovery commands on the CLI', () => {
     it('a sweep the guard cuts short is reported as incomplete, not printed as the answer', async () => {
       /**
        * `delegateGetAll` documents `exhausted: false` as "the caller must report
-       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`/`list-slugs`
+       * this, not swallow it" — and `tagged_list`/`tagged_list_mixed`
        * all swallowed it. A tag list cut at the runaway guard and presented as
        * complete is what authorizes a rename or a delete against a set that was
        * never fully seen. Simulated here with a server that never stops saying

@@ -73,7 +73,7 @@ export const DatabaseTableChip: FC<EntityChipProps<DatabaseTable>> = ({ slug, en
       }}
     >
       <DatabaseTableIcon size={11} style={{ color: 'var(--c-accent)' }} />
-      <span style={{ color: 'var(--c-ink)' }}>{entity.name}</span>
+      <span style={{ color: 'var(--c-ink)' }}>{entity.title}</span>
     </button>
   );
 };

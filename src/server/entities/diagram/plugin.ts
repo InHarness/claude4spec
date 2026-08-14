@@ -9,11 +9,20 @@ export const diagramBackendModule: BackendModule = {
   type: 'diagram',
   data: diagramData,
   slugPattern: diagramSlugPattern,
-  payloadVersion: 1,
-  // Slug is slugified prose (ac: `text`, diagram: `caption`), so two entities
-  // that start alike are two entities — suffix rather than refuse. See
-  // `slugConflict` on the manifest; every identity-derived type takes the default.
-  slugConflict: 'suffix',
+  payloadVersion: 2,
+  /**
+   * 0.2.22 — from `'suffix'` to a hard refusal, and this type is deliberately
+   * the only one that moves.
+   *
+   * Suffixing made sense while the slug came from a transient caption backed by
+   * a random fallback: a collision was cheap because the fallback was already
+   * random. It comes from `title` now, and two diagrams a person gave the same
+   * title are almost never two diagrams — they are one diagram saved twice, or a
+   * rename that should have been a rename. `SLUG_CONFLICT` says so. Compare
+   * `ac`, which keeps suffixing because two criteria opening the same way are
+   * ordinary, and `spreadsheet`, where two sheets called "Q1 report" are normal.
+   */
+  slugConflict: 'reject',
 
   label: 'Diagram',
   labelPlural: 'Diagrams',

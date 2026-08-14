@@ -1,4 +1,4 @@
-import type { GetEntitiesResult, SerializedMeta } from '../../../server/discovery/index.js';
+import type { EntityRow, GetEntitiesResult, SerializedMeta } from '../../../server/discovery/index.js';
 import { CliError } from '../errors.js';
 
 /**
@@ -36,11 +36,18 @@ export function withMeta(record: { data?: unknown; entity?: unknown } & Serializ
  * command down mid-page.
  */
 export function pickEntityPage(payload: unknown): {
-  items: Array<{ slug: string; data: unknown } & SerializedMeta>;
+  items: EntityRow[];
   hasMore: boolean;
 } {
+  /**
+   * 0.2.22 — the row is `{ slug, title }` and carries no payload and no
+   * serializer flags, so it is the answer rather than something to unwrap.
+   * Running it through `withMeta` — which reads `record.entity ?? record.data`
+   * — printed a list of `null`s, a whole command emptied out by a shape change
+   * one layer down.
+   */
   const p = (payload ?? {}) as {
-    items?: Array<{ slug: string; data: unknown } & SerializedMeta>;
+    items?: EntityRow[];
     hasMore?: boolean;
   };
   return { items: Array.isArray(p.items) ? p.items : [], hasMore: p.hasMore === true };

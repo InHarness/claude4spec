@@ -14,18 +14,35 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SPEC_DIR = path.join(ROOT, '.claude/skills/specyfikacja');
 const SKIPLIST_PATH = path.join(ROOT, 'tests/ac-skiplist.json');
 
+// 0.2.22 — `list-slugs` is gone, absorbed by `list-entities`, whose row now
+// carries `title` beside the slug. The row is what changed; the sweep is the
+// same one, and it still pages to exhaustion because a partial AC list would
+// silently report coverage against a subset of the criteria.
 function specAcSlugs() {
-  const out = execFileSync(
-    'npx',
-    ['tsx', 'src/bin/c4s.ts', 'list-slugs', '--type', 'ac', '--project', SPEC_DIR, '--format', 'json', '--compact'],
-    { cwd: ROOT, encoding: 'utf8' },
-  );
-  const parsed = JSON.parse(out);
-  if (parsed.error) {
-    console.error(`c4s error: ${parsed.error.code} — ${parsed.error.message}`);
-    process.exit(1);
+  const slugs = [];
+  for (let offset = 0; ; ) {
+    const out = execFileSync(
+      'npx',
+      [
+        'tsx', 'src/bin/c4s.ts', 'list-entities',
+        '--type', 'ac',
+        '--project', SPEC_DIR,
+        '--limit', '500',
+        '--offset', String(offset),
+        '--format', 'json', '--compact',
+      ],
+      { cwd: ROOT, encoding: 'utf8' },
+    );
+    const parsed = JSON.parse(out);
+    if (parsed.error) {
+      console.error(`c4s error: ${parsed.error.code} — ${parsed.error.message}`);
+      process.exit(1);
+    }
+    const items = parsed.items ?? [];
+    slugs.push(...items.map((item) => item.slug));
+    if (!parsed.hasMore || items.length === 0) return slugs;
+    offset += items.length;
   }
-  return parsed.slugs;
 }
 
 function* walkTestFiles(dir) {

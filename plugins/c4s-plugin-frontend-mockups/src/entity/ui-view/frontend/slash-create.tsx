@@ -54,13 +54,13 @@ function UiViewSlashCreateForm({
     const trimmed = name.trim();
     if (!trimmed) throw new Error('Name is required');
     const view = await create.mutateAsync({
-      name: trimmed,
+      title: trimmed,
       url: url.trim() || null,
       description: description.trim() || undefined,
     });
     void qc.invalidateQueries({ queryKey: uiViewKeys.all });
     insertEmbed(editor, UI_VIEW_TYPE, view.slug);
-    toast.success(`${UI_VIEW_LABEL} ${view.slug} created`);
+    toast.success(`${UI_VIEW_LABEL} ${view.title} created`);
     onClose();
     return view;
   });

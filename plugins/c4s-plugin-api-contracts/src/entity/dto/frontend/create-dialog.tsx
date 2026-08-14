@@ -15,7 +15,7 @@ import { useCreateDto } from './hooks.js';
 
 interface Props {
   onClose: () => void;
-  onCreated: (dto: { slug: string; name: string }) => void;
+  onCreated: (dto: { slug: string; title: string }) => void;
 }
 
 export function DtoCreateDialog({ onClose, onCreated }: Props) {
@@ -36,7 +36,7 @@ export function DtoCreateDialog({ onClose, onCreated }: Props) {
       .filter(Boolean);
     try {
       const dto = await create.mutateAsync({
-        name: name.trim(),
+        title: name.trim(),
         ...(description.trim() ? { description: description.trim() } : {}),
         ...(tags.length ? { tags } : {}),
       });

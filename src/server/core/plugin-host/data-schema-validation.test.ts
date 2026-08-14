@@ -1,5 +1,5 @@
 /**
- * The four LOUD rejections Host API 2.0.0 owes a plugin author.
+ * The LOUD rejections Host API 3.0.0 owes a plugin author.
  *
  * Each corresponds to a failure that, left unchecked, surfaces at boot rather
  * than at load: a generated `CREATE TABLE` with a reserved word in it, a
@@ -14,10 +14,27 @@ import type { DataDeclaration } from '../../../shared/plugin-host/data-schema.js
 import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
 const NAME_PATTERN: SlugPattern = [{ op: 'slugify', field: 'name' }];
-const OK: DataDeclaration = { schema: { name: { kind: 'string', required: true } } };
+const TITLE: DataDeclaration['schema'] = {
+  title: { kind: 'string', required: true, maxLength: 200 },
+};
+const OK: DataDeclaration = { schema: { ...TITLE, name: { kind: 'string', required: true } } };
+
+/**
+ * Every fixture gets the reserved `title` unless it declares one itself.
+ *
+ * 0.2.22 made it required, so without this each of the ~50 cases below would
+ * stop at the title rule and never reach the rule it is actually about. Merged
+ * in the helper rather than written into every fixture so the fixtures keep
+ * saying only what their own case is about — and the title rule gets its own
+ * tests, further down, where it can be the subject.
+ */
+const withTitle = (data: DataDeclaration): DataDeclaration => {
+  if (!data?.schema || !Object.keys(data.schema).length) return data;
+  return 'title' in data.schema ? data : { ...data, schema: { ...TITLE, ...data.schema } };
+};
 
 const check = (data: DataDeclaration, pattern: SlugPattern = NAME_PATTERN, version = 1) => () =>
-  validateDataDeclaration('widget', data, pattern, version);
+  validateDataDeclaration('widget', withTitle(data), pattern, version);
 
 describe('data.schema — the required triple', () => {
   it('accepts a minimal well-formed declaration', () => {
@@ -424,7 +441,7 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
 
 describe('systemPrompt.defaultPredicate', () => {
   const withPredicate = (predicate: unknown, data: DataDeclaration = OK) => () =>
-    validateDataDeclaration('widget', data, NAME_PATTERN, 1, predicate as never);
+    validateDataDeclaration('widget', withTitle(data), NAME_PATTERN, 1, predicate as never);
 
   it('accepts a predicate over a projected field', () => {
     expect(withPredicate({ field: 'name', in: ['x'] })).not.toThrow();
@@ -468,14 +485,6 @@ describe('slugPattern', () => {
     );
   });
 
-  it('accepts an optional-only pattern that ends in a nanoid alternative', () => {
-    const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
-
-    expect(
-      check(data, [[{ op: 'slugify', field: 'caption' }], [{ op: 'nanoid', n: 8 }]]),
-    ).not.toThrow();
-  });
-
   it('accepts an optional-only pattern carrying a literal prefix', () => {
     const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
 
@@ -484,11 +493,27 @@ describe('slugPattern', () => {
     ).not.toThrow();
   });
 
-  it('rejects a non-positive truncate or nanoid length', () => {
+  it('rejects a non-positive truncate length', () => {
     expect(check(OK, [{ op: 'slugify', field: 'name' }, { op: 'truncate', n: 0 }])).toThrow(
       /truncate\(0\)/,
     );
-    expect(check(OK, [{ op: 'nanoid', n: -1 }])).toThrow(/nanoid\(-1\)/);
+  });
+
+  /**
+   * 0.2.22 — `nanoid(n)` left the grammar, so an optional-only pattern has ONE
+   * escape rather than two: a literal prefix. The alternative it used to have —
+   * ending the chain in a random suffix — is exactly what `diagram` did, and
+   * dropping it is what turns a repeated title into a visible `SLUG_CONFLICT`
+   * instead of two entities nobody knows were meant to be one.
+   */
+  it('no longer accepts a random suffix as the escape from an optional-only pattern', () => {
+    const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
+    expect(
+      check(data, [
+        [{ op: 'slugify', field: 'caption' }],
+        [{ op: 'literal', value: 'diagram-' }],
+      ]),
+    ).not.toThrow();
   });
 });
 
@@ -537,5 +562,132 @@ describe('string constraints — pattern and notReserved', () => {
       },
     } as unknown as DataDeclaration;
     expect(check(data)).toThrow(/carries `pattern`/);
+  });
+});
+
+/**
+ * The three rejections 0.2.22 adds, each stated where the author will read it.
+ */
+describe('Host API 3.0.0 — the reserved title', () => {
+  it('[ac:m13-title-required] rejects a schema without `title`, on the missing-schema path', () => {
+    const data: DataDeclaration = { schema: { name: { kind: 'string', required: true } } };
+    expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
+      /reserved `title` field is required/,
+    );
+  });
+
+  it('rejects a `title` declared with the wrong shape', () => {
+    for (const title of [
+      { kind: 'string' } as const,
+      { kind: 'string', required: true } as const,
+      { kind: 'string', required: true, maxLength: 80 } as const,
+    ]) {
+      const data = { schema: { title, name: { kind: 'string' } } } as unknown as DataDeclaration;
+      expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
+        /must be declared exactly/,
+      );
+    }
+  });
+
+  it('refuses to let the label itself be content-bearing', () => {
+    const data = {
+      schema: { title: { kind: 'string', required: true, maxLength: 200, contentBearing: true } },
+    } as unknown as DataDeclaration;
+    expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
+      /may not be contentBearing/,
+    );
+  });
+});
+
+describe('computedDefault as a derivation', () => {
+  const derived = (steps: unknown): DataDeclaration =>
+    ({
+      schema: {
+        title: { kind: 'string', required: true, maxLength: 200, computedDefault: steps },
+        text: { kind: 'string', required: true },
+      },
+    }) as unknown as DataDeclaration;
+
+  const TITLE_PATTERN: SlugPattern = [{ op: 'slugify', field: 'title' }];
+
+  it('accepts a derivation reading a declared field', () => {
+    expect(
+      check(derived([{ op: 'raw', field: 'text' }, { op: 'truncate', n: 200 }]), TITLE_PATTERN),
+    ).not.toThrow();
+  });
+
+  it('rejects a derivation reading a field that does not exist', () => {
+    expect(check(derived([{ op: 'raw', field: 'nope' }]), TITLE_PATTERN)).toThrow(
+      /is not in the schema/,
+    );
+  });
+
+  it('rejects a derivation reading itself', () => {
+    expect(check(derived([{ op: 'raw', field: 'title' }]), TITLE_PATTERN)).toThrow(/reading itself/);
+  });
+
+  /**
+   * Chaining is refused rather than ordered. Derivation is a single pass at
+   * create, so a default reading another computed field would depend on which
+   * order the host happened to resolve them in — a fact no reader of the
+   * declaration can see.
+   */
+  it('rejects a derivation reading another computed field', () => {
+    const data = {
+      schema: {
+        title: { kind: 'string', required: true, maxLength: 200, computedDefault: [{ op: 'raw', field: 'label' }] },
+        label: { kind: 'string', computedDefault: [{ op: 'raw', field: 'text' }] },
+        text: { kind: 'string', required: true },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data, TITLE_PATTERN)).toThrow(/itself computed/);
+  });
+});
+
+describe('contentBearing must be reachable', () => {
+  const withContent = (extra: Record<string, unknown>): DataDeclaration =>
+    ({
+      schema: {
+        title: { kind: 'string', required: true, maxLength: 200 },
+        body: { kind: 'string', contentBearing: true, ...extra },
+      },
+    }) as unknown as DataDeclaration;
+
+  it('accepts the flag with no operation named — the host generates one', () => {
+    expect(check(withContent({}), [{ op: 'slugify', field: 'title' }])).not.toThrow();
+  });
+
+  it('rejects a contentOperation that resolves to nothing', () => {
+    expect(check(withContent({ contentOperation: 'read_the_body' }), [{ op: 'slugify', field: 'title' }])).toThrow(
+      /resolves to no operation/,
+    );
+  });
+
+  it('rejects a transient field claiming to carry content', () => {
+    expect(
+      check(withContent({ transientInput: true }), [{ op: 'slugify', field: 'title' }]),
+    ).toThrow(/no stored content to issue/);
+  });
+});
+
+describe('value constraints', () => {
+  it('rejects maxLength on a non-string leaf', () => {
+    const data = {
+      schema: {
+        title: { kind: 'string', required: true, maxLength: 200 },
+        count: { kind: 'number', maxLength: 5 },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data)).toThrow(/STRING constraint/);
+  });
+
+  it('rejects a non-positive maxLength', () => {
+    const data = {
+      schema: {
+        title: { kind: 'string', required: true, maxLength: 200 },
+        note: { kind: 'string', maxLength: 0 },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data)).toThrow(/must be a positive integer/);
   });
 });

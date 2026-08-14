@@ -9,10 +9,12 @@ export const acBackendModule: BackendModule = {
   type: 'ac',
   data: acData,
   slugPattern: acSlugPattern,
-  payloadVersion: 1,
-  // Slug is slugified prose (ac: `text`, diagram: `caption`), so two entities
-  // that start alike are two entities — suffix rather than refuse. See
-  // `slugConflict` on the manifest; every identity-derived type takes the default.
+  payloadVersion: 2,
+  // Slug is slugified prose, so two entities that start alike are two entities —
+  // suffix rather than refuse. See `slugConflict` on the manifest. `diagram`
+  // left this group in 0.2.22: a repeated diagram TITLE is now a hard conflict,
+  // because two diagrams meant to be one is a worse outcome than a refusal. An
+  // AC is different — two criteria opening with the same clause are ordinary.
   slugConflict: 'suffix',
 
   label: 'Acceptance Criterion',

@@ -1,5 +1,5 @@
 /**
- * Host API 2.0.0 — the logical schema is validated AT REGISTRATION.
+ * Host API 3.0.0 — the logical schema is validated AT REGISTRATION.
  *
  * Same temporal argument as `composition-validation.ts`, one step earlier in the
  * chain: a schema is a licence to GENERATE DDL and to interpolate field-derived
@@ -16,10 +16,22 @@
  *   3. a schema deeper than the projection can walk;
  *   4. an identifier failing the `sql-identifier` rule (snake_case plus the
  *      host-maintained reserved-word list).
+ *
+ * 0.2.22 adds three more, on the same terms:
+ *   5. a schema without the reserved `title` field — rejected on the SAME path
+ *      as one without `data.schema`, because both mean "this does not describe
+ *      an entity this host can serve";
+ *   6. a `computedDefault` reading a field that does not exist, itself, or
+ *      another computed field;
+ *   7. a `contentBearing` field naming a `contentOperation` that resolves to no
+ *      operation — the reachability rule that replaces the retired
+ *      views-versus-contentBearing ban.
  */
 
 import {
   MAX_PROJECTION_DEPTH,
+  RESERVED_TITLE_FIELD,
+  TITLE_MAX_LENGTH,
   columnOf,
   hasProjectionTable,
   isEmbedded,
@@ -31,6 +43,7 @@ import {
   type FieldNode,
   type IntegrityConstraint,
 } from '../../../shared/plugin-host/data-schema.js';
+import { CATALOG } from '../../operations/catalog.js';
 import {
   alternativesOf,
   slugPatternFields,
@@ -437,18 +450,26 @@ function checkIntegrity(
   }
 }
 
-/** The pattern must be well-formed AND must be able to produce a slug. */
-function checkSlugPattern(type: string, schema: DataDeclaration['schema'], pattern: SlugPattern): void {
+/**
+ * Well-formedness of a step list, shared by `slugPattern` and `computedDefault`.
+ *
+ * 0.2.22 — one grammar means one validator. `slot` names the caller in every
+ * message, because "reads a field that is not in the schema" needs to say WHICH
+ * declaration is wrong before an author can fix it.
+ */
+function checkSteps(
+  type: string,
+  schema: DataDeclaration['schema'],
+  pattern: SlugPattern,
+  slot: string,
+): void {
   const alternatives = alternativesOf(pattern);
   if (!alternatives.length || alternatives.some((a) => !a.length)) {
-    fail(type, 'slugPattern must declare at least one non-empty alternative');
+    fail(type, `${slot} must declare at least one non-empty alternative`);
   }
   for (const step of alternatives.flat()) {
     if (step.op === 'truncate' && (!Number.isInteger(step.n) || step.n <= 0)) {
-      fail(type, `slugPattern truncate(${String(step.n)}) must be a positive integer`);
-    }
-    if (step.op === 'nanoid' && (!Number.isInteger(step.n) || step.n <= 0)) {
-      fail(type, `slugPattern nanoid(${String(step.n)}) must be a positive integer`);
+      fail(type, `${slot} truncate(${String(step.n)}) must be a positive integer`);
     }
   }
   for (const field of slugPatternFields(pattern)) {
@@ -456,23 +477,31 @@ function checkSlugPattern(type: string, schema: DataDeclaration['schema'], patte
     if (!(root in schema)) {
       fail(
         type,
-        `slugPattern reads field "${field}", which is not in the schema. A pattern reading a field ` +
-          `that does not exist produces an empty slug for every entity of the type`,
+        `${slot} reads field "${field}", which is not in the schema. A derivation reading a field ` +
+          `that does not exist produces an empty value for every entity of the type`,
       );
     }
   }
+}
+
+/** The pattern must be well-formed AND must be able to produce a slug. */
+function checkSlugPattern(type: string, schema: DataDeclaration['schema'], pattern: SlugPattern): void {
+  checkSteps(type, schema, pattern, 'slugPattern');
   /**
    * A pattern reading only OPTIONAL fields yields `''` whenever the author omits
    * all of them — an entity with no slug, on a perfectly valid create. That has
    * to be impossible by construction rather than unlikely in practice.
    *
-   * Two ways to be safe, and the six built-in types split across both: end the
-   * chain in something total (`ac`'s `ac-` literal, `diagram`'s `nanoid(8)`), or
-   * read a field the schema marks `required` (`dto`/`ui-view`/`design-system`
-   * slugify `name`, `endpoint` reads `method` and `path`). A required field that
-   * slugifies to nothing — a name of pure punctuation — is a write-path
-   * validation error, which is the correct place for it: the payload is the
-   * problem, not the pattern.
+   * Two ways to be safe: end the chain in something total (`ac`'s `ac-`
+   * literal), or read a field the schema marks `required`. Since 0.2.22 every
+   * type satisfies the second by construction, because every pattern reads the
+   * required `title` — but the check stays, since a plugin may derive its slug
+   * from something else. A required field that slugifies to nothing — a title of
+   * pure punctuation — is a write-path validation error, which is the correct
+   * place for it: the payload is the problem, not the pattern.
+   *
+   * `nanoid(8)` used to be the other way to be total. It is gone from the
+   * grammar, so the remaining escape is a literal.
    */
   const readsRequiredField = slugPatternFields(pattern).some(
     (field) => schema[field.split('.')[0] as string]?.required === true,
@@ -481,7 +510,7 @@ function checkSlugPattern(type: string, schema: DataDeclaration['schema'], patte
     fail(
       type,
       'slugPattern reads only optional fields, so a valid create can produce an empty slug — read a ' +
-        'required field, or end the chain with a literal prefix or a nanoid(n) alternative',
+        'required field (`title` is required on every type), or end the chain with a literal prefix',
     );
   }
 }
@@ -530,6 +559,130 @@ function checkDefaultPredicate(
   }
 }
 
+/**
+ * The reserved `title` field — rejected on the SAME path as a missing
+ * `data.schema`, which is the brief's own instruction and the right one: both
+ * are "this manifest does not describe an entity this host can serve", and
+ * splitting them into two severities would let a type load without the field
+ * every renderer, every slug pattern and every identity lookup now reads.
+ */
+function checkReservedTitle(type: string, schema: DataDeclaration['schema']): void {
+  const node = schema[RESERVED_TITLE_FIELD];
+  if (!node) {
+    fail(
+      type,
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field is required in Host API 3.0.0 — declare ` +
+        `\`${RESERVED_TITLE_FIELD}: { kind: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\`. ` +
+        `It is the single source of the entity's label, its slug and its identity search scope; ` +
+        `derive it from another field with \`computedDefault\` when the author supplies none`,
+    );
+  }
+  if (node.kind !== 'string' || node.required !== true || node.maxLength !== TITLE_MAX_LENGTH) {
+    fail(
+      type,
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field must be declared exactly ` +
+        `\`{ kind: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\` — the bound is the ` +
+        `HOST's, which is what makes "a title never needs shortening at read time" a fact`,
+    );
+  }
+  if (node.contentBearing) {
+    fail(type, `the reserved \`${RESERVED_TITLE_FIELD}\` field may not be contentBearing — it is the label`);
+  }
+}
+
+/**
+ * Value constraints, and the one place they may NOT appear.
+ *
+ * `maxLength` is a domain truth enforced on write. `data.integrity` drives
+ * projection and DDL and explicitly excludes CHECK-shaped rules, so a length
+ * bound expressed there would be a constraint the table tries to enforce and the
+ * write path does not — two answers to one question.
+ */
+function checkValueConstraints(type: string, schema: DataDeclaration['schema']): void {
+  walkSchema(schema, (path, node) => {
+    if (node.kind === 'string') {
+      if (node.maxLength !== undefined && (!Number.isInteger(node.maxLength) || node.maxLength <= 0)) {
+        fail(type, `field "${path}" declares maxLength ${String(node.maxLength)} — must be a positive integer`);
+      }
+      return;
+    }
+    if ((node as { maxLength?: number }).maxLength !== undefined) {
+      fail(type, `field "${path}" declares maxLength on a ${node.kind} leaf — it is a STRING constraint`);
+    }
+  });
+}
+
+/**
+ * A derived `computedDefault` must read fields that exist, and must not chain.
+ *
+ * No chaining is the rule worth stating: derivation happens once, at create, in
+ * one pass, so a default reading a field that is ITSELF derived would depend on
+ * the order the host happened to resolve them in. Rejecting it is cheaper than
+ * specifying an order nobody can see from the declaration.
+ */
+function checkComputedDefaults(type: string, schema: DataDeclaration['schema']): void {
+  for (const [name, node] of Object.entries(schema)) {
+    const computed = node.computedDefault;
+    if (!computed || computed === 'now') continue;
+    checkSteps(type, schema, computed, `field "${name}" computedDefault`);
+    for (const field of slugPatternFields(computed)) {
+      const root = field.split('.')[0] ?? field;
+      if (root === name) {
+        fail(type, `field "${name}" has a computedDefault reading itself`);
+      }
+      const source = schema[root];
+      if (source?.computedDefault && source.computedDefault !== 'now') {
+        fail(
+          type,
+          `field "${name}" has a computedDefault reading "${field}", which is itself computed — ` +
+            `derivation is a single pass at create, so a chain would depend on resolution order`,
+        );
+      }
+    }
+  }
+}
+
+/**
+ * A `contentBearing` field's content must be REACHABLE.
+ *
+ * The host generates `get_field_content` for every flagged field, so the default
+ * always resolves. A type naming its own operation — the windowed-read pattern —
+ * is checked against the operation catalog, because a field excluded from every
+ * generic read with nothing behind it is write-only data.
+ *
+ * LIMIT worth stating: the catalog holds CORE operations. Plugin-contributed MCP
+ * tools are declared as prose in `systemPrompt.mcpToolsLine` and never
+ * registered, so a plugin naming one of its own tools here is accepted on the
+ * strength of that line. Reported to the spec author — closing it properly means
+ * plugins registering their tools in the catalog, which is a wider change than
+ * this release scopes.
+ */
+function checkContentOperations(
+  type: string,
+  schema: DataDeclaration['schema'],
+  mcpToolsLine: string | undefined,
+): void {
+  for (const [field, node] of Object.entries(schema)) {
+    if (!node.contentBearing) continue;
+    if (node.transientInput || node.localSurrogate) {
+      fail(type, `field "${field}" is contentBearing and transient — there is no stored content to issue`);
+    }
+    const operation = node.contentOperation;
+    if (!operation) continue;
+    const known = CATALOG.has(operation) || (mcpToolsLine ?? '').includes(operation);
+    if (!known) {
+      fail(
+        type,
+        `field "${field}" names contentOperation "${operation}", which resolves to no operation. A ` +
+          `content-bearing field is issued by no generic read, so an unreachable operation makes it ` +
+          `write-only data. Known core operations: ${CATALOG.list()
+            .map((op) => op.name)
+            .join(', ')}`,
+      );
+    }
+  }
+}
+
 /** Validate the whole `data` + `slugPattern` + `payloadVersion` triple. */
 export function validateDataDeclaration(
   type: string,
@@ -537,13 +690,15 @@ export function validateDataDeclaration(
   slugPattern: SlugPattern | undefined,
   payloadVersion: number | undefined,
   defaultPredicate?: DefaultPredicate,
+  mcpToolsLine?: string,
 ): void {
   if (!data || typeof data !== 'object' || !data.schema || typeof data.schema !== 'object') {
-    fail(type, 'the `data.schema` slot is required in Host API 2.0.0');
+    fail(type, 'the `data.schema` slot is required in Host API 3.0.0');
   }
   if (!Object.keys(data.schema).length) fail(type, 'the schema declares no fields');
+  checkReservedTitle(type, data.schema);
   if (!slugPattern || !Array.isArray(slugPattern) || !slugPattern.length) {
-    fail(type, 'the `slugPattern` slot is required in Host API 2.0.0');
+    fail(type, 'the `slugPattern` slot is required in Host API 3.0.0');
   }
   if (!Number.isInteger(payloadVersion) || (payloadVersion as number) < 1) {
     fail(
@@ -554,8 +709,11 @@ export function validateDataDeclaration(
   }
 
   checkNodes(type, data.schema);
+  checkValueConstraints(type, data.schema);
   if (data.integrity?.length) checkIntegrity(type, data.schema, data.integrity);
   checkSlugPattern(type, data.schema, slugPattern);
+  checkComputedDefaults(type, data.schema);
+  checkContentOperations(type, data.schema, mcpToolsLine);
   checkDefaultPredicate(type, data.schema, defaultPredicate);
 
   for (const hint of data.access ?? []) {
@@ -567,35 +725,19 @@ export function validateDataDeclaration(
   }
 }
 
-/**
- * 0.2.19 — a type may not declare its own `views?` AND emit a `contentBearing`
- * field. The flag's meaning is derivable only from views the HOST generates: the
- * host is what excludes the field and puts `has<Field>` / `<field>Bytes` in its
- * place. A type computing its own views decides for itself what each one
- * carries, so the flag would either be silently ignored or, worse, honoured in
- * the schema and contradicted by the payload.
+/*
+ * 0.2.22 removed `assertContentBearingViews`.
  *
- * Rejected at registration rather than tolerated, because both failure modes are
- * invisible at runtime: nothing throws when a computed view emits a 400 KB body
- * that the derived JSON Schema says is not there.
+ * It rejected a type that declared its own `views?` alongside a `contentBearing`
+ * field, on the grounds that the flag's meaning came from views the HOST
+ * generates. That premise is gone: exclusion is now a property of the READ —
+ * `project()` runs after serialization, over the schema, whoever computed the
+ * payload — so a type computing its own views can no longer contradict the flag.
+ *
+ * The rule it is replaced by is `checkContentOperations` above: the content must
+ * be REACHABLE. That is the half of the old pair which was never mechanically
+ * enforced, and it is the half that mattered.
  */
-export function assertContentBearingViews(
-  type: string,
-  schema: DataDeclaration['schema'] | undefined,
-  views: unknown,
-): void {
-  if (!schema || !views || typeof views !== 'object' || !Object.keys(views).length) return;
-  const offenders = Object.entries(schema)
-    .filter(([, node]) => (node as FieldNode).contentBearing)
-    .map(([name]) => name);
-  if (!offenders.length) return;
-  fail(
-    type,
-    `declares its own \`views\` and the contentBearing field(s) ${offenders.map((f) => `"${f}"`).join(', ')} — ` +
-      `the flag only has meaning for host-generated views (it is the host that swaps the field for ` +
-      `\`has<Field>\`/\`<field>Bytes\`). Drop the flag, or drop the computed views for this type`,
-  );
-}
 
 /** Every `ref` flag in a schema → the payload path carrying it. Consumed by rename propagation (tier D). */
 export function refFieldsOf(schema: DataDeclaration['schema']): Array<{ path: string; node: FieldNode }> {

@@ -55,11 +55,14 @@ export const DatabaseTableListRow: FC<DatabaseTableListRowProps> = ({
   >
     <div className="flex items-center gap-2">
       <span className="text-[14px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-        {item.name}
+        {item.title}
       </span>
     </div>
     <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>
-      {shapeSummary({ columns: item.columnCount, indexes: item.indexCount })}
+      {shapeSummary({
+        columns: item.columnCount ?? item.columns?.length ?? 0,
+        indexes: item.indexCount ?? item.indexes?.length ?? 0,
+      })}
     </div>
   </EntityListRow>
 );

@@ -37,12 +37,12 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { DomainError } from '../../services/tags.js';
+import { getEntitiesAll } from '../../discovery/index.js';
 import { errorHandler } from '../../routes/errors.js';
 import { buildCreateShape, buildUpdateShape } from './crud-schema-gen.js';
 import { genericCreate, genericDelete, genericUpdate, propagateRename, type GenericCrudDeps } from './generic-crud.js';
 import { isEmbedded, type FieldNode } from '../../../shared/plugin-host/data-schema.js';
 import type { DiscoveryCore } from '../../discovery/types.js';
-import type { ViewKind } from '../../serialization/types.js';
 import type { WsEmitter } from '../../ws/project-emitter.js';
 import type { BackendModule } from './types.js';
 
@@ -65,7 +65,10 @@ function positiveInt(raw: unknown): number | undefined {
 }
 
 /** Query keys this router owns; everything else is a candidate field filter. */
-const RESERVED_QUERY_KEYS = new Set(['search', 'tags', 'tagFilter', 'limit', 'offset', 'view']);
+// `view` left this set in 0.2.22 along with the parameter; `sort`/`dir` joined
+// it, or a type declaring a field called `sort` would have its ordering read as
+// a field filter.
+const RESERVED_QUERY_KEYS = new Set(['search', 'tags', 'tagFilter', 'limit', 'offset', 'sort', 'dir']);
 
 /** `'3'` → `3`, `'true'` → `true` — a query string carries no types of its own. */
 function coerceFilterValue(node: FieldNode, raw: string): string | number | boolean | undefined {
@@ -143,42 +146,46 @@ function attachStamp(view: unknown, system: { createdAt: string; updatedAt: stri
 }
 
 /**
- * The views a GET may ask for. `detail` is the reason this exists.
+ * One entity, at the full projection.
  *
- * `view` was already RESERVED as a query key — excluded from the field filters —
- * and then never read, so every GET answered `single_element` and the `detail`
- * view was unreachable over REST for every type. That was invisible while each
- * type still had a router that served its own shape, and became visible the
- * moment tier K deleted them: `detail` is where the JOINS live (`dto.endpoints`,
- * the `_references` back-pointers), and those are exactly the fields a detail
- * PAGE needs and a list row does not.
- *
- * Not an open parameter: an arbitrary string would reach `serializeEntity` as a
- * view no type computes, and the caller would get a generic row while believing
- * it asked for something else.
- *
- * And REJECTED, not downgraded. The first cut of this silently fell back to
- * `single_element` for anything unrecognised, which is the same failure it
- * exists to prevent one level up: `?view=details` (a typo) answered 200 with no
- * `endpoints`, and the caller had no way to tell it had not been given what it
- * asked for. That is precisely how the missing parameter went unnoticed for the
- * whole tier — `view` was accepted-and-ignored rather than refused.
+ * 0.2.22 retired the `?view=` parameter this function used to take. The reason
+ * it existed — `detail` carries the joins (`dto.endpoints`, the `_references`
+ * back-pointers) that a detail page needs and a list row does not — is now
+ * served by `get_entities` serializing the widest view and projecting, so a GET
+ * gets the joins without anybody naming a view.
  */
-const READABLE_VIEWS = new Set<ViewKind>(['single_element', 'detail']);
-
-function requestedView(raw: unknown): ViewKind {
-  if (raw === undefined || raw === '') return 'single_element';
-  if (typeof raw === 'string' && READABLE_VIEWS.has(raw as ViewKind)) return raw as ViewKind;
-  throw new DomainError(
-    'VALIDATION',
-    `unknown view '${String(raw)}' — expected one of ${[...READABLE_VIEWS].join(', ')}`,
-  );
-}
-
-function readOne(deps: GeneratedCrudDeps, type: string, slug: string, view: ViewKind = 'single_element'): unknown {
-  const [result] = deps.discovery.getEntities({ type, slugs: [slug], view }).results;
+function readOne(deps: GeneratedCrudDeps, type: string, slug: string): unknown {
+  const [result] = deps.discovery.getEntities({ type, slugs: [slug] }).results;
   if (!result || result.entity == null) throw new DomainError('NOT_FOUND', `${type} '${slug}' not found`);
   return withSystem(deps, type, slug, result.entity);
+}
+
+/**
+ * Turn discovery rows into the records this route has always returned.
+ *
+ * 0.2.22 froze the `list_entities` row to `{ slug, title }`, which is right for
+ * discovery and not enough for a list PAGE — the UI renders a description, a
+ * method, a parameter count. So the two questions are asked separately: the core
+ * decides WHICH entities and in what order, and one batched `get_entities` says
+ * what they contain. One extra call per page, not per row.
+ *
+ * No `select`: the default projection is already "everything but the
+ * content-bearing fields", which is exactly what a list wants — and it is the
+ * same rule the agent-facing channel gets, so the UI has no privileged width.
+ *
+ * `getEntitiesAll`, NOT `getEntities`: this route's default page is 200 while
+ * the core operation refuses more than 50 slugs in one call. That cap is the
+ * agent's contract and is right for it; a page the server itself just decided
+ * the size of is not overreaching, so it batches instead of being refused.
+ */
+function hydrateRows(deps: GeneratedCrudDeps, type: string, rows: Array<{ slug: string }>): unknown[] {
+  if (!rows.length) return [];
+  const { results } = getEntitiesAll(deps.discovery, { type, slugs: rows.map((r) => r.slug) });
+  return withSystemAll(
+    deps,
+    type,
+    results.filter((r) => r.entity != null).map((r) => ({ slug: r.slug, data: r.entity })),
+  );
 }
 
 export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModule): Router {
@@ -242,32 +249,30 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
         filters,
         applyDefaultPredicate: true,
         ...(tags ? { tags } : {}),
-        ...(tagFilter ? { filter: tagFilter } : {}),
+        ...(tagFilter ? { tagFilter } : {}),
       };
 
       if (search) {
         const hits = deps.discovery.searchEntities({
           type,
           query: search,
-          view: 'element_list_item',
           limit,
           ...narrowing,
           ...(offset !== undefined ? { offset } : {}),
         });
         if (hits.mode !== 'hits') throw new DomainError('INTERNAL', 'search returned a count');
-        res.json({ data: withSystemAll(deps, type, hits.items), total: hits.total });
+        res.json({ data: hydrateRows(deps, type, hits.items), total: hits.total });
         return;
       }
 
       const page = deps.discovery.listEntities({
         type,
-        view: 'element_list_item',
         limit,
         ...narrowing,
         ...(offset !== undefined ? { offset } : {}),
       });
       if (page.mode !== 'items') throw new DomainError('INTERNAL', 'list returned a count');
-      res.json({ data: withSystemAll(deps, type, page.items), total: page.total });
+      res.json({ data: hydrateRows(deps, type, page.items), total: page.total });
     } catch (err) {
       next(err);
     }
@@ -295,7 +300,10 @@ export function generatedCrudRouter(deps: GeneratedCrudDeps, module: BackendModu
 
   router.get('/:slug', (req, res, next) => {
     try {
-      res.json({ data: readOne(deps, type, req.params.slug, requestedView(req.query.view)) });
+      // 0.2.22 — `?view=` is gone from this route with the rest of the axis. A
+      // detail page gets the full projection, and a caller wanting less says so
+      // with `select` on `GET /api/entities/:type/get`.
+      res.json({ data: readOne(deps, type, req.params.slug) });
     } catch (err) {
       next(err);
     }

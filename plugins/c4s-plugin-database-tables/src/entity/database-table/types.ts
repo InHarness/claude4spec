@@ -34,6 +34,12 @@ export interface Index {
 
 export interface DatabaseTable {
   slug: string;
+  /**
+   * 0.2.22 — the reserved label, and this type is the only one where it sits
+   * BESIDE `name` rather than replacing it: `name` is the SQL identifier code is
+   * generated from, `title` is what a person reads. It starts as a copy.
+   */
+  title: string;
   name: string;
   description?: string | null;
   columns: Column[];
@@ -47,13 +53,26 @@ export interface DatabaseTable {
  * What a LIST row carries — counts, never the arrays. The serializer's list
  * views project to exactly this; see `views.ts` for why.
  */
+/**
+ * 0.2.22 — the derived counts are OPTIONAL now.
+ *
+ * A list row used to be the type's own `element_list_item` view, which computed
+ * `columnCount`/`indexCount`/`hasPrimaryKey` so a list screen never received the
+ * arrays. Record width is the caller's since this release, and the UI list route
+ * hydrates through the same projection everyone else gets — so the arrays are
+ * present and the counts are derivable from them. Kept in the shape because a
+ * type MAY still compute them; read them with a fallback (see `list-row`).
+ */
 export interface DatabaseTableListItem {
   slug: string;
+  title: string;
   name: string;
   description?: string | null;
-  columnCount: number;
-  indexCount: number;
-  hasPrimaryKey: boolean;
+  columns?: Column[];
+  indexes?: Index[];
+  columnCount?: number;
+  indexCount?: number;
+  hasPrimaryKey?: boolean;
   tags?: string[];
   updatedAt?: string;
 }

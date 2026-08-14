@@ -76,10 +76,10 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
   });
 
   it('[ac:ac-rename-sluga-encji-propaguje-sie-do-wszy] a design-system rename repoints ui-view.designSystemSlug', async () => {
-    const ds = await post(p('/design-systems'), { name: `Rename DS ${stamp}` });
+    const ds = await post(p('/design-systems'), { title: `Rename DS ${stamp}` });
     expect(ds.status).toBeLessThan(400);
     const view = await post(p('/ui-views'), {
-      name: `Rename View ${stamp}`,
+      title: `Rename View ${stamp}`,
       url: '/rename/:id',
       designSystemSlug: ds.body.data.slug,
     });
@@ -95,7 +95,7 @@ describe.skipIf(!BASE)('rename propagation — end to end', () => {
 
   it('[ac:ac-rename-sluga-encji-propaguje-sie-do-wszy] a dto rename keeps the endpoint’s link resolvable', async () => {
     const dto = await post(p('/dtos'), {
-      name: `RenameDto${stamp}`,
+      title: `RenameDto${stamp}`,
       fields: [{ name: 'id', type: 'string', required: true }],
     });
     const endpoint = await post(p('/endpoints'), {

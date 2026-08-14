@@ -26,7 +26,8 @@ import type { BackendModule, EntityRenamedEvent, MountContext } from '../core/pl
 /** `FIXTURE_DATA` plus one scalar reference to `dto` — the minimum that earns a listener. */
 const REFERENCING_DATA: DataDeclaration = {
   schema: {
-    ...FIXTURE_DATA.schema,
+    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+...FIXTURE_DATA.schema,
     dtoSlug: { kind: 'string', ref: 'dto', onMissing: 'warn', onDelete: 'leave-dangling' },
   },
 };
@@ -77,7 +78,7 @@ describe('rename listeners', () => {
     const { host, db } = mountWith([fixture('widget', REFERENCING_DATA)]);
     try {
       expect(host.listRenameListeners()).toHaveLength(1);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
 
       for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
 
@@ -123,7 +124,7 @@ describe('rename listeners', () => {
     try {
       expect(ownMountRan).toBe(true);
       expect(host.listRenameListeners()).toHaveLength(1);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
 
       for (const fn of host.listRenameListeners()) fn({ type: 'dto', oldSlug: 'user-dto', newSlug: 'account-dto' });
 
@@ -154,8 +155,8 @@ describe('rename listeners', () => {
     ]);
     try {
       expect(host.listRenameListeners()).toHaveLength(2);
-      db.prepare('INSERT INTO widget (slug, name, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
-      db.prepare('INSERT INTO gadget (slug, name, dto_slug) VALUES (?, ?, ?)').run('g1', 'G', 'user-dto');
+      db.prepare('INSERT INTO widget (slug, title, dto_slug) VALUES (?, ?, ?)').run('w1', 'W', 'user-dto');
+      db.prepare('INSERT INTO gadget (slug, title, dto_slug) VALUES (?, ?, ?)').run('g1', 'G', 'user-dto');
 
       // A rename of a type NEITHER module references must leave both alone —
       // that filtering used to be an `if (type !== 'dto') return;` in each hook.
@@ -181,7 +182,7 @@ describe('ReferencesService fan-out', () => {
       // 2.0.0 tier K: written through the REST surface rather than through
       // `requireService`, which no longer hands back a write door for either
       // type. Same production path a client takes.
-      await request(app.app).post('/api/dtos').send({ name: 'UserDto', fields: [] }).expect(201);
+      await request(app.app).post('/api/dtos').send({ title: 'UserDto', fields: [] }).expect(201);
       await request(app.app)
         .post('/api/endpoints')
         .send({ method: 'GET', path: '/users', summary: 'list' })

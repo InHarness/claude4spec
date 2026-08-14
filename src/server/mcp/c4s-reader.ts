@@ -72,6 +72,7 @@ export const C4S_READER_TOOL_NAMES = [
   'search_entities',
   'list_entities',
   'get_entities',
+  'get_field_content',
   'list_tags',
   'find_references',
   'check_consistency',
@@ -165,10 +166,21 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     offset: z.number().int().nonnegative().optional().describe('Rows to skip; a stable sort makes it meaningful'),
   };
 
-  const viewShape = z
-    .enum(VIEW_ENUM)
+  /**
+   * The field projection — 0.2.22's replacement for `view`.
+   *
+   * The old parameter named one of five shapes the TYPE declared. This one names
+   * FIELDS, and the host computes the shape from the schema, so a caller no
+   * longer has to know a type's view repertoire to ask a narrow question.
+   */
+  const selectShape = z
+    .array(z.string())
     .optional()
-    .describe('Record shape — the width of a row, independent of how many rows come back');
+    .describe(
+      'Top-level field names to return; slug, title and tags always come back. Omit for every ' +
+        'field except content-bearing ones; [] for the identity skeleton alone. See ' +
+        'describe_types.selectableFields.',
+    );
 
   /**
    * One handler shape for all fourteen: guard the project, call the operation,
@@ -203,16 +215,10 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas are DERIVED from the type\'s declared data schema — every type answers every view, so a view a type does not compute is described as the generic projection rather than being absent. A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback; an unknown view answers INVALID_VIEW.',
     {
       types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
-      // An enum, not a free string: an unrecognized view used to be forwarded to
-      // the serializer, which answered with whatever its if-chain fell through
-      // to. The tool then reported a view that does not exist, and the LATER
-      // call using it was the one that failed.
-      view: viewShape,
     },
     (discovery, args) =>
       discovery.describeTypes({
         types: (args.types as string[] | undefined)?.map(asTypeId),
-        view: optionalString(args.view) as ViewKind | undefined,
       }),
   );
 
@@ -326,7 +332,6 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
         .array(z.string())
         .optional()
         .describe('Dotted paths to search, e.g. fields[].description; overrides the type and host scope'),
-      view: viewShape,
       mode: z.enum(['hits', 'count']).optional().describe('Shape of the answer; default "hits"'),
       ...pageShape,
     },
@@ -335,7 +340,6 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
         type: asTypeId(args.type),
         query: String(args.query),
         fields: args.fields as string[] | undefined,
-        view: args.view as ViewKind | undefined,
         mode: args.mode as 'hits' | 'count' | undefined,
         limit: optionalNumber(args.limit),
         offset: optionalNumber(args.offset),
@@ -350,8 +354,12 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     {
       type: z.string().describe('Entity type'),
       tags: z.array(z.string()).optional().describe('Tag slugs; omit for no filter'),
-      filter: z.enum(['and', 'or']).optional().describe('How to combine tags; default "and"'),
-      view: viewShape,
+      tagFilter: z.enum(['and', 'or']).optional().describe('How to combine tags; default "and"'),
+      sort: z
+        .enum(['createdAt', 'title', 'slug'])
+        .optional()
+        .describe('Row order; default "createdAt", the only one whose offset window is write-stable'),
+      dir: z.enum(['asc', 'desc']).optional().describe('Direction; default "asc"'),
       mode: z.enum(['items', 'count']).optional().describe('Shape of the answer; default "items"'),
       ...pageShape,
     },
@@ -359,8 +367,9 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
       discovery.listEntities({
         type: asTypeId(args.type),
         tags: args.tags as string[] | undefined,
-        filter: args.filter as 'and' | 'or' | undefined,
-        view: args.view as ViewKind | undefined,
+        tagFilter: args.tagFilter as 'and' | 'or' | undefined,
+        sort: args.sort as 'createdAt' | 'title' | 'slug' | undefined,
+        dir: args.dir as 'asc' | 'desc' | undefined,
         mode: args.mode as 'items' | 'count' | undefined,
         limit: optionalNumber(args.limit),
         offset: optionalNumber(args.offset),
@@ -373,13 +382,29 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
     {
       type: z.string().describe('Entity type'),
       slugs: z.array(z.string()).describe('Slugs to fetch, in order'),
-      view: viewShape,
+      select: selectShape,
     },
     (discovery, args) =>
       discovery.getEntities({
         type: asTypeId(args.type),
         slugs: (args.slugs as string[]).map(String),
-        view: args.view as ViewKind | undefined,
+        select: args.select as string[] | undefined,
+      }),
+  );
+
+  const getFieldContent = op(
+    'get_field_content',
+    'The content of ONE content-bearing field of one entity, addressed by (type, slug, field). A content-bearing field is carried by NO generic read — get_entities answers with `has<Field>`, `<field>Bytes` and this operation\'s name — so this is the only way to read one. `describe_types` lists each type\'s `contentFields` with the operation that issues them. A field that is not content-bearing is INVALID_ARGUMENT with the covered fields attached; an unknown slug is ENTITY_NOT_FOUND.',
+    {
+      type: z.string().describe('Entity type'),
+      slug: z.string().describe('Entity slug'),
+      field: z.string().describe('A content-bearing field of that type'),
+    },
+    (discovery, args) =>
+      discovery.getFieldContent({
+        type: asTypeId(args.type),
+        slug: String(args.slug),
+        field: String(args.field),
       }),
   );
 
@@ -475,6 +500,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
       searchEntities,
       listEntities,
       getEntities,
+      getFieldContent,
       listTags,
       findReferences,
       checkConsistency,

@@ -37,7 +37,7 @@ export function DesignSystemsList({
   }
 
   // Alphabetical by name (list endpoint already orders by name; keep stable).
-  const sorted = [...systems].sort((a, b) => a.name.localeCompare(b.name));
+  const sorted = [...systems].sort((a, b) => a.title.localeCompare(b.title));
 
   return (
     <ListPageLayout>
@@ -47,7 +47,7 @@ export function DesignSystemsList({
         count={systems.length}
         search={search}
         onSearchChange={onSearchChange}
-        searchPlaceholder="Search name, slug, description…"
+        searchPlaceholder="Search title, slug, description…"
         createLabel="New Design System"
         onCreate={handleCreate}
       />
@@ -75,7 +75,7 @@ export function DesignSystemsList({
             >
               <div className="flex items-center gap-2">
                 <span className="text-[13.5px]" style={{ color: 'var(--c-ink)', fontWeight: 500 }}>
-                  {ds.name}
+                  {ds.title}
                 </span>
               </div>
               {ds.description && (

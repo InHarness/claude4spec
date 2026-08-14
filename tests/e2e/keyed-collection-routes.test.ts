@@ -149,7 +149,7 @@ describe.skipIf(!BASE)('keyed-collection read routes — against a live grid', (
     const created = await api(`/api/projects/${projectId}/spreadsheets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: `Keyed grid smoke ${Date.now()}`, nRows: 3, nCols: 3, headerRow: true }),
+      body: JSON.stringify({ title: `Keyed grid smoke ${Date.now()}`, nRows: 3, nCols: 3, headerRow: true }),
     });
     expect([200, 201]).toContain(created.status);
     sheetSlug = created.body.data.slug;

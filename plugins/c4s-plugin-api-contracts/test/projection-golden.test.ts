@@ -21,12 +21,22 @@ import { applyProjection, generateProjectionDDL } from '../../../src/server/db/p
 import { dtoData } from '../src/entity/dto/schema.js';
 import { endpointData } from '../src/entity/endpoint/schema.js';
 
-/** The DDL as the deleted `backend/migrations.ts` files wrote it, byte for byte. */
+/**
+ * The DDL as the deleted `backend/migrations.ts` files wrote it — with the one
+ * change 0.2.22 makes to it, spelled out rather than silently regenerated.
+ *
+ * `dto.name` became `dto.title`, and `endpoint` GAINED a `title` column. Those
+ * are the release's rename and its derivation, and the golden has to move with
+ * them or it pins a shape the type no longer declares. Everything else about
+ * these tables — order, nullability, defaults, the whole junction — still has to
+ * match what the hand-written migration wrote, which is what this file exists
+ * for.
+ */
 const RETIRED_DDL: Record<string, string> = {
   dto: `
     CREATE TABLE IF NOT EXISTS dto (
       slug TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
+      title TEXT NOT NULL,
       description TEXT,
       fields TEXT NOT NULL DEFAULT '[]',
       examples TEXT NOT NULL DEFAULT '[]',
@@ -37,6 +47,7 @@ const RETIRED_DDL: Record<string, string> = {
   endpoint: `
     CREATE TABLE IF NOT EXISTS endpoint (
       slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
       method TEXT NOT NULL,
       path TEXT NOT NULL,
       summary TEXT NOT NULL DEFAULT '',
@@ -201,8 +212,8 @@ describe('api-contracts projection — creation order does not matter', () => {
       ]),
     ).not.toThrow();
 
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('d', 'D')`).run();
-    db.prepare(`INSERT INTO endpoint (slug, method, path) VALUES ('e', 'GET', '/x')`).run();
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('d', 'D')`).run();
+    db.prepare(`INSERT INTO endpoint (slug, title, method, path) VALUES ('e', 'E', 'GET', '/x')`).run();
     db.prepare(
       `INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','d','response')`,
     ).run();
@@ -228,8 +239,8 @@ describe('api-contracts projection — creation order does not matter', () => {
   it('reconciles a column added to the junction on an existing database', () => {
     const db = new Database(':memory:');
     applyProjection(db, MODULES);
-    db.prepare(`INSERT INTO dto (slug, name) VALUES ('d', 'D')`).run();
-    db.prepare(`INSERT INTO endpoint (slug, method, path) VALUES ('e', 'GET', '/x')`).run();
+    db.prepare(`INSERT INTO dto (slug, title) VALUES ('d', 'D')`).run();
+    db.prepare(`INSERT INTO endpoint (slug, title, method, path) VALUES ('e', 'E', 'GET', '/x')`).run();
     db.prepare(
       `INSERT INTO endpoint_dto (endpoint_slug, dto_slug, relation) VALUES ('e','d','response')`,
     ).run();

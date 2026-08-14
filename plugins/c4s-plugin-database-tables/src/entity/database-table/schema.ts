@@ -29,6 +29,27 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 export const databaseTableData: DataDeclaration = {
   schema: {
     /**
+     * The reserved label — and this is the ONE type where it lives beside a
+     * surviving `name`, because the two are genuinely different facts.
+     *
+     * `name` is a SQL identifier (`order_items`), constrained by a pattern and
+     * a reserved-word list, and code is generated from it. `title` is what a
+     * person reads. Renaming the identifier to `title` would have made the
+     * schema claim that an identifier is a label, and forced either the
+     * constraint onto every other type's title or the constraint's removal here.
+     *
+     * `computedDefault` copies `name`, so nothing has to be authored twice: a
+     * table created as `order_items` is titled `order_items` until somebody
+     * decides it is really "Order line items".
+     */
+    title: {
+      kind: 'string',
+      required: true,
+      maxLength: 200,
+      computedDefault: [{ op: 'raw', field: 'name' }],
+      description: 'Human label. Defaults to the SQL identifier in `name`.',
+    },
+    /**
      * The SQL table identifier, and the slug source.
      *
      * The pattern is case-INSENSITIVE by construction, which is not sloppiness:
@@ -47,6 +68,10 @@ export const databaseTableData: DataDeclaration = {
       required: true,
       pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
       notReserved: 'sql',
+      // 0.2.22 — bounded at last. An identifier had no length limit at all,
+      // which no database agrees with; 200 matches the host's title bound so
+      // the two constraints on this entity read the same way.
+      maxLength: 200,
       description:
         'SQL table identifier — a letter or underscore, then letters, digits or underscores, ' +
         'and never a reserved SQL word. The slug is `slugify(name)`; editing `name` alone does ' +
@@ -75,7 +100,12 @@ export const databaseTableData: DataDeclaration = {
       item: {
         kind: 'object',
         fields: {
-          name: { kind: 'string', required: true, description: 'Column identifier.' },
+          name: {
+            kind: 'string',
+            required: true,
+            maxLength: 200,
+            description: 'Column identifier.',
+          },
           type: {
             kind: 'string',
             required: true,
@@ -187,4 +217,4 @@ export const databaseTableData: DataDeclaration = {
  * therefore non-blank in both generated shapes. See the composition note in
  * `crud-schema-gen`: that rule and the two flags above have to hold at once.
  */
-export const databaseTableSlugPattern: SlugPattern = [{ op: 'slugify', field: 'name' }];
+export const databaseTableSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title' }];

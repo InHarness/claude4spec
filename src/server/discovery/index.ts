@@ -19,6 +19,7 @@
 import { collectionOverview, collectionWindow } from './ops/collections.js';
 import { checkConsistency } from './ops/consistency.js';
 import { getEntities, listEntities, resolveIdentity, searchEntities } from './ops/entities.js';
+import { getFieldContent } from './ops/content.js';
 import { describeTypes, overview } from './ops/meta.js';
 import { getPage, listPages } from './ops/pages.js';
 import { findReferences } from './ops/references.js';
@@ -38,7 +39,7 @@ import type {
   ListEntitiesInput,
   ListTagsInput,
   ReferenceHit,
-  SerializedMeta,
+  EntityRow,
   TagListItem,
 } from './types.js';
 
@@ -61,6 +62,7 @@ export function createDiscoveryCore(deps: DiscoveryDeps): DiscoveryCore {
     findReferences: (input) => findReferences(deps, pages, roots, input),
     checkConsistency: (input) => checkConsistency(deps, pages, roots, input),
     resolveIdentity: (input) => resolveIdentity(deps, input),
+    getFieldContent: (input) => getFieldContent(deps, input),
     collectionOverview: (input) => collectionOverview(deps, input),
     collectionWindow: (input) => collectionWindow(deps, input),
   };
@@ -99,13 +101,13 @@ export function collectAll<T>(fetchPage: (offset: number) => Page<T>): T[] {
 export function listEntitiesAll(
   core: DiscoveryCore,
   input: Omit<ListEntitiesInput, 'mode' | 'limit' | 'offset'>,
-): Array<{ slug: string; data: unknown } & SerializedMeta> {
+): EntityRow[] {
   return collectAll((offset) => {
     const page = core.listEntities({ ...input, mode: 'items', limit: MAX_LIMIT, offset });
     // Unreachable — `mode: 'items'` was just asked for. Shaped as a full `Page`
     // so the exhaustive sweep below cannot mistake it for a budget cut.
     if (page.mode !== 'items') return { items: [], total: 0, hasMore: false, truncated: false };
-    return page;
+    return { items: page.items, total: page.total, hasMore: page.hasMore, truncated: false };
   });
 }
 
@@ -165,10 +167,19 @@ export function listTagsAll(core: DiscoveryCore, input: Omit<ListTagsInput, 'lim
  * literally wrote on the page is not overreaching, so it batches instead of
  * being refused.
  */
-export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): GetEntitiesResult['results'] {
+export function getEntitiesAll(
+  core: DiscoveryCore,
+  input: GetEntitiesInput,
+): { results: GetEntitiesResult['results']; selectedFields: string[] } {
   const out: GetEntitiesResult['results'] = [];
+  // The echo is the same for every batch — the projection depends on the schema
+  // and the `select`, not on which slugs were in this slice — so the first
+  // batch's answer is the call's answer.
+  let selectedFields: string[] = [];
   for (let i = 0; i < input.slugs.length; i += MAX_SLUGS_PER_CALL) {
-    out.push(...core.getEntities({ ...input, slugs: input.slugs.slice(i, i + MAX_SLUGS_PER_CALL) }).results);
+    const batch = core.getEntities({ ...input, slugs: input.slugs.slice(i, i + MAX_SLUGS_PER_CALL) });
+    selectedFields = batch.selectedFields;
+    out.push(...batch.results);
   }
   /**
    * 0.2.6 — re-ask for anything the batch could not afford, ONE SLUG AT A TIME.
@@ -187,10 +198,12 @@ export function getEntitiesAll(core: DiscoveryCore, input: GetEntitiesInput): Ge
   for (let i = 0; i < out.length; i++) {
     const row = out[i]!;
     if (row.truncated !== true) continue;
+    // `...input` carries the SAME `select` into the retry. A retry at a
+    // different width would hand the caller two shapes in one answer.
     const [retried] = core.getEntities({ ...input, slugs: [row.slug] }).results;
     if (retried) out[i] = retried;
   }
-  return out;
+  return { results: out, selectedFields };
 }
 
 export { DiscoveryError, isDiscoveryError, type DiscoveryErrorCode } from './errors.js';
