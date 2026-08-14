@@ -499,9 +499,11 @@ export interface ProjectPluginHost {
 
   /**
    * Register an MCP server *factory* under a unique name (e.g. "dto-tools").
-   * Stored as a thunk, not an instance: `buildMcpServers` calls it per turn so
-   * each agent run gets a fresh `McpServer` (concurrent turns must not share
-   * one instance — see the MountContext note).
+   * Stored as a thunk, not an instance: `buildMcpServers` calls it once per
+   * `adapter.execute()`, so every SDK query gets a fresh `McpServer` — neither
+   * concurrent turns nor successive queries of ONE turn may share an instance
+   * (see the MountContext note). "Per turn" is precisely the granularity error
+   * that let brief `0-2-23-to-next` survive; do not restate it that way.
    */
   registerMcpServer(name: string, factory: () => McpServerFactory): void;
 

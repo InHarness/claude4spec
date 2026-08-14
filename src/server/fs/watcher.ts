@@ -452,6 +452,13 @@ export class FileWatchRuntime {
    * one-shot and still expires on its own; this only lets a caller that KNOWS its
    * write failed hand the token back early. Calling it after a write that
    * succeeded would resurrect the echo the suppression exists to eat.
+   *
+   * Not concurrency-safe per key, and cannot be made so here: `pendingSuppress`
+   * holds ONE token per key, so two overlapping writers already collapse into a
+   * single token at `suppress()` time — the second one's echo dispatches as
+   * external whether or not either write fails. Tagging tokens with an id would
+   * not close that; only refcounting would, and a count that outlives its events
+   * is a worse failure than the one it fixes.
    */
   unsuppress(scope: WatchScope, source: string, relPath: string): void {
     this.pendingSuppress.delete(writeKey(scope, source, relPath));
