@@ -379,7 +379,23 @@ export class BriefService {
     }
     const abs = this.absPath(opts.path);
     this.deps.briefsWatcher.suppress(opts.path);
-    await fs.writeFile(abs, opts.content, 'utf-8');
+    /**
+     * The token is issued BEFORE the write, so a write that throws leaves it live
+     * with no event of its own — and the next genuine edit of this brief, inside
+     * the self-write window, gets swallowed instead. Hand it back on failure.
+     *
+     * The guard covers `fs.writeFile` ONLY, and deliberately not the rest of the
+     * method: once the bytes are on disk the echo really is ours, so a later throw
+     * from `recordVersion`/`indexPage` must leave the suppression standing. A
+     * `finally` over the whole block would resurrect exactly the event the token
+     * exists to eat.
+     */
+    try {
+      await fs.writeFile(abs, opts.content, 'utf-8');
+    } catch (err) {
+      this.deps.briefsWatcher.unsuppress?.(opts.path);
+      throw err;
+    }
     await this.deps.pageVersions.recordVersion(
       opts.path,
       'update',

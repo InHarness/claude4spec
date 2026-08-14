@@ -23,7 +23,7 @@
 
 import { createMcpServer, mcpTool, type CapturedMcpServer } from '../plugin-runtime/index.js';
 import type { ListProjectsResult } from '../workspace/list-projects.js';
-import { toolSuccess } from '../operations/envelope.js';
+import { toolFailure, toolSuccess } from '../operations/envelope.js';
 
 /**
  * Takes a THUNK, not a snapshot: the registry is re-read on every call, so a
@@ -42,7 +42,22 @@ export function buildWorkspaceToolsServer(listProjects: () => ListProjectsResult
       'Read-only. No pagination.',
     ].join('\n'),
     {},
-    async () => toolSuccess(listProjects(), { operation: 'list_projects', channel: 'mcp' }),
+    /**
+     * The `try/catch` is not decoration. Every sibling server in this directory
+     * wraps its handler (`patch-tools`, `brief-tools`, `page-tools`, `plan-tools`,
+     * `transagent-tools`); this one did not, so a throw out of `listProjects` —
+     * an unreadable workspace registry, say — escaped as an unanswered request
+     * instead of an error envelope. From the agent's side that is indistinguishable
+     * from the server having gone silent, which is exactly the symptom this
+     * release is here to make impossible to mistake.
+     */
+    async () => {
+      try {
+        return toolSuccess(listProjects(), { operation: 'list_projects', channel: 'mcp' });
+      } catch (err) {
+        return toolFailure(err);
+      }
+    },
   );
 
   return createMcpServer({ name: 'workspace-tools', tools: [listProjectsTool] });

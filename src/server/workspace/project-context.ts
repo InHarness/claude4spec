@@ -777,8 +777,10 @@ async function buildInner(
   registerRefRewriteListeners(pluginHost, db.handle, entityStore);
 
   // Cross-cutting MCP server — owned by the host, not a plugin (M13).
-  // Registered as a factory: a fresh instance is built per agent turn so
-  // concurrent turns never share one MCP transport.
+  // Registered as a factory: a fresh instance is built per `adapter.execute()` so
+  // neither concurrent turns nor successive queries of one turn share an MCP
+  // transport. See `registerMcpServer` in plugin-host/types.ts for why the unit is
+  // the query rather than the turn.
   pluginHost.registerMcpServer('reference-tools', () =>
     createReferenceToolsServer({
       pluginHost,
