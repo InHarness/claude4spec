@@ -88,6 +88,8 @@ cd ".worktrees/$brief_slug"
 
 Standard code flow in your target repository: read existing code, plan, edit, test. Stay focused on what the brief specifies. Commit your work on the `brief/<slug>` branch.
 
+If you find the brief is already fully implemented, stop there: report it to the user and do not manufacture a change (or a patch) to have something to hand off.
+
 ### 4a. Stage `package.json` version from the brief's target release
 
 The brief frontmatter carries `to_release` — the **target release name**. Read it from the brief body (it is the YAML block at the very top of `c4s read-brief <brief-path> …`, alongside `from_release`, `type`, `implemented`). Use it to stage this repo's version:
@@ -152,11 +154,13 @@ printf '%s\n' "$PATCH_BODY" | c4s file-patch \
   --project 'app-spec' --workspace 'default'
 ```
 
+**Never file a patch that says "already implemented".** If the brief's change turns out to be fully present in the code — nothing to add, the acceptance criteria already pass — that is **not** drift and **not** patch material. Say it plainly to the user instead ("brief `<path>` is already implemented in `<files>` — no code change needed") and ask whether to mark it implemented (step 9). The same goes for any patch body whose substance is "no changes were needed", "confirmed working as described", or "verified matches the spec": a patch is for something the spec-author must *act* on, not a status report.
+
 The body (from stdin, or `--body-file <f>`) goes below an auto-generated `# Patch — <short-desc>` heading. Structure the body as two sections: a `## What I found` section (the drift / missing detail / incorrect assumption) and a `## Suggestion` section (what the spec-author should consider in a follow-up brief or entity edits). `c4s file-patch` records all the metadata for you (which brief it relates to, the kind from `--kind`, defaulting to `drift`) — you only write the markdown body.
 
 `--kind` values:
 
-- `drift` — the brief described behavior X, but the codebase already does Y.
+- `drift` — the brief describes behavior X, but the codebase does something **materially different** (Y ≠ X). Not for "the code already does exactly X" — see the rule above.
 - `missing` — the brief is silent on a detail you had to decide yourself.
 - `incorrect` — the brief is factually wrong about existing code.
 - `clarification` — the brief is ambiguous; you guessed but it should be made explicit for next time.
