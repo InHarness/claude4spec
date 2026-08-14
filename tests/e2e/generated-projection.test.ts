@@ -171,14 +171,20 @@ describe.skipIf(!BASE)('generated SQLite projection — end to end', () => {
       statusCode: 200,
     });
     expect(res.status).toBeLessThan(400);
-    // Readable from BOTH ends — the junction is the only table generated from a
-    // value collection rather than as a column, so a one-directional read would
-    // hide half of it.
-    // `?view=detail`: `endpoints` is a reverse join, and the generated GET
-    // answers `single_element` unless asked. See generated-crud-router.
-    const dto = await api(`/api/projects/${projectId}/dtos/${created.dto!.slug}?view=detail`);
-    expect(dto.body.data.endpoints?.map((e: { endpointSlug: string }) => e.endpointSlug)).toContain(
-      created.endpoint!.slug,
+    /**
+     * Read back off the ENDPOINT, which is the end that declares the link.
+     *
+     * This used to read the DTO side (`?view=detail` → `dto.endpoints`), on the
+     * reasoning that a junction should be readable from both ends. 0.2.23 settles
+     * which end that is: the spec keeps the edge once, on the endpoint, as the
+     * declared `linkedDtos` collection, and specifies no operation for the reverse
+     * direction — so the reverse read is gone rather than reinvented here. What
+     * this case is actually about, that a value collection reaches its own
+     * projection table and comes back, is unchanged.
+     */
+    const endpoint = await api(`/api/projects/${projectId}/endpoints/${created.endpoint!.slug}`);
+    expect(endpoint.body.data.linkedDtos?.map((l: { dto: string }) => l.dto)).toContain(
+      created.dto!.slug,
     );
   });
 

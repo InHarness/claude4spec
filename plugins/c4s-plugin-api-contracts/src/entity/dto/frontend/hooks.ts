@@ -35,12 +35,12 @@ export function useCreateDto() {
     /**
      * INVALIDATE, do not seed.
      *
-     * The detail query is `dtosApi.get`, which asks for `?view=detail`; a write
-     * answers `single_element`, which for `dto` is the host's generic row and
-     * carries no `endpoints`. Seeding the detail cache with it silently dropped
-     * the "Used by endpoints" block until the next refetch — and because
-     * `detail-panel` guards with `endpoints?.length ?? 0`, it vanished quietly
-     * rather than throwing.
+     * A write's response and a read's are the same shape since 0.2.23 — one
+     * record per type — so seeding is no longer WRONG the way it was when the
+     * detail query asked for `?view=detail` and a POST answered the narrower
+     * `single_element`. It stays an invalidate anyway: the record is derived
+     * from the row the write produced, and a refetch is the only thing that
+     * also picks up what OTHER writes did to the same entity.
      *
      * The rule this settles: a write response is not a substitute for the read
      * a page performs, unless the two are known to be the same view.
@@ -60,8 +60,7 @@ export function useUpdateDto() {
     onSuccess: (dto: Dto, { slug }) => {
       qc.invalidateQueries({ queryKey: keys.all });
       if (slug !== dto.slug) qc.removeQueries({ queryKey: keys.detail(slug) });
-      // Invalidated, not seeded — see `useCreateDto`. The PATCH answers
-      // `single_element`; this cache is read by a `?view=detail` query.
+      // Invalidated, not seeded — see `useCreateDto`.
       qc.invalidateQueries({ queryKey: keys.detail(dto.slug) });
       qc.invalidateQueries({ queryKey: ['versions', 'dto', dto.slug] });
       qc.invalidateQueries({ queryKey: ['tags'] });
