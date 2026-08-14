@@ -142,6 +142,17 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
    * host will not honour, and finding that out at registration beats finding it
    * out from a payload that quietly lost fields.
    */
+  /**
+   * The 2.x spelling — the map the five callbacks moved INTO in 2.0.0, and the
+   * only one a plugin written against this host could plausibly still ship.
+   *
+   * It has to be listed precisely because the baseline stays at `2.0.0`: a
+   * package declaring `hostApiVersion: '^2.0.0'` and carrying a `views` map
+   * passes the semver gate, so without this line it would register clean and
+   * have its read code ignored — the exact silent-loss failure the flat 1.x
+   * entries below exist to prevent.
+   */
+  ['views', 'nothing — the record is derived from data.schema, narrowed by select'],
   ['inlineMention', 'nothing — the record is derived from data.schema, narrowed by select'],
   ['singleElement', 'nothing — the record is derived from data.schema, narrowed by select'],
   ['elementListItem', 'nothing — the record is derived from data.schema, narrowed by select'],

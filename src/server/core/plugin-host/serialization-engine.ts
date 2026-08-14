@@ -95,17 +95,29 @@ export class SerializationEngine {
    * one shape; a fork between an authored and a generated record cannot exist
    * when nothing is authored.
    *
-   * An unknown or deactivated type THROWS rather than returning a shaped
-   * apology. The old code answered with a generic payload plus
-   * `error: 'unknown_type'`, which a caller reading only `data` could not tell
-   * from a real record. The discovery core guards with `requireActiveType`
-   * before it ever gets here, so this is the backstop, and M39 maps it to
-   * `INVALID_TYPE`.
+   * An unregistered type THROWS rather than returning a shaped apology. The old
+   * code answered with a generic payload plus `error: 'unknown_type'`, which a
+   * caller reading only `data` could not tell from a real record.
+   *
+   * This is a BACKSTOP, not the gate. Every discovery caller passes
+   * `requireActiveType` first, which resolves through `getEntity` — the
+   * active-checked lookup — and raises a proper `INVALID_TYPE`. Resolution here
+   * goes through `getAvailable`, which ignores the active whitelist, so a
+   * DEACTIVATED type does not reach this throw: it is refused earlier, and were
+   * it not, it would serialize normally. What is left for this line to catch is
+   * a type the host has never registered arriving by some path that skipped the
+   * guard — a bug, and it surfaces as one rather than as data.
    */
-  serializeEntity(type: string, entity: RawEntity, reader: RawEntityReader): SerializeResult {
+  serializeEntity(
+    type: string,
+    entity: RawEntity,
+    reader: RawEntityReader,
+    /** Passed down so an unselected projected collection is never queried. */
+    select?: readonly string[],
+  ): SerializeResult {
     const m = this.host.getAvailable(type);
     if (!m) throw new SerializerError(type);
-    return { data: genericEntity(entity, m.data?.schema, reader) };
+    return { data: genericEntity(entity, m.data?.schema, reader, select) };
   }
 
   /**

@@ -1,4 +1,4 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -7,61 +7,6 @@ import type {
 } from '@c4s/plugin-runtime';
 import type { UiViewParam, UiViewParamLocation } from '../../types.js';
 import { uiViewPayloadUpgrades } from './upgrades.js';
-
-interface ParamShape {
-  name: string;
-  in: string;
-  type?: string;
-  required?: boolean;
-  default?: string;
-  description?: string;
-}
-
-function readParams(entity: RawEntity): ParamShape[] {
-  const raw = entity.data.params;
-  if (!Array.isArray(raw)) return [];
-  return (raw as unknown[])
-    .filter((p): p is Record<string, unknown> => p !== null && typeof p === 'object')
-    .map((p) => ({
-      name: String(p.name ?? ''),
-      in: String(p.in ?? ''),
-      ...(typeof p.type === 'string' ? { type: p.type } : {}),
-      ...(typeof p.required === 'boolean' ? { required: p.required } : {}),
-      ...(typeof p.default === 'string' ? { default: p.default } : {}),
-      ...(typeof p.description === 'string' ? { description: p.description } : {}),
-    }));
-}
-
-function readDesignSystemSlug(entity: RawEntity): string | null {
-  const raw = entity.data.design_system_slug ?? entity.data.designSystemSlug;
-  return typeof raw === 'string' && raw ? raw : null;
-}
-
-function baseSingle(entity: RawEntity) {
-  return {
-    type: 'ui-view',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    description: (entity.data.description as string | null) ?? null,
-    params: readParams(entity),
-    designSystemSlug: readDesignSystemSlug(entity),
-    tags: entity.tags,
-  };
-}
-
-function trimItem(entity: RawEntity) {
-  const params = readParams(entity);
-  return {
-    type: 'ui-view',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    url: (entity.data.url as string | null) ?? null,
-    description: (entity.data.description as string | null) ?? null,
-    paramCount: params.length,
-    tags: entity.tags,
-  };
-}
 
 // ─── M17 Snapshot shape (entities/ui-view.md `uvsn0sho`) ────────────────────
 

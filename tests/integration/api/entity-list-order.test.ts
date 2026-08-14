@@ -17,7 +17,6 @@ import request from 'supertest';
 import { createTestApp, type TestApp } from '../../helpers/test-app.js';
 import { createDiscoveryCore } from '../../../src/server/discovery/index.js';
 import { SerializationEngine } from '../../../src/server/core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../../../src/server/serialization/serializers/section.js';
 import { builtinPagesRoot } from '../../../src/server/config.js';
 
 function discoveryFor(t: TestApp) {
@@ -25,7 +24,7 @@ function discoveryFor(t: TestApp) {
     reader: t.rawReader,
     db: t.db,
     host: t.host,
-    serialization: new SerializationEngine(t.host, sectionSerializer),
+    serialization: new SerializationEngine(t.host),
     roots: [builtinPagesRoot()],
     projectDir: t.cwd,
     packageVersion: 'test',

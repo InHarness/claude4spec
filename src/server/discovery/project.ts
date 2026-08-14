@@ -167,20 +167,22 @@ export function project(
   }
 
   /**
-   * With NO `select`, keys the type computed but the schema never declared
-   * survive: `dto.endpoints` (a reverse join), `ac.brokenVerifies`,
-   * `_references`.
+   * With NO `select`, an undeclared key on the row survives.
    *
-   * The strict reading of "every schema field" would drop them, and that reading
-   * costs real behaviour — the DTO detail page reads `endpoints.length`, and it
-   * threw on load the last time a read stopped carrying it. So the default is
-   * "the record as the host produced it, minus what is content-bearing", which
-   * is what a caller who asked for no particular shape means.
+   * This used to be load-bearing: the three examples were `dto.endpoints`,
+   * `ac.brokenVerifies` and `_references`, all computed by a view the schema knew
+   * nothing about, and dropping them broke real pages. 0.2.23 removed the views,
+   * so by construction there is nothing left that a type computes and the schema
+   * does not declare — the host builds the record FROM the schema.
    *
-   * A caller who DOES name fields gets exactly those: they asked for a shape, so
-   * a computed extra riding along would be the same surprise in the other
-   * direction. Such a key is also not `select`-able, since `selectableFields`
-   * comes from the schema — reported to the spec author as a clarification.
+   * Kept anyway, and deliberately: the row is hydrated from a projection table
+   * that may hold a column the declaration no longer names (mid-migration, or a
+   * `payloadUpgrades` chain part-way applied). Serving it under the name the
+   * table uses beats dropping it silently, and it is the same call `byFieldName`
+   * makes one layer down. What it can no longer do is smuggle a computed field
+   * back in.
+   *
+   * A caller who DOES name fields gets exactly those — they asked for a shape.
    */
   if (!wanted) {
     for (const [key, value] of Object.entries(row)) {

@@ -165,10 +165,6 @@ export function AcDetail({
   }
   if (!ac || !draft) return null;
 
-  const brokenByKey = new Map<string, string>();
-  for (const b of ac.brokenVerifies ?? []) {
-    brokenByKey.set(`${b.type}/${b.slug}`, b.reason);
-  }
   const deprecated = draft.status === 'deprecated';
 
   return (
@@ -250,7 +246,6 @@ export function AcDetail({
           <FieldRow label="Verifies" align="start">
             <VerifiesPanel
               verifies={draft.verifies}
-              brokenByKey={brokenByKey}
               onAdd={addVerify}
               onRemove={removeVerify}
               onOpenEntity={onOpenEntity}
@@ -312,7 +307,6 @@ export function AcDetail({
 
 interface VerifiesPanelProps {
   verifies: AcVerifyRef[];
-  brokenByKey: Map<string, string>;
   onAdd: (type: string, slug: string) => void;
   onRemove: (idx: number) => void;
   onOpenEntity?: (type: EntityType, slug: string) => void;
@@ -331,7 +325,6 @@ interface VerifiesPanelProps {
  */
 function VerifiesPanel({
   verifies,
-  brokenByKey,
   onAdd,
   onRemove,
   onOpenEntity,
@@ -377,7 +370,28 @@ function VerifiesPanel({
       // candidates failed to load must not read as "nothing to link".
       label: mod ? (result?.isError ? `${mod.label} (failed to load)` : mod.label) : `${type} (inactive)`,
       items: verifyGroupItems(type, groupInput).map((slug) => {
-        const reason = brokenByKey.get(`${type}/${slug}`);
+        /**
+         * A dangling `verifies[]` entry, derived HERE rather than read off the
+         * record.
+         *
+         * `ac.brokenVerifies` was computed by the `ac` detail view; 0.2.23
+         * leaves no read code on a type, so the marker is derived from what this
+         * panel already loaded — the same move `database-table` makes for its
+         * counts. Both halves of the old `classifyVerifies` answer survive: an
+         * unknown or inactive TYPE is visible without loading anything, and a
+         * missing SLUG is visible against the group's candidate list.
+         *
+         * The slug half is claimed only once that list has actually arrived —
+         * candidates load lazily, per opened group, and calling everything
+         * dangling while the fetch is in flight would be worse than saying
+         * nothing.
+         */
+        const loaded = !!mod && !result?.isError && result?.data !== undefined;
+        const reason = !mod
+          ? 'unknown type'
+          : loaded && !fetchedByType[type]!.includes(slug)
+            ? 'missing'
+            : undefined;
         return {
           id: slug,
           label: slug,

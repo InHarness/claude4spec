@@ -14,7 +14,6 @@ import type { ProjectPluginHost, BackendModule } from '../core/plugin-host/types
 import { createDiscoveryCore } from '../discovery/index.js';
 import { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import { sectionSerializer } from '../serialization/serializers/section.js';
 import { builtinPagesRoot } from '../config.js';
 
 /**
@@ -121,7 +120,7 @@ describe('check_consistency — rule 12 (hidden entity types)', () => {
         reader: new RawEntityReader(db, pluginHost),
         db,
         host: pluginHost,
-        serialization: new SerializationEngine(pluginHost, sectionSerializer),
+        serialization: new SerializationEngine(pluginHost),
         roots: [builtinPagesRoot()],
         projectDir: cwd,
         packageVersion: 'test',

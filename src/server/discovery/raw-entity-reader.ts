@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import { compositionOf } from '../../shared/plugin-host/composition.js';
 import { columnOf, isEmbedded, type FieldNode } from '../../shared/plugin-host/data-schema.js';
-import { readProjectionCollection } from '../db/projection-read.js';
+import { countProjectionCollection, readProjectionCollection } from '../db/projection-read.js';
 import { toIsoMs, type SystemStamp } from '../serialization/system-fields.js';
 
 /**
@@ -355,6 +355,17 @@ export class RawEntityReader {
     const node = module?.data?.schema?.[field];
     if (!module || !node || node.kind !== 'collection') return [];
     return readProjectionCollection(this.db, module, field, node, slug);
+  }
+
+  /**
+   * The SIZE of that collection, without reading it — see
+   * {@link countProjectionCollection}. Same unknown-type rule: `0`.
+   */
+  countCollection(type: string, slug: string, field: string): number {
+    const module = this.host.getEntity(type);
+    const node = module?.data?.schema?.[field];
+    if (!module || !node || node.kind !== 'collection') return 0;
+    return countProjectionCollection(this.db, module, field, node, slug);
   }
 
   /**

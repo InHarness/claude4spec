@@ -38,18 +38,29 @@ export function genericEntity(
    * one); an absent reader means the record carries only what the row holds.
    */
   collections?: CollectionReader,
+  /**
+   * The caller's `select`, so a collection nobody asked for is never READ.
+   *
+   * Projection happens downstream, in `discovery/project.ts`, and letting it do
+   * all the narrowing would mean a list page paying one junction query per row
+   * for fields it discards — `resolveElementList` passes `select: []` and would
+   * still have queried. Undefined means no `select` at all, which asks for the
+   * whole record; `[]` asks for identity only.
+   */
+  select?: readonly string[],
 ): Record<string, unknown> {
   return {
     type: entity.type,
     slug: entity.slug,
     tags: entity.tags,
     ...byFieldName(entity.data, schema),
-    ...projectedCollections(entity, schema, collections),
+    ...projectedCollections(entity, schema, collections, select),
   };
 }
 
 export interface CollectionReader {
   readCollection(type: string, slug: string, field: string): unknown[];
+  countCollection(type: string, slug: string, field: string): number;
 }
 
 /**
@@ -62,19 +73,23 @@ export interface CollectionReader {
  *     carries only its OVERVIEW — never a full materialisation. An overview of a
  *     keyed collection is its shape, not a sample of its contents, which is why
  *     `count` is all of it: a 200x40 spreadsheet must not put 8 000 cells into
- *     a record nobody asked to be that wide.
+ *     a record nobody asked to be that wide. It must not READ 8 000 cells to say
+ *     so either, hence `countCollection` rather than `readCollection().length`.
  */
 function projectedCollections(
   entity: RawEntity,
   schema: Readonly<Record<string, FieldNode>> | undefined,
   collections: CollectionReader | undefined,
+  select: readonly string[] | undefined,
 ): Record<string, unknown> {
   if (!schema || !collections) return {};
   const out: Record<string, unknown> = {};
   for (const [name, node] of Object.entries(schema)) {
     if (node.kind !== 'collection' || isEmbedded(node)) continue;
-    const rows = collections.readCollection(entity.type, entity.slug, name);
-    out[name] = isKeyed(node) ? { count: rows.length } : rows;
+    if (select && !select.includes(name)) continue;
+    out[name] = isKeyed(node)
+      ? { count: collections.countCollection(entity.type, entity.slug, name) }
+      : collections.readCollection(entity.type, entity.slug, name);
   }
   return out;
 }

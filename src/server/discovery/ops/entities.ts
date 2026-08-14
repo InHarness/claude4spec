@@ -151,10 +151,21 @@ function applySort(deps: DiscoveryDeps, input: ListEntitiesInput, slugs: string[
  * distinguishable from "the host generated it because the type's view threw";
  * with no type-contributed read code, the distinction has no second side.
  */
-function serializeSlug(deps: DiscoveryDeps, type: string, slug: string): { data: unknown } {
+function serializeSlug(
+  deps: DiscoveryDeps,
+  type: string,
+  slug: string,
+  /**
+   * Handed down to the serializer, not merely applied afterwards: a collection
+   * with its own projection table costs a query, and `project` discarding it a
+   * moment later would not un-run that query. A list page asking for `select: []`
+   * would otherwise pay one per row.
+   */
+  select?: readonly string[],
+): { data: unknown } {
   const raw = deps.reader.getEntity(type, slug);
   if (!raw) return { data: null };
-  return { data: deps.serialization.serializeEntity(type, raw, deps.reader).data };
+  return { data: deps.serialization.serializeEntity(type, raw, deps.reader, select).data };
 }
 
 export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEntitiesResult {
@@ -189,7 +200,7 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
   validateSelect(input.select, schema);
 
   const results: GetEntitiesResult['results'] = slugs.map((slug) => {
-    const { data } = serializeSlug(deps, input.type, slug);
+    const { data } = serializeSlug(deps, input.type, slug, input.select);
     // The stored row goes in beside the serialized one, so a content-bearing
     // field's SIZE is knowable even where the record itself (correctly) omits
     // the value. See `project`.

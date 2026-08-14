@@ -110,14 +110,27 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
     },
   );
 
-  it('[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] accepts a serializer that declares only computed views, a diff and a payload version', () => {
+  /**
+   * The assertion this replaces said the opposite: `views` was the one read slot
+   * a plugin COULD author, so a serializer carrying nothing else was accepted.
+   *
+   * 0.2.23 removed the slot, and rejecting it matters more here than the other
+   * removals rather than less — because the baseline stays at `2.0.0`. A package
+   * written against 2.0.0 legitimately declares `^2.0.0`, so semver alone lets it
+   * through; without this rejection it would register clean and have its read
+   * code silently ignored, serving records missing the fields its own UI reads.
+   */
+  it('[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] rejects an authored `views` map — a 2.0.0 plugin passes the semver gate, so the slot check is the only thing standing between it and a silently ignored read path', () => {
     expect(() =>
-      assertSerializationContribution(
-        'widget',
-        { views: { detail: () => ({}) }, diff: () => ({}) },
-        1,
-      ),
-    ).not.toThrow();
+      assertSerializationContribution('widget', { views: { detail: () => ({}) }, diff: () => ({}) }, 1),
+    ).toThrow(PluginManifestError);
+    expect(() =>
+      assertSerializationContribution('widget', { views: { detail: () => ({}) }, diff: () => ({}) }, 1),
+    ).toThrow(/the record is derived from data\.schema, narrowed by select/);
+  });
+
+  it('accepts a serializer that declares only a diff and a payload version — all a type contributes to reads is nothing', () => {
+    expect(() => assertSerializationContribution('widget', { diff: () => ({}) }, 1)).not.toThrow();
   });
 });
 

@@ -15,7 +15,7 @@
  */
 
 import type { DataDeclaration, FieldNode } from './data-schema.js';
-import { columnOf, contentBearingKeys, isEmbedded } from './data-schema.js';
+import { columnOf, contentBearingKeys, isEmbedded, isKeyed } from './data-schema.js';
 
 export type JsonSchema = Record<string, unknown>;
 
@@ -115,9 +115,9 @@ function objectSchema(
   fields: Readonly<Record<string, FieldNode>>,
   keyOf: (name: string, node: FieldNode) => string,
   /**
-   * Generic-view mode. The payload is a projection ROW, so it carries a key for
-   * every embedded column — including the ones holding SQL NULL — and carries no
-   * key at all for a collection that projects to its own table.
+   * Record mode. The payload is built from a projection ROW, so it carries a key
+   * for every embedded column — including the ones holding SQL NULL — plus the
+   * collections the host reads from their own projection tables.
    */
   row?: boolean,
 ): JsonSchema {
@@ -126,10 +126,19 @@ function objectSchema(
   for (const [name, node] of Object.entries(fields)) {
     if (!readable(node)) continue;
     // A collection with its own table (`endpoint.linkedDtos` → `endpoint_dto`)
-    // is not on the row the generic payload spreads, so a closed schema must not
-    // claim it. A computed view may well resolve it, which is why this only
-    // applies in row mode.
-    if (row && !isEmbedded(node)) continue;
+    // is not on the row — but since 0.2.23 the host READS it and puts it on the
+    // record, because there is no longer a view to fetch it for itself. So the
+    // schema has to claim it, in the same two shapes `projectedCollections`
+    // emits: a value collection inline, a keyed one as its `{count}` overview.
+    // Both are always present, hence `required`: the host emits every declared
+    // collection, an empty one included.
+    if (row && !isEmbedded(node)) {
+      properties[name] = isKeyed(node)
+        ? { type: 'object', properties: { count: { type: 'integer' } }, required: ['count'], additionalProperties: false }
+        : nodeSchema(node);
+      required.push(name);
+      continue;
+    }
     // 0.2.19 — a `contentBearing` field is excluded from the view and described
     // by its two derived keys instead. Both are always present: the host emits
     // them for every row, including one whose content is absent (`false` / `0`).

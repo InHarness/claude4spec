@@ -106,16 +106,29 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     // below is about the junction rather than about an empty section.
     const res = await fetch(`${BASE}/api/projects/${project.id}/endpoints`);
     // K2: the L4 list envelope is `{ data, total }`, not a per-type key.
+    //
+    // 0.2.23 — the junction arrives as `linkedDtos`, the value collection the
+    // type DECLARES, carrying `{dto}` slugs. It used to arrive as `dtos` with a
+    // resolved `dtoName`, computed by the endpoint's own `detail` view; with the
+    // views gone the record carries what the schema says and the NAME is
+    // resolved where it is displayed — so the test resolves it the same way the
+    // panel does, from the DTO list.
     const { data: endpoints } = (await res.json()) as {
-      data: Array<{ slug: string; dtos: Array<{ dtoName: string }> }>;
+      data: Array<{ slug: string; linkedDtos: Array<{ dto: string }> }>;
     };
-    const linked = endpoints.find((e) => e.dtos.length > 0);
+    const linked = endpoints.find((e) => e.linkedDtos.length > 0);
     if (!linked) {
       // Seed-shaped, not a behaviour failure — say so rather than passing quietly.
       console.warn('[e2e] no endpoint with a linked DTO in this environment — junction not exercised');
       await page.close();
       return;
     }
+
+    const dtosRes = await fetch(`${BASE}/api/projects/${project.id}/dtos`);
+    const { data: dtos } = (await dtosRes.json()) as { data: Array<{ slug: string; title: string }> };
+    const linkedSlug = linked.linkedDtos[0]!.dto;
+    const linkedTitle = dtos.find((d) => d.slug === linkedSlug)?.title;
+    expect(linkedTitle, `no DTO named ${linkedSlug} — the junction points at nothing`).toBeTruthy();
 
     await page.goto(`${BASE}/p/${project.id}/endpoints/${linked.slug}`, { waitUntil: 'networkidle' });
 
@@ -125,7 +138,7 @@ describe.skipIf(!BASE)('envelope-contributed entity pages', () => {
     // The junction, resolved by the envelope's own SQL.
     await expect
       .poll(() => page.locator('body').innerText())
-      .toMatch(new RegExp(linked.dtos[0]!.dtoName));
+      .toMatch(new RegExp(linkedTitle!));
 
     expect(consoleErrors, 'console errors').toEqual([]);
     expect(badResponses, 'responses >= 400').toEqual([]);

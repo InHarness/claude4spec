@@ -40,6 +40,30 @@ function declaredModule(type = 'widget'): BackendModule {
 
 const reader = { count: () => 0 } as unknown as RawEntityReader;
 
+/**
+ * A type whose collections live in their OWN projection tables — the case the
+ * host had to take over in 0.2.23, since the view that used to fetch them is
+ * gone. `projectionTable` is what puts a collection off the entity's row.
+ */
+const WITH_COLLECTIONS = {
+  schema: {
+    title: { kind: 'string', required: true, default: 'Untitled' },
+    // `keyFields` is what moves a VALUE collection off the row (hasProjectionTable).
+    links: { kind: 'collection', collection: 'value', keyFields: ['name'], item: { kind: 'string' } },
+    cells: { kind: 'collection', collection: 'keyed', item: { kind: 'string' } },
+  },
+} as unknown as BackendModule['data'];
+
+function collectionModule(): BackendModule {
+  return { ...fixtureModule('widget'), data: WITH_COLLECTIONS };
+}
+
+const collectionReader = {
+  count: () => 0,
+  readCollection: () => ['a', 'b'],
+  countCollection: () => 7,
+} as unknown as RawEntityReader;
+
 describe('SerializationEngine.serializeEntity — one producer, one shape', () => {
   it('derives the record from the type"s declared schema, with no provenance markers', () => {
     const engine = new SerializationEngine(hostWith([declaredModule()]));
@@ -96,6 +120,63 @@ describe('SerializationEngine.serializeEntity — one producer, one shape', () =
     expect(
       engine.serializeEntity('gadget', { ...ENTITY, type: 'gadget' }, reader).data,
     ).toMatchObject({ type: 'gadget', slug: 'w1' });
+  });
+});
+
+describe('SerializationEngine — the record and its published schema agree', () => {
+  /**
+   * The schema is CLOSED (`additionalProperties: false`), so every key the
+   * record carries must be a key the schema declares — otherwise the host
+   * publishes a contract its own payloads violate on every entity that has a
+   * projected collection.
+   *
+   * This is not hypothetical: the first cut of 0.2.23 taught `genericEntity` to
+   * materialise those collections without teaching `recordSchema` about them, so
+   * `describe_types` promised an `endpoint` shape with no `linkedDtos` while
+   * every endpoint record had one.
+   */
+  it('declares every key the record carries, projected collections included', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
+
+    // Only DECLARED columns on the row: an undeclared one passes through by
+    // design (a table mid-migration), and it is the schema-derived keys this
+    // case is about.
+    const entity = { ...ENTITY, data: { title: 'Widget One' } };
+    const record = engine.serializeEntity('widget', entity, collectionReader).data as Record<string, unknown>;
+    const schema = engine.describe('widget')!.schemas.record!;
+    const declared = Object.keys(schema.properties as Record<string, unknown>);
+
+    expect(schema.additionalProperties).toBe(false);
+    expect(Object.keys(record).filter((k) => !declared.includes(k))).toEqual([]);
+    expect(declared).toContain('links');
+    expect(declared).toContain('cells');
+  });
+
+  it('carries a value collection inline and a keyed one as its count — and COUNTS the keyed one rather than reading it', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
+
+    const record = engine.serializeEntity('widget', ENTITY, collectionReader).data as Record<string, unknown>;
+
+    expect(record.links).toEqual(['a', 'b']);
+    // 7 comes from `countCollection`; `readCollection` would have said 2. A
+    // 200x40 sheet must not decode 8 000 rows to report how many there are.
+    expect(record.cells).toEqual({ count: 7 });
+  });
+
+  it('does not read a collection the caller did not select', () => {
+    const engine = new SerializationEngine(hostWith([collectionModule()]));
+    let reads = 0;
+    const counting = {
+      count: () => 0,
+      readCollection: () => { reads++; return []; },
+      countCollection: () => { reads++; return 0; },
+    } as unknown as RawEntityReader;
+
+    // `select: []` is what a list page's element rendering asks for. Narrowing
+    // downstream would answer the same, but only after paying one query per row.
+    engine.serializeEntity('widget', ENTITY, counting, []);
+
+    expect(reads).toBe(0);
   });
 });
 

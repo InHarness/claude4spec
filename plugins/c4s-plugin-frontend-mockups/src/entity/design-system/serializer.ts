@@ -1,4 +1,4 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -33,53 +33,7 @@ export interface DesignSystemSnapshot {
   tags: string[];
 }
 
-function readGroups(entity: RawEntity): TokenGroup[] {
-  return parseGroups(entity.data.groups);
-}
-
-function readModes(entity: RawEntity): DesignMode[] {
-  return parseModes(entity.data.modes);
-}
-
 // ─── view helpers ────────────────────────────────────────────────────────────
-
-function baseSingle(entity: RawEntity) {
-  const groups = readGroups(entity);
-  const modes = readModes(entity);
-  const resolved = resolve(groups, modes); // Base mode
-  return {
-    type: 'design-system',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    description: (entity.data.description as string | null) ?? null,
-    groups: groups.map((g) => ({
-      name: g.name,
-      tier: g.tier,
-      tokens: g.tokens.map((t) => ({
-        name: t.name,
-        type: t.type,
-        value: t.value,
-        ...(t.description !== undefined ? { description: t.description } : {}),
-        resolvedValue: resolved[t.name],
-      })),
-    })),
-    modes,
-    tags: entity.tags,
-  };
-}
-
-function trimItem(entity: RawEntity) {
-  const groups = readGroups(entity);
-  return {
-    type: 'design-system',
-    slug: entity.slug,
-    title: (entity.data.title as string) ?? entity.slug,
-    description: (entity.data.description as string | null) ?? null,
-    groupCount: groups.length,
-    tokenCount: groups.reduce((acc, g) => acc + g.tokens.length, 0),
-    tags: entity.tags,
-  };
-}
 
 // ─── snapshot / restore / diff ──────────────────────────────────────────────
 
