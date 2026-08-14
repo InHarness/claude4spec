@@ -184,12 +184,18 @@ export async function delegateGetEntities(
   args: ParsedArgs,
   type: string,
   slugs: readonly string[],
-  view?: string,
+  /**
+   * 0.2.22 — the projection, where the fixed `view` used to be. `undefined` is
+   * the default width; `[]` is the identity skeleton, which is what a chip or a
+   * list row is. The retry below carries the SAME value, or the caller would get
+   * two shapes in one answer.
+   */
+  select?: readonly string[],
 ): Promise<EntityRow[]> {
   const rows: EntityRow[] = [];
   for (let i = 0; i < slugs.length; i += MAX_SLUGS_PER_CALL) {
     const chunk = slugs.slice(i, i + MAX_SLUGS_PER_CALL);
-    const payload = (await delegateGet(args, `/entities/${type}/get`, { slugs: chunk, view })) as {
+    const payload = (await delegateGet(args, `/entities/${type}/get`, { slugs: chunk, select })) as {
       results?: EntityRow[];
     };
     rows.push(...(payload.results ?? []));
@@ -198,7 +204,7 @@ export async function delegateGetEntities(
     if (rows[i]!.truncated !== true) continue;
     const payload = (await delegateGet(args, `/entities/${type}/get`, {
       slugs: [rows[i]!.slug],
-      view,
+      select,
     })) as { results?: EntityRow[] };
     const [retried] = payload.results ?? [];
     if (retried) rows[i] = retried;

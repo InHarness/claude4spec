@@ -48,7 +48,17 @@ type Schema = Readonly<Record<string, FieldNode>>;
  */
 export function validateSelect(select: readonly string[] | undefined, schema: Schema): void {
   if (!select) return;
-  const legal = selectableFieldsOf(schema);
+  /**
+   * The identity names are legal INPUT as well as guaranteed output.
+   *
+   * They are not schema fields — `slug` and `tags` live on the envelope — so a
+   * schema-derived list left them out, and the envelope's own `selectedFields`
+   * echo could not be handed straight back as a `select`. Refusing the exact
+   * shape a caller was just told it received is the kind of asymmetry nobody
+   * reads a doc to discover. Naming them changes nothing about the answer: they
+   * survive every projection either way.
+   */
+  const legal = [...new Set([...IDENTITY_FIELDS, ...selectableFieldsOf(schema)])];
   for (const name of select) {
     const bad =
       typeof name !== 'string' || name.includes('.') || name.includes('[') || !legal.includes(name);
@@ -94,6 +104,18 @@ export function project(
    * makes the descriptor identical whichever of the two produced the record.
    */
   stored?: Record<string, unknown>,
+  /**
+   * The type's web-UI path prefix (`/acs`, `/endpoints`), from the manifest.
+   *
+   * `href` is an identity field the HOST generates — `${pathPrefix}/${slug}` —
+   * rather than a field of the schema, which is why it is passed in here rather
+   * than read out of the record. It was the one thing the retired per-type
+   * `inline_mention` views contributed that a projection over the schema could
+   * not reproduce, and without it a chip renders as a bold label where it used
+   * to render as a link. An informational origin link, not a promise that a
+   * server is listening on it.
+   */
+  pathPrefix?: string,
 ): unknown {
   if (data === null || typeof data !== 'object' || Array.isArray(data)) return data;
   const row = data as Record<string, unknown>;
@@ -112,6 +134,10 @@ export function project(
   for (const key of ['type', '_generic', '_type', '_error', '_brokenRefs']) {
     if (key in row) out[key] = row[key];
   }
+  // Host-generated, so it survives every projection alongside the other
+  // identity fields — including `select: []`, where a link is most of the point.
+  const slug = out.slug ?? row.slug;
+  if (pathPrefix && typeof slug === 'string') out.href = `${pathPrefix}/${slug}`;
 
   for (const [name, node] of Object.entries(schema)) {
     if (node.transientInput || node.localSurrogate) continue;

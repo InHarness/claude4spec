@@ -1118,7 +1118,17 @@ describe('discovery core', () => {
 
     // `select: []` is the identity skeleton — a legal, cheap request.
     const skeleton = c.getEntities({ type: 'widget', slugs: ['a'], select: [] });
-    expect(skeleton.selectedFields).toEqual(['slug', 'title', 'tags']);
+    expect(skeleton.selectedFields).toEqual(['slug', 'title', 'tags', 'href']);
+    /**
+     * `href` is in the skeleton because a chip is a LABEL AND A LINK, and the
+     * host is now the only thing that can supply the second: it is derived from
+     * the type's `pathPrefix`, not declared in any schema, so a projection over
+     * the schema alone would have quietly turned every rendered mention into
+     * bold text. Present at the narrowest width, which is where it matters.
+     */
+    const row = skeleton.results[0]!.entity as Record<string, unknown>;
+    expect(row.href).toBe('/widgets/a');
+    expect(row.source).toBeUndefined();
   });
 
   /**

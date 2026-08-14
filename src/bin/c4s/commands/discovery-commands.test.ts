@@ -52,6 +52,8 @@ import { runCatalog } from './catalog.js';
 import { runDescribe } from './describe.js';
 import { runListTags } from './list-tags.js';
 import { runInlineMention } from './inline-mention.js';
+import { runSingleElement } from './single-element.js';
+import { runDetail } from './detail.js';
 import { runElementList } from './element-list.js';
 
 /** The shape `healthCheck` demands of `GET /api/projects/:id/config`. */
@@ -244,15 +246,36 @@ describe('discovery commands on the CLI', () => {
   });
 
   describe('the aliases and the projections', () => {
-    it('inline_mention is get_entities with a fixed view, unwrapped to the one row', async () => {
-      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: { title: 'A' } }] };
+    /**
+     * The alias carries a fixed PROJECTION now, and asserting the URL is the
+     * point: `view=inline_mention` did not fail once the route stopped reading
+     * it — it was accepted and ignored, so the narrowest command in the CLI
+     * silently returned the widest record.
+     */
+    it('inline_mention is get_entities with a fixed projection, unwrapped to the one row', async () => {
+      reply = { type: 'ac', results: [{ slug: 'a', entity: { slug: 'a', title: 'A', href: '/acs/a' } }] };
       await runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'));
-      expect(called()).toBe('/entities/ac/get?slugs=a&view=inline_mention');
-      expect(printed()).toEqual({ title: 'A' });
+      // `select=` — present and empty, which the route reads as `[]`.
+      expect(called()).toBe('/entities/ac/get?slugs=a&select=');
+      expect(printed()).toEqual({ slug: 'a', title: 'A', href: '/acs/a' });
+    });
+
+    /**
+     * `single_element` and `detail` make the SAME call — the two differed only
+     * by a `view`, and there is no view axis left. Both keep their names: one
+     * matches an XML tag an agent reads off a page, the other is the name for
+     * "the whole record" with no tag behind it.
+     */
+    it('single_element and detail both ask for the default projection', async () => {
+      reply = { type: 'ac', results: [{ slug: 'a', entity: { slug: 'a', title: 'A' } }] };
+      await runSingleElement(args('single_element', '--type', 'ac', '--slug', 'a'));
+      await runDetail(args('detail', '--type', 'ac', '--slug', 'a'));
+      const urls = seen.map((s) => s.url.replace(/^\/api\/projects\/[^/]+/, ''));
+      expect(urls).toEqual(['/entities/ac/get?slugs=a', '/entities/ac/get?slugs=a']);
     });
 
     it('a missing entity becomes ENTITY_NOT_FOUND — the null row the list operation reports', async () => {
-      reply = { type: 'ac', view: 'inline_mention', results: [{ slug: 'a', entity: null }] };
+      reply = { type: 'ac', results: [{ slug: 'a', entity: null }] };
       await expect(runInlineMention(args('inline_mention', '--type', 'ac', '--slug', 'a'))).rejects.toMatchObject({
         code: 'ENTITY_NOT_FOUND',
       });
@@ -349,10 +372,12 @@ describe('discovery commands on the CLI', () => {
    */
   describe('the exhaustive sweeps page to the end', () => {
     it('tagged_list follows hasMore across pages and returns every row', async () => {
+      // 0.2.22 — the row IS `{ slug, title }`. It used to be unwrapped from a
+      // `data` key that no longer exists, which printed a list of `null`s.
       const pages = [
-        { items: [{ slug: 'a', data: 1 }], total: 3, hasMore: true },
-        { items: [{ slug: 'b', data: 2 }], total: 3, hasMore: true },
-        { items: [{ slug: 'c', data: 3 }], total: 3, hasMore: false },
+        { items: [{ slug: 'a', title: 'A' }], total: 3, hasMore: true },
+        { items: [{ slug: 'b', title: 'B' }], total: 3, hasMore: true },
+        { items: [{ slug: 'c', title: 'C' }], total: 3, hasMore: false },
       ];
       let n = 0;
       server.removeAllListeners('request');
@@ -368,12 +393,22 @@ describe('discovery commands on the CLI', () => {
       expect(seen).toHaveLength(3);
       // The offset advances by what was actually returned, not by a page size
       // the transport assumed.
+      /**
+       * `tagFilter`, not `filter` — and this line is the whole reason to assert
+       * a URL rather than a result. The server reads `tagFilter` and applies its
+       * own default when it is absent, so the retired spelling did not fail: it
+       * turned a `--filter or` into an AND and answered confidently.
+       */
       expect(seen.map((s) => s.url.replace(/^.*\?/, ''))).toEqual([
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=0',
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=1',
-        'limit=1000&tags=x&filter=or&view=tagged_list_item&offset=2',
+        'limit=1000&tags=x&tagFilter=or&offset=0',
+        'limit=1000&tags=x&tagFilter=or&offset=1',
+        'limit=1000&tags=x&tagFilter=or&offset=2',
       ]);
-      expect(printed().items).toEqual([1, 2, 3]);
+      expect(printed().items).toEqual([
+        { slug: 'a', title: 'A' },
+        { slug: 'b', title: 'B' },
+        { slug: 'c', title: 'C' },
+      ]);
       // A sweep that ran to the end says so.
       expect(printed().hasMore).toBe(false);
     });

@@ -23,6 +23,16 @@ export const endpointData: DataDeclaration = {
         { op: 'raw', field: 'method' },
         { op: 'literal', value: ' ' },
         { op: 'raw', field: 'path' },
+        /**
+         * The same 200 the field declares, applied where the value is MADE.
+         *
+         * Derived values are filled after the create body has been validated,
+         * so a `maxLength` cannot catch one — a long enough `path` would store
+         * a title that violates the type's own constraint, and the next
+         * unrelated update would be refused for a field the caller never
+         * touched. Deriving within the bound is what keeps that impossible.
+         */
+        { op: 'truncate', n: 200 },
       ],
       description: 'Label. Defaults to "{method} {path}", e.g. "GET /orders/{id}".',
     },

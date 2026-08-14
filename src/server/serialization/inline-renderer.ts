@@ -1,7 +1,13 @@
 export function renderInlineMention(data: unknown): string {
   const obj = asObject(data);
   if (!obj) return String(data);
-  const label = pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'unknown';
+  /**
+   * 0.2.22 — `title` is the label, on every type, with no per-type view left to
+   * supply one. `label` stays ahead of `slug` in the chain for the SECTION chip,
+   * which is not an entity and carries its own.
+   */
+  const label =
+    pickString(obj, 'title') ?? pickString(obj, 'label') ?? pickString(obj, 'slug') ?? 'unknown';
   const href = pickString(obj, 'href') ?? '';
   return href ? `[${label}](${href})` : `**${label}**`;
 }

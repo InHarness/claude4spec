@@ -514,8 +514,14 @@ export const RESERVED_TITLE_DECLARATION: ScalarNode = {
  * They come from the envelope rather than from `data` — `slug` is the row's
  * identity, `tags` are a cross-cutting relation, and `title` is reserved — so a
  * projection cannot remove them and a caller never has to ask for them.
+ *
+ * `href` joins them as the one identity field the host GENERATES, from the
+ * type's `pathPrefix` and the slug (`/endpoints/get-users`). It is the reason a
+ * chip can still be a link now that no per-type view contributes one: an
+ * informational path to the entity's page in the web UI, not a claim that a
+ * server is answering on it.
  */
-export const IDENTITY_FIELDS = ['slug', RESERVED_TITLE_FIELD, 'tags'] as const;
+export const IDENTITY_FIELDS = ['slug', RESERVED_TITLE_FIELD, 'tags', 'href'] as const;
 
 /** UTF-8 size of a content-bearing value; absent/null counts as 0. */
 export function contentBytes(value: unknown): number {

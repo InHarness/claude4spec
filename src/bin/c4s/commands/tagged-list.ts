@@ -4,7 +4,6 @@ import { delegateGetAll } from '../delegate.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
-import { withMeta } from './_meta.js';
 import { pickEntityPage } from './_meta.js';
 import type { CliCommandContribution } from '../registry.js';
 
@@ -21,15 +20,24 @@ import type { CliCommandContribution } from '../registry.js';
 export async function runTaggedList(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const tags = requireStringList(args, 'tags');
-  const filterRaw = optionalString(args, 'filter') ?? 'or';
+  /**
+   * 0.2.22 — `--tag-filter`, the spelling the operation itself uses, with
+   * `--filter` still accepted so an existing pipeline keeps working.
+   *
+   * The wire key moved with it. Sending the old `filter=` to a server that only
+   * reads `tagFilter` was worse than an error: the core fell back to its own
+   * default and quietly answered the INTERSECTION to a command that had asked
+   * for the union.
+   */
+  const filterRaw = optionalString(args, 'tag-filter') ?? optionalString(args, 'filter') ?? 'or';
   if (filterRaw !== 'and' && filterRaw !== 'or') {
-    throw new CliError('INVALID_ARGS', `--filter must be 'and' or 'or', got '${filterRaw}'`);
+    throw new CliError('INVALID_ARGS', `--tag-filter must be 'and' or 'or', got '${filterRaw}'`);
   }
 
   const { items, exhausted } = await delegateGetAll(
     args,
     `/entities/${type}/list`,
-    { tags, filter: filterRaw, view: 'tagged_list_item' },
+    { tags, tagFilter: filterRaw },
     pickEntityPage,
   );
   /**
@@ -42,7 +50,7 @@ export async function runTaggedList(args: ParsedArgs): Promise<void> {
    * not to give. `find-references` has always reported it; these did not.
    */
   writeOutput(
-    { items: items.map(withMeta), hasMore: !exhausted, query: { type, tags, filter: filterRaw } },
+    { items, hasMore: !exhausted, query: { type, tags, tagFilter: filterRaw } },
     args,
   );
 }

@@ -24,7 +24,9 @@ import type { CliCommandContribution } from '../registry.js';
 export async function runElementList(args: ParsedArgs): Promise<void> {
   const type = normalizeEntityType(requireString(args, 'type'));
   const slugs = requireStringList(args, 'slugs');
-  const rows = await delegateGetEntities(args, type, slugs, 'element_list_item');
+  // `select: []` — a list row is a link and a label, which is the identity
+  // skeleton. `element_list_item` was a view name the route stopped reading.
+  const rows = await delegateGetEntities(args, type, slugs, []);
   const found = rows.filter((r) => r.entity !== null);
   if (found.length === 0) {
     throw new CliError('ENTITY_NOT_FOUND', `no ${type} found for slugs: ${slugs.join(', ')}`);

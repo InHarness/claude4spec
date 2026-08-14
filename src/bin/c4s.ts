@@ -91,8 +91,8 @@ Tag commands (1:1 with XML tag names):
   inline_mention --type <t> --slug <s>
   single_element --type <t> --slug <s>
   element_list --type <t> --slugs <s1,s2,...>
-  tagged_list --type <t> --tags <t1,t2,...> [--filter and|or]
-  tagged_list_mixed --tags <t1,t2,...> [--filter and|or]
+  tagged_list --type <t> --tags <t1,t2,...> [--tag-filter and|or]
+  tagged_list_mixed --tags <t1,t2,...> [--tag-filter and|or]
 
 Detail view (no XML counterpart):
   detail --type <t> --slug <s>

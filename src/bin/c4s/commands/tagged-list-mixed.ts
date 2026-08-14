@@ -3,7 +3,7 @@ import { optionalString, requireStringList } from '../args.js';
 import { delegateGet, delegateGetAll } from '../delegate.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
-import { pickEntityPage, withMeta } from './_meta.js';
+import { pickEntityPage } from './_meta.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -24,9 +24,10 @@ import type { CliCommandContribution } from '../registry.js';
  */
 export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
   const tags = requireStringList(args, 'tags');
-  const filterRaw = optionalString(args, 'filter') ?? 'or';
+  // `--tag-filter`, with `--filter` still accepted — see `tagged-list.ts`.
+  const filterRaw = optionalString(args, 'tag-filter') ?? optionalString(args, 'filter') ?? 'or';
   if (filterRaw !== 'and' && filterRaw !== 'or') {
-    throw new CliError('INVALID_ARGS', `--filter must be 'and' or 'or', got '${filterRaw}'`);
+    throw new CliError('INVALID_ARGS', `--tag-filter must be 'and' or 'or', got '${filterRaw}'`);
   }
 
   /**
@@ -57,13 +58,13 @@ export async function runTaggedListMixed(args: ParsedArgs): Promise<void> {
     const { items, exhausted } = await delegateGetAll(
       args,
       `/entities/${type}/list`,
-      { tags, filter: filterRaw, view: 'tagged_list_item' },
+      { tags, tagFilter: filterRaw },
       pickEntityPage,
     );
     if (!exhausted) complete = false;
-    grouped[`${type}s`] = items.map(withMeta);
+    grouped[`${type}s`] = items;
   }
-  writeOutput({ ...grouped, hasMore: !complete, query: { tags, filter: filterRaw } }, args);
+  writeOutput({ ...grouped, hasMore: !complete, query: { tags, tagFilter: filterRaw } }, args);
 }
 
 export const taggedListMixedCommand: CliCommandContribution = {

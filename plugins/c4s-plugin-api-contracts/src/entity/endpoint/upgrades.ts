@@ -70,6 +70,9 @@ export function endpointPayloadV2ToV3(payload: SnapshotData): SnapshotData {
   if (payload === null || typeof payload !== 'object' || Array.isArray(payload)) return payload;
   const p = { ...(payload as Record<string, unknown>) };
   if (typeof p.title === 'string' && p.title.trim() !== '') return p;
-  p.title = `${String(p.method ?? '')} ${String(p.path ?? '')}`.trim();
+  // Bounded at the field's own `maxLength`, exactly as the `computedDefault`
+  // does on the create path. An upgrade that produced a value the declaration
+  // refuses would leave the entity unwritable until somebody retitled it.
+  p.title = `${String(p.method ?? '')} ${String(p.path ?? '')}`.trim().slice(0, 200);
   return p;
 }

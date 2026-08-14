@@ -222,7 +222,8 @@ export function getEntities(deps: DiscoveryDeps, input: GetEntitiesInput): GetEn
     const stored = deps.reader.getEntity(input.type, slug)?.data;
     return {
       slug,
-      entity: data === null ? null : project(data, input.select, schema, stored),
+      entity:
+        data === null ? null : project(data, input.select, schema, stored, module.pathPrefix),
       ...meta,
     };
   });
