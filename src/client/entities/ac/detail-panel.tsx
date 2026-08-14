@@ -333,8 +333,9 @@ function VerifiesPanel({
   // locally: a single shared query would filter groups whose own box reads
   // empty, and would offer its literal in all of them.
   const [queries, setQueries] = useState<Record<string, string>>({});
-  // A group's candidates are a whole collection, so they load when its picker
-  // is first opened rather than on every AC the user clicks through.
+  // A group's candidates are a whole collection, so an EMPTY group loads only
+  // when its picker is first opened rather than on every AC the user clicks
+  // through. A group that already holds refs loads eagerly — see `enabled`.
   const [opened, setOpened] = useState<Set<string>>(() => new Set());
 
   const modules = clientPluginHost.listEntities().filter((m) => m.type !== 'ac');
@@ -348,7 +349,20 @@ function VerifiesPanel({
       queryKey: ['verify-candidates', m.type] as const,
       queryFn: () => m.listByTags({ tags: [], filter: 'or' as const }),
       staleTime: 60_000,
-      enabled: opened.has(m.type as string),
+      /**
+       * Opened pickers — and any group this AC ALREADY verifies something in.
+       *
+       * The second half is what keeps the dangling-ref badge visible on load.
+       * It used to arrive precomputed as `ac.brokenVerifies`; 0.2.23 leaves the
+       * type no read code to compute it with, so it is derived here against the
+       * candidate list — and a list that only loads when the user opens a picker
+       * would mark a dead ref only for someone already going looking for it.
+       *
+       * It costs one request per type this AC verifies, not per type that
+       * exists: an AC names one or two, and the queries are shared and cached
+       * across every AC the user clicks through.
+       */
+      enabled: opened.has(m.type as string) || (selected[m.type as string]?.length ?? 0) > 0,
     })),
   });
   const candidateByType = new Map(modules.map((m, i) => [m.type as string, candidates[i]]));

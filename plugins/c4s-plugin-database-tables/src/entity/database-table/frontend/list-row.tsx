@@ -5,9 +5,11 @@
  * The spec calls out the common mistake explicitly: list-screen rows are rendered
  * by `EntityListRow` from the kit, NOT by the `renderRow` slot — `renderRow` is
  * for embedded lists in content only (see `render-row.tsx`). The two rows are two
- * files on purpose: this one consumes `columnCount`/`indexCount` (the list DTO
- * never carries `columns[]`/`indexes[]`) and draws tag chips, which an embedded
- * row has no tag context for.
+ * files on purpose: this one draws tag chips, which an embedded row has no tag
+ * context for. It used to be the other way round as well — this row read the
+ * type's computed `columnCount`/`indexCount` because the list payload carried no
+ * arrays — but 0.2.23 leaves one record shape, so both rows count the arrays
+ * through the same `countsOf`.
  *
  * Purely presentational — data (item, tags, tag lookup) comes from the screen's
  * hooks. Row style discipline: colours are `var(--c-*)` tokens only, never
@@ -60,8 +62,8 @@ export const DatabaseTableListRow: FC<DatabaseTableListRowProps> = ({
     </div>
     <div className="text-[12.5px] truncate mt-0.5" style={{ color: 'var(--c-muted)' }}>
       {shapeSummary({
-        columns: item.columnCount ?? item.columns?.length ?? 0,
-        indexes: item.indexCount ?? item.indexes?.length ?? 0,
+        columns: item.columns?.length ?? 0,
+        indexes: item.indexes?.length ?? 0,
       })}
     </div>
   </EntityListRow>
