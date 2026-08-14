@@ -210,31 +210,17 @@ function designSystemDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 
 // ─── schemas ─────────────────────────────────────────────────────────────────
 
+/**
+ * 0.2.23 — `resolve()` stays; the view that called it does not.
+ *
+ * `single_element` emitted each token twice: the raw `value` as authored and a
+ * `resolvedValue` with `{token}` aliases expanded in Base mode. Expanding an
+ * alias is a presentation decision — which mode, at what moment — and the record
+ * now carries the raw value alone. `resolve()` itself is untouched and has the
+ * two callers it always really had: `frontend.renderCard` and the live preview
+ * in the detail panel.
+ */
 export const designSystemSerializer: SerializationContribution<RawEntity> = {
-  views: {
-    inline_mention: (entity) => ({
-      type: 'design-system',
-      slug: entity.slug,
-      label: (entity.data.title as string) ?? entity.slug,
-      href: `/design-systems/${entity.slug}`,
-    }),
-
-    single_element: (entity) => baseSingle(entity),
-    element_list_item: (entity) => trimItem(entity),
-    tagged_list_item: (entity) => trimItem(entity),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const references = (reader.findSectionReferences('design-system', entity.slug) as SectionEntityRef[]).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return { ...base, _references: references };
-    },
-  },
-
   diff: designSystemDiff,
 
   /** v1 files carry a synthesised `description: null` on every token; v2 files spell the label `name`. */

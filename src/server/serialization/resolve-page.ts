@@ -5,7 +5,7 @@ import {
   renderSingleElement,
   renderTaggedListMixed,
 } from './inline-renderer.js';
-import { getEntitiesAll, listEntitiesAll, type DiscoveryCore, type SerializedMeta } from '../discovery/index.js';
+import { getEntitiesAll, listEntitiesAll, type DiscoveryCore } from '../discovery/index.js';
 
 /**
  * Expanding tags inline is a RENDER concern — the editor preview, the static
@@ -159,13 +159,16 @@ function resolveSingle(
       error: 'entity_not_found',
     };
   }
-  const data = withMeta(record.entity, record);
-  return {
-    data,
-    inline: render(data),
-    generic: record.generic === true,
-    ...(record.error ? { error: record.error } : {}),
-  };
+  /**
+   * The record as the core produced it — nothing appended.
+   *
+   * 0.2.23: `withMeta` used to fold the serializer's `_generic` / `_error` into
+   * the payload here. Neither exists any more; the record has one producer, and
+   * a flag on the envelope below still reports the resolution outcomes this
+   * function genuinely owns (unknown type, entity not found).
+   */
+  const data = record.entity;
+  return { data, inline: render(data), generic: false };
 }
 
 function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome {
@@ -189,7 +192,7 @@ function resolveElementList(tag: XmlTag, deps: ResolvePageDeps): ResolveOutcome 
   // `select: []` — a list row is a link and a label, which is exactly the
   // identity skeleton. Anything wider was a view's idea of what a row wanted.
   const { results } = getEntitiesAll(deps.discovery, { type, slugs, select: [] });
-  const items = results.filter((r) => r.entity !== null).map((r) => withMeta(r.entity, r));
+  const items = results.filter((r) => r.entity !== null).map((r) => r.entity);
   /**
    * `entity: null` alone is NOT "missing" — since 0.2.6 it also marks a row the
    * response budget could not carry, which `truncated` distinguishes. Rendering
@@ -294,14 +297,3 @@ function normalizeType(raw: string, deps: ResolvePageDeps): string | null {
   return deps.activeTypes.includes(raw) ? raw : null;
 }
 
-function withMeta(data: unknown, meta: SerializedMeta): unknown {
-  if (!meta.generic && !meta.error) return data;
-  if (typeof data === 'object' && data !== null) {
-    return {
-      ...(data as object),
-      ...(meta.generic ? { _generic: true } : {}),
-      ...(meta.error ? { _error: meta.error } : {}),
-    };
-  }
-  return data;
-}

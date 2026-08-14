@@ -1,49 +1,12 @@
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import type { EntityWriter } from './writer.js';
 
-export type ViewKind =
-  | 'inline_mention'
-  | 'single_element'
-  | 'element_list_item'
-  | 'tagged_list_item'
-  | 'detail';
-
-/**
- * The vocabulary as a VALUE, declared once beside the type.
- *
- * Every layer that has to answer "is this a view?" — the core's guard, the CLI's
- * eager check, the engine's describe — reads this array. Three copies of five
- * strings is how a sixth view kind ends up recognised in one place and rejected
- * in another.
- */
-export const VIEW_KINDS: readonly ViewKind[] = [
-  'inline_mention',
-  'single_element',
-  'element_list_item',
-  'tagged_list_item',
-  'detail',
-];
-
 /**
  * 0.2.9 — schemas are DERIVED from `data.schema`, so the type moved to
  * `shared/plugin-host/json-schema.ts` next to the deriver. Re-exported here
  * because every consumer of a schema in this layer imports from this file.
  */
 export type { JsonSchema } from '../../shared/plugin-host/json-schema.js';
-
-/**
- * A computed view: the entity wrapper in, an arbitrary payload out.
- *
- * 0.2.9 dropped the `SerializeContext` wrapper (`{reader, depth, maxDepth}`) for
- * a bare reader. `depth` was `0` at every call site in the repo, so the single
- * guard that read it never fired once; a parameter no caller ever varies is not
- * a depth limit, it is a comment. Where a view genuinely has a depth rule (dto's
- * `detail` resolves nested DTOs one level), the rule is now written into the view.
- */
-export type ViewFn<T> = (entity: T, reader: RawEntityReader) => unknown;
-
-/** The views a type computes itself. Every kind it omits is served generically. */
-export type ViewSet<T> = Partial<Record<ViewKind, ViewFn<T>>>;
 
 // ─── Snapshot view (M17) — types ────────────────────────────────────────────
 
@@ -93,6 +56,21 @@ export class SnapshotNotImplementedError extends Error {
   }
 }
 
+/**
+ * The ONE error the read lookup can produce: the type is unknown or deactivated.
+ *
+ * 0.2.23 narrowed the contract to this single case. The other two the engine
+ * used to report are gone with the code that produced them — a view outside the
+ * enum (`INVALID_VIEW`) and a type's own serializer throwing (`SERIALIZER_THREW`)
+ * both presupposed author code in the read path. M39 maps this to `INVALID_TYPE`.
+ */
+export class SerializerError extends Error {
+  constructor(type: string) {
+    super(`type '${type}' is not registered or not active — no read record can be derived`);
+    this.name = 'SerializerError';
+  }
+}
+
 // ─── Serialization contribution (L9) ────────────────────────────────────────
 
 /**
@@ -101,18 +79,19 @@ export class SnapshotNotImplementedError extends Error {
  *
  * Gone from 1.x, all of it derivable from `data.schema`: `type` (the manifest
  * already says it), `version: string` (an advisory semver the registry never
- * enforced — replaced by the manifest's integer `payloadVersion`), the five flat
- * view callbacks (now one map, so "which views does this type compute?" is a
- * property of the data instead of a five-case switch), `schema?(view)` (derived
- * — see `shared/plugin-host/json-schema.ts`) and, in PR2 of this tier,
- * `snapshot`/`restore`.
+ * enforced — replaced by the manifest's integer `payloadVersion`),
+ * `schema?(view)` (derived — see `shared/plugin-host/json-schema.ts`) and, in PR2
+ * of this tier, `snapshot`/`restore`.
  *
- * What is left is what the host genuinely cannot derive: payload shapes that are
- * COMPUTED (resolved refs, back-references, counts) and a SEMANTIC diff.
+ * 0.2.23 removed the last of it: the `views?` map. A type contributed READ CODE
+ * for as long as the shape of a read was a closed list of variants each type
+ * declared; the shape is now `f(schema, select)`, computed by the host for every
+ * type at once, so there is nothing left for a view to decide. What survives is
+ * the one axis a schema genuinely cannot express — the payload's history
+ * (`payloadVersion` + `payloadUpgrades?`) — and the optional semantics of a
+ * delta (`diff?`).
  */
 export interface SerializationContribution<T = unknown> {
-  /** Views this type computes. Absent kinds are served generically by the host. */
-  views?: ViewSet<T>;
   /**
    * Optional semantic diff. Falls back to default deep-diff when omitted.
    *
@@ -154,15 +133,15 @@ export interface SerializationContribution<T = unknown> {
   // A stale 1.x slot is rejected at registration, not ignored.
 }
 
+/**
+ * One field, because there is one producer.
+ *
+ * `generic` used to say whether the host or the type shaped the payload, and
+ * `error` / `brokenRefs` reported what went wrong when the type's own code ran.
+ * All three described a fork that no longer exists: the host is the only
+ * producer, it cannot disagree with itself, and there is no author code left to
+ * throw or to half-resolve a reference.
+ */
 export interface SerializeResult {
   data: unknown;
-  /**
-   * True when the host built this payload from the projection row rather than
-   * the type computing it. 0.2.9 renamed it from `fallback`: a type that
-   * declares its data and computes nothing is FULLY served, not degraded, so
-   * "generic" is the rule and "fallback" was the wrong word for the common case.
-   */
-  generic: boolean;
-  error?: string;
-  brokenRefs?: string[];
 }

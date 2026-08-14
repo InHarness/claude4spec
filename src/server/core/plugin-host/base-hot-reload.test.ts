@@ -35,7 +35,7 @@ function moduleSource(version: string): string {
   return `export const manifest = {
   name: ${JSON.stringify(NAME)},
   version: ${JSON.stringify(version)},
-  hostApiVersion: '^3.0.0',
+  hostApiVersion: '^2.0.0',
   onUnregister: () => {},
   contributes: {
     settings: [

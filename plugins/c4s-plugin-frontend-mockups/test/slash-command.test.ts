@@ -66,7 +66,7 @@ describe('the manifest as a whole', () => {
     // The loader `continue`s BEFORE `registerPlugin` on a version mismatch, so
     // the failure mode is not an error: it is no sidebar tab, no routes, no
     // serializer, and one `PLUGIN_HOST_API_MISMATCH` line in the log.
-    expect(manifest.hostApiVersion).toBe('^3.0.0');
+    expect(manifest.hostApiVersion).toBe('^2.0.0');
   });
 
   it('declares onUnregister — an empty no-op is the correct implementation here', () => {

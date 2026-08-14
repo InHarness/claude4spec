@@ -4,7 +4,7 @@ import { delegateGetEntities } from '../delegate.js';
 import { CliError } from '../errors.js';
 import { writeOutput } from '../output.js';
 import { normalizeEntityType } from '../type-validation.js';
-import { withMeta } from './_meta.js';
+import { unwrapEntity } from './_meta.js';
 import type { CliCommandContribution } from '../registry.js';
 
 /**
@@ -33,7 +33,7 @@ export async function runElementList(args: ParsedArgs): Promise<void> {
   }
   writeOutput(
     {
-      items: found.map(withMeta),
+      items: found.map(unwrapEntity),
       missing: rows.filter((r) => r.entity === null).map((r) => r.slug),
     },
     args,

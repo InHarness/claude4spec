@@ -9,7 +9,7 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
   return {
     name: '@c4s/reloadable',
     version,
-    hostApiVersion: '^3.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister,
     contributes: {
       entities: [
@@ -104,11 +104,9 @@ describe('M33 — reloadPlugin (base hot-reload pipeline)', () => {
     registry.registerPlugin(pluginV('1.0.0', oldTeardown));
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-    // A different MAJOR than the host's (2.0.0) — `^3.0.0`, not `^1.0.0`, so the
-    // case keeps testing a forward mismatch rather than becoming the 1→2
-    // migration every real plugin now has to make.
-    // One major behind the host (3.0.0) — the shape a stale package really has.
-    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^2.0.0' };
+    // One major behind the host (2.0.0) — the shape a stale package really has,
+    // and the crossing `buildMigrationInfo` has a descriptor for.
+    const incompatible = { ...pluginV('2.0.0'), hostApiVersion: '^1.0.0' };
     const rec = await reloadPlugin(registry, '@c4s/reloadable', seams({ manifest: incompatible }));
 
     expect(rec).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });

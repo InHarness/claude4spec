@@ -31,7 +31,7 @@ export const manifest: PluginManifest = {
    * would take both types offline rather than loading them against a contract
    * they no longer satisfy.
    */
-  hostApiVersion: '^3.0.0',
+  hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     entities: [dtoEntity, endpointEntity],

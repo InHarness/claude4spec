@@ -111,18 +111,6 @@ export interface EntityModuleManifest {
 }
 
 /**
- * View kinds referenced by L9 serializers and L8 NodeViews. Mirrored on the
- * server in src/server/serialization/types.ts (kept in sync manually — this
- * is the canonical list).
- */
-export type ViewKind =
-  | 'inline_mention'
-  | 'single_element'
-  | 'element_list_item'
-  | 'tagged_list_item'
-  | 'detail';
-
-/**
  * SystemPromptContribution — slot consumed by buildSystemPrompt (M05).
  * Server-only at runtime, but the shape is shared so plugins can declare it
  * uniformly. Plugins set this as part of their backend manifest.

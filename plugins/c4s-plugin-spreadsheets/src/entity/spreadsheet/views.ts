@@ -1,38 +1,16 @@
 import type { EntityDiff, SerializationContribution, SnapshotData } from '@c4s/plugin-runtime';
-import type { RawEntity, ReaderLike } from '../../host-kit/host-types.js';
-import { CELLS_FIELD, SPREADSHEET_PATH_PREFIX, SPREADSHEET_TYPE } from '../../identity.js';
-import { buildOverview, cellLookup, metaOf, toSparseCells } from './overview.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
+import { SPREADSHEET_TYPE } from '../../identity.js';
 import { spreadsheetPayloadUpgrades } from './upgrades.js';
 
 /**
- * Two views, a diff, and the payload chain.
+ * A diff and the payload chain — nothing else.
  *
- * Every view NOT listed here is served generically from `data.schema` — which
- * for this type is most of them: `single_element`, `element_list_item` and
- * `tagged_list_item` were the same three-field projection in v1 and the host
- * now produces them identically. `snapshot` and `restore` are not slots any
- * more at all; the host generates both, and its keyed snapshot (sparse, sorted,
- * empties dropped) is the shape this type's files are migrated INTO. See
- * `upgrades.ts`.
+ * `snapshot` and `restore` stopped being slots in 0.2.9 (the host generates
+ * both, and its keyed snapshot — sparse, sorted, empties dropped — is the shape
+ * this type's files are migrated INTO; see `upgrades.ts`). The views followed in
+ * 0.2.23.
  */
-
-function detailFields(overview: ReturnType<typeof buildOverview>): Array<{ label: string; value: string }> {
-  const fields = [
-    { label: 'Slug', value: overview.slug },
-    { label: 'Title', value: overview.title },
-    { label: 'Rows', value: String(overview.nRows) },
-    { label: 'Columns', value: String(overview.nCols) },
-    { label: 'Header row', value: overview.headerRow ? 'yes' : 'no' },
-    { label: 'Header column', value: overview.headerCol ? 'yes' : 'no' },
-  ];
-  if (overview.headerRowLabels) {
-    fields.push({ label: 'Header row labels', value: overview.headerRowLabels.join(' | ') });
-  }
-  if (overview.headerColLabels) {
-    fields.push({ label: 'Header column labels', value: overview.headerColLabels.join(' | ') });
-  }
-  return fields;
-}
 
 const DIFF_KEYS = ['title', 'nRows', 'nCols', 'headerRow', 'headerCol', 'cells'] as const;
 
@@ -49,59 +27,24 @@ function spreadsheetDiff(a: SnapshotData, b: SnapshotData, slug: string): Entity
   return { type: SPREADSHEET_TYPE, slug, op, changes };
 }
 
+/**
+ * 0.2.23 — the `detail` view is gone, and with it the perimeter labels.
+ *
+ * That view returned an OVERVIEW instead of the type's fields, on the reasoning
+ * that a generic read would otherwise carry the whole `cells` collection — 8 000
+ * cells of prose for a 200x40 sheet. The reasoning survives; the mechanism was
+ * the wrong one. `cells` is declared a KEYED collection, so the host already
+ * refuses to materialise it and emits only its overview: the discipline is now a
+ * property of the declaration rather than of a function this type wrote.
+ *
+ * What the view added on top — the first row's and first column's header labels
+ * — leaves the record entirely. An overview of a keyed collection is its SHAPE,
+ * not a sample of its contents, and the labels are contents. They have one home
+ * now, `spreadsheet-tools`' `get_overview`, alongside the dimensions and the
+ * header flags. `n_rows` / `n_cols` / `header_row` / `header_col` are ordinary
+ * schema fields and come back in the record for free.
+ */
 export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
-  views: {
-    /**
-     * Stays a slot because `label` and `href` are a rendering decision rather
-     * than fields — nothing in `data.schema` says a mention shows the title and
-     * links to the (nonexistent) detail page.
-     */
-    inline_mention: (entity) => ({
-      kind: 'inline_mention',
-      type: SPREADSHEET_TYPE,
-      slug: entity.slug,
-      label: metaOf(entity).title || entity.slug,
-      href: `${SPREADSHEET_PATH_PREFIX}/${entity.slug}`,
-    }),
-
-    /**
-     * `detail` IS THE OVERVIEW, and the omission is the feature.
-     *
-     * A generic detail view would carry the whole `cells` collection, which for
-     * this type is the one thing a reader must never receive by accident: a
-     * 200×40 sheet is 8 000 cells of prose, and the only way to make
-     * overview-first a real discipline rather than advice is for the cheap read
-     * to be the ONLY read that arrives unasked. Body cells come back solely
-     * through an explicit windowed range read.
-     *
-     * The perimeter labels are the deliberate exception — see `buildOverview`.
-     */
-    detail: (entity, reader) => {
-      const meta = metaOf(entity);
-      if (!meta.headerRow && !meta.headerCol) {
-        return { kind: 'detail', type: SPREADSHEET_TYPE, slug: meta.slug, title: meta.title, fields: detailFields(meta) };
-      }
-      /*
-       * `readCollection` answers the whole collection, and there is no narrower
-       * primitive on the published reader — the host exposes no perimeter or
-       * window read to a serializer. The cells are filtered to the perimeter
-       * here and nothing else escapes this function, so the OUTPUT contract
-       * (shape plus labels, never body) holds regardless; what it costs is one
-       * full read of an index that is already in SQLite.
-       */
-      const cells = toSparseCells((reader as unknown as ReaderLike).readCollection(SPREADSHEET_TYPE, meta.slug, CELLS_FIELD));
-      const perimeter = cells.filter((cell) => cell.r === 1 || cell.c === 1);
-      const overview = buildOverview(meta, cellLookup(perimeter));
-      return {
-        kind: 'detail',
-        type: SPREADSHEET_TYPE,
-        slug: overview.slug,
-        title: overview.title,
-        fields: detailFields(overview),
-      };
-    },
-  },
-
   diff: spreadsheetDiff,
 
   /**

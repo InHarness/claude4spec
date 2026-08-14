@@ -5,19 +5,22 @@ import {
   contentBytes,
   type FieldNode,
 } from '../../shared/plugin-host/data-schema.js';
-import type { ViewKind } from './types.js';
 
 /**
- * The payload the host builds when a type does not compute a view itself.
+ * THE read record — the only shape an entity is ever read in.
  *
- * 0.2.9 renamed this from `fallback`: with schemas, snapshot and restore all
- * derived from `data.schema`, a type that computes nothing is fully served
- * rather than degraded. `_generic: true` says "the host shaped this row", which
- * is a fact about provenance — not, as `_fallback` implied, an apology.
+ * 0.2.9 renamed this from `fallback` (a type that declares its data and computes
+ * nothing is fully served, not degraded); 0.2.23 made the name redundant in the
+ * other direction. There is no non-generic payload left to distinguish this
+ * from, so the provenance markers `_generic` / `_type` / `_view` go with the
+ * distinction they described: a flag every row carries identically tells a
+ * consumer nothing.
+ *
+ * Width is not decided here. This produces the widest honest record and
+ * `discovery/project.ts` cuts it to the caller's `select`.
  */
 export function genericEntity(
   entity: RawEntity,
-  view: ViewKind,
   schema?: Readonly<Record<string, FieldNode>>,
 ): Record<string, unknown> {
   return {
@@ -25,9 +28,6 @@ export function genericEntity(
     slug: entity.slug,
     tags: entity.tags,
     ...byFieldName(entity.data, schema),
-    _generic: true,
-    _type: entity.type,
-    _view: view,
   };
 }
 
@@ -97,7 +97,7 @@ function byFieldName(
   return out;
 }
 
-export function genericSection(section: RawSection, view: ViewKind): Record<string, unknown> {
+export function genericSection(section: RawSection): Record<string, unknown> {
   return {
     type: 'section',
     anchor: section.anchor,
@@ -107,8 +107,5 @@ export function genericSection(section: RawSection, view: ViewKind): Record<stri
     headingLevel: section.headingLevel,
     lineStart: section.lineStart,
     lineEnd: section.lineEnd,
-    _generic: true,
-    _type: 'section',
-    _view: view,
   };
 }

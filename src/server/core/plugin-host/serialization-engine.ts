@@ -15,19 +15,15 @@ import type {
   RawEntity,
   RawEntityReader,
   RawEntityType,
-  RawSection,
 } from '../../discovery/raw-entity-reader.js';
-import { genericEntity, genericSection } from '../../serialization/generic.js';
-import { viewSchema } from '../../../shared/plugin-host/json-schema.js';
+import { genericEntity } from '../../serialization/generic.js';
+import { recordSchema } from '../../../shared/plugin-host/json-schema.js';
 import type {
   JsonSchema,
   SerializationContribution,
   SerializeResult,
-  ViewFn,
-  ViewKind,
-  ViewSet,
 } from '../../serialization/types.js';
-import { VIEW_KINDS } from '../../serialization/types.js';
+import { SerializerError } from '../../serialization/types.js';
 import type { ProjectPluginHost } from './types.js';
 
 export interface CatalogEntry {
@@ -54,45 +50,31 @@ export interface DescribeResult {
   type: string;
   payloadVersion: number;
   /**
-   * Keyed by view kind, all five, for every active type.
+   * ONE schema, under the key `record`.
    *
-   * 0.2.22 removed the sibling `views: ViewKind[]`. It listed the kinds as a
-   * CHOICE, and there is no longer a choice to make — a caller states a `select`
-   * and the host decides internally what to serialize before projecting. These
-   * schemas stay because they describe shapes this host really can produce;
-   * which of them is computed and which is generic is carried inside each one
-   * (`x-computed`).
+   * 0.2.22 removed the sibling `views: ViewKind[]` — it listed the kinds as a
+   * CHOICE, and there was no longer a choice to make. 0.2.23 removes the five
+   * schemas themselves: a caller reads ONE shape, narrowed by its own `select`,
+   * so publishing five was publishing four shapes nothing can ask for. The field
+   * stays plural because the envelope names it that way and a type may yet
+   * publish a second, genuinely different, schema.
    */
   schemas: Record<string, JsonSchema>;
 }
 
 export class SerializationEngine {
-  constructor(
-    private readonly host: ProjectPluginHost,
-    /** Section serializer is registered separately — section is not an entity. */
-    private readonly sectionViews: ViewSet<unknown> | null = null,
-  ) {}
+  constructor(private readonly host: ProjectPluginHost) {}
 
   has(type: string): boolean {
-    if (type === 'section') return this.sectionViews !== null;
     return this.host.getAvailable(type) !== null;
   }
 
-  /** The views a type computes itself. `section` is a bare view set — it has no manifest. */
-  views(type: string): ViewSet<unknown> | undefined {
-    if (type === 'section') return this.sectionViews ?? undefined;
-    return this.host.getAvailable(type)?.serializer.views;
-  }
-
   get(type: string): SerializationContribution<unknown> | undefined {
-    if (type === 'section') return undefined;
     return this.host.getAvailable(type)?.serializer;
   }
 
   listTypes(): string[] {
-    const types = this.host.listAvailable().map((m) => m.type);
-    if (this.sectionViews) types.push('section');
-    return types.sort();
+    return this.host.listAvailable().map((m) => m.type).sort();
   }
 
   /**
@@ -104,62 +86,41 @@ export class SerializationEngine {
     return this.host.getAvailable(type)?.payloadVersion ?? null;
   }
 
-  serializeEntity(
-    type: string,
-    view: ViewKind,
-    entity: RawEntity,
-    reader: RawEntityReader
-  ): SerializeResult {
-    return this.invoke(type, view, entity, reader, () =>
-      genericEntity(entity, view, this.host.getAvailable(type)?.data?.schema),
-    );
-  }
-
-  serializeSection(view: ViewKind, section: RawSection, reader: RawEntityReader): SerializeResult {
-    return this.invoke('section', view, section, reader, () => genericSection(section, view));
-  }
-
-  private invoke(
-    type: string,
-    view: ViewKind,
-    input: unknown,
-    reader: RawEntityReader,
-    buildGeneric: () => Record<string, unknown>
-  ): SerializeResult {
-    if (!this.has(type)) {
-      return { data: buildGeneric(), generic: true, error: 'unknown_type' };
-    }
-    const fn: ViewFn<unknown> | undefined = this.views(type)?.[view];
-    if (!fn) {
-      // The RULE, not a failure: the type declared its data and left this view
-      // to the host.
-      return { data: buildGeneric(), generic: true };
-    }
-    try {
-      const data = fn(input, reader);
-      const brokenRefs = extractBrokenRefs(data);
-      return { data, generic: false, ...(brokenRefs ? { brokenRefs } : {}) };
-    } catch (err) {
-      return {
-        data: buildGeneric(),
-        generic: true,
-        error: `serializer_threw: ${(err as Error).message}`,
-      };
-    }
+  /**
+   * The read record for one entity, derived wholly from its type's `data.schema`.
+   *
+   * 0.2.23 removed the three-case registry this used to run — "the type computes
+   * this view", "the type left it to the host", "the type's view threw" — and
+   * the `view` parameter that selected between shapes. There is one producer and
+   * one shape; a fork between an authored and a generated record cannot exist
+   * when nothing is authored.
+   *
+   * An unknown or deactivated type THROWS rather than returning a shaped
+   * apology. The old code answered with a generic payload plus
+   * `error: 'unknown_type'`, which a caller reading only `data` could not tell
+   * from a real record. The discovery core guards with `requireActiveType`
+   * before it ever gets here, so this is the backstop, and M39 maps it to
+   * `INVALID_TYPE`.
+   */
+  serializeEntity(type: string, entity: RawEntity, _reader: RawEntityReader): SerializeResult {
+    const m = this.host.getAvailable(type);
+    if (!m) throw new SerializerError(type);
+    return { data: genericEntity(entity, m.data?.schema) };
   }
 
   /**
-   * The schema of one type × one view, DERIVED from the type's `data.schema`.
+   * The schema of one type's read record, DERIVED from its `data.schema`.
    *
    * 0.2.9 removed the other path: a hand-written `serializer.schema(view)` when
    * the type had one, reflection over the SQLite columns (stamped `_auto`) when
    * it did not, and a stub apologising for the missing db handle when there was
-   * none. One derivation, no db, no `_auto`.
+   * none. 0.2.23 removed the remaining axis — a schema PER VIEW — because the
+   * views it described are gone. One type, one schema.
    */
-  getSchema(type: string, view: ViewKind): JsonSchema {
+  getSchema(type: string): JsonSchema {
     const m = this.host.getAvailable(type);
     if (!m) return { type: 'object', properties: {}, required: [] };
-    return viewSchema({ type, data: m.data, view, computed: !!m.serializer.views?.[view] });
+    return recordSchema({ type, data: m.data });
   }
 
   /**
@@ -199,33 +160,16 @@ export class SerializationEngine {
 
   /**
    * On-demand schema discovery for one active entity type. Returns null when
-   * the type is unknown or deactivated (caller maps to INVALID_TYPE). When
-   * `view` is given the response is narrowed to that single view; otherwise
-   * every view is returned, because every type answers every view. Schemas are
-   * derived from `data.schema` — see {@link getSchema}.
-   */
-  /**
-   * 0.2.22 — no `view` parameter, and no `views` in the answer.
+   * the type is unknown or deactivated (caller maps to INVALID_TYPE). Schemas
+   * are derived from `data.schema` — see {@link getSchema}.
    *
-   * The five schemas are still emitted: a view remains an INTERNAL shape, and
-   * the schema of each is a real fact about what this host can produce. What
-   * disappears is the caller's ability to ask for one of them, and the list that
-   * implied they had a choice.
+   * 0.2.22 dropped the `view` parameter and the `views` list; 0.2.23 drops the
+   * five schemas behind them. A view was an internal shape worth publishing only
+   * while the host could produce five of them.
    */
   describe(type: string): DescribeResult | null {
     const m = this.host.listEntities().find((e) => e.type === type);
     if (!m) return null;
-    const schemas: Record<string, JsonSchema> = {};
-    for (const v of VIEW_KINDS) {
-      schemas[v] = this.getSchema(type, v);
-    }
-    return { type, payloadVersion: m.payloadVersion, schemas };
+    return { type, payloadVersion: m.payloadVersion, schemas: { record: this.getSchema(type) } };
   }
-}
-
-function extractBrokenRefs(data: unknown): string[] | undefined {
-  if (!data || typeof data !== 'object') return undefined;
-  const refs = (data as Record<string, unknown>)._brokenRefs;
-  if (Array.isArray(refs) && refs.every((r) => typeof r === 'string')) return refs as string[];
-  return undefined;
 }

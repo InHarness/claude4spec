@@ -103,7 +103,7 @@ const PUBLISHED_PLUGIN_RUNTIME_UI_NAMES = [
 
 describe('published Host API type surface', () => {
   it('does NOT bump hostApiVersion — type distribution is additive DX (AC3)', () => {
-    expect(HOST_API_VERSION).toBe('3.0.0');
+    expect(HOST_API_VERSION).toBe('2.0.0');
   });
 
   it('covers exactly the @c4s/plugin-runtime runtime value surface (no drift)', () => {

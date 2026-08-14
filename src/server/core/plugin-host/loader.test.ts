@@ -27,7 +27,7 @@ function manifest(over: Partial<PluginManifest> = {}): PluginManifest {
   return {
     name: '@acme/c4s-plugin-glossary',
     version: '1.0.0',
-    hostApiVersion: '^3.0.0',
+    hostApiVersion: '^2.0.0',
     onUnregister: () => {},
     contributes: { entities: [entity('glossary')] },
     ...over,
@@ -69,7 +69,7 @@ describe('loadWorkspacePlugins', () => {
     const registry = new PluginRegistryImpl();
     // `^2.5.0` needs a newer minor than the 2.0.0 host — unsatisfiable but SAME
     // major, so it is `skipped` (not `incompatible`) with no migration descriptor.
-    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^3.5.0' }) } });
+    const importer = fakeImporter({ 'pkg-b': { manifest: manifest({ hostApiVersion: '^2.5.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-b'], importer);
 
@@ -83,12 +83,12 @@ describe('loadWorkspacePlugins', () => {
     // `^3.0.0` targets a different major — incompatible under the 2.x host.
     // One major BEHIND the host — the realistic case since 0.2.22, and the one
     // whose migration descriptor a plugin author actually reads.
-    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^2.0.0' }) } });
+    const importer = fakeImporter({ 'pkg-old': { manifest: manifest({ hostApiVersion: '^1.0.0' }) } });
 
     const { records } = await loadWorkspacePlugins(registry, ['pkg-old'], importer);
 
     expect(records[0]).toMatchObject({ status: 'incompatible', code: 'PLUGIN_HOST_API_MISMATCH' });
-    expect(records[0]?.migration?.targetHostApiVersion).toBe('3.0.0');
+    expect(records[0]?.migration?.targetHostApiVersion).toBe('2.0.0');
     /**
      * The 2 → 3 crossing, which is what makes this record useful: a plugin one
      * major behind gets the four descriptors naming exactly what it must change

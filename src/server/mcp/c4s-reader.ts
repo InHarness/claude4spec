@@ -4,7 +4,6 @@ import { toolError } from '../operations/envelope.js';
 import type Database from 'better-sqlite3';
 import type { RawEntityReader } from '../discovery/raw-entity-reader.js';
 import { isDiscoveryError, MAX_ANCHORS_PER_CALL, type DiscoveryCore } from '../discovery/index.js';
-import { VIEW_KINDS, type ViewKind } from '../serialization/types.js';
 
 /**
  * `c4s-reader` — the external stdio transport over the M39 discovery core.
@@ -43,18 +42,6 @@ export interface C4sReaderDeps {
   projectDir: string | null;
   packageVersion: string;
 }
-
-/**
- * 0.2.9: the vocabulary comes from `serialization/types.ts`, where `ViewKind`
- * itself lives. This file used to keep its own `as const` list feeding the zod
- * enum — the second of the two transport-local copies the core's `requireView`
- * was meant to retire, and the one that would have kept a newly added view kind
- * working over CLI and REST while answering INVALID_ARGUMENT over MCP.
- *
- * The zod enum needs a mutable tuple, so the readonly array is widened here;
- * `ViewKind` still types the result, so a divergence cannot compile.
- */
-const VIEW_ENUM = [...VIEW_KINDS] as [ViewKind, ...ViewKind[]];
 
 /**
  * The tool names this server exposes, in the order the brief lists the
@@ -212,7 +199,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const describeTypes = op(
     'describe_types',
-    'JSON Schemas and views per entity type, plus `searchableFields` — the paths a search_entities call would actually cover for that type, so one call answers both "what shape is this" and "what would search see". Omit `types` for every active type. Schemas are DERIVED from the type\'s declared data schema — every type answers every view, so a view a type does not compute is described as the generic projection rather than being absent. A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback; an unknown view answers INVALID_VIEW.',
+    'The JSON Schema of each entity type\'s read record, plus what you need before a read: `constraints` (per-field value rules), `contentFields` (fields withheld from every record, each with the operation that issues its content), `selectableFields` (the names legal in `get_entities`\' `select`) and `searchableFields` (the paths a search_entities call would actually cover). Omit `types` for every active type. ONE schema per type, DERIVED from the type\'s declared data schema — a type contributes no read code, so there is nothing else it could be. A type deactivated in config answers INVALID_TYPE with the active list, never a raw-JSON fallback.',
     {
       types: z.array(z.string()).optional().describe('Restrict to these types; omit for all active types'),
     },
@@ -378,7 +365,7 @@ export function createC4sReaderServer(deps: C4sReaderDeps): CapturedMcpServer {
 
   const getEntities = op(
     'get_entities',
-    'Fetch entities of one type by slug list — one slug is simply a list of one. Resolves <single_element type="..." slug="..."/>, <inline_mention .../> and <element_list type="..." slugs="a,b,c"/>; `view` picks which of those shapes comes back. Without `view`, one slug defaults to `single_element` and several default to `element_list_item`, matching the tags each resolves. `slugs` has a hard length limit (exceeding it is INVALID_ARGUMENT stating the limit), and the response has a size budget: nothing you named is ever dropped, but an item past the budget comes back with `entity: null` AND `truncated: true`, and the envelope\'s `message` says how to retry. The FIRST item never degrades that way — a one-slug call is already the smallest retry, so it is emitted whole. A slug that does not exist comes back as `entity: null` WITHOUT `truncated`, which is how "no such entity" stays distinguishable from "cut for size". The response echoes the `view` it used.',
+    'Fetch entities of one type by slug list — one slug is simply a list of one. Resolves <single_element type="..." slug="..."/>, <inline_mention .../> and <element_list type="..." slugs="a,b,c"/>; `select` decides how wide the answer is, and the same call answers all three. Omit `select` for the full record, pass [] for the identity skeleton a chip or a list row needs, or name the fields you will actually render. `slugs` has a hard length limit (exceeding it is INVALID_ARGUMENT stating the limit), and the response has a size budget: nothing you named is ever dropped, but an item past the budget comes back with `entity: null` AND `truncated: true`, and the envelope\'s `message` says how to retry. The FIRST item never degrades that way — a one-slug call is already the smallest retry, so it is emitted whole. A slug that does not exist comes back as `entity: null` WITHOUT `truncated`, which is how "no such entity" stays distinguishable from "cut for size". The response echoes the fields it used as `selectedFields`, and that list can be handed straight back as a `select`.',
     {
       type: z.string().describe('Entity type'),
       slugs: z.array(z.string()).describe('Slugs to fetch, in order'),

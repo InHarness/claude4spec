@@ -1,4 +1,4 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
   RestoreContext,
@@ -6,20 +6,7 @@ import type {
   SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { DtoExample, DtoField } from '../../types.js';
-import { findDtoEndpoints } from '../junction/index.js';
 import { dtoPayloadUpgrades } from './upgrades.js';
-
-function baseSingle(entity: RawEntity) {
-  return {
-    type: 'dto',
-    slug: entity.slug,
-    title: entity.data.title as string,
-    description: (entity.data.description as string | null) ?? null,
-    fields: entity.data.fields ?? [],
-    examples: entity.data.examples ?? [],
-    tags: entity.tags,
-  };
-}
 
 // ─── M17 Snapshot shape (entities/dto.md `dtosn0sho`) ───────────────────────
 
@@ -118,53 +105,25 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
 }
 
 /**
- * 2.0.0 tier K (item 57) — `dto` computes TWO views, not five.
+ * 0.2.23 — `dto` computes NOTHING.
  *
- * `single_element`, `element_list_item` and `tagged_list_item` were the same
- * `baseSingle` call three times, and `baseSingle` was itself a hand-written
- * re-listing of the columns: `name`, `description`, `fields`, `examples`, plus
- * `type`/`slug`/`tags`. Every one of those is in `data.schema`, so the host's
- * `genericEntity` produces the identical object — and unlike this function, it
- * cannot fall behind a schema change.
+ * It kept two views until now: `inline_mention`, because `label`/`href` were a
+ * rendering decision rather than fields, and `detail`, because it JOINED — the
+ * endpoints referencing this DTO and the page sections mentioning it, neither of
+ * which lives in `dto`'s own row.
  *
- * `inline_mention` stays because `label`/`href` are not fields (they are a
- * rendering decision), and `detail` stays because it JOINS — the endpoints that
- * reference this DTO, and the page sections that mention it, neither of which
- * lives in `dto`'s own row.
+ * Both are gone. The chip's label is the reserved `title` and its `href` is
+ * derived by the host from the manifest's `pathPrefix`, so the first view was
+ * reproducing what the projection now produces for every type alike. The joins
+ * went with it: `_references` because the page-scanning `find_references` (M19)
+ * answers that question directly, and `endpoints` because the spec keeps the
+ * endpoint↔DTO edge once, on the endpoint side, and describes no read surface
+ * for the reverse direction. A patch is filed for the latter — the DTO detail
+ * panel's "Used by endpoints" list has no specified operation behind it.
  */
 export const dtoSerializer: SerializationContribution<RawEntity> = {
   payloadVersion: 2,
   payloadUpgrades: dtoPayloadUpgrades,
-  views: {
-    inline_mention: (entity) => ({
-      type: 'dto',
-      slug: entity.slug,
-      label: (entity.data.title as string) ?? entity.slug,
-      href: `/dtos/${entity.slug}`,
-    }),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const endpoints = findDtoEndpoints(reader.db, entity.slug).map((e) => ({
-        endpointSlug: e.endpointSlug,
-        method: e.method,
-        path: e.path,
-        relation: e.relation,
-        statusCode: e.statusCode,
-      }));
-      const references = (reader.findSectionReferences('dto', entity.slug) as SectionEntityRef[]).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return {
-        ...base,
-        endpoints,
-        _references: references,
-      };
-    },
-  },
 
   // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   diff: dtoDiff,

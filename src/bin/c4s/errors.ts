@@ -5,7 +5,6 @@ export type CliErrorCode =
   | 'ENTITY_NOT_FOUND'
   | 'SECTION_NOT_FOUND'
   | 'INVALID_TYPE'
-  | 'INVALID_VIEW'
   | 'INVALID_ARGS'
   | 'AMBIGUOUS_SLUGS'
   | 'SCHEMA_OUT_OF_DATE'
@@ -60,7 +59,7 @@ export type CliErrorCode =
   | 'INSTALL_FAILED'
   // 0.2.3 M39 — MAPPED FROM THE DISCOVERY CORE, not raised by the CLI itself.
   // The other core codes (ENTITY_NOT_FOUND, SECTION_NOT_FOUND, INVALID_TYPE,
-  // INVALID_VIEW, AMBIGUOUS_*, INDEX_NOT_MATERIALIZED) were already in this
+  // AMBIGUOUS_*, INDEX_NOT_MATERIALIZED) were already in this
   // union under their own names; these two are new here because no CLI command
   // used to be able to address a page or to refuse an argument the way the core
   // does. `INVALID_ARGUMENT` is deliberately NOT folded into the CLI's own

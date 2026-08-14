@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { DataDeclaration } from './data-schema.js';
-import { nodeSchema, searchablePaths, viewSchema } from './json-schema.js';
+import { nodeSchema, recordSchema, searchablePaths } from './json-schema.js';
 
 const DATA: DataDeclaration = {
   schema: {
@@ -58,36 +58,35 @@ describe('nodeSchema', () => {
   });
 });
 
-describe('viewSchema', () => {
-  it('[ac:ac-slot-views-zawiera-wylacznie-widoki-o] describes the generic view exactly: closed, column-keyed, with the provenance markers', () => {
-    const schema = viewSchema({ type: 'widget', data: DATA, view: 'single_element', computed: false });
+describe('recordSchema', () => {
+  it('describes the read record exactly: closed, field-keyed, no provenance markers', () => {
+    const schema = recordSchema({ type: 'widget', data: DATA });
     const props = schema.properties as Record<string, unknown>;
 
     expect(schema.additionalProperties).toBe(false);
-    expect(props._generic).toEqual({ const: true });
-    expect(props._view).toEqual({ const: 'single_element' });
-    // Column names, because the generic payload spreads the projection row —
-    // and nullable, because the column is: `hydrate` copies every column, so an
-    // unset optional field is PRESENT holding null, not absent.
-    expect(props.design_system_slug).toEqual({ type: ['string', 'null'] });
-    expect(props.designSystemSlug).toBeUndefined();
-    // A collection with its own projection table is not on that row at all, so a
-    // CLOSED schema must not claim it.
+    /**
+     * DECLARED field names, not projection column names.
+     *
+     * This schema promised `design_system_slug` while `genericEntity` had been
+     * re-keying the hydrated row through `byFieldName` since 0.2.22 — so the
+     * record said `designSystemSlug` and its own schema contradicted it. One
+     * producer, one spelling, and the declaration is the one that wins.
+     */
+    expect(props.designSystemSlug).toEqual({ type: ['string', 'null'] });
+    expect(props.design_system_slug).toBeUndefined();
+    // Nullable because the column is: `hydrate` copies every column, so an unset
+    // optional field is PRESENT holding null, not absent.
+    expect(props._generic).toBeUndefined();
+    expect(props._view).toBeUndefined();
+    // A collection with its own projection table is not on that row, but it IS
+    // part of the record, so a closed schema must still claim it.
     expect(props.params).toBeDefined();
     expect(props.tokens).toBeDefined();
   });
 
-  it('omits `required` for a computed view — the declaration is a floor, not a contract', () => {
-    // Real computed views are selective: ac's `inline_mention` answers four keys
-    // out of eight declared fields. A `required` list derived from the
-    // declaration published a contract every genuine response violated.
-    const schema = viewSchema({ type: 'widget', data: DATA, view: 'inline_mention', computed: true });
-    expect(schema.required).toBeUndefined();
-  });
-
-  it('never describes systemManaged timestamps — no view payload carries them', () => {
+  it('never describes systemManaged timestamps — no record carries them', () => {
     // `hydrate` lifts createdAt/updatedAt out of `entity.data` into a separate
-    // `system` slot, and no computed view emits them.
+    // `system` slot.
     const withStamps = {
       schema: {
         ...DATA.schema,
@@ -95,13 +94,11 @@ describe('viewSchema', () => {
         updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
       },
     } as DataDeclaration;
-    for (const computed of [true, false]) {
-      const schema = viewSchema({ type: 'widget', data: withStamps, view: 'detail', computed });
-      const props = schema.properties as Record<string, unknown>;
-      expect(props.createdAt).toBeUndefined();
-      expect(props.created_at).toBeUndefined();
-      expect((schema.required as string[] | undefined) ?? []).not.toContain('createdAt');
-    }
+    const schema = recordSchema({ type: 'widget', data: withStamps });
+    const props = schema.properties as Record<string, unknown>;
+    expect(props.createdAt).toBeUndefined();
+    expect(props.created_at).toBeUndefined();
+    expect(schema.required as string[]).not.toContain('createdAt');
   });
 
   it('admits null into a clearable ENUM\'s value list, not only into its type', () => {
@@ -114,44 +111,36 @@ describe('viewSchema', () => {
     });
   });
 
-  it('[ac:ac-slot-views-zawiera-wylacznie-widoki-o] describes a computed view as an OPEN floor — the host cannot introspect a function', () => {
-    const schema = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: true });
-    const props = schema.properties as Record<string, unknown>;
-
-    expect(schema.additionalProperties).toBe(true);
-    expect(schema['x-computed']).toBe(true);
-    // Field names here: a computed view emits what the type declares, by name.
-    expect(props.designSystemSlug).toEqual({ type: 'string' });
-    expect(props._generic).toBeUndefined();
-  });
-
   it('excludes inputs that never land and columns that are not reproducible', () => {
-    const props = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: true })
-      .properties as Record<string, unknown>;
+    const props = recordSchema({ type: 'widget', data: DATA }).properties as Record<string, unknown>;
     expect(props.caption).toBeUndefined(); // transientInput — feeds the slug, never the payload
     expect(props.id).toBeUndefined(); // localSurrogate — index-only, excluded from every projection
   });
 
-  it('requires a field with a default, not only one marked required — in the GENERIC schema', () => {
-    // Only the generic schema carries `required` at all: it is the one the host
-    // builds itself and can therefore promise.
-    const required = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: false })
-      .required as string[];
+  it('requires a field with a default, not only one marked required', () => {
+    /**
+     * `required` is promisable again for EVERY type.
+     *
+     * It used to be carried by the generic schema alone: a computed view built
+     * its payload in a function the host could not read, and the real ones were
+     * selective, so a `required` list derived from the declaration published a
+     * contract those responses violated. With no computed views left there is no
+     * such response, and the floor-versus-contract split goes with them.
+     */
+    const required = recordSchema({ type: 'widget', data: DATA }).required as string[];
     expect(required).toContain('name'); // required
     expect(required).toContain('status'); // default — the column can never be NULL
     // Present but nullable, so it is described as `['string','null']` rather than
-    // promised — see the generic-view case above.
+    // promised.
     expect(required).not.toContain('description');
   });
 
-  it('differs between two generic views only in the `_view` marker', () => {
-    const a = viewSchema({ type: 'widget', data: DATA, view: 'detail', computed: false });
-    const b = viewSchema({ type: 'widget', data: DATA, view: 'inline_mention', computed: false });
-    const strip = (s: Record<string, unknown>) => ({
-      ...s,
-      properties: { ...(s.properties as Record<string, unknown>), _view: null },
-    });
-    expect(strip(a)).toEqual(strip(b));
+  it('is one schema per type — the same call cannot be asked to vary', () => {
+    // There is no `view` argument to differ on any more, so two derivations of
+    // one type are identical by construction rather than by convention.
+    expect(recordSchema({ type: 'widget', data: DATA })).toEqual(
+      recordSchema({ type: 'widget', data: DATA }),
+    );
   });
 });
 

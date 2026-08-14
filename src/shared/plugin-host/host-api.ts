@@ -65,12 +65,14 @@ export interface PluginMigrationInfo {
 /**
  * The Host API changelog, one entry per breaking change at a major boundary.
  *
- * There are two crossings. 1 → 2 moved behaviour out of the type; 2 → 3 changed
- * what the declaration must say (`title`) and what a read of it gives back
- * (`select`, `contentBearing`). Both are shimless for the same reason: the host
- * would have to invent domain facts it does not have.
+ * There is ONE crossing, 1 → 2, and the baseline has stayed on it. The shape
+ * changes that landed after it — the reserved `title`, the `select` projection
+ * replacing the `view` axis, the redefined `contentBearing`, and the removal of
+ * the `views?` slot itself — are absorbed INTO 2.0.0 rather than raising it,
+ * under the stabilisation rule: 2.0.0 is not published and has no external
+ * plugin consumer, so there is nobody a major bump could protect.
  *
- * 1 → 2 is the first crossing, and it is the whole point of 2.0.0: an entity
+ * 1 → 2 is that crossing, and it is the whole point of 2.0.0: an entity
  * type stops CARRYING behaviour (DDL, a slug function, a serializer's
  * snapshot/restore) and starts DECLARING data, from which the host generates
  * the rest. Every entry below is a removal, and every one has
@@ -110,13 +112,13 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
     slot: 'serializer.{version,inlineMention,singleElement,elementListItem,taggedListItem,schema}',
     kind: 'slot-removed',
     summary:
-      'The serializer became a `SerializationContribution`: computed `views` (one ' +
-      'map, not five slots), an optional semantic `diff`, an integer ' +
-      '`payloadVersion` and an ordered `payloadUpgrades` chain. The advisory ' +
-      'semver is gone — the registry never enforced it — and JSON Schemas are ' +
-      'derived from `data.schema` instead of being hand-written per view or ' +
-      'reflected off the SQLite columns and flagged `_auto`. Views a type does ' +
-      'not compute are served generically, marked `_generic` (was `_fallback`).',
+      'The serializer became a `SerializationContribution`: an optional semantic ' +
+      '`diff`, an integer `payloadVersion` and an ordered `payloadUpgrades` ' +
+      'chain. The advisory semver is gone — the registry never enforced it — ' +
+      'and JSON Schemas are derived from `data.schema` instead of being ' +
+      'hand-written per view or reflected off the SQLite columns. A type ' +
+      'contributes NO read code: the host derives the whole record from ' +
+      '`data.schema` and the caller narrows it with `select`.',
   },
   {
     fromMajor: 1,
@@ -163,64 +165,6 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
    * a shim: a `title` cannot be invented for somebody else's entities, and a
    * projection cannot guess which of a type's fields were meant to be content.
    */
-  {
-    fromMajor: 2,
-    toMajor: 3,
-    slot: 'data.schema.title',
-    kind: 'slot-required',
-    summary:
-      'Every type must declare `title: { kind: \'string\', required: true, ' +
-      'maxLength: 200 }`. A manifest without it is rejected at registration, on ' +
-      'the same path as one without `data.schema`. It is the single source of the ' +
-      "entity's label, its slug and the identity end of its search scope — the " +
-      'contract previously promised `inline_mention.label` without naming the ' +
-      'field that fed it. Supply it from author input, or derive it once at ' +
-      'create with `computedDefault`.',
-  },
-  {
-    fromMajor: 2,
-    toMajor: 3,
-    slot: 'FieldFlags.contentBearing',
-    kind: 'contributes-reshape',
-    summary:
-      'Redefined, and stricter. A content-bearing field is issued by NO generic ' +
-      'read on ANY surface — including a `select` that names it explicitly, and ' +
-      'including the REST layer behind the UI. Callers receive `has<Field>` / ' +
-      '`<field>Bytes` plus the name of the operation that hands over the content; ' +
-      'the host generates `get_field_content(type, slug, field)` on MCP, REST and ' +
-      'CLI for every flagged field. In exchange, the rule forbidding a type with ' +
-      'its own `views?` from declaring the flag is GONE, and a type may name a ' +
-      'richer operation in `contentOperation` — which registration now rejects if ' +
-      'it does not resolve.',
-  },
-  {
-    fromMajor: 2,
-    toMajor: 3,
-    slot: 'get_entities.view',
-    kind: 'field-rename',
-    summary:
-      'The `view` axis is gone from the read contract, replaced by the caller ' +
-      "chosen projection `select?: string[]`. Omitted means every schema field " +
-      'except content-bearing ones; `[]` means the identity skeleton (`slug`, ' +
-      '`title`, `tags`); a list means those fields plus identity. Top-level names ' +
-      'only — a value collection is opaque and travels whole. The envelope echoes ' +
-      '`selectedFields`, `list_entities` rows freeze to `{ slug, title }`, and ' +
-      "`describe_*` drops `views` in favour of `selectableFields`, `constraints` " +
-      'and `contentFields`.',
-  },
-  {
-    fromMajor: 2,
-    toMajor: 3,
-    slot: 'slugPattern.nanoid',
-    kind: 'slot-removed',
-    summary:
-      'The `nanoid(n)` op leaves the grammar, which is now shared with ' +
-      '`computedDefault`: literal | raw(field) | slugify(field) | truncate(n). A ' +
-      'derived TITLE may not be random, and a duplicate title is better reported ' +
-      'as `SLUG_CONFLICT` than hidden behind a random suffix. Value constraints ' +
-      '(`enum` + `values`, `maxLength`) join the versioned surface at the same ' +
-      'time, enforced on write only.',
-  },
 ];
 
 /** One slot changed WITHOUT crossing a major, during stabilization. */

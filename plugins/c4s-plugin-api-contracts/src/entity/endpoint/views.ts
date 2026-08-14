@@ -1,64 +1,13 @@
-import type { RawEntity, SectionEntityRef } from '../../host-kit/host-types.js';
+import type { RawEntity } from '../../host-kit/host-types.js';
 import type {
   EntityDiff,
-  HostEntityReader,
   RestoreContext,
   RestoreResult,
   SerializationContribution,
 } from '@c4s/plugin-runtime';
 import type { EndpointDtoRelation, HttpMethod } from '../../types.js';
-import { readEndpointDtos } from '../junction/index.js';
 import { ENDPOINT_TYPE } from '../../identity.js';
 import { endpointPayloadV1ToV2, endpointPayloadV2ToV3 } from './upgrades.js';
-
-interface EndpointDtoRef {
-  dtoSlug: string;
-  dtoName: string;
-  relation: string;
-  statusCode: number | null;
-}
-
-/**
- * 0.2.22 — the label is the stored `title`, not a string rebuilt here.
- *
- * The fallback keeps the old construction for a row read mid-upgrade, so a
- * chip never renders empty while the index is catching up with the files.
- */
-function label(entity: RawEntity): string {
-  const title = (entity.data.title as string | undefined) ?? '';
-  if (title.trim() !== '') return title;
-  const method = (entity.data.method as string | undefined) ?? '';
-  const path = (entity.data.path as string | undefined) ?? '';
-  return `${method} ${path}`.trim();
-}
-
-function href(entity: RawEntity): string {
-  return `/endpoints/${entity.slug}`;
-}
-
-function baseSingle(entity: RawEntity, reader: HostEntityReader, includeDtos = true) {
-  const dtos = includeDtos ? readEndpointDtos(reader, entity.slug) : undefined;
-  return {
-    type: 'endpoint',
-    slug: entity.slug,
-    title: label(entity),
-    method: entity.data.method as string,
-    path: entity.data.path as string,
-    summary: (entity.data.summary as string) ?? '',
-    description: (entity.data.description as string | null) ?? null,
-    tags: entity.tags,
-    ...(dtos !== undefined ? { dtos: formatDtos(dtos) } : {}),
-  };
-}
-
-function formatDtos(dtos: EndpointDtoRef[]) {
-  return dtos.map((d) => ({
-    dtoSlug: d.dtoSlug,
-    dtoName: d.dtoName,
-    relation: d.relation,
-    statusCode: d.statusCode,
-  }));
-}
 
 // ─── M17 Snapshot shape (entities/endpoint.md `ensn0sho`) ───────────────────
 
@@ -175,72 +124,23 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'endpoint', slug, op: 'modified', changes };
 }
 
+/**
+ * 0.2.23 — `endpoint` computes nothing either.
+ *
+ * Five views went, and the `detail` one was the last automatic reference
+ * resolution in the system: it read each linked DTO and inlined its fields, one
+ * level deep, mapping a dangling link to `null` and collecting `_brokenRefs`
+ * beside the payload. The rule is now universal and much duller — a field
+ * flagged `ref` stays a slug, on every surface and at every projection — so a
+ * consumer that wants the DTO asks for it by slug, and a broken link reveals
+ * itself as `ENTITY_NOT_FOUND` on that second call rather than as an
+ * out-of-band marker on this one.
+ *
+ * Nothing is lost from the record: `linkedDtos` is a declared value collection
+ * (`schema.ts`), so the host emits the links inline from the schema without any
+ * of this file's help.
+ */
 export const endpointSerializer: SerializationContribution<RawEntity> = {
-  views: {
-    inline_mention: (entity) => ({
-      type: 'endpoint',
-      slug: entity.slug,
-      label: label(entity),
-      href: href(entity),
-    }),
-
-    single_element: (entity, reader) => baseSingle(entity, reader, true),
-
-    element_list_item: (entity, reader) => {
-      const base = baseSingle(entity, reader, true);
-      const description = base.description ? base.description.split('\n')[0] : null;
-      return { ...base, description };
-    },
-
-    tagged_list_item: (entity, reader) => {
-      const base = baseSingle(entity, reader, true);
-      const description = base.description ? base.description.split('\n')[0] : null;
-      return { ...base, description };
-    },
-
-    /**
-     * Resolves each linked DTO ONE level deep — the nested DTO's own fields are
-     * carried, its own links are not.
-     *
-     * 0.2.9: that rule used to be expressed as `ctx.depth >= ctx.maxDepth`,
-     * against a `depth` no caller ever set to anything but `0`. The guard could
-     * therefore never fire, and the `_truncated` marker it produced was
-     * unreachable code pretending to be a depth limit. The rule is now what the
-     * code does: resolve one level, never recurse.
-     */
-    detail: (entity, reader) => {
-      const base = baseSingle(entity, reader, true);
-      const brokenRefs: string[] = [];
-      const dtos = readEndpointDtos(reader, entity.slug);
-      const dtoObjects = dtos.map((link) => {
-        const dto = reader.getEntity('dto', link.dtoSlug) as RawEntity | null;
-        if (!dto) {
-          brokenRefs.push(`dto:${link.dtoSlug}`);
-          return { ...link, dto: null };
-        }
-        return {
-          ...link,
-          dto: {
-            slug: dto.slug,
-            // 0.2.22 — the DTO's label is `title`.
-            title: dto.data.title as string,
-            description: (dto.data.description as string | null) ?? null,
-            fields: dto.data.fields,
-            tags: dto.tags,
-          },
-        };
-      });
-
-      const references = reader.findSectionReferences('endpoint', entity.slug) as SectionEntityRef[];
-      return {
-        ...base,
-        dtos: dtoObjects,
-        _references: formatReferences(references),
-        ...(brokenRefs.length ? { _brokenRefs: brokenRefs } : {}),
-      };
-    },
-  },
-
   diff: endpointDiff,
 
   /**
@@ -251,12 +151,3 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
    */
   payloadUpgrades: [endpointPayloadV1ToV2, endpointPayloadV2ToV3],
 };
-
-function formatReferences(refs: SectionEntityRef[]) {
-  return refs.map((r) => ({
-    anchor: r.anchor,
-    pagePath: r.pagePath,
-    headingText: r.headingText,
-    relation: r.relation,
-  }));
-}

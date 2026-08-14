@@ -170,36 +170,6 @@ export const uiViewSerializer: SerializationContribution<RawEntity> = {
   payloadVersion: 2,
   /** v1 files spell the label `name`. */
   payloadUpgrades: uiViewPayloadUpgrades,
-  views: {
-    inline_mention: (entity) => ({
-      type: 'ui-view',
-      slug: entity.slug,
-      label: (entity.data.title as string) ?? entity.slug,
-      url: (entity.data.url as string | null) ?? null,
-      href: `/ui-views/${entity.slug}`,
-    }),
-
-    single_element: (entity) => baseSingle(entity),
-
-    element_list_item: (entity) => trimItem(entity),
-
-    tagged_list_item: (entity) => trimItem(entity),
-
-    detail: (entity, reader) => {
-      const base = baseSingle(entity);
-      const references = (reader.findSectionReferences('ui-view', entity.slug) as SectionEntityRef[]).map((r) => ({
-        anchor: r.anchor,
-        pagePath: r.pagePath,
-        headingText: r.headingText,
-        relation: r.relation,
-      }));
-      return {
-        ...base,
-        _references: references,
-      };
-    },
-  },
-
   // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   diff: uiViewDiff,
 };

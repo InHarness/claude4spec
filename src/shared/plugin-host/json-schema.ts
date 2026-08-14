@@ -19,14 +19,6 @@ import { columnOf, contentBearingKeys, isEmbedded } from './data-schema.js';
 
 export type JsonSchema = Record<string, unknown>;
 
-/** The five read views. Mirrors `ViewKind` in the server's serialization types. */
-export type ViewName =
-  | 'inline_mention'
-  | 'single_element'
-  | 'element_list_item'
-  | 'tagged_list_item'
-  | 'detail';
-
 /**
  * One field node → JSON Schema.
  *
@@ -159,76 +151,42 @@ function objectSchema(
   return { type: 'object', properties, required };
 }
 
-export interface ViewSchemaArgs {
+export interface RecordSchemaArgs {
   type: string;
   data: DataDeclaration;
-  view: ViewName;
-  /**
-   * Whether the type declares a computed view for this view kind. The two cases
-   * are genuinely different contracts, not a formatting detail — see below.
-   */
-  computed: boolean;
 }
 
 /**
- * The schema of one type × one view.
+ * The schema of a type's READ RECORD — one per type, and the only one.
  *
- * Two shapes, because there are two kinds of view since "generic is the rule":
+ * Until 0.2.23 this took a `view` and had two shapes behind it. The GENERIC one
+ * described what the host built; the COMPUTED one described what a type's own
+ * view function might emit, and had to be open and `required`-less precisely
+ * because the host could not read that function. With no author code left in the
+ * read path, the second shape has nothing to describe: every record comes out of
+ * `genericEntity`, so the schema is CLOSED and exact for every type alike.
  *
- *   - GENERIC (`computed: false`) — the host builds the payload itself, from the
- *     projection row plus the `_generic`/`_type`/`_view` markers. The schema is
- *     therefore CLOSED (`additionalProperties: false`) and exact. Its property
- *     names are PROJECTION COLUMN names, because that is literally what the
- *     generic payload spreads (`snakeCase` unless the field declared `column`).
- *   - COMPUTED (`computed: true`) — the payload comes out of a function the host
- *     cannot introspect, and the real ones are SELECTIVE: `ac.inline_mention`
- *     answers `{type, slug, label, href}` out of eight declared fields, while
- *     `detail` adds `_references` and resolved refs that no declaration mentions.
- *     So the schema is open, carries NO `required` list, and is marked
- *     `x-computed`: it says what a field is named and shaped WHEN it appears,
- *     never that it appears. Property names here are the DECLARED field names,
- *     which is what a computed view emits.
+ * Property names are the DECLARED field names. They used to be projection COLUMN
+ * names here, which stopped being true when `genericEntity` started re-keying
+ * the hydrated row through `byFieldName` — a type like `ui-view` was serving
+ * `designSystemSlug` while this schema promised `design_system_slug`. The
+ * declaration is the contract on both sides now.
  *
- * The naming split is a consequence of the generic payload still being column-
- * keyed; it is described here rather than papered over, because a schema that
- * lies about its key names is worse than one that explains itself.
+ * This schema describes the record BEFORE projection. A caller's `select`
+ * narrows what arrives; `selectableFields` on `describe_types` is what says
+ * which names may be narrowed to.
  */
-export function viewSchema({ type, data, view, computed }: ViewSchemaArgs): JsonSchema {
-  const fields = objectSchema(
-    data.schema,
-    computed ? (name) => name : (name, node) => columnOf(name, node),
-    !computed,
-  );
-  const properties: Record<string, JsonSchema> = {
-    type: { const: type },
-    slug: { type: 'string' },
-    tags: { type: 'array', items: { type: 'string' } },
-    ...(fields.properties as Record<string, JsonSchema>),
-  };
-  if (computed) {
-    /**
-     * NO `required` list, deliberately.
-     *
-     * A computed view builds its payload in a function the host cannot read, and
-     * the real ones emit a SMALL selection of the declared fields —
-     * `ac.inline_mention` answers `{type, slug, label, href}` out of eight
-     * declared fields. Deriving `required` from the declaration therefore
-     * published a contract every genuine response violated. The declared fields
-     * remain as a FLOOR of what may appear, which is all the declaration can
-     * honestly say; `type` and `slug` are not required here either, for the same
-     * reason — nothing forces a computed view to emit them.
-     */
-    return { type: 'object', properties, additionalProperties: true, 'x-computed': true };
-  }
+export function recordSchema({ type, data }: RecordSchemaArgs): JsonSchema {
+  const fields = objectSchema(data.schema, (name) => name, true);
   return {
     type: 'object',
     properties: {
-      ...properties,
-      _generic: { const: true },
-      _type: { const: type },
-      _view: { const: view },
+      type: { const: type },
+      slug: { type: 'string' },
+      tags: { type: 'array', items: { type: 'string' } },
+      ...(fields.properties as Record<string, JsonSchema>),
     },
-    required: ['type', 'slug', 'tags', ...(fields.required as string[]), '_generic', '_type', '_view'],
+    required: ['type', 'slug', 'tags', ...(fields.required as string[])],
     additionalProperties: false,
   };
 }

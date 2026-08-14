@@ -22,7 +22,6 @@ import type { Database } from 'better-sqlite3';
 import type { Root } from '../../shared/types.js';
 import type { ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { SerializationEngine } from '../core/plugin-host/serialization-engine.js';
-import type { ViewKind } from '../serialization/types.js';
 import type { RawEntityReader } from './raw-entity-reader.js';
 import type { Page } from './pagination.js';
 import type { DiscoveryErrorCode } from './errors.js';
@@ -439,21 +438,6 @@ export interface ListEntitiesInput {
 }
 
 /**
- * Serialization outcome, travelling with every serialized record — see
- * `serialize` in ops/entities.ts.
- *
- * `generic` (0.2.9, was `fallback`) marks a payload the HOST built from the
- * projection row rather than one the type computed. Optional on the wire on
- * purpose: it is the common case now, and stamping `generic: false` onto every
- * row of every list would pay for the rare case in every response.
- */
-export interface SerializedMeta {
-  generic?: boolean;
-  error?: string;
-  brokenRefs?: string[];
-}
-
-/**
  * The FROZEN discovery row: a key and a label, and nothing else.
  *
  * `list_entities` has no width parameter at all since 0.2.22. Discovery answers
@@ -489,7 +473,7 @@ export interface GetEntitiesResult {
   type: string;
   /** The fields the records actually carry — symmetric to `searchedFields`. */
   selectedFields: string[];
-  results: Array<{ slug: string; entity: unknown | null; truncated?: boolean } & SerializedMeta>;
+  results: Array<{ slug: string; entity: unknown | null; truncated?: boolean } >;
   truncated?: boolean;
   /**
    * 0.2.6 — the instruction lives HERE, not on the item.

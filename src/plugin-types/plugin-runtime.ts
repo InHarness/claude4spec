@@ -323,21 +323,18 @@ export interface EntityDiff {
   changes?: Record<string, unknown>;
 }
 export type SnapshotData = unknown;
-export type ViewKind =
-  | 'inline_mention'
-  | 'single_element'
-  | 'element_list_item'
-  | 'tagged_list_item'
-  | 'detail';
-export type ViewFn<T> = (entity: T, reader: HostEntityReader) => unknown;
-export type ViewSet<T> = Partial<Record<ViewKind, ViewFn<T>>>;
 /**
- * Host API 2.0.0 — a type contributes COMPUTED views and a semantic diff, and
- * nothing else. Views it does not compute are served generically from its
- * `data.schema`; schemas, snapshot and restore are derived from the same place.
+ * Host API 2.0.0 — a type contributes a payload timeline and an optional
+ * semantic diff, and NOTHING about the shape of a read.
+ *
+ * The `views?` map is gone as of 0.2.23, and with it `ViewKind` / `ViewFn` /
+ * `ViewSet`. The record a caller receives is derived by the host from
+ * `data.schema` and narrowed by the caller's own `select`, so a type that
+ * declared a view was describing a decision that is no longer its to make.
+ * Presentation still belongs to the type — through the `frontend.render*` slots,
+ * which are untouched.
  */
 export interface SerializationContribution<T = unknown> {
-  views?: ViewSet<T>;
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
   /**
    * Optional echo of the manifest's `payloadVersion`, which is the authority.

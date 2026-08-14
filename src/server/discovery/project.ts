@@ -127,13 +127,13 @@ export function project(
   for (const key of IDENTITY_FIELDS) {
     if (key in row) out[key] = row[key];
   }
-  // `type` and the `_generic` / `_error` markers are envelope facts about the
-  // record, not fields of it. They survive projection for the same reason
-  // identity does: a consumer that cannot tell a host-shaped row from a
-  // type-computed one will read the second as the first.
-  for (const key of ['type', '_generic', '_type', '_error', '_brokenRefs']) {
-    if (key in row) out[key] = row[key];
-  }
+  // `type` is an envelope fact about the record, not a field of it, so it
+  // survives projection for the same reason identity does.
+  //
+  // 0.2.23 removed the four markers that used to ride along with it —
+  // `_generic`, `_type`, `_error`, `_brokenRefs`. Each described the outcome of
+  // running a type's own read code, and there is none left to run.
+  if ('type' in row) out.type = row.type;
   // Host-generated, so it survives every projection alongside the other
   // identity fields — including `select: []`, where a link is most of the point.
   const slug = out.slug ?? row.slug;

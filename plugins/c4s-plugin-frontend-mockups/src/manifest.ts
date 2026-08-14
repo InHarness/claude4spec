@@ -13,7 +13,7 @@ import { frontendMockupCommands } from './capabilities/commands.js';
  * does NOT extend to a polymorphic ref: `ac.verifies[]` targets any active type,
  * and applying it there would force one envelope for everything.)
  *
- * `hostApiVersion: '^3.0.0'` matters more than it looks. The loader's version
+ * `hostApiVersion: '^2.0.0'` matters more than it looks. The loader's version
  * gate `continue`s BEFORE `registerPlugin`, so a stale range does not fail
  * loudly — both types are simply NOT THERE: no sidebar tab, no routes, no
  * serializer, and a `PLUGIN_HOST_API_MISMATCH` line in the log as the only
@@ -33,7 +33,7 @@ import { frontendMockupCommands } from './capabilities/commands.js';
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-frontend-mockups',
   version: '0.2.18',
-  hostApiVersion: '^3.0.0',
+  hostApiVersion: '^2.0.0',
   engines: { node: '>=20' },
   contributes: {
     // `design-system` FIRST — see `entity/ui-view/index.ts` on `dependsOn`.
