@@ -40,7 +40,7 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
-import { stripFileEnvelope, upgradeCapture } from '../serialization/payload-upgrade.js';
+import { attachPayloadVersion, stripFileEnvelope, upgradeCapture } from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
@@ -55,12 +55,14 @@ import {
   buildBundleArchive as buildBundleArchiveImpl,
   extractBundleStream,
   BUNDLE_SCHEMA_VERSION,
-  bundleEntityFileMap,
-  bundleEntityFileMapForWrite,
+  BUNDLE_TAGS_FILE,
+  readBundleEntities,
   type BuildBundleResult,
+  type BundleEntityInput,
   type BundleManifest,
   type BundlePageInput,
   type BundleRoot,
+  type BundleTagInput,
 } from './release-bundle.js';
 
 /** Shared by `classifyGitDiffFiles`/`diffPageCandidates` — `diffRefs`/`diffRefToWorkingTree` already flatten renames (R) into a D(old)+A(new) pair. */
@@ -1702,33 +1704,86 @@ export class ReleaseService {
       release,
       readConfig(this.cwd),
       pageRows,
-      // ACTIVE modules: the write side must only lay out types this host could
-      // also read back, which is the same set `buildSnapshot` captured. Refuses
-      // on a name collision — here it would mean one type's rows overwriting
-      // another's inside the archive.
-      bundleEntityFileMapForWrite(this.host.listEntities()),
+      this.bundleEntityRows(snapshot),
+      this.bundleTagDefs(snapshot),
     );
   }
 
   /**
-   * CONTRACT-ONLY in v1 — implementation deferred to M26 (Release Import,
-   * `c4s import <bundle>`). The signature is public so the bidirectional bundle
-   * contract is fixed now (write here, read in M26).
+   * The release's entities in M29 STORE shape — what `entities/<type>/<slug>.json`
+   * has to contain for restore to be an unpack rather than a translation.
    *
-   * M26 read-direction algorithm (do not implement here):
-   *   1. Parse `manifest.json` FIRST (first tar entry). Missing → throw
-   *      `BUNDLE_MANIFEST_MISSING`. `bundleSchemaVersion` > max supported →
-   *      throw `BUNDLE_SCHEMA_UNSUPPORTED { foundVersion, maxSupportedVersion }`.
-   *   2. Optionally verify SHA-256 (caller supplies expected hash, e.g. from an
-   *      M25 push header). Mismatch → throw `BUNDLE_HASH_MISMATCH { expected, actual }`.
-   *   3. Read `config.json` via a `bundleSchemaVersion`-aware parser; unknown
-   *      fields → warn + ignore (forward-compat).
-   *   4. Stream `pages/<path>.md`; reject `..` / absolute / null-byte paths →
-   *      throw `BUNDLE_MALFORMED_ENTRY { path, reason }`.
-   *   5. Stream `entities/<typePlural>.json`; plural absent from local
-   *      `config.entities` → throw `BUNDLE_UNKNOWN_ENTITY_TYPE { type }`.
-   *   6. Compose a `SpecSnapshot` (same shape as `getReleaseSnapshot`). M26 owns
-   *      what to do with it (UPSERT restore / dry-run diff / read-only mount).
+   * Two things separate a stored file from an `entity_version.data` blob. The
+   * envelope's `createdAt`/`updatedAt` are already in the blob (the capture in
+   * `versions.ts` runs the same `host.snapshot`), but `payloadVersion` is NOT:
+   * on the version log it lives in the `serializer_version` COLUMN, so it is
+   * stamped back in here from the manifest's map. And the row's `op` is dropped
+   * — an archive carries state.
+   *
+   * Types the host no longer knows are skipped: their rows survive in
+   * `entity_version`, but nothing can say what payload version they are at, and
+   * an entry the reader could not upgrade is worse than an absent one.
+   */
+  private bundleEntityRows(snapshot: SpecSnapshot): BundleEntityInput[] {
+    const rows: BundleEntityInput[] = [];
+    for (const entity of snapshot.entities) {
+      if (entity.op === 'delete') continue;
+      if (!this.host.getEntity(entity.type)) continue;
+      const version = snapshot.serializer_versions[entity.type];
+      if (version === undefined) continue;
+      rows.push({
+        type: entity.type,
+        slug: entity.slug,
+        data: canonicalize(attachPayloadVersion(entity.data, Number(version))),
+      });
+    }
+    return rows;
+  }
+
+  /**
+   * Tag DEFINITIONS for `entities/tags.json`, read from HEAD and filtered to the
+   * slugs this release's entities actually carry.
+   *
+   * HEAD, not a version table, because there is no `tag_version` — a tag is not
+   * a plugin-host entity type. That is a deliberate hole in the bundle's
+   * determinism, not an oversight: two builds of the same release separated by a
+   * tag rename produce different `tags.json`. Assignments are unaffected, since
+   * `tags[]` travels inside each entity's own payload; only the definition
+   * (colour, description, display name) is copied.
+   *
+   * `null` when the project has no `tags.json` — the bundle then omits the file.
+   */
+  private bundleTagDefs(snapshot: SpecSnapshot): BundleTagInput[] | null {
+    if (!this.entityStore?.tagsFileExists()) return null;
+    const used = new Set<string>();
+    for (const entity of snapshot.entities) {
+      if (entity.op === 'delete') continue;
+      const tags = (entity.data as { tags?: unknown } | null)?.tags;
+      if (!Array.isArray(tags)) continue;
+      for (const tag of tags) {
+        if (typeof tag === 'string') used.add(tag);
+        else if (tag && typeof tag === 'object' && typeof (tag as { slug?: unknown }).slug === 'string') {
+          used.add((tag as { slug: string }).slug);
+        }
+      }
+    }
+    return this.entityStore.readTags().filter((t) => used.has(t.slug));
+  }
+
+  /**
+   * The read direction (M27 project clone / `c4s import <bundle>`):
+   *
+   *   1. Parse `manifest.json` FIRST. Missing → `BUNDLE_MANIFEST_MISSING`.
+   *      `bundleSchemaVersion` > max supported → `BUNDLE_SCHEMA_UNSUPPORTED`.
+   *      (`BUNDLE_HASH_MISMATCH` is the CALLER's — it holds the expected hash
+   *      from the push header; see `release-import.ts`.)
+   *   2. Pages: `<rootId>/<path>.md`, or a flat `pages/` tree on v1, where the
+   *      absent `manifest.roots` selects the built-in root. Unsafe relative path
+   *      → `BUNDLE_MALFORMED_ENTRY`.
+   *   3. Entities, dispatched on the manifest version — see `readBundleEntities`.
+   *   4. Tag definitions — see `restoreBundleTags`.
+   *   5. Compose a `SpecSnapshot` (same shape as `getReleaseSnapshot`).
+   *
    * All errors are structured (code + payload), never bare strings.
    */
   async restoreBundleArchive(stream: NodeJS.ReadableStream): Promise<SpecSnapshot> {
@@ -1810,48 +1865,9 @@ export class ReleaseService {
       const entities: SpecSnapshotEntityRow[] = [];
       const entitiesDir = nodePath.join(restoreDir, 'entities');
       if (nodeFs.existsSync(entitiesDir)) {
-        // Validate every bundle file maps to a known + locally-active type up front.
-        //
-        // The reverse map is built from AVAILABLE modules, not active ones, so
-        // the two refusals below stay distinguishable: a file belonging to an
-        // installed-but-deactivated type must say "not active locally" rather
-        // than be misreported as an unrecognised file.
-        //
-        // Collisions are checked per FILE PRESENT, not globally: an unrelated
-        // deactivated plugin whose `pathPrefix` basename happens to clash must
-        // not abort an import of an archive that contains neither type.
-        const { toType: fileToType, collisions } = bundleEntityFileMap(this.host.listAvailable());
-        const byType = new Map<RawEntityType, SpecSnapshotEntityRow[]>();
-        for (const file of nodeFs.readdirSync(entitiesDir).filter((f) => f.endsWith('.json'))) {
-          const ambiguous = collisions.get(file);
-          if (ambiguous) {
-            throw new DomainError(
-              'BUNDLE_BASENAME_COLLISION',
-              `bundle file '${file}' is claimed by more than one installed type ` +
-                `(${ambiguous.map((t) => `'${t}'`).join(', ')}) — deactivating or removing one resolves it`,
-            );
-          }
-          const type = fileToType.get(file);
-          if (!type) {
-            throw new DomainError('BUNDLE_UNKNOWN_ENTITY_TYPE', `unknown entity bundle file '${file}'`);
-          }
-          if (!this.host.getEntity(type)) {
-            // Deliberately fatal rather than a skip: the alternative is dropping
-            // every row of that type from the restore without saying so, and a
-            // half-restored spec is worse than a refused one. 0.2.11 made this
-            // reachable for the first time (the old static map never wrote a file
-            // for `design-system`/`diagram`/plugin types), so it is called out in
-            // the CHANGELOG. The remedy is one setting.
-            throw new DomainError(
-              'BUNDLE_UNKNOWN_ENTITY_TYPE',
-              `entity type '${type}' is not active locally — activate it in config.entities to import this bundle`,
-            );
-          }
-          byType.set(
-            type,
-            JSON.parse(nodeFs.readFileSync(nodePath.join(entitiesDir, file), 'utf8')) as SpecSnapshotEntityRow[],
-          );
-        }
+        const byType = readBundleEntities(entitiesDir, manifest.bundleSchemaVersion, (t) =>
+          this.host.getEntity(t) !== null,
+        );
         /**
          * 0.2.11 — declared `dependsOn` order over the ACTIVE modules, the same
          * source and cycle handling `restoreSpec` has used since 0.2.2.
@@ -1872,19 +1888,25 @@ export class ReleaseService {
           const rows = byType.get(type);
           if (!rows) continue;
           for (const row of rows) {
-            if (row.op === 'delete') continue;
             // A bundle can be older than this installation; its manifest records
             // the version each type was captured at.
             const bundled = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
             if (!bundled.ok) continue; // same rule as restoreEntity: skip, never half-restore
             const data = bundled.data;
             this.host.restore(type, data, restoreCtx);
-            entities.push({ type, slug: row.slug, op: row.op, data });
+            // An archive carries STATE, so every entry is a create in the fresh
+            // cwd this restores into. v1–v3 entries did carry an `op`; it is
+            // discarded rather than trusted, so both layouts land identically.
+            entities.push({ type, slug: row.slug, op: 'create', data });
           }
         }
+
+        // Tag definitions, after the entities — the fabrication warning counts
+        // slugs the entities actually reference.
+        this.restoreBundleTags(entitiesDir, entities);
       }
 
-      // 5. Compose a SpecSnapshot (same shape as getReleaseSnapshot).
+      // Compose a SpecSnapshot (same shape as getReleaseSnapshot).
       return {
         release: {
           id: manifest.release.id,
@@ -1900,6 +1922,52 @@ export class ReleaseService {
     } finally {
       nodeFs.rmSync(restoreDir, { recursive: true, force: true });
     }
+  }
+
+  /**
+   * Step 5b — tag DEFINITIONS from `entities/tags.json`, written verbatim to the
+   * store's own `tags.json`.
+   *
+   * Anything an entity references but the definitions do not carry is fabricated
+   * (`name = slug`, no colour, no description) so the assignment does not dangle.
+   * The precedent is the by-slug auto-create of `tag_entity`. It is a write path
+   * inventing data, so it must be VISIBLE: the count goes out as a warning rather
+   * than being absorbed silently. Bundles older than v4 have no such file, so
+   * every definition they need is fabricated through exactly this path.
+   */
+  private restoreBundleTags(entitiesDir: string, entities: readonly SpecSnapshotEntityRow[]): void {
+    if (!this.entityStore) return;
+    const bundledPath = nodePath.join(entitiesDir, BUNDLE_TAGS_FILE);
+    const defs: BundleTagInput[] = nodeFs.existsSync(bundledPath)
+      ? (JSON.parse(nodeFs.readFileSync(bundledPath, 'utf8')) as BundleTagInput[])
+      : [];
+    const known = new Set(defs.map((d) => d.slug));
+
+    const fabricated: BundleTagInput[] = [];
+    for (const entity of entities) {
+      const tags = (entity.data as { tags?: unknown } | null)?.tags;
+      if (!Array.isArray(tags)) continue;
+      for (const tag of tags) {
+        const slug =
+          typeof tag === 'string'
+            ? tag
+            : tag && typeof tag === 'object' && typeof (tag as { slug?: unknown }).slug === 'string'
+              ? (tag as { slug: string }).slug
+              : null;
+        if (slug === null || known.has(slug)) continue;
+        known.add(slug);
+        fabricated.push({ slug, name: slug, color: null, description: null });
+      }
+    }
+
+    if (defs.length === 0 && fabricated.length === 0) return;
+    if (fabricated.length > 0) {
+      console.warn(
+        `[release] bundle carried no definition for ${fabricated.length} tag(s) ` +
+          `(${fabricated.map((t) => `'${t.slug}'`).join(', ')}) — created from the slug alone`,
+      );
+    }
+    this.entityStore.writeTags([...defs, ...fabricated]);
   }
 
   // ─── Internals ───────────────────────────────────────────────────────────

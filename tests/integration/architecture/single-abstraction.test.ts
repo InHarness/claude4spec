@@ -109,7 +109,12 @@ describe('Single Abstraction Rule', () => {
       // A user-facing sentence that happens to name the field: the refusal when
       // a bundle carries a type this installation has deactivated tells the
       // reader where to go and fix it. Naming a setting is not dispatching on it.
-      expect.stringContaining('release.ts'),
+      //
+      // 0.2.24 moved this sentence from `release.ts` into the bundle module with
+      // the rest of the layout's read direction. The activation TEST is still
+      // not made here — `readBundleEntities` takes an `isActive` predicate the
+      // host supplies, which is the whole reason the module can stay pure.
+      expect.stringContaining('release-bundle.ts'),
     ]);
   });
 
