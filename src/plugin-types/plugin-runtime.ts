@@ -333,12 +333,28 @@ export type SnapshotData = unknown;
  * declared a view was describing a decision that is no longer its to make.
  * Presentation still belongs to the type — through the `frontend.render*` slots,
  * which are untouched.
+ *
+ * 0.2.24 — DECLARE THESE ON THE TYPE, not inside a `serializer` object. The
+ * container is rejected at registration now. It had held five slots; four were
+ * derived away, and wrapping the two survivors only suggested the others were
+ * still somewhere to be found. This interface stays as the shape of what those
+ * two slots are, and as the thing `EntityContribution` picks them from.
+ *
+ * ```ts
+ * // before                          // now
+ * serializer: {                      payloadVersion: 2,
+ *   payloadVersion: 2,               payloadUpgrades: [toV2],
+ *   payloadUpgrades: [toV2],         diff: myDiff,
+ *   diff: myDiff,
+ * },
+ * ```
  */
 export interface SerializationContribution<T = unknown> {
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
   /**
-   * Optional echo of the manifest's `payloadVersion`, which is the authority.
-   * Declare it only if you want the cross-check; registration rejects a mismatch.
+   * The type's payload shape version. Declared on the MANIFEST, where it has
+   * always been the authority — it is named here only so this interface
+   * describes the whole contribution.
    */
   payloadVersion?: number;
   /** `payloadUpgrades[i]`: payload `i+1` → `i+2`. Enforced by the host on load and restore. */

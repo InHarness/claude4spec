@@ -140,7 +140,8 @@ function endpointDiff(a: unknown, b: unknown, slug: string): EntityDiff {
  * (`schema.ts`), so the host emits the links inline from the schema without any
  * of this file's help.
  */
-export const endpointSerializer: SerializationContribution<RawEntity> = {
+/** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
+export const endpointSerialization = {
   diff: endpointDiff,
 
   /**
@@ -150,4 +151,4 @@ export const endpointSerializer: SerializationContribution<RawEntity> = {
    * and the number in `index.ts` cannot drift apart. v2 → v3 adds `title`.
    */
   payloadUpgrades: [endpointPayloadV1ToV2, endpointPayloadV2ToV3],
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

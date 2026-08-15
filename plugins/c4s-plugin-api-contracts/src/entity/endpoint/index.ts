@@ -4,7 +4,7 @@ import {
   ENDPOINT_PATH_PREFIX,
   ENDPOINT_TYPE,
 } from '../../identity.js';
-import { endpointSerializer } from './serializer.js';
+import { endpointSerialization } from './serializer.js';
 import { endpointSystemPrompt } from './system-prompt.js';
 import { endpointsRouter } from './backend/routes.js';
 import { createEndpointToolsServer } from './backend/mcp.js';
@@ -36,7 +36,7 @@ export const endpointEntity: EntityContribution = {
    * of this line; the host's topological sort only consumes it.
    */
   dependsOn: ['dto'],
-  serializer: endpointSerializer,
+  ...endpointSerialization,
   systemPrompt: endpointSystemPrompt,
   /**
    * 2.0.0 tier K (item 58) — no `service`. `EndpointService` is deleted; CRUD

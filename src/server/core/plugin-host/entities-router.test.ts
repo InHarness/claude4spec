@@ -152,11 +152,9 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
       module: {
         type: 'endpoint',
         payloadVersion: 2,
-        serializer: {
-          payloadUpgrades: [
-            (p: unknown) => ({ current: (p as { legacy: string }).legacy }),
-          ],
-        },
+        payloadUpgrades: [
+          (p: unknown) => ({ current: (p as { legacy: string }).legacy }),
+        ],
       },
     });
 

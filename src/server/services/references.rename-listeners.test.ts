@@ -42,7 +42,6 @@ function fixture(type: string, data: DataDeclaration): BackendModule {
     labelPlural: `${type}s`,
     displayOrder: 900,
     pathPrefix: `/${type}s`,
-    serializer: {} as BackendModule['serializer'],
     systemPrompt: { roleNoun: type },
   } as BackendModule);
 }
@@ -111,7 +110,6 @@ describe('rename listeners', () => {
       labelPlural: 'widgets',
       displayOrder: 900,
       pathPrefix: '/widgets',
-      serializer: {} as BackendModule['serializer'],
       systemPrompt: { roleNoun: 'widget' },
       backend: {
         mount: () => {

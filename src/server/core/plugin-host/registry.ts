@@ -77,7 +77,7 @@ export class PluginRegistryImpl implements PluginRegistry {
     // module came through.
     assertSerializationContribution(
       module.type,
-      (module.serializer ?? {}) as Record<string, unknown>,
+      module as unknown as Record<string, unknown>,
       module.payloadVersion,
     );
     this.modules.set(module.type, attachComposition(synthesizeMount(module), this.modules.values()));

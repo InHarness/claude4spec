@@ -42,7 +42,6 @@ function mod(type: string, data: DataDeclaration = BASE_DATA): BackendModule {
     labelPlural: `${type}s`,
     displayOrder: 100,
     pathPrefix: `/${type}s`,
-    serializer: {} as BackendModule['serializer'],
     systemPrompt: { roleNoun: type },
   };
 }

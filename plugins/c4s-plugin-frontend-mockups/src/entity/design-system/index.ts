@@ -6,7 +6,7 @@ import {
   DESIGN_SYSTEM_PATH_PREFIX,
   DESIGN_SYSTEM_TYPE,
 } from '../../identity.js';
-import { designSystemSerializer } from './serializer.js';
+import { designSystemSerialization } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemData, designSystemSlugPattern } from './schema.js';
 
@@ -34,6 +34,6 @@ export const designSystemEntity: EntityContribution = {
   labelPlural: DESIGN_SYSTEM_LABEL_PLURAL,
   displayOrder: DESIGN_SYSTEM_DISPLAY_ORDER,
   pathPrefix: DESIGN_SYSTEM_PATH_PREFIX,
-  serializer: designSystemSerializer,
+  ...designSystemSerialization,
   systemPrompt: designSystemSystemPrompt,
 } as EntityContribution;

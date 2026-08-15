@@ -128,6 +128,12 @@ const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
  * its file format, and loading it would leave the host generating a DIFFERENT
  * snapshot than the one the plugin was written to read back. Silence there costs
  * data; an error costs one line of migration.
+ *
+ * These are checked against the CONTRIBUTION OBJECT a 1.x/2.x plugin passed as
+ * `serializer`. The slot itself is now rejected too (see
+ * {@link assertNoSerializerSlot}) — but its contents are still enumerated here,
+ * because "the whole object moved" is the wrong advice for `snapshot`: that one
+ * did not move anywhere.
  */
 const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   ['type', 'the manifest already declares it'],
@@ -181,30 +187,14 @@ const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
  */
 export function assertSerializationContribution(
   type: string,
-  serializer: Record<string, unknown>,
+  module: Record<string, unknown>,
   payloadVersion: number,
 ): void {
-  for (const [slot, successor] of REMOVED_SERIALIZER_SLOTS) {
-    if (serializer[slot] != null) {
-      throw new PluginManifestError(
-        `entity "${type}" — \`serializer.${slot}\` was removed in Host API 2.0.0; use \`${successor}\``,
-      );
-    }
+  assertNoSerializerSlot(type, module);
+  const upgrades = module.payloadUpgrades;
+  if (module.diff != null && typeof module.diff !== 'function') {
+    throw new PluginManifestError(`entity "${type}" — diff must be a function`);
   }
-  /**
-   * The manifest slot is the AUTHORITY and the only thing any consumer reads;
-   * the contribution's copy is an optional echo, kept because the brief declares
-   * the field there. Optional rather than required on purpose — a number every
-   * author must write twice is a number that will eventually be written twice
-   * differently, and nothing outside this check would notice.
-   */
-  if (serializer.payloadVersion != null && serializer.payloadVersion !== payloadVersion) {
-    throw new PluginManifestError(
-      `entity "${type}" — serializer.payloadVersion (${String(serializer.payloadVersion)}) ` +
-        `disagrees with the manifest's payloadVersion (${payloadVersion})`,
-    );
-  }
-  const upgrades = serializer.payloadUpgrades;
   if (upgrades != null && (!Array.isArray(upgrades) || upgrades.some((u) => typeof u !== 'function'))) {
     throw new PluginManifestError(`entity "${type}" — payloadUpgrades must be an array of functions`);
   }
@@ -233,6 +223,40 @@ export function assertSerializationContribution(
   }
 }
 
+/**
+ * The `serializer` container itself, rejected as a removed slot.
+ *
+ * A package still shipping one is not merely out of date: its `diff` and
+ * `payloadUpgrades` sit one level too deep, so the host would find neither. The
+ * diff would silently degrade to a deep-diff — survivable — but the missing
+ * upgrade chain is not: `payloadVersion` would appear to be 1 with no steps
+ * declared, and every payload the plugin has ever written would be read at the
+ * wrong shape without a word.
+ *
+ * The message names the slot that actually matters. If the object carries a
+ * `snapshot` or a `views` map, the enclosed slot is reported instead — telling
+ * such an author to "unwrap the object" would be advice to hoist a callback the
+ * host stopped honouring two releases ago.
+ */
+function assertNoSerializerSlot(type: string, module: Record<string, unknown>): void {
+  const serializer = module.serializer;
+  if (serializer == null) return;
+  if (typeof serializer === 'object') {
+    for (const [slot, successor] of REMOVED_SERIALIZER_SLOTS) {
+      if ((serializer as Record<string, unknown>)[slot] != null) {
+        throw new PluginManifestError(
+          `entity "${type}" — \`serializer.${slot}\` was removed in Host API 2.0.0; use \`${successor}\``,
+        );
+      }
+    }
+  }
+  throw new PluginManifestError(
+    `entity "${type}" — the \`serializer\` slot was removed in Host API 2.0.0; ` +
+      'declare `diff` and `payloadUpgrades` directly on the type ' +
+      '(`payloadVersion` already lives there)',
+  );
+}
+
 function assertContribution(c: EntityContribution): void {
   if (!c || typeof c !== 'object') {
     throw new PluginManifestError('entity contribution must be an object');
@@ -259,10 +283,7 @@ function assertContribution(c: EntityContribution): void {
       );
     }
   }
-  if (c.serializer == null) {
-    throw new PluginManifestError(`entity "${c.type}" — serializer is required`);
-  }
-  assertSerializationContribution(c.type, c.serializer as Record<string, unknown>, c.payloadVersion);
+  assertSerializationContribution(c.type, c as unknown as Record<string, unknown>, c.payloadVersion);
   if (c.systemPrompt == null) {
     throw new PluginManifestError(`entity "${c.type}" — systemPrompt is required`);
   }
@@ -316,7 +337,10 @@ export function lowerEntityContribution(c: EntityContribution): BackendModule {
     payloadVersion: c.payloadVersion,
     pathPrefix: c.pathPrefix,
     dependsOn: c.dependsOn,
-    serializer: c.serializer as SerializationContribution<unknown>,
+    ...(c.diff ? { diff: c.diff as SerializationContribution<unknown>['diff'] } : {}),
+    ...(c.payloadUpgrades
+      ? { payloadUpgrades: c.payloadUpgrades as SerializationContribution<unknown>['payloadUpgrades'] }
+      : {}),
     systemPrompt: c.systemPrompt,
     backend: backendSlot,
   };

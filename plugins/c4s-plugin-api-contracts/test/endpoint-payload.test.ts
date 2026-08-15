@@ -15,7 +15,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { endpointSerializer } from '../src/entity/endpoint/serializer.js';
+import { endpointSerialization } from '../src/entity/endpoint/serializer.js';
 import { endpointPayloadV1ToV2 } from '../src/entity/endpoint/upgrades.js';
 import { endpointEntity } from '../src/entity/endpoint/index.js';
 
@@ -35,7 +35,7 @@ describe('endpoint payload v1 → v2', () => {
     // bump-without-a-step fail in the package that owns both.
     expect(endpointEntity.payloadVersion).toBe(3);
     // Two since 0.2.22: the junction reshape, then the reserved `title`.
-    expect(endpointSerializer.payloadUpgrades).toHaveLength(2);
+    expect(endpointSerialization.payloadUpgrades).toHaveLength(2);
   });
 
   it('renames the junction from column names to declared field names', () => {
@@ -86,7 +86,7 @@ describe('endpoint payload v1 → v2', () => {
 });
 
 describe('endpointDiff reads the CURRENT payload shape', () => {
-  const diff = endpointSerializer.diff!;
+  const diff = endpointSerialization.diff;
 
   it('reports a DTO link added between two v2 payloads', () => {
     // The regression: with `coerceEndpoint` reading only v1 spellings, both

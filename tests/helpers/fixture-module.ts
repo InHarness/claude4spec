@@ -57,7 +57,8 @@ export function fixtureModule(type: string, opts: FixtureModuleOpts = {}): Backe
     labelPlural: `${type}s`,
     displayOrder: 999,
     pathPrefix: `/${type}s`,
-    serializer: { payloadVersion: 1 } as BackendModule['serializer'],
+    // 0.2.24 — no serialization slot at all. `payloadVersion: 1` above is the
+    // whole contribution a type with no diff and no migrations makes.
     systemPrompt: {
       roleNoun: type,
       mcpToolsLine: `${type}-tools: ...`,

@@ -25,13 +25,11 @@ const STAMP_B = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-07-31T
 function hostWithDiffSlot(seen: unknown[]): PluginHost {
   return {
     getEntity: () => ({
-      serializer: {
-        diff: (a: unknown, b: unknown, slug: string) => {
-          seen.push({ a, b });
-          return JSON.stringify(a) === JSON.stringify(b)
-            ? { type: 'x', slug, op: 'noop' as const }
-            : { type: 'x', slug, op: 'modified' as const };
-        },
+      diff: (a: unknown, b: unknown, slug: string) => {
+        seen.push({ a, b });
+        return JSON.stringify(a) === JSON.stringify(b)
+          ? { type: 'x', slug, op: 'noop' as const }
+          : { type: 'x', slug, op: 'modified' as const };
       },
     }),
   } as unknown as PluginHost;

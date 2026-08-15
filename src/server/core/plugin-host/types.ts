@@ -246,8 +246,23 @@ export interface EntityRenamedEvent {
 }
 
 export interface BackendModule extends EntityModuleManifest {
-  /** L9 — computed views + semantic diff; everything else is derived. */
-  serializer: SerializationContribution<unknown>;
+  /**
+   * L9 — the semantic diff, and nothing else.
+   *
+   * 0.2.24 removed the `serializer` container these two slots used to sit in.
+   * It had been shrinking for four releases — `snapshot`/`restore` went in
+   * 0.2.9, `views` in 0.2.23 — until what remained was not a serializer in any
+   * sense: one optional delta function and a migration chain, both of which are
+   * properties of the TYPE rather than of a component it owns. A wrapper around
+   * two optional fields only invites an author to look for the other three.
+   *
+   * Falls back to a deep-diff when omitted. `payloadVersion` (required) and
+   * {@link payloadUpgrades} complete the set — see `SerializationContribution`.
+   */
+  diff?: SerializationContribution<unknown>['diff'];
+
+  /** L9 — ordered payload migrations; `payloadUpgrades[i]` takes `i+1` to `i+2`. */
+  payloadUpgrades?: SerializationContribution<unknown>['payloadUpgrades'];
 
   /** M05 — system prompt contribution composed by buildSystemPrompt. */
   systemPrompt: SystemPromptContribution;

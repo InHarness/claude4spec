@@ -62,7 +62,6 @@ function widgetModule(): BackendModule {
     labelPlural: 'Widgets',
     displayOrder: 10,
     pathPrefix: '/widgets',
-    serializer: { payloadVersion: 1, views: { single_element: (e: unknown) => e } } as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Widgets',
     },

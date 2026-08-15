@@ -69,10 +69,6 @@ export class SerializationEngine {
     return this.host.getAvailable(type) !== null;
   }
 
-  get(type: string): SerializationContribution<unknown> | undefined {
-    return this.host.getAvailable(type)?.serializer;
-  }
-
   listTypes(): string[] {
     return this.host.listAvailable().map((m) => m.type).sort();
   }

@@ -99,7 +99,7 @@ export interface UpgradableModule {
   type: string;
   payloadVersion?: number;
   data?: { schema: Readonly<Record<string, FieldNode>> };
-  serializer?: { payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData> };
+  payloadUpgrades?: Array<(payload: SnapshotData) => SnapshotData>;
 }
 
 export interface UpgradeResult {
@@ -234,7 +234,7 @@ export function upgradePayload(
     };
   }
 
-  const chain = module.serializer?.payloadUpgrades ?? [];
+  const chain = module.payloadUpgrades ?? [];
   let payload = data;
   const warnings: string[] = [];
 

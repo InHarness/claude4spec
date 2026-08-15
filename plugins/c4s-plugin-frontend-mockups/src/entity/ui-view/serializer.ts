@@ -111,11 +111,10 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'ui-view', slug, op: 'modified', changes };
 }
 
-export const uiViewSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 2,
+/** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
+export const uiViewSerialization = {
   /** v1 files spell the label `name`. */
   payloadUpgrades: uiViewPayloadUpgrades,
-  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   diff: uiViewDiff,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;
 

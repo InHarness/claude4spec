@@ -71,8 +71,15 @@ function acDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'ac', slug, op: 'modified', changes };
 }
 
-export const acSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 2,
+/**
+ * 0.2.24 — the two surviving slots, declared on the type rather than wrapped.
+ *
+ * `payloadVersion` is not repeated here: it lives on the manifest, which was
+ * always the authority. The optional echo this object used to carry is gone
+ * with the container — a number written twice is a number that eventually
+ * disagrees with itself.
+ */
+export const acSerialization = {
   payloadUpgrades: acPayloadUpgrades,
   diff: acDiff,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;
