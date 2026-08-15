@@ -103,6 +103,16 @@ export interface MountContext {
   reader: any;
   crud: any;
   host: any;
+  /**
+   * 0.2.24 — the M39 read core, for a plugin that needs to READ an entity of a
+   * type other than its own. A thunk: mounting runs before the core exists, so
+   * call it at tool-call time, not at mount time.
+   *
+   * Reach reads through THIS, never through the host's serialization engine.
+   * The core is the one read path every transport shares; the engine under it
+   * is host-internal and held to a single caller.
+   */
+  discovery(): any;
   cwd: string;
   ws: { broadcast(msg: unknown): void };
   tagsService: any;
@@ -294,8 +304,10 @@ export interface HostEntityReader {
     getEntityService?(type: string): unknown;
   };
   getEntity(type: string, slug: string): unknown;
-  /** Page sections referencing this entity — `{anchor, pagePath, headingText, relation}`. */
-  findSectionReferences(type: string, slug: string): unknown[];
+  // 0.2.24 — `findSectionReferences` is gone. It was the entity→sections half of
+  // the retired `detail._references`, and it lost its last caller with that
+  // field; the question is answered by `find_references({ target: 'entity' })`,
+  // which reads the same junction and is a tool rather than a reader method.
 }
 
 /** 0.2.2 — the restore-path writer, named. See `HostEntityReader`. */

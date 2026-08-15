@@ -39,6 +39,7 @@ export const acBackendModule: BackendModule = {
         cwd: ctx.cwd,
         roots: ctx.roots,
         host: ctx.host,
+        discovery: ctx.discovery,
       }),
   },
 };

@@ -3,8 +3,9 @@
  *
  * 0.2.13 abandoned the premise that "endpoints serve the UI (React), not the
  * agent — the agent uses MCP". REST is now ONE surface with TWO consumers; where
- * their projections differ, the `view` parameter (L9) carries the difference,
- * not a second route family.
+ * their projections differ, the caller's own `select` carries the difference,
+ * not a second route family. (It was the `view` parameter until 0.2.22, and
+ * this sentence outlived it by two releases — see the handler below.)
  *
  * Three of these four (`check_consistency`, `search_entities`, `resolve_identity`)
  * had no REST rendering at all before this release — `check_consistency` was
@@ -67,14 +68,13 @@ export function metaRouter(discovery: DiscoveryCore, host: ProjectPluginHost): R
    */
   router.get('/types', (req, res, next) => {
     try {
+      // 0.2.24 — `?view=` is gone from here too. The core stopped reading it in
+      // 0.2.22 and this handler kept forwarding it through an `as never` cast,
+      // which is precisely what let it compile against a type that no longer had
+      // the field: the parameter was accepted, ignored, and reported as honoured.
+      // The CLI has refused it outright since 0.2.23 (`commands/describe.ts`).
       const type = optionalString(req.query.type);
-      const view = optionalString(req.query.view);
-      res.json(
-        discovery.describeTypes({
-          ...(type ? { types: [type] } : {}),
-          ...(view ? { view: view as never } : {}),
-        }),
-      );
+      res.json(discovery.describeTypes(type ? { types: [type] } : {}));
     } catch (err) {
       next(err);
     }

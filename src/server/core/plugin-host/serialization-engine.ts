@@ -1,10 +1,11 @@
 /**
  * SerializationEngine — host-driven dispatch for L9 entity serialization.
  *
- * Host-driven L9 dispatch (M13). All entity serializers come
- * from the plugin host's `BackendModule.serializer` slot; the only internal
- * registration is the `section` non-entity serializer, kept here because
- * section is not a plugin (M06 owns it).
+ * Host-driven L9 dispatch (M13). There is nothing left to dispatch TO: the
+ * record is derived from each type's `data.schema`, so this reads the registry
+ * rather than a slot on it. `BackendModule.serializer` — the last thing it did
+ * look up — went in 0.2.24, along with the `section` registration that made
+ * this a registry of two kinds of thing.
  *
  * M31: was a singleton bound to the `pluginHost` singleton — now a class
  * instantiated once per ProjectContext (`ctx.serialization`) and once per CLI

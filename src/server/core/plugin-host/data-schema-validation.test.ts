@@ -1,5 +1,5 @@
 /**
- * The LOUD rejections Host API 3.0.0 owes a plugin author.
+ * The LOUD rejections Host API 2.0.0 owes a plugin author.
  *
  * Each corresponds to a failure that, left unchecked, surfaces at boot rather
  * than at load: a generated `CREATE TABLE` with a reserved word in it, a
@@ -568,7 +568,7 @@ describe('string constraints — pattern and notReserved', () => {
 /**
  * The three rejections 0.2.22 adds, each stated where the author will read it.
  */
-describe('Host API 3.0.0 — the reserved title', () => {
+describe('Host API 2.0.0 — the reserved title', () => {
   it('[ac:m13-title-required] rejects a schema without `title`, on the missing-schema path', () => {
     const data: DataDeclaration = { schema: { name: { kind: 'string', required: true } } };
     expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(

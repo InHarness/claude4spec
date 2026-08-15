@@ -5,6 +5,7 @@ import { z } from 'zod';
 import type { RawEntityReader } from '../../discovery/raw-entity-reader.js';
 import { AcAnalysisService } from './ac-analysis.service.js';
 import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { DiscoveryCore } from '../../discovery/types.js';
 import type { Root } from '../../../shared/types.js';
 import { DomainError } from '../../services/tags.js';
 
@@ -25,6 +26,8 @@ export interface AcToolsDeps {
   roots: Root[];
   /** Brief 0.1.45 §1: inactive guard for the semantic audit. */
   host: PluginHost;
+  /** 0.2.24: the M39 read core, for the read record of each verified entity. */
+  discovery: () => DiscoveryCore;
 }
 
 export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
@@ -45,6 +48,7 @@ export function createAcToolsServer(deps: AcToolsDeps): McpServerInstance {
     cwd: deps.cwd,
     roots: deps.roots,
     host: deps.host,
+    discovery: deps.discovery,
   });
 
   const analyzeAcAgainstEntities = mcpTool(

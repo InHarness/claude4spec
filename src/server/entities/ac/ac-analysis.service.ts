@@ -1,5 +1,6 @@
 import { createAdapter, extractText } from '@inharness-ai/agent-adapters';
 import type { PluginHost } from '../../core/plugin-host/types.js';
+import type { DiscoveryCore } from '../../discovery/types.js';
 import type { Root } from '../../../shared/types.js';
 import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
 import { readActiveAcs } from './read-acs.js';
@@ -54,6 +55,15 @@ export interface AcAnalysisDeps {
    */
   roots: Root[];
   host: PluginHost;
+  /**
+   * 0.2.24 — the M39 read core, resolved lazily (it is built after mounting).
+   *
+   * The audit needs the READ RECORD of each verified entity, and the core is
+   * where a read record comes from — the serialization engine underneath it is
+   * held to a single caller by an architecture gate, so reaching past the core
+   * would fork the read path this module is supposed to share.
+   */
+  discovery: () => DiscoveryCore;
 }
 
 /**
@@ -85,6 +95,7 @@ export class AcAnalysisService {
     }
 
     const reader = this.deps.reader;
+    const discovery = this.deps.discovery();
     let targets = readActiveAcs(reader);
     if (opts.ac_slug) {
       targets = targets.filter((a) => a.slug === opts.ac_slug);
@@ -117,11 +128,21 @@ export class AcAnalysisService {
         if (!reader.host.getEntity(v.type)) {
           return { type: v.type, slug: v.slug, status: 'unknown-type' as const };
         }
-        const entity = reader.getEntity(v.type as RawEntityType, v.slug);
-        if (!entity) {
+        const record = discovery.getEntities({ type: v.type, slugs: [v.slug] }).results[0];
+        if (!record || record.entity === null) {
           return { type: v.type, slug: v.slug, status: 'missing' as const };
         }
-        return { type: v.type, slug: v.slug, status: 'active' as const, data: entity.data };
+        /**
+         * 0.2.24 — the M39 READ RECORD, one call per ref, not the raw row.
+         *
+         * `entity.data` is the projection's own shape: column-ish key names,
+         * and nothing from a collection that lives in its own table. So an AC
+         * verifying an endpoint was judged against a payload with no
+         * `linkedDtos` in it, and the model was asked whether the criterion
+         * matched a shape the criterion could not see. The record is what every
+         * other reader of this type gets.
+         */
+        return { type: v.type, slug: v.slug, status: 'active' as const, data: record.entity };
       });
       // An AC whose every verify is missing/unknown-type has nothing to compare
       // the text against — the broken refs are M19's concern (rule 9), not ours.

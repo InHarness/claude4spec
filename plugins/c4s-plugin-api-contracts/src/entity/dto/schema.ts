@@ -1,6 +1,6 @@
 import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 
-/** Host API 3.0.0 — what `dto` IS. */
+/** Host API 2.0.0 — what `dto` IS. */
 export const dtoData: DataDeclaration = {
   schema: {
     /**

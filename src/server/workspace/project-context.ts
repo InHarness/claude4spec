@@ -748,11 +748,24 @@ async function buildInner(
   // helper, mounts its router, registers its MCP server, and registers that
   // helper via the supplied MountContext. Inactive plugins are skipped
   // (config.entities).
+  /**
+   * Assigned right after `createDiscoveryCore` below. The core is built OVER the
+   * plugin registry, and mounting is what fills the registry — so the mount
+   * cannot be handed a finished core, only a way to reach one later.
+   */
+  let discoveryCore: DiscoveryCore | null = null;
+
   pluginHost.mountBackend({
     app: router,
     reader: rawReader,
     crud: crudFacade,
     host: pluginHost,
+    discovery: () => {
+      if (!discoveryCore) {
+        throw new Error('discovery core requested during mount — it does not exist until mounting finishes');
+      }
+      return discoveryCore;
+    },
     cwd,
     roots: effectiveRoots,
     ws,
@@ -859,6 +872,7 @@ async function buildInner(
     projectDir: cwd,
     packageVersion: readPackageVersion(),
   });
+  discoveryCore = discovery;
   /**
    * 0.2.13 (tier C) — the same core over a NARROWED root list, for `?pages=`.
    *

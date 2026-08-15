@@ -1,7 +1,7 @@
 import type { DataDeclaration } from '../../plugin-host/data-schema.js';
 import type { SlugPattern } from '../../plugin-host/slug-pattern.js';
 
-/** Host API 3.0.0 — what `diagram` IS. */
+/** Host API 2.0.0 — what `diagram` IS. */
 export const diagramData: DataDeclaration = {
   schema: {
     /**
