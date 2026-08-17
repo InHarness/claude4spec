@@ -63,3 +63,6 @@ c4s-cpanel/package.json
 !docker/environments/*/seed/project/pages/**
 !docker/environments/*/seed/project/.claude4spec/
 !docker/environments/*/seed/project/.claude4spec/**
+
+# One-off local migration script (0.2.24 name→title); never part of the source tree.
+fix-name.sh
