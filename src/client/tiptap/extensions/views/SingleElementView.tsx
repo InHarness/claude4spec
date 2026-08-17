@@ -31,7 +31,13 @@ export function SingleElementView(props: NodeViewProps) {
 
   return (
     <NodeViewWrapper className="my-3 not-prose" contentEditable={false} onClickCapture={altCapture}>
-      <CardResolver type={type} slug={slug} caption={caption} onOpen={open} />
+      <CardResolver
+        type={type}
+        slug={slug}
+        caption={caption}
+        onOpen={open}
+        onCaptionChange={(next) => props.updateAttributes({ caption: next })}
+      />
     </NodeViewWrapper>
   );
 }
@@ -41,11 +47,13 @@ function CardResolver({
   slug,
   caption,
   onOpen,
+  onCaptionChange,
 }: {
   type: string;
   slug: string;
   caption?: string;
   onOpen?: () => void;
+  onCaptionChange: (caption: string | null) => void;
 }) {
   const def = getEntityDef(type)!;
   const { data, isLoading } = def.useGetBySlug(slug);
@@ -61,6 +69,12 @@ function CardResolver({
   }
   const Card = def.renderCard;
   return (
-    <Card slug={slug} entity={data ?? null} {...(caption ? { caption } : {})} onOpen={onOpen} />
+    <Card
+      slug={slug}
+      entity={data ?? null}
+      {...(caption ? { caption } : {})}
+      onOpen={onOpen}
+      onCaptionChange={onCaptionChange}
+    />
   );
 }

@@ -155,7 +155,10 @@ function fakeDeps(extraActive: BackendModule[] = []): {
         if (mode === 'count') return { mode: 'count', total: items.length };
         return {
           mode: 'items',
-          items: items.map((w) => ({ slug: w.slug, data: w })),
+          // The core's FROZEN row — `{ slug, title }`, nothing wider. The stub
+          // used to hand back `{ slug, data }`, which let a handler read fields
+          // off a listing the real core never puts there.
+          items: items.map((w) => ({ slug: w.slug, title: w.title })),
           total: items.length,
           hasMore: false,
         };
@@ -429,6 +432,28 @@ describe('entity-tools: list_entities measurement', () => {
     const payload = parse(await tool(deps, 'list_entities').handler({ type: 'widget', mode: 'count' }));
     expect(payload).toMatchObject({ mode: 'count', total: 1 });
     expect(payload.items).toBeUndefined();
+  });
+
+  /**
+   * The frozen row, and the reason it is frozen: `list_entities` here used to
+   * re-hydrate every slug into a full record, so ONE operation had two widths
+   * depending on which MCP server the caller reached — this one answered wide
+   * while `c4s-reader` and `GET /:type/list` answered `{ slug, title }`.
+   *
+   * Width belongs to `get_entities` and its `select` alone. A listing that
+   * silently ships every field also ships a `database-table`'s `columns[]` to a
+   * caller that asked for a menu.
+   */
+  it('answers the frozen { slug, title } row — never a full record', async () => {
+    const { deps } = fakeDeps();
+    const payload = parse(await tool(deps, 'list_entities').handler({ type: 'widget' }));
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(['slug', 'title']);
+  });
+
+  it('declares no `select` — width is not a parameter of this operation', async () => {
+    const { deps } = fakeDeps();
+    expect(Object.keys(tool(deps, 'list_entities').inputSchema ?? {})).not.toContain('select');
   });
 });
 

@@ -58,7 +58,7 @@ type RenderState =
  * on the embedding tag, and is edited with the chip (Alt+click), which is the
  * one thing the old view conflated.
  */
-export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<Diagram>) {
+export function DiagramCard({ slug, entity, caption, onOpen, onCaptionChange }: EntityCardProps<Diagram>) {
   const { effectiveTheme } = useTheme();
   const format = entity?.format ?? 'mermaid';
   /**
@@ -86,9 +86,33 @@ export function DiagramCard({ slug, entity, caption, onOpen }: EntityCardProps<D
     const result = await openPopover(
       'diagram',
       { x: e?.clientX ?? rect?.left ?? 100, y: e?.clientY ?? (rect?.bottom ?? 100) + 4 },
-      { mode: 'edit', initial: { format, title: entity?.title ?? '', caption: caption ?? '', source } },
+      {
+        mode: 'edit',
+        initial: { format, title: entity?.title ?? '', caption: caption ?? '', source },
+        // No handler means no reference node behind this card (a chat tool
+        // result renders one from a slug alone). Show no caption field rather
+        // than take an edit with nowhere to save it.
+        captionEditable: !!onCaptionChange,
+      },
     );
     if (!result || '__action' in result) return;
+
+    /**
+     * The popover edits two things that live in two places, and they are saved
+     * separately because they belong to different owners: `title`/`source`/
+     * `format` are the ENTITY, while `caption` is an attribute of the one
+     * reference this card was rendered from.
+     *
+     * Before 0.2.26 the caption was shown, edited, and then dropped on the floor
+     * — the form returned it and nothing wrote it anywhere.
+     *
+     * Empty clears the attribute to `null` rather than `''`: `serializeXmlTag`
+     * skips both, but only `null` matches the node's declared default, so the
+     * document does not come back dirty on the next round-trip.
+     */
+    const nextCaption = result.caption?.trim() ? result.caption : null;
+    if (nextCaption !== (caption ?? null)) onCaptionChange?.(nextCaption);
+
     if (result.source === source && result.format === format && result.title === entity?.title) return;
     updateDiagram.mutate(
       {

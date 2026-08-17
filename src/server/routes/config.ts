@@ -25,9 +25,14 @@ export interface ConfigRouterDeps {
    */
   effectiveRoots?: Root[];
   /**
-   * M31: PATCH touching a context-defining field (pagesDir/briefsDir/
-   * patchesDir/entitiesDir/entities) invalidates the project context — the
-   * next request rebuilds it. No restart, no banner.
+   * M31: PATCH touching a context-defining field invalidates the project
+   * context — the next request rebuilds it. No restart, no banner.
+   *
+   * The list itself is `CONTEXT_DEFINING_FIELDS` below, and is the authority:
+   * roots/briefsDir/patchesDir/plansDir/entitiesDir/releasesDir/entities. It is
+   * mirrored client-side in `src/client/hooks/useConfig.ts`, which invalidates
+   * its query cache on the same set. (`pagesDir` was named here until config v4
+   * replaced the scalar with `roots[]`.)
    */
   onContextConfigChanged?: () => void;
   /**

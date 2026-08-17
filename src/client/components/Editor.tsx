@@ -44,7 +44,8 @@ export function Editor({ rootId, path, onOpenEntity, onOpenSection }: Props) {
       EditorFactory.buildExtensions('page', {
         qc,
         currentPath: path,
-        onSlashInvoke: (editor, command) => void invokeSlash(editor, command, { qc, currentPath: path }),
+        onSlashInvoke: (editor, command) =>
+          void invokeSlash(editor, command, { qc, currentPath: path }),
         getAnnotations: () => useChatStore.getState().annotations,
       }),
     [qc, path],

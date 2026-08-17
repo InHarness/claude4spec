@@ -6,6 +6,7 @@ import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
 import { dispatchTodoPopover } from '../components/TodoPopover.js';
 import { openPopover, toast } from '../ui/events.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 
 export interface SlashInvokeDeps {
   qc: QueryClient;
@@ -13,12 +14,33 @@ export interface SlashInvokeDeps {
   currentPath?: string | null;
 }
 
+/**
+ * The tagging convention (see `acSystemPrompt.narrativeBlock`) applied to the
+ * page the author is standing on, so `/ac` opens with the right tag already in
+ * the box. Two axes:
+ *
+ *  - a host module page (`modules/mNN-*`) → `mNN`;
+ *  - a page named for an entity type → `entity-{type}`.
+ *
+ * The second used to match `entities/<slug>.md`, a layout that stopped existing
+ * once entity-type pages moved out into their own root — so it had quietly
+ * stopped firing at all. It now resolves the type by ASKING THE HOST rather
+ * than munging the path: the pages are named for their plugin envelope as often
+ * as for their type (`c4s-plugin-database-tables.md` holds `database-table`),
+ * so no string rule gets it right.
+ *
+ * Deliberately NOT gated on a root id. Which root holds the entity-type pages
+ * is each project's own naming choice (`plugins` here, `types` elsewhere), and
+ * a hardcoded id makes the branch dead everywhere but one repo. The host lookup
+ * is the real predicate: a page whose basename names no registered type
+ * pre-fills nothing, which is the honest answer in any root.
+ */
 function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
   if (!currentPath) return [];
   const m = currentPath.match(/^modules\/(m\d{2})-/i);
   if (m) return [m[1]!.toLowerCase()];
-  const e = currentPath.match(/^entities\/([a-z0-9-]+)\.md$/i);
-  if (e) return [`entity-${e[1]}`];
+  const base = currentPath.split('/').pop()?.replace(/\.mdx?$/i, '') ?? '';
+  if (base && clientPluginHost.getAvailable(base)) return [`entity-${base}`];
   return [];
 }
 

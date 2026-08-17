@@ -110,6 +110,35 @@ describe('the page write primitive', () => {
     ).resolves.toBeTruthy();
   });
 
+  /**
+   * The trap this pins: "content is optional" reads as "omit it and get an empty
+   * page", and it does not. The route generates a template, so the page a caller
+   * gets back is not zero bytes and its hash is the template's hash — a caller
+   * that assumed `''` fails its own next `expectedHash`.
+   *
+   * Only the frontmatter `title` is contractual. Nothing asserts a body, an H1 or
+   * a placeholder section, because the specification deliberately does not say.
+   */
+  it('create_page with no content generates the default template, not an empty page', async () => {
+    await createPage(target, { path: 'templated.md', title: 'A Real Title' }, 'user');
+    const onDisk = await fs.readFile(path.join(pages.root, 'templated.md'), 'utf-8');
+    expect(onDisk).not.toBe('');
+    expect(onDisk).toContain('title: A Real Title');
+  });
+
+  it('create_page falls back to the basename when no title is given', async () => {
+    await createPage(target, { path: 'nested/m16-onboarding.md' }, 'agent');
+    const onDisk = await fs.readFile(path.join(pages.root, 'nested/m16-onboarding.md'), 'utf-8');
+    expect(onDisk).toContain('title: m16-onboarding');
+  });
+
+  it('create_page WITH content writes exactly that content — no template merged in', async () => {
+    // The escape hatch the template documents: to get an empty page, pass one.
+    await createPage(target, { path: 'verbatim.md', content: '' }, 'user');
+    const onDisk = await fs.readFile(path.join(pages.root, 'verbatim.md'), 'utf-8');
+    expect(onDisk).toBe('');
+  });
+
   it('create_page answers with the page identity and its anchors, never its content', async () => {
     const res = await createPage(target, { path: 'made.md', content: '# A\n\nlots of text\n' }, 'agent');
     expect(Object.keys(res).sort()).toEqual(['anchors', 'hash', 'path', 'rootId']);

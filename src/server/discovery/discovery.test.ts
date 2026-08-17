@@ -31,6 +31,7 @@ import type { DiscoveryCore, SectionResultItem } from './types.js';
 import type { BackendModule, ProjectPluginHost } from '../core/plugin-host/types.js';
 import type { Root } from '../../shared/types.js';
 import { DEFAULT_PAGES_ROOT_PROPS, DEFAULT_USER_ROOT_PROPS } from '../../shared/types.js';
+import { acBackendModule } from '../entities/ac/plugin.js';
 import { z } from 'zod';
 import matter from 'gray-matter';
 
@@ -1115,6 +1116,15 @@ describe('discovery core', () => {
     const skeleton = c.getEntities({ type: 'widget', slugs: ['a'], select: [] });
     expect(skeleton.selectedFields).toEqual(['slug', 'title', 'tags', 'href']);
     /**
+     * The row is WIDER than its own echo by exactly `type`. Pinned here because
+     * it is a live asymmetry rather than an accident nobody noticed: the
+     * criterion `ac-select-jest-legalne-i-znaczy-sam-szki` fixes the echo at
+     * these four, while `project()` puts the envelope's `type` on every record.
+     * A patch asks the spec which of the two should move.
+     */
+    expect(skeleton.results[0]!.entity).toHaveProperty('type');
+    expect(skeleton.selectedFields).not.toContain('type');
+    /**
      * `href` is in the skeleton because a chip is a LABEL AND A LINK, and the
      * host is now the only thing that can supply the second: it is derived from
      * the type's `pathPrefix`, not declared in any schema, so a projection over
@@ -1334,6 +1344,33 @@ describe('discovery core', () => {
       expect(page.hasMore).toBe(true);
       expect(listEntitiesAll(c, { type: 'widget' })).toHaveLength(120);
     });
+  });
+
+  /**
+   * Rule 11 is the ONE rule tied to a specific root, and this is what that buys.
+   *
+   * `M{NN}` numbering is a convention of the built-in `pages` root; the root that
+   * holds entity-type pages never adopted it and tags by `entity-{type}` instead.
+   * Sweeping every root would mint modules out of any root that happens to hold a
+   * `modules/mNN-*.md` and then report each one as uncovered — a warning about a
+   * numbering scheme that root does not use.
+   */
+  it('rule 11 counts modules from the built-in pages root alone', async () => {
+    await fs.mkdir(path.join(cwd, '.claude4spec'), { recursive: true });
+    await fs.writeFile(
+      path.join(cwd, '.claude4spec', 'config.json'),
+      JSON.stringify({ consistency: { requireModuleAc: 'warn' } }),
+      'utf-8',
+    );
+    await writePage('pages', 'modules/m16-onboarding.md', '# M16\n');
+    await writePage('notes', 'modules/m99-not-a-module.md', '# Not one\n');
+
+    const c = core([pagesRoot(), flatRoot()], [widgetModule(), acBackendModule]);
+    const report = await c.checkConsistency({});
+    const flagged = (report.modulesWithoutAc as Array<{ module: string }>).map((r) => r.module);
+
+    expect(flagged).toContain('m16');
+    expect(flagged).not.toContain('m99');
   });
 
   it('check_consistency severity filters by ROW, not by bucket', async () => {

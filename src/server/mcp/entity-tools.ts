@@ -189,7 +189,7 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     limit: number,
     offset: number,
     filters?: Record<string, unknown>,
-  ): { items: Array<{ slug: string }>; total: number } => {
+  ): { items: Array<{ slug: string; title: string }>; total: number } => {
     const page = deps.discovery.listEntities({
       type,
       ...(tags?.length ? { tags, tagFilter } : {}),
@@ -201,7 +201,9 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
       offset,
     });
     if (page.mode !== 'items') return { items: [], total: page.total };
-    return { items: page.items.map((i) => ({ slug: i.slug })), total: page.total };
+    // The core's frozen row, carried through unchanged. Narrowing it to `{ slug }`
+    // here is what forced the re-hydration below and cost this tool its row shape.
+    return { items: page.items.map((i) => ({ slug: i.slug, title: i.title })), total: page.total };
   };
 
   const broadcastChanged = (type: string, slug: string): void => {
@@ -393,25 +395,10 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
     },
   );
 
-  /**
-   * Batch slug list → L9 `element_list_item` views.
-   *
-   * M39: the projection is the discovery core's, not this server's. The service
-   * still decides WHICH slugs (its own filters, its own ranking); the core
-   * decides what a serialized record looks like.
-   */
-  const serializeSlugs = (type: string, slugs: string[]) =>
-    // getEntitiesAll: the service decided how many slugs this page has (the
-    // caller's own `limit`), so refusing to serialize them past 50 would turn a
-    // documented `list_entities({ limit: 100 })` into a thrown error.
-    getEntitiesAll(deps.discovery, { type, slugs }).results
-      .filter((r) => r.entity !== null)
-      .map((r) => r.entity);
-
   // ─── list_entities ────────────────────────────────────────────────────────
   const listEntities = mcpTool(
     'list_entities',
-    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } (L9 list view per item), or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: a type may declare a DEFAULT filter that applies when you name no value for that field — `ac` lists only active ACs unless you ask for { status: ["active", "deprecated"] }.',
+    'List entities of a type with optional tag filtering and pagination. Returns { items, total, hasMore } where each item is the frozen row { slug, title } — this operation takes no `select` and has no width to ask for; call get_entities with an explicit `select` when you need fields. Or { total } with mode: "count" — which answers "how many entities match" without walking them. `filters` matches on the type\'s own declared scalar fields: { field: value } or { field: [v1, v2] } for set membership, ANDed together and with the tag filter (e.g. ac: { status: "active", kind: "edge-case" }). See describe_entity_type\'s createSchema for the fields a type declares; a key naming no declared field is ignored. NOTE: a type may declare a DEFAULT filter that applies when you name no value for that field — `ac` lists only active ACs unless you ask for { status: ["active", "deprecated"] }.',
     {
       type: z.string(),
       tags: z.array(z.string()).optional(),
@@ -445,11 +432,20 @@ export function buildEntityTools(deps: EntityToolsDeps): McpToolDefinition[] {
        */
       const page = coreList(type, opts.tags, opts.tagFilter, opts.limit, offset, opts.filters);
       if (args.mode === 'count') return ok({ type, mode: 'count', total: page.total });
-      const slugs = page.items.map((item) => (item as { slug: string }).slug);
+      /**
+       * The frozen row, `{ slug, title }` — the same one `c4s-reader`'s
+       * `list_entities` and `GET /:type/list` answer with.
+       *
+       * This tool used to re-hydrate every slug into a full record, so the SAME
+       * operation had two widths depending on which MCP server you asked. That
+       * also handed back `columns[]`/`indexes[]`-sized payloads for a listing
+       * nobody asked to be wide. Width is `get_entities`' job and its alone:
+       * a caller who needs fields makes a second call with an explicit `select`.
+       */
       return ok({
         type,
         mode: 'items',
-        items: serializeSlugs(type, slugs),
+        items: page.items,
         total: page.total,
         hasMore: offset + page.items.length < page.total,
       });

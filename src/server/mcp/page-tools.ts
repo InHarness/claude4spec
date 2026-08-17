@@ -97,7 +97,17 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
     {
       rootId: rootIdParam,
       path: pathParam,
-      content: z.string().optional().describe('Initial markdown body. Defaults to empty.'),
+      title: z
+        .string()
+        .optional()
+        .describe('Sets the frontmatter `title` of the generated template. Ignored when `content` is given.'),
+      content: z
+        .string()
+        .optional()
+        .describe(
+          'Full markdown, frontmatter included. Omit it and you get a default template — a frontmatter ' +
+            'block with `title`, not an empty file. Overwrite the page afterwards if you truly want it empty.',
+        ),
     },
     async (args) => {
       try {
@@ -106,6 +116,7 @@ export function createPageToolsServer(deps: PageToolsDeps): CapturedMcpServer {
             target(String(args.rootId)),
             {
               path: String(args.path),
+              ...(args.title !== undefined ? { title: String(args.title) } : {}),
               ...(args.content !== undefined ? { content: String(args.content) } : {}),
             },
             'agent',

@@ -157,7 +157,10 @@ const acFrontendModule: FrontendModule = {
   type: 'ac',
   data: acData,
   slugPattern: acSlugPattern,
-  payloadVersion: 1,
+  // Tracks the backend module (src/server/entities/ac/plugin.ts), which went to 2
+  // when `title` was lifted out of `text`. Left at 1 here, the two halves of the
+  // same type disagreed about their own payload age.
+  payloadVersion: 2,
   label: 'Acceptance Criterion',
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
