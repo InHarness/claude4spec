@@ -24,24 +24,24 @@ import type { DataDeclaration } from '../../../src/shared/plugin-host/data-schem
  */
 const WIDGET_DATA: DataDeclaration = {
   schema: {
-    title: { kind: 'string', required: true, maxLength: 200 },
-    status: { kind: 'enum', values: ['draft', 'live'], default: 'draft' },
-    note: { kind: 'string', clearable: true },
+    title: { type: 'string', required: true, maxLength: 200 },
+    status: { type: 'enum', values: ['draft', 'live'], default: 'draft' },
+    note: { type: 'string', clearable: true },
     /**
      * A field whose COLUMN differs from its NAME. The first version of this
      * fixture had none, and that gap hid a data loss: `hydrate` keys the row by
      * column while the write path is keyed by field, so an unrelated PATCH
      * blanked every camelCase field of a declaratively-authored type.
      */
-    ownerSlug: { kind: 'string', column: 'owner_slug', clearable: true },
+    ownerSlug: { type: 'string', column: 'owner_slug', clearable: true },
     /** Same idea for `required`: this one made the entity UNPATCHABLE. */
-    kindLabel: { kind: 'string', column: 'kind_label', required: true, default: 'plain' },
+    kindLabel: { type: 'string', column: 'kind_label', required: true, default: 'plain' },
     /** An opaque value, to pin that it round-trips rather than gaining a layer of escaping per write. */
-    blob: { kind: 'json' },
+    blob: { type: 'json' },
     parts: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
-      item: { kind: 'object', fields: { label: { kind: 'string', required: true } } },
+      item: { type: 'object', fields: { label: { type: 'string', required: true } } },
     },
     /**
      * A value collection with `keyFields`, so it projects to a table of its own
@@ -49,19 +49,19 @@ const WIDGET_DATA: DataDeclaration = {
      * on the parent row, so it is exactly what a naive merge cannot see.
      */
     links: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       keyFields: ['target'],
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          target: { kind: 'string', required: true },
-          rank: { kind: 'number' },
+          target: { type: 'string', required: true },
+          rank: { type: 'number' },
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

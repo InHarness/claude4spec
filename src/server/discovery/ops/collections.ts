@@ -129,7 +129,7 @@ function extentColumnOf(module: ProjectableModule, axis: AxisSpec): string {
 
 /** The projection column holding an axis's coordinate. */
 function axisColumnOf(node: CollectionNode, axis: AxisSpec): string {
-  return node.item.kind === 'object' && node.item.fields[axis.key]
+  return node.item.type === 'object' && node.item.fields[axis.key]
     ? columnOf(axis.key, node.item.fields[axis.key] as FieldNode)
     : axis.key;
 }
@@ -166,7 +166,7 @@ export function collectionOverview(
     flags: {
       ...(node.required ? { required: true } : {}),
       ...(node.unordered ? { unordered: true } : {}),
-      ...(node.item.kind === 'object' ? {} : { scalarItem: node.item.kind }),
+      ...(node.item.type === 'object' ? {} : { scalarItem: node.item.type }),
     },
   };
 }
@@ -290,7 +290,7 @@ function decodeItem(
   columns: readonly string[],
   row: Record<string, unknown>,
 ): unknown {
-  if (node.item.kind !== 'object') return decodeColumn(node.item, row[columns[0]!]);
+  if (node.item.type !== 'object') return decodeColumn(node.item, row[columns[0]!]);
   const payload = new Set(payloadFieldsOf(node));
   const out: Record<string, unknown> = {};
   fields.forEach(([name, n], i) => {
@@ -309,8 +309,8 @@ function decodeItem(
  * invite a consumer to read the key off a body that has no row behind it.
  */
 function emptyItemOf(node: CollectionNode): unknown {
-  if (node.item.kind !== 'object') {
-    return node.item.kind === 'number' ? null : node.item.kind === 'boolean' ? null : '';
+  if (node.item.type !== 'object') {
+    return node.item.type === 'number' ? null : node.item.type === 'boolean' ? null : '';
   }
   const out: Record<string, unknown> = {};
   for (const name of payloadFieldsOf(node)) out[name] = null;

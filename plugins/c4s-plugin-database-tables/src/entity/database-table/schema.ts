@@ -43,7 +43,7 @@ export const databaseTableData: DataDeclaration = {
      * decides it is really "Order line items".
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       computedDefault: [{ op: 'raw', field: 'name' }],
@@ -64,7 +64,7 @@ export const databaseTableData: DataDeclaration = {
      * the list, so this cannot drift from what the host enforces elsewhere.
      */
     name: {
-      kind: 'string',
+      type: 'string',
       required: true,
       pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
       notReserved: 'sql',
@@ -79,7 +79,7 @@ export const databaseTableData: DataDeclaration = {
     },
 
     description: {
-      kind: 'string',
+      type: 'string',
       clearable: true,
       description: 'Prose describing what the table holds and why it exists.',
     },
@@ -91,43 +91,43 @@ export const databaseTableData: DataDeclaration = {
      * slash popover both send an explicit `[]`.
      */
     columns: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       required: true,
       description:
         'Ordered columns. The order is part of the table identity — never sorted, never ' +
         'reshuffled. (No `unordered` flag, deliberately.)',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
           name: {
-            kind: 'string',
+            type: 'string',
             required: true,
             maxLength: 200,
             description: 'Column identifier.',
           },
           type: {
-            kind: 'string',
+            type: 'string',
             required: true,
             description: 'Type token as written in the schema — integer, text, uuid, timestamp, …',
           },
-          nullable: { kind: 'boolean', description: 'The column admits NULL.' },
-          unique: { kind: 'boolean', description: 'The column carries a UNIQUE constraint.' },
-          pk: { kind: 'boolean', description: 'The column is part of the primary key.' },
+          nullable: { type: 'boolean', description: 'The column admits NULL.' },
+          unique: { type: 'boolean', description: 'The column carries a UNIQUE constraint.' },
+          pk: { type: 'boolean', description: 'The column is part of the primary key.' },
           /**
            * `json`, not `string`. Every default in the corpus today happens to
            * be a string, but the inherited format leaves the value free-form,
-           * and `kind: 'string'` would turn `default: 0` and `default: false`
+           * and `type: 'string'` would turn `default: 0` and `default: false`
            * into create-time rejections of data the format permits.
            */
           default: {
-            kind: 'json',
+            type: 'json',
             description: 'Default value, as written in the schema. Free-form.',
           },
           enumValues: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
-            item: { kind: 'string' },
+            item: { type: 'string' },
             description: 'Allowed values, when `type` is an enumeration.',
           },
           /**
@@ -150,13 +150,13 @@ export const databaseTableData: DataDeclaration = {
            * surfacing it is the point; a one-time adoption pass normalises it.
            */
           fk: {
-            kind: 'object',
+            type: 'object',
             description:
               'Soft foreign key. A target that does not exist is a WARNING on the write, never ' +
               'a rejection, and deleting the target does not cascade.',
             fields: {
               table: {
-                kind: 'string',
+                type: 'string',
                 required: true,
                 ref: 'database-table',
                 onMissing: 'warn',
@@ -164,39 +164,39 @@ export const databaseTableData: DataDeclaration = {
                 description: 'Slug of the referenced database-table. May dangle.',
               },
               column: {
-                kind: 'string',
+                type: 'string',
                 required: true,
                 description: 'Column name inside the referenced table.',
               },
             },
           },
-          description: { kind: 'string', description: 'Prose describing what the column holds.' },
+          description: { type: 'string', description: 'Prose describing what the column holds.' },
         },
       },
     },
 
     indexes: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       description: 'Ordered indexes.',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
           columns: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
             required: true,
-            item: { kind: 'string' },
+            item: { type: 'string' },
             description: 'Indexed column names, in order — the order is the index.',
           },
-          unique: { kind: 'boolean', description: 'The index is UNIQUE.' },
+          unique: { type: 'boolean', description: 'The index is UNIQUE.' },
           /**
            * OPTIONAL, and left optional on purpose. `deriveIndexName` fills a
            * missing name at DISPLAY time; writing it into the payload instead
            * would rewrite authored data on every snapshot.
            */
           name: {
-            kind: 'string',
+            type: 'string',
             description:
               'Index identifier. Optional — consumers derive `idx_<table>_<cols…>` when absent.',
           },
@@ -204,8 +204,8 @@ export const databaseTableData: DataDeclaration = {
       },
     },
 
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

@@ -13,7 +13,7 @@ export const diagramData: DataDeclaration = {
      * in the source" made a passable slug but would make a poor title.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       description: 'Label, e.g. "Checkout sequence".',
@@ -27,7 +27,7 @@ export const diagramData: DataDeclaration = {
      * stated once.
      */
     format: {
-      kind: 'enum',
+      type: 'enum',
       values: ['mermaid', 'd2'],
       required: true,
       default: 'mermaid',
@@ -44,7 +44,7 @@ export const diagramData: DataDeclaration = {
      * snapshotted normally, and stored verbatim in the entity file.
      */
     source: {
-      kind: 'string',
+      type: 'string',
       required: true,
       default: '',
       contentBearing: true,
@@ -52,8 +52,8 @@ export const diagramData: DataDeclaration = {
         'DSL body (mermaid). May be empty (placeholder). Content-bearing: read it with ' +
         'get_field_content, not through get_entities.',
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
   },
 };
 

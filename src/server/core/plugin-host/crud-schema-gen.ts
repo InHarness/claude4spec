@@ -82,7 +82,7 @@ function stringType(node: ScalarNode): z.ZodString {
 
 /** One field node → one zod type. Flags are applied by the callers below. */
 function nodeType(node: FieldNode): ZodTypeAny {
-  switch (node.kind) {
+  switch (node.type) {
     case 'string':
       return stringType(node);
     case 'number': {
@@ -223,12 +223,12 @@ function slugSourceFields(pattern: SlugPattern | undefined): Set<string> {
  * A leaf declaring both would have its own rule accepted at registration and
  * enforced nowhere.
  *
- * `t` is `nodeType(node)`'s output, which for `kind: 'string'` is always a
+ * `t` is `nodeType(node)`'s output, which for `type: 'string'` is always a
  * `ZodString`, so `.regex()` chains off it — that is what makes the composition
  * possible at all rather than needing a wrapper.
  */
 function nonBlankIfSlugSource(name: string, node: FieldNode, sources: Set<string>, t: ZodTypeAny): ZodTypeAny {
-  return node.kind === 'string' && sources.has(name)
+  return node.type === 'string' && sources.has(name)
     ? (t as z.ZodString).regex(/\S/, 'must not be blank')
     : t;
 }

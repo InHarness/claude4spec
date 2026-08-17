@@ -32,7 +32,7 @@ export const FIXTURE_DATA: DataDeclaration = {
     // `default` so a fixture's write payloads stay about whatever they are
     // testing: `title` is required on every type now, and threading a label
     // through a hundred collection/projection assertions would say nothing.
-    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
+    title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
   },
 };
 

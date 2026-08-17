@@ -15,36 +15,36 @@ import type { RestoreContext } from './types.js';
 
 const SCHEMA: Record<string, FieldNode> = {
   // Payload name and column name diverge — the case the whole mapping exists for.
-  designSystemSlug: { kind: 'string', column: 'design_system_slug', clearable: true, ref: 'design-system' },
-  title: { kind: 'string', required: true },
-  status: { kind: 'enum', values: ['on', 'off'], default: 'on' },
-  note: { kind: 'string' },
-  params: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
+  designSystemSlug: { type: 'string', column: 'design_system_slug', clearable: true, ref: 'design-system' },
+  title: { type: 'string', required: true },
+  status: { type: 'enum', values: ['on', 'off'], default: 'on' },
+  note: { type: 'string' },
+  params: { type: 'collection', collection: 'value', item: { type: 'string' } },
   // Unordered, with an object item — sorted by declaration order (`type`, then
   // `slug`), which is the `ac.verifies` rule.
   refs: {
-    kind: 'collection',
+    type: 'collection',
     collection: 'value',
     unordered: true,
     item: {
-      kind: 'object',
-      fields: { type: { kind: 'string' }, slug: { kind: 'string' } },
+      type: 'object',
+      fields: { type: { type: 'string' }, slug: { type: 'string' } },
     },
   },
   // Lives in its own table, so it is read through the reader, not off the row.
   links: {
-    kind: 'collection',
+    type: 'collection',
     collection: 'value',
     unordered: true,
     keyFields: ['target'],
     projectionTable: 'widget_link',
-    item: { kind: 'object', fields: { target: { kind: 'string' } } },
+    item: { type: 'object', fields: { target: { type: 'string' } } },
   },
   // The three exclusions.
-  caption: { kind: 'string', transientInput: true },
-  id: { kind: 'number', localSurrogate: true },
-  createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-  updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+  caption: { type: 'string', transientInput: true },
+  id: { type: 'number', localSurrogate: true },
+  createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+  updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
 };
 
 const widget: SnapshottableModule = { type: 'widget', data: { schema: SCHEMA } };
@@ -188,11 +188,11 @@ describe('restoreFromSchema', () => {
  */
 describe('snapshotFromSchema — keyed collections', () => {
   const gridSchema: Record<string, FieldNode> = {
-    name: { kind: 'string', required: true },
-    nRows: { kind: 'number', column: 'n_rows' },
-    nCols: { kind: 'number', column: 'n_cols' },
+    name: { type: 'string', required: true },
+    nRows: { type: 'number', column: 'n_rows' },
+    nCols: { type: 'number', column: 'n_cols' },
     cells: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'keyed',
       keyFields: ['r', 'c'],
       axes: [
@@ -200,11 +200,11 @@ describe('snapshotFromSchema — keyed collections', () => {
         { key: 'c', extent: 'nCols' },
       ],
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          r: { kind: 'number', required: true },
-          c: { kind: 'number', required: true },
-          value: { kind: 'string' },
+          r: { type: 'number', required: true },
+          c: { type: 'number', required: true },
+          value: { type: 'string' },
         },
       },
     },

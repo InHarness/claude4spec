@@ -254,10 +254,10 @@ describe('api-contracts projection — creation order does not matter', () => {
           linkedDtos: {
             ...(endpointData.schema.linkedDtos as Record<string, unknown>),
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
                 ...((endpointData.schema.linkedDtos as { item: { fields: object } }).item.fields),
-                note: { kind: 'string' },
+                note: { type: 'string' },
               },
             },
           },

@@ -26,12 +26,12 @@ const grid = {
   payloadVersion: 1,
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      name: { kind: 'string', required: true },
-      nRows: { kind: 'number', column: 'n_rows', default: 0 },
-      nCols: { kind: 'number', column: 'n_cols', default: 0 },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      name: { type: 'string', required: true },
+      nRows: { type: 'number', column: 'n_rows', default: 0 },
+      nCols: { type: 'number', column: 'n_cols', default: 0 },
       cells: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'keyed',
         keyFields: ['r', 'c'],
         axes: [
@@ -39,11 +39,11 @@ const grid = {
           { key: 'c', extent: 'nCols' },
         ],
         item: {
-          kind: 'object',
+          type: 'object',
           fields: {
-            r: { kind: 'number', required: true },
-            c: { kind: 'number', required: true },
-            value: { kind: 'string' },
+            r: { type: 'number', required: true },
+            c: { type: 'number', required: true },
+            value: { type: 'string' },
           },
         },
       },

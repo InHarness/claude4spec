@@ -33,25 +33,25 @@ const paths = (data: DataDeclaration | undefined): string[] =>
 /** `design-system`'s token shape, reproduced: named leaves around an opaque one. */
 const opaqueValueData: DataDeclaration = {
   schema: {
-    title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-    name: { kind: 'string', required: true },
+    title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+    name: { type: 'string', required: true },
     groups: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true },
+          name: { type: 'string', required: true },
           tokens: {
-            kind: 'collection',
+            type: 'collection',
             collection: 'value',
             required: true,
             item: {
-              kind: 'object',
+              type: 'object',
               fields: {
-                name: { kind: 'string', required: true },
-                type: { kind: 'string', required: true },
-                value: { kind: 'json', required: true },
+                name: { type: 'string', required: true },
+                type: { type: 'string', required: true },
+                value: { type: 'json', required: true },
               },
             },
           },
@@ -74,12 +74,12 @@ describe('hostDefaultFields', () => {
      */
     const out = paths({
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        labels: { type: 'record', key: { type: 'string' }, value: { type: 'string' } },
         composites: {
-          kind: 'record',
-          key: { kind: 'string' },
-          value: { kind: 'object', fields: { note: { kind: 'string' } } },
+          type: 'record',
+          key: { type: 'string' },
+          value: { type: 'object', fields: { note: { type: 'string' } } },
         },
       },
     });
@@ -124,12 +124,12 @@ describe('hostDefaultFields', () => {
   it('excludes a transient subtree by PREFIX, not just its root', () => {
     const out = paths({
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        name: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        name: { type: 'string', required: true },
         upload: {
-          kind: 'object',
+          type: 'object',
           transientInput: true,
-          fields: { caption: { kind: 'string' } },
+          fields: { caption: { type: 'string' } },
         },
       },
     });
@@ -144,11 +144,11 @@ describe('hostDefaultFields', () => {
     // `slug` and `tags[]` are the two paths every entity has whatever it declares
     // — the identity column and the cross-cutting tag layer.
     expect(paths(undefined)).toEqual(['slug', 'tags[]']);
-    expect(paths({ schema: { count: { kind: 'number' } } })).toEqual(['slug', 'tags[]']);
+    expect(paths({ schema: { count: { type: 'number' } } })).toEqual(['slug', 'tags[]']);
   });
 
   it('boosts an identity path the type actually declares, and invents none', () => {
-    const withName = hostDefaultFields(moduleWith({ schema: { name: { kind: 'string' } } }));
+    const withName = hostDefaultFields(moduleWith({ schema: { name: { type: 'string' } } }));
     expect(withName).toContainEqual({ path: 'name', weight: 3 });
     // Since 0.2.22 EVERY type declares `title`, so the boost always applies —
     // what the rule still forbids is inventing a path the schema lacks.

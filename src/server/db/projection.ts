@@ -46,7 +46,7 @@ export interface ProjectableModule {
 
 /** SQLite storage class for a logical node. */
 function sqlType(node: FieldNode): string {
-  switch (node.kind) {
+  switch (node.type) {
     case 'number':
       // No REAL: every numeric field in the six built-in types is a count, a
       // status code or a coordinate. A type needing floats declares `number` and
@@ -71,7 +71,7 @@ function defaultClause(node: FieldNode): string | null {
   }
   // An embedded collection is never NULL — absent means empty, and a reader that
   // has to distinguish `NULL` from `'[]'` is a reader with two empty cases.
-  if (node.kind === 'collection') return `DEFAULT '[]'`;
+  if (node.type === 'collection') return `DEFAULT '[]'`;
   return null;
 }
 
@@ -89,7 +89,7 @@ export function isNotNull(node: FieldNode): boolean {
     node.required === true ||
     node.default !== undefined ||
     node.computedDefault !== undefined ||
-    node.kind === 'collection'
+    node.type === 'collection'
   );
 }
 
@@ -147,7 +147,7 @@ function projectionTableDDL(
   const indexed: string[][] = [[binding]];
 
   const itemFields: Array<[string, FieldNode]> =
-    item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+    item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
 
   for (const [itemName, itemNode] of itemFields) {
     const column = columnOf(itemName, itemNode);
@@ -166,7 +166,7 @@ function projectionTableDDL(
 
   if (node.keyFields?.length) {
     const keyColumns = node.keyFields.map((key) =>
-      item.kind === 'object' && item.fields[key] ? columnOf(key, item.fields[key]) : snakeCase(key),
+      item.type === 'object' && item.fields[key] ? columnOf(key, item.fields[key]) : snakeCase(key),
     );
     columns.push(`UNIQUE(${[binding, ...keyColumns].join(', ')})`);
   }
@@ -343,7 +343,7 @@ function reconcileColumns(db: Database, module: ProjectableModule): string[] {
     const collection = node as CollectionNode;
     const item = collection.item;
     const itemFields: Array<[string, FieldNode]> =
-      item.kind === 'object' ? Object.entries(item.fields) : [['value', item]];
+      item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
     added.push(
       ...addMissingColumns(db, projectionTableOf(module, name, collection), itemFields),
     );

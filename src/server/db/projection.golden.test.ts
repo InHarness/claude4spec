@@ -177,7 +177,7 @@ describe('projection generator — reconciling an existing database', () => {
         schema: {
           ...acData.schema,
           reviewedAt: {
-            kind: 'string',
+            type: 'string',
             column: 'reviewed_at',
             systemManaged: true,
             computedDefault: 'now',

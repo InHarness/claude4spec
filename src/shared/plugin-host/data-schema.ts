@@ -159,7 +159,7 @@ export interface FieldFlags {
 
 /** A leaf holding a single scalar. */
 export interface ScalarNode extends FieldFlags {
-  kind: 'string' | 'number' | 'boolean';
+  type: 'string' | 'number' | 'boolean';
   /**
    * NUMBER ONLY — the value must be an integer.
    *
@@ -243,13 +243,13 @@ export interface ScalarNode extends FieldFlags {
 
 /** A leaf constrained to a closed set of strings. Projects to `TEXT`, validated on write. */
 export interface EnumNode extends FieldFlags {
-  kind: 'enum';
+  type: 'enum';
   values: readonly string[];
 }
 
 /** A nested object with named fields. */
 export interface ObjectNode extends FieldFlags {
-  kind: 'object';
+  type: 'object';
   fields: Readonly<Record<string, FieldNode>>;
 }
 
@@ -294,7 +294,7 @@ export interface AxisSpec {
  *     Projects to a separate table; never embedded on the parent.
  */
 export interface CollectionNode extends FieldFlags {
-  kind: 'collection';
+  type: 'collection';
   collection: 'value' | 'keyed';
   item: FieldNode;
   /**
@@ -360,7 +360,7 @@ export interface CollectionNode extends FieldFlags {
  * the key schema declared there is nothing left to guess.
  */
 export interface RecordNode extends FieldFlags {
-  kind: 'record';
+  type: 'record';
   key: FieldNode;
   value: FieldNode;
 }
@@ -388,7 +388,7 @@ export interface RecordNode extends FieldFlags {
  * layer could act on. Filed against the brief as a `missing` patch.
  */
 export interface JsonNode extends FieldFlags {
-  kind: 'json';
+  type: 'json';
 }
 
 export type FieldNode = ScalarNode | EnumNode | ObjectNode | CollectionNode | RecordNode | JsonNode;
@@ -503,7 +503,7 @@ export function contentBearingKeys(name: string): { has: string; bytes: string }
 export const RESERVED_TITLE_FIELD = 'title';
 export const TITLE_MAX_LENGTH = 200;
 export const RESERVED_TITLE_DECLARATION: ScalarNode = {
-  kind: 'string',
+  type: 'string',
   required: true,
   maxLength: TITLE_MAX_LENGTH,
 };
@@ -575,8 +575,8 @@ export type FieldConstraint =
 export function constraintsOf(schema: Readonly<Record<string, FieldNode>>): FieldConstraint[] {
   const out: FieldConstraint[] = [];
   for (const [field, node] of Object.entries(schema)) {
-    if (node.kind === 'enum') out.push({ field, type: 'enum', values: node.values });
-    if (node.kind === 'string' && node.maxLength !== undefined) {
+    if (node.type === 'enum') out.push({ field, type: 'enum', values: node.values });
+    if (node.type === 'string' && node.maxLength !== undefined) {
       out.push({ field, type: 'maxLength', maxLength: node.maxLength });
     }
   }
@@ -598,7 +598,7 @@ export function contentFieldsOf(
  * `keyFields` (see {@link CollectionNode.keyFields}).
  */
 export function hasProjectionTable(node: FieldNode): boolean {
-  if (node.kind !== 'collection') return false;
+  if (node.type !== 'collection') return false;
   return node.collection === 'keyed' || !!node.keyFields?.length;
 }
 
@@ -618,7 +618,7 @@ export function isEmbedded(node: FieldNode): boolean {
  * did not.
  */
 export function isKeyed(node: FieldNode): node is CollectionNode {
-  return node.kind === 'collection' && node.collection === 'keyed';
+  return node.type === 'collection' && node.collection === 'keyed';
 }
 
 /**
@@ -642,7 +642,7 @@ export function axesOf(node: FieldNode): readonly AxisSpec[] {
  * key is.
  */
 export function payloadFieldsOf(node: CollectionNode): readonly string[] {
-  if (node.item.kind !== 'object') return ['value'];
+  if (node.item.type !== 'object') return ['value'];
   const keys = new Set(node.keyFields ?? []);
   return Object.keys(node.item.fields).filter((name) => !keys.has(name));
 }
@@ -663,7 +663,7 @@ export function payloadFieldsOf(node: CollectionNode): readonly string[] {
  */
 export function sortKeyFieldsOf(node: CollectionNode): readonly string[] {
   if (node.keyFields?.length) return node.keyFields;
-  if (node.item.kind === 'object') return Object.keys(node.item.fields);
+  if (node.item.type === 'object') return Object.keys(node.item.fields);
   return [];
 }
 
@@ -676,8 +676,8 @@ export function walkSchema(
     for (const [name, node] of Object.entries(fields)) {
       const path = prefix ? `${prefix}.${name}` : name;
       visit(path, node, depth);
-      if (node.kind === 'object') walk(node.fields, path, depth + 1);
-      else if (node.kind === 'collection') {
+      if (node.type === 'object') walk(node.fields, path, depth + 1);
+      else if (node.type === 'collection') {
         // The item is the collection's own level, not a level below it: a
         // collection of objects nests exactly as deep as an object does. Counting
         // it twice would make `design-system.groups[].tokens[].value` read as
@@ -685,11 +685,11 @@ export function walkSchema(
         // fine.
         const itemPath = `${path}[]`;
         visit(itemPath, node.item, depth);
-        if (node.item.kind === 'object') walk(node.item.fields, itemPath, depth + 1);
-      } else if (node.kind === 'record') {
+        if (node.item.type === 'object') walk(node.item.fields, itemPath, depth + 1);
+      } else if (node.type === 'record') {
         visit(`${path}.$key`, node.key, depth + 1);
         visit(`${path}.$value`, node.value, depth + 1);
-        if (node.value.kind === 'object') walk(node.value.fields, `${path}.$value`, depth + 1);
+        if (node.value.type === 'object') walk(node.value.fields, `${path}.$value`, depth + 1);
       }
     }
   };

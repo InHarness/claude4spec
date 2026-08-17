@@ -50,7 +50,7 @@ function withNull(schema: JsonSchema): JsonSchema {
 }
 
 function baseSchema(node: FieldNode): JsonSchema {
-  switch (node.kind) {
+  switch (node.type) {
     case 'string':
       // 0.2.22 — the value constraint travels into the derived schema, so a
       // caller reading `describe_entity_type` sees the same bound the write path
@@ -60,7 +60,7 @@ function baseSchema(node: FieldNode): JsonSchema {
         : { type: 'string', maxLength: node.maxLength };
     case 'number':
     case 'boolean':
-      return { type: node.kind };
+      return { type: node.type };
     case 'enum':
       return { type: 'string', enum: [...node.values] };
     case 'object':
@@ -217,11 +217,11 @@ export function searchablePaths(data: DataDeclaration): string[] {
       // `json` carries its own path and no children — same rule, and the same
       // reason, as `discovery/search/fields.ts`: an opaque value may hold a
       // string, and the host cannot name a path inside one.
-      if (node.kind === 'string' || node.kind === 'enum' || node.kind === 'json') paths.push(path);
-      else if (node.kind === 'object') walk(node.fields, path);
-      else if (node.kind === 'collection' && node.item.kind === 'object') walk(node.item.fields, `${path}[]`);
-      else if (node.kind === 'collection' && node.item.kind === 'string') paths.push(`${path}[]`);
-      else if (node.kind === 'record' && node.value.kind === 'object') walk(node.value.fields, `${path}.$value`);
+      if (node.type === 'string' || node.type === 'enum' || node.type === 'json') paths.push(path);
+      else if (node.type === 'object') walk(node.fields, path);
+      else if (node.type === 'collection' && node.item.type === 'object') walk(node.item.fields, `${path}[]`);
+      else if (node.type === 'collection' && node.item.type === 'string') paths.push(`${path}[]`);
+      else if (node.type === 'record' && node.value.type === 'object') walk(node.value.fields, `${path}.$value`);
     }
   };
   walk(data.schema, '');

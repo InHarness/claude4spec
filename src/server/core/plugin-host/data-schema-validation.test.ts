@@ -15,9 +15,9 @@ import type { SlugPattern } from '../../../shared/plugin-host/slug-pattern.js';
 
 const NAME_PATTERN: SlugPattern = [{ op: 'slugify', field: 'name' }];
 const TITLE: DataDeclaration['schema'] = {
-  title: { kind: 'string', required: true, maxLength: 200 },
+  title: { type: 'string', required: true, maxLength: 200 },
 };
-const OK: DataDeclaration = { schema: { ...TITLE, name: { kind: 'string', required: true } } };
+const OK: DataDeclaration = { schema: { ...TITLE, name: { type: 'string', required: true } } };
 
 /**
  * Every fixture gets the reserved `title` unless it declares one itself.
@@ -64,8 +64,8 @@ describe('rule 1 — a collection must declare its kind', () => {
   it('rejects a collection with no `collection` flag', () => {
     const data = {
       schema: {
-        name: { kind: 'string', required: true },
-        items: { kind: 'collection', item: { kind: 'string' } },
+        name: { type: 'string', required: true },
+        items: { type: 'collection', item: { type: 'string' } },
       },
     } as unknown as DataDeclaration;
 
@@ -75,8 +75,8 @@ describe('rule 1 — a collection must declare its kind', () => {
   it('rejects a value other than value|keyed rather than defaulting it', () => {
     const data = {
       schema: {
-        name: { kind: 'string', required: true },
-        items: { kind: 'collection', collection: 'big', item: { kind: 'string' } },
+        name: { type: 'string', required: true },
+        items: { type: 'collection', collection: 'big', item: { type: 'string' } },
       },
     } as unknown as DataDeclaration;
 
@@ -86,11 +86,11 @@ describe('rule 1 — a collection must declare its kind', () => {
   it('requires a keyed collection to declare its key', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         cells: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'keyed',
-          item: { kind: 'object', fields: { row: { kind: 'number' } } },
+          item: { type: 'object', fields: { row: { type: 'number' } } },
         },
       },
     };
@@ -101,12 +101,12 @@ describe('rule 1 — a collection must declare its kind', () => {
   it('rejects a keyField that is not a field of the item', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         cells: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'keyed',
           keyFields: ['column'],
-          item: { kind: 'object', fields: { row: { kind: 'number' } } },
+          item: { type: 'object', fields: { row: { type: 'number' } } },
         },
       },
     };
@@ -128,12 +128,12 @@ describe('rule 1b — a keyed collection declares two resolvable axes', () => {
   ): DataDeclaration =>
     ({
       schema: {
-        name: { kind: 'string', required: true },
-        nRows: { kind: 'number' },
-        nCols: { kind: 'number' },
+        name: { type: 'string', required: true },
+        nRows: { type: 'number' },
+        nCols: { type: 'number' },
         ...parent,
         cells: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'keyed',
           keyFields: ['r', 'c'],
           axes: [
@@ -141,11 +141,11 @@ describe('rule 1b — a keyed collection declares two resolvable axes', () => {
             { key: 'c', extent: 'nCols' },
           ],
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
-              r: { kind: 'number' },
-              c: { kind: 'number' },
-              value: { kind: 'string' },
+              r: { type: 'number' },
+              c: { type: 'number' },
+              value: { type: 'string' },
             },
           },
           ...overrides,
@@ -232,7 +232,7 @@ describe('rule 1b — a keyed collection declares two resolvable axes', () => {
               { key: 'c', extent: 'nCols' },
             ],
           },
-          { sizes: { kind: 'collection', collection: 'keyed', item: { kind: 'number' } } },
+          { sizes: { type: 'collection', collection: 'keyed', item: { type: 'number' } } },
         ),
       ),
     ).toThrow(/does not live on the widget row|must declare keyFields/);
@@ -314,10 +314,10 @@ describe('rule 2 — the integrity vocabulary is closed', () => {
 describe('rule 3 — depth is rejected, never truncated', () => {
   it('rejects a schema nested past the projection limit', () => {
     // Five levels of nested objects — one past MAX_PROJECTION_DEPTH.
-    let node = { kind: 'string' } as Record<string, unknown>;
-    for (let i = 0; i < 5; i += 1) node = { kind: 'object', fields: { deeper: node } };
+    let node = { type: 'string' } as Record<string, unknown>;
+    for (let i = 0; i < 5; i += 1) node = { type: 'object', fields: { deeper: node } };
     const data = {
-      schema: { name: { kind: 'string', required: true }, nest: node },
+      schema: { name: { type: 'string', required: true }, nest: node },
     } as unknown as DataDeclaration;
 
     expect(check(data)).toThrow(/past the projection limit/);
@@ -326,20 +326,20 @@ describe('rule 3 — depth is rejected, never truncated', () => {
   it('accepts the deepest real built-in shape (design-system tokens)', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         groups: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
           item: {
-            kind: 'object',
+            type: 'object',
             fields: {
               tokens: {
-                kind: 'collection',
+                type: 'collection',
                 collection: 'value',
                 item: {
-                  kind: 'object',
+                  type: 'object',
                   fields: {
-                    value: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
+                    value: { type: 'record', key: { type: 'string' }, value: { type: 'string' } },
                   },
                 },
               },
@@ -356,7 +356,7 @@ describe('rule 3 — depth is rejected, never truncated', () => {
 describe('rule 4 — generated identifiers are snake_case and never reserved', () => {
   it('rejects a field projecting to a reserved SQL word', () => {
     const data: DataDeclaration = {
-      schema: { name: { kind: 'string', required: true }, order: { kind: 'number' } },
+      schema: { name: { type: 'string', required: true }, order: { type: 'number' } },
     };
 
     expect(check(data)).toThrow(/reserved SQL word/);
@@ -365,8 +365,8 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
   it('accepts a reserved-word field that declares an explicit column', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
-        order: { kind: 'number', column: 'sort_order' },
+        name: { type: 'string', required: true },
+        order: { type: 'number', column: 'sort_order' },
       },
     };
 
@@ -375,7 +375,7 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
 
   it('rejects a column name that is not a bare identifier', () => {
     const data: DataDeclaration = {
-      schema: { name: { kind: 'string', required: true }, bad: { kind: 'string', column: 'a-b' } },
+      schema: { name: { type: 'string', required: true }, bad: { type: 'string', column: 'a-b' } },
     };
 
     expect(check(data)).toThrow(/not a valid SQL identifier/);
@@ -383,7 +383,7 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
 
   it('rejects a field claiming a column the host owns', () => {
     const data: DataDeclaration = {
-      schema: { name: { kind: 'string', required: true }, slug: { kind: 'string' } },
+      schema: { name: { type: 'string', required: true }, slug: { type: 'string' } },
     };
 
     expect(check(data)).toThrow(/which the host owns/);
@@ -391,7 +391,7 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
 
   it('camelCases into snake_case rather than rejecting', () => {
     const data: DataDeclaration = {
-      schema: { name: { kind: 'string', required: true }, designSystemSlug: { kind: 'string' } },
+      schema: { name: { type: 'string', required: true }, designSystemSlug: { type: 'string' } },
     };
 
     expect(check(data)).not.toThrow();
@@ -406,14 +406,14 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
   it('rejects a reserved word in a table-backed collection item field', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         params: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
           keyFields: ['in'],
           item: {
-            kind: 'object',
-            fields: { in: { kind: 'string', required: true } },
+            type: 'object',
+            fields: { in: { type: 'string', required: true } },
           },
         },
       },
@@ -426,11 +426,11 @@ describe('rule 4 — generated identifiers are snake_case and never reserved', (
     // No keyFields ⇒ embedded JSON, so `in` is a JSON key, not an identifier.
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         params: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
-          item: { kind: 'object', fields: { in: { kind: 'string' } } },
+          item: { type: 'object', fields: { in: { type: 'string' } } },
         },
       },
     };
@@ -459,8 +459,8 @@ describe('systemPrompt.defaultPredicate', () => {
   it('rejects a field that projects to no column', () => {
     const data: DataDeclaration = {
       schema: {
-        name: { kind: 'string', required: true },
-        caption: { kind: 'string', transientInput: true },
+        name: { type: 'string', required: true },
+        caption: { type: 'string', transientInput: true },
       },
     };
     expect(withPredicate({ field: 'caption', eq: 'x' }, data)).toThrow(/projects to no column/);
@@ -478,7 +478,7 @@ describe('slugPattern', () => {
   });
 
   it('rejects a pattern that reads only optional fields', () => {
-    const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
+    const data: DataDeclaration = { schema: { caption: { type: 'string' } } };
 
     expect(check(data, [{ op: 'slugify', field: 'caption' }])).toThrow(
       /reads only optional fields/,
@@ -486,7 +486,7 @@ describe('slugPattern', () => {
   });
 
   it('accepts an optional-only pattern carrying a literal prefix', () => {
-    const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
+    const data: DataDeclaration = { schema: { caption: { type: 'string' } } };
 
     expect(
       check(data, [{ op: 'literal', value: 'x-' }, { op: 'slugify', field: 'caption' }]),
@@ -507,7 +507,7 @@ describe('slugPattern', () => {
    * instead of two entities nobody knows were meant to be one.
    */
   it('no longer accepts a random suffix as the escape from an optional-only pattern', () => {
-    const data: DataDeclaration = { schema: { caption: { kind: 'string' } } };
+    const data: DataDeclaration = { schema: { caption: { type: 'string' } } };
     expect(
       check(data, [
         [{ op: 'slugify', field: 'caption' }],
@@ -524,11 +524,11 @@ describe('slugPattern', () => {
  */
 describe('string constraints — pattern and notReserved', () => {
   const withName = (node: Record<string, unknown>) =>
-    ({ schema: { name: { kind: 'string', required: true }, f: node } }) as unknown as DataDeclaration;
+    ({ schema: { name: { type: 'string', required: true }, f: node } }) as unknown as DataDeclaration;
 
   it('accepts pattern and notReserved on a string leaf', () => {
     expect(
-      check(withName({ kind: 'string', pattern: '^[a-z_]+$', notReserved: 'sql' })),
+      check(withName({ type: 'string', pattern: '^[a-z_]+$', notReserved: 'sql' })),
     ).not.toThrow();
   });
 
@@ -547,17 +547,17 @@ describe('string constraints — pattern and notReserved', () => {
    * and only happens for the types whose routers get built.
    */
   it('rejects a pattern that does not compile', () => {
-    expect(check(withName({ kind: 'string', pattern: '[' }))).toThrow(/does not compile/);
+    expect(check(withName({ type: 'string', pattern: '[' }))).toThrow(/does not compile/);
   });
 
   it('reaches a leaf nested inside a collection item', () => {
     const data = {
       schema: {
-        name: { kind: 'string', required: true },
+        name: { type: 'string', required: true },
         rows: {
-          kind: 'collection',
+          type: 'collection',
           collection: 'value',
-          item: { kind: 'object', fields: { n: { kind: 'number', pattern: '^x$' } } },
+          item: { type: 'object', fields: { n: { type: 'number', pattern: '^x$' } } },
         },
       },
     } as unknown as DataDeclaration;
@@ -570,7 +570,7 @@ describe('string constraints — pattern and notReserved', () => {
  */
 describe('Host API 2.0.0 — the reserved title', () => {
   it('[ac:m13-title-required] rejects a schema without `title`, on the missing-schema path', () => {
-    const data: DataDeclaration = { schema: { name: { kind: 'string', required: true } } };
+    const data: DataDeclaration = { schema: { name: { type: 'string', required: true } } };
     expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
       /reserved `title` field is required/,
     );
@@ -578,11 +578,11 @@ describe('Host API 2.0.0 — the reserved title', () => {
 
   it('rejects a `title` declared with the wrong shape', () => {
     for (const title of [
-      { kind: 'string' } as const,
-      { kind: 'string', required: true } as const,
-      { kind: 'string', required: true, maxLength: 80 } as const,
+      { type: 'string' } as const,
+      { type: 'string', required: true } as const,
+      { type: 'string', required: true, maxLength: 80 } as const,
     ]) {
-      const data = { schema: { title, name: { kind: 'string' } } } as unknown as DataDeclaration;
+      const data = { schema: { title, name: { type: 'string' } } } as unknown as DataDeclaration;
       expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
         /must be declared exactly/,
       );
@@ -591,7 +591,7 @@ describe('Host API 2.0.0 — the reserved title', () => {
 
   it('refuses to let the label itself be content-bearing', () => {
     const data = {
-      schema: { title: { kind: 'string', required: true, maxLength: 200, contentBearing: true } },
+      schema: { title: { type: 'string', required: true, maxLength: 200, contentBearing: true } },
     } as unknown as DataDeclaration;
     expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
       /may not be contentBearing/,
@@ -603,8 +603,8 @@ describe('computedDefault as a derivation', () => {
   const derived = (steps: unknown): DataDeclaration =>
     ({
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, computedDefault: steps },
-        text: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, computedDefault: steps },
+        text: { type: 'string', required: true },
       },
     }) as unknown as DataDeclaration;
 
@@ -635,9 +635,9 @@ describe('computedDefault as a derivation', () => {
   it('rejects a derivation reading another computed field', () => {
     const data = {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200, computedDefault: [{ op: 'raw', field: 'label' }] },
-        label: { kind: 'string', computedDefault: [{ op: 'raw', field: 'text' }] },
-        text: { kind: 'string', required: true },
+        title: { type: 'string', required: true, maxLength: 200, computedDefault: [{ op: 'raw', field: 'label' }] },
+        label: { type: 'string', computedDefault: [{ op: 'raw', field: 'text' }] },
+        text: { type: 'string', required: true },
       },
     } as unknown as DataDeclaration;
     expect(check(data, TITLE_PATTERN)).toThrow(/itself computed/);
@@ -648,8 +648,8 @@ describe('contentBearing must be reachable', () => {
   const withContent = (extra: Record<string, unknown>): DataDeclaration =>
     ({
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200 },
-        body: { kind: 'string', contentBearing: true, ...extra },
+        title: { type: 'string', required: true, maxLength: 200 },
+        body: { type: 'string', contentBearing: true, ...extra },
       },
     }) as unknown as DataDeclaration;
 
@@ -674,8 +674,8 @@ describe('value constraints', () => {
   it('rejects maxLength on a non-string leaf', () => {
     const data = {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200 },
-        count: { kind: 'number', maxLength: 5 },
+        title: { type: 'string', required: true, maxLength: 200 },
+        count: { type: 'number', maxLength: 5 },
       },
     } as unknown as DataDeclaration;
     expect(check(data)).toThrow(/STRING constraint/);
@@ -684,8 +684,8 @@ describe('value constraints', () => {
   it('rejects a non-positive maxLength', () => {
     const data = {
       schema: {
-        title: { kind: 'string', required: true, maxLength: 200 },
-        note: { kind: 'string', maxLength: 0 },
+        title: { type: 'string', required: true, maxLength: 200 },
+        note: { type: 'string', maxLength: 0 },
       },
     } as unknown as DataDeclaration;
     expect(check(data)).toThrow(/must be a positive integer/);

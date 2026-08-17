@@ -14,39 +14,39 @@ export const uiViewData: DataDeclaration = {
      * view.
      */
     title: {
-      kind: 'string',
+      type: 'string',
       required: true,
       maxLength: 200,
       description: 'Display name (e.g. "User Profile Screen")',
     },
     url: {
-      kind: 'string',
+      type: 'string',
       clearable: true,
       description: 'Route pattern (e.g. "/users/:id"). Null/omitted = modal/drawer without routing.',
     },
-    description: { kind: 'string', clearable: true },
+    description: { type: 'string', clearable: true },
     params: {
-      kind: 'collection',
+      type: 'collection',
       collection: 'value',
       item: {
-        kind: 'object',
+        type: 'object',
         fields: {
-          name: { kind: 'string', required: true, description: 'Parameter name (no `:` prefix)' },
+          name: { type: 'string', required: true, description: 'Parameter name (no `:` prefix)' },
           in: {
-            kind: 'enum',
+            type: 'enum',
             values: ['path', 'query', 'hash'],
             required: true,
             description: 'Where the param lives',
           },
-          type: { kind: 'string', description: 'Suggested value type (string|int|uuid|enum|...)' },
-          required: { kind: 'boolean' },
-          default: { kind: 'string' },
-          description: { kind: 'string' },
+          type: { type: 'string', description: 'Suggested value type (string|int|uuid|enum|...)' },
+          required: { type: 'boolean' },
+          default: { type: 'string' },
+          description: { type: 'string' },
         },
       },
     },
-    createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-    updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+    createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+    updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     /**
      * The flag set that replaces a hand-written rename hook, a hand-written
      * nullable Zod field and a hand-written dangling-reference warning:
@@ -55,7 +55,7 @@ export const uiViewData: DataDeclaration = {
      * rather than blocks.
      */
     designSystemSlug: {
-      kind: 'string',
+      type: 'string',
       column: 'design_system_slug',
       ref: 'design-system',
       clearable: true,

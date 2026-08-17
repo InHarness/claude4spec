@@ -32,22 +32,22 @@ const widget: WritableModule = {
   payloadVersion: 1,
   data: {
     schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      label: { kind: 'string', required: true },
-      size: { kind: 'enum', values: ['s', 'm', 'l'], default: 'm' },
-      active: { kind: 'boolean', default: true },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      label: { type: 'string', required: true },
+      size: { type: 'enum', values: ['s', 'm', 'l'], default: 'm' },
+      active: { type: 'boolean', default: true },
       // The shape the review found broken: a top-level object field.
-      meta: { kind: 'object', fields: { note: { kind: 'string' }, rank: { kind: 'number' } } },
+      meta: { type: 'object', fields: { note: { type: 'string' }, rank: { type: 'number' } } },
       // And a record, which hydrate treats identically.
-      labels: { kind: 'record', key: { kind: 'string' }, value: { kind: 'string' } },
-      notes: { kind: 'collection', collection: 'value', item: { kind: 'string' } },
+      labels: { type: 'record', key: { type: 'string' }, value: { type: 'string' } },
+      notes: { type: 'collection', collection: 'value', item: { type: 'string' } },
       rows: {
-        kind: 'collection',
+        type: 'collection',
         collection: 'value',
-        item: { kind: 'object', fields: { name: { kind: 'string' }, n: { kind: 'number' } } },
+        item: { type: 'object', fields: { name: { type: 'string' }, n: { type: 'number' } } },
       },
-      createdAt: { kind: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
-      updatedAt: { kind: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
+      createdAt: { type: 'string', column: 'created_at', systemManaged: true, computedDefault: 'now' },
+      updatedAt: { type: 'string', column: 'updated_at', systemManaged: true, computedDefault: 'now' },
     },
   },
 };
@@ -159,9 +159,9 @@ describe('the write path agrees with the DDL generator', () => {
     const withComputed: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        label: { kind: 'string', required: true },
-        lastSeenAt: { kind: 'string', computedDefault: 'now' },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
+        lastSeenAt: { type: 'string', computedDefault: 'now' },
       } },
     };
     const { deps, reader } = setup(withComputed);
@@ -188,9 +188,9 @@ describe('the write path agrees with the DDL generator', () => {
     const camel: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        label: { kind: 'string', required: true },
-        designSystemSlug: { kind: 'string' },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
+        designSystemSlug: { type: 'string' },
       } },
     };
     const { deps, reader } = setup(camel);
@@ -223,9 +223,9 @@ describe('the write path agrees with the DDL generator', () => {
     const nullable: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        label: { kind: 'string', required: true },
-        note: { kind: 'string', clearable: true },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
+        note: { type: 'string', clearable: true },
       } },
     };
     const { deps, reader } = setup(nullable);
@@ -243,10 +243,10 @@ describe('system fields', () => {
     const renamed: WritableModule = {
       type: 'widget', payloadVersion: 1,
       data: { schema: {
-        title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-        label: { kind: 'string', required: true },
-        createdAt: { kind: 'string', column: 'made_at', systemManaged: true, computedDefault: 'now' },
-        updatedAt: { kind: 'string', column: 'touched_at', systemManaged: true, computedDefault: 'now' },
+        title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+        label: { type: 'string', required: true },
+        createdAt: { type: 'string', column: 'made_at', systemManaged: true, computedDefault: 'now' },
+        updatedAt: { type: 'string', column: 'touched_at', systemManaged: true, computedDefault: 'now' },
       } },
     };
     const { db, deps } = setup(renamed);
@@ -287,12 +287,12 @@ describe('dangling refs warn, they do not abort', () => {
   const linker: WritableModule = {
     type: 'widget', payloadVersion: 1,
     data: { schema: {
-      title: { kind: 'string', required: true, maxLength: 200, default: 'Untitled' },
-      label: { kind: 'string', required: true },
+      title: { type: 'string', required: true, maxLength: 200, default: 'Untitled' },
+      label: { type: 'string', required: true },
       links: {
-        kind: 'collection', collection: 'value', keyFields: ['target'],
-        item: { kind: 'object', fields: {
-          target: { kind: 'string', required: true, ref: 'widget', onMissing: 'warn', onDelete: 'leave-dangling' },
+        type: 'collection', collection: 'value', keyFields: ['target'],
+        item: { type: 'object', fields: {
+          target: { type: 'string', required: true, ref: 'widget', onMissing: 'warn', onDelete: 'leave-dangling' },
         } },
       },
     } },

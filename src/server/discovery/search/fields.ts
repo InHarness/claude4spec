@@ -183,15 +183,15 @@ function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[]
      * see without a second call per hit.
      */
     if (node.contentBearing) return;
-    if (node.kind === 'string' || node.kind === 'enum') {
+    if (node.type === 'string' || node.type === 'enum') {
       push(path);
       return;
     }
-    if (node.kind === 'object') {
+    if (node.type === 'object') {
       for (const [name, child] of Object.entries(node.fields)) visit(child, `${path}.${name}`, depth + 1);
       return;
     }
-    if (node.kind === 'collection') {
+    if (node.type === 'collection') {
       // Its rows are in a table of their own; `data` never carries them.
       if (hasProjectionTable(node)) return;
       // The item is the collection's own level, not one below it — the same rule
@@ -199,12 +199,12 @@ function textPathsOfSchema(schema: DataDeclaration['schema']): SearchableField[]
       visit(node.item, `${path}[]`, depth);
       return;
     }
-    if (node.kind === 'record') {
+    if (node.type === 'record') {
       visit(node.key, `${path}.$key`, depth + 1);
       visit(node.value, `${path}.$value`, depth + 1);
       return;
     }
-    if (node.kind === 'json') {
+    if (node.type === 'json') {
       /**
        * The node's OWN path, and no children — the host does not know what is
        * inside, so it cannot name a path within it.

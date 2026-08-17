@@ -39,7 +39,7 @@ function makeDb(): Database.Database {
 const widgetModule = {
   type: 'widget',
   payloadVersion: 1,
-  data: { schema: { label: { kind: 'string' as const, required: true } } },
+  data: { schema: { label: { type: 'string' as const, required: true } } },
 };
 
 function hostWith(
