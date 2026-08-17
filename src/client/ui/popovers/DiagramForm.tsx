@@ -23,7 +23,7 @@ type PreviewState =
   | { status: 'error'; message: string; line?: number };
 
 export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
-  const { mode, initial } = request.props;
+  const { mode, initial, captionEditable = true } = request.props;
   const [format, setFormat] = useState<string>(initial?.format || 'mermaid');
   /**
    * 0.2.22 — TWO fields where there was one.
@@ -150,14 +150,16 @@ export function DiagramForm({ request, onClose }: PopoverFormProps<'diagram'>) {
               <FieldLabel>Title</FieldLabel>
               <TextInput value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Auth flow" />
             </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <FieldLabel>Caption (optional)</FieldLabel>
-              <TextInput
-                value={caption}
-                onChange={(e) => setCaption(e.target.value)}
-                placeholder="Shown under this embed"
-              />
-            </div>
+            {captionEditable && (
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <FieldLabel>Caption (optional)</FieldLabel>
+                <TextInput
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  placeholder="Shown under this embed"
+                />
+              </div>
+            )}
             <button
               onClick={() => setFullscreen((f) => !f)}
               title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}

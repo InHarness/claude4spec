@@ -12,37 +12,35 @@ export interface SlashInvokeDeps {
   qc: QueryClient;
   /** Page path the editor is currently mounted on. Used to pre-fill AC tags. */
   currentPath?: string | null;
-  /** Root the page lives in. Decides which of the two tagging axes applies. */
-  currentRootId?: string | null;
 }
 
 /**
  * The tagging convention (see `acSystemPrompt.narrativeBlock`) applied to the
  * page the author is standing on, so `/ac` opens with the right tag already in
- * the box. Two axes, one per root:
+ * the box. Two axes:
  *
- *  - a host module page → `mNN`;
- *  - an entity-type page in the `plugins` root → `entity-{type}`.
+ *  - a host module page (`modules/mNN-*`) → `mNN`;
+ *  - a page named for an entity type → `entity-{type}`.
  *
  * The second used to match `entities/<slug>.md`, a layout that stopped existing
- * when entity-type pages moved into the `plugins` root — so it had quietly
- * stopped firing at all. It resolves the type by ASKING THE HOST rather than
- * munging the filename: the pages are named for their plugin envelope as often
+ * once entity-type pages moved out into their own root — so it had quietly
+ * stopped firing at all. It now resolves the type by ASKING THE HOST rather
+ * than munging the path: the pages are named for their plugin envelope as often
  * as for their type (`c4s-plugin-database-tables.md` holds `database-table`),
- * so no string rule gets it right. A page whose basename names no registered
- * type simply pre-fills nothing, which is the honest answer.
+ * so no string rule gets it right.
+ *
+ * Deliberately NOT gated on a root id. Which root holds the entity-type pages
+ * is each project's own naming choice (`plugins` here, `types` elsewhere), and
+ * a hardcoded id makes the branch dead everywhere but one repo. The host lookup
+ * is the real predicate: a page whose basename names no registered type
+ * pre-fills nothing, which is the honest answer in any root.
  */
-function detectAcDefaultTags(
-  currentPath: string | null | undefined,
-  currentRootId: string | null | undefined,
-): string[] {
+function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
   if (!currentPath) return [];
   const m = currentPath.match(/^modules\/(m\d{2})-/i);
   if (m) return [m[1]!.toLowerCase()];
-  if (currentRootId === 'plugins') {
-    const base = currentPath.split('/').pop()?.replace(/\.mdx?$/i, '') ?? '';
-    if (base && clientPluginHost.getAvailable(base)) return [`entity-${base}`];
-  }
+  const base = currentPath.split('/').pop()?.replace(/\.mdx?$/i, '') ?? '';
+  if (base && clientPluginHost.getAvailable(base)) return [`entity-${base}`];
   return [];
 }
 
@@ -268,7 +266,7 @@ async function runTaggedMixed(editor: Editor): Promise<void> {
 }
 
 async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const defaultTags = detectAcDefaultTags(deps.currentPath ?? null, deps.currentRootId ?? null);
+  const defaultTags = detectAcDefaultTags(deps.currentPath ?? null);
   const result = await openPopover('create-ac', coordsAt(editor), { defaultTags });
   if (!result) return;
   try {

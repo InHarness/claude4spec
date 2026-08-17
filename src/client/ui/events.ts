@@ -170,7 +170,13 @@ export type PopoverMap = {
     result: EditChipAttrs;
   };
   diagram: {
-    props: { mode: 'create' | 'edit'; initial?: DiagramInitial };
+    /**
+     * `captionEditable` is false where the card has no reference node behind it
+     * — a chat tool result, say. The caption lives on the reference, so with
+     * nowhere to write it the field would take input and drop it; hiding it is
+     * the honest surface. Defaults to true (the editor's own cards).
+     */
+    props: { mode: 'create' | 'edit'; initial?: DiagramInitial; captionEditable?: boolean };
     result: DiagramResult;
   };
 };

@@ -86,7 +86,14 @@ export function DiagramCard({ slug, entity, caption, onOpen, onCaptionChange }: 
     const result = await openPopover(
       'diagram',
       { x: e?.clientX ?? rect?.left ?? 100, y: e?.clientY ?? (rect?.bottom ?? 100) + 4 },
-      { mode: 'edit', initial: { format, title: entity?.title ?? '', caption: caption ?? '', source } },
+      {
+        mode: 'edit',
+        initial: { format, title: entity?.title ?? '', caption: caption ?? '', source },
+        // No handler means no reference node behind this card (a chat tool
+        // result renders one from a slug alone). Show no caption field rather
+        // than take an edit with nowhere to save it.
+        captionEditable: !!onCaptionChange,
+      },
     );
     if (!result || '__action' in result) return;
 
