@@ -308,15 +308,64 @@ function addMissingColumns(
 }
 
 /**
+ * Columns the host owns, which are never a projection of a declared field and so
+ * must never be read as one that went away.
+ *
+ * `slug` is the row's identity and comes from the envelope, not from
+ * `data.schema`. A collection's projection row additionally carries its binding
+ * column back to the parent and its ordinal. The `id` local surrogate is excluded
+ * by its own flag, one layer up.
+ */
+const HOST_OWNED_COLUMNS = new Set(['slug', 'id', 'ord']);
+
+/**
+ * Drop columns the schema no longer declares.
+ *
+ * THE OTHER HALF OF "THE PROJECTION IS GENERATED". A generator that adds but
+ * never removes does not compute `schema → DDL`; it computes a function of the
+ * database's history, so two installs of one project diverge physically and the
+ * regeneration this module claims is idempotent is not.
+ *
+ * It is also, concretely, a broken upgrade. A removed field's column keeps its
+ * `NOT NULL` while the write path binds only DECLARED columns, so the very next
+ * `indexAll()` fails with `NOT NULL constraint failed` — inside the single
+ * rebuild transaction, which rolls the whole rebuild back and serves the project
+ * from a permanently stale index. 0.2.27 removes `database-table.name` and would
+ * have done exactly that to every existing project.
+ *
+ * SAFE BECAUSE THE FILES ARE THE TRUTH. Dropping a projection column destroys no
+ * authored data: the column is derived, the entity files are authoritative, and
+ * `indexAll()` refills from them immediately after. That is the same reasoning
+ * that lets this module's docblock name "drop the table and rebuild" as the
+ * recovery for anything it cannot do in place — this is the narrower, cheaper
+ * version of that.
+ *
+ * Bounded twice, and both bounds are the contract's: never a host-owned column,
+ * and never a table the generator did not create (the caller only ever passes it
+ * generated tables).
+ */
+function dropUndeclaredColumns(db: Database, table: string, declared: Set<string>): string[] {
+  if (!tableExists(db, table)) return [];
+  const dropped: string[] = [];
+  for (const column of existingColumns(db, table)) {
+    if (declared.has(column) || HOST_OWNED_COLUMNS.has(column)) continue;
+    db.exec(`ALTER TABLE ${table} DROP COLUMN ${column};`);
+    dropped.push(`${table}.${column}`);
+  }
+  return dropped;
+}
+
+/**
  * Additive reconciliation for tables that already exist — the parent row AND
  * every projection table.
  *
  * `CREATE TABLE IF NOT EXISTS` no-ops on an existing table, so a field ADDED to
  * a schema would otherwise never reach an existing database — the type would
- * write a column that is not there. `ALTER TABLE ADD COLUMN` closes exactly that
- * gap and nothing wider: a REMOVED or RETYPED field is left alone here and
- * resolved by the rebuild, because those are the changes that need the files to
- * be re-read rather than the table to be edited.
+ * write a column that is not there. `ALTER TABLE ADD COLUMN` closes that gap, and
+ * `DROP COLUMN` closes its mirror image: a field REMOVED from the schema leaves a
+ * column behind that the write path never binds, and if it was `NOT NULL` the
+ * next rebuild fails on it. A RETYPED field is still left to the rebuild — that
+ * one genuinely needs the files re-read rather than the table edited.
  *
  * Projection tables are reconciled too, and must be. An earlier revision covered
  * only the parent, which left a field added to a table-backed collection
@@ -333,10 +382,15 @@ function addMissingColumns(
 function reconcileColumns(db: Database, module: ProjectableModule): string[] {
   const schema = module.data?.schema;
   if (!schema) return [];
-  const added: string[] = [];
+  const changed: string[] = [];
+
+  const declaredColumns = (fields: Array<[string, FieldNode]>) =>
+    new Set(fields.map(([name, node]) => columnOf(name, node)));
 
   const embedded = Object.entries(schema).filter(([, node]) => isEmbedded(node));
-  added.push(...addMissingColumns(db, mainTableOf(module), embedded));
+  const mainTable = mainTableOf(module);
+  changed.push(...addMissingColumns(db, mainTable, embedded));
+  changed.push(...dropUndeclaredColumns(db, mainTable, declaredColumns(embedded)));
 
   for (const [name, node] of Object.entries(schema)) {
     if (!hasProjectionTable(node)) continue;
@@ -344,12 +398,20 @@ function reconcileColumns(db: Database, module: ProjectableModule): string[] {
     const item = collection.item;
     const itemFields: Array<[string, FieldNode]> =
       item.type === 'object' ? Object.entries(item.fields) : [['value', item]];
-    added.push(
-      ...addMissingColumns(db, projectionTableOf(module, name, collection), itemFields),
-    );
+    const table = projectionTableOf(module, name, collection);
+    changed.push(...addMissingColumns(db, table, itemFields));
+    /**
+     * A projection row's binding column back to its parent is host-owned, like
+     * `slug` — it is not a projection of any declared item field, so it must be
+     * spared explicitly or the first boot would drop the junction's own key.
+     */
+    const declared = declaredColumns(itemFields);
+    declared.add(bindingColumnOf(module));
+    for (const axis of collection.keyFields ?? []) declared.add(snakeCase(axis));
+    changed.push(...dropUndeclaredColumns(db, table, declared));
   }
 
-  return added;
+  return changed;
 }
 
 /**

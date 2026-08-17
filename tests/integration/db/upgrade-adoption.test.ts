@@ -102,13 +102,19 @@ describe('upgrading a pre-0.2.2 database', () => {
        * 0.2.22 — the adopted tables gain the reserved `title` column, and that
        * is the point of `reconcileColumns`: a legacy database reaches the new
        * shape by an ADD COLUMN at boot rather than by a rebuild that would
-       * discard the rows this test just checked are intact. `dto` also keeps its
-       * now-unused `name` column, since a removed field is resolved by the
-       * rebuild from files, never by dropping a column underneath a running
-       * install.
+       * discard the rows this test just checked are intact.
+       *
+       * 0.2.27 — and they LOSE the columns their type no longer declares. This
+       * reverses the earlier rule that a removed field is "resolved by the
+       * rebuild, never by dropping a column underneath a running install",
+       * because that rule did not survive contact with a NOT NULL column: the
+       * legacy `dto.name` is `TEXT NOT NULL`, the write path binds only DECLARED
+       * columns, so the rebuild it deferred to is exactly what fails on it. A
+       * generator that only ever adds computes a function of the database's
+       * history rather than of the schema.
        */
       expect(result.alteredColumns).toEqual(
-        expect.arrayContaining(['endpoint.title', 'dto.title', 'ac.title']),
+        expect.arrayContaining(['endpoint.title', 'dto.title', 'ac.title', 'dto.name']),
       );
 
       // 3. The retired ledger is gone, dropped by the host chain rather than
@@ -119,9 +125,12 @@ describe('upgrading a pre-0.2.2 database', () => {
           .get(),
       ).toBeUndefined();
 
-      // 4. Nothing was touched.
-      expect(db.prepare('SELECT name FROM dto WHERE slug = ?').get('user-dto')).toEqual({
-        name: 'UserDto',
+      // 4. The ROWS were not touched — which is the property adoption is about.
+      //    `dto.name` is gone as a COLUMN (its type stopped declaring the field),
+      //    but nothing that is still part of the projection moved: the row is
+      //    there, under its original slug, with its declared columns intact.
+      expect(db.prepare('SELECT slug FROM dto WHERE slug = ?').get('user-dto')).toEqual({
+        slug: 'user-dto',
       });
       expect(db.prepare('SELECT summary FROM endpoint WHERE slug = ?').get('get-users')).toEqual({
         summary: 'List',

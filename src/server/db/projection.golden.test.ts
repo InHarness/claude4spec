@@ -206,6 +206,65 @@ describe('projection generator — reconciling an existing database', () => {
     expect(applyProjection(db, MODULES)).toEqual({ created: [], alteredColumns: [] });
     db.close();
   });
+
+  /**
+   * THE MIRROR IMAGE OF ADD COLUMN, and the bug that earned it.
+   *
+   * A generator that adds but never removes does not compute `schema → DDL`; it
+   * computes a function of the database's history, so two installs of one project
+   * diverge physically. That is the principled argument. The concrete one is that
+   * a stale NOT NULL column BREAKS the next rebuild: the write path binds only
+   * declared columns, so the insert fails inside `indexAll`'s single transaction
+   * and rolls the whole rebuild back, leaving a permanently stale index.
+   *
+   * Safe because the projection is derived and the entity files are the truth —
+   * the rebuild that follows refills every declared column from them.
+   */
+  it('drops a column the schema no longer declares', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    db.exec(`ALTER TABLE ac ADD COLUMN legacy_note TEXT NOT NULL DEFAULT ''`);
+    const names = () => columnsOf(db, 'ac').map((c) => c.name);
+    expect(names()).toContain('legacy_note');
+
+    const result = applyProjection(db, MODULES);
+    expect(result.alteredColumns).toContain('ac.legacy_note');
+    expect(names()).not.toContain('legacy_note');
+    db.close();
+  });
+
+  it('a stale NOT NULL column would otherwise make the next write impossible', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    // No DEFAULT: exactly the shape a removed required field leaves behind.
+    db.exec(`ALTER TABLE ac ADD COLUMN gone TEXT`);
+    db.exec(`UPDATE ac SET gone = 'x'`);
+    applyProjection(db, MODULES);
+    expect(() =>
+      db.prepare(`INSERT INTO ac (slug, title, text) VALUES ('b', 't', 't')`).run(),
+    ).not.toThrow();
+    db.close();
+  });
+
+  /**
+   * The two exclusions, both the contract's. `slug` is the row's identity and
+   * comes from the envelope rather than from `data.schema`; a keyed collection's
+   * projection row carries its binding column back to the parent. Neither is a
+   * projection of a declared field, and dropping either would take out the
+   * junction's own key.
+   */
+  it('never drops the identity or binding columns', () => {
+    const db = new Database(':memory:');
+    applyProjection(db, MODULES);
+    const before = tablesOf(db).map((t) => [t, columnsOf(db, t)] as const);
+    applyProjection(db, MODULES);
+    for (const [table, columns] of before) {
+      expect(columnsOf(db, table)).toEqual(columns);
+      const names = columns.map((c) => c.name);
+      if (names.includes('slug')) expect(columnsOf(db, table).map((c) => c.name)).toContain('slug');
+    }
+    db.close();
+  });
 });
 
 describe('projection generator — idempotency', () => {
