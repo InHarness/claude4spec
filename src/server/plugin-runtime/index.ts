@@ -140,4 +140,14 @@ export type { SlugPattern, SlugStep } from '../../shared/plugin-host/slug-patter
  * host adds.
  */
 export { checkValidator, validatorMessage } from '../../shared/plugin-host/named-validators.js';
+/**
+ * 0.2.27 — the UTF-8 byte count behind every `contentBearing` descriptor.
+ *
+ * Needed by a type that OVERRIDES `diff` and declares a content-bearing field:
+ * the host's default diff reports `<field>_changed: { fromBytes, toBytes }`, and
+ * an override has to produce the same numbers the read descriptors advertise. A
+ * second implementation would disagree the first time a mockup held a character
+ * outside ASCII — `.length` counts UTF-16 units, not bytes.
+ */
+export { contentBytes } from '../../shared/plugin-host/data-schema.js';
 export type { ValidatorKind, ValidatorFailure } from '../../shared/plugin-host/named-validators.js';

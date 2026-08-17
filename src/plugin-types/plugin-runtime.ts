@@ -259,6 +259,12 @@ export declare function validatorMessage(
   value: string,
 ): string;
 
+// 0.2.27 — the UTF-8 byte count behind every `contentBearing` descriptor. A type
+// overriding `diff` while declaring a content-bearing field must report the same
+// numbers the read descriptors advertise; `.length` counts UTF-16 units and would
+// disagree on the first non-ASCII character.
+export declare function contentBytes(value: unknown): number;
+
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build
 // with the host's `z`, obtained here — NOT a bundled `import { z } from 'zod'`. The

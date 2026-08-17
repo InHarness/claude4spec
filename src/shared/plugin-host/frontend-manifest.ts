@@ -128,6 +128,9 @@ export const PLUGIN_RUNTIME_BACKEND_VALUE_NAMES = [
   // host's; a plugin transcribing it drifts on the first entry the host adds.
   'checkValidator',
   'validatorMessage',
+  // 0.2.27 — a type overriding `diff` must report the byte counts the read
+  // descriptors advertise, not a second count of its own.
+  'contentBytes',
 ] as const;
 
 /**

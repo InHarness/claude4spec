@@ -64,6 +64,44 @@ export const uiViewData: DataDeclaration = {
       description:
         'Slug of a design-system this view uses (no FK; dangling allowed). Null = detach. Omit = unchanged.',
     },
+    /**
+     * The screen's MOCKUP — a blob of HTML, and the corpus's second
+     * `contentBearing` field after `diagram.source`.
+     *
+     * On the entity rather than in a page for the reason the DSL moved out to
+     * `diagram.source`: the artefact runs to kilobytes, so carrying it in a read
+     * record would poison the context of every agent that reads a view, while
+     * storing it once lets every reader share it by slug. The flag is the whole
+     * mechanism — no read emits it on any surface (`select` included), it stays
+     * out of `search_entities` scope, and `get_field_content` issues it. None of
+     * that is code here; the host derives all of it from the flag.
+     *
+     * It ILLUSTRATES the view, it does not define it. Routing truth is `url` +
+     * `params[]`, so a mockup that disagrees with them is a legal state nobody
+     * validates — not even the client-side `url` ↔ `params` linter, which never
+     * reads this field.
+     *
+     * Nullable and `clearable`, unlike the required `diagram.source`: a view
+     * without a mockup is ordinary, and `update_entities({ mockupHtml: null })`
+     * is how one is removed. Omitting the field changes nothing, which is what
+     * keeps a title edit from wiping a mockup.
+     *
+     * Written literally — no HTML validation, no trim. A mockup half-finished
+     * mid-iteration is a legal state, and the generated write path has no
+     * per-type hook to catch it in anyway.
+     *
+     * LAST, like `designSystemSlug` before it: field order is column order and
+     * the baseline gate compares `PRAGMA table_info` positionally.
+     */
+    mockupHtml: {
+      type: 'string',
+      column: 'mockup_html',
+      clearable: true,
+      contentBearing: true,
+      description:
+        'HTML mockup of the screen. Content-bearing: reads never emit it — fetch it with ' +
+        'get_field_content. Null = no mockup; null in an update clears it, omitting it changes nothing.',
+    },
   },
 };
 

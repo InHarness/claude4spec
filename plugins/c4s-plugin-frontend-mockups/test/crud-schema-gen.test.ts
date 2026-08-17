@@ -170,11 +170,16 @@ const CASES = [
     data: uiViewData,
     create: uiViewCreateSchema,
     update: uiViewUpdateSchema,
-    createAdds: [],
+    // 0.2.27 — the mockup. Written through the ORDINARY write path: the
+    // `contentBearing` flag governs reads, so the field is an unremarkable
+    // optional string in both input shapes.
+    createAdds: ['mockupHtml'],
     // Every type takes `tags` on update. Two of the six hand-written shapes
     // omitted it for no stated reason — nothing about ui-view makes its tags
     // less editable than ac's.
-    updateAdds: ['tags'],
+    updateAdds: ['tags', 'mockupHtml'],
+    // `clearable`, so `null` clears it — the arm the retired shape had no field for.
+    updateNullAdds: ['mockupHtml'],
   },
   {
     type: 'design-system',
@@ -183,11 +188,12 @@ const CASES = [
     update: designSystemUpdateSchema,
     createAdds: [],
     updateAdds: ['tags'],
+    updateNullAdds: [],
   },
 ];
 
 describe('item 27 — generated CRUD schemas vs the hand-written ones they replace', () => {
-  describe.each(CASES)('$type', ({ data, create, update, createAdds, updateAdds }) => {
+  describe.each(CASES)('$type', ({ data, create, update, createAdds, updateAdds, updateNullAdds }) => {
     it('create: same fields, plus only the enumerated additions', () => {
       expect(keys(buildCreateShape(data))).toEqual([...keys(create), ...createAdds].sort());
     });
@@ -215,7 +221,9 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
       // `clearable` is the ONLY source of a null arm. If the two disagree, a
       // caller either loses the ability to clear a field or gains the ability to
       // null one the column rejects.
-      expect(nullableKeys(buildUpdateShape(data))).toEqual(nullableKeys(update));
+      expect(nullableKeys(buildUpdateShape(data))).toEqual(
+        [...nullableKeys(update), ...updateNullAdds].sort(),
+      );
     });
   });
 
