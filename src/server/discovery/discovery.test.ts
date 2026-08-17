@@ -1114,15 +1114,16 @@ describe('discovery core', () => {
 
     // `select: []` is the identity skeleton — a legal, cheap request.
     const skeleton = c.getEntities({ type: 'widget', slugs: ['a'], select: [] });
+    expect(skeleton.selectedFields).toEqual(['slug', 'title', 'tags', 'href']);
     /**
-     * The echo lists `type` because the ROW carries it. It did not until 0.2.26,
-     * which made this envelope the one place a consumer could not trust: it
-     * described a four-field record and handed back a five-field one.
+     * The row is WIDER than its own echo by exactly `type`. Pinned here because
+     * it is a live asymmetry rather than an accident nobody noticed: the
+     * criterion `ac-select-jest-legalne-i-znaczy-sam-szki` fixes the echo at
+     * these four, while `project()` puts the envelope's `type` on every record.
+     * A patch asks the spec which of the two should move.
      */
-    expect(skeleton.selectedFields).toEqual(['type', 'slug', 'title', 'tags', 'href']);
-    expect(Object.keys(skeleton.results[0]!.entity as object).sort()).toEqual(
-      [...skeleton.selectedFields].sort(),
-    );
+    expect(skeleton.results[0]!.entity).toHaveProperty('type');
+    expect(skeleton.selectedFields).not.toContain('type');
     /**
      * `href` is in the skeleton because a chip is a LABEL AND A LINK, and the
      * host is now the only thing that can supply the second: it is derived from

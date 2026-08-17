@@ -203,11 +203,18 @@ export function project(
  * that were merely not requested.
  */
 export function selectedFieldsOf(select: readonly string[] | undefined, schema: Schema): string[] {
-  // `type` rides with identity here for the same reason it does in `project()`
-  // above: it is on every projected row, `select: []` included. Omitting it made
-  // the echo disagree with the record it describes — the one thing this function
-  // exists to prevent.
-  const identity = ['type', ...IDENTITY_FIELDS];
+  /**
+   * `type` is deliberately NOT listed, even though `project()` puts it on every
+   * row. The echo and the record therefore differ by exactly one key.
+   *
+   * That looked like a bug and was nearly "fixed" while implementing brief
+   * 0.2.26 — until the acceptance criterion
+   * `ac-select-jest-legalne-i-znaczy-sam-szki` turned out to pin this list to
+   * `['slug','title','tags','href']`. Whether the envelope should describe the
+   * envelope fact as well as the data fields is a specification question; a
+   * patch is filed. Until it is answered, the criterion wins.
+   */
+  const identity = [...IDENTITY_FIELDS];
   if (select) return [...new Set([...identity, ...select])];
   return [
     ...new Set([
