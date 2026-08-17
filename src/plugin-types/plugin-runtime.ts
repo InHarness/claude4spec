@@ -39,6 +39,7 @@ import type {
   EntityModuleManifest,
   SystemPromptContribution,
 } from '../shared/plugin-host/types.js';
+import type { ValidatorFailure, ValidatorKind } from '../shared/plugin-host/named-validators.js';
 
 // ── L11/L1 contract — dep-free, re-exported from the canonical host modules ──
 // These are the interfaces the brief names as "the contract's home"; keeping
@@ -77,6 +78,7 @@ export type {
   ScalarNode,
 } from '../shared/plugin-host/data-schema.js';
 export type { SlugPattern, SlugStep } from '../shared/plugin-host/slug-pattern.js';
+export type { ValidatorKind, ValidatorFailure } from '../shared/plugin-host/named-validators.js';
 
 // ── Backend mount context ──
 // Host-provided dependencies are loosely typed: the real types (express Router,
@@ -237,6 +239,25 @@ export declare class DomainError extends Error {
   constructor(code: string, message: string);
   code: string;
 }
+
+// 0.2.27 — the named-validator registry behind the `kind` value constraint.
+//
+// BACKEND-ONLY VALUES, published for ONE caller shape: a `payloadUpgrades` step
+// migrating files onto a field that has just gained a validator. Such a step must
+// decide whether a stored value passes, and it must refuse rather than repair when
+// it does not — so it needs the host's rule, not a transcription of it. A plugin
+// carrying its own copy of the identifier pattern or the reserved-word list drifts
+// from the host on the first keyword the host adds, which is the whole reason the
+// registry is the host's in the first place.
+//
+// The declaration side needs nothing from here: a type says
+// `kind: 'sql-identifier'` in `data.schema` and the host does the enforcing.
+export declare function checkValidator(kind: ValidatorKind, value: string): ValidatorFailure | null;
+export declare function validatorMessage(
+  kind: ValidatorKind,
+  failure: ValidatorFailure,
+  value: string,
+): string;
 
 // zod facade (0.1.134→next). A plugin's backend schema code (the `backend.crud`
 // create/update schemas, a custom `backend.mcpServer`'s `mcpTool` shapes) MUST build

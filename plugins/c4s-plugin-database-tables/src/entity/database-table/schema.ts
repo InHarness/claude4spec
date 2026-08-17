@@ -29,53 +29,33 @@ import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 export const databaseTableData: DataDeclaration = {
   schema: {
     /**
-     * The reserved label — and this is the ONE type where it lives beside a
-     * surviving `name`, because the two are genuinely different facts.
+     * The reserved label — and for THIS type it is the SQL table identifier.
      *
-     * `name` is a SQL identifier (`order_items`), constrained by a pattern and
-     * a reserved-word list, and code is generated from it. `title` is what a
-     * person reads. Renaming the identifier to `title` would have made the
-     * schema claim that an identifier is a label, and forced either the
-     * constraint onto every other type's title or the constraint's removal here.
+     * The type carried two name fields until 0.2.27, on the reasoning that an
+     * identifier and a label are different facts. The corpus never agreed: across
+     * 22 entities `title` equalled `name` character for character, not once
+     * otherwise. The separation was a distinction nobody drew, so it is gone, and
+     * the reserved field absorbs the role.
      *
-     * `computedDefault` copies `name`, so nothing has to be authored twice: a
-     * table created as `order_items` is titled `order_items` until somebody
-     * decides it is really "Order line items".
+     * `kind: 'sql-identifier'` is the host's named validator, and the price is
+     * named with it: instances of this type never get a human name — not an
+     * unused one, an UNWRITABLE one. That is justified only where the instance's
+     * name and its technical identifier are genuinely one thing, which is exactly
+     * the case here and is not the general case.
+     *
+     * NO `computedDefault`, deliberately: there is nothing left to derive from,
+     * so the field is required outright and a write without it fails input
+     * validation.
      */
     title: {
       type: 'string',
       required: true,
       maxLength: 200,
-      computedDefault: [{ op: 'raw', field: 'name' }],
-      description: 'Human label. Defaults to the SQL identifier in `name`.',
-    },
-    /**
-     * The SQL table identifier, and the slug source.
-     *
-     * The pattern is case-INSENSITIVE by construction, which is not sloppiness:
-     * two rules meet on this field and a strictly-lowercase shape makes the
-     * second one unreachable. The name must be an identifier, AND
-     * `Order_Items` / `ORDER_ITEMS` / `order_items` must all be creatable and
-     * all collapse onto the slug `order-items`. `slugify` does the lowercasing;
-     * the shape check has no business repeating it.
-     *
-     * `notReserved` rather than folding the word list into the pattern: it is
-     * set membership, not shape, and it earns its own message. The host owns
-     * the list, so this cannot drift from what the host enforces elsewhere.
-     */
-    name: {
-      type: 'string',
-      required: true,
-      pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
-      notReserved: 'sql',
-      // 0.2.22 — bounded at last. An identifier had no length limit at all,
-      // which no database agrees with; 200 matches the host's title bound so
-      // the two constraints on this entity read the same way.
-      maxLength: 200,
+      kind: 'sql-identifier',
       description:
-        'SQL table identifier — a letter or underscore, then letters, digits or underscores, ' +
-        'and never a reserved SQL word. The slug is `slugify(name)`; editing `name` alone does ' +
-        'NOT move the slug, a rename travels as `newSlug`.',
+        'SQL table identifier, and the table\'s name — a letter or underscore, then letters, ' +
+        'digits or underscores, and never a reserved SQL word. The slug is `slugify(title)`; ' +
+        'editing `title` alone does NOT move the slug, a rename travels as `newSlug`.',
     },
 
     description: {
@@ -210,11 +190,17 @@ export const databaseTableData: DataDeclaration = {
 };
 
 /**
- * `slugify(name)` — the retired plugin's `databaseTableSlugFrom` without its
- * random fallback, which is unreachable once `name` cannot be blank.
+ * `slugify(title)` — the retired plugin's `databaseTableSlugFrom` without its
+ * random fallback, which is unreachable once the source cannot be blank.
  *
- * Single-alternative, which is exactly what makes `name` a SLUG SOURCE and
+ * Single-alternative, which is exactly what makes `title` a SLUG SOURCE and
  * therefore non-blank in both generated shapes. See the composition note in
- * `crud-schema-gen`: that rule and the two flags above have to hold at once.
+ * `crud-schema-gen`: that rule and the validator above have to hold at once.
+ *
+ * Unchanged in meaning by the 0.2.27 field merge. The slug was never derived
+ * because `title` copied `name`; it is derived because `slugify` is handed the
+ * entity's name, and that value now arrives from one field instead of two.
+ * Mixed case still collapses: a table titled `Order_Archive` slugs to
+ * `order-archive` while the title keeps its capitals.
  */
 export const databaseTableSlugPattern: SlugPattern = [{ op: 'slugify', field: 'title' }];

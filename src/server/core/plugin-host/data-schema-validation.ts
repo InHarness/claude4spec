@@ -52,6 +52,7 @@ import {
 } from '../../../shared/plugin-host/slug-pattern.js';
 import { PluginManifestError } from './manifest-adapter.js';
 import { SQL_RESERVED_WORDS } from '../../../shared/plugin-host/sql-reserved-words.js';
+import { VALIDATOR_KINDS, isValidatorKind } from '../../../shared/plugin-host/named-validators.js';
 
 /**
  * snake_case only — stricter than the bare-identifier rule in
@@ -267,7 +268,7 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
      * believes a shape is enforced.
      */
     if (node.type !== 'string') {
-      for (const flag of ['pattern', 'notReserved'] as const) {
+      for (const flag of ['kind'] as const) {
         if ((node as unknown as Record<string, unknown>)[flag] !== undefined) {
           fail(
             type,
@@ -277,19 +278,19 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
           );
         }
       }
-    } else if (node.pattern !== undefined) {
+    } else if (node.kind !== undefined) {
       /**
-       * Compiled HERE so a typo fails at registration, naming the type and the
-       * field. `crud-schema-gen` compiles it once per generated schema, which is
-       * router-construction time — far from the declaration, with no type name
-       * in the message, and only for the types whose routers get built.
+       * Resolved HERE so an unknown name fails at registration, naming the type
+       * and the field. A validator name that resolves to nothing is worse than a
+       * typo in a pattern: the value would pass every write untouched while the
+       * declaration claims it is screened.
        */
-      try {
-        new RegExp(node.pattern);
-      } catch (err) {
+      if (!isValidatorKind(node.kind)) {
         fail(
           type,
-          `"${path}" declares a \`pattern\` that does not compile: ${(err as Error).message}`,
+          `"${path}" declares \`kind: '${String(node.kind)}'\`, which is not a registered ` +
+            `validator. Known validators: ${VALIDATOR_KINDS.join(', ')}. The registry is the ` +
+            `HOST's — a name it does not know screens nothing`,
         );
       }
     }
@@ -577,12 +578,28 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
         `derive it from another field with \`computedDefault\` when the author supplies none`,
     );
   }
+  /**
+   * The host sets the FLOOR for `title`, not the ceiling.
+   *
+   * `type: 'string'`, `required: true` and `maxLength: 200` are the host's and
+   * nobody may drop or widen them — that is what makes "a title never needs
+   * shortening at read time" a fact rather than a hope. What a type MAY do is
+   * narrow further from the value-constraint dictionary: `database-table` binds
+   * its title to `kind: 'sql-identifier'` because for that type the instance's
+   * name and its technical identifier are one thing. Narrowing only; a type
+   * cannot relax what the host fixed.
+   *
+   * `computedDefault` is likewise optional rather than expected. A type with
+   * nothing to derive a title FROM declares none, and a write without a title
+   * then fails input validation — which is the honest outcome, not a gap.
+   */
   if (node.type !== 'string' || node.required !== true || node.maxLength !== TITLE_MAX_LENGTH) {
     fail(
       type,
-      `the reserved \`${RESERVED_TITLE_FIELD}\` field must be declared exactly ` +
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field must declare at least ` +
         `\`{ type: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\` — the bound is the ` +
-        `HOST's, which is what makes "a title never needs shortening at read time" a fact`,
+        `HOST's, which is what makes "a title never needs shortening at read time" a fact. A type ` +
+        `may add NARROWING constraints beside it, but may not drop or widen these`,
     );
   }
   if (node.contentBearing) {

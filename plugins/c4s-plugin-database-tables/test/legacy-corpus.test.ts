@@ -34,7 +34,7 @@ const fixtureDir = (corpus: string) =>
   path.join(import.meta.dirname, 'fixtures', 'corpus', corpus);
 
 interface Expected {
-  name: string;
+  title: string;
   columns: number;
   indexes: number;
   createdAt?: string;
@@ -47,7 +47,9 @@ function expectedFromFiles(dir: string): Map<string, Expected> {
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.json'))) {
     const j = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf-8')) as Record<string, unknown>;
     out.set(f.replace(/\.json$/, ''), {
-      name: String(j.name),
+      // v1 files spell it `name`; the 1→2 step moves it to the reserved
+      // `title`, so the value the index must end up holding is the same either way.
+      title: String(j.title ?? j.name),
       columns: Array.isArray(j.columns) ? j.columns.length : 0,
       indexes: Array.isArray(j.indexes) ? j.indexes.length : 0,
       createdAt: typeof j.createdAt === 'string' ? j.createdAt : undefined,
@@ -82,12 +84,12 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
     new Map(
       (
         t.db
-          .prepare('SELECT slug, name, columns, indexes FROM database_table ORDER BY slug')
+          .prepare('SELECT slug, title, columns, indexes FROM database_table ORDER BY slug')
           .all() as Array<Record<string, string>>
       ).map((r) => [
         r.slug,
         {
-          name: r.name,
+          title: r.title,
           columns: (JSON.parse(r.columns) as unknown[]).length,
           indexes: (JSON.parse(r.indexes) as unknown[]).length,
         },
@@ -100,7 +102,7 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
       expect(got, `missing table ${slug}`).toBeDefined();
       expect({ slug, ...got }).toEqual({
         slug,
-        name: want.name,
+        title: want.title,
         columns: want.columns,
         indexes: want.indexes,
       });
@@ -156,14 +158,14 @@ describe.each(CORPORA)('the %s corpus, adopted in place', (corpus) => {
       .prepare(`UPDATE database_table SET columns = '[]', indexes = '[]' WHERE slug = ?`)
       .run(emptied);
     // (b) a stale row carrying the wrong name — does the update overwrite, or only insert?
-    t.db.prepare(`UPDATE database_table SET name = 'stale_name' WHERE slug = ?`).run(renamed);
+    t.db.prepare(`UPDATE database_table SET title = 'stale_name' WHERE slug = ?`).run(renamed);
     // (c) a missing row — is it recreated, or skipped as already-known?
     t.db.prepare(`DELETE FROM database_table WHERE slug = ?`).run(deleted);
     // (d) an orphan with no file behind it — does the reconcile pass remove it?
     t.db
       .prepare(
-        `INSERT INTO database_table (slug, title, name, columns, indexes, created_at, updated_at)
-         VALUES ('ghost-table', 'ghost', 'ghost', '[]', '[]', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z')`,
+        `INSERT INTO database_table (slug, title, columns, indexes, created_at, updated_at)
+         VALUES ('ghost-table', 'ghost', '[]', '[]', '1970-01-01T00:00:00.000Z', '1970-01-01T00:00:00.000Z')`,
       )
       .run();
 

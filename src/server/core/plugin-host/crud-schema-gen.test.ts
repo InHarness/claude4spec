@@ -240,36 +240,59 @@ describe('item 27 — generated CRUD schemas vs the hand-written ones they repla
 /**
  * The string constraints, and the composition that makes one of them reachable.
  *
- * `pattern` and `notReserved` exist for a type whose payload field becomes a SQL
- * identifier somewhere the host cannot see — `database-table.name` is a real
- * table name in someone else's schema. That field is also, necessarily, the
- * field the type SLUGIFIES, which is what makes the second half of this block
- * the load-bearing one.
+ * `kind` — the named validator — exists for a type whose payload field becomes a
+ * SQL identifier somewhere the host cannot see: `database-table.title` is a real
+ * table name in someone else's schema. That field is also, necessarily, the field
+ * the type SLUGIFIES, which is what makes the second half of this block the
+ * load-bearing one.
+ *
+ * 0.2.27 replaced the pair this block used to cover (a raw `pattern` string and a
+ * `notReserved: 'sql'` flag) with one named validator. The rules did not change —
+ * shape and reserved-word membership are still screened separately and still
+ * produce different messages — only where they are written down.
  */
 describe('string constraints', () => {
   const shapeFor = (node: Record<string, unknown>, slug?: SlugPattern) =>
     z.object(buildCreateShape({ schema: { name: node as never } }, slug));
 
-  it('applies a declared pattern', () => {
-    const s = shapeFor({ type: 'string', required: true, pattern: '^[A-Za-z_][A-Za-z0-9_]*$' });
+  it('applies a named validator', () => {
+    const s = shapeFor({ type: 'string', required: true, kind: 'sql-identifier' });
     expect(s.safeParse({ name: 'order_items' }).success).toBe(true);
     expect(s.safeParse({ name: 'Order_Items' }).success).toBe(true);
     expect(s.safeParse({ name: 'order items' }).success).toBe(false);
     expect(s.safeParse({ name: '2fast' }).success).toBe(false);
+    expect(s.safeParse({ name: 'order-list' }).success).toBe(false);
   });
 
-  it('refuses a reserved SQL word, case-insensitively, where the declaration asks', () => {
-    const s = shapeFor({ type: 'string', required: true, notReserved: 'sql' });
+  it('refuses a reserved SQL word, case-insensitively, as part of the same validator', () => {
+    const s = shapeFor({ type: 'string', required: true, kind: 'sql-identifier' });
     expect(s.safeParse({ name: 'table' }).success).toBe(false);
     expect(s.safeParse({ name: 'TABLE' }).success).toBe(false);
     expect(s.safeParse({ name: 'tables' }).success).toBe(true);
   });
 
+  /**
+   * The two failure arms are NOT interchangeable. "That word is reserved" tells
+   * an author what to do; a shape mismatch on a well-shaped identifier tells them
+   * nothing, which is why the validator reports membership separately.
+   */
   it('names the reserved word in the message, rather than reporting a shape mismatch', () => {
-    const s = shapeFor({ type: 'string', required: true, notReserved: 'sql' });
+    const s = shapeFor({ type: 'string', required: true, kind: 'sql-identifier' });
     const res = s.safeParse({ name: 'select' });
     expect(res.success).toBe(false);
     if (!res.success) expect(res.error.issues[0]?.message).toContain('reserved SQL word');
+  });
+
+  it('reports a shape failure differently from a reserved one', () => {
+    const s = shapeFor({ type: 'string', required: true, kind: 'sql-identifier' });
+    const res = s.safeParse({ name: 'order items' });
+    expect(res.success).toBe(false);
+    if (!res.success) {
+      // The describe text names the word list too, so the discriminator is the
+      // VERB: "is a reserved SQL word" vs "is not a valid sql-identifier".
+      expect(res.error.issues[0]?.message).not.toContain('is a reserved SQL word');
+      expect(res.error.issues[0]?.message).toContain('is not a valid sql-identifier');
+    }
   });
 
   /**
@@ -281,14 +304,13 @@ describe('string constraints', () => {
    * update path had the identical bug, and a rename is exactly when a bad
    * identifier arrives.
    */
-  it('composes declared constraints with the non-blank slug-source rule', () => {
+  it('composes a named validator with the non-blank slug-source rule', () => {
     const data: DataDeclaration = {
       schema: {
         name: {
           type: 'string',
           required: true,
-          pattern: '^[A-Za-z_][A-Za-z0-9_]*$',
-          notReserved: 'sql',
+          kind: 'sql-identifier',
         },
       },
     };
@@ -297,8 +319,8 @@ describe('string constraints', () => {
     for (const shape of [buildCreateShape(data, slug), buildUpdateShape(data, slug)]) {
       const s = z.object(shape);
       expect(s.safeParse({ name: 'order_items' }).success).toBe(true);
-      expect(s.safeParse({ name: 'order items' }).success).toBe(false); // pattern survives
-      expect(s.safeParse({ name: 'select' }).success).toBe(false); // notReserved survives
+      expect(s.safeParse({ name: 'order items' }).success).toBe(false); // shape survives
+      expect(s.safeParse({ name: 'select' }).success).toBe(false); // the word list survives
       expect(s.safeParse({ name: '   ' }).success).toBe(false); // and so does non-blank
     }
   });

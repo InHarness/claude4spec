@@ -131,3 +131,13 @@ export type {
   ScalarNode,
 } from '../../shared/plugin-host/data-schema.js';
 export type { SlugPattern, SlugStep } from '../../shared/plugin-host/slug-pattern.js';
+/**
+ * 0.2.27 — the named-validator registry, for `payloadUpgrades` steps.
+ *
+ * A migration onto a field that has just gained a validator has to ask whether a
+ * stored value passes, and must refuse rather than repair when it does not. The
+ * host owns the rule; a plugin transcribing it drifts on the first keyword the
+ * host adds.
+ */
+export { checkValidator, validatorMessage } from '../../shared/plugin-host/named-validators.js';
+export type { ValidatorKind, ValidatorFailure } from '../../shared/plugin-host/named-validators.js';

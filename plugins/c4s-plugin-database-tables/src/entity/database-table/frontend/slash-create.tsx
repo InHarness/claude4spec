@@ -126,7 +126,7 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
   const create = useCreateDatabaseTable();
 
   const q = query.trim().toLowerCase();
-  const matches = items.filter((it) => !q || it.name.toLowerCase().includes(q) || it.slug.includes(q));
+  const matches = items.filter((it) => !q || it.title.toLowerCase().includes(q) || it.slug.includes(q));
   const exactExists = items.some((it) => it.slug === slugify(query));
 
   const embed = (slug: string) => {
@@ -139,7 +139,7 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
     // Explicit empty `columns` — the create contract requires the key; omitting
     // it is a 400, not an empty table (same as the create dialog).
     create.mutate(
-      { name: query.trim(), columns: [] },
+      { title: query.trim(), columns: [] },
       { onSuccess: (entity) => embed(entity.slug) },
     );
   };
@@ -163,7 +163,7 @@ export const DatabaseTableSlashCreatePopover: FC<SlashCreatePopoverProps> = ({
             onClick={() => embed(it.slug)}
             style={OPTION_STYLE}
           >
-            {it.name}
+            {it.title}
           </button>
         ))}
       </div>

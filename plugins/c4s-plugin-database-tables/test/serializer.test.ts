@@ -24,7 +24,7 @@ describe('database-table — serializer views', () => {
     await t.crud.create(
       'database-table',
       {
-        name: 'order_items',
+        title: 'order_items',
         columns: [
           { name: 'id', type: 'uuid', pk: true },
           { name: 'sku', type: 'text' },
@@ -34,7 +34,7 @@ describe('database-table — serializer views', () => {
       },
       'user',
     );
-    await t.crud.create('database-table', { name: 'keyless', columns: [{ name: 'a', type: 'text' }] }, 'user');
+    await t.crud.create('database-table', { title: 'keyless', columns: [{ name: 'a', type: 'text' }] }, 'user');
   });
   afterEach(() => t.cleanup());
 
@@ -62,7 +62,6 @@ describe('database-table — serializer views', () => {
     const row = rows.find((r) => r.slug === 'order-items')!;
     expect(row.columns).toHaveLength(3);
     expect(row.indexes).toHaveLength(2);
-    expect(row.name).toBe('order_items');
     expect(row.title).toBe('order_items');
   });
 

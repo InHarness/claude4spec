@@ -14,10 +14,10 @@ import type { SystemPromptContribution } from '@c4s/plugin-runtime';
  * stated here instead.
  *
  * That trade is only sound because the rules that can be MECHANICAL now are:
- * the identifier shape and the reserved-word screen are `pattern` and
- * `notReserved` on `name`, enforced by the generated schema on every write
- * through every door. What is left here is the part no validator can express —
- * what a soft FK MEANS, and that a rename is not a `name` edit.
+ * the identifier shape and the reserved-word screen are one named validator,
+ * `kind: 'sql-identifier'` on `title`, enforced by the generated schema on every
+ * write through every door. What is left here is the part no validator can
+ * express — what a soft FK MEANS, and that a rename is not a `title` edit.
  */
 export const databaseTableSystemPrompt: SystemPromptContribution = {
   roleNoun: 'database tables',
@@ -25,7 +25,8 @@ export const databaseTableSystemPrompt: SystemPromptContribution = {
     'A database table is a SHAPE — ordered columns and indexes — not a live schema; nothing here ' +
     'runs DDL. A column\'s `fk` is a SOFT foreign key: it may point at a table that does not exist ' +
     'yet, which returns a warning rather than an error, and deleting a table never cascades to the ' +
-    'columns referencing it. `name` is the SQL identifier and must stay one; the slug is derived ' +
-    'from it once, so editing `name` alone does NOT rename the entity — pass `newSlug` to do that, ' +
-    'which also repoints every `fk` pointing here.',
+    'columns referencing it. `title` is this type\'s ONLY name field and IS the SQL identifier — it ' +
+    'must stay one, so it takes no free text; the slug is derived from it once, so editing `title` ' +
+    'alone does NOT rename the entity — pass `newSlug` to do that, which also repoints every `fk` ' +
+    'pointing here.',
 };

@@ -123,6 +123,11 @@ export const PLUGIN_RUNTIME_BACKEND_VALUE_NAMES = [
   // 0.2.2 — the host narrows on this class with `instanceof`, so a plugin that
   // declares its own copy loses every structured error code to INTERNAL/500.
   'DomainError',
+  // 0.2.27 — the named-validator registry, needed by a `payloadUpgrades` step
+  // migrating files onto a field that has just gained a `kind`. The rule is the
+  // host's; a plugin transcribing it drifts on the first entry the host adds.
+  'checkValidator',
+  'validatorMessage',
 ] as const;
 
 /**

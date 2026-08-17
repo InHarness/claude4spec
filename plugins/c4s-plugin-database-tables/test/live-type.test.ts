@@ -29,7 +29,7 @@ describe('database-table — the shipped type', () => {
     await t.crud.create(
       'database-table',
       {
-        name: 'order_items',
+        title: 'order_items',
         description: 'Line items of an order.',
         columns: [
           { name: 'id', type: 'uuid', pk: true, nullable: false },
@@ -59,7 +59,10 @@ describe('database-table — the shipped type', () => {
   it('slugifies the name and keeps the SQL identifier intact', () => {
     const r = row();
     expect(r?.slug).toBe('order-items');
-    expect(r?.name).toBe('order_items');
+    expect(r?.title).toBe('order_items');
+    // 0.2.27 — one name field, not two. The column the merge removed must be
+    // gone from the projection, not merely unread.
+    expect(r).not.toHaveProperty('name');
   });
 
   /**
@@ -110,8 +113,8 @@ describe('database-table — the shipped type', () => {
    * asserting that adoption is impossible.
    */
   describe('the identifier rule, at the doors that enforce it', () => {
-    const post = (name: string) =>
-      request(t.app).post('/api/database-tables').send({ name, columns: [] });
+    const post = (title: string) =>
+      request(t.app).post('/api/database-tables').send({ title, columns: [] });
 
     const bad: Array<[string, string]> = [
       ['a name with spaces', 'order items'],
@@ -134,7 +137,7 @@ describe('database-table — the shipped type', () => {
       // which is why the pattern is `[A-Za-z_]` and not `[a-z_]`.
       const res = await post('Order_Archive');
       expect(res.status).toBe(201);
-      expect(row('order-archive')?.name).toBe('Order_Archive');
+      expect(row('order-archive')?.title).toBe('Order_Archive');
     });
 
     it('refuses a bad identifier on UPDATE, not only on create', async () => {
@@ -144,7 +147,7 @@ describe('database-table — the shipped type', () => {
       // sibling with a special meaning.
       const res = await request(t.app)
         .patch('/api/database-tables/order-items')
-        .send({ name: 'select' });
+        .send({ title: 'select' });
       expect(res.status).toBe(400);
     });
 
@@ -158,14 +161,14 @@ describe('database-table — the shipped type', () => {
       // and refusing to READ it would make the type unable to adopt its own
       // history.
       await expect(
-        t.crud.create('database-table', { name: 'select', columns: [] }, 'user'),
+        t.crud.create('database-table', { title: 'select', columns: [] }, 'user'),
       ).resolves.toBeTruthy();
     });
   });
 
   it('round-trips the file without inventing keys', () => {
     const file = entityFile();
-    expect(file.name).toBe('order_items');
+    expect(file.title).toBe('order_items');
     expect(file.columns).toHaveLength(2);
     expect(file.indexes).toHaveLength(1);
     // Timestamps ride the envelope, not the declared body.

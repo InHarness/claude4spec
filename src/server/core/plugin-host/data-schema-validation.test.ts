@@ -522,32 +522,33 @@ describe('slugPattern', () => {
  * where they cannot apply rather than ignored, because a constraint the author
  * believes is enforced is worse than no constraint.
  */
-describe('string constraints — pattern and notReserved', () => {
+describe('string constraints — the named validator', () => {
   const withName = (node: Record<string, unknown>) =>
     ({ schema: { name: { type: 'string', required: true }, f: node } }) as unknown as DataDeclaration;
 
-  it('accepts pattern and notReserved on a string leaf', () => {
-    expect(
-      check(withName({ type: 'string', pattern: '^[a-z_]+$', notReserved: 'sql' })),
-    ).not.toThrow();
+  it('accepts a registered validator on a string leaf', () => {
+    expect(check(withName({ type: 'string', kind: 'sql-identifier' }))).not.toThrow();
   });
 
-  for (const kind of ['number', 'boolean'] as const) {
-    it(`rejects pattern on a ${kind} leaf`, () => {
-      expect(check(withName({ kind, pattern: '^x$' }))).toThrow(/carries `pattern`/);
-    });
-    it(`rejects notReserved on a ${kind} leaf`, () => {
-      expect(check(withName({ kind, notReserved: 'sql' }))).toThrow(/carries `notReserved`/);
+  for (const leaf of ['number', 'boolean'] as const) {
+    it(`rejects kind on a ${leaf} leaf`, () => {
+      expect(check(withName({ type: leaf, kind: 'sql-identifier' }))).toThrow(/carries `kind`/);
     });
   }
 
   /**
-   * Compiled at registration so the type name is in the message. `crud-schema-gen`
-   * compiles it at router-construction time, which is far from the declaration
-   * and only happens for the types whose routers get built.
+   * Resolved at registration so the type name is in the message. A validator name
+   * that resolves to nothing is worse than a typo in a regex: the value would pass
+   * every write untouched while the declaration claims it is screened.
    */
-  it('rejects a pattern that does not compile', () => {
-    expect(check(withName({ type: 'string', pattern: '[' }))).toThrow(/does not compile/);
+  it('rejects a validator name the registry does not know', () => {
+    expect(check(withName({ type: 'string', kind: 'postcode' }))).toThrow(
+      /not a registered validator/,
+    );
+  });
+
+  it('names the registered validators in that message', () => {
+    expect(check(withName({ type: 'string', kind: 'postcode' }))).toThrow(/sql-identifier/);
   });
 
   it('reaches a leaf nested inside a collection item', () => {
@@ -557,11 +558,11 @@ describe('string constraints — pattern and notReserved', () => {
         rows: {
           type: 'collection',
           collection: 'value',
-          item: { type: 'object', fields: { n: { type: 'number', pattern: '^x$' } } },
+          item: { type: 'object', fields: { n: { type: 'number', kind: 'sql-identifier' } } },
         },
       },
     } as unknown as DataDeclaration;
-    expect(check(data)).toThrow(/carries `pattern`/);
+    expect(check(data)).toThrow(/carries `kind`/);
   });
 });
 
@@ -576,17 +577,42 @@ describe('Host API 2.0.0 — the reserved title', () => {
     );
   });
 
-  it('rejects a `title` declared with the wrong shape', () => {
+  it('rejects a `title` that drops or widens what the host fixed', () => {
     for (const title of [
       { type: 'string' } as const,
       { type: 'string', required: true } as const,
+      // Widening the host's bound is the case the message exists for: a longer
+      // title would need shortening at read time, which the contract promises
+      // never happens.
       { type: 'string', required: true, maxLength: 80 } as const,
+      { type: 'string', required: true, maxLength: 500 } as const,
     ]) {
       const data = { schema: { title, name: { type: 'string' } } } as unknown as DataDeclaration;
       expect(() => validateDataDeclaration('widget', data, NAME_PATTERN, 1)).toThrow(
-        /must be declared exactly/,
+        /must declare at least/,
       );
     }
+  });
+
+  /**
+   * 0.2.27 — the host sets the FLOOR, not the ceiling.
+   *
+   * A type may NARROW the reserved title from the value-constraint dictionary.
+   * `database-table` binds its title to `kind: 'sql-identifier'` because for that
+   * type the instance's name and its technical identifier are one thing. Without
+   * this the rule would have had to go on every other type's title, or nowhere.
+   */
+  it('accepts a `title` that NARROWS with a value constraint, and one with no computedDefault', () => {
+    const data = {
+      schema: {
+        title: { type: 'string', required: true, maxLength: 200, kind: 'sql-identifier' },
+        name: { type: 'string' },
+      },
+    } as unknown as DataDeclaration;
+    // Slugged from `title`, as a type binding its title to an identifier would:
+    // `name` here is optional and cannot seed a slug on its own.
+    const titlePattern = [{ op: 'slugify', field: 'title' }] as unknown as typeof NAME_PATTERN;
+    expect(() => validateDataDeclaration('widget', data, titlePattern, 1)).not.toThrow();
   });
 
   it('refuses to let the label itself be content-bearing', () => {
