@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { designSystemSerializer, type DesignSystemSnapshot } from '../src/entity/design-system/serializer.js';
+import { designSystemSerialization, type DesignSystemSnapshot } from '../src/entity/design-system/serializer.js';
 import { designSystemEntity } from '../src/entity/design-system/index.js';
 import { canonicalize } from '../../../src/server/serialization/snapshot.js';
 import { snapshotFromSchema } from '../../../src/server/serialization/schema-snapshot.js';
@@ -114,10 +114,10 @@ describe('design-system serializer', () => {
       tags: [],
     };
 
-    const reorderOnly = designSystemSerializer.diff!(a, a, 'brand');
+    const reorderOnly = designSystemSerialization.diff(a, a, 'brand');
     expect(reorderOnly.op).toBe('noop');
 
-    const d = designSystemSerializer.diff!(a, b, 'brand');
+    const d = designSystemSerialization.diff(a, b, 'brand');
     expect(d.op).toBe('modified');
     const changes = d.changes as Record<string, unknown>;
     expect(changes.token_added).toEqual([{ group: 'A', name: 't3', type: 'color' }]);
@@ -128,12 +128,15 @@ describe('design-system serializer', () => {
     });
   });
 
-  it('declares its payload version on the MANIFEST, not on the contribution', () => {
-    // 0.2.9: the contribution's copy was an optional echo of a number only the
-    // manifest is ever read for, so it is not written twice.
-    // 2 since 0.2.9 — v1 files carry a synthesised `description: null` on every
-    // token that the generated snapshot does not reproduce. See `./upgrades.ts`.
+  it('declares its payload version ONCE, on the manifest, with a step per transition', () => {
+    // 0.2.24: there is no second place left to write it. The contribution's
+    // optional echo went with the `serializer` wrapper, so the number and the
+    // chain that has to match its length now sit side by side on the type.
+    // 3 — v1 files carry a synthesised `description: null` on every token that
+    // the generated snapshot does not reproduce, and v2 files spell the label
+    // `name`. See `./upgrades.ts`.
     expect(designSystemEntity.payloadVersion).toBe(3);
-    expect(designSystemSerializer.payloadVersion).toBeUndefined();
+    expect(designSystemEntity.payloadUpgrades).toHaveLength(2);
+    expect(designSystemSerialization.payloadUpgrades).toHaveLength(2);
   });
 });

@@ -8,7 +8,7 @@ import {
   SPREADSHEET_TYPE,
 } from '../../identity.js';
 import { spreadsheetData, spreadsheetSlugPattern } from './schema.js';
-import { spreadsheetSerializer } from './serializer.js';
+import { spreadsheetSerialization } from './serializer.js';
 import { spreadsheetSystemPrompt } from './system-prompt.js';
 import { createSpreadsheetMcpServer } from './mcp.js';
 
@@ -57,7 +57,7 @@ export const spreadsheetEntity: EntityContribution = {
   labelPlural: SPREADSHEET_LABEL_PLURAL,
   displayOrder: SPREADSHEET_DISPLAY_ORDER,
   pathPrefix: SPREADSHEET_PATH_PREFIX,
-  serializer: spreadsheetSerializer,
+  ...spreadsheetSerialization,
   systemPrompt: spreadsheetSystemPrompt,
   backend: {
     mcpServer: (_service: unknown, ctx: MountContext) => createSpreadsheetMcpServer(ctx),

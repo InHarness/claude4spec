@@ -44,14 +44,14 @@ function spreadsheetDiff(a: SnapshotData, b: SnapshotData, slug: string): Entity
  * header flags. `n_rows` / `n_cols` / `header_row` / `header_col` are ordinary
  * schema fields and come back in the record for free.
  */
-export const spreadsheetSerializer: SerializationContribution<RawEntity> = {
+/** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
+export const spreadsheetSerialization = {
   diff: spreadsheetDiff,
 
   /**
-   * The dense→sparse migration. `payloadVersion` is declared on the manifest
-   * (which is the authority); echoing it here keeps the two visible together,
-   * and registration refuses the pair if the chain length disagrees.
+   * The dense→sparse migration. `payloadVersion` is declared on the manifest,
+   * which is the authority — the echo that used to sit here went with the
+   * wrapper, and registration still refuses a chain whose length disagrees.
    */
-  payloadVersion: 3,
   payloadUpgrades: spreadsheetPayloadUpgrades,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

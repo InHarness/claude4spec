@@ -14,7 +14,6 @@ function entity(type: string): EntityContribution {
     labelPlural: `${type}s`,
     displayOrder: 100,
     pathPrefix: `/${type}s`,
-    serializer: {},
     systemPrompt: {
       roleNoun: type,
       countStat: { placeholder: `${type}Count`, sqlQuery: `SELECT 0 AS count`, label: type },

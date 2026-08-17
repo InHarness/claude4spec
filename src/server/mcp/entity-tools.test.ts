@@ -25,7 +25,6 @@ function widgetModule(overrides: Partial<BackendModule> = {}): BackendModule {
     labelPlural: 'Widgets',
     displayOrder: 1,
     pathPrefix: '/widgets',
-    serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Widgets',
     },

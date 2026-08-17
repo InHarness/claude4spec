@@ -23,7 +23,7 @@ const tokenValue: FieldNode = {
     'Literal ("#2563eb", "16px"), an alias "{token-name}", or a composite object (typography/shadow).',
 };
 
-/** Host API 3.0.0 — what `design-system` IS. */
+/** Host API 2.0.0 — what `design-system` IS. */
 export const designSystemData: DataDeclaration = {
   schema: {
     /**

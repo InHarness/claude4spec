@@ -121,10 +121,12 @@ function dtoDiff(a: unknown, b: unknown, slug: string): EntityDiff {
  * for the reverse direction. A patch is filed for the latter — the DTO detail
  * panel's "Used by endpoints" list has no specified operation behind it.
  */
-export const dtoSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 2,
+/**
+ * 0.2.24 — spread onto the type. The `serializer` wrapper is rejected now, and
+ * `payloadVersion` is not echoed here: the manifest in `index.ts` declares it,
+ * and it was always the only copy anything read.
+ */
+export const dtoSerialization = {
   payloadUpgrades: dtoPayloadUpgrades,
-
-  // ─── M17 — generated from `data.schema` in the next commit of this tier ───
   diff: dtoDiff,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

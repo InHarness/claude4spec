@@ -134,7 +134,7 @@ export function diffEntity(
     // Inactive plugin — fall back to default; consumers (UI, M18) will see raw deep-diff.
     return defaultDeepDiff(type, slug, lhs, rhs);
   }
-  const fn = module.serializer.diff;
+  const fn = module.diff;
   // 0.2.19: the declaration goes with it, so `contentBearing` fields report bytes
   // rather than bodies. A type computing its own `diff` is on its own here — the
   // same reason such a type may not declare `contentBearing` alongside its own views.

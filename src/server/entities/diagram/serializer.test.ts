@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diagramSerializer, type DiagramSnapshot } from './serializer.js';
+import { diagramSerialization, type DiagramSnapshot } from './serializer.js';
 import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';
@@ -50,10 +50,10 @@ describe('diagram serializer', () => {
 
   it('diff reports format / source / tag changes and ignores no-ops', () => {
     const a: DiagramSnapshot = { slug: 'd', format: 'mermaid', source: 'graph TD; A-->B', tags: ['x'] };
-    expect(diagramSerializer.diff!(a, a, 'd').op).toBe('noop');
+    expect(diagramSerialization.diff(a, a, 'd').op).toBe('noop');
 
     const b: DiagramSnapshot = { slug: 'd', format: 'mermaid', source: 'graph TD; A-->C', tags: ['x', 'y'] };
-    const d = diagramSerializer.diff!(a, b, 'd');
+    const d = diagramSerialization.diff(a, b, 'd');
     expect(d.op).toBe('modified');
     const changes = d.changes as Record<string, unknown>;
     /**
@@ -66,11 +66,12 @@ describe('diagram serializer', () => {
     expect(changes.tag_added).toEqual(['y']);
   });
 
-  it('carries its payload version on the manifest and on the contribution alike', () => {
-    // The chain-length check compares the two, so a bump that touches only one
-    // of them does not register at all.
+  it('carries its payload version and a step for each transition', () => {
+    // 0.2.24 — ONE copy of the number. The contribution's echo went with the
+    // `serializer` wrapper, so there is nothing left for a half-done bump to
+    // disagree with; the chain length is what registration checks it against.
     expect(diagramBackendModule.payloadVersion).toBe(2);
-    expect(diagramSerializer.payloadVersion).toBe(2);
-    expect(diagramSerializer.payloadUpgrades).toHaveLength(1);
+    expect(diagramBackendModule.payloadUpgrades).toHaveLength(1);
+    expect(diagramSerialization.payloadUpgrades).toHaveLength(1);
   });
 });

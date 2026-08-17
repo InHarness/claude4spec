@@ -1,5 +1,5 @@
 /**
- * Host API 3.0.0 — the logical schema is validated AT REGISTRATION.
+ * Host API 2.0.0 — the logical schema is validated AT REGISTRATION.
  *
  * Same temporal argument as `composition-validation.ts`, one step earlier in the
  * chain: a schema is a licence to GENERATE DDL and to interpolate field-derived
@@ -571,7 +571,7 @@ function checkReservedTitle(type: string, schema: DataDeclaration['schema']): vo
   if (!node) {
     fail(
       type,
-      `the reserved \`${RESERVED_TITLE_FIELD}\` field is required in Host API 3.0.0 — declare ` +
+      `the reserved \`${RESERVED_TITLE_FIELD}\` field is required in Host API 2.0.0 — declare ` +
         `\`${RESERVED_TITLE_FIELD}: { kind: 'string', required: true, maxLength: ${TITLE_MAX_LENGTH} }\`. ` +
         `It is the single source of the entity's label, its slug and its identity search scope; ` +
         `derive it from another field with \`computedDefault\` when the author supplies none`,
@@ -693,12 +693,12 @@ export function validateDataDeclaration(
   mcpToolsLine?: string,
 ): void {
   if (!data || typeof data !== 'object' || !data.schema || typeof data.schema !== 'object') {
-    fail(type, 'the `data.schema` slot is required in Host API 3.0.0');
+    fail(type, 'the `data.schema` slot is required in Host API 2.0.0');
   }
   if (!Object.keys(data.schema).length) fail(type, 'the schema declares no fields');
   checkReservedTitle(type, data.schema);
   if (!slugPattern || !Array.isArray(slugPattern) || !slugPattern.length) {
-    fail(type, 'the `slugPattern` slot is required in Host API 3.0.0');
+    fail(type, 'the `slugPattern` slot is required in Host API 2.0.0');
   }
   if (!Number.isInteger(payloadVersion) || (payloadVersion as number) < 1) {
     fail(

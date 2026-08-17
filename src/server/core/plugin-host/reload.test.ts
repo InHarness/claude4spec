@@ -22,7 +22,6 @@ function pluginV(version: string, onUnregister: () => void = () => {}): PluginMa
           labelPlural: 'Things',
           displayOrder: 100,
           pathPrefix: '/things',
-          serializer: {},
           systemPrompt: {
             roleNoun: 'thing',
             mcpToolsLine: 'thing-tools: ...',

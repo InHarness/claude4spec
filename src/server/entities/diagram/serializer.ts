@@ -82,8 +82,8 @@ function diagramDiff(a: unknown, b: unknown, slug: string): EntityDiff {
   return { type: 'diagram', slug, op: 'modified', changes };
 }
 
-export const diagramSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 2,
+/** 0.2.24 — declared on the type; see `ac/serializer.ts` for why the wrapper went. */
+export const diagramSerialization = {
   payloadUpgrades: diagramPayloadUpgrades,
   diff: diagramDiff,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

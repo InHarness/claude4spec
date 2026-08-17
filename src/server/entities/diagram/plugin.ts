@@ -1,6 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { SerializationContribution } from '../../serialization/types.js';
-import { diagramSerializer } from './serializer.js';
+import { diagramSerialization } from './serializer.js';
 import { diagramSystemPrompt } from './system-prompt.js';
 import { createDiagramToolsServer } from './mcp-server.js';
 import { diagramData, diagramSlugPattern } from '../../../shared/entities/diagram/schema.js';
@@ -29,7 +28,7 @@ export const diagramBackendModule: BackendModule = {
   // After design-system (60) — diagrams sit at the end of ELEMENTS.
   displayOrder: 70,
   pathPrefix: '/diagrams',
-  serializer: diagramSerializer as SerializationContribution<unknown>,
+  ...diagramSerialization,
   systemPrompt: diagramSystemPrompt,
   /**
    * 2.0.0 tier K (item 56) — `mcpServer` and NOTHING else. `validate_diagram`

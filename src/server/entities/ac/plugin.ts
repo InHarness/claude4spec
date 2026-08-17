@@ -1,6 +1,5 @@
 import type { BackendModule, PluginRegistry } from '../../core/plugin-host/types.js';
-import type { SerializationContribution } from '../../serialization/types.js';
-import { acSerializer } from './serializer.js';
+import { acSerialization } from './serializer.js';
 import { acSystemPrompt } from './system-prompt.js';
 import { createAcToolsServer } from './mcp-server.js';
 import { acData, acSlugPattern } from '../../../shared/entities/ac/schema.js';
@@ -21,7 +20,7 @@ export const acBackendModule: BackendModule = {
   labelPlural: 'Acceptance Criteria',
   displayOrder: 50,
   pathPrefix: '/acs',
-  serializer: acSerializer as SerializationContribution<unknown>,
+  ...acSerialization,
   systemPrompt: acSystemPrompt,
   /**
    * 2.0.0 tier K (item 61) — `mcpServer` only, and no `service` behind it.
@@ -40,6 +39,7 @@ export const acBackendModule: BackendModule = {
         cwd: ctx.cwd,
         roots: ctx.roots,
         host: ctx.host,
+        discovery: ctx.discovery,
       }),
   },
 };

@@ -74,7 +74,6 @@ const sprocket = {
   labelPlural: 'Sprockets',
   displayOrder: 950,
   pathPrefix: '/sprockets',
-  serializer: { payloadVersion: 1 } as BackendModule['serializer'],
   systemPrompt: {
     roleNoun: 'Sprockets',
     narrativeBlock: 'A sprocket is a toothed wheel. It fits DTOs.',

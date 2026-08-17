@@ -174,9 +174,10 @@ function designSystemDiff(a: unknown, b: unknown, slug: string): EntityDiff {
  * two callers it always really had: `frontend.renderCard` and the live preview
  * in the detail panel.
  */
-export const designSystemSerializer: SerializationContribution<RawEntity> = {
+/** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
+export const designSystemSerialization = {
   diff: designSystemDiff,
 
   /** v1 files carry a synthesised `description: null` on every token; v2 files spell the label `name`. */
   payloadUpgrades: [designSystemPayloadV1ToV2, designSystemPayloadV2ToV3],
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

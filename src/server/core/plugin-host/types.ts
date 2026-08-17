@@ -18,6 +18,7 @@ import type {
 } from '../../../shared/plugin-host/types.js';
 import type { ChangedBy } from '../../../shared/entities.js';
 import type { Root } from '../../../shared/types.js';
+import type { DiscoveryCore } from '../../discovery/types.js';
 import type { UpsertResult } from '../../serialization/writer.js';
 import type { SystemStamp } from '../../serialization/system-fields.js';
 import type {
@@ -190,6 +191,20 @@ export interface MountContext {
   crud: CrudFacade;
   /** M31: the project host being mounted — plugins needing host lookups (e.g. ac) use this, never a singleton. */
   host: ProjectPluginHost;
+  /**
+   * 0.2.24 — the M39 read core, for a plugin that needs to READ an entity of
+   * some OTHER type (`ac-tools`' semantic audit reads what each AC verifies).
+   *
+   * A thunk, because `mountBackend` runs before the context assembles its core:
+   * the core is built over the plugin registry, which is what mounting fills.
+   * Every consumer resolves it at tool-call time, long after both exist.
+   *
+   * It is the core rather than the serialization engine on purpose. The engine
+   * is the registry, and an architecture gate holds it to one caller — reaching
+   * it from a plugin would fork the read path, which is exactly the asymmetry
+   * M39 exists to close.
+   */
+  discovery: () => DiscoveryCore;
   /** Project root — needed by plugins that run an LLM adapter (e.g. ac-tools analyze). */
   cwd: string;
   /**
@@ -246,8 +261,23 @@ export interface EntityRenamedEvent {
 }
 
 export interface BackendModule extends EntityModuleManifest {
-  /** L9 — computed views + semantic diff; everything else is derived. */
-  serializer: SerializationContribution<unknown>;
+  /**
+   * L9 — the semantic diff, and nothing else.
+   *
+   * 0.2.24 removed the `serializer` container these two slots used to sit in.
+   * It had been shrinking for four releases — `snapshot`/`restore` went in
+   * 0.2.9, `views` in 0.2.23 — until what remained was not a serializer in any
+   * sense: one optional delta function and a migration chain, both of which are
+   * properties of the TYPE rather than of a component it owns. A wrapper around
+   * two optional fields only invites an author to look for the other three.
+   *
+   * Falls back to a deep-diff when omitted. `payloadVersion` (required) and
+   * {@link payloadUpgrades} complete the set — see `SerializationContribution`.
+   */
+  diff?: SerializationContribution<unknown>['diff'];
+
+  /** L9 — ordered payload migrations; `payloadUpgrades[i]` takes `i+1` to `i+2`. */
+  payloadUpgrades?: SerializationContribution<unknown>['payloadUpgrades'];
 
   /** M05 — system prompt contribution composed by buildSystemPrompt. */
   systemPrompt: SystemPromptContribution;

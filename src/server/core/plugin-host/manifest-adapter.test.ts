@@ -19,7 +19,6 @@ function base(over: Partial<EntityContribution> = {}): EntityContribution {
     labelPlural: 'Glossary',
     displayOrder: 100,
     pathPrefix: '/glossary',
-    serializer: {},
     systemPrompt: {
       roleNoun: 'Glossary',
       mcpToolsLine: 'glossary-tools: ...',
@@ -39,7 +38,7 @@ describe('lowerEntityContribution', () => {
     const mod = lowerEntityContribution(base());
     expect(mod.type).toBe('glossary');
     expect(mod.pathPrefix).toBe('/glossary');
-    expect(mod.serializer).toBeDefined();
+    expect(mod.payloadVersion).toBeDefined();
     expect(mod.systemPrompt.roleNoun).toBe('Glossary');
   });
 
@@ -98,13 +97,12 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
   ])(
     '[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] rejects an authored `%s` slot, naming data.schema as its successor',
     (slot, serializer) => {
-      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
-        PluginManifestError,
-      );
-      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
+      const module = { serializer };
+      expect(() => assertSerializationContribution('widget', module, 1)).toThrow(PluginManifestError);
+      expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
         new RegExp(`serializer\\.${slot}\`? was removed in Host API 2\\.0\\.0`),
       );
-      expect(() => assertSerializationContribution('widget', serializer, 1)).toThrow(
+      expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
         /generated from data\.schema/,
       );
     },
@@ -121,16 +119,56 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
    * code silently ignored, serving records missing the fields its own UI reads.
    */
   it('[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] rejects an authored `views` map — a 2.0.0 plugin passes the semver gate, so the slot check is the only thing standing between it and a silently ignored read path', () => {
-    expect(() =>
-      assertSerializationContribution('widget', { views: { detail: () => ({}) }, diff: () => ({}) }, 1),
-    ).toThrow(PluginManifestError);
-    expect(() =>
-      assertSerializationContribution('widget', { views: { detail: () => ({}) }, diff: () => ({}) }, 1),
-    ).toThrow(/the record is derived from data\.schema, narrowed by select/);
+    const module = { serializer: { views: { detail: () => ({}) }, diff: () => ({}) } };
+    expect(() => assertSerializationContribution('widget', module, 1)).toThrow(PluginManifestError);
+    expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
+      /the record is derived from data\.schema, narrowed by select/,
+    );
   });
 
-  it('accepts a serializer that declares only a diff and a payload version — all a type contributes to reads is nothing', () => {
+  /**
+   * 0.2.24 — the CONTAINER is a removed slot in its own right.
+   *
+   * The failure it prevents is not the diff degrading to a deep-diff, which is
+   * survivable. It is `payloadUpgrades` sitting one level too deep: the host
+   * would see a type at `payloadVersion` 1 with no chain, and read every file
+   * that plugin ever wrote at the wrong shape without a word.
+   */
+  it('rejects the `serializer` container itself, pointing at the flat slots', () => {
+    const module = { serializer: { diff: () => ({}), payloadUpgrades: [] } };
+    expect(() => assertSerializationContribution('widget', module, 1)).toThrow(PluginManifestError);
+    expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
+      /the `serializer` slot was removed in Host API 2\.0\.0/,
+    );
+    expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
+      /declare `diff` and `payloadUpgrades` directly on the type/,
+    );
+  });
+
+  /**
+   * An enclosed slot is reported ahead of the container. Telling this author to
+   * "unwrap the object" would be telling them to hoist a callback the host
+   * stopped honouring two releases ago — the answer for `snapshot` is not a
+   * move, and the message has to keep saying so.
+   */
+  it('names the enclosed slot rather than the container when both are wrong', () => {
+    expect(() =>
+      assertSerializationContribution('widget', { serializer: { snapshot: () => ({}) } }, 1),
+    ).toThrow(/serializer\.snapshot/);
+  });
+
+  it('accepts a type declaring a flat diff — all a type contributes to reads is nothing', () => {
     expect(() => assertSerializationContribution('widget', { diff: () => ({}) }, 1)).not.toThrow();
+  });
+
+  it('accepts a type declaring no serialization at all', () => {
+    expect(() => assertSerializationContribution('widget', {}, 1)).not.toThrow();
+  });
+
+  it('rejects a non-function diff', () => {
+    expect(() => assertSerializationContribution('widget', { diff: 'nope' }, 1)).toThrow(
+      /diff must be a function/,
+    );
   });
 });
 

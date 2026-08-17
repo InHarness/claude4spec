@@ -130,7 +130,7 @@ describe('contentBearing — the default diff', () => {
 });
 
 describe('contentBearing — load-time validation', () => {
-  function moduleWith(views: unknown): BackendModule {
+  function moduleWith(): BackendModule {
     return {
       type: 'doc',
       data: { schema: SCHEMA },
@@ -140,28 +140,25 @@ describe('contentBearing — load-time validation', () => {
       labelPlural: 'Docs',
       displayOrder: 1,
       pathPrefix: '/docs',
-      serializer: (views ? { views, payloadVersion: 1 } : { payloadVersion: 1 }),
       systemPrompt: { roleNoun: 'doc' },
     } as unknown as BackendModule;
   }
 
   /**
-   * 0.2.22 REVERSED this pair.
+   * 0.2.22 REVERSED the ban this pair used to check, and 0.2.23 removed the
+   * thing it was a ban ON.
    *
    * The rule was: a type may not compute its own `views` AND declare a
    * contentBearing field, because exclusion was a property of the VIEW and the
    * host could not honour it inside a function it cannot read. Exclusion is a
    * property of the READ now — `project()` runs after serialization, over the
-   * schema, whoever produced the payload — so the conflict cannot arise and the
-   * ban is gone. `diagram` is the type that needed it lifted: it computes views
-   * and its `source` is the first content-bearing field in the specification.
+   * schema, whoever produced the payload — so the conflict could not arise and
+   * the ban went. With `views` itself gone, the two cases that varied over it
+   * were varying over a slot registration rejects outright, so they collapse
+   * into the one statement left to make.
    */
-  it('accepts a type that declares its own views AND a contentBearing field', () => {
-    expect(() => attachComposition(moduleWith({ detail: () => ({}) }), [])).not.toThrow();
-  });
-
-  it('accepts one that computes no views either', () => {
-    expect(() => attachComposition(moduleWith(null), [])).not.toThrow();
+  it('accepts a contentBearing field', () => {
+    expect(() => attachComposition(moduleWith(), [])).not.toThrow();
   });
 
   /**
@@ -170,7 +167,7 @@ describe('contentBearing — load-time validation', () => {
    * from every generic read with nothing behind it is write-only data.
    */
   it('rejects a contentOperation that resolves to no operation', () => {
-    const module = moduleWith(null);
+    const module = moduleWith();
     (module.data!.schema as Record<string, FieldNode>).body = {
       kind: 'string',
       contentBearing: true,

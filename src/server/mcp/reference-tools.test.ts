@@ -42,7 +42,6 @@ function diagramModule(): BackendModule {
     labelPlural: 'Diagrams',
     displayOrder: 70,
     pathPrefix: '/diagrams',
-    serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: 'Diagrams',
     },

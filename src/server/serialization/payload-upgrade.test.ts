@@ -23,7 +23,7 @@ function moduleAt(version: number, steps: Array<(p: unknown) => unknown> = []): 
     type: 'widget',
     payloadVersion: version,
     data: { schema: SCHEMA },
-    serializer: { payloadUpgrades: steps as UpgradableModule['serializer'] extends undefined ? never : never },
+    payloadUpgrades: steps,
   } as unknown as UpgradableModule;
 }
 

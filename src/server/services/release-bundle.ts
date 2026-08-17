@@ -4,13 +4,19 @@
  * release N, derived ONLY from the versioning tables (via `getReleaseSnapshot`),
  * never from `pagesDir` on disk or entity HEADs.
  *
- * Spec reference: brief `0-1-27-to-0-1-28.md`. Direct consumers (future):
- * M25 (push to remote) writes; M26 (`c4s import`) reads. The restore direction
- * lives in `ReleaseService.restoreBundleArchive` (contract-only in v1).
+ * Spec reference: briefs `0-1-27-to-0-1-28.md` and `0-2-23-to-0-2-24.md`. Direct
+ * consumers: M25 (push to remote) writes; M27 (project clone / `c4s import`)
+ * reads. The restore direction lives in `ReleaseService.restoreBundleArchive`.
  *
- * This module owns the pure write logic + the constants/types M26 will import.
- * The two public methods stay on `ReleaseService` per the M17 contract; they
- * are thin delegations to `buildBundleArchive(...)` here.
+ * Since v4 the `entities/` tree is the M29 store's tree — same paths, same file
+ * contents. The two differ only in SOURCE: the store reads HEAD, the bundle
+ * derives entities from `entity_version` filtered by release. That is what makes
+ * restore an unpack rather than a format translation. `tags.json` is the one
+ * exception on both sides: it has no version table, so it is copied from HEAD.
+ *
+ * This module owns the pure write logic + the constants/types the read side
+ * imports. The two public methods stay on `ReleaseService` per the M17 contract;
+ * they are thin delegations to `buildBundleArchive(...)` here.
  */
 
 import fs from 'node:fs';
@@ -21,125 +27,55 @@ import { createHash } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { create as tarCreate, extract as tarExtract } from 'tar';
 import { nanoid } from 'nanoid';
-import type { Release, SpecSnapshot, SpecSnapshotEntityRow } from '../../shared/entities.js';
+import type { Release, SpecSnapshot } from '../../shared/entities.js';
 import type { Root } from '../../shared/types.js';
 import type { Config, NormalizedConfig } from '../config.js';
 import { DomainError } from './tags.js';
 
 /**
  * Bundle layout version. Bump = breaking change in the bundle shape (layout,
- * manifest, sanitization semantics). M26 import compares
+ * manifest, sanitization semantics). Import compares
  * `manifest.bundleSchemaVersion` against the highest version it supports →
- * mismatch ⇒ `BUNDLE_SCHEMA_UNSUPPORTED`. NOT bumped when an entity's
+ * greater ⇒ `BUNDLE_SCHEMA_UNSUPPORTED`. NOT bumped when an entity's
  * `serializer_version` changes — each bundle is self-contained w.r.t. entity
  * schema (carried per-type in the manifest's `serializerVersions`).
  *
- * v2 (0.1.96 multiroot): pages are laid out as `<rootId>/<path>.md` (was flat
- * `pages/`); the manifest gains `roots[]` and the sanitized config carries
- * `roots[]` instead of the `pagesDir` scalar. v1 bundles (flat `pages/`, no
- * `manifest.roots`) are still readable — see `ReleaseService.restoreBundleArchive`.
+ * The full history, which until 0.2.24 lived only in the reader's branches:
  *
- * v3 (0.2.11): `entities/` carries one file per ACTIVE entity type, derived from
- * each module's `pathPrefix`, instead of the five names a static map allowed. The
- * LAYOUT rule changed, so the version had to move: a v3 bundle can contain
- * `design-systems.json`, `diagrams.json` or a plugin type's file, and a pre-0.2.11
- * reader has no entry for those. Left at 2, that reader's version guard would pass
- * and it would then abort on the first unmappable file — reporting a broken
- * archive when the real problem is version skew, which is the one thing this
- * constant exists to say. v2 and v1 bundles remain readable: the derivation
- * reproduces all five historical names exactly.
+ * | v | shipped | `entities/` layout                          | pages          |
+ * |---|---------|---------------------------------------------|----------------|
+ * | 1 | 0.1.28  | `<typePlural>.json`, static singular→plural  | flat `pages/`  |
+ * | 2 | 0.1.96  | `<typePlural>.json`, static singular→plural  | `<rootId>/…`   |
+ * | 3 | 0.2.11  | `<name>.json`, name from `pathPrefix`        | `<rootId>/…`   |
+ * | 4 | 0.2.24  | `<type>/<slug>.json` + `tags.json`           | `<rootId>/…`   |
+ *
+ * v2 added `manifest.roots[]` and swapped the sanitized config's `pagesDir`
+ * scalar for `roots[]`. v3 changed only how an entity FILE was named, so that a
+ * plugin type could appear in an archive at all. v4 changes the layout itself:
+ * one file per entity, mirroring the M29 store byte for byte, so restore is an
+ * unpack rather than a translation — plus `entities/tags.json`, and no `op`
+ * field, because an archive carries state and not a delta.
+ *
+ * WHY 4 AND NOT 3. Brief `0-2-23-to-0-2-24` specifies this layout as `3`,
+ * reading the flat `entities/<typePlural>.json` shape as the current one. It is
+ * not: `3` shipped in 0.2.11 and blobs declaring it are already out there, on a
+ * remote that stores them append-only with no retention policy. Reusing `3`
+ * would put two incompatible `entities/` layouts under one declared version with
+ * nothing to tell them apart — exactly the failure this constant exists to
+ * prevent, and one that presents as data corruption rather than version skew.
+ * The deviation is filed as a drift patch against the brief.
+ *
+ * Reading v3 costs nothing extra: its file names were already irrelevant to the
+ * reader, which takes the type from each entry's own `type` field, so v3 and v2
+ * share one branch.
  */
-export const BUNDLE_SCHEMA_VERSION = 3 as const;
+export const BUNDLE_SCHEMA_VERSION = 4 as const;
 
-/** The minimum a module must expose to be laid out in a bundle. */
-export interface BundleEntityModule {
-  type: string;
-  pathPrefix: string;
-}
+/** The oldest layout whose `entities/` is an array-per-file rather than a tree. */
+export const BUNDLE_LEGACY_ENTITY_LAYOUT_MAX = 3 as const;
 
-/**
- * The bundle file name for an entity type: the last segment of its `pathPrefix`.
- *
- * 0.2.11 — this replaces a hand-written singular→plural map of five entries.
- * The map was the reason `design-system` and `diagram` were silently absent from
- * every bundle ever produced (step 4 below skips a type with no entry), and the
- * reason a plugin type could never appear in one at all.
- *
- * `pathPrefix` rather than `labelPlural`: `labelPlural` is a presentation string
- * (sidebar, chips), so a type author retitling "Acceptance Criteria" would
- * silently rename a file inside an archive format — and `slugify('Acceptance
- * Criteria')` is `acceptance-criteria`, not the `acs` every existing bundle
- * carries. `pathPrefix` is already a durable identifier: it mounts REST routes
- * and client navigation, so changing it is a breaking change either way.
- *
- * The LAST segment, not the whole prefix with its leading slash stripped, so the
- * rule is indifferent to whether a prefix is spelled `/acs` or `/api/acs` — and
- * so it can never yield a name containing a path separator.
- *
- * It reproduces every pre-0.2.11 name exactly, which is what keeps old bundles
- * readable with no compatibility table: `/endpoints`→`endpoints.json`,
- * `/dtos`→`dtos.json`, `/ui-views`→`ui-views.json`, `/acs`→`acs.json`,
- * `/database-tables`→`database-tables.json`. `pathPrefix` is required on every
- * manifest, so there is no fallback path to get wrong.
- */
-export function bundleEntityFileName(module: BundleEntityModule): string {
-  const segments = module.pathPrefix.split('/').filter(Boolean);
-  const base = segments[segments.length - 1];
-  if (!base) {
-    throw new DomainError(
-      'VALIDATION',
-      `entity type '${module.type}' has an empty pathPrefix — cannot derive a bundle file name`,
-    );
-  }
-  return `${base}.json`;
-}
-
-/**
- * Both directions of the type ↔ bundle-file-name mapping, built from a module
- * list, plus any file name more than one type claims.
- *
- * Collisions are REPORTED, not thrown, because the two call sites need different
- * answers. The write side builds this over ACTIVE modules and must refuse: two
- * types sharing a file name means one silently overwrites the other's rows in the
- * archive. The read side builds it over AVAILABLE modules — every installed
- * plugin, activated or not — where a throw would be indefensible: an unrelated
- * deactivated plugin declaring `/v2/acs` would abort every clone, import and
- * restore in the project, before a single file of the archive is read, over a
- * type the bundle does not even contain. There, only a collision on a file
- * ACTUALLY PRESENT is a real ambiguity.
- */
-export function bundleEntityFileMap(modules: readonly BundleEntityModule[]): {
-  toFile: Map<string, string>;
-  toType: Map<string, string>;
-  collisions: Map<string, string[]>;
-} {
-  const toFile = new Map<string, string>();
-  const toType = new Map<string, string>();
-  const collisions = new Map<string, string[]>();
-  for (const module of modules) {
-    const file = bundleEntityFileName(module);
-    const claimed = toType.get(file);
-    if (claimed !== undefined && claimed !== module.type) {
-      collisions.set(file, [...(collisions.get(file) ?? [claimed]), module.type]);
-    }
-    toFile.set(module.type, file);
-    if (claimed === undefined) toType.set(file, module.type);
-  }
-  return { toFile, toType, collisions };
-}
-
-/** The write-side map: a collision here corrupts the archive, so it refuses. */
-export function bundleEntityFileMapForWrite(modules: readonly BundleEntityModule[]): Map<string, string> {
-  const { toFile, collisions } = bundleEntityFileMap(modules);
-  const [file, types] = collisions.entries().next().value ?? [];
-  if (file && types) {
-    throw new DomainError(
-      'BUNDLE_BASENAME_COLLISION',
-      `entity types ${types.map((t) => `'${t}'`).join(' and ')} both map to bundle file '${file}'`,
-    );
-  }
-  return toFile;
-}
+/** `entities/tags.json` — the one file allowed at the top of `entities/`. */
+export const BUNDLE_TAGS_FILE = 'tags.json';
 
 /** One releasable page root as carried by the bundle manifest (id/name/dir only). */
 export interface BundleRoot {
@@ -184,20 +120,51 @@ export interface BundleManifest {
     description: string;
     createdAt: string; // ISO 8601 — copy of spec_release.created_at
   };
-  /** Informational (debug/audit) — M26 does NOT reject by this, only by `bundleSchemaVersion`. */
+  /** Informational (debug/audit) — restore does NOT reject by this, only by `bundleSchemaVersion`. */
   c4sVersion: string;
   /** Build moment — `new Date().toISOString()`, distinct from `release.createdAt`. */
   createdAt: string;
   /**
-   * Per-type serializer versions at capture time: one key per ACTIVE entity type
+   * Per-type payload versions at capture time: one key per ACTIVE entity type
    * (0.2.11 — no longer a fixed six), plus `page`. The snapshot model carries
-   * serializer versions per-type, not per-entity. M26 reads the version per type
-   * and delegates to the matching deserializer.
+   * them per-type, not per-entity, and the reader upgrades each entry from the
+   * version recorded here.
    *
-   * Keys stay SINGULAR (the type id), independent of the bundle FILE name, which
-   * is derived separately — see {@link bundleEntityFileName}.
+   * Keys are the type id, and from v4 they are also the `entities/` directory
+   * names: `{directories in entities/} ⊆ ({keys} \ {page})`. Containment, not
+   * equality — a key with no directory just means the release has no entity of
+   * that type, while a directory with no key is a corrupt archive.
+   *
+   * The historical name is kept deliberately: the value is the type's
+   * `payloadVersion`, and renaming the field would be a migration with no gain.
    */
   serializerVersions: Record<string, string>;
+}
+
+/**
+ * One entity as it is laid out in a v4 bundle: `entities/<type>/<slug>.json`.
+ *
+ * The file's CONTENT is the M29 store's file, byte for byte — the snapshot
+ * generated from the type's logical schema plus the envelope (`createdAt` /
+ * `updatedAt` / `payloadVersion`). The identity lives in the PATH: the directory
+ * names the type, the file names the slug, and the slug is authoritative there
+ * because it is create-time and may legitimately diverge from `slugify(title)`.
+ * There is no `op` — an archive carries state, so an incremental import derives
+ * deletions from the difference of slug sets instead.
+ */
+export interface BundleEntityInput {
+  type: string;
+  slug: string;
+  /** The store-shaped payload, envelope included. */
+  data: unknown;
+}
+
+/** A tag definition as carried by `entities/tags.json` (mirror of the M29 store's file). */
+export interface BundleTagInput {
+  slug: string;
+  name: string;
+  color: string | null;
+  description: string | null;
 }
 
 export interface BuildBundleResult {
@@ -270,6 +237,26 @@ export function sanitizeConfigForBundle(config: NormalizedConfig): BundleConfig 
   };
 }
 
+/**
+ * Refuse a type or slug that would not survive a round trip through the archive
+ * path. From v4 the identity of an entity IS its path, so a segment carrying a
+ * separator, a traversal or a null byte is not a naming quirk — it is a way to
+ * write outside `entities/`, and a way for the reader to recover a different
+ * identity than the writer meant.
+ */
+function assertSafeBundleSegment(segment: string, what: string): void {
+  if (
+    segment === '' ||
+    segment === '.' ||
+    segment === '..' ||
+    segment.includes('/') ||
+    segment.includes('\\') ||
+    segment.includes('\0')
+  ) {
+    throw new DomainError('BUNDLE_MALFORMED_ENTRY', `unsafe ${what} '${segment}' for a bundle path`);
+  }
+}
+
 /** Recursively collect file entries under `dir`, as sorted posix-style relative paths. */
 function collectSortedEntries(dir: string): string[] {
   const out: string[] = [];
@@ -317,16 +304,24 @@ export async function buildBundleArchive(
   config: NormalizedConfig,
   pageRows: BundlePageInput[],
   /**
-   * Entity type → bundle file name, resolved by the caller from the host's
-   * ACTIVE modules (see {@link bundleEntityFileMap}).
+   * The release's entities in STORE shape — one entry per file to lay out,
+   * already stamped with its envelope and already filtered of delete tombstones
+   * and inactive types by the caller.
    *
-   * A parameter rather than a host lookup inside this module: `release-bundle.ts`
-   * deliberately depends on nothing but node, `shared/`, and the config — it is
-   * the pure `(snapshot, release, config) → bytes` half, which is what makes it
-   * testable without standing up a project. `ReleaseService` already holds the
-   * host and resolves the map there.
+   * A parameter rather than a derivation from `snapshot.entities` inside this
+   * module: `release-bundle.ts` deliberately depends on nothing but node,
+   * `shared/` and the config — it is the pure `(snapshot, release, config) →
+   * bytes` half, which is what makes it testable without standing up a project.
+   * Stamping the envelope needs the host registry, which `ReleaseService` holds.
    */
-  entityFiles: ReadonlyMap<string, string>,
+  entityRows: readonly BundleEntityInput[],
+  /**
+   * Tag definitions for `entities/tags.json`, copied from HEAD and already
+   * filtered to the slugs this release's entities actually carry. `null` when
+   * the project has no `tags.json` on disk — the file is then simply absent,
+   * which is not an error.
+   */
+  tagDefs: readonly BundleTagInput[] | null,
 ): Promise<BuildBundleResult> {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-bundle-'));
   try {
@@ -368,25 +363,54 @@ export async function buildBundleArchive(
       fs.writeFileSync(dest, page.content, 'utf8');
     }
 
-    // 4. entities/<typePlural>.json — one file per active type with rows.
-    const byType = new Map<string, SpecSnapshotEntityRow[]>();
-    for (const entity of snapshot.entities) {
-      if (entity.op === 'delete') continue;
-      const list = byType.get(entity.type) ?? [];
-      list.push(entity);
-      byType.set(entity.type, list);
-    }
-    if (byType.size > 0) {
-      const entitiesDir = path.join(tempDir, 'entities');
+    // 4. entities/<type>/<slug>.json — one file per entity, mirroring the M29
+    //    store. The type is the DIRECTORY and the slug is the FILE NAME, so the
+    //    reader recovers both from the path without parsing anything.
+    const entitiesDir = path.join(tempDir, 'entities');
+    const writtenTypes = new Set<string>();
+    if (entityRows.length > 0) {
       fs.mkdirSync(entitiesDir, { recursive: true });
-      for (const [type, rows] of byType) {
-        const fileName = entityFiles.get(type);
-        // A type the host no longer knows — its rows survive in `entity_version`
-        // but there is no module left to name a file for them. Skip rather than
-        // guess a name the read direction could not map back.
-        if (!fileName) continue;
-        fs.writeFileSync(path.join(entitiesDir, fileName), JSON.stringify(rows, null, 2), 'utf8');
+      for (const entity of entityRows) {
+        assertSafeBundleSegment(entity.type, 'entity type');
+        assertSafeBundleSegment(entity.slug, 'entity slug');
+        const dir = path.join(entitiesDir, entity.type);
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(
+          path.join(dir, `${entity.slug}.json`),
+          JSON.stringify(entity.data, null, 2) + '\n',
+          'utf8',
+        );
+        writtenTypes.add(entity.type);
       }
+    }
+
+    // 4a. `{directories in entities/} ⊆ ({keys of serializerVersions} \ {page})`.
+    //     Containment, not equality: a key with no directory is a release that
+    //     simply has no entity of that type, but a directory the manifest cannot
+    //     account for would leave the reader unable to resolve its payload
+    //     version — which is a corrupt archive, caught here rather than shipped.
+    for (const type of writtenTypes) {
+      if (type === 'page' || snapshot.serializer_versions[type] === undefined) {
+        throw new DomainError(
+          'BUNDLE_MALFORMED_ENTRY',
+          `entities/${type}/ has no '${type}' key in manifest.serializerVersions`,
+        );
+      }
+    }
+
+    // 4b. entities/tags.json — definitions copied from HEAD, already filtered to
+    //     the slugs this release uses, sorted by slug for a stable diff. Tags are
+    //     not a plugin-host entity type (there is no `tag_version`), so HEAD is
+    //     the only source there is; `config.json` has taken the same path since
+    //     v1. No file on disk ⇒ no file in the bundle, and that is not an error.
+    if (tagDefs !== null) {
+      fs.mkdirSync(entitiesDir, { recursive: true });
+      const sorted = [...tagDefs].sort((a, b) => (a.slug < b.slug ? -1 : a.slug > b.slug ? 1 : 0));
+      fs.writeFileSync(
+        path.join(entitiesDir, BUNDLE_TAGS_FILE),
+        JSON.stringify(sorted, null, 2) + '\n',
+        'utf8',
+      );
     }
 
     // 5. tar -czf (sorted entries, portable headers for stable-ish output).
@@ -407,6 +431,102 @@ export async function buildBundleArchive(
 }
 
 // ─── Read direction (M27 Project Clone) ──────────────────────────────────────
+
+/** One entity recovered from an archive, before its payload upgrade. */
+export interface BundleEntityOutput {
+  slug: string;
+  data: unknown;
+}
+
+/**
+ * Read a bundle's `entities/` into `type → rows`, dispatching on the layout
+ * version the manifest declares.
+ *
+ * **v4 is a TREE.** The directory names the type, the file names the slug, and
+ * the slug from the PATH wins: it is create-time and may legitimately differ
+ * from `slugify(title)`, so it is read literally rather than recomputed. A file
+ * sitting directly in `entities/` is a malformed entry — `tags.json` is the one
+ * exception and has its own handling. Without that rule it would be read as a
+ * type named `tags.json`, which is a spurious `BUNDLE_UNKNOWN_ENTITY_TYPE` at
+ * best and a silent drop at worst.
+ *
+ * **v1–v3 are FLAT** — `entities/<something>.json`, each an array of
+ * `{type, slug, op, data}`. All three share one branch because the reader has no
+ * use for the file NAMES: the type is inside every entry. That is what makes v3
+ * (whose names came from `pathPrefix`) free to keep reading, and it is why the
+ * singular→plural map is not resurrected in either direction.
+ *
+ * `isActive` decides whether a type can be restored here. It is fatal rather
+ * than a skip: dropping every row of a type without saying so leaves a
+ * half-restored spec, which is worse than a refused one.
+ */
+export function readBundleEntities(
+  entitiesDir: string,
+  schemaVersion: number,
+  isActive: (type: string) => boolean,
+): Map<string, BundleEntityOutput[]> {
+  const byType = new Map<string, BundleEntityOutput[]>();
+  const requireActive = (type: string): void => {
+    if (isActive(type)) return;
+    throw new DomainError(
+      'BUNDLE_UNKNOWN_ENTITY_TYPE',
+      `entity type '${type}' is not active locally — activate it in config.entities to import this bundle`,
+    );
+  };
+  const push = (type: string, row: BundleEntityOutput): void => {
+    requireActive(type);
+    byType.set(type, [...(byType.get(type) ?? []), row]);
+  };
+
+  const entries = fs.readdirSync(entitiesDir, { withFileTypes: true });
+
+  if (schemaVersion <= BUNDLE_LEGACY_ENTITY_LAYOUT_MAX) {
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.json')) continue;
+      const rows = JSON.parse(fs.readFileSync(path.join(entitiesDir, entry.name), 'utf8')) as Array<{
+        type: string;
+        slug: string;
+        op?: string;
+        data: unknown;
+      }>;
+      for (const row of rows) {
+        if (row.op === 'delete') continue;
+        push(row.type, { slug: row.slug, data: row.data });
+      }
+    }
+    return byType;
+  }
+
+  for (const entry of entries) {
+    if (entry.isFile()) {
+      if (entry.name === BUNDLE_TAGS_FILE) continue;
+      throw new DomainError(
+        'BUNDLE_MALFORMED_ENTRY',
+        `'entities/${entry.name}' is a file — in this layout a type is a DIRECTORY, ` +
+          `and '${BUNDLE_TAGS_FILE}' is the only file allowed at this level`,
+      );
+    }
+    if (!entry.isDirectory()) continue;
+    // Checked on the DIRECTORY, so an empty one still refuses an inactive type
+    // rather than passing for having no rows to object to.
+    requireActive(entry.name);
+    byType.set(entry.name, []);
+    const typeDir = path.join(entitiesDir, entry.name);
+    for (const file of fs.readdirSync(typeDir).filter((f) => f.endsWith('.json'))) {
+      const slug = file.slice(0, -'.json'.length);
+      const data = JSON.parse(fs.readFileSync(path.join(typeDir, file), 'utf8')) as unknown;
+      const inBody = (data as { slug?: unknown } | null)?.slug;
+      if (typeof inBody === 'string' && inBody !== slug) {
+        throw new DomainError(
+          'BUNDLE_MALFORMED_ENTRY',
+          `entities/${entry.name}/${file} declares slug '${inBody}' — the file name is authoritative`,
+        );
+      }
+      push(entry.name, { slug, data });
+    }
+  }
+  return byType;
+}
 
 /**
  * Extract a bundle `tar.gz` stream into `destDir`. The inverse transport step of

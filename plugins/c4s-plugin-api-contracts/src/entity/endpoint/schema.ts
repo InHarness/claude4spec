@@ -1,6 +1,6 @@
 import type { DataDeclaration, SlugPattern } from '@c4s/plugin-runtime';
 
-/** Host API 3.0.0 — what `endpoint` IS. */
+/** Host API 2.0.0 — what `endpoint` IS. */
 export const endpointData: DataDeclaration = {
   schema: {
     /**

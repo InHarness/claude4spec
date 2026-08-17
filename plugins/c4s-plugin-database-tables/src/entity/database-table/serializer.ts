@@ -18,8 +18,8 @@ import { databaseTablePayloadUpgrades } from './upgrades.js';
  * owner: a list row asks for `select` with the columns it draws, and gets
  * exactly those.
  */
-export const databaseTableSerializer: SerializationContribution<RawEntity> = {
-  payloadVersion: 2,
+/** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
+export const databaseTableSerialization = {
   /** v1 files predate the reserved `title`; it starts life as a copy of `name`. */
   payloadUpgrades: databaseTablePayloadUpgrades,
-};
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;

@@ -71,13 +71,6 @@ export interface FindByTagParams {
   filter: 'and' | 'or';
 }
 
-export interface SectionEntityRef {
-  anchor: string;
-  pagePath: string;
-  headingText: string;
-  relation: string;
-}
-
 /*
  * 0.2.11: `ENTITY_TABLES`, `ALL_ENTITY_TYPES` and `isRawEntityType` are GONE.
  *
@@ -651,32 +644,6 @@ export class RawEntityReader {
       counts: countMap.get(r.slug) ?? zeroCounts,
     }));
   }
-
-  /** Returns sections that referenced the given entity (populated by section-indexer). */
-  findSectionReferences(type: string, slug: string): SectionEntityRef[] {
-    const rows = this.db
-      .prepare(
-        `SELECT sel.anchor AS anchor, sel.relation AS relation,
-                si.page_path AS page_path, si.heading_text AS heading_text
-           FROM section_entity_link sel
-           JOIN section_index si ON si.anchor = sel.anchor
-          WHERE sel.entity_type = ? AND sel.entity_slug = ?
-          ORDER BY si.page_path, si.line_start`
-      )
-      .all(type, slug) as Array<{
-        anchor: string;
-        relation: string;
-        page_path: string;
-        heading_text: string;
-      }>;
-    return rows.map((r) => ({
-      anchor: r.anchor,
-      pagePath: r.page_path,
-      headingText: r.heading_text,
-      relation: r.relation,
-    }));
-  }
-
 
   private hydrate(type: string, row: Record<string, unknown>): RawEntity {
     const slug = row.slug as string;

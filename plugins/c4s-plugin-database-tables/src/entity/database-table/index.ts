@@ -8,7 +8,7 @@ import {
   DATABASE_TABLE_TYPE,
 } from '../../identity.js';
 import { databaseTableData, databaseTableSlugPattern } from './schema.js';
-import { databaseTableSerializer } from './serializer.js';
+import { databaseTableSerialization } from './serializer.js';
 import { databaseTableSystemPrompt } from './system-prompt.js';
 
 /**
@@ -51,7 +51,7 @@ export const databaseTableEntity: EntityContribution = {
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
   displayOrder: DATABASE_TABLE_DISPLAY_ORDER,
   pathPrefix: DATABASE_TABLE_PATH_PREFIX,
-  serializer: databaseTableSerializer,
+  ...databaseTableSerialization,
   systemPrompt: databaseTableSystemPrompt,
   /*
    * 0.2.15 — no `frontend.referenceType`: the slot is gone from the host and

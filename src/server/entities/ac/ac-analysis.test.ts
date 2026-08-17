@@ -58,7 +58,19 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
         : { type, slug, tags: [], data: {} },
   });
 
-  const deps = () => ({ cwd, roots: [], host: { getEntity: () => ({}) }, reader: reader([]) }) as never;
+  const host = () => ({ getEntity: () => ({}) });
+
+  /**
+   * 0.2.24 — the audit reads each verified entity through the M39 core, so the
+   * stub answers as the core does: `results[].entity`, the record rather than
+   * the row. These cases are about the adapter turn, so one non-null record is
+   * all they need to get past the all-verifies-broken skip.
+   */
+  const discovery = () => () =>
+    ({ getEntities: () => ({ results: [{ slug: 'e-1', entity: { slug: 'e-1' } }] }) }) as never;
+
+  const deps = () =>
+    ({ cwd, roots: [], host: host(), discovery: discovery(), reader: reader([]) }) as never;
 
   beforeEach(() => {
     cwd = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-ac-analysis-')));
@@ -78,7 +90,8 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
     ({
       cwd,
       roots: [],
-      host: { getEntity: () => ({}) },
+      host: host(),
+      discovery: discovery(),
       reader: reader([{ type: 'endpoint', slug: 'e-1' }]),
     }) as never;
 

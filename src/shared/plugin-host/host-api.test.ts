@@ -34,6 +34,39 @@ describe('M34/L12 — the version gate counts contribution, not consumption', ()
     expect(HOST_API_VERSION).toBe('2.0.0');
     expect(migrationsBetween(1, 1)).toEqual([]);
   });
+
+  /**
+   * 0.2.24 — no source file may NAME a Host API version other than the constant.
+   *
+   * 0.2.22 raised the baseline to 3.0.0 and 0.2.23 reverted it, but nine
+   * comments and — worse — three registration ERROR MESSAGES kept saying
+   * "required in Host API 3.0.0". A plugin author reading that would go looking
+   * for a major this host rejects, over a slot it actually requires. The
+   * constant is one line; the sentences quoting it were not checked by
+   * anything, so they drifted the moment the number moved back.
+   */
+  it('is the only Host API version any source file names', async () => {
+    const { execFileSync } = await import('node:child_process');
+    const root = new URL('../../../', import.meta.url).pathname;
+    let out = '';
+    try {
+      out = execFileSync(
+        'grep',
+        ['-rIn', '--include=*.ts', '--include=*.tsx', '-E', 'Host API [0-9]+\\.[0-9]+\\.[0-9]+', 'src', 'plugins'],
+        { cwd: root, encoding: 'utf8' },
+      );
+    } catch {
+      out = ''; // grep exits 1 when it matches nothing
+    }
+    const offenders = out
+      .split('\n')
+      .filter((line) => line.trim() !== '')
+      // This file is the one place that may name a wrong version: the rule has
+      // to quote what it is banning to explain itself.
+      .filter((line) => !line.startsWith('src/shared/plugin-host/host-api.test.ts:'))
+      .filter((line) => !/Host API 2\.0\.0/.test(line));
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe('M33 — Host API versioning helpers', () => {

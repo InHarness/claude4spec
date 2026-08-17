@@ -7,7 +7,7 @@ import {
   UI_VIEW_PATH_PREFIX,
   UI_VIEW_TYPE,
 } from '../../identity.js';
-import { uiViewSerializer } from './serializer.js';
+import { uiViewSerialization } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewData, uiViewSlugPattern } from './schema.js';
 
@@ -33,6 +33,6 @@ export const uiViewEntity: EntityContribution = {
   displayOrder: UI_VIEW_DISPLAY_ORDER,
   pathPrefix: UI_VIEW_PATH_PREFIX,
   dependsOn: [DESIGN_SYSTEM_TYPE],
-  serializer: uiViewSerializer,
+  ...uiViewSerialization,
   systemPrompt: uiViewSystemPrompt,
 } as EntityContribution;

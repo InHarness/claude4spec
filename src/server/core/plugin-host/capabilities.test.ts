@@ -23,7 +23,6 @@ function entityManifest(over: Partial<PluginManifest> = {}): PluginManifest {
           labelPlural: 'Widgets',
           displayOrder: 100,
           pathPrefix: '/widgets',
-          serializer: {},
           systemPrompt: {
             roleNoun: 'widget',
             mcpToolsLine: 'widget-tools: ...',

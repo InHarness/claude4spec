@@ -139,8 +139,20 @@ export interface PluginEngines {
  * the registry narrows them at registration time.
  */
 export interface EntityContribution extends EntityModuleManifest {
-  /** L9 — JSON serializer (server `EntitySerializer<unknown>`; narrowed server-side). */
-  serializer: unknown;
+  /**
+   * L9 — optional semantic diff of two snapshots (server
+   * `SerializationContribution['diff']`; narrowed server-side, typed `unknown`
+   * here so the shared bundle stays dep-free). Omitted ⇒ the host deep-diffs.
+   *
+   * 0.2.24 — this and {@link payloadUpgrades} are declared DIRECTLY on the type.
+   * The `serializer` object that used to hold them is gone: with `snapshot`,
+   * `restore`, `views`, `schema` and `version` all derived, the container had
+   * nothing left to group.
+   */
+  diff?: unknown;
+
+  /** L9 — ordered payload migration chain (server `SerializationContribution['payloadUpgrades']`). */
+  payloadUpgrades?: unknown;
 
   /** M05 — system prompt contribution composed by buildSystemPrompt. */
   systemPrompt: SystemPromptContribution;

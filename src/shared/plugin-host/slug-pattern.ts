@@ -1,5 +1,5 @@
 /**
- * Host API 3.0.0 — `slugPattern` and `computedDefault`, the DATA that replaces
+ * Host API 2.0.0 — `slugPattern` and `computedDefault`, the DATA that replaces
  * `slugFrom`, the function.
  *
  * A function on a manifest can do anything: read the database, call a service,

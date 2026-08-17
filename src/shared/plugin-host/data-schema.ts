@@ -1,5 +1,5 @@
 /**
- * Host API 3.0.0 — the LOGICAL SCHEMA an entity type declares.
+ * Host API 2.0.0 — the LOGICAL SCHEMA an entity type declares.
  *
  * Before this, a type shipped its own DDL (`backend.migrations`), its own slug
  * function (`slugFrom`), its own MCP input schemas (`backend.crud.*`) and its

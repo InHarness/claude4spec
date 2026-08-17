@@ -103,6 +103,16 @@ export interface MountContext {
   reader: any;
   crud: any;
   host: any;
+  /**
+   * 0.2.24 — the M39 read core, for a plugin that needs to READ an entity of a
+   * type other than its own. A thunk: mounting runs before the core exists, so
+   * call it at tool-call time, not at mount time.
+   *
+   * Reach reads through THIS, never through the host's serialization engine.
+   * The core is the one read path every transport shares; the engine under it
+   * is host-internal and held to a single caller.
+   */
+  discovery(): any;
   cwd: string;
   ws: { broadcast(msg: unknown): void };
   tagsService: any;
@@ -294,8 +304,10 @@ export interface HostEntityReader {
     getEntityService?(type: string): unknown;
   };
   getEntity(type: string, slug: string): unknown;
-  /** Page sections referencing this entity — `{anchor, pagePath, headingText, relation}`. */
-  findSectionReferences(type: string, slug: string): unknown[];
+  // 0.2.24 — `findSectionReferences` is gone. It was the entity→sections half of
+  // the retired `detail._references`, and it lost its last caller with that
+  // field; the question is answered by `find_references({ target: 'entity' })`,
+  // which reads the same junction and is a tool rather than a reader method.
 }
 
 /** 0.2.2 — the restore-path writer, named. See `HostEntityReader`. */
@@ -333,12 +345,28 @@ export type SnapshotData = unknown;
  * declared a view was describing a decision that is no longer its to make.
  * Presentation still belongs to the type — through the `frontend.render*` slots,
  * which are untouched.
+ *
+ * 0.2.24 — DECLARE THESE ON THE TYPE, not inside a `serializer` object. The
+ * container is rejected at registration now. It had held five slots; four were
+ * derived away, and wrapping the two survivors only suggested the others were
+ * still somewhere to be found. This interface stays as the shape of what those
+ * two slots are, and as the thing `EntityContribution` picks them from.
+ *
+ * ```ts
+ * // before                          // now
+ * serializer: {                      payloadVersion: 2,
+ *   payloadVersion: 2,               payloadUpgrades: [toV2],
+ *   payloadUpgrades: [toV2],         diff: myDiff,
+ *   diff: myDiff,
+ * },
+ * ```
  */
 export interface SerializationContribution<T = unknown> {
   diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
   /**
-   * Optional echo of the manifest's `payloadVersion`, which is the authority.
-   * Declare it only if you want the cross-check; registration rejects a mismatch.
+   * The type's payload shape version. Declared on the MANIFEST, where it has
+   * always been the authority — it is named here only so this interface
+   * describes the whole contribution.
    */
   payloadVersion?: number;
   /** `payloadUpgrades[i]`: payload `i+1` → `i+2`. Enforced by the host on load and restore. */

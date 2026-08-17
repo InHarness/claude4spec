@@ -15,7 +15,6 @@ function mod(type: string, displayOrder = 100): BackendModule {
     labelPlural: `${type}s`,
     displayOrder,
     pathPrefix: `/${type}s`,
-    serializer: {} as BackendModule['serializer'],
     systemPrompt: {
       roleNoun: type,
       countStat: { placeholder: `${type}Count`, sqlQuery: 'SELECT 0 AS count', label: type },
