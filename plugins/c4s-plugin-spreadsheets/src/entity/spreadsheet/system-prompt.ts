@@ -23,13 +23,13 @@ export const spreadsheetSystemPrompt: SystemPromptContribution = {
     'not only for large sheets. Never pull the whole grid when you only need its shape.\n' +
     '1. ALWAYS start from the overview — dimensions (nRows × nCols), the header_row / header_col ' +
     'flags, and the perimeter header labels (names from row 1 and column 1) — before touching any ' +
-    'body content. The `detail` projection and `get_overview` both return exactly this ' +
-    'skeleton with header labels, never body cells.\n' +
+    'body content. The read record at its default width and `get_overview` both return exactly ' +
+    'this skeleton with header labels, never body cells.\n' +
     '2. Because the overview already carries the header names, you do NOT need a separate range read ' +
     'just for labels. Fetch only BODY cell content by RANGES via `spreadsheet-tools` (get_range), in ' +
     'windows sized to what you actually need — never the entire sheet at once. Indices are 1-based ' +
     'and inclusive.\n' +
-    '3. Do NOT equate the `detail`/overview projection with body content: the overview is the shape ' +
+    '3. Do NOT equate the read record / overview projection with body content: the overview is the shape ' +
     'plus header labels. Body cells are always a separate, explicit range read.\n' +
     '4. The dimensions are AUTHORED, not inferred from where cells happen to be. Clearing the last ' +
     'written cell does not shrink the sheet, and a sheet may legitimately have trailing empty rows.',
