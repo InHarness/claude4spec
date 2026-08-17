@@ -8,8 +8,8 @@
  * Props contract: `EntityDetailProps = { slug; onDeleted?; onRenamed? }`. The host
  * injects ONLY `slug`. `onDeleted?`/`onRenamed?` are optional panel→host
  * notifications; `onRenamed?(newSlug)` fires ONLY when a save actually moved the
- * slug (a rename goes exclusively through `newSlug`, never through editing `name`
- * alone). There is deliberately NO `onBack`, no `onOpenEntity`, no `onOpenPage`:
+ * slug (a rename goes exclusively through `newSlug`, never through editing
+ * `title` alone). There is deliberately NO `onBack`, no `onOpenEntity`, no `onOpenPage`:
  * back is the host breadcrumb, and cross-entity navigation goes through the
  * `useEditorBridge()` / `editorBridge` singleton.
  *
@@ -21,7 +21,8 @@
  * rapid edit-after-rename still PATCHes the right URL before the host remounts
  * the panel via `key={slug}`.
  *
- * This is the single real editing surface for a table: NAME, COLUMNS and INDEXES.
+ * This is the single real editing surface for a table: TITLE (which for this type
+ * IS the SQL identifier), COLUMNS and INDEXES.
  * `fk` is soft — pointing a column at a table that does not exist is a warning on
  * the mutation response, never a client-side error, so the editor never blocks it.
  *
@@ -1089,7 +1090,7 @@ const DatabaseTableDetailForm: FC<{
     if (!el) return;
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [draft.name]);
+  }, [draft.title]);
 
   /**
    * The last saved state, as a REF.
@@ -1108,8 +1109,8 @@ const DatabaseTableDetailForm: FC<{
   const pendingRef = useRef<Draft | null>(null);
 
   const scheduleSave = (next: Draft) => {
-    // A blank name would `slugify` to an empty slug.
-    if (!next.name.trim()) return;
+    // A blank title would `slugify` to an empty slug.
+    if (!next.title.trim()) return;
 
     /**
      * QUEUE, do not drop.
@@ -1317,7 +1318,7 @@ const DatabaseTableDetailForm: FC<{
         }
       >
         <p style={{ margin: 0 }}>
-          Delete <strong>{draft.name || entity.slug}</strong>? This can’t be undone.
+          Delete <strong>{draft.title || entity.slug}</strong>? This can’t be undone.
         </p>
       </Dialog>
     </DatabaseTableDetailShell>

@@ -280,6 +280,69 @@ describe('entity-tools: batch partial-success', () => {
   });
 });
 
+/**
+ * THE SECOND DOOR for a named validator.
+ *
+ * `kind` is enforced in the shared input-schema builder, so REST and this MCP
+ * surface get it from one edit — but "one builder" is a claim about the code, and
+ * an agent writing through `create_entities` is the caller who actually has to be
+ * stopped. `database-table` proves the REST half in its own suite; this proves
+ * the half an agent uses, and proves the two report it the same way: per ITEM,
+ * inside the batch envelope, as `VALIDATION_ERROR`.
+ */
+describe('entity-tools: a named validator, at the MCP door', () => {
+  const identified = () =>
+    widgetModule({
+      data: {
+        schema: {
+          title: { type: 'string', required: true, maxLength: 200, kind: 'sql-identifier' },
+        },
+      },
+    });
+
+  it('refuses a title that is not a SQL identifier, per item', async () => {
+    const { deps } = fakeDeps([identified()]);
+    const result = await tool(deps, 'create_entities').handler({
+      type: 'widget',
+      items: [{ title: 'order_items' }, { title: 'order items' }],
+    });
+    const body = parse(result) as { results: Array<Record<string, unknown>> };
+    expect(body.results[0]).toMatchObject({ slug: 'order-items' });
+    expect(body.results[1]).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+
+  it('names the reserved word rather than reporting a shape mismatch', async () => {
+    const { deps } = fakeDeps([identified()]);
+    const result = await tool(deps, 'create_entities').handler({
+      type: 'widget',
+      items: [{ title: 'select' }],
+    });
+    const body = parse(result) as { results: Array<{ error?: string }> };
+    expect(body.results[0]?.error).toMatch(/reserved SQL word/);
+  });
+
+  it('accepts mixed case and leaves the lowercasing to the slug', async () => {
+    const { deps } = fakeDeps([identified()]);
+    const result = await tool(deps, 'create_entities').handler({
+      type: 'widget',
+      items: [{ title: 'Order_Archive' }],
+    });
+    const body = parse(result) as { results: Array<{ slug?: string }> };
+    expect(body.results[0]).toMatchObject({ slug: 'order-archive' });
+  });
+
+  it('refuses it on update too — a rename is when a bad identifier arrives', async () => {
+    const { deps } = fakeDeps([identified()]);
+    await tool(deps, 'create_entities').handler({ type: 'widget', items: [{ title: 'orders' }] });
+    const result = await tool(deps, 'update_entities').handler({
+      type: 'widget',
+      updates: [{ slug: 'orders', data: { title: 'order list' } }],
+    });
+    const body = parse(result) as { results: Array<Record<string, unknown>> };
+    expect(body.results[0]).toMatchObject({ code: 'VALIDATION_ERROR' });
+  });
+});
+
 describe('entity-tools: update_entities rename', () => {
   it('newSlug renames; result.slug is the NEW slug; propagateSlugChange is called', async () => {
     const { deps, rows } = fakeDeps();
