@@ -67,7 +67,13 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
    * all they need to get past the all-verifies-broken skip.
    */
   const discovery = () => () =>
-    ({ getEntities: () => ({ results: [{ slug: 'e-1', entity: { slug: 'e-1' } }] }) }) as never;
+    ({
+      getEntities: () => ({ results: [{ slug: 'e-1', entity: { slug: 'e-1' } }] }),
+      // No content-bearing field ⇒ nothing to inline; the cases below are about
+      // the adapter turn, not about the record's shape.
+      describeTypes: () => ({ types: [{ contentFields: [] }] }),
+      getFieldContent: () => ({ content: '' }),
+    }) as never;
 
   const deps = () =>
     ({ cwd, roots: [], host: host(), discovery: discovery(), reader: reader([]) }) as never;
@@ -146,5 +152,67 @@ describe('AcAnalysisService — adapter execution scope (A19)', () => {
     await service.analyze();
     const second = executeMock.mock.calls[1][0] as unknown as { disallowedPaths: string[] };
     expect(second.disallowedPaths).toContain(path.join(cwd, 'later'));
+  });
+
+  /**
+   * 0.2.24 — the record answers a content-bearing field with a DESCRIPTOR, never
+   * with the value. For a type whose body essentially is that field (a diagram's
+   * `source`), an audit shown `{sourceHas: true, sourceBytes: 42}` is being asked
+   * to judge text it was not given. The descriptor names the operation that
+   * issues the content; the audit follows it.
+   */
+  it('inlines content-bearing fields the record would only describe', async () => {
+    const getFieldContent = vi.fn(() => ({ content: 'flowchart TD; A-->B' }));
+    const deps = {
+      cwd,
+      roots: [],
+      host: host(),
+      reader: reader([{ type: 'diagram', slug: 'e-1' }]),
+      discovery: () =>
+        ({
+          getEntities: () => ({
+            results: [{ slug: 'e-1', entity: { slug: 'e-1', sourceHas: true, sourceBytes: 19 } }],
+          }),
+          describeTypes: () => ({
+            types: [{ contentFields: [{ field: 'source', operation: 'get_field_content' }] }],
+          }),
+          getFieldContent,
+        }) as never,
+    } as never;
+
+    await new AcAnalysisService(deps).analyze();
+
+    expect(getFieldContent).toHaveBeenCalledWith({
+      type: 'diagram',
+      slug: 'e-1',
+      field: 'source',
+    });
+    const [[args]] = executeMock.mock.calls as unknown as [[{ prompt: string }]];
+    expect(args.prompt).toContain('flowchart TD; A-->B');
+  });
+
+  /** A field the entity does not carry is not fetched — the descriptor said so. */
+  it('does not fetch content for a field the record reports as empty', async () => {
+    const getFieldContent = vi.fn(() => ({ content: '' }));
+    const deps = {
+      cwd,
+      roots: [],
+      host: host(),
+      reader: reader([{ type: 'diagram', slug: 'e-1' }]),
+      discovery: () =>
+        ({
+          getEntities: () => ({
+            results: [{ slug: 'e-1', entity: { slug: 'e-1', sourceHas: false, sourceBytes: 0 } }],
+          }),
+          describeTypes: () => ({
+            types: [{ contentFields: [{ field: 'source', operation: 'get_field_content' }] }],
+          }),
+          getFieldContent,
+        }) as never,
+    } as never;
+
+    await new AcAnalysisService(deps).analyze();
+
+    expect(getFieldContent).not.toHaveBeenCalled();
   });
 });
