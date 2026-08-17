@@ -475,7 +475,9 @@ export function readBundleEntities(
   };
   const push = (type: string, row: BundleEntityOutput): void => {
     requireActive(type);
-    byType.set(type, [...(byType.get(type) ?? []), row]);
+    const rows = byType.get(type);
+    if (rows) rows.push(row);
+    else byType.set(type, [row]);
   };
 
   const entries = fs.readdirSync(entitiesDir, { withFileTypes: true });

@@ -5,6 +5,7 @@ import type { Root } from '../../../shared/types.js';
 import { resolveAgentExecutionScope } from '../../services/agent-execution-scope.js';
 import { readActiveAcs } from './read-acs.js';
 import { type RawEntityReader, type RawEntityType } from '../../discovery/raw-entity-reader.js';
+import { DEFAULT_CONTENT_OPERATION } from '../../../shared/plugin-host/data-schema.js';
 
 export interface AcAnalysisOptions {
   /** Limit to ACs carrying this tag slug. Omit for no tag filter. */
@@ -78,6 +79,9 @@ export interface AcAnalysisDeps {
  * exists — never whether the AC text matches the entity shape.
  */
 export class AcAnalysisService {
+  /** `describe_types` is per-type and stable for a run; one call each, not one per ref. */
+  private readonly contentFieldsByType = new Map<string, string[]>();
+
   constructor(private readonly deps: AcAnalysisDeps) {}
 
   async analyze(opts: AcAnalysisOptions = {}): Promise<AcAnalysisResult> {
@@ -142,7 +146,9 @@ export class AcAnalysisService {
          * matched a shape the criterion could not see. The record is what every
          * other reader of this type gets.
          */
-        return { type: v.type, slug: v.slug, status: 'active' as const, data: record.entity };
+        const data = { ...(record.entity as Record<string, unknown>) };
+        this.attachContent(discovery, v.type, v.slug, data);
+        return { type: v.type, slug: v.slug, status: 'active' as const, data };
       });
       // An AC whose every verify is missing/unknown-type has nothing to compare
       // the text against — the broken refs are M19's concern (rule 9), not ours.
@@ -208,6 +214,47 @@ export class AcAnalysisService {
       skipped_count: skipped_reasons.length,
       skipped_reasons,
     };
+  }
+
+  /**
+   * Put the CONTENT back into a projected record, in place.
+   *
+   * A read record answers a content-bearing field with a descriptor —
+   * `sourceHas` / `sourceBytes` / `sourceOperation` — and never with the value,
+   * whether or not the caller named the field in `select`. That is right for a
+   * catalog listing and wrong for this: the audit's whole question is whether an
+   * AC's text matches the entity, and for a `diagram` the entity essentially IS
+   * its `source`. Handing the model `{sourceHas: true, sourceBytes: 412}` asks it
+   * to judge a body it was not shown — worse than the raw row this replaced.
+   *
+   * So the descriptor is followed to the operation it names, exactly as an
+   * external caller would follow it. Only the default single-value operation is
+   * resolved; a field that issues its content through a windowed collection op
+   * keeps its descriptor, because there is no one value to inline.
+   */
+  private attachContent(
+    discovery: DiscoveryCore,
+    type: string,
+    slug: string,
+    data: Record<string, unknown>,
+  ): void {
+    let fields = this.contentFieldsByType.get(type);
+    if (!fields) {
+      const described = discovery.describeTypes({ types: [type] }).types[0];
+      fields = (described?.contentFields ?? [])
+        .filter((f) => f.operation === DEFAULT_CONTENT_OPERATION)
+        .map((f) => f.field);
+      this.contentFieldsByType.set(type, fields);
+    }
+    for (const field of fields) {
+      if (data[`${field}Has`] === false) continue;
+      try {
+        data[field] = discovery.getFieldContent({ type, slug, field }).content;
+      } catch {
+        // A field the core cannot issue leaves its descriptor standing. The
+        // audit degrades to what the record already said; it does not fail.
+      }
+    }
   }
 }
 

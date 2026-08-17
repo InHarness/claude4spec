@@ -40,7 +40,12 @@ import type { RestoreContext, RestoreResult } from '../serialization/types.js';
 import { canonicalize, toRawDeltaEntityChange } from '../serialization/snapshot.js';
 import { samePayloadVersion } from '../serialization/payload-version.js';
 import { readSystemFields, stripSystemFields } from '../serialization/system-fields.js';
-import { attachPayloadVersion, stripFileEnvelope, upgradeCapture } from '../serialization/payload-upgrade.js';
+import {
+  attachPayloadVersion,
+  stripFileEnvelope,
+  stripPayloadVersion,
+  upgradeCapture,
+} from '../serialization/payload-upgrade.js';
 import { payloadVersionOfCapture } from '../serialization/payload-version.js';
 import type { SnapshotData } from '../serialization/types.js';
 import { projectStamp } from './system-stamp-projection.js';
@@ -1734,7 +1739,11 @@ export class ReleaseService {
       rows.push({
         type: entity.type,
         slug: entity.slug,
-        data: canonicalize(attachPayloadVersion(entity.data, Number(version))),
+        // `payloadVersionOfCapture`, not `Number()`: the column holds two
+        // vocabularies — integers since 0.2.9, semver ('1.1.0') before it — and
+        // `Number('1.1.0')` is NaN, which `attachPayloadVersion` would happily
+        // stamp as `"payloadVersion": null`.
+        data: canonicalize(attachPayloadVersion(entity.data, payloadVersionOfCapture(version))),
       });
     }
     return rows;
@@ -1892,7 +1901,24 @@ export class ReleaseService {
             // the version each type was captured at.
             const bundled = this.upgradeCapture(type, row.data, manifest.serializerVersions?.[type] ?? null);
             if (!bundled.ok) continue; // same rule as restoreEntity: skip, never half-restore
-            const data = bundled.data;
+            /**
+             * The PATH's slug is stamped in, and the payload marker taken out.
+             *
+             * v4 lets a file body omit `slug` — the path already says it — but
+             * `restoreFromSchema` reads the slug from the body and would upsert
+             * such an entry under `''`, collapsing every slug-less file of a type
+             * onto one row while the returned snapshot still reported the right
+             * paths. The one authoritative slug has to reach the writer too.
+             *
+             * `payloadVersion` goes the other way: v4 stamps it into the FILE,
+             * where it is the store's own envelope, but a capture must not carry
+             * it (`PAYLOAD_VERSION_KEY`) — inside a snapshot it turns every diff
+             * spanning a bump into a spurious `modified`.
+             */
+            const data = stripPayloadVersion({
+              ...(bundled.data as Record<string, unknown>),
+              slug: row.slug,
+            });
             this.host.restore(type, data, restoreCtx);
             // An archive carries STATE, so every entry is a create in the fresh
             // cwd this restores into. v1–v3 entries did carry an `op`; it is
