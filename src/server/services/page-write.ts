@@ -88,6 +88,8 @@ export interface PageWriteTarget {
 
 export interface CreatePageInput {
   path: string;
+  /** Sets the frontmatter `title`. Ignored when `content` is supplied — that carries its own. */
+  title?: string;
   content?: string;
 }
 
@@ -304,6 +306,11 @@ function currentVersionOf(target: PageWriteTarget, relPath: string): number {
   return target.versions?.getLatestForPath(relPath, undefined, target.pages.rootId)?.version ?? 0;
 }
 
+/** `modules/m16-onboarding.md` → `m16-onboarding`. The last resort for a template's title. */
+function titleFromPath(relPath: string): string {
+  return path.basename(relPath).replace(/\.mdx?$/i, '');
+}
+
 export async function createPage(
   target: PageWriteTarget,
   input: CreatePageInput,
@@ -318,7 +325,28 @@ export async function createPage(
       `update it with update_page({ rootId: "${target.pages.rootId}", path: "${relPath}", body }) instead`,
     );
   }
-  const written = await commit(target, relPath, actor, { body: input.content ?? '' });
+  /**
+   * An omitted `content` is NOT an empty page — the route generates a default
+   * template. What that template guarantees is exactly one thing: a frontmatter
+   * block carrying `title`. Everything past that (an H1, placeholder sections,
+   * per-root variants) is deliberately not part of the contract, so nothing is
+   * invented here — the body stays empty and `commit` serializes the frontmatter
+   * through the same gray-matter path every other write uses.
+   *
+   * The consequence callers must know: a freshly created page's `content` is not
+   * `''`, and its hash is the hash of the template. To get a genuinely empty
+   * page, overwrite it right after creating it.
+   *
+   * `title` falls back to the file's basename because a page whose frontmatter
+   * says `title: ''` is worse than one named after itself.
+   */
+  const written =
+    input.content !== undefined
+      ? await commit(target, relPath, actor, { body: input.content })
+      : await commit(target, relPath, actor, {
+          body: '',
+          frontmatter: { title: input.title?.trim() || titleFromPath(relPath) },
+        });
   return { rootId: target.pages.rootId, path: relPath, hash: written.hash, anchors: written.anchors };
 }
 

@@ -203,7 +203,11 @@ export function project(
  * that were merely not requested.
  */
 export function selectedFieldsOf(select: readonly string[] | undefined, schema: Schema): string[] {
-  const identity = [...IDENTITY_FIELDS];
+  // `type` rides with identity here for the same reason it does in `project()`
+  // above: it is on every projected row, `select: []` included. Omitting it made
+  // the echo disagree with the record it describes — the one thing this function
+  // exists to prevent.
+  const identity = ['type', ...IDENTITY_FIELDS];
   if (select) return [...new Set([...identity, ...select])];
   return [
     ...new Set([

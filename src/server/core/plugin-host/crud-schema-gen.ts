@@ -193,11 +193,16 @@ function slugSourceFields(pattern: SlugPattern | undefined): Set<string> {
    * A FALLBACK CHAIN exempts everything in it.
    *
    * `SlugPattern` is either one step list or an ordered list of alternatives,
-   * and the chain exists precisely so a blank source is survivable: `diagram` is
-   * `slugify(caption)` → `slugify(firstSourceIdentifier)` → `nanoid(8)`, so a
-   * captionless diagram is not a mistake, it is the case alternative two and
-   * three are for. Only a single-alternative pattern has no recovery, and only
-   * there does a blank source degenerate into the bare literal prefix.
+   * and the chain exists precisely so a blank source is survivable: a type whose
+   * first alternative slugifies an optional field is not obliged to have it,
+   * because that is what alternatives two and three are for. Only a
+   * single-alternative pattern has no recovery, and only there does a blank
+   * source degenerate into the bare literal prefix.
+   *
+   * `diagram` used to be the example here — `slugify(caption)` →
+   * `slugify(firstSourceIdentifier)` → `nanoid(8)` — and is now the opposite
+   * one: 0.2.22 collapsed it to the single alternative `slugify(title)` with a
+   * hard `SLUG_CONFLICT`, so it takes the no-recovery branch below.
    */
   const alternatives = Array.isArray(pattern[0]) ? (pattern as SlugStep[][]) : [pattern as SlugStep[]];
   if (alternatives.length > 1) return fields;

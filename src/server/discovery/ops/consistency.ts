@@ -326,10 +326,26 @@ export async function checkConsistency(
       }
     }
 
+    /**
+     * The ONE rule bound to a specific root, and deliberately so. Every other
+     * rule iterates roots without knowing their names; this one asks "does
+     * module MNN have a criterion", and the `M{NN}` numbering is a convention of
+     * the `pages` root alone — the `plugins` root carries entity-type pages,
+     * which are tagged `entity-{type}` and were never numbered. Sweeping every
+     * root here would invent modules out of any root that happened to hold a
+     * `modules/mNN-*.md`, then report them all as uncovered.
+     *
+     * The binding is this predicate and nothing else: the rest of the sweep
+     * above stays root-agnostic. It is expressed as the `builtin` PROPERTY
+     * rather than `rootId === 'pages'` — same set of roots, but it keeps the
+     * rule readable as "the root the host ships" and honours the no-identity-
+     * branches rule the root module states.
+     */
     if (requireModuleAc !== 'off') {
       const moduleRe = /modules\/(m\d{2})-[^/]+\.md$/;
       const modules = new Set<string>();
       for (const p of allPagePaths) {
+        if (!roots.get(p.rootId)?.builtin) continue;
         const m = moduleRe.exec(p.path);
         if (m?.[1]) modules.add(m[1]);
       }

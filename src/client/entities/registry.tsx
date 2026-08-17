@@ -19,10 +19,20 @@ export interface EntityChipProps<T> {
 export interface EntityCardProps<T> extends EntityChipProps<T> {
   /**
    * 0.2.15 — the `caption` written on THIS `<single_element/>` reference.
-   * Advisory prose belonging to the reference, not to the entity, so it is
-   * never synced back and is absent whenever the tag omitted it.
+   * Advisory prose belonging to the reference, not to the entity, and absent
+   * whenever the tag omitted it. It is never written onto the entity — two
+   * embeds of one diagram may carry two different captions.
    */
   caption?: string;
+  /**
+   * 0.2.26 — write the caption back onto the REFERENCE this card was rendered
+   * from. Supplied only where there is a reference to write to (the
+   * `single_element` node view); a card on a list page has no caption to own.
+   *
+   * `null` clears the attribute rather than storing `''`, which is what keeps
+   * the serializer from emitting `caption=""` on the round-trip.
+   */
+  onCaptionChange?: (caption: string | null) => void;
 }
 
 export interface EntityDetailProps {

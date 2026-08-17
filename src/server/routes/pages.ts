@@ -228,8 +228,12 @@ export function pagesRouter(
     }
   });
 
-  // 0.1.96: explicit create (CreatePageRequest { path, content? }). See the
-  // `clarification` patch — the body shape was not enumerated in the brief.
+  // 0.1.96: explicit create (CreatePageRequest { path, title?, content? }). See
+  // the `clarification` patch — the body shape was not enumerated in the brief.
+  //
+  // 0.2.26: `title` joined the body, and an omitted `content` now yields the
+  // default template (frontmatter with `title`) rather than a zero-byte file.
+  // The rule lives in `createPage`, so MCP and CLI got it at the same moment.
   //
   // 0.2.13 (tier C-3): the contract itself moved to `services/page-write.ts`.
   // This handler is now what the catalog says a channel is — an adapter that
@@ -240,10 +244,14 @@ export function pagesRouter(
     try {
       const rt = resolve(req, res);
       if (!rt) return;
-      const body = (req.body ?? {}) as { path?: string; content?: string };
+      const body = (req.body ?? {}) as { path?: string; title?: string; content?: string };
       const result = await createPage(
         rt,
-        { path: typeof body.path === 'string' ? body.path : '', ...(body.content !== undefined ? { content: body.content } : {}) },
+        {
+          path: typeof body.path === 'string' ? body.path : '',
+          ...(typeof body.title === 'string' ? { title: body.title } : {}),
+          ...(body.content !== undefined ? { content: body.content } : {}),
+        },
         'user',
       );
       res.status(201).json(result);

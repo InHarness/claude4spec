@@ -15,6 +15,10 @@ const CONTEXT_DEFINING_FIELDS = [
   'patchesDir',
   'plansDir',
   'entitiesDir',
+  // Must mirror CONTEXT_DEFINING_FIELDS in src/server/routes/config.ts. Missing
+  // here, a `releasesDir`-only write rebuilt the context server-side while the
+  // client kept serving every cached query against the old one.
+  'releasesDir',
   'entities',
 ] as const satisfies readonly (keyof ConfigPatch)[];
 

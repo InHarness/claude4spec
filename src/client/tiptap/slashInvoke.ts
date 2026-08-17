@@ -6,19 +6,43 @@ import { diagramsApi } from '../entities/diagram/api.js';
 import type { DiagramFormat } from '../../shared/entities.js';
 import { dispatchTodoPopover } from '../components/TodoPopover.js';
 import { openPopover, toast } from '../ui/events.js';
+import { clientPluginHost } from '../core/plugin-host/host.js';
 
 export interface SlashInvokeDeps {
   qc: QueryClient;
   /** Page path the editor is currently mounted on. Used to pre-fill AC tags. */
   currentPath?: string | null;
+  /** Root the page lives in. Decides which of the two tagging axes applies. */
+  currentRootId?: string | null;
 }
 
-function detectAcDefaultTags(currentPath: string | null | undefined): string[] {
+/**
+ * The tagging convention (see `acSystemPrompt.narrativeBlock`) applied to the
+ * page the author is standing on, so `/ac` opens with the right tag already in
+ * the box. Two axes, one per root:
+ *
+ *  - a host module page → `mNN`;
+ *  - an entity-type page in the `plugins` root → `entity-{type}`.
+ *
+ * The second used to match `entities/<slug>.md`, a layout that stopped existing
+ * when entity-type pages moved into the `plugins` root — so it had quietly
+ * stopped firing at all. It resolves the type by ASKING THE HOST rather than
+ * munging the filename: the pages are named for their plugin envelope as often
+ * as for their type (`c4s-plugin-database-tables.md` holds `database-table`),
+ * so no string rule gets it right. A page whose basename names no registered
+ * type simply pre-fills nothing, which is the honest answer.
+ */
+function detectAcDefaultTags(
+  currentPath: string | null | undefined,
+  currentRootId: string | null | undefined,
+): string[] {
   if (!currentPath) return [];
   const m = currentPath.match(/^modules\/(m\d{2})-/i);
   if (m) return [m[1]!.toLowerCase()];
-  const e = currentPath.match(/^entities\/([a-z0-9-]+)\.md$/i);
-  if (e) return [`entity-${e[1]}`];
+  if (currentRootId === 'plugins') {
+    const base = currentPath.split('/').pop()?.replace(/\.mdx?$/i, '') ?? '';
+    if (base && clientPluginHost.getAvailable(base)) return [`entity-${base}`];
+  }
   return [];
 }
 
@@ -244,7 +268,7 @@ async function runTaggedMixed(editor: Editor): Promise<void> {
 }
 
 async function runCreateAc(editor: Editor, deps: SlashInvokeDeps): Promise<void> {
-  const defaultTags = detectAcDefaultTags(deps.currentPath ?? null);
+  const defaultTags = detectAcDefaultTags(deps.currentPath ?? null, deps.currentRootId ?? null);
   const result = await openPopover('create-ac', coordsAt(editor), { defaultTags });
   if (!result) return;
   try {
