@@ -25,7 +25,9 @@ export function registerPluginCommands(commands: PluginCommandContribution[]): v
   // prefix and absent from it belongs to a package that has left the pool. The
   // host has already dropped it from the registry (`unregisterPlugin`); without
   // this line its trigger would linger in the slash menu, since the editor
-  // extension registry is the one consumer that does not read by pull.
+  // extension registry is a push cache rather than a pull-read consumer.
+  // Only the caller's full list may stand in for the pool — see the guard in
+  // `runtime/boot-plugins.ts`, which refuses to replace on a malformed payload.
   unregisterEditorExtensionsByPrefix(PLUGIN_CMD_PREFIX);
   for (const cmd of commands) {
     if (!cmd?.name || !cmd.trigger || !cmd.popoverKind) {

@@ -41,9 +41,9 @@ describe('M33 — plugin command routing', () => {
   });
 
   it('re-registering a shrunken list drops the departed plugin\'s command (replace, not merge)', () => {
-    // 0.2.29 — the editor extension registry is the ONE consumer that does not
-    // read by pull: `registerEditorExtension` upserts and never removes. So when
-    // the host unregisters a plugin, every server-side consumer notices, but a
+    // 0.2.29 — the editor extension registry is a push cache, not a pull-read
+    // consumer: `registerEditorExtension` upserts and never removes. So when the
+    // host unregisters a plugin, every server-side consumer notices, but a
     // departed package's trigger would sit in the slash menu until a full page
     // reload. `registerPluginCommands` therefore replaces the whole
     // `plugin-cmd:` namespace rather than merging into it.

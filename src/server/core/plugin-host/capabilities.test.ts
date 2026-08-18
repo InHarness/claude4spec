@@ -127,20 +127,23 @@ describe('M33 — registry capability records', () => {
     warn.mockRestore();
   });
 
-  it('drops the settings DESCRIPTOR on unregister while config VALUES survive', () => {
+  it('drops the settings DESCRIPTOR on unregister — the values under config.plugins are not its to touch', () => {
     // The brief's line: `contributes.settings` is a descriptor of a section under
     // `config.plugins[<name>]`, and only the descriptor is the registry's to
     // remove. Wiping the user's values because a package was momentarily
     // unregistered — every hot-reload does exactly that — would be data loss.
+    //
+    // The values half is structural rather than asserted here: the registry is
+    // constructed with no config reference at all, so it has no channel through
+    // which to reach them. What CAN be pinned is that the descriptor goes.
+    // Persistence of the values across writes is covered end-to-end in
+    // `tests/integration/api/config-plugins.test.ts`.
     const registry = new PluginRegistryImpl();
     registry.registerPlugin(fooManifest());
-    // The VALUES, as they live in the config file — nothing the registry owns.
-    const configPlugins = { '@c4s/plugin-foo': { enableBadge: true, apiBase: 'https://kept' } };
     expect(registry.consolidate({}).listSettings().map((s) => s.name)).toEqual(['@c4s/plugin-foo']);
 
     registry.unregisterPlugin('@c4s/plugin-foo');
     expect(registry.consolidate({}).listSettings()).toEqual([]);
-    expect(configPlugins['@c4s/plugin-foo']).toEqual({ enableBadge: true, apiBase: 'https://kept' });
   });
 });
 
