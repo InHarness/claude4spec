@@ -388,7 +388,9 @@ export interface ProjectPluginOverlay {
 /**
  * M33 — a registered base-layer plugin, retained by the registry so the
  * host can surface its non-entity capabilities (settings/commands) and the
- * hot-reload pipeline can tear it down via `onUnregister` before re-registering.
+ * hot-reload pipeline can drop the whole record on re-registration. Retaining
+ * the record IS the fan-out: skills, the settings descriptor and the commands
+ * are all read off it by their consumers, so deleting it unwires them.
  */
 export interface RegisteredPluginRecord {
   name: string;
@@ -397,8 +399,14 @@ export interface RegisteredPluginRecord {
   contributedTypes: string[];
   settings: PluginSettingsSection['fields'];
   commands: PluginCommandContribution[];
-  /** Required teardown hook (idempotent, non-throwing by contract). */
-  onUnregister: () => void;
+  /**
+   * 0.2.29 — OPTIONAL teardown hook for the plugin's OWN resources (see
+   * `PluginManifest.onUnregister`). `undefined` when the manifest declares none,
+   * which is the normal case for a purely declarative package. The registry does
+   * NOT call it; the reload pipeline reads it off this record and calls the OLD
+   * version's hook before `unregisterPlugin`.
+   */
+  onUnregister?: () => void;
 }
 
 /** One overlay type that shadows a same-named base type (cross-layer collision). */
@@ -435,11 +443,20 @@ export interface PluginRegistry {
   validatePlugin(manifest: PluginManifest): void;
 
   /**
-   * M33 — tear down a previously-registered base plugin by name: call
-   * its `onUnregister` (idempotent, non-throwing) and drop its entity modules +
-   * retained capability record. The hot-reload pipeline calls this on the OLD
-   * version before re-`registerPlugin`-ing the fresh module. No-op for an
-   * unknown name.
+   * M33 — the mirror of `registerPlugin`: drop a previously-registered base
+   * plugin by name, fanning out BACKWARDS over its `contributedTypes[]`. Removes
+   * its entity modules (so the types fall out of `listAvailable()`/`getAvailable`)
+   * and its retained capability record — and with the record go the skills, the
+   * `config.plugins[<name>]` settings DESCRIPTOR and the commands, since all
+   * three are pull-read off it. Config VALUES are untouched.
+   *
+   * 0.2.29 — this clears the REGISTRY only. It no longer calls the plugin's
+   * `onUnregister` (the reload pipeline owns that, and calls it first), and it
+   * does not remove what is MOUNTED — Express routes, MCP server factories and
+   * DI services come down on `ProjectContext` invalidation + rebuild. Only both
+   * operations together guarantee no duplicated slots after a reload.
+   *
+   * Idempotent: a no-op, not an error, for a name absent from the registry.
    */
   unregisterPlugin(name: string): void;
 

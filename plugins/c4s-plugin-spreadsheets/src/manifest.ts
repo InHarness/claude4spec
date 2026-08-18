@@ -12,9 +12,13 @@ import { spreadsheetCommands } from './capabilities/commands.js';
  * there: no `spreadsheet` type, no tools, no embed, and a
  * `PLUGIN_HOST_API_MISMATCH` line in the log as the only evidence.
  *
- * `onUnregister` is a deliberate no-op. Dropping the projection tables on
- * unregister would destroy the derived index of a type the user may re-enable
- * five seconds later; the entity FILES are the source of truth and the index is
+ * No `onUnregister`: the slot is optional since 0.2.29 and covers only a
+ * plugin's OWN resources (a timer, a watcher, a connection from the imperative
+ * `backend.mount`), of which this declarative package has none. The host unwires
+ * the type via `registry.unregisterPlugin(name)` plus the `ProjectContext`
+ * rebuild. Note what that deliberately does NOT do: drop the projection tables.
+ * Doing so would destroy the derived index of a type the user may re-enable five
+ * seconds later; the entity FILES are the source of truth and the index is
  * rebuilt from them, so there is nothing here worth being clever about.
  */
 export const manifest: PluginManifest = {
@@ -26,5 +30,4 @@ export const manifest: PluginManifest = {
     entities: [spreadsheetEntity],
     commands: spreadsheetCommands,
   },
-  onUnregister: () => {},
 };

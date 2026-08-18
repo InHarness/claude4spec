@@ -76,10 +76,10 @@ describe('axis A — registration is per envelope', () => {
     // The other envelopes are untouched — teardown is per envelope, not global.
     expect(types()).toContain('endpoint');
 
-    // Second call is a no-op. `onUnregister` is an empty arrow in every
-    // envelope — the slot is for resources the host cannot see, and this package
-    // holds none — so the idempotency lives in the registry's
-    // `if (!record) return`, and this is what pins it.
+    // Second call is a no-op. Since 0.2.29 no envelope declares `onUnregister`
+    // at all — the slot is optional and only for resources the host cannot see,
+    // and these packages hold none — so both the teardown AND its idempotency
+    // are entirely the registry's: `if (!record) return`, which this pins.
     expect(() => registry.unregisterPlugin(ENVELOPE)).not.toThrow();
     for (const type of PAIR) expect(types()).not.toContain(type);
   });

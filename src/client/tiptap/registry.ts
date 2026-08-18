@@ -103,6 +103,27 @@ export function registerEditorExtension(reg: EditorExtensionRegistration): void 
   else REGISTRY.push(reg);
 }
 
+/**
+ * 0.2.29 — drop every registration whose name starts with `prefix`.
+ *
+ * `registerEditorExtension` only ever upserts, which makes this module a PUSH
+ * cache: once a plugin's entries land here nothing takes them out again. That is
+ * fine while plugins only ever arrive, but a plugin can also LEAVE the pool —
+ * the host unwires it with `registry.unregisterPlugin(name)`, and every server-
+ * side consumer notices because they all read by pull. This one would not: the
+ * departed package's slash commands would stay in the menu until a page reload.
+ *
+ * So the plugin-command layer re-registers by REPLACE rather than merge, and
+ * this is the removal half of it. Prefix-scoped on purpose — `plugin-cmd:` is
+ * owned entirely by `pluginCommands.ts`, so clearing it cannot touch a built-in
+ * or an entity-borne extension, which register under their own bare names.
+ */
+export function unregisterEditorExtensionsByPrefix(prefix: string): void {
+  for (let i = REGISTRY.length - 1; i >= 0; i--) {
+    if (REGISTRY[i]!.name.startsWith(prefix)) REGISTRY.splice(i, 1);
+  }
+}
+
 export function getEditorExtensions(
   ctx: RegistryContext,
   scope: ExtensionScope = 'full',

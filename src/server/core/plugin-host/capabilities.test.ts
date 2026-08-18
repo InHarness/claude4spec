@@ -45,16 +45,37 @@ describe('M33 — registry capability records', () => {
     expect(records[0]?.commands.map((c) => c.trigger)).toEqual(['foo']);
   });
 
-  it('unregisterPlugin calls onUnregister and drops the record + its entity modules', () => {
+  it('unregisterPlugin drops the record + its entity modules WITHOUT calling onUnregister', () => {
+    // 0.2.29 inverted the ownership: unwiring capability is the host's, and it
+    // happens here; the plugin's optional hook is for its OWN resources and is
+    // called by the reload pipeline BEFORE this, never from inside it. Calling
+    // it here as well would make a faulty hook able to hold up the host's step.
     const registry = new PluginRegistryImpl();
     const onUnregister = vi.fn();
     registry.registerPlugin(entityManifest({ onUnregister }));
     expect(registry.getAvailable('widget')).not.toBeNull();
 
     registry.unregisterPlugin('@c4s/plugin-with-entity');
-    expect(onUnregister).toHaveBeenCalledTimes(1);
+    expect(onUnregister).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()).toHaveLength(0);
     expect(registry.getAvailable('widget')).toBeNull();
+  });
+
+  it('exposes the optional onUnregister on the record so the reload pipeline can call it', () => {
+    // The loader reads the OLD version's hook off `listPluginRecords()` — this
+    // is the only channel it has, so the record must carry it verbatim, and must
+    // carry `undefined` when the manifest declared none.
+    const registry = new PluginRegistryImpl();
+    const onUnregister = vi.fn();
+    registry.registerPlugin(entityManifest({ onUnregister }));
+    registry.listPluginRecords()[0]?.onUnregister?.();
+    expect(onUnregister).toHaveBeenCalledTimes(1);
+
+    const bare = new PluginRegistryImpl();
+    const noHook = fooManifest();
+    delete (noHook as { onUnregister?: unknown }).onUnregister;
+    bare.registerPlugin(noHook);
+    expect(bare.listPluginRecords()[0]?.onUnregister).toBeUndefined();
   });
 
   it('unregisterPlugin is a no-op for an unknown name', () => {
@@ -76,9 +97,12 @@ describe('M33 — registry capability records', () => {
     expect(registry.listPluginRecords().map((r) => r.name)).toEqual(['@c4s/plugin-b']);
   });
 
-  it('swallows a throwing onUnregister (idempotent, non-blocking contract)', () => {
+  it('a throwing onUnregister cannot block unregisterPlugin — it is not called from here at all', () => {
+    // The non-blocking guarantee used to be a try/catch inside the registry.
+    // Since 0.2.29 it is structural: the registry never invokes the hook, so
+    // there is nothing for a throw to interrupt. (`reload.test.ts` pins the
+    // other half — the loader, which DOES call it, swallows the throw.)
     const registry = new PluginRegistryImpl();
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     registry.registerPlugin(
       fooManifest(() => {
         throw new Error('boom');
@@ -86,20 +110,37 @@ describe('M33 — registry capability records', () => {
     );
     expect(() => registry.unregisterPlugin('@c4s/plugin-foo')).not.toThrow();
     expect(registry.listPluginRecords()).toHaveLength(0);
-    warn.mockRestore();
   });
 
-  it('warns but still registers a manifest missing onUnregister (no-op teardown)', () => {
+  it('registers a manifest declaring no onUnregister, silently — the slot is optional', () => {
+    // Absence is now the NORMAL case for a declarative package, so it must not
+    // warn: a warning on every well-formed plugin is noise that trains readers
+    // to ignore the channel.
     const registry = new PluginRegistryImpl();
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const bad = fooManifest();
-    // Simulate a plugin built without the required slot.
-    delete (bad as { onUnregister?: unknown }).onUnregister;
-    registry.registerPlugin(bad);
-    expect(warn).toHaveBeenCalled();
+    const bare = fooManifest();
+    delete (bare as { onUnregister?: unknown }).onUnregister;
+    registry.registerPlugin(bare);
+    expect(warn).not.toHaveBeenCalled();
     expect(registry.listPluginRecords()).toHaveLength(1);
     expect(() => registry.unregisterPlugin('@c4s/plugin-foo')).not.toThrow();
     warn.mockRestore();
+  });
+
+  it('drops the settings DESCRIPTOR on unregister while config VALUES survive', () => {
+    // The brief's line: `contributes.settings` is a descriptor of a section under
+    // `config.plugins[<name>]`, and only the descriptor is the registry's to
+    // remove. Wiping the user's values because a package was momentarily
+    // unregistered — every hot-reload does exactly that — would be data loss.
+    const registry = new PluginRegistryImpl();
+    registry.registerPlugin(fooManifest());
+    // The VALUES, as they live in the config file — nothing the registry owns.
+    const configPlugins = { '@c4s/plugin-foo': { enableBadge: true, apiBase: 'https://kept' } };
+    expect(registry.consolidate({}).listSettings().map((s) => s.name)).toEqual(['@c4s/plugin-foo']);
+
+    registry.unregisterPlugin('@c4s/plugin-foo');
+    expect(registry.consolidate({}).listSettings()).toEqual([]);
+    expect(configPlugins['@c4s/plugin-foo']).toEqual({ enableBadge: true, apiBase: 'https://kept' });
   });
 });
 

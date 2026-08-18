@@ -20,10 +20,14 @@ import { databaseTableCommands } from './capabilities/commands.js';
  * (`config.entities` filters entity types only), so they were live. They carry
  * no domain value and are not ported.
  *
- * `onUnregister` is a deliberate no-op. Dropping the projection on unregister
- * would destroy the derived index of a type the user may re-enable five seconds
- * later; the entity FILES are the source of truth and the index rebuilds from
- * them.
+ * No `onUnregister`: the slot is optional since 0.2.29 and covers only a
+ * plugin's OWN resources (a timer, a watcher, a connection from the imperative
+ * `backend.mount`), of which this declarative package has none. The host unwires
+ * the type via `registry.unregisterPlugin(name)` plus the `ProjectContext`
+ * rebuild. Note what that deliberately does NOT do: drop the projection. Doing
+ * so would destroy the derived index of a type the user may re-enable five
+ * seconds later; the entity FILES are the source of truth and the index rebuilds
+ * from them.
  */
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-database-tables',
@@ -34,5 +38,4 @@ export const manifest: PluginManifest = {
     entities: [databaseTableEntity],
     commands: databaseTableCommands,
   },
-  onUnregister: () => {},
 };
