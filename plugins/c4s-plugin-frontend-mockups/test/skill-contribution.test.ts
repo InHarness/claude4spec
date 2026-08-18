@@ -55,8 +55,14 @@ describe('the body states the read contract', () => {
     expect(body).toContain('mockupHtmlBytes');
   });
 
-  it('names find_references for the domain context', () => {
-    expect(body).toContain('find_references');
+  it('splits domain context by the tool that can actually answer it', () => {
+    // Entities-by-tag is `list_entities`; `find_references` takes no tags and
+    // requires the `target` discriminator. The first draft of this skill named
+    // `find_references` for both, which is an INVALID_ARGUMENT at worst and a
+    // silently empty result at best.
+    expect(body).toMatch(/list_entities\(\{[^)]*tags:/);
+    expect(body).toContain("find_references({ target: 'entity', type: 'ui-view', slug })");
+    expect(body).toMatch(/takes no tags and\s*\n?\s*requires the `target` discriminator/);
   });
 });
 
@@ -75,9 +81,15 @@ describe('the body states the three output rules', () => {
     expect(body).toMatch(/no `designSystemSlug`[\s\S]{0,160}no token references at all/i);
   });
 
-  it('puts mode variants on one attribute selector rather than in separate fragments', () => {
-    expect(body).toContain('[data-preview-mode="dark"]');
-    expect(body).toMatch(/not through separate fragments/i);
+  it('describes modes as token redefinition, which is what the stylesheet actually emits', () => {
+    // `stylesheet.ts` emits `[data-preview-mode="<name>"] { --token: … }` — modes
+    // rebind custom properties. A skill that taught author-level descendant rules
+    // instead would have the agent duplicate every override by hand.
+    expect(body).toMatch(/redefines the tokens/i);
+    expect(body).toContain('[data-preview-mode="dark"] { --color-surface: … }');
+    expect(body).toMatch(/switches modes\s*\n?\s*for free/i);
+    // And the escape hatch is still there, for what a token cannot carry.
+    expect(body).toContain('[data-preview-mode="dark"] .card { box-shadow: none; }');
   });
 
   it('leaves the script slot empty — no state harness', () => {
@@ -92,9 +104,23 @@ describe('the body states the write contract', () => {
     expect(body).toMatch(/partial update of `mockupHtml` alone/i);
   });
 
+  it('wraps the field in `data`, the shape the tool schema actually requires', () => {
+    // `entity-tools.ts` declares `updates: [{ slug, data, newSlug? }]` and zod
+    // strips anything else, so a field placed beside `slug` is not a partial
+    // update — it is a no-op the agent cannot see. Every example must carry the
+    // wrapper, and the prose must say why.
+    expect(body).toContain(
+      "update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: { mockupHtml: '<fragment>' } }] })",
+    );
+    expect(body).toContain('data: { mockupHtml: null }');
+    expect(body).toMatch(/\*\*inside `data`\*\*/);
+    // No example may show the flat shape.
+    expect(body).not.toMatch(/\{ slug: '<slug>', mockupHtml:/);
+  });
+
   it('says null clears and omission means no change', () => {
-    expect(body).toMatch(/passing `null` clears the mockup/i);
-    expect(body).toMatch(/Omitting the field means "no change"/i);
+    expect(body).toMatch(/`data: \{ mockupHtml: null \}` clears the mockup/i);
+    expect(body).toMatch(/Omitting the field means "no\s+change"/i);
   });
 
   it('forbids both escape hatches: a file on disk and the mockup route', () => {

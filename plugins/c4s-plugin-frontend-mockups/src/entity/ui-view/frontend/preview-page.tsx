@@ -76,7 +76,8 @@ export function UiViewPreview({ slug }: { slug: string }) {
  * route's `Content-Security-Policy: sandbox` response header, and from nothing
  * else.
  *
- * Styled like an inactive tab but deliberately NOT inside the switcher's
+ * Styled like the kit's inactive tab — `--c-muted`, no border, no background — but
+ * deliberately NOT inside the switcher's
  * `SegmentedControlTabs`: it is an action, not a view, and a segment there would
  * carry an `aria-selected` — and a `role="tab"` — that claim otherwise.
  */
@@ -88,7 +89,7 @@ export function UiViewOpenExternal({ slug }: { slug: string }) {
       rel="noopener noreferrer"
       title="Open the mockup in a new tab"
       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-[12px] font-medium transition"
-      style={{ color: 'var(--c-ink)', border: '1px solid transparent' }}
+      style={{ color: 'var(--c-muted)' }}
     >
       <ExternalLink size={12} />
       Open

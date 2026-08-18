@@ -60,9 +60,13 @@ everything below is a generic host entity tool.
    (\`GET /api/ui-views/:slug/mockup\`) is not one — its subject is a derived document,
    not the field.
 
-4. **Domain context.** \`find_references\` for entities and pages sharing the view's
-   tags — endpoints, DTOs, acceptance criteria. This is what makes the mockup show the
-   right fields and the right states rather than a generic screen.
+4. **Domain context**, so the mockup shows the right fields rather than a generic
+   screen. Two different tools, and they answer two different questions:
+   \`list_entities({ type: 'endpoint', tags: [...], tagFilter: 'or' })\` — repeated per
+   type you care about (\`endpoint\`, \`dto\`, \`ac\`) — finds the entities that share
+   the view's tags. \`find_references({ target: 'entity', type: 'ui-view', slug })\`
+   finds the spec pages that cite the view itself. \`find_references\` takes no tags and
+   requires the \`target\` discriminator; calling it without one is an error.
 
 ## 2. Write a \`<body>\` fragment — not a document
 
@@ -81,32 +85,38 @@ stylesheet of the design system's custom properties, then pastes your fragment i
 Plain, unstyled, semantic markup beats guessing the names of a design system that does
 not exist.
 
-**Mode variants through one attribute selector**, not through separate fragments:
+**Mode variants usually need nothing from you.** A mode does not restyle elements — it
+**redefines the tokens**, which the route emits as \`[data-preview-mode="dark"] { --color-surface: … }\`.
+A fragment that already reads every value through \`var(--…)\` therefore switches modes
+for free; that is the second reason for the rule above.
+
+Reach for \`[data-preview-mode="<name>"]\` yourself only when a mode has to change
+something no token value can carry — a raised card that goes flat in dark, say — and
+write it as one selector in the fragment rather than as a second fragment:
 
 \`\`\`html
 <div class="card">…</div>
 <style>
-  .card { background: var(--color-surface); }
-  [data-preview-mode="dark"] .card { background: var(--color-surface-inverse); }
+  .card { background: var(--color-surface); box-shadow: var(--shadow-raised); }
+  [data-preview-mode="dark"] .card { box-shadow: none; }
 </style>
 \`\`\`
 
-This matches how the \`design-system\` side emits its stylesheet, so a mode switch is a
-single attribute flip on the root rather than a different document.
-
-**No state harness.** The document's \`<script>\` slot stays empty. Loading, empty and
-error states are not modelled here — they are waiting on a \`states\` field of the
-\`ui-component\` entity. Do not simulate them with script.
+**No state harness.** The document's \`<script>\` slot stays empty. A mockup is one
+static screen: loading, empty and error states have no home in \`ui-view\` today. Draw
+the state the view is chiefly about and leave the rest — do not simulate them with
+script, and do not stack them as hidden siblings.
 
 ## 3. Save
 
 \`\`\`
-update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', mockupHtml: '<fragment>' }] })
+update_entities({ type: 'ui-view', updates: [{ slug: '<slug>', data: { mockupHtml: '<fragment>' } }] })
 \`\`\`
 
-A partial update of \`mockupHtml\` alone. Omitting the field means "no change";
-passing \`null\` clears the mockup — the field is clearable, and that is how you
-remove one.
+A partial update of \`mockupHtml\` alone. The field goes **inside \`data\`** — a key
+placed beside \`slug\` is not an update, it is dropped. Omitting the field means "no
+change"; \`data: { mockupHtml: null }\` clears the mockup — the field is clearable, and
+that is how you remove one.
 
 Do **not** write a file to disk, and do **not** call the mockup route. The entity is
 the only store; the document is generated from it on request.
