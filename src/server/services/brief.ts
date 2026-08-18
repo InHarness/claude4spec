@@ -78,6 +78,8 @@ export interface BriefThreadForBriefOpts {
   /** 0.1.69 Transagents: mark the created thread as a hidden child banka. */
   parentThreadId?: string | null;
   spawnedByToolUseId?: string | null;
+  /** 0.2.30: generic thread posture, forwarded verbatim to `createThread`. */
+  planMode?: boolean;
 }
 
 export interface BriefUpdateContentOpts {
@@ -450,6 +452,7 @@ export class BriefService {
       briefPath: opts.path,
       parentThreadId: opts.parentThreadId ?? null,
       spawnedByToolUseId: opts.spawnedByToolUseId ?? null,
+      planMode: opts.planMode ?? false,
     });
     return { threadId: thread.id };
   }

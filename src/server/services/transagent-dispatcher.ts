@@ -3,7 +3,10 @@
  *
  * A chat/patch thread delegates a unit of work to a hidden CHILD thread of the
  * same spec via the `runTransagent` MCP tool. The dispatcher:
- *   1. resolves or creates the child thread (binding per `contextType`),
+ *   1. resolves or creates the child thread — a generic step first (its
+ *      `parent_thread_id` = the current thread, `spawned_by_tool_use_id` = this
+ *      tool_use's id, `plan_mode` = the call's `planMode`), then the binding
+ *      per `contextType`,
  *   2. emits `transagent_started` into the PARENT's stream so the parent panel
  *      can nested-live-join the child,
  *   3. runs a full child turn through the shared `runAgentTurn`,
@@ -32,8 +35,34 @@ export interface TransagentRunInput {
   message: string;
   /** Per-contextType binding hints (e.g. `{ fromReleaseName, patchPath, suffix }`). */
   payload?: Record<string, unknown>;
+  /**
+   * 0.2.30: open the child banka in plan mode. TOP-LEVEL on purpose, never a
+   * `payload` key — the split is "top-level = generic for the thread, `payload`
+   * = specific to the context type", and `plan_mode` is a plain `chat_thread`
+   * column shared by every context type (the one the UI toggle flips).
+   *
+   * NOT inherited from the parent thread: omitted ⇒ `false`, exactly like the
+   * toggle on a hand-created new thread. Inheriting would be a regression — a
+   * `contextType: 'patch'` banka spawned from a plan-mode parent would lose
+   * `Write`/`Edit`/`Bash` and could no longer edit the spec, which is the only
+   * reason it exists. A caller who wants inheritance passes the flag itself.
+   */
+  planMode?: boolean;
   /** Continue an existing child banka instead of creating one. */
   threadId?: string;
+}
+
+/**
+ * 0.2.30: the `chat_thread` columns that are generic across every context type,
+ * resolved ONCE from the top-level call fields before the per-context branching
+ * and spread verbatim into whichever create call the branch makes. Keeping them
+ * in one object is what stops `plan_mode` from being restated (and drifting) in
+ * each of the three bindings.
+ */
+interface GenericThreadColumns {
+  parentThreadId: string;
+  spawnedByToolUseId: string;
+  planMode: boolean;
 }
 
 export interface TransagentRunResult {
@@ -72,6 +101,10 @@ export class TransagentDispatcher {
     const toolUseId = await this.opts.takeToolUseId();
 
     // 1. Resolve/create the child thread.
+    //    Continuation SKIPS prepare-per-context entirely — including the generic
+    //    step below — so `input.planMode` is deliberately ignored here: an
+    //    existing banka keeps the posture it was created with. Nothing on this
+    //    branch may `UPDATE chat_thread SET plan_mode`.
     let child: ChatThread;
     if (input.threadId) {
       const existing = this.deps.chatService.getThreadMeta(input.threadId);
@@ -81,7 +114,14 @@ export class TransagentDispatcher {
       }
       child = existing;
     } else {
-      child = await this.createChild(contextType, parentThreadId, toolUseId, message, payload);
+      // Generic step, before the per-context branching: the columns every
+      // context type shares, taken straight from the top-level call fields.
+      const generic: GenericThreadColumns = {
+        parentThreadId,
+        spawnedByToolUseId: toolUseId,
+        planMode: input.planMode ?? false,
+      };
+      child = await this.createChild(contextType, message, payload, generic);
     }
 
     const parentAdapter = this.deps.activeAdapters.get(parentThreadId);
@@ -141,13 +181,16 @@ export class TransagentDispatcher {
    *     from=payload.fromReleaseName ?? latest) then a child brief thread.
    *   - patch → child patch thread (requires payload.patchPath).
    *   - chat  → plain child chat thread.
+   *
+   * Each branch spreads `generic` (parent_thread_id, spawned_by_tool_use_id,
+   * plan_mode) and adds ONLY its own binding fields — the generic columns are
+   * decided by the caller, once, for all three.
    */
   private async createChild(
     contextType: 'brief' | 'chat' | 'patch',
-    parentThreadId: string,
-    spawnedByToolUseId: string,
     message: string,
     payload: Record<string, unknown>,
+    generic: GenericThreadColumns,
   ): Promise<ChatThread> {
     if (contextType === 'brief') {
       // `createBrief` itself defaults a null `fromReleaseName` to the latest
@@ -165,8 +208,7 @@ export class TransagentDispatcher {
       });
       const { threadId } = this.deps.briefService.createThreadForBrief({
         path: briefPath,
-        parentThreadId,
-        spawnedByToolUseId,
+        ...generic,
       });
       const child = this.deps.chatService.getThreadMeta(threadId);
       if (!child) throw new DomainError('INTERNAL', 'child brief thread disappeared after create');
@@ -181,8 +223,7 @@ export class TransagentDispatcher {
       return this.deps.chatService.createThread(`Transagent: ${patchPath}`, {
         contextType: 'patch',
         patchPath,
-        parentThreadId,
-        spawnedByToolUseId,
+        ...generic,
       });
     }
 
@@ -190,8 +231,7 @@ export class TransagentDispatcher {
     const title = message.slice(0, 60) + (message.length > 60 ? '...' : '');
     return this.deps.chatService.createThread(title || 'Transagent', {
       contextType: 'chat',
-      parentThreadId,
-      spawnedByToolUseId,
+      ...generic,
     });
   }
 }

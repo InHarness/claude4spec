@@ -47,11 +47,16 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
       "  - contextType='chat': a plain child chat turn.",
       'Continue an existing child by passing its `threadId` (omit `contextType` semantics then).',
       'At most one child runs per turn (this tool_use blocks until the child finishes).',
+      '`planMode: true` opens the child in plan mode (read-only builtins) — a top-level field, NOT a',
+      'payload key. It is NOT inherited: omit it and the child runs unrestricted even if YOU are in',
+      'plan mode. It is ignored when continuing an existing child via `threadId` — a banka\'s posture',
+      'is fixed when it is created.',
     ].join('\n'),
     {
       contextType: z.enum(['brief', 'chat', 'patch']),
       message: z.string(),
       payload: z.record(z.string(), z.unknown()).optional(),
+      planMode: z.boolean().optional().default(false),
       threadId: z.string().optional(),
     },
     async (input) => {
@@ -64,6 +69,7 @@ export function buildTransagentToolsServer(ctx: TransagentToolsContext): Capture
             input.payload && typeof input.payload === 'object'
               ? (input.payload as Record<string, unknown>)
               : undefined,
+          planMode: input.planMode === true,
           threadId: typeof input.threadId === 'string' ? input.threadId : undefined,
         });
         return {

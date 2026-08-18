@@ -789,6 +789,12 @@ export function registerCoreOperations(): void {
       contextType: z.enum(['brief', 'chat', 'patch']),
       message: z.string(),
       payload: z.record(z.string(), z.unknown()).optional(),
+      planMode: z
+        .boolean()
+        .optional()
+        .describe(
+          'Open the child in plan mode (read-only builtins). Top-level, not a payload key — payload is per-contextType, plan_mode is a generic chat_thread column. Not inherited from the parent thread; ignored when continuing via threadId.',
+        ),
       threadId: z.string().optional().describe('Continue an existing child rather than spawning one.'),
     },
     errorCodes: ['AGENT_ERROR', 'STREAM_IN_PROGRESS'],
