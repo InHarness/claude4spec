@@ -39,7 +39,7 @@ export const databaseTableFrontendModule: FrontendModule = {
   // Mirrors the backend contribution (`entity/database-table/index.ts`); the two
   // declaring different versions is how a frontend quietly reads a shape the
   // server no longer writes.
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
   displayOrder: DATABASE_TABLE_DISPLAY_ORDER,

@@ -120,11 +120,17 @@ function uiViewDiff(a: unknown, b: unknown, slug: string): EntityDiff {
    *
    * `meta_changes[].field` is a closed set of things with a readable `from`/`to`,
    * and a blob of tens of kilobytes has neither. What a reader can use is whether
-   * it changed and by how much, which is the shape the host's default diff
-   * already gives every `contentBearing` field (`<field>_changed`). This type
-   * OVERRIDES `diff`, so it does not get that for free and says it here instead —
-   * without which the mockup would vanish from release diffs silently, which is
-   * the one thing the flag must not cause.
+   * it changed and by how much — a `{ fromBytes, toBytes }` sibling, in the shape
+   * the host's default diff gives a `contentBearing` field. This type OVERRIDES
+   * `diff`, so it does not get one for free and says it here instead — without
+   * which the mockup would vanish from release diffs silently, which is the one
+   * thing the flag must not cause.
+   *
+   * The KEY is `mockup_changed`, and it is authorial rather than derived: the
+   * spec names it, and this diff is hand-written, so nothing mechanical is
+   * deriving `mockupHtml_changed` for a consumer to match. That is the deliberate
+   * contrast with the read descriptors on the same field — `hasMockupHtml` and
+   * `mockupHtmlBytes` ARE derived, in one place, from the field's name.
    *
    * Reported for an appearance and a removal too: for content, "it appeared" and
    * "it grew from nothing" are one event, and `{ fromBytes: 0, toBytes: n }` says

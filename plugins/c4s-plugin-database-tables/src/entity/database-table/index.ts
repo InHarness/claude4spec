@@ -31,12 +31,15 @@ import { databaseTableSystemPrompt } from './system-prompt.js';
  * database tables. `deriveIndexName` and the three serializer views are what
  * genuinely were, and those came across.
  *
- * `payloadVersion: 2` — version 1 was the inherited format, read in place; 2 is
- * the name-field MERGE (`name` goes, the reserved `title` takes over its role),
- * carried by the one step in `payloadUpgrades`. The adoption story that made
- * this type start at 1 still holds for version 1 itself: the `.json` files the
- * retired plugins wrote across six projects were read unconverted. What changed
- * is that the type finally has a payload change of its own to migrate.
+ * `payloadVersion: 3` — 1 was the inherited format, read in place; 2 started
+ * writing `title` alongside `name`; 3 is the name-field MERGE (`name` goes, the
+ * reserved `title` takes over its role). The merge is numbered 3 rather than
+ * folded into 2 because 2 already SHIPPED, in 0.2.22: every project opened since
+ * is stamped 2, the chain fires only below the envelope's version, and a
+ * redefined 2 would never reach them. A version number stamps a shape, and one
+ * number cannot mean two shapes. The adoption story that made this type start at
+ * 1 still holds for version 1 itself: the `.json` files the retired plugins
+ * wrote across six projects were read unconverted.
  *
  * NO `slugConflict: 'suffix'`, unlike `spreadsheet`. Two sheets called
  * "Q1 report" is ordinary; two tables called `order_items` in one schema is a
@@ -46,7 +49,7 @@ export const databaseTableEntity: EntityContribution = {
   type: DATABASE_TABLE_TYPE,
   data: databaseTableData,
   slugPattern: databaseTableSlugPattern,
-  payloadVersion: 2,
+  payloadVersion: 3,
   label: DATABASE_TABLE_LABEL,
   labelPlural: DATABASE_TABLE_LABEL_PLURAL,
   displayOrder: DATABASE_TABLE_DISPLAY_ORDER,
