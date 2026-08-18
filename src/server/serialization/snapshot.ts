@@ -127,9 +127,14 @@ export function restoreEntity(
  * fields, which is the same rule stated where the declaration is visible — the
  * two agree, and either alone would be enough.)
  *
- * An UNKNOWN or deactivated type has no schema to walk, so it yields `noop`
- * rather than a shapeless guess: with no declaration there is no notion of what
- * a change to such an entity would even be.
+ * An UNKNOWN or deactivated type has no schema to walk, so it makes no claim
+ * about WHAT changed — but it still reports THAT something did. Silence would
+ * be worse than vagueness here: `getReleaseDiff` skips `noop`, so a `noop` on a
+ * genuinely edited entity would drop it out of the release listing altogether,
+ * and a plugin deactivated between two releases would quietly take its entities'
+ * history with it. An empty `changes` on `updated` is the same statement
+ * `created` and `deleted` already make: something happened, the full state is in
+ * the snapshot.
  */
 export function diffEntity(
   host: PluginHost,
@@ -153,7 +158,9 @@ export function diffEntity(
    */
   if (lhs == null) return { op: 'created', changes: [] };
   if (rhs == null) return { op: 'deleted', changes: [] };
-  if (!schema) return { op: 'noop', changes: [] };
+  if (!schema) {
+    return deepEqual(lhs, rhs) ? { op: 'noop', changes: [] } : { op: 'updated', changes: [] };
+  }
 
   const changes = diffFromSchema(schema, lhs, rhs);
   return changes.length ? { op: 'updated', changes } : { op: 'noop', changes: [] };
@@ -184,10 +191,8 @@ export function toRawDeltaEntityChange(
   };
 }
 
-function isObj(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
+/** Key-order-insensitive equality — the only comparison available when a type
+ *  has no declaration to compare it BY. */
 function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }

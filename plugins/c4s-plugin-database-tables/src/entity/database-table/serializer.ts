@@ -22,4 +22,4 @@ import { databaseTablePayloadUpgrades } from './upgrades.js';
 export const databaseTableSerialization = {
   /** v1 files predate the reserved `title`; it starts life as a copy of `name`. */
   payloadUpgrades: databaseTablePayloadUpgrades,
-} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades'>;

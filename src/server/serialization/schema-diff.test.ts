@@ -86,6 +86,48 @@ describe('a value collection WITH a declared identity', () => {
   });
 });
 
+describe('a declared identity that the data does NOT make unique', () => {
+  /**
+   * `identity` is a claim about the data, and nothing enforces it. The live case
+   * is `endpoint.linkedDtos`: it keys on `dto` + `relation` while the join table
+   * also discriminates on `statusCode`, so a 404 and a 500 response to the same
+   * DTO legitimately share one identity. Pairing the first of each side would
+   * report an ARRIVAL as an edit of its neighbour — a delta that is not merely
+   * imprecise but false.
+   */
+  const contested: Record<string, FieldNode> = {
+    links: {
+      type: 'collection',
+      collection: { kind: 'value', identity: ['dto'] },
+      item: {
+        type: 'object',
+        fields: { dto: { type: 'string' }, status: { type: 'number' } },
+      },
+    },
+  };
+
+  it('reports an arrival under a contested key as item_added, not as an edit', () => {
+    const a = { links: [{ dto: 'err', status: 404 }] };
+    const b = { links: [{ dto: 'err', status: 404 }, { dto: 'err', status: 500 }] };
+    expect(diffFromSchema(contested, a, b)).toEqual([
+      { op: 'item_added', path: 'links', identity: { dto: 'err' }, item: { dto: 'err', status: 500 } },
+    ]);
+  });
+
+  it('reports a departure under a contested key as item_removed', () => {
+    const a = { links: [{ dto: 'err', status: 404 }, { dto: 'err', status: 500 }] };
+    const b = { links: [{ dto: 'err', status: 404 }] };
+    expect(diffFromSchema(contested, a, b)).toEqual([
+      { op: 'item_removed', path: 'links', identity: { dto: 'err' }, item: { dto: 'err', status: 500 } },
+    ]);
+  });
+
+  it('stays silent when nothing under the contested key changed', () => {
+    const links = [{ dto: 'err', status: 404 }, { dto: 'err', status: 500 }];
+    expect(diffFromSchema(contested, { links }, { links: [...links] })).toEqual([]);
+  });
+});
+
 describe('the rekey pass', () => {
   const rekeyed: Record<string, FieldNode> = {
     params: {

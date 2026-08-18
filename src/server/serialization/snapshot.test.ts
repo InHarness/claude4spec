@@ -91,9 +91,23 @@ describe('a stamp-only delta is noop', () => {
     expect(JSON.stringify(diff.changes)).not.toMatch(/createdAt|updatedAt/);
   });
 
-  it('an unknown type yields noop rather than a shapeless guess', () => {
+  /**
+   * A deactivated plugin's entities still have versions, and a release still
+   * contains them. With no declaration there is nothing to say about WHAT
+   * changed — but `getReleaseDiff` drops `noop` rows, so claiming `noop` here
+   * would erase a released change from the listing entirely.
+   */
+  it('an unknown type reports THAT it changed, without claiming what', () => {
     const host = { getEntity: () => null } as unknown as PluginHost;
-    expect(diffEntity(host, 'nope', { a: 1 }, { a: 2 })).toEqual({ op: 'noop', changes: [] });
+    expect(diffEntity(host, 'nope', { a: 1 }, { a: 2 })).toEqual({ op: 'updated', changes: [] });
+  });
+
+  it('an unknown type whose content did not move is still noop', () => {
+    const host = { getEntity: () => null } as unknown as PluginHost;
+    expect(diffEntity(host, 'nope', { a: 1, b: 2 }, { b: 2, a: 1 })).toEqual({
+      op: 'noop',
+      changes: [],
+    });
   });
 
   it('created and deleted carry no operations — the full state comes from the snapshot', () => {

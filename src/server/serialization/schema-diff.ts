@@ -160,6 +160,13 @@ function scalarItemChanges(node: CollectionNode, path: string, a: unknown, b: un
  *
  * Pass 1 pairs on the FULL key: a pair with differences is `item_modified`, an
  * identical pair produces nothing (which is what makes a reshuffle `noop`).
+ * It pairs only when the key is unique on BOTH sides. A declared identity is a
+ * claim about the data, not a guarantee about it — `endpoint.linkedDtos` keys on
+ * `dto` + `relation` while its table also discriminates on `statusCode`, so two
+ * links can legitimately share one identity. Pairing the first of several would
+ * report an arrival as an edit of its neighbour and a departure as the same edit
+ * backwards, so a contested key degrades to remove/add for every element under
+ * it — the same honest fallback pass 2 takes when a move would be a guess.
  *
  * Pass 2 exists so that editing a key field reads as a MOVE rather than as a
  * deletion and an unrelated arrival. It runs only over what pass 1 left
@@ -181,18 +188,20 @@ function diffByIdentity(
   const out: DiffOp[] = [];
   const fields = itemFieldsOf(node);
 
-  const leftByKey = new Map<string, unknown>();
-  for (const item of a) leftByKey.set(keyOf(item, identity), item);
+  const leftByKey = groupBy(a, (item) => keyOf(item, identity));
+  const rightByKey = groupBy(b, (item) => keyOf(item, identity));
+  const pairable = (key: string): boolean =>
+    leftByKey.get(key)?.length === 1 && rightByKey.get(key)?.length === 1;
   const matchedLeft = new Set<string>();
 
   const orphansRight: unknown[] = [];
   for (const right of b) {
     const key = keyOf(right, identity);
-    const left = leftByKey.get(key);
-    if (left === undefined && !leftByKey.has(key)) {
+    if (!pairable(key)) {
       orphansRight.push(right);
       continue;
     }
+    const left = leftByKey.get(key)?.[0];
     matchedLeft.add(key);
     const changes = fields
       ? diffFields(fields, left as Row, right as Row, `${path}[]`)
@@ -202,9 +211,17 @@ function diffByIdentity(
     }
   }
 
-  const orphansLeft = [...leftByKey.entries()]
-    .filter(([key]) => !matchedLeft.has(key))
-    .map(([, item]) => item);
+  const orphansLeft = a.filter((item) => !matchedLeft.has(keyOf(item, identity)));
+
+  /**
+   * Under a contested key the elements arrive here unpaired, including the ones
+   * that did not change at all. Two unchanged elements are the SAME element, so
+   * cancelling identical orphans keeps the report to what actually moved: adding
+   * a second link says `item_added`, not "the first one left and two arrived".
+   * A rekey always changes a key field, so nothing cancelled here could have
+   * been one, and pass 2 below still sees everything it could act on.
+   */
+  cancelIdenticalPairs(orphansLeft, orphansRight);
 
   const rekeyOn = rekeyOnOf(node);
   const rekeyed = new Set<unknown>();
@@ -256,6 +273,16 @@ function diffByIdentity(
     out.push({ op: 'item_added', path, identity: identityKeyOf(item, identity), item });
   }
   return out;
+}
+
+/** Drop element pairs that are deeply equal, in place, one right per left. */
+function cancelIdenticalPairs(left: unknown[], right: unknown[]): void {
+  for (let i = left.length - 1; i >= 0; i -= 1) {
+    const j = right.findIndex((candidate) => jsonEqual(left[i], candidate));
+    if (j === -1) continue;
+    left.splice(i, 1);
+    right.splice(j, 1);
+  }
 }
 
 function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {

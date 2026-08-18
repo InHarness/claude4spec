@@ -137,6 +137,18 @@ const REMOVED_BACKEND_SLOTS: ReadonlyArray<[string, string]> = [
  */
 const REMOVED_SERIALIZER_SLOTS: ReadonlyArray<[string, string]> = [
   ['type', 'the manifest already declares it'],
+  /**
+   * Listed even though it outlived the wrapper — it survived the 2.0.0 unwrap as
+   * a top-level slot and was removed on its own in 0.2.31. A package still
+   * shipping the wrapped spelling would otherwise be told to declare
+   * `payloadUpgrades`, which is true but silent about the half of its
+   * contribution that no longer has anywhere to go.
+   */
+  [
+    'diff',
+    '`collection: { kind, identity }` on the collections that have an element identity — ' +
+      'the host generates the semantic delta from `data.schema` (removed in 0.2.31)',
+  ],
   ['version', 'payloadVersion (an integer, enforced by the upgrade chain)'],
   /**
    * The five view callbacks.

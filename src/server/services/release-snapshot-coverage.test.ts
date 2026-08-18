@@ -16,7 +16,7 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
-import { defaultDeepDiff } from '../serialization/snapshot.js';
+import { diffEntity } from '../serialization/snapshot.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { VersionService } from './versions.js';
@@ -40,7 +40,7 @@ const ACTIVE = [
 const fakeHost = {
   listEntities: () => ACTIVE,
   getEntity: (type: string) => ACTIVE.find((m) => m.type === type) ?? null,
-  diff: (type: string, a: unknown, b: unknown, slug: string) => defaultDeepDiff(type, slug, a, b),
+  diff: (type: string, a: unknown, b: unknown) => diffEntity(fakeHost, type, a, b),
 } as unknown as PluginHost;
 
 const fakeFileSerializer = { version: 'v1', diff: () => null } as unknown as FileSerializer;
