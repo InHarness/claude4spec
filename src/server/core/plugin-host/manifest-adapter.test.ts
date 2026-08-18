@@ -119,7 +119,7 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
    * code silently ignored, serving records missing the fields its own UI reads.
    */
   it('[ac:ac-snapshot-i-restore-nie-sa-slotami-aut] rejects an authored `views` map — a 2.0.0 plugin passes the semver gate, so the slot check is the only thing standing between it and a silently ignored read path', () => {
-    const module = { serializer: { views: { detail: () => ({}) }, diff: () => ({}) } };
+    const module = { serializer: { views: { detail: () => ({}) }, payloadUpgrades: [] } };
     expect(() => assertSerializationContribution('widget', module, 1)).toThrow(PluginManifestError);
     expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
       /the record is derived from data\.schema, narrowed by select/,
@@ -129,19 +129,18 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
   /**
    * 0.2.24 — the CONTAINER is a removed slot in its own right.
    *
-   * The failure it prevents is not the diff degrading to a deep-diff, which is
-   * survivable. It is `payloadUpgrades` sitting one level too deep: the host
-   * would see a type at `payloadVersion` 1 with no chain, and read every file
-   * that plugin ever wrote at the wrong shape without a word.
+   * The failure it prevents is `payloadUpgrades` sitting one level too deep: the
+   * host would see a type at `payloadVersion` 1 with no chain, and read every
+   * file that plugin ever wrote at the wrong shape without a word.
    */
-  it('rejects the `serializer` container itself, pointing at the flat slots', () => {
-    const module = { serializer: { diff: () => ({}), payloadUpgrades: [] } };
+  it('rejects the `serializer` container itself, pointing at the flat slot', () => {
+    const module = { serializer: { payloadUpgrades: [] } };
     expect(() => assertSerializationContribution('widget', module, 1)).toThrow(PluginManifestError);
     expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
       /the `serializer` slot was removed in Host API 2\.0\.0/,
     );
     expect(() => assertSerializationContribution('widget', module, 1)).toThrow(
-      /declare `diff` and `payloadUpgrades` directly on the type/,
+      /declare `payloadUpgrades` directly on the type/,
     );
   });
 
@@ -157,17 +156,32 @@ describe('assertSerializationContribution — snapshot/restore are not authorabl
     ).toThrow(/serializer\.snapshot/);
   });
 
-  it('accepts a type declaring a flat diff — all a type contributes to reads is nothing', () => {
-    expect(() => assertSerializationContribution('widget', { diff: () => ({}) }, 1)).not.toThrow();
-  });
-
   it('accepts a type declaring no serialization at all', () => {
     expect(() => assertSerializationContribution('widget', {}, 1)).not.toThrow();
   });
 
-  it('rejects a non-function diff', () => {
+  /**
+   * 0.2.31 — a flat `diff` is REJECTED, where it used to be the one thing this
+   * contribution was for.
+   *
+   * Rejected rather than ignored on the same reasoning as every other removed
+   * slot, and more sharply: an ignored `diff` would sit in the author's source
+   * looking honoured while every delta on every surface came from the host's
+   * schema walk. The author would have no way to notice, because the deltas
+   * would be perfectly reasonable — just not theirs.
+   */
+  it('rejects a flat `diff` — the host generates the delta from data.schema', () => {
+    expect(() => assertSerializationContribution('widget', { diff: () => ({}) }, 1)).toThrow(
+      PluginManifestError,
+    );
+    expect(() => assertSerializationContribution('widget', { diff: () => ({}) }, 1)).toThrow(
+      /the `diff` slot was removed in 0\.2\.31/,
+    );
+  });
+
+  it('rejects a non-function `diff` for the same reason — the key is what is refused', () => {
     expect(() => assertSerializationContribution('widget', { diff: 'nope' }, 1)).toThrow(
-      /diff must be a function/,
+      /the `diff` slot was removed in 0\.2\.31/,
     );
   });
 });

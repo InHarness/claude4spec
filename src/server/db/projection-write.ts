@@ -37,6 +37,7 @@ import {
   columnOf,
   hasProjectionTable,
   isEmbedded,
+  collectionKindOf,
   isKeyed,
   payloadFieldsOf,
   type AxisSpec,
@@ -786,7 +787,7 @@ function syncProjectionTable(
   node: CollectionNode,
   value: unknown,
 ): string[] {
-  if (node.collection === 'keyed') {
+  if (collectionKindOf(node) === 'keyed') {
     return reconcileKeyedCollection(db, module, slug, field, node, value);
   }
 
@@ -1593,7 +1594,7 @@ export function mutateAxis(
 /** The declared keyed collection behind a field name, or a loud error. */
 function requireKeyed(module: WritableModule, field: string): CollectionNode {
   const node = module.data?.schema?.[field];
-  if (!node || node.type !== 'collection' || node.collection !== 'keyed') {
+  if (!node || !isKeyed(node)) {
     throw new DomainError(
       'VALIDATION',
       `${module.type}.${field} is not a keyed collection`,

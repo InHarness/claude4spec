@@ -13,17 +13,13 @@ export type { JsonSchema } from '../../shared/plugin-host/json-schema.js';
 /** Plugin decides shape; recommendation: similar to single_element + tags + relations. */
 export type SnapshotData = unknown;
 
-export type FieldChange = Record<string, unknown>;
-
-export interface EntityDiff {
-  type: string;
-  slug: string;
-  op: 'created' | 'deleted' | 'modified' | 'noop';
-  /** Plugin-defined structured changes (e.g. dto_added, tag_removed, ...). */
-  changes?: Record<string, unknown>;
-  /** Default deep-diff fallback when plugin does not override `diff`. */
-  raw?: { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> };
-}
+/**
+ * 0.2.31 — the delta contract lives in `shared/plugin-host/data-schema.ts`,
+ * next to the declaration it is generated FROM, because the client renders the
+ * same eight operations the server produces. Re-exported here because every
+ * consumer in this layer imports its types from this file.
+ */
+export type { DiffOp, EntityDiff, IdentityKey } from '../../shared/plugin-host/data-schema.js';
 
 export interface RestoreContext {
   reader: RawEntityReader;
@@ -88,18 +84,15 @@ export class SerializerError extends Error {
  * declared; the shape is now `f(schema, select)`, computed by the host for every
  * type at once, so there is nothing left for a view to decide. What survives is
  * the one axis a schema genuinely cannot express — the payload's history
- * (`payloadVersion` + `payloadUpgrades?`) — and the optional semantics of a
- * delta (`diff?`).
+ * (`payloadVersion` + `payloadUpgrades?`).
+ *
+ * 0.2.31 removed the last one that was not that: `diff?`. The delta is
+ * GENERATED from `data.schema` and the `collection.identity` declarations on
+ * it (`./schema-diff.ts`), so what a type says about its own delta is now said
+ * in the same declaration it says everything else in. A manifest still carrying
+ * the key is rejected at registration — see `manifest-adapter.ts`.
  */
 export interface SerializationContribution<T = unknown> {
-  /**
-   * Optional semantic diff. Falls back to default deep-diff when omitted.
-   *
-   * The brief's snippet writes this as `(a, b) => EntityDiff`; `EntityDiff`
-   * carries `slug` and every implementation builds it from the third argument,
-   * so the parameter is kept and a clarification patch is filed instead.
-   */
-  diff?: (a: SnapshotData, b: SnapshotData, slug: string) => EntityDiff;
   /**
    * Optional echo of the manifest's `payloadVersion`.
    *

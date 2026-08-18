@@ -1,7 +1,9 @@
 import type { TodoItem, UsageStats } from '@inharness-ai/agent-adapters';
 import type { GitCommitStatus, GitSyncField } from './git.js';
+import type { DiffOp } from './plugin-host/data-schema.js';
 
 export type { TodoItem, UsageStats };
+export type { DiffOp };
 
 /**
  * An entity type id, kebab-case — plus the pseudo-type `section`, which is not
@@ -357,12 +359,21 @@ export interface SpecSnapshot {
   pages: SpecSnapshotPageRow[];
 }
 
+/**
+ * One entity's row in a delta: its identity, plus the delta itself.
+ *
+ * 0.2.31 — `changes` is the closed eight-operation dictionary rather than a
+ * per-type bag of differently-named keys, and `raw` is gone with the deep-diff
+ * mode that used to fill it. `op` spells the state `updated`, matching the
+ * `EntityDiff` envelope this row carries; the PAGE-side `RawDeltaPageChange`
+ * keeps `modified`, because that vocabulary belongs to M02's `FileDiff` and
+ * pages have no logical schema to generate a delta from.
+ */
 export interface RawDeltaEntityChange {
   type: string;
   slug: string;
-  op: 'created' | 'deleted' | 'modified' | 'noop';
-  changes?: Record<string, unknown>;
-  raw?: unknown;
+  op: 'created' | 'deleted' | 'updated' | 'noop';
+  changes: DiffOp[];
   _serializerVersionMismatch?: { type: string; from: string | null; to: string | null };
 }
 

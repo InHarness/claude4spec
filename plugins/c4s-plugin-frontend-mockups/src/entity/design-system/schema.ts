@@ -42,7 +42,7 @@ export const designSystemData: DataDeclaration = {
     description: { type: 'string', clearable: true },
     groups: {
       type: 'collection',
-      collection: 'value',
+      collection: { kind: 'value', identity: ['name'] },
       description: 'Token groups (default []).',
       // A group's identity is its name, so reordering groups is a noop — but an
       // unsorted snapshot would still churn the file. `tokens` below is
@@ -55,7 +55,14 @@ export const designSystemData: DataDeclaration = {
           tier: { type: 'enum', values: ['primitive', 'semantic'], required: true },
           tokens: {
             type: 'collection',
-            collection: 'value',
+            /**
+             * The token's identity is its LOCAL `name`. Membership of a group is
+             * carried by the PATH (`groups[].tokens`), so putting `group` in the
+             * key would say the same thing twice — and moving a token between
+             * groups already reads as a removal from one group's nested changes
+             * and an addition to the other's.
+             */
+            collection: { kind: 'value', identity: ['name'] },
             // A group carries its token list, even when empty — the retired
             // hand-written `groupSchema` had it mandatory. Restated because
             // `required` travels on the node, and nothing else in the host
@@ -81,7 +88,7 @@ export const designSystemData: DataDeclaration = {
     },
     modes: {
       type: 'collection',
-      collection: 'value',
+      collection: { kind: 'value', identity: ['name'] },
       // Same rule as `groups`; `overrides` stays authored.
       unordered: true,
       description: 'Theme modes — token override sets (default []).',
@@ -91,7 +98,7 @@ export const designSystemData: DataDeclaration = {
           name: { type: 'string', required: true },
           overrides: {
             type: 'collection',
-            collection: 'value',
+            collection: { kind: 'value', identity: ['token'] },
             // Same rule as `groups[].tokens` above.
             required: true,
             item: {

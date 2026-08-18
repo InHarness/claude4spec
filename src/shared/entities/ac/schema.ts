@@ -51,7 +51,9 @@ export const acData: DataDeclaration = {
      */
     verifies: {
       type: 'collection',
-      collection: 'value',
+      // A verification is the PAIR (type, slug) — that is what makes two entries
+      // the same link across two captures, so reshuffling the list is a noop.
+      collection: { kind: 'value', identity: ['type', 'slug'] },
       // Assignment order is not content — two ACs verifying the same set must
       // snapshot identically regardless of the order they were linked in.
       unordered: true,

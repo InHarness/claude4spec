@@ -26,16 +26,24 @@
  *   7. a `contentBearing` field naming a `contentOperation` that resolves to no
  *      operation — the reachability rule that replaces the retired
  *      views-versus-contentBearing ban.
+ *
+ * 0.2.31 adds the element-identity rules, on the same terms — see
+ * {@link checkIdentity}. They matter more than their size suggests: the host now
+ * computes the semantic delta from this declaration, so a wrong `identity` does
+ * not fail, it lies.
  */
 
 import {
   MAX_PROJECTION_DEPTH,
   RESERVED_TITLE_FIELD,
   TITLE_MAX_LENGTH,
+  collectionKindOf,
   columnOf,
   hasProjectionTable,
+  identityOf,
   isEmbedded,
   payloadFieldsOf,
+  rekeyOnOf,
   walkSchema,
   type CollectionNode,
   type DefaultPredicate,
@@ -227,6 +235,108 @@ function checkAxes(
   }
 }
 
+/** Either legal spelling of the `collection` flag — bare enum or object form. */
+function isCollectionFlag(value: unknown): boolean {
+  if (value === 'value' || value === 'keyed') return true;
+  if (value === null || typeof value !== 'object') return false;
+  const kind = (value as { kind?: unknown }).kind;
+  return kind === 'value' || kind === 'keyed';
+}
+
+/**
+ * The element-identity rules (0.2.31), all four of them loud.
+ *
+ * They exist because the host, not the type, now computes the semantic delta:
+ * `identity` is the ONLY thing standing between "this item was edited" and
+ * "this item was deleted and another one added". A declaration that names a
+ * field the item does not have, or names a nested collection, would not fail
+ * at registration — it would quietly produce a delta that reads plausibly and
+ * is wrong, which is the failure mode nobody catches in review.
+ */
+function checkIdentity(type: string, path: string, node: CollectionNode): void {
+  const identity = identityOf(node);
+  const rekeyOn = rekeyOnOf(node);
+
+  /**
+   * Rule 4, first: a keyed collection's key IS its identity, by construction of
+   * the kind. Declaring a second one would be declaring two answers to one
+   * question, and the reader would have to know which wins.
+   */
+  if (collectionKindOf(node) === 'keyed') {
+    const raw = node.collection;
+    if (typeof raw === 'object' && 'identity' in raw) {
+      fail(
+        type,
+        `keyed collection "${path}" declares \`identity\` — a keyed collection is already ` +
+          `addressed by its \`keyFields\`, which IS its identity. Declaring a second one asks the ` +
+          `delta engine to choose between two keys`,
+      );
+    }
+    return;
+  }
+
+  /**
+   * Whether the author WROTE the key, not whether it resolved to anything. An
+   * explicit `rekeyOn: []` is a declaration that the second pass compares on no
+   * fields at all — which would match every orphan to every other one — and it
+   * has to be caught as such rather than read as "absent".
+   */
+  const declaredRekeyOn =
+    typeof node.collection === 'object' && 'rekeyOn' in node.collection;
+
+  if (!identity.length) {
+    // No declaration is a decision (match by index), not something to complain
+    // about. But `rekeyOn` without `identity` is a prefix of nothing.
+    if (declaredRekeyOn) {
+      fail(type, `collection "${path}" declares \`rekeyOn\` without \`identity\` — a prefix of nothing`);
+    }
+    return;
+  }
+
+  const itemFields = node.item.type === 'object' ? node.item.fields : null;
+  for (const name of identity) {
+    if (!itemFields || !(name in itemFields)) {
+      fail(
+        type,
+        `collection "${path}" declares \`identity: ["${name}"]\` but "${name}" is not a field of ` +
+          `its item — the delta engine would match every element against \`undefined\``,
+      );
+      continue;
+    }
+    const field = itemFields[name] as FieldNode;
+    if (field.type === 'collection' || field.type === 'object' || field.type === 'record' || field.type === 'json') {
+      fail(
+        type,
+        `collection "${path}" identity field "${name}" is a ${field.type}, not a scalar — an ` +
+          `identity has to be comparable as a value, and a nested structure is not`,
+      );
+    }
+    if (field.contentBearing) {
+      fail(
+        type,
+        `collection "${path}" identity field "${name}" is \`contentBearing\` — content is never ` +
+          `compared as a value (it comes back as bytes), so it cannot identify anything`,
+      );
+    }
+  }
+
+  if (declaredRekeyOn) {
+    const isProperPrefix =
+      rekeyOn.length > 0 &&
+      rekeyOn.length < identity.length &&
+      rekeyOn.every((name, i) => identity[i] === name);
+    if (!isProperPrefix) {
+      fail(
+        type,
+        `collection "${path}" declares \`rekeyOn: ${JSON.stringify(rekeyOn)}\`, which is not a ` +
+          `proper, non-empty prefix of \`identity: ${JSON.stringify(identity)}\`. The second ` +
+          `matching pass compares on a SHORTER key than the first; an equal or unrelated one ` +
+          `would either re-run pass 1 or match unrelated elements`,
+      );
+    }
+  }
+}
+
 /** Rule 1 + rule 3 + identifier checks over every node in the tree. */
 function checkNodes(type: string, schema: DataDeclaration['schema']): void {
   walkSchema(schema, (path, node, depth) => {
@@ -297,15 +407,18 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
 
     if (node.type === 'collection') {
       const declared = (node as { collection?: unknown }).collection;
-      if (declared !== 'value' && declared !== 'keyed') {
+      if (!isCollectionFlag(declared)) {
         fail(
           type,
-          `collection "${path}" must declare \`collection: 'value' | 'keyed'\` — the two differ in ` +
-            `where rows live, how restore reconciles them and how they are read, so there is no ` +
-            `safe default. Got ${JSON.stringify(declared)}`,
+          `collection "${path}" must declare \`collection: 'value' | 'keyed'\` (or the object form ` +
+            `\`{ kind, identity?, rekeyOn? }\`) — the two kinds differ in where rows live, how ` +
+            `restore reconciles them and how they are read, so there is no safe default. ` +
+            `Got ${JSON.stringify(declared)}`,
         );
       }
-      if (declared === 'keyed' && (!node.keyFields || node.keyFields.length === 0)) {
+      const kind = collectionKindOf(node);
+      checkIdentity(type, path, node);
+      if (kind === 'keyed' && (!node.keyFields || node.keyFields.length === 0)) {
         fail(type, `keyed collection "${path}" must declare keyFields — the key IS its address`);
       }
       if (node.keyFields?.length) {
@@ -322,7 +435,7 @@ function checkNodes(type: string, schema: DataDeclaration['schema']): void {
       // AFTER the keyFields checks: an axis names a keyField, so "that keyField
       // does not exist" is the more specific and more actionable complaint, and
       // reporting the axes first would bury it.
-      if (declared === 'keyed') checkAxes(type, schema, path, node);
+      if (kind === 'keyed') checkAxes(type, schema, path, node);
     }
     if (node.type === 'record' && node.value.type === 'collection') {
       fail(type, `"${path}" nests a collection inside a record — not projectable`);

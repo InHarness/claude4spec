@@ -19,7 +19,10 @@ export const dtoData: DataDeclaration = {
     description: { type: 'string', clearable: true },
     fields: {
       type: 'collection',
-      collection: 'value',
+      // A field is identified by its NAME. Declaration order is still the DTO
+      // (no `unordered`), but an edit to `user_id` reads as an edit to that
+      // field rather than as one deletion and one arrival.
+      collection: { kind: 'value', identity: ['name'] },
       item: {
         type: 'object',
         fields: {
@@ -39,7 +42,7 @@ export const dtoData: DataDeclaration = {
     },
     examples: {
       type: 'collection',
-      collection: 'value',
+      collection: { kind: 'value', identity: ['name'] },
       description: 'Named payload exemplars. Soft-validated. name unique within DTO.',
       item: {
         type: 'object',

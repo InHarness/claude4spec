@@ -362,8 +362,8 @@ export class ProjectPluginHostImpl implements ProjectPluginHost {
     return restoreEntity(this, type, data, ctx);
   }
 
-  diff(type: string, a: SnapshotData, b: SnapshotData, slug: string): EntityDiff {
-    return diffEntity(this, type, a, b, slug);
+  diff(type: string, a: SnapshotData, b: SnapshotData): EntityDiff {
+    return diffEntity(this, type, a, b);
   }
 
   /**

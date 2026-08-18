@@ -1,31 +1,17 @@
-import type { EntityDiff, SerializationContribution, SnapshotData } from '@c4s/plugin-runtime';
+import type { SerializationContribution } from '@c4s/plugin-runtime';
 import type { RawEntity } from '../../host-kit/host-types.js';
-import { SPREADSHEET_TYPE } from '../../identity.js';
 import { spreadsheetPayloadUpgrades } from './upgrades.js';
 
 /**
- * A diff and the payload chain — nothing else.
+ * The payload chain — nothing else.
  *
  * `snapshot` and `restore` stopped being slots in 0.2.9 (the host generates
  * both, and its keyed snapshot — sparse, sorted, empties dropped — is the shape
  * this type's files are migrated INTO; see `upgrades.ts`). The views followed in
- * 0.2.23.
+ * 0.2.23, and `diff` in 0.2.31: `cells` is a KEYED collection, so the host
+ * matches its items by the `keyFields` that already address them and needs
+ * nothing from this file to do it.
  */
-
-const DIFF_KEYS = ['title', 'nRows', 'nCols', 'headerRow', 'headerCol', 'cells'] as const;
-
-function spreadsheetDiff(a: SnapshotData, b: SnapshotData, slug: string): EntityDiff {
-  const left = (a ?? null) as Record<string, unknown> | null;
-  const right = (b ?? null) as Record<string, unknown> | null;
-  const changes: Record<string, unknown> = {};
-  for (const key of DIFF_KEYS) {
-    const from = left?.[key];
-    const to = right?.[key];
-    if (JSON.stringify(from) !== JSON.stringify(to)) changes[key] = { from, to };
-  }
-  const op = left == null ? 'created' : right == null ? 'deleted' : Object.keys(changes).length ? 'modified' : 'noop';
-  return { type: SPREADSHEET_TYPE, slug, op, changes };
-}
 
 /**
  * 0.2.23 — the `detail` view is gone, and with it the perimeter labels.
@@ -46,12 +32,10 @@ function spreadsheetDiff(a: SnapshotData, b: SnapshotData, slug: string): Entity
  */
 /** 0.2.24 — spread onto the type; the `serializer` wrapper is rejected now. */
 export const spreadsheetSerialization = {
-  diff: spreadsheetDiff,
-
   /**
    * The dense→sparse migration. `payloadVersion` is declared on the manifest,
    * which is the authority — the echo that used to sit here went with the
    * wrapper, and registration still refuses a chain whose length disagrees.
    */
   payloadUpgrades: spreadsheetPayloadUpgrades,
-} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades' | 'diff'>;
+} satisfies Pick<SerializationContribution<RawEntity>, 'payloadUpgrades'>;

@@ -4,12 +4,12 @@
  * No shipped type carries the flag yet — the first bearer is a later stage — so
  * these are the only place the behaviour is pinned. Written against the three
  * layers that have to agree on it at once: the generated view payload, the
- * derived JSON Schema, and the default diff.
+ * derived JSON Schema, and the delta.
  */
 
 import { describe, expect, it } from 'vitest';
 import { genericEntity } from './generic.js';
-import { defaultDeepDiff } from './snapshot.js';
+import { diffFromSchema } from './schema-diff.js';
 import { snapshotFromSchema } from './schema-snapshot.js';
 import { recordSchema } from '../../shared/plugin-host/json-schema.js';
 import { attachComposition } from '../core/plugin-host/composition-validation.js';
@@ -80,52 +80,42 @@ describe('contentBearing — the snapshot', () => {
   });
 });
 
-describe('contentBearing — the default diff', () => {
+describe('contentBearing — the delta', () => {
   it('reports bytes rather than two bodies nobody can compare', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'hello' }, { title: 'T', body: 'hello world' }, SCHEMA);
-    expect(diff.op).toBe('modified');
-    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 5, toBytes: 11 } });
-    expect(JSON.stringify(diff)).not.toContain('hello world');
+    const changes = diffFromSchema(SCHEMA, { title: 'T', body: 'hello' }, { title: 'T', body: 'hello world' });
+    expect(changes).toEqual([
+      { op: 'field_changed_opaque', path: 'body', fromBytes: 5, toBytes: 11 },
+    ]);
+    expect(JSON.stringify(changes)).not.toContain('hello world');
   });
 
   it('still diffs ordinary fields beside it', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'x' }, { title: 'U', body: 'x' }, SCHEMA);
-    expect(diff.raw?.changed).toEqual({ title: { from: 'T', to: 'U' } });
+    const changes = diffFromSchema(SCHEMA, { title: 'T', body: 'x' }, { title: 'U', body: 'x' });
+    expect(changes).toEqual([{ op: 'field_changed', path: 'title', from: 'T', to: 'U' }]);
   });
 
-  it('treats an appearing body as a change from zero bytes, not as an `added` payload', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T' }, { title: 'T', body: 'hello' }, SCHEMA);
-    expect(diff.raw?.added).toEqual({});
-    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 0, toBytes: 5 } });
+  it('treats an appearing body as a change from zero bytes, never as a payload', () => {
+    const changes = diffFromSchema(SCHEMA, { title: 'T' }, { title: 'T', body: 'hello' });
+    expect(changes).toEqual([
+      { op: 'field_changed_opaque', path: 'body', fromBytes: 0, toBytes: 5 },
+    ]);
   });
 
   it('says nothing about a body that did not change', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'same' }, { title: 'U', body: 'same' }, SCHEMA);
-    expect(diff.raw?.changed).not.toHaveProperty('body_changed');
+    const changes = diffFromSchema(SCHEMA, { title: 'T', body: 'same' }, { title: 'U', body: 'same' });
+    expect(changes.some((c) => 'path' in c && c.path === 'body')).toBe(false);
   });
 
-  it('does not ship the body of a CREATED entity — the whole-entity payload is stripped too', () => {
-    // `created` reports the entity under a single `/` key, so the body rides
-    // inside a value, not under a key named after the field. A newly added entity
-    // is exactly where the body is biggest.
-    const diff = defaultDeepDiff('doc', 'a-doc', null, { title: 'T', body: 'SECRET-BIG-BODY' }, SCHEMA);
-    expect(diff.op).toBe('created');
-    expect(JSON.stringify(diff)).not.toContain('SECRET-BIG-BODY');
-    expect(diff.raw?.added).toEqual({ '/': { title: 'T' } });
-    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 0, toBytes: 15 } });
-  });
-
-  it('does not ship the body of a DELETED entity either', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { title: 'T', body: 'SECRET-BIG-BODY' }, null, SCHEMA);
-    expect(diff.op).toBe('deleted');
-    expect(JSON.stringify(diff)).not.toContain('SECRET-BIG-BODY');
-    expect(diff.raw?.removed).toEqual({ '/': { title: 'T' } });
-    expect(diff.raw?.changed).toEqual({ body_changed: { fromBytes: 15, toBytes: 0 } });
-  });
-
-  it('falls back to raw values with no schema — an inactive type keeps a usable diff', () => {
-    const diff = defaultDeepDiff('doc', 'a-doc', { body: 'a' }, { body: 'b' });
-    expect(diff.raw?.changed).toEqual({ body: { from: 'a', to: 'b' } });
+  /**
+   * The old deep-diff reported a created entity under a single `/` key, so the
+   * body rode inside a value that no field-name filter could reach — and the
+   * test that pinned this had to check the stripping worked there too. The
+   * envelope carries no operations for `created`/`deleted` at all now, so the
+   * body has nowhere to appear in the first place. Kept because the guarantee
+   * ("a delta never carries a body") is the one worth pinning, not the mechanism.
+   */
+  it('a created or deleted entity ships no body, because it ships no operations', () => {
+    expect(diffFromSchema(SCHEMA, { title: 'T' }, { title: 'T' })).toEqual([]);
   });
 });
 

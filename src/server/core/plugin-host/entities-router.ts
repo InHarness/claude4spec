@@ -534,13 +534,15 @@ export function entitiesRouter(host: ProjectPluginHost, tags: TagsService, versi
       const module = host.getEntity(type);
       const fromData = upgradeCapture(module, from.data, payloadVersionOfCapture(fromVer)).data;
       const toData = upgradeCapture(module, to.data, payloadVersionOfCapture(toVer)).data;
-      const diff = host.diff(type, fromData, toData, slug);
+      const diff = host.diff(type, fromData, toData);
       // 0.2.9: compared as PAYLOAD VERSIONS, not as strings. The column changed
       // vocabulary (semver → integer `payloadVersion`) without migrating old
       // rows, so a raw comparison flags a bump on every diff that spans the
       // upgrade. See `serialization/payload-version.ts`.
       res.json(
         toRawDeltaEntityChange(
+          type,
+          slug,
           diff,
           samePayloadVersion(fromVer, toVer) ? null : { type, from: fromVer, to: toVer }
         )

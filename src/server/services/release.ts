@@ -79,6 +79,22 @@ const STATUS_TO_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'modified' | 'dele
 };
 
 /**
+ * The same git statuses, in the ENTITY vocabulary.
+ *
+ * 0.2.31 spells an entity's modified state `updated`, matching the `EntityDiff`
+ * envelope the row carries; a page's stays `modified`, because that word belongs
+ * to M02's `FileDiff` and a page has no logical schema to generate a delta from.
+ * Two maps rather than one with a cast, so neither can be used for the other by
+ * accident.
+ */
+const STATUS_TO_ENTITY_OP: Record<'A' | 'M' | 'D' | 'R', 'created' | 'updated' | 'deleted'> = {
+  A: 'created',
+  M: 'updated',
+  D: 'deleted',
+  R: 'created',
+};
+
+/**
  * 0.1.122: release names reserved by the `:to`/`:from` diff-route sentinel
  * (`GET /api/releases/:from/diff/current`). Single source of truth — checked
  * by `createRelease`/`updateRelease` AND by `ReleaseIndexerService` (which
@@ -948,7 +964,12 @@ export class ReleaseService {
         const relPath = nodePath.relative(entitiesAbs, file.path).replaceAll(nodePath.sep, '/');
         const parsed = this.entityStore?.parseRelPath(relPath);
         if (parsed) {
-          entities.push({ type: parsed.type, slug: parsed.slug, op: STATUS_TO_OP[file.status] });
+          entities.push({
+            type: parsed.type,
+            slug: parsed.slug,
+            op: STATUS_TO_ENTITY_OP[file.status],
+            changes: [],
+          });
           entityPaths.push(file.path);
         }
         continue;
@@ -1000,7 +1021,7 @@ export class ReleaseService {
     readNew: (absPath: string) => Promise<string | null>,
   ): Promise<RawDeltaEntityChange[]> {
     const decide = async (change: RawDeltaEntityChange, i: number): Promise<boolean> => {
-      if (change.op !== 'modified') return true;
+      if (change.op !== 'updated') return true;
       const absPath = entityPaths[i];
       if (!absPath) return true;
       const [oldText, newText] = await Promise.all([readOld(absPath), readNew(absPath)]);
@@ -1270,7 +1291,7 @@ export class ReleaseService {
         bRaw === null
           ? null
           : this.upgradeCapture(sample.type, bRaw, toSnap.serializer_versions[sample.type] ?? null).data;
-      const diff = this.host.diff(sample.type, aData, bData, sample.slug);
+      const diff = this.host.diff(sample.type, aData, bData);
       if (diff.op === 'noop') continue;
       const aVer = fromSnap.serializer_versions[sample.type] ?? null;
       const bVer = toSnap.serializer_versions[sample.type] ?? null;
@@ -1279,6 +1300,8 @@ export class ReleaseService {
       // they mean the same shape. See `serialization/payload-version.ts`.
       entityChanges.push(
         toRawDeltaEntityChange(
+          sample.type,
+          sample.slug,
           diff,
           samePayloadVersion(aVer, bVer) ? null : { type: sample.type, from: aVer, to: bVer }
         )
@@ -1419,7 +1442,7 @@ export class ReleaseService {
     const current = this.rawReader.getEntity(input.type, input.slug);
     if (current) {
       const currentSnapshot = this.host.snapshot(input.type, current, this.rawReader);
-      const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot, input.slug);
+      const diff = this.host.diff(input.type, currentSnapshot, targetSnapshot);
       if (diff.op === 'noop') {
         /**
          * 0.2.4 — "no substantive change" governs the DIFF REPORT and the

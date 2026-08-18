@@ -8,8 +8,9 @@
  *     (snapshot is *required* for M17 participation, unlike read-only views
  *     which fall back to raw JSON).
  *   - `restoreEntity(host, type, ...)` — calls `serializer.restore(...)`.
- *   - `diffEntity(host, type, a, b, slug)` — calls `serializer.diff(...)`
- *     when present, otherwise computes a default deep-diff.
+ *   - `diffEntity(host, type, a, b)` — GENERATES the semantic delta from the
+ *     type's `data.schema` (`./schema-diff.ts`). No slot is consulted: 0.2.31
+ *     removed the `diff?` contribution and with it the second, deep-diff mode.
  */
 
 import type { PluginHost } from '../core/plugin-host/types.js';
@@ -29,7 +30,7 @@ import {
   stripSystemFields,
   type SystemStamp,
 } from './system-fields.js';
-import { contentBytes, type FieldNode } from '../../shared/plugin-host/data-schema.js';
+import { diffFromSchema } from './schema-diff.js';
 
 /**
  * 0.2.4 — the `createdAt`/`updatedAt` envelope is attached here and NOWHERE
@@ -113,179 +114,85 @@ export function restoreEntity(
 }
 
 /**
- * 0.2.4 — the envelope is stripped from BOTH sides before dispatch, so a delta
- * that is nothing but a timestamp difference is structurally `noop`.
+ * The delta between two snapshots of one entity, GENERATED from the schema.
  *
- * Host-global and per-type-agnostic on purpose: this is the one place that can
- * state "a timestamp is not a substantive change" once, for every type at once,
- * including plugin-contributed types whose `diff` slot we cannot edit.
+ * 0.2.31 — there is no dispatch left to do. The function used to look up the
+ * type's `diff` slot, call it when present and deep-diff when absent; both the
+ * slot and the fallback are gone, so what remains is: strip the timestamp
+ * envelope, walk the declaration, wrap the result.
+ *
+ * The envelope is stripped from BOTH sides here rather than inside the engine
+ * because this is the one place that can say "a timestamp is not a substantive
+ * change" once, for every type at once. (The engine also skips `systemManaged`
+ * fields, which is the same rule stated where the declaration is visible — the
+ * two agree, and either alone would be enough.)
+ *
+ * An UNKNOWN or deactivated type has no schema to walk, so it makes no claim
+ * about WHAT changed — but it still reports THAT something did. Silence would
+ * be worse than vagueness here: `getReleaseDiff` skips `noop`, so a `noop` on a
+ * genuinely edited entity would drop it out of the release listing altogether,
+ * and a plugin deactivated between two releases would quietly take its entities'
+ * history with it. An empty `changes` on `updated` is the same statement
+ * `created` and `deleted` already make: something happened, the full state is in
+ * the snapshot.
  */
 export function diffEntity(
   host: PluginHost,
   type: string,
   a: SnapshotData,
-  b: SnapshotData,
-  slug: string
+  b: SnapshotData
 ): EntityDiff {
   const lhs = stripSystemFields(a);
   const rhs = stripSystemFields(b);
-  const module = host.getEntity(type);
-  if (!module) {
-    // Inactive plugin — fall back to default; consumers (UI, M18) will see raw deep-diff.
-    return defaultDeepDiff(type, slug, lhs, rhs);
+  if (lhs == null && rhs == null) return { op: 'noop', changes: [] };
+
+  const schema = host.getEntity(type)?.data?.schema;
+  /**
+   * `created` and `deleted` carry NO operations.
+   *
+   * Both consumers that exist — the M17 release card and the MCP projection —
+   * render one bullet for these and take the full entity state from the
+   * snapshot, which they have. Emitting a per-field list nobody reads would put
+   * a whole entity body inside a delta, including the `contentBearing` fields
+   * the opaque encoding exists to keep out of one.
+   */
+  if (lhs == null) return { op: 'created', changes: [] };
+  if (rhs == null) return { op: 'deleted', changes: [] };
+  if (!schema) {
+    return deepEqual(lhs, rhs) ? { op: 'noop', changes: [] } : { op: 'updated', changes: [] };
   }
-  const fn = module.diff;
-  // 0.2.19: the declaration goes with it, so `contentBearing` fields report bytes
-  // rather than bodies. A type computing its own `diff` is on its own here — the
-  // same reason such a type may not declare `contentBearing` alongside its own views.
-  if (!fn) return defaultDeepDiff(type, slug, lhs, rhs, module.data.schema);
-  return fn(lhs, rhs, slug);
+
+  const changes = diffFromSchema(schema, lhs, rhs);
+  return changes.length ? { op: 'updated', changes } : { op: 'noop', changes: [] };
 }
 
 /**
- * Shape an `EntityDiff` (from `diffEntity`) into the wire format both
- * `ReleaseService.getReleaseDiff` and the per-entity version-diff route send
- * to clients — one place for the `{type,slug,op,changes?,raw?}` spread so the
- * two call sites can't drift on which optional fields they include.
+ * Shape an `EntityDiff` into the wire format both `ReleaseService.getReleaseDiff`
+ * and the per-entity version-diff route send to clients.
+ *
+ * The identity lives HERE and not on `EntityDiff` — the delta is recursive
+ * (`item_modified.changes` carries the same dictionary), so a `type`/`slug` pair
+ * on the envelope would have to be repeated meaninglessly at every nesting
+ * level. Identity is a property of the row, the delta is a property of the
+ * content.
  */
 export function toRawDeltaEntityChange(
+  type: string,
+  slug: string,
   diff: EntityDiff,
   serializerMismatch?: { type: string; from: string | null; to: string | null } | null
 ): RawDeltaEntityChange {
   return {
-    type: diff.type,
-    slug: diff.slug,
+    type,
+    slug,
     op: diff.op,
-    ...(diff.changes ? { changes: diff.changes } : {}),
-    ...(diff.raw ? { raw: diff.raw } : {}),
+    changes: diff.changes,
     ...(serializerMismatch ? { _serializerVersionMismatch: serializerMismatch } : {}),
   };
 }
 
-/**
- * Compute deep-diff between two SnapshotData JSONs and wrap as EntityDiff.
- *
- * Strips the 0.2.4 timestamp envelope itself rather than relying on
- * `diffEntity` having done it: this is exported and called directly (the M18
- * page/entity delta paths), and a stamp-only difference must read as `noop`
- * from every entrance, not just the dispatching one. `stripSystemFields` is a
- * no-op on already-stripped data, so the double call costs nothing.
- */
-export function defaultDeepDiff(
-  type: string,
-  slug: string,
-  aIn: SnapshotData,
-  bIn: SnapshotData,
-  /**
-   * 0.2.19 — the declaring type's schema, when the caller has it. Only
-   * `contentBearing` fields are read from it: their value never appears in a
-   * diff, and a `<field>_changed: { fromBytes, toBytes }` entry appears instead.
-   * Optional because this function is also called for an INACTIVE type, where
-   * there is no module and hence no schema — and a diff that degrades to raw
-   * values is better than no diff at all.
-   */
-  schema?: Readonly<Record<string, FieldNode>>
-): EntityDiff {
-  const a = stripSystemFields(aIn);
-  const b = stripSystemFields(bIn);
-  if (a == null && b == null) return { type, slug, op: 'noop' };
-  const fields = contentBearingFields(schema);
-  // The field is removed BEFORE partitioning, not filtered out of the result
-  // afterwards. On `created`/`deleted` the partition reports the whole entity
-  // under a single `/` key, so no key-name filter can reach the body inside it —
-  // and a newly added entity is exactly the case where a body is largest.
-  const raw = (x: unknown, y: unknown) =>
-    withContentBearingEntries(deepDiffPartition(withoutFields(x, fields), withoutFields(y, fields)), x, y, fields);
-  if (a == null) return { type, slug, op: 'created', raw: raw(undefined, b) };
-  if (b == null) return { type, slug, op: 'deleted', raw: raw(a, undefined) };
-  if (deepEqual(a, b)) return { type, slug, op: 'noop' };
-  return { type, slug, op: 'modified', raw: raw(a, b) };
-}
-
-/** The declared `contentBearing` field names, or `[]` when the caller had no schema. */
-function contentBearingFields(schema?: Readonly<Record<string, FieldNode>>): string[] {
-  if (!schema) return [];
-  return Object.entries(schema)
-    .filter(([, node]) => node.contentBearing)
-    .map(([field]) => field);
-}
-
-/** A shallow copy without the named top-level keys; `undefined`/non-object passes through. */
-function withoutFields(value: unknown, fields: string[]): unknown {
-  if (fields.length === 0 || !isObj(value)) return value;
-  const out: Record<string, unknown> = {};
-  for (const [key, v] of Object.entries(value)) if (!fields.includes(key)) out[key] = v;
-  return out;
-}
-
-/**
- * Add one `<field>_changed: { fromBytes, toBytes }` under `changed` per
- * `contentBearing` field whose content differs.
- *
- * Reported under `changed` even when the field was only added or only removed:
- * for content, "it appeared" and "it grew from nothing" are the same event, and
- * `{ fromBytes: 0, toBytes: 4096 }` says it in the one shape a reader has to
- * learn. The alternative — a body-sized payload in `added` — is precisely the
- * output the flag exists to prevent.
- */
-function withContentBearingEntries(
-  raw: { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> },
-  a: unknown,
-  b: unknown,
-  fields: string[]
-): { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> } {
-  for (const field of fields) {
-    const from = isObj(a) ? a[field] : undefined;
-    const to = isObj(b) ? b[field] : undefined;
-    if (deepEqual(from, to)) continue;
-    raw.changed[`${field}_changed`] = { fromBytes: contentBytes(from), toBytes: contentBytes(to) };
-  }
-  return raw;
-}
-
-function deepDiffPartition(
-  a: unknown,
-  b: unknown
-): { added: Record<string, unknown>; removed: Record<string, unknown>; changed: Record<string, unknown> } {
-  const added: Record<string, unknown> = {};
-  const removed: Record<string, unknown> = {};
-  const changed: Record<string, unknown> = {};
-  partition('', a, b, added, removed, changed);
-  return { added, removed, changed };
-}
-
-function partition(
-  prefix: string,
-  a: unknown,
-  b: unknown,
-  added: Record<string, unknown>,
-  removed: Record<string, unknown>,
-  changed: Record<string, unknown>
-): void {
-  if (deepEqual(a, b)) return;
-  if (a === undefined) {
-    added[prefix || '/'] = b;
-    return;
-  }
-  if (b === undefined) {
-    removed[prefix || '/'] = a;
-    return;
-  }
-  if (!isObj(a) || !isObj(b)) {
-    changed[prefix || '/'] = { from: a, to: b };
-    return;
-  }
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
-  for (const key of keys) {
-    const sub = prefix ? `${prefix}.${key}` : key;
-    partition(sub, (a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], added, removed, changed);
-  }
-}
-
-function isObj(v: unknown): v is Record<string, unknown> {
-  return v !== null && typeof v === 'object' && !Array.isArray(v);
-}
-
+/** Key-order-insensitive equality — the only comparison available when a type
+ *  has no declaration to compare it BY. */
 function deepEqual(a: unknown, b: unknown): boolean {
   return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
 }
