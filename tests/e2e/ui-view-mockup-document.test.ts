@@ -196,11 +196,11 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
 
     // All three segments, and no leftover inline section on the detail form.
     for (const label of ['Details', 'Preview', 'History']) {
-      await expect.poll(() => page.getByRole('button', { name: label, exact: true }).count()).toBe(1);
+      await expect.poll(() => page.getByRole('tab', { name: label, exact: true }).count()).toBe(1);
     }
     expect(await page.locator('iframe[title*="Mockup preview"]').count()).toBe(0);
 
-    await page.getByRole('button', { name: 'Preview', exact: true }).click();
+    await page.getByRole('tab', { name: 'Preview', exact: true }).click();
     await expect.poll(() => new URL(page.url()).pathname).toMatch(/\/ui-views\/[^/]+\/preview$/);
 
     const frame = page.locator('iframe[title*="Mockup preview"]');
@@ -214,7 +214,7 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
       .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('h1').innerText())
       .toMatch(/Smoke Heading/);
 
-    await page.getByRole('button', { name: 'History', exact: true }).click();
+    await page.getByRole('tab', { name: 'History', exact: true }).click();
     await expect.poll(() => new URL(page.url()).pathname).toMatch(/\/ui-views\/[^/]+\/history$/);
     await expect.poll(() => frame.count()).toBe(0);
 
@@ -234,7 +234,7 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     await page.goto(`${BASE}/p/${project.id}/ui-views/${slug}/preview`, { waitUntil: 'networkidle' });
 
     await expect
-      .poll(() => page.getByRole('button', { name: 'Preview', exact: true }).getAttribute('aria-pressed'))
+      .poll(() => page.getByRole('tab', { name: 'Preview', exact: true }).getAttribute('aria-selected'))
       .toBe('true');
     await expect
       .poll(() => page.frameLocator('iframe[title*="Mockup preview"]').locator('h1').innerText())
@@ -274,7 +274,7 @@ describe.skipIf(!BASE)('ui-view mockup document', () => {
     const page = await browser.newPage();
     await page.goto(`${BASE}/p/${project.id}/ui-views/${empty}/preview`, { waitUntil: 'networkidle' });
 
-    const tab = page.getByRole('button', { name: 'Preview', exact: true });
+    const tab = page.getByRole('tab', { name: 'Preview', exact: true });
     await expect.poll(() => tab.isDisabled()).toBe(false);
     await expect
       .poll(() =>

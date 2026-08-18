@@ -20,7 +20,11 @@
  * changed.
  */
 
-import { describe, expect, it, beforeAll } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { SkillRegistry, SkillResolver, findSkillsRoots } from '../../../src/server/services/skill-registry.js';
 import { loadBuiltinEnvelopes } from '../../../src/server/core/plugin-host/loader.js';
 import { PluginRegistryImpl } from '../../../src/server/core/plugin-host/registry.js';
 import { registerAllPlugins } from '../../../src/server/serialization/registerAll.js';
@@ -112,5 +116,105 @@ describe('axis B — activation is per project, per type', () => {
   it('an undefined whitelist activates both, as it does every other type', () => {
     const active = registry.consolidate(null).listEntities().map((m) => m.type);
     for (const type of PAIR) expect(active).toContain(type);
+  });
+});
+
+/**
+ * 0.2.32 — the axis the envelope grew: it contributes something that is not a
+ * type.
+ *
+ * `ui-view-mockup-generator` reaches the agent through a chain with three links,
+ * and only the middle one is obvious. The manifest fills `contributes.skills[]`;
+ * the loader lowers it into the plugin record; and the M37 resolver picks it up
+ * off `source: 'plugin'` ALONE — there is no entry for it in any context type's
+ * `attachInternalSkills`, and adding one would be the wrong fix for a resolver
+ * that stopped summing its third source.
+ *
+ * Driven through the real loader against the real `plugins/` tree for the same
+ * reason as the axes above: a fixture would prove the machinery, and the wiring
+ * is what changed.
+ */
+describe('axis A, continued — the envelope contributes a SKILL, not only types', () => {
+  const SKILL = 'ui-view-mockup-generator';
+  const CONTEXTS = ['chat', 'brief', 'patch', 'ask'] as const;
+  /** A real bundled writing style, so the `<project_skill/>` slot is genuinely occupied. */
+  const STYLE = 'layered-vertical-slices';
+
+  /** A registry with the envelope's skills folded in the way `createProjectContext` folds them. */
+  function skillRegistryWith(registry: PluginRegistryImpl, cwd: string): SkillRegistry {
+    const skills = SkillRegistry.load(findSkillsRoots(cwd));
+    for (const skill of registry.listSkills()) skills.addPluginSkill(skill);
+    return skills;
+  }
+
+  let registry: PluginRegistryImpl;
+  let tmp: string;
+
+  beforeAll(async () => {
+    registry = await loadedRegistry();
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'c4s-envelope-skill-'));
+    fs.mkdirSync(path.join(tmp, '.claude4spec'), { recursive: true });
+    fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: null }));
+  });
+  afterAll(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('the loader carries it off the manifest as a contextual plugin skill', () => {
+    const contributed = registry.listSkills().filter((s) => s.slug === SKILL);
+    expect(contributed).toHaveLength(1);
+    expect(contributed[0].scope).toBe('contextual');
+    expect(contributed[0].content.length).toBeGreaterThan(0);
+  });
+
+  it('the M37 registry files it under source "plugin"', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.list().find((s) => s.slug === SKILL)?.source).toBe('plugin');
+  });
+
+  it.each(CONTEXTS)('rides inlineSkills in the %s context, with no attachInternalSkills entry', (contextType) => {
+    const resolver = new SkillResolver(skillRegistryWith(registry, tmp), tmp);
+    expect(resolver.resolveForContext(contextType).map((s) => s.name)).toContain(SKILL);
+  });
+
+  it.each(CONTEXTS)('never earns a <project_skill/> in %s — forcing belongs to the writing-style slot', (contextType) => {
+    // `agent-turn` picks the ONE skill that gets the block by `metadata.scope ===
+    // 'writing-style'`, not by list position. So this is the assertion that keeps a
+    // contextual plugin skill from being forced into a turn the model was meant to
+    // open it in on its own — and it has to hold WITH a style active, which is the
+    // only configuration where a second `writing-style` entry could hide.
+    fs.writeFileSync(
+      path.join(tmp, '.claude4spec', 'config.json'),
+      JSON.stringify({ writingStyle: STYLE }),
+    );
+    try {
+      const resolved = new SkillResolver(skillRegistryWith(registry, tmp), tmp).resolveForContext(contextType);
+      expect(resolved.find((s) => s.name === SKILL)?.metadata?.scope).toBe('contextual');
+      expect(resolved.filter((s) => s.metadata?.scope === 'writing-style').map((s) => s.name)).toEqual([STYLE]);
+    } finally {
+      fs.writeFileSync(path.join(tmp, '.claude4spec', 'config.json'), JSON.stringify({ writingStyle: null }));
+    }
+  });
+
+  it('is visible in list() but never selectable as a writing style', () => {
+    const skills = skillRegistryWith(registry, tmp);
+    expect(skills.list().map((s) => s.slug)).toContain(SKILL);
+    expect(skills.listSelectable().map((s) => s.slug)).not.toContain(SKILL);
+    expect(skills.isSelectable(SKILL)).toBe(false);
+  });
+
+  it('comes down with the envelope — one unregister takes both types AND the skill', () => {
+    // The unit of distribution is the whole contribution. Were the skill split
+    // into an envelope of its own, this is where it would survive `ui-view` and
+    // go on teaching an entity type that is no longer registered.
+    registry.unregisterPlugin(ENVELOPE);
+    expect(registry.listSkills().map((s) => s.slug)).not.toContain(SKILL);
+    const types = registry.listAvailable().map((m) => m.type);
+    for (const type of PAIR) expect(types).not.toContain(type);
+
+    const resolver = new SkillResolver(skillRegistryWith(registry, tmp), tmp);
+    for (const contextType of CONTEXTS) {
+      expect(resolver.resolveForContext(contextType).map((s) => s.name)).not.toContain(SKILL);
+    }
   });
 });

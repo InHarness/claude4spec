@@ -1,3 +1,14 @@
+/**
+ * HOST-LOCAL — the catalog publishes the list PRESENTATION, not its query.
+ *
+ * `TagFilterBar` / `EntityListLayout` / `EntityListHeader` are all imported from
+ * the kit below and in the list panels; what has no catalog counterpart is the
+ * assembly above them — the search + tag-filter query key, the and/or tag mode,
+ * and the `TagBarProps` value handed down to the kit component. No slot,
+ * primitive or hook in `@c4s/plugin-runtime/ui` covers that, so this is a gap in
+ * the surface rather than a copy of something already in it.
+ */
+
 import { useMemo, useState } from 'react';
 import { useTags } from '@c4s/plugin-runtime';
 import type { EntityType } from '../types.js';

@@ -76,9 +76,9 @@ export function UiViewPreview({ slug }: { slug: string }) {
  * route's `Content-Security-Policy: sandbox` response header, and from nothing
  * else.
  *
- * Styled like an inactive `SegmentButton` but deliberately NOT inside the
- * switcher's `ButtonGroup`: it is an action, not a view, and a segment there
- * would carry an `aria-pressed` that claims otherwise.
+ * Styled like an inactive tab but deliberately NOT inside the switcher's
+ * `SegmentedControlTabs`: it is an action, not a view, and a segment there would
+ * carry an `aria-selected` — and a `role="tab"` — that claim otherwise.
  */
 export function UiViewOpenExternal({ slug }: { slug: string }) {
   return (

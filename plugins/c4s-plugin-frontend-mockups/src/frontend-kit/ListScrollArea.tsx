@@ -1,3 +1,14 @@
+/**
+ * HOST-LOCAL — the composition, not the pieces.
+ *
+ * Every visual piece here comes from the catalog: `EntityListLayout`,
+ * `LoadingState`, `EmptyState`. What stays local is the three-way choice between
+ * them plus this envelope's "create" affordance in the empty state — a
+ * composition the catalog publishes no slot for. Nothing below re-implements a
+ * catalog component; if the kit ever publishes this arrangement, this file
+ * becomes a re-export.
+ */
+
 import { Plus } from 'lucide-react';
 import { EntityListLayout } from '@c4s/plugin-runtime/ui';
 import { LoadingState } from '@c4s/plugin-runtime/ui';

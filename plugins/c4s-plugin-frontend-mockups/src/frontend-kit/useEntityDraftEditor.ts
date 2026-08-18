@@ -1,3 +1,15 @@
+/**
+ * HOST-LOCAL — the catalog carries no state hook of this shape.
+ *
+ * `@c4s/plugin-runtime/ui` is a catalog of COMPONENTS (plus, from
+ * `@c4s/plugin-runtime`, the L11 data hooks `useTags` / `useReferences`); it
+ * publishes no debounced entity-draft editor, and the L11 surfaces it does
+ * publish are read-side. So there is nothing here to import instead — this is a
+ * missing surface, not a duplicated one, and it is legal on exactly that ground.
+ *
+ * It shrinks to a shim the day the catalog publishes a draft-editing hook.
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface Options<E, D> {
