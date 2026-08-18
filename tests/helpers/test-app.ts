@@ -205,6 +205,18 @@ export async function createTestApp(opts: { extraModules?: BackendModule[] } = {
     reader: rawReader,
     crud: crudFacade,
     host,
+    /**
+     * 0.2.28 — the M39 core, which this harness used to leave off the mount
+     * context entirely even though `buildProjectContext` passes it.
+     *
+     * It is a THUNK for the same reason it is one in production: the core is
+     * built over the plugin registry, and mounting is what fills the registry,
+     * so it cannot exist yet at this line. Every consumer resolves it at
+     * request time, long after the `const` below is initialised. A plugin route
+     * reading an entity of another type (`ui-view`'s mockup document reading
+     * its design system) 500s without this.
+     */
+    discovery: () => discovery,
     cwd,
     ws,
     tagsService,

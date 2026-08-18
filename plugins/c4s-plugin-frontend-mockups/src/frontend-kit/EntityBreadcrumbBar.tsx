@@ -18,7 +18,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { ChevronRight, Monitor, Palette } from 'lucide-react';
 import { clientPluginHost } from '@c4s/plugin-runtime';
-import { EntityViewSwitcher } from './EntityViewSwitcher.js';
+import { EntityViewSwitcher, type EntityView } from './EntityViewSwitcher.js';
 import { DESIGN_SYSTEM_TYPE, UI_VIEW_TYPE } from '../identity.js';
 import type { EntityType } from '../types.js';
 
@@ -26,13 +26,32 @@ interface Props {
   type: EntityType;
   slug: string;
   name?: string;
-  view: 'details' | 'history';
-  hasHistory?: boolean;
+  view: EntityView;
+  /**
+   * Which views this type has routes for — `undefined` means the default pair
+   * (details + history).
+   *
+   * It replaced a `hasHistory` boolean in 0.2.28. The boolean was only ever a
+   * way to HIDE a switcher for the two types in this envelope that had no
+   * second route; once both grew one, the question stopped being "is there
+   * history" and became "which views exist", which is the thing the switcher
+   * needs anyway.
+   */
+  views?: readonly EntityView[];
+  /**
+   * View-specific controls, rendered in the topbar to the left of the switcher.
+   *
+   * An opaque node on purpose: this bar is vendored kit shared by both types in
+   * the envelope, so it must not learn what any one view's action DOES. The
+   * `preview` view passes its "open the mockup top-level" link through here
+   * (0.2.28); every other route omits it.
+   */
+  actions?: React.ReactNode;
 }
 
 const crumbLinkClass = 'inline-flex items-center gap-1.5 rounded px-1 -mx-1 transition';
 
-export function EntityBreadcrumbBar({ type, slug, name, view, hasHistory }: Props) {
+export function EntityBreadcrumbBar({ type, slug, name, view, views, actions }: Props) {
   const navigate = useNavigate();
   // Always a METHOD call. `getAvailable` reads `this.modules`, so pulling it
   // into a local — the obvious way to write a cast once — silently unbinds the
@@ -69,7 +88,10 @@ export function EntityBreadcrumbBar({ type, slug, name, view, hasHistory }: Prop
         </span>
       </div>
       <span className="flex-1" />
-      {hasHistory && <EntityViewSwitcher type={type} slug={slug} view={view} />}
+      {actions}
+      {(views?.length ?? 2) > 1 && (
+        <EntityViewSwitcher type={type} slug={slug} view={view} views={views} />
+      )}
     </div>
   );
 }

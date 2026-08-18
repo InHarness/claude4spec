@@ -108,10 +108,50 @@ describe('tier K left nothing to grow back (item 62)', () => {
   });
 
   it('no type ships a CRUD service', () => {
-    // `service.ts` / `services.ts`. What a type may still register on
-    // `backend.service` is a DOMAIN HELPER, and none of the six needs one — the
-    // file name is the signal, and its absence is the invariant.
-    expect(named(/^services?\.ts$/)).toEqual([]);
+    /**
+     * 0.2.28 — the assertion moved from the FILE NAME to what is inside it.
+     *
+     * Until now no type registered `backend.service` at all, so "there is no
+     * `service.ts`" and "there is no CRUD service" were the same statement and
+     * the cheaper one was the test. `design-system` broke the tie by needing
+     * the thing the slot was always for: a DOMAIN HELPER (token `resolve()` and
+     * the CSS sheet built from it), which the Host API names in as many words.
+     * Keeping the name-based gate would have forced that helper to hide under a
+     * blander filename — the exact smuggling the `views.ts` case above warns
+     * about — so the honest invariant is asserted directly instead.
+     *
+     * What must stay absent is a SECOND WRITE DOOR: create/update/delete/upsert
+     * on a per-type service, or a service reaching SQL. Those are what tier K
+     * removed; a pure function of its arguments is not one of them.
+     */
+    const services = typeFiles().filter((f) => /^services?\.ts$/.test(path.basename(f)));
+    const crudish: string[] = [];
+
+    // Comments are stripped before either scan: this gate reads CODE, and a
+    // docblock explaining why a service must not `SELECT ... FROM` anything
+    // would otherwise fail the case it is describing.
+    const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+    // A write verb in METHOD-DECLARATION position. Line-based rather than one
+    // regex, because the two forms differ only in what FOLLOWS the parameter
+    // list: a declaration opens a body, a call ends in `;`. Modifiers, generics
+    // and a `create`-prefixed name (`createMany`) all have to be reachable —
+    // the door this gate closes must not be re-openable by rephrasing.
+    const WRITE_METHOD =
+      /^[ \t]*(?:(?:public|private|protected|static|readonly|override|async)\s+)*\*?\s*(create|update|delete|upsert|remove|insert)\w*\s*(?:<[^>]*>)?\s*\(/i;
+
+    for (const file of services) {
+      const text = stripComments(fs.readFileSync(file, 'utf8'));
+      const lines = text.split('\n');
+      if (lines.some((l) => WRITE_METHOD.test(l) && !/;\s*$/.test(l))) {
+        crudish.push(path.relative(SRC_ROOT, file));
+      }
+      // Or any SQL at all — the host owns the projection.
+      if (/\b(INSERT INTO|UPDATE\s+\w+\s+SET|DELETE FROM|SELECT\b.*\bFROM)\b/i.test(text)) {
+        crudish.push(path.relative(SRC_ROOT, file));
+      }
+    }
+    expect([...new Set(crudish)]).toEqual([]);
   });
 
   it('no type ships a `views.ts` — there are no views left to put in one', () => {

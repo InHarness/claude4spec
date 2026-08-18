@@ -9,11 +9,18 @@ import {
 import { designSystemSerialization } from './serializer.js';
 import { designSystemSystemPrompt } from './system-prompt.js';
 import { designSystemData, designSystemSlugPattern } from './schema.js';
+import { DesignSystemService } from './backend/service.js';
 
 /**
- * The `design-system` contribution — no `backend` block: the generated
- * `/api/design-systems` router serves every CRUD verb from `data` below, and
- * there is no non-CRUD tool for this type.
+ * The `design-system` contribution — `backend.service` only: the generated
+ * `/api/design-systems` router still serves every CRUD verb from `data` below,
+ * and there is no non-CRUD tool and no domain route for this type.
+ *
+ * The service slot arrived with the mockup document (0.2.28). It is NOT a CRUD
+ * service — tier K deleted those — but the domain logic the host cannot derive
+ * from `data.schema`: token `resolve()` and the CSS sheet built from it. Its
+ * consumer is another TYPE's router (`ui-view`'s `/:slug/mockup`), reaching it
+ * in-process through `getEntityService('design-system')`.
  *
  * It is listed FIRST in the manifest's `contributes.entities`, ahead of
  * `ui-view`, because `ui-view.designSystemSlug` declares `ref: 'design-system'`
@@ -36,4 +43,10 @@ export const designSystemEntity: EntityContribution = {
   pathPrefix: DESIGN_SYSTEM_PATH_PREFIX,
   ...designSystemSerialization,
   systemPrompt: designSystemSystemPrompt,
+  backend: {
+    // Stateless — the factory ignores its `MountContext`. Everything the two
+    // methods need arrives as arguments, which is what keeps the same logic
+    // usable from the browser (`renderCard`, the L5 preview) as plain imports.
+    service: () => new DesignSystemService(),
+  },
 } as EntityContribution;
