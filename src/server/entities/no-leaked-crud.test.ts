@@ -108,10 +108,36 @@ describe('tier K left nothing to grow back (item 62)', () => {
   });
 
   it('no type ships a CRUD service', () => {
-    // `service.ts` / `services.ts`. What a type may still register on
-    // `backend.service` is a DOMAIN HELPER, and none of the six needs one — the
-    // file name is the signal, and its absence is the invariant.
-    expect(named(/^services?\.ts$/)).toEqual([]);
+    /**
+     * 0.2.28 — the assertion moved from the FILE NAME to what is inside it.
+     *
+     * Until now no type registered `backend.service` at all, so "there is no
+     * `service.ts`" and "there is no CRUD service" were the same statement and
+     * the cheaper one was the test. `design-system` broke the tie by needing
+     * the thing the slot was always for: a DOMAIN HELPER (token `resolve()` and
+     * the CSS sheet built from it), which the Host API names in as many words.
+     * Keeping the name-based gate would have forced that helper to hide under a
+     * blander filename — the exact smuggling the `views.ts` case above warns
+     * about — so the honest invariant is asserted directly instead.
+     *
+     * What must stay absent is a SECOND WRITE DOOR: create/update/delete/upsert
+     * on a per-type service, or a service reaching SQL. Those are what tier K
+     * removed; a pure function of its arguments is not one of them.
+     */
+    const services = typeFiles().filter((f) => /^services?\.ts$/.test(path.basename(f)));
+    const crudish: string[] = [];
+    for (const file of services) {
+      const text = fs.readFileSync(file, 'utf8');
+      // A write verb declared as a METHOD, not merely mentioned in prose.
+      if (/^\s*(async\s+)?(create|update|delete|upsert|remove|insert)\s*\(/m.test(text)) {
+        crudish.push(path.relative(SRC_ROOT, file));
+      }
+      // Or any SQL at all — the host owns the projection.
+      if (/\b(INSERT INTO|UPDATE\s+\w+\s+SET|DELETE FROM|SELECT\b.*\bFROM)\b/i.test(text)) {
+        crudish.push(path.relative(SRC_ROOT, file));
+      }
+    }
+    expect([...new Set(crudish)]).toEqual([]);
   });
 
   it('no type ships a `views.ts` — there are no views left to put in one', () => {

@@ -249,17 +249,21 @@ describe('0.2.4 — the file owns the timestamps', () => {
      *
      * 2.0.0 tier K settles it by removing the category. The six per-type CRUD
      * services are deleted; timestamps are resolved once, by the host, in
-     * `serialization/system-fields.ts`. So the assertion inverts: this used to
-     * require the walker to FIND more than five service files, and now requires
-     * it to find none.
+     * `serialization/system-fields.ts`.
      *
-     * The `datetime('now')` scan is kept rather than dropped — it costs nothing
-     * and it is what makes the first re-introduced service fail here rather than
-     * in production.
+     * 0.2.28 — and the `datetime('now')` scan, kept then because it "costs
+     * nothing", is now the whole assertion. `design-system` registers the first
+     * real `backend.service`: a stateless domain helper (token `resolve()` plus
+     * the CSS sheet generator), which the Host API has always allowed on that
+     * slot. So "there are no service files" stopped being true without anything
+     * this case cares about having changed. What it cares about is that no such
+     * file mints a timestamp — which is exactly what the scan says, and it now
+     * has a file to say it about.
      */
     const services = typePackageFiles(/^services?\.ts$/);
-    expect(services.map((f) => path.relative(REPO_ROOT, f))).toEqual([]);
     expect(hitsIn(services, /datetime\('now'\)/)).toEqual([]);
+    // Sanity: without this the scan above passes just as well against nothing.
+    expect(services.length).toBeGreaterThan(0);
   });
 
   it('no serializer knows the timestamps exist', () => {

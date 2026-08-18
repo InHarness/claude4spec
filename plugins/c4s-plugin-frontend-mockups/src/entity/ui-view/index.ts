@@ -1,4 +1,4 @@
-import type { EntityContribution } from '@c4s/plugin-runtime';
+import type { EntityContribution, MountContext } from '@c4s/plugin-runtime';
 import {
   DESIGN_SYSTEM_TYPE,
   UI_VIEW_DISPLAY_ORDER,
@@ -10,10 +10,20 @@ import {
 import { uiViewSerialization } from './serializer.js';
 import { uiViewSystemPrompt } from './system-prompt.js';
 import { uiViewData, uiViewSlugPattern } from './schema.js';
+import { uiViewMockupRouter } from './backend/routes.js';
+import type { MockupMountContext } from '../../host-kit/host-types.js';
 
 /**
- * The `ui-view` contribution — no `backend` block; the generated `/api/ui-views`
- * router serves every CRUD verb from `data` below.
+ * The `ui-view` contribution — the generated `/api/ui-views` router still serves
+ * every CRUD verb from `data` below; `backend.routes` adds the one path that is
+ * NOT CRUD in disguise.
+ *
+ * 0.2.28: this type contributed no routes at all until the mockup document
+ * (`GET /:slug/mockup`) arrived. The router carries no prefix of its own — it
+ * inherits `pathPrefix` — so the transport address is
+ * `/api/projects/:id/ui-views/:slug/mockup`. See `backend/routes.ts` for why a
+ * declared route rather than a host-derived one, and for the isolation header
+ * that makes serving agent-authored HTML from our own origin defensible.
  *
  * `dependsOn: ['design-system']` is the runtime half of the coupling that puts
  * both types in ONE envelope: `data.schema.designSystemSlug` carries
@@ -37,4 +47,13 @@ export const uiViewEntity: EntityContribution = {
   dependsOn: [DESIGN_SYSTEM_TYPE],
   ...uiViewSerialization,
   systemPrompt: uiViewSystemPrompt,
+  backend: {
+    // `_service` is this TYPE's service, and `ui-view` has none. The design
+    // system's generator is fetched from the host per request instead — see
+    // `uiViewMockupRouter`.
+    routes: {
+      router: (_service: unknown, ctx: MountContext) =>
+        uiViewMockupRouter(ctx as unknown as MockupMountContext),
+    },
+  },
 } as EntityContribution;
