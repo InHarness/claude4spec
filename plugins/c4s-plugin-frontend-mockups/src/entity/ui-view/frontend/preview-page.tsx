@@ -8,11 +8,12 @@
  *
  * Nothing is rendered from `mockupHtml` here — the frame's `src` is the
  * document route, the same address a person can paste into the address bar,
- * which is a REQUIREMENT and not a side effect. Isolation when that happens
- * comes from that route's `Content-Security-Policy: sandbox` response header
- * and from nothing else; the `sandbox` ATTRIBUTE below is defence in depth,
- * because an attribute only exists inside an `<iframe>` and says nothing about
- * a top-level open.
+ * which is a REQUIREMENT and not a side effect. `UiViewOpenExternal` below is
+ * that requirement made reachable: the same URL, opened top-level. Isolation
+ * when that happens comes from that route's `Content-Security-Policy: sandbox`
+ * response header and from nothing else; the `sandbox` ATTRIBUTE is defence in
+ * depth, because an attribute only exists inside an `<iframe>` and says
+ * nothing about a top-level open.
  *
  * Deliberately WITHOUT `allow-same-origin`: the document is agent-authored HTML
  * served from our own origin, so it gets an opaque one. `allow-forms` and
