@@ -77,7 +77,15 @@ export const endpointData: DataDeclaration = {
      */
     linkedDtos: {
       type: 'collection',
-      collection: 'value',
+      /**
+       * (dto, relation) — NOT the full `keyFields` triple.
+       *
+       * `statusCode` is part of the projection's uniqueness but not of the
+       * link's identity: changing a response's status code is an edit to that
+       * link (`item_modified`), which is the whole reason the delta needs an
+       * identity narrower than the physical key.
+       */
+      collection: { kind: 'value', identity: ['dto', 'relation'] },
       // Link order is not content, and the rows come back in insertion order —
       // so without this, relinking a DTO reorders the endpoint's file.
       unordered: true,

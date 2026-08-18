@@ -5,6 +5,7 @@ import { uiViewPayloadV2ToV3 } from '../src/entity/ui-view/upgrades.js';
 import { uiViewData } from '../src/entity/ui-view/schema.js';
 import { snapshotFromSchema } from '../../../src/server/serialization/schema-snapshot.js';
 import { canonicalize } from '../../../src/server/serialization/snapshot.js';
+import { diffFromSchema } from '../../../src/server/serialization/schema-diff.js';
 import { genericEntity } from '../../../src/server/serialization/generic.js';
 import { hostDefaultFields } from '../../../src/server/discovery/search/fields.js';
 import type { RawEntity } from '../src/host-kit/host-types.js';
@@ -92,8 +93,18 @@ describe('ui-view mockupHtml — serialization', () => {
   });
 });
 
-describe('ui-view mockupHtml — the diff', () => {
-  const diff = uiViewSerialization.diff;
+/**
+ * 0.2.31 — `mockup_changed` is gone, replaced by the generic
+ * `field_changed_opaque` with `path: 'mockupHtml'`.
+ *
+ * The old operation was AUTHORIAL: `ui-view` overrode `diff`, so it did not get
+ * the content-bearing treatment for free and said so itself, in a name only it
+ * used. Every other type with such a field invented its own name too
+ * (`source_changed` on `diagram`). One encoding now covers all of them, and it
+ * is the flag's meaning rather than a per-type convention.
+ */
+describe('ui-view mockupHtml — the delta', () => {
+  const schema = uiViewEntity.data!.schema;
   const view = (mockupHtml: string | null) => ({
     slug: 'v',
     title: 'V',
@@ -105,24 +116,93 @@ describe('ui-view mockupHtml — the diff', () => {
     tags: [],
   });
 
-  /**
-   * A sibling field, NOT a `meta_changes` entry: that enum is for changes with a
-   * readable from/to, which tens of kilobytes of HTML has not.
-   */
   it('reports bytes, never the value', () => {
-    const d = diff(view(null), view(MOCKUP), 'v') as { changes: Record<string, unknown> };
-    expect(d.changes.mockup_changed).toEqual({ fromBytes: 0, toBytes: MOCKUP_BYTES });
-    expect(JSON.stringify(d)).not.toContain('Profil');
-    expect(d.changes.meta_changes).toBeUndefined();
+    const changes = diffFromSchema(schema, view(null), view(MOCKUP));
+    expect(changes).toEqual([
+      { op: 'field_changed_opaque', path: 'mockupHtml', fromBytes: 0, toBytes: MOCKUP_BYTES },
+    ]);
+    expect(JSON.stringify(changes)).not.toContain('Profil');
   });
 
   it('reports a removal as a change too, in the same shape', () => {
-    const d = diff(view(MOCKUP), view(null), 'v') as { changes: Record<string, unknown> };
-    expect(d.changes.mockup_changed).toEqual({ fromBytes: MOCKUP_BYTES, toBytes: 0 });
+    expect(diffFromSchema(schema, view(MOCKUP), view(null))).toEqual([
+      { op: 'field_changed_opaque', path: 'mockupHtml', fromBytes: MOCKUP_BYTES, toBytes: 0 },
+    ]);
   });
 
   it('says nothing when the mockup did not move', () => {
-    expect(diff(view(MOCKUP), view(MOCKUP), 'v')).toMatchObject({ op: 'noop' });
+    expect(diffFromSchema(schema, view(MOCKUP), view(MOCKUP))).toEqual([]);
+  });
+});
+
+/**
+ * `params` is the corpus's only `rekeyOn` declaration, and the reason it exists.
+ *
+ * `id` in the path and `id` in the query are different parameters, so the
+ * identity is the pair `(name, in)`. But MOVING a parameter from path to query
+ * is one edit, and reporting it as a removal plus an unrelated-looking addition
+ * loses that. The second matching pass, on `name` alone, recovers it.
+ */
+describe('ui-view params — the two-pass match', () => {
+  const schema = uiViewEntity.data!.schema;
+  const withParams = (params: unknown[]) => ({
+    slug: 'v',
+    title: 'V',
+    url: null,
+    description: null,
+    params,
+    designSystemSlug: null,
+    mockupHtml: null,
+    tags: [],
+  });
+
+  it('reports a path → query move as a rekey, not as a remove/add pair', () => {
+    const a = withParams([{ name: 'id', in: 'path', type: 'string', required: true }]);
+    const b = withParams([{ name: 'id', in: 'query', type: 'string', required: true }]);
+    expect(diffFromSchema(schema, a, b)).toEqual([
+      {
+        op: 'item_rekeyed',
+        path: 'params',
+        identity: { name: 'id', in: 'query' },
+        field: 'in',
+        from: 'path',
+        to: 'query',
+      },
+    ]);
+  });
+
+  it('keeps two same-named parameters in different locations distinct', () => {
+    const a = withParams([{ name: 'id', in: 'path' }]);
+    const b = withParams([{ name: 'id', in: 'path' }, { name: 'id', in: 'query' }]);
+    expect(diffFromSchema(schema, a, b)).toEqual([
+      {
+        op: 'item_added',
+        path: 'params',
+        identity: { name: 'id', in: 'query' },
+        item: { name: 'id', in: 'query' },
+      },
+    ]);
+  });
+
+  /**
+   * The ambiguity rule, and it degrades SILENTLY on purpose. With two orphans a
+   * side sharing a `rekeyOn` key there is no fact about which moved into which,
+   * so the honest report is the remove/add pair — and a warning about it would
+   * be a warning that the data is ordinary.
+   */
+  it('degrades to remove + add when the rekey would be a guess', () => {
+    const a = withParams([
+      { name: 'id', in: 'path' },
+      { name: 'id', in: 'hash' },
+    ]);
+    const b = withParams([
+      { name: 'id', in: 'query' },
+      { name: 'id', in: 'header' },
+    ]);
+    const ops = diffFromSchema(schema, a, b).map((c) => c.op);
+    expect(ops).not.toContain('item_rekeyed');
+    expect(ops.filter((o) => o === 'item_removed')).toHaveLength(2);
+    expect(ops.filter((o) => o === 'item_added')).toHaveLength(2);
   });
 });
 

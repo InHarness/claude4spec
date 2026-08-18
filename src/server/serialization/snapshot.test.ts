@@ -2,14 +2,14 @@
  * 0.2.4 — the host-global rule that a timestamp is not a substantive change.
  *
  * These are unit tests on the chokepoints rather than integration tests through
- * a type, on purpose: the guarantee is that the rule holds for EVERY type,
- * including plugin-contributed ones whose `diff` slot the host never sees. That
- * is only true if the stripping happens before dispatch, which is what the
- * per-type case below pins.
+ * a type, on purpose: the guarantee is that the rule holds for EVERY type at
+ * once. 0.2.31 gave it a second, independent enforcement — the delta engine
+ * skips `systemManaged` fields by declaration — so the cases below pin BOTH:
+ * the envelope is stripped before the walk, and the walk would ignore it anyway.
  */
 
 import { describe, expect, it } from 'vitest';
-import { defaultDeepDiff, diffEntity } from './snapshot.js';
+import { diffEntity } from './snapshot.js';
 import {
   attachSystemFields,
   readSystemFields,
@@ -21,15 +21,17 @@ import type { PluginHost } from '../core/plugin-host/types.js';
 const STAMP_A = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' };
 const STAMP_B = { createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-07-31T12:00:00.000Z' };
 
-/** A host whose `diff` slot is a plain deep-equality check — enough to observe what it was handed. */
-function hostWithDiffSlot(seen: unknown[]): PluginHost {
+/** A host whose one type declares two ordinary fields — enough to walk. */
+function hostWithSchema(): PluginHost {
   return {
     getEntity: () => ({
-      diff: (a: unknown, b: unknown, slug: string) => {
-        seen.push({ a, b });
-        return JSON.stringify(a) === JSON.stringify(b)
-          ? { type: 'x', slug, op: 'noop' as const }
-          : { type: 'x', slug, op: 'modified' as const };
+      data: {
+        schema: {
+          slug: { type: 'string' },
+          name: { type: 'string' },
+          createdAt: { type: 'string', systemManaged: true },
+          updatedAt: { type: 'string', systemManaged: true },
+        },
       },
     }),
   } as unknown as PluginHost;
@@ -65,42 +67,44 @@ describe('system-fields', () => {
 });
 
 describe('a stamp-only delta is noop', () => {
-  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] through defaultDeepDiff', () => {
-    const payload = { slug: 'x', name: 'X' };
-    const diff = defaultDeepDiff(
-      'x',
-      'x',
-      attachSystemFields(payload, STAMP_A),
-      attachSystemFields(payload, STAMP_B),
-    );
-    expect(diff.op).toBe('noop');
-  });
-
-  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] through a per-type diff slot — the envelope never reaches the serializer', () => {
-    const seen: unknown[] = [];
+  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] the envelope never reaches the walk', () => {
     const payload = { slug: 'x', name: 'X' };
     const diff = diffEntity(
-      hostWithDiffSlot(seen),
+      hostWithSchema(),
       'x',
       attachSystemFields(payload, STAMP_A),
       attachSystemFields(payload, STAMP_B),
-      'x',
     );
-    expect(diff.op).toBe('noop');
-    // The point of stripping BEFORE dispatch: a plugin's own diff slot cannot be
-    // asked to know about a host concern it was written years before.
-    expect(seen).toEqual([{ a: payload, b: payload }]);
+    expect(diff).toEqual({ op: 'noop', changes: [] });
   });
 
-  it('but a real content change still reads as modified', () => {
-    const diff = defaultDeepDiff(
-      'x',
+  it('but a real content change still reads as updated', () => {
+    const diff = diffEntity(
+      hostWithSchema(),
       'x',
       attachSystemFields({ slug: 'x', name: 'X' }, STAMP_A),
       attachSystemFields({ slug: 'x', name: 'Y' }, STAMP_B),
     );
-    expect(diff.op).toBe('modified');
+    expect(diff.op).toBe('updated');
+    expect(diff.changes).toEqual([{ op: 'field_changed', path: 'name', from: 'X', to: 'Y' }]);
     // And the envelope is absent from the reported delta, not merely ignored.
-    expect(JSON.stringify(diff.raw)).not.toMatch(/createdAt|updatedAt/);
+    expect(JSON.stringify(diff.changes)).not.toMatch(/createdAt|updatedAt/);
+  });
+
+  it('an unknown type yields noop rather than a shapeless guess', () => {
+    const host = { getEntity: () => null } as unknown as PluginHost;
+    expect(diffEntity(host, 'nope', { a: 1 }, { a: 2 })).toEqual({ op: 'noop', changes: [] });
+  });
+
+  it('created and deleted carry no operations — the full state comes from the snapshot', () => {
+    const host = hostWithSchema();
+    expect(diffEntity(host, 'x', null, { slug: 'x', name: 'X' })).toEqual({
+      op: 'created',
+      changes: [],
+    });
+    expect(diffEntity(host, 'x', { slug: 'x', name: 'X' }, null)).toEqual({
+      op: 'deleted',
+      changes: [],
+    });
   });
 });

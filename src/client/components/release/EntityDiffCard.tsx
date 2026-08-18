@@ -59,7 +59,7 @@ export function EntityDiffCard({ change, fromSnapshot }: Props) {
         ) : (
           change.op !== 'noop' && (
             <div className="text-[12px] italic" style={{ color: 'var(--c-subtle)' }}>
-              {change.op === 'created' ? 'added' : change.op}
+              {labelForOp(change.op)}
             </div>
           )
         )}

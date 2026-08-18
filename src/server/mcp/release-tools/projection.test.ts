@@ -109,10 +109,12 @@ function diffFixture(): { raw: RawDelta; from: SpecSnapshot; to: SpecSnapshot } 
     from: { id: 1, name: 'v1' },
     to: { id: 2, name: 'v2' },
     entities: [
-      { type: 'endpoint', slug: 'ep-a', op: 'created' },
-      { type: 'endpoint', slug: 'ep-b', op: 'modified' },
-      { type: 'dto', slug: 'dto-c', op: 'deleted' },
-      { type: 'dto', slug: 'dto-d', op: 'created' },
+      { type: 'endpoint', slug: 'ep-a', op: 'created', changes: [] },
+      // 0.2.31 — the entity vocabulary spells this `updated`; L3 still projects
+      // it to `update`, which is the point of the two vocabularies being separate.
+      { type: 'endpoint', slug: 'ep-b', op: 'updated', changes: [] },
+      { type: 'dto', slug: 'dto-c', op: 'deleted', changes: [] },
+      { type: 'dto', slug: 'dto-d', op: 'created', changes: [] },
     ],
     pages: [emptyPage('pages/new.md', 'created'), emptyPage('pages/gone.md', 'deleted')],
   };

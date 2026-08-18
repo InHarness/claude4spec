@@ -60,6 +60,107 @@ describe('data.schema — the required triple', () => {
   });
 });
 
+/**
+ * 0.2.31 — the element-identity rules.
+ *
+ * They matter more than their size suggests. Every other rule here prevents a
+ * LOUD failure later (a table that will not create, a branch the projection
+ * drops). These prevent a QUIET one: the host generates the semantic delta from
+ * `identity`, so a declaration naming a field the item does not have would not
+ * crash — it would report every element as removed-and-added, forever, and the
+ * output would look perfectly reasonable.
+ */
+describe('element identity — the four rejections', () => {
+  const withIdentity = (collection: unknown): DataDeclaration =>
+    ({
+      schema: {
+        name: { type: 'string', required: true },
+        items: {
+          type: 'collection',
+          collection,
+          item: {
+            type: 'object',
+            fields: {
+              label: { type: 'string' },
+              kind: { type: 'string' },
+              body: { type: 'string', contentBearing: true },
+              nested: { type: 'collection', collection: 'value', item: { type: 'string' } },
+            },
+          },
+        },
+      },
+    }) as unknown as DataDeclaration;
+
+  it('accepts the object form alongside the bare enum — the widening is additive', () => {
+    expect(check(withIdentity('value'))).not.toThrow();
+    expect(check(withIdentity({ kind: 'value' }))).not.toThrow();
+    expect(check(withIdentity({ kind: 'value', identity: ['label'] }))).not.toThrow();
+  });
+
+  it('accepts no identity at all — matching by index is a decision, not an omission', () => {
+    expect(check(withIdentity({ kind: 'value' }))).not.toThrow();
+  });
+
+  it('rejects an identity naming a field the item does not have', () => {
+    expect(check(withIdentity({ kind: 'value', identity: ['nope'] }))).toThrow(
+      /is not a field of\s+its item/,
+    );
+  });
+
+  it('rejects an identity naming a nested collection — a structure is not comparable as a value', () => {
+    expect(check(withIdentity({ kind: 'value', identity: ['nested'] }))).toThrow(
+      /is a collection, not a scalar/,
+    );
+  });
+
+  it('rejects an identity naming a contentBearing field — content comes back as bytes', () => {
+    expect(check(withIdentity({ kind: 'value', identity: ['body'] }))).toThrow(
+      /is `contentBearing`/,
+    );
+  });
+
+  it('rejects a rekeyOn that is not a PROPER, non-empty prefix of the identity', () => {
+    const cases = [
+      { kind: 'value', identity: ['label'], rekeyOn: ['label'] }, // equal, not proper
+      { kind: 'value', identity: ['label'], rekeyOn: [] }, // empty
+      { kind: 'value', identity: ['label', 'kind'], rekeyOn: ['kind'] }, // not a PREFIX
+    ];
+    for (const collection of cases) {
+      expect(check(withIdentity(collection)), JSON.stringify(collection)).toThrow(
+        /not a\s+proper, non-empty prefix|prefix of nothing/,
+      );
+    }
+  });
+
+  it('rejects a rekeyOn declared without an identity — a prefix of nothing', () => {
+    expect(check(withIdentity({ kind: 'value', rekeyOn: ['label'] }))).toThrow(/prefix of nothing/);
+  });
+
+  it('rejects an identity on a KEYED collection — its keyFields already are one', () => {
+    const data = {
+      schema: {
+        name: { type: 'string', required: true },
+        cells: {
+          type: 'collection',
+          collection: { kind: 'keyed', identity: ['r'] },
+          keyFields: ['r', 'c'],
+          axes: [
+            { key: 'r', extent: 'nRows' },
+            { key: 'c', extent: 'nCols' },
+          ],
+          item: {
+            type: 'object',
+            fields: { r: { type: 'number' }, c: { type: 'number' }, value: { type: 'string' } },
+          },
+        },
+        nRows: { type: 'number' },
+        nCols: { type: 'number' },
+      },
+    } as unknown as DataDeclaration;
+    expect(check(data)).toThrow(/declares `identity`/);
+  });
+});
+
 describe('rule 1 — a collection must declare its kind', () => {
   it('rejects a collection with no `collection` flag', () => {
     const data = {

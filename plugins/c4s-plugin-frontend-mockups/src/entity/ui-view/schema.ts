@@ -27,7 +27,13 @@ export const uiViewData: DataDeclaration = {
     description: { type: 'string', clearable: true },
     params: {
       type: 'collection',
-      collection: 'value',
+      /**
+       * `id` in the path is not `id` in the query — hence the pair. `rekeyOn`
+       * is the `name` alone, so moving a parameter from path to query comes
+       * back as one `item_rekeyed` on `in` rather than as a removal plus an
+       * unrelated-looking addition.
+       */
+      collection: { kind: 'value', identity: ['name', 'in'], rekeyOn: ['name'] },
       item: {
         type: 'object',
         fields: {

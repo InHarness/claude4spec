@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { diagramSerialization, type DiagramSnapshot } from './serializer.js';
+import { diffFromSchema } from '../../serialization/schema-diff.js';
 import { diagramBackendModule } from './plugin.js';
 import { canonicalize } from '../../serialization/snapshot.js';
 import { snapshotFromSchema } from '../../serialization/schema-snapshot.js';
@@ -48,22 +49,38 @@ describe('diagram serializer', () => {
     expect(snap.source).toBe('');
   });
 
-  it('diff reports format / source / tag changes and ignores no-ops', () => {
-    const a: DiagramSnapshot = { slug: 'd', format: 'mermaid', source: 'graph TD; A-->B', tags: ['x'] };
-    expect(diagramSerialization.diff(a, a, 'd').op).toBe('noop');
+  /**
+   * 0.2.31 — the delta is the HOST's, generated from `diagram`'s own schema.
+   *
+   * `diagram` declares no value collections at all, so its delta is provably
+   * scalar: `field_changed` for `title`/`format`, `field_changed_opaque` for the
+   * `contentBearing` `source`, and the two tag operations. No `item_*` operation
+   * can appear here, and that is a property of the declaration rather than of
+   * anything this type wrote.
+   */
+  it('[ac:ac-slot-diff-jest-opcjonalny-typ-bez-dek] delta reports format / source / tag changes and ignores no-ops', () => {
+    const schema = diagramBackendModule.data!.schema;
+    const a: DiagramSnapshot = { slug: 'd', title: 'D', format: 'mermaid', source: 'graph TD; A-->B', tags: ['x'] };
+    expect(diffFromSchema(schema, a, a)).toEqual([]);
 
-    const b: DiagramSnapshot = { slug: 'd', format: 'mermaid', source: 'graph TD; A-->C', tags: ['x', 'y'] };
-    const d = diagramSerialization.diff(a, b, 'd');
-    expect(d.op).toBe('modified');
-    const changes = d.changes as Record<string, unknown>;
+    const b: DiagramSnapshot = { slug: 'd', title: 'D', format: 'd2', source: 'graph TD; A-->C', tags: ['x', 'y'] };
+    const changes = diffFromSchema(schema, a, b);
+    expect(changes).toContainEqual({ op: 'field_changed', path: 'format', from: 'mermaid', to: 'd2' });
     /**
-     * 0.2.22 — a content-bearing field diffs by SIZE. `source_changed: true`
-     * said only that something moved; two byte counts say how much and in which
-     * direction, which is the most a reader can act on without opening bodies
-     * the flag exists to keep out of a diff.
+     * A content-bearing field diffs by SIZE. `source_changed: true` said only
+     * that something moved; two byte counts say how much and in which direction,
+     * which is the most a reader can act on without opening bodies the flag
+     * exists to keep out of a delta. Equal sizes, different content — still a
+     * change, and still reported without either body.
      */
-    expect(changes.source_changed).toEqual({ fromBytes: 15, toBytes: 15 });
-    expect(changes.tag_added).toEqual(['y']);
+    expect(changes).toContainEqual({
+      op: 'field_changed_opaque',
+      path: 'source',
+      fromBytes: 15,
+      toBytes: 15,
+    });
+    expect(changes).toContainEqual({ op: 'tag_added', tag: 'y' });
+    expect(changes.some((c) => c.op.startsWith('item_'))).toBe(false);
   });
 
   it('carries its payload version and a step for each transition', () => {

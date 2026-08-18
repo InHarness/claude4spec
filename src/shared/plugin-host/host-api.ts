@@ -112,9 +112,10 @@ const HOST_API_CHANGELOG: HostApiMigration[] = [
     slot: 'serializer.{version,inlineMention,singleElement,elementListItem,taggedListItem,schema}',
     kind: 'slot-removed',
     summary:
-      'The serializer became a `SerializationContribution`: an optional semantic ' +
-      '`diff`, an integer `payloadVersion` and an ordered `payloadUpgrades` ' +
-      'chain. The advisory semver is gone — the registry never enforced it — ' +
+      'The serializer became a `SerializationContribution`: an integer ' +
+      '`payloadVersion` and an ordered `payloadUpgrades` chain. (It briefly also ' +
+      'carried an optional semantic `diff`; 0.2.31 removed that slot within this ' +
+      'same baseline — the host generates the delta from `data.schema`.) The advisory semver is gone — the registry never enforced it — ' +
       'and JSON Schemas are derived from `data.schema` instead of being ' +
       'hand-written per view or reflected off the SQLite columns. A type ' +
       'contributes NO read code: the host derives the whole record from ' +
@@ -405,8 +406,8 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'excludes it from all five generated views and emits `has<Field>: boolean` ' +
       '+ `<field>Bytes: number` in its place; the field stays in the snapshot ' +
       '(it is reproducible from the entity file and the projection invariant ' +
-      'still binds it), and the default diff reports ' +
-      '`<field>_changed: { fromBytes, toBytes }` instead of two payloads nobody ' +
+      'still binds it), and the delta reports it as `field_changed_opaque` with ' +
+      'a `{ fromBytes, toBytes }` pair instead of two payloads nobody ' +
       'can read side by side. Two rules bind a declaring type: it may NOT also ' +
       'declare its own `views?` (the flag only has meaning for host-generated ' +
       'views, so the combination is rejected at load time), and it MUST expose ' +
@@ -432,6 +433,46 @@ export const HOST_API_UNVERSIONED_CHANGES: readonly HostApiUnversionedChange[] =
       'stabilization rule as the 0.2.4 removal above — zero published plugins ' +
       'means zero possible breakage. Once a third-party plugin is published, ' +
       'removals go back under the major-bump rule.',
+  },
+  {
+    release: '0.2.31',
+    slot: 'SerializationContribution.diff / EntityModule.diff / BackendModule.diff',
+    kind: 'slot-removed',
+    summary:
+      'The last place a type could inject its own algorithm into the versioning ' +
+      'path. The host now generates the semantic delta from the type\'s logical ' +
+      'schema, matching elements of a value collection by a declared ' +
+      '`collection: { kind: \'value\', identity, rekeyOn? }`. Five types shipped ' +
+      'five mutually incompatible `changes` shapes; all are replaced by one ' +
+      'closed dictionary of eight `DiffOp` operations under a `{ op, changes }` ' +
+      'envelope, so no consumer branches per entity type any more. A manifest ' +
+      'still declaring `diff` is REJECTED at registration rather than ignored — ' +
+      'the envelope has no slot for it, so an unknown key does not pass quietly. ' +
+      'There is no second diff mode: a type declaring no identity matches its ' +
+      'elements BY INDEX, which is a decision (reordering IS a change), not a ' +
+      'degradation. Formally breaking, absorbed into the 2.0.0 baseline under ' +
+      'the same stabilization rule as the `injection` removal above — zero ' +
+      'published plugins means zero possible breakage. The versioned surface ' +
+      'stops naming the `diff` slot and starts naming the shape of `EntityDiff` ' +
+      'as returned by `useVersionDiff`.',
+  },
+  {
+    release: '0.2.31',
+    slot: 'CollectionNode.collection (object form)',
+    kind: 'slot-added',
+    summary:
+      'The flag gains an object spelling, `{ kind, identity?, rekeyOn? }`, ' +
+      'alongside the bare `\'value\'` / `\'keyed\'` which stay legal — additive, ' +
+      'not a migration. `identity` names ELEMENT fields the host matches on when ' +
+      'computing a delta; `rekeyOn` is a proper non-empty prefix of it, feeding a ' +
+      'second matching pass so that editing a key field returns as `item_rekeyed` ' +
+      'rather than as a remove/add pair. Four rules are checked at registration ' +
+      'and all reject loudly: an identity name absent from the item schema, a ' +
+      'name resolving to a non-scalar or to a `contentBearing` field, a `rekeyOn` ' +
+      'that is not a proper non-empty prefix, and an `identity` declared on a ' +
+      'keyed collection (whose `keyFields` already ARE its identity). This is a ' +
+      'new VALUE SHAPE for an existing flag, not a new entry in the closed flag ' +
+      'dictionary.',
   },
 ];
 

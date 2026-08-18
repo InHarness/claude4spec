@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { designSystemSerialization, type DesignSystemSnapshot } from '../src/entity/design-system/serializer.js';
 import { designSystemEntity } from '../src/entity/design-system/index.js';
 import { canonicalize } from '../../../src/server/serialization/snapshot.js';
+import { diffFromSchema } from '../../../src/server/serialization/schema-diff.js';
 import { snapshotFromSchema } from '../../../src/server/serialization/schema-snapshot.js';
 import type { RawEntity } from '../src/host-kit/host-types.js';
 import { resolve } from '../src/design-system-domain.js';
@@ -82,10 +83,24 @@ describe('design-system serializer', () => {
     expect(resolve(groups, [])['action']).toBe('#2563eb');
   });
 
-  it('diff reports token add/remove/modify and ignores group reorder (noop)', () => {
+  /**
+   * 0.2.31 — four levels of identity, and every one of them declared.
+   *
+   * `groups` and `modes` are keyed by `name`, `groups[].tokens` by its LOCAL
+   * `name` (group membership is carried by the path, so repeating it in the key
+   * would say the same thing twice), and `modes[].overrides` by `token`. The
+   * nesting is what makes the recursion worth pinning: a token edit comes back
+   * as an `item_modified` on `groups` whose `changes` is itself an
+   * `item_modified` on `groups[].tokens` — a LIST, never a count. The old
+   * hand-written diff flattened all of this into `token_modified` entries
+   * carrying a synthetic `group` field, and reported mode overrides as
+   * `override_changes: <number>`.
+   */
+  it('delta reports token add/modify recursively and ignores group reorder', () => {
+    const schema = designSystemEntity.data!.schema;
     const a: DesignSystemSnapshot = {
       slug: 'brand',
-      name: 'Brand',
+      title: 'Brand',
       description: null,
       groups: [
         { name: 'A', tier: 'primitive', tokens: [{ name: 't1', type: 'color', value: '#000', description: null }] },
@@ -93,12 +108,15 @@ describe('design-system serializer', () => {
       ],
       modes: [],
       tags: [],
-    };
-    // reordered groups + a modified token value + an added token
-    const b: DesignSystemSnapshot = {
-      slug: 'brand',
-      name: 'Brand',
-      description: null,
+    } as unknown as DesignSystemSnapshot;
+
+    // Reordering the groups alone produces NO operations — structurally, because
+    // both sides match on `name` and neither pair differs.
+    const reordered = { ...a, groups: [...a.groups].reverse() };
+    expect(diffFromSchema(schema, a, reordered)).toEqual([]);
+
+    const b = {
+      ...a,
       groups: [
         { name: 'B', tier: 'primitive', tokens: [{ name: 't2', type: 'color', value: '#111', description: null }] },
         {
@@ -110,22 +128,78 @@ describe('design-system serializer', () => {
           ],
         },
       ],
-      modes: [],
+    } as unknown as DesignSystemSnapshot;
+
+    expect(diffFromSchema(schema, a, b)).toEqual([
+      {
+        op: 'item_modified',
+        path: 'groups',
+        identity: { name: 'A' },
+        changes: [
+          {
+            op: 'item_modified',
+            path: 'groups[].tokens',
+            identity: { name: 't1' },
+            changes: [
+              {
+                // A token's `value` is a free-JSON node, so it is reported by
+                // SIZE — the escape hatch has no schema to compare against.
+                op: 'field_changed_opaque',
+                path: 'groups[].tokens[].value',
+                fromBytes: 4,
+                toBytes: 4,
+              },
+            ],
+          },
+          {
+            op: 'item_added',
+            path: 'groups[].tokens',
+            identity: { name: 't3' },
+            item: { name: 't3', type: 'color', value: '#222', description: null },
+          },
+        ],
+      },
+    ]);
+  });
+
+  /** Mode overrides are a fourth level, keyed by `token` — a list, not a count. */
+  it('delta reports a mode override edit as an operation list, never a count', () => {
+    const schema = designSystemEntity.data!.schema;
+    const base = {
+      slug: 'brand',
+      title: 'Brand',
+      description: null,
+      groups: [],
+      modes: [{ name: 'dark', overrides: [{ token: 't1', value: '#000' }] }],
       tags: [],
-    };
+    } as unknown as DesignSystemSnapshot;
+    const after = {
+      ...base,
+      modes: [{ name: 'dark', overrides: [{ token: 't1', value: '#fff' }] }],
+    } as unknown as DesignSystemSnapshot;
 
-    const reorderOnly = designSystemSerialization.diff(a, a, 'brand');
-    expect(reorderOnly.op).toBe('noop');
-
-    const d = designSystemSerialization.diff(a, b, 'brand');
-    expect(d.op).toBe('modified');
-    const changes = d.changes as Record<string, unknown>;
-    expect(changes.token_added).toEqual([{ group: 'A', name: 't3', type: 'color' }]);
-    expect((changes.token_modified as Array<Record<string, unknown>>)[0]).toMatchObject({
-      group: 'A',
-      name: 't1',
-      value_changed: { from: '#000', to: '#fff' },
-    });
+    expect(diffFromSchema(schema, base, after)).toEqual([
+      {
+        op: 'item_modified',
+        path: 'modes',
+        identity: { name: 'dark' },
+        changes: [
+          {
+            op: 'item_modified',
+            path: 'modes[].overrides',
+            identity: { token: 't1' },
+            changes: [
+              {
+                op: 'field_changed_opaque',
+                path: 'modes[].overrides[].value',
+                fromBytes: 4,
+                toBytes: 4,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 
   it('declares its payload version ONCE, on the manifest, with a step per transition', () => {

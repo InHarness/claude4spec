@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { endpointSerialization } from '../src/entity/endpoint/serializer.js';
+import { diffFromSchema } from '../../../src/server/serialization/schema-diff.js';
 import { endpointPayloadV1ToV2 } from '../src/entity/endpoint/upgrades.js';
 import { endpointEntity } from '../src/entity/endpoint/index.js';
 
@@ -85,45 +86,59 @@ describe('endpoint payload v1 → v2', () => {
   });
 });
 
-describe('endpointDiff reads the CURRENT payload shape', () => {
-  const diff = endpointSerialization.diff;
+/**
+ * 0.2.31 — the delta comes from the HOST, walking `endpoint`'s own schema.
+ *
+ * These cases used to pin `endpointDiff`, a hand-written function that read
+ * three payload vintages and emitted `dto_added` / `status_code_changed`. The
+ * function is gone; what replaced it is a declaration —
+ * `linkedDtos: { kind: 'value', identity: ['dto', 'relation'] }` — and these
+ * cases now pin that the declaration produces the same distinctions.
+ *
+ * The interesting one is the status code: `statusCode` is part of the
+ * collection's physical `keyFields` but deliberately NOT of its identity, so
+ * changing it is an `item_modified` on the same link rather than a removal and
+ * an unrelated arrival.
+ */
+describe('the host delta reads the CURRENT payload shape', () => {
+  const schema = endpointEntity.data!.schema;
 
   it('reports a DTO link added between two v2 payloads', () => {
-    // The regression: with `coerceEndpoint` reading only v1 spellings, both
-    // sides coerced to `[]` and this came back `noop`.
     const before = { ...V2, linkedDtos: [] };
-    const result = diff(before, V2, 'get-users');
-    expect(result.op).toBe('modified');
-    expect((result.changes as { dto_added?: unknown[] }).dto_added).toEqual([
-      { dto_slug: 'user-dto', relation: 'response', status_code: 200 },
+    const changes = diffFromSchema(schema, before, V2);
+    expect(changes).toEqual([
+      {
+        op: 'item_added',
+        path: 'linkedDtos',
+        identity: { dto: 'user-dto', relation: 'response' },
+        item: { dto: 'user-dto', relation: 'response', statusCode: 200 },
+      },
     ]);
   });
 
-  it('reports a status code change between two v2 payloads', () => {
+  it('reports a status code change as an EDIT to the same link, not a swap', () => {
     const after = { ...V2, linkedDtos: [{ dto: 'user-dto', relation: 'response', statusCode: 201 }] };
-    const result = diff(V2, after, 'get-users');
-    expect((result.changes as { status_code_changed?: Array<{ from: number; to: number }> }).status_code_changed)
-      .toEqual([{ dto_slug: 'user-dto', relation: 'response', from: 200, to: 201 }]);
+    expect(diffFromSchema(schema, V2, after)).toEqual([
+      {
+        op: 'item_modified',
+        path: 'linkedDtos',
+        identity: { dto: 'user-dto', relation: 'response' },
+        changes: [
+          { op: 'field_changed', path: 'linkedDtos[].statusCode', from: 200, to: 201 },
+        ],
+      },
+    ]);
   });
 
-  it('still compares a v1 capture against a v2 one without inventing changes', () => {
-    // Two captures either side of the bump describing the SAME endpoint. The
-    // release layer upgrades both before diffing, but `coerceEndpoint` reading
-    // every vintage is what keeps a stale caller from reporting a phantom edit.
-    const v1 = {
-      slug: 'get-users',
-      method: 'GET',
-      path: '/users',
-      summary: null,
-      description: null,
-      linked_dtos: [{ dto_slug: 'user-dto', relation: 'response', status_code: 200 }],
-      tags: [],
-    };
-    const result = diff(v1, V2, 'get-users');
-    // `summary` genuinely differs (null vs ''), so this is not `noop` — but the
-    // junction must NOT appear as added or removed.
-    const changes = (result.changes ?? {}) as Record<string, unknown>;
-    expect(changes.dto_added).toBeUndefined();
-    expect(changes.dto_removed).toBeUndefined();
+  it('reports a pure reshuffle of the links as no change at all', () => {
+    // What the identity declaration buys: `noop` is structural — no operations
+    // were produced — rather than a rule anyone had to write down.
+    const two = [
+      { dto: 'user-dto', relation: 'response', statusCode: 200 },
+      { dto: 'error-dto', relation: 'error', statusCode: 500 },
+    ];
+    const a = { ...V2, linkedDtos: two };
+    const b = { ...V2, linkedDtos: [...two].reverse() };
+    expect(diffFromSchema(schema, a, b)).toEqual([]);
   });
 });

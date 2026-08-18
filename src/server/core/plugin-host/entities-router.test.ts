@@ -72,10 +72,8 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
 
   it('fetches both versions and passes their .data to host.diff in (from, to) order', async () => {
     const diff = vi.fn().mockReturnValue({
-      type: 'endpoint',
-      slug: 'my-slug',
-      op: 'modified',
-      raw: { added: {}, removed: {}, changed: { 'name': { from: 'a', to: 'b' } } },
+      op: 'updated',
+      changes: [{ op: 'field_changed', path: 'name', from: 'a', to: 'b' }],
     });
     const server = app({
       getVersion: (_t, _s, v) => (v === 1 ? detail(1, { name: 'a' }) : detail(2, { name: 'b' })),
@@ -83,28 +81,32 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     });
     const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
     expect(res.status).toBe(200);
-    expect(diff).toHaveBeenCalledWith('endpoint', { name: 'a' }, { name: 'b' }, 'my-slug');
+    // 0.2.31 — no `slug` argument: the delta carries no identity, so the route
+    // that paired the two captures is the one that names the entity.
+    expect(diff).toHaveBeenCalledWith('endpoint', { name: 'a' }, { name: 'b' });
     expect(res.body).toEqual({
       type: 'endpoint',
       slug: 'my-slug',
-      op: 'modified',
-      raw: { added: {}, removed: {}, changed: { name: { from: 'a', to: 'b' } } },
+      op: 'updated',
+      changes: [{ op: 'field_changed', path: 'name', from: 'a', to: 'b' }],
     });
   });
 
-  it('omits changes/raw from the response when host.diff does not return them (noop)', async () => {
-    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'noop' });
+  it('sends an empty changes list for a noop rather than omitting the key', async () => {
+    const diff = vi.fn().mockReturnValue({ op: 'noop', changes: [] });
     const server = app({
       getVersion: (_t, _s, v) => detail(v, { name: 'same' }),
       diff,
     });
     const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'noop' });
+    expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'noop', changes: [] });
   });
 
   it('flags _serializerVersionMismatch when the two captured versions span a serializer upgrade', async () => {
-    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+    const diff = vi
+      .fn()
+      .mockReturnValue({ op: 'updated', changes: [{ op: 'tag_added', tag: 'x' }] });
     const server = app({
       getVersion: (_t, _s, v) =>
         v === 1 ? detail(1, { name: 'a' }, '1.0.0') : detail(2, { name: 'b' }, '1.1.0'),
@@ -115,21 +117,28 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     expect(res.body).toEqual({
       type: 'endpoint',
       slug: 'my-slug',
-      op: 'modified',
-      changes: { x: 1 },
+      op: 'updated',
+      changes: [{ op: 'tag_added', tag: 'x' }],
       _serializerVersionMismatch: { type: 'endpoint', from: '1.0.0', to: '1.1.0' },
     });
   });
 
   it('omits _serializerVersionMismatch when both versions share the same serializer version', async () => {
-    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+    const diff = vi
+      .fn()
+      .mockReturnValue({ op: 'updated', changes: [{ op: 'tag_added', tag: 'x' }] });
     const server = app({
       getVersion: (_t, _s, v) => detail(v, { name: v === 1 ? 'a' : 'b' }, '1.0.0'),
       diff,
     });
     const res = await request(server).get('/api/entities/endpoint/my-slug/versions/1/diff/2');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ type: 'endpoint', slug: 'my-slug', op: 'modified', changes: { x: 1 } });
+    expect(res.body).toEqual({
+      type: 'endpoint',
+      slug: 'my-slug',
+      op: 'updated',
+      changes: [{ op: 'tag_added', tag: 'x' }],
+    });
   });
 
   /**
@@ -143,7 +152,7 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
    * on screen explained where they came from.
    */
   it('upgrades BOTH captures to the current payload shape before diffing', async () => {
-    const diff = vi.fn().mockReturnValue({ type: 'endpoint', slug: 'my-slug', op: 'noop' });
+    const diff = vi.fn().mockReturnValue({ op: 'noop', changes: [] });
     const server = app({
       // v1 spelled it `legacy`; v2 spells it `current`.
       getVersion: (_t, _s, v) =>
@@ -162,7 +171,7 @@ describe('GET /:type/:slug/versions/:from/diff/:to', () => {
     expect(res.status).toBe(200);
     // The v1 capture reaches `diff` already migrated, so both sides are the same
     // shape and the entity reads as unchanged — which it is.
-    expect(diff).toHaveBeenCalledWith('endpoint', { current: 'x' }, { current: 'x' }, 'my-slug');
+    expect(diff).toHaveBeenCalledWith('endpoint', { current: 'x' }, { current: 'x' });
     expect(res.body.op).toBe('noop');
   });
 });

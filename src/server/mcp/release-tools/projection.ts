@@ -269,9 +269,15 @@ function indexPagesByPath(rows: SpecSnapshotPageRow[]): Map<string, SpecSnapshot
   return m;
 }
 
+/**
+ * L2's entity vocabulary → L3's. The two are deliberately different: L2 returns
+ * the raw delta (four states, `noop` included), L3 projects it (three states,
+ * no `noop` — an unchanged entity is simply absent from the projection). 0.2.31
+ * renamed L2's middle state `modified` → `updated`; L3's stays `update`.
+ */
 function mapEntityOp(op: RawEntityOp): MCPOp | null {
   if (op === 'created') return 'create';
-  if (op === 'modified') return 'update';
+  if (op === 'updated') return 'update';
   if (op === 'deleted') return 'delete';
   return null;
 }

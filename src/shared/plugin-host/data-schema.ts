@@ -290,9 +290,39 @@ export interface AxisSpec {
  *   - `'keyed'` — addressed by key, read in windows, reconciled key-by-key.
  *     Projects to a separate table; never embedded on the parent.
  */
+/**
+ * How the collection is addressed, and — for a value collection — what makes one
+ * of its ELEMENTS the same element across two captures.
+ *
+ * The bare strings came first and stay legal: widening this to an object was
+ * additive, not a migration. The object form exists because the delta engine
+ * (`server/serialization/schema-diff.ts`) has to answer a question the bare
+ * enum cannot express — "is this the same item, edited, or a different item?" —
+ * and the only honest answer comes from the type, once, in the same place it
+ * declares everything else about its fields.
+ *
+ * `identity` is a list of ELEMENT field names, not an expression. It deliberately
+ * does NOT borrow `slugPattern` / `computedDefault`: those derive a value at
+ * WRITE time, this compares values at READ-HISTORY time, and one grammar serving
+ * both would make a change to either a change to both.
+ *
+ * `rekeyOn` is a proper, non-empty prefix of `identity`. It feeds the delta's
+ * SECOND matching pass so that editing a key field comes back as a move
+ * (`item_rekeyed`) rather than as a remove/add pair.
+ *
+ * NO `identity` IS A DECISION, not an omission: such a collection matches BY
+ * INDEX, which is to say reordering its elements IS a change. That is what
+ * `database-table.columns` wants — column order is part of the table.
+ */
+export type CollectionFlag =
+  | 'value'
+  | 'keyed'
+  | { kind: 'value'; identity?: readonly string[]; rekeyOn?: readonly string[] }
+  | { kind: 'keyed' };
+
 export interface CollectionNode extends FieldFlags {
   type: 'collection';
-  collection: 'value' | 'keyed';
+  collection: CollectionFlag;
   item: FieldNode;
   /**
    * The tuple addressing one item within its parent.
@@ -602,7 +632,7 @@ export function contentFieldsOf(
  */
 export function hasProjectionTable(node: FieldNode): boolean {
   if (node.type !== 'collection') return false;
-  return node.collection === 'keyed' || !!node.keyFields?.length;
+  return collectionKindOf(node) === 'keyed' || !!node.keyFields?.length;
 }
 
 /** True when the field lives on the parent row. The complement of {@link hasProjectionTable}. */
@@ -621,7 +651,34 @@ export function isEmbedded(node: FieldNode): boolean {
  * did not.
  */
 export function isKeyed(node: FieldNode): node is CollectionNode {
-  return node.type === 'collection' && node.collection === 'keyed';
+  return node.type === 'collection' && collectionKindOf(node) === 'keyed';
+}
+
+/**
+ * The collection's kind, whichever of the two spellings the author used.
+ *
+ * Every consumer asks through this rather than comparing `node.collection`
+ * directly — the flag has two legal shapes and a bare `=== 'keyed'` silently
+ * answers `false` for the object spelling, which is the kind of bug that shows
+ * up as a table that quietly stopped being generated.
+ */
+export function collectionKindOf(node: CollectionNode): 'value' | 'keyed' {
+  return typeof node.collection === 'string' ? node.collection : node.collection.kind;
+}
+
+/**
+ * The element field names the delta engine matches on, or `[]` when the type
+ * declared none — which means "match by index", not "match by deep equality".
+ */
+export function identityOf(node: CollectionNode): readonly string[] {
+  if (typeof node.collection === 'string' || node.collection.kind !== 'value') return [];
+  return node.collection.identity ?? [];
+}
+
+/** The prefix of {@link identityOf} used by the delta's second, rekey pass. */
+export function rekeyOnOf(node: CollectionNode): readonly string[] {
+  if (typeof node.collection === 'string' || node.collection.kind !== 'value') return [];
+  return node.collection.rekeyOn ?? [];
 }
 
 /**
@@ -697,4 +754,45 @@ export function walkSchema(
     }
   };
   walk(schema, '', 0);
+}
+
+/**
+ * The CLOSED dictionary of delta operations (0.2.31).
+ *
+ * Lives in `shared/` because both sides read it: the server GENERATES it from
+ * this same file's schema nodes, and the client renders it. It replaced five
+ * mutually incompatible per-type `changes` bags, and the point of closing it is
+ * that a consumer can `switch` exhaustively — a formatter with no per-entity-type
+ * branch is only possible if the dictionary is the same for every type.
+ *
+ * `path` is always a path in the LOGICAL SCHEMA (`title`, `params`,
+ * `groups[].tokens`) — never a name a type invented for its own diff. The two
+ * tag operations are the only ones WITHOUT a `path`, and that is not an
+ * inconsistency: tags are not a schema field, they ride the entity envelope.
+ */
+export type IdentityKey = Record<string, string | number | boolean>;
+
+export type DiffOp =
+  /** A comparable value changed. The one encoding of a scalar change, for every type. */
+  | { op: 'field_changed'; path: string; from: unknown; to: unknown }
+  /**
+   * A value that cannot be shown side by side changed — a `contentBearing`
+   * field, or a free-JSON field with no schema to compare against. NEVER a
+   * boolean "it changed", never the full value: the two sizes are what a reader
+   * can actually act on.
+   */
+  | { op: 'field_changed_opaque'; path: string; fromBytes: number; toBytes: number }
+  | { op: 'item_added'; path: string; identity: IdentityKey; item: unknown }
+  | { op: 'item_removed'; path: string; identity: IdentityKey; item: unknown }
+  /** Recursive: the nested list uses this same dictionary. Never a COUNT. */
+  | { op: 'item_modified'; path: string; identity: IdentityKey; changes: DiffOp[] }
+  /** A key field of a matched item moved — pass 2 of the collection match. */
+  | { op: 'item_rekeyed'; path: string; identity: IdentityKey; field: string; from: unknown; to: unknown }
+  | { op: 'tag_added'; tag: string }
+  | { op: 'tag_removed'; tag: string };
+
+/** The envelope. `changes: []` for `noop`, `created` and `deleted` alike. */
+export interface EntityDiff {
+  op: 'created' | 'updated' | 'deleted' | 'noop';
+  changes: DiffOp[];
 }

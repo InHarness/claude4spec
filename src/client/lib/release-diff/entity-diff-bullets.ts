@@ -1,164 +1,142 @@
 /**
- * Generic mapper EntityDiff → Bullet[] (M17 L5, m17ui002).
+ * `EntityDiff → Bullet[]` — the generic mapper, and now the ONLY one (M17 L5).
  *
- * Konsumuje pole `changes` z `RawDeltaEntityChange` i mapuje po konwencji
- * nazw pól używanej dziś przez wszystkie 4 plugin-serializery encji
- * (endpoint, dto, database-table, ui-view). Per-plugin formatter może
- * zostać dorobiony jako extension point — patrz otwarte pytanie #5
- * w m17-snapshots-releases.md.
+ * What this file used to be is the argument for what it is. It received an
+ * untyped `changes` bag whose keys each entity type invented for itself, and
+ * reverse-engineered their meaning from a SUFFIX CONVENTION: `*_added` meant an
+ * addition, `*_changed` meant an edit, `field_changes` and `meta_changes` were
+ * arrays of `{field, from, to}`, `status_code_changed` was an endpoint-shaped
+ * special case, and anything unrecognised fell through to a bullet labelled with
+ * the raw key. That convention was never declared anywhere; it was inferred from
+ * four serializers that happened to agree, and a fifth that did not.
  *
- * Konwencje (suffix-based):
- *   `*_added`     → Bullet[] kind: 'add'
- *   `*_removed`   → Bullet[] kind: 'remove'
- *   `*_modified`  → Bullet[] kind: 'modify'
- *   `*_changed`   → Bullet[] kind: 'modify' z `from`/`to`
- *
- * Specjalne pola:
- *   `field_changes`, `meta_changes` — Array<{field, from, to}> →
- *     bullet 'modify' per field
- *   `status_code_changed` (Endpoint) — Array<{dto_slug, relation, from, to}> →
- *     bullet 'modify' per relation z labelką
- *
- * Nieznane klucze: fallback bullet 'modify' z labelką = nazwa klucza.
+ * 0.2.31 replaced the bag with a closed dictionary of eight operations, so this
+ * is a `switch` with no default worth writing and — the point — NOT ONE BRANCH
+ * PER ENTITY TYPE. Where a rendering genuinely differs, it keys off the schema
+ * `path` (a rendering decision inside one mapper) rather than off the type (a
+ * fork in the contract).
  */
+
+import type { DiffOp } from '../../../shared/entities.js';
 
 export type BulletKind = 'add' | 'modify' | 'remove';
 
 export interface Bullet {
   kind: BulletKind;
-  /** Human-friendly etykieta np. `method`, `linked_dtos[user-create]`, `tags[admin]` */
+  /** Human-friendly label, e.g. `method`, `linkedDtos[user-create:response]`, `tags[admin]` */
   label: string;
   from?: unknown;
   to?: unknown;
+  /** Bytes, for the opaque class — the content itself is never comparable. */
+  fromBytes?: number;
+  toBytes?: number;
+  /** Nested operations (`item_modified`), same grammar, rendered recursively. */
+  children?: Bullet[];
+  /** The full item, for `item_added` / `item_removed`. */
+  item?: unknown;
+  /** True when the row carries something worth expanding. */
+  expandable?: boolean;
 }
 
-interface FieldChange {
-  field: string;
-  from: unknown;
-  to: unknown;
+type IdentityKey = Record<string, string | number | boolean>;
+
+/**
+ * `linkedDtos[user-create:response]` rather than `linkedDtos[{"dto":…}]`.
+ *
+ * The values in declaration order, colon-joined — which reproduces the labels
+ * the hand-written formatters used to build (`linked_dtos[user-create]`,
+ * `tokens[color-500]`) without any of them saying so, because the order of an
+ * identity tuple is the order the type declared it in.
+ */
+function labelOf(path: string, identity: IdentityKey): string {
+  const values = Object.values(identity).map(String).filter(Boolean);
+  return values.length ? `${path}[${values.join(':')}]` : path;
 }
 
-export function entityDiffToBullets(
-  changes: Record<string, unknown> | undefined,
-): Bullet[] {
-  if (!changes) return [];
-  const bullets: Bullet[] = [];
-
-  for (const [key, value] of Object.entries(changes)) {
-    if (key === 'field_changes' || key === 'meta_changes') {
-      bullets.push(...fieldChangesToBullets(value));
-      continue;
-    }
-    if (key === 'status_code_changed') {
-      bullets.push(...statusCodeChangedToBullets(value));
-      continue;
-    }
-    if (key.endsWith('_added')) {
-      const category = key.slice(0, -'_added'.length);
-      bullets.push(...listToBullets(value, 'add', category));
-      continue;
-    }
-    if (key.endsWith('_removed')) {
-      const category = key.slice(0, -'_removed'.length);
-      bullets.push(...listToBullets(value, 'remove', category));
-      continue;
-    }
-    if (key.endsWith('_modified')) {
-      const category = key.slice(0, -'_modified'.length);
-      bullets.push(...modifiedListToBullets(value, category));
-      continue;
-    }
-    if (key.endsWith('_changed')) {
-      const category = key.slice(0, -'_changed'.length);
-      bullets.push(...changedToBullets(value, category));
-      continue;
-    }
-    // Unknown key fallback
-    bullets.push({ kind: 'modify', label: key, to: value });
-  }
-
-  return bullets;
+/**
+ * The one place a rendering keys off `path`.
+ *
+ * An endpoint's DTO links read much better with the HTTP status code in the
+ * label, and `statusCode` is deliberately NOT part of that collection's
+ * identity (changing it is an edit to the link, not a different link), so it
+ * would otherwise never reach the row. Keyed by the schema path, not by
+ * `type === 'endpoint'`: a second type declaring a field of the same shape
+ * would get the same treatment, which is the honest generalisation.
+ */
+function decorate(path: string, item: unknown): string {
+  if (path !== 'linkedDtos' || item === null || typeof item !== 'object') return '';
+  const status = (item as { statusCode?: unknown }).statusCode;
+  return status == null ? '' : ` (${String(status)})`;
 }
 
-function fieldChangesToBullets(value: unknown): Bullet[] {
-  if (!Array.isArray(value)) return [];
+export function entityDiffToBullets(changes: readonly DiffOp[] | undefined): Bullet[] {
+  if (!changes?.length) return [];
   const out: Bullet[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const fc = item as FieldChange;
-    if (typeof fc.field !== 'string') continue;
-    out.push({ kind: 'modify', label: fc.field, from: fc.from, to: fc.to });
-  }
-  return out;
-}
 
-function statusCodeChangedToBullets(value: unknown): Bullet[] {
-  if (!Array.isArray(value)) return [];
-  const out: Bullet[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== 'object') continue;
-    const o = item as Record<string, unknown>;
-    const dto = String(o.dto_slug ?? '');
-    const rel = String(o.relation ?? '');
-    out.push({
-      kind: 'modify',
-      label: `status_code[${rel}:${dto}]`,
-      from: o.from,
-      to: o.to,
-    });
-  }
-  return out;
-}
+  for (const change of changes) {
+    switch (change.op) {
+      case 'field_changed':
+        out.push({ kind: 'modify', label: change.path, from: change.from, to: change.to });
+        break;
 
-function listToBullets(value: unknown, kind: BulletKind, category: string): Bullet[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => ({
-    kind,
-    label: `${category}[${labelOfItem(item)}]`,
-    ...(kind === 'add' ? { to: item } : { from: item }),
-  }));
-}
+      case 'field_changed_opaque':
+        // Sizes, never the bodies: this operation exists precisely because the
+        // two values cannot be shown side by side.
+        out.push({
+          kind: 'modify',
+          label: change.path,
+          fromBytes: change.fromBytes,
+          toBytes: change.toBytes,
+        });
+        break;
 
-function modifiedListToBullets(value: unknown, category: string): Bullet[] {
-  if (!Array.isArray(value)) return [];
-  return value.map((item) => ({
-    kind: 'modify',
-    label: `${category}[${labelOfItem(item)}]`,
-    to: item,
-  }));
-}
+      case 'item_added':
+        out.push({
+          kind: 'add',
+          label: labelOf(change.path, change.identity) + decorate(change.path, change.item),
+          item: change.item,
+          expandable: true,
+        });
+        break;
 
-function changedToBullets(value: unknown, category: string): Bullet[] {
-  // Single { from, to } object — most common shape for `*_changed`
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const o = value as Record<string, unknown>;
-    if ('from' in o || 'to' in o) {
-      return [{ kind: 'modify', label: category, from: o.from, to: o.to }];
+      case 'item_removed':
+        out.push({
+          kind: 'remove',
+          label: labelOf(change.path, change.identity) + decorate(change.path, change.item),
+          item: change.item,
+          expandable: true,
+        });
+        break;
+
+      case 'item_modified':
+        out.push({
+          kind: 'modify',
+          label: labelOf(change.path, change.identity),
+          // RECURSION, not a count. The nested list is the same grammar, so the
+          // renderer that draws this level draws that one too.
+          children: entityDiffToBullets(change.changes),
+          expandable: true,
+        });
+        break;
+
+      case 'item_rekeyed':
+        out.push({
+          kind: 'modify',
+          label: `${labelOf(change.path, change.identity)}.${change.field}`,
+          from: change.from,
+          to: change.to,
+        });
+        break;
+
+      case 'tag_added':
+        out.push({ kind: 'add', label: `tags[${change.tag}]` });
+        break;
+
+      case 'tag_removed':
+        out.push({ kind: 'remove', label: `tags[${change.tag}]` });
+        break;
     }
   }
-  // Array of { from, to } shapes — fallback per item
-  if (Array.isArray(value)) {
-    return value.map((item) => ({
-      kind: 'modify',
-      label: `${category}[${labelOfItem(item)}]`,
-      from: (item as Record<string, unknown>)?.from,
-      to: (item as Record<string, unknown>)?.to,
-    }));
-  }
-  return [{ kind: 'modify', label: category, to: value }];
-}
 
-/** Pick a short identifier from a list-item object (slug/name/id, else stringify). */
-function labelOfItem(item: unknown): string {
-  if (item == null) return '';
-  if (typeof item === 'string' || typeof item === 'number') return String(item);
-  if (typeof item === 'object') {
-    const o = item as Record<string, unknown>;
-    for (const key of ['slug', 'dto_slug', 'name', 'anchor', 'id', 'path', 'field']) {
-      if (typeof o[key] === 'string' || typeof o[key] === 'number') {
-        return String(o[key]);
-      }
-    }
-  }
-  return JSON.stringify(item).slice(0, 40);
+  return out;
 }

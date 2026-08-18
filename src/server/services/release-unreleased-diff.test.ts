@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { runMigrations } from '../db/migrate.js';
 import { ReleaseService } from './release.js';
-import { defaultDeepDiff } from '../serialization/snapshot.js';
+import { diffEntity } from '../serialization/snapshot.js';
 import type { PluginHost } from '../core/plugin-host/types.js';
 import type { FileSerializer } from './file-serializer.js';
 import type { VersionService } from './versions.js';
@@ -13,15 +13,29 @@ import type { PagesService } from './pages.js';
 
 // 0.1.122: `getCurrentSnapshot`/`getUnreleasedDiff` never touch git-anchoring,
 // readConfig, or the on-disk release store — an in-memory DB + these fakes is
-// enough. `host.diff` delegates to the real `defaultDeepDiff` so entity `op`
-// values match production semantics instead of being hand-rolled per test.
+// enough. 0.2.31: `host.diff` delegates to the real `diffEntity` so entity `op`
+// values match production semantics instead of being hand-rolled per test — and
+// the fake type now has to declare a `data.schema`, because that declaration IS
+// what the delta is generated from.
 // 0.2.11: `listEntities()` is what `buildSnapshot` iterates now — the covered
 // types come from the registry rather than a hardcoded five — so a fake host
 // must enumerate as well as resolve.
+const endpointModule = {
+  payloadVersion: 1,
+  data: {
+    schema: {
+      slug: { type: 'string' },
+      title: { type: 'string' },
+      method: { type: 'string' },
+      path: { type: 'string' },
+    },
+  },
+};
+
 const fakeHost = {
   listEntities: () => [{ type: 'endpoint', payloadVersion: 1 }],
-  getEntity: (type: string) => (type === 'endpoint' ? { payloadVersion: 1 } : null),
-  diff: (type: string, a: unknown, b: unknown, slug: string) => defaultDeepDiff(type, slug, a, b),
+  getEntity: (type: string) => (type === 'endpoint' ? endpointModule : null),
+  diff: (type: string, a: unknown, b: unknown) => diffEntity(fakeHost, type, a, b),
 } as unknown as PluginHost;
 
 const emptyPageDiffFields = {
@@ -154,7 +168,7 @@ describe('ReleaseService — compare-with-current-state (0.1.122)', () => {
       expect(delta.from).toEqual({ id: relId, name: 'v1' });
       expect(delta.to).toEqual({ id: 0, name: 'current' });
       expect(delta.entities).toEqual([
-        expect.objectContaining({ type: 'endpoint', slug: 'e1', op: 'modified' }),
+        expect.objectContaining({ type: 'endpoint', slug: 'e1', op: 'updated' }),
       ]);
       const pageOps = new Map(delta.pages.map((p) => [p.path, p.op]));
       expect(pageOps.get('b.md')).toBe('created');
