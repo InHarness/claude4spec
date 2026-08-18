@@ -99,7 +99,13 @@ function projectLang(cwd: string): string {
   try {
     const raw = readFileSync(join(cwd, '.claude4spec', 'config.json'), 'utf8');
     const language = (JSON.parse(raw) as { language?: unknown }).language;
-    if (typeof language === 'string' && LANGUAGE_TAGS[language]) return LANGUAGE_TAGS[language];
+    // `Object.hasOwn`, not a truthiness test on the index: `language` is an
+    // unvalidated config value, so `"toString"` would otherwise pass the check
+    // and return a FUNCTION typed as `string` — which throws downstream and
+    // turns this best-effort read into the 500 it exists to avoid.
+    if (typeof language === 'string' && Object.hasOwn(LANGUAGE_TAGS, language)) {
+      return LANGUAGE_TAGS[language];
+    }
   } catch {
     // no config, unreadable, or not JSON — `en` is a fine answer to all three.
   }
@@ -138,11 +144,22 @@ export function uiViewMockupRouter(ctx: MockupMountContext): Router {
         // Through the M39 core, not the raw reader: `groups`/`modes` are
         // declared collections, so they live in child tables and the
         // projection row does not carry them.
-        const found = ctx.discovery().getEntities({ type: DESIGN_SYSTEM_TYPE, slugs: [dsSlug] });
-        const ds = found.results.find((r) => r.slug === dsSlug)?.entity as
-          | { groups?: unknown; modes?: unknown }
-          | null
-          | undefined;
+        // Guarded, because `getEntities` calls `requireActiveType` and THROWS
+        // `INVALID_TYPE` when `design-system` is absent from `config.entities`.
+        // `dependsOn` is a soft ordering hint, not referential integrity, so a
+        // project that whitelists `ui-view` alone is reachable — and there the
+        // documented degradation (a document without tokens) must still win over
+        // a JSON error. An unreadable design system is a MISSING one.
+        let ds: { groups?: unknown; modes?: unknown } | null | undefined;
+        try {
+          const found = ctx.discovery().getEntities({ type: DESIGN_SYSTEM_TYPE, slugs: [dsSlug] });
+          ds = found.results.find((r) => r.slug === dsSlug)?.entity as
+            | { groups?: unknown; modes?: unknown }
+            | null
+            | undefined;
+        } catch {
+          ds = null;
+        }
         if (!ds) {
           // `onMissing: 'warn'` — a dangling ref degrades, it does not fail.
           missingDesignSystemSlug = dsSlug;

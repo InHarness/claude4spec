@@ -126,10 +126,24 @@ describe('tier K left nothing to grow back (item 62)', () => {
      */
     const services = typeFiles().filter((f) => /^services?\.ts$/.test(path.basename(f)));
     const crudish: string[] = [];
+
+    // Comments are stripped before either scan: this gate reads CODE, and a
+    // docblock explaining why a service must not `SELECT ... FROM` anything
+    // would otherwise fail the case it is describing.
+    const stripComments = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+
+    // A write verb in METHOD-DECLARATION position. Line-based rather than one
+    // regex, because the two forms differ only in what FOLLOWS the parameter
+    // list: a declaration opens a body, a call ends in `;`. Modifiers, generics
+    // and a `create`-prefixed name (`createMany`) all have to be reachable —
+    // the door this gate closes must not be re-openable by rephrasing.
+    const WRITE_METHOD =
+      /^[ \t]*(?:(?:public|private|protected|static|readonly|override|async)\s+)*\*?\s*(create|update|delete|upsert|remove|insert)\w*\s*(?:<[^>]*>)?\s*\(/i;
+
     for (const file of services) {
-      const text = fs.readFileSync(file, 'utf8');
-      // A write verb declared as a METHOD, not merely mentioned in prose.
-      if (/^\s*(async\s+)?(create|update|delete|upsert|remove|insert)\s*\(/m.test(text)) {
+      const text = stripComments(fs.readFileSync(file, 'utf8'));
+      const lines = text.split('\n');
+      if (lines.some((l) => WRITE_METHOD.test(l) && !/;\s*$/.test(l))) {
         crudish.push(path.relative(SRC_ROOT, file));
       }
       // Or any SQL at all — the host owns the projection.

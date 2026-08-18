@@ -99,4 +99,27 @@ describe('degradation — none of these is an error', () => {
   it('escapes a title that would otherwise close the element', () => {
     expect(doc({ title: '</title><script>alert(1)</script>' })).not.toContain('</title><script>');
   });
+
+  it('closes the warning comment against `--!>` as well as `-->`', () => {
+    // The tokenizer's comment-end-BANG state ends a comment on `--!>`, and
+    // `designSystemSlug` has no slug pattern (dangling refs are legal), so the
+    // sequence is reachable by a plain PATCH. Left in, the warning's tail would
+    // become character data in `<head>` and shunt the parser into `<body>`
+    // ahead of the `<style>` element.
+    for (const slug of ['x-->y', 'x--!>y', 'x---!>y']) {
+      const doc = renderMockupDocument({
+        title: 'T',
+        mockupHtml: null,
+        stylesheet: '',
+        lang: 'en',
+        missingDesignSystemSlug: slug,
+      });
+      const warning = doc.slice(doc.indexOf('<!-- claude4spec: design system'));
+      const end = warning.indexOf('-->');
+      // Exactly one terminator, and it is the one this file wrote.
+      expect(warning.slice(0, end)).not.toMatch(/--!?>/);
+      expect(doc).toContain('<style>');
+      expect(doc.indexOf('<style>')).toBeLessThan(doc.indexOf('<body>'));
+    }
+  });
 });

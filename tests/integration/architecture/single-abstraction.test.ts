@@ -262,8 +262,12 @@ describe('0.2.4 — the file owns the timestamps', () => {
      */
     const services = typePackageFiles(/^services?\.ts$/);
     expect(hitsIn(services, /datetime\('now'\)/)).toEqual([]);
-    // Sanity: without this the scan above passes just as well against nothing.
-    expect(services.length).toBeGreaterThan(0);
+    // Sanity on the SCANNER, not on the corpus: `service.ts` files are optional
+    // — deleting the one that exists is a legal refactor, and it must not fail
+    // a case whose message is about timestamps. What must not silently pass is
+    // `typePackageFiles` reaching nothing at all, so the check anchors on a file
+    // every type has.
+    expect(typePackageFiles(/^index\.ts$/).length).toBeGreaterThan(0);
   });
 
   it('no serializer knows the timestamps exist', () => {

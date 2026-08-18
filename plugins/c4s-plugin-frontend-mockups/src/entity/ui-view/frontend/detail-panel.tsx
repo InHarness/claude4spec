@@ -395,7 +395,7 @@ export function UiViewDetail({
 
         <div className="mt-6">
         <FieldRow label="Mockup Preview" align="start">
-          <MockupPreview slug={view.slug} />
+          <MockupPreview slug={view.slug} version={view.updatedAt} />
         </FieldRow>
         </div>
 
@@ -608,13 +608,23 @@ function DesignSystemSelect({
  * view with no mockup still answers `200` with a placeholder, so the empty
  * state shows up INSIDE the frame rather than as a browser error page.
  */
-function MockupPreview({ slug }: { slug: string }) {
+/**
+ * `version` is a REMOUNT KEY, not decoration.
+ *
+ * `mockupHtml` is agent-written and not editable in this panel, so it changes
+ * under a mounted frame. React keeps the same `<iframe>` element as long as
+ * `src` is unchanged, and the browser then makes no request at all — which is
+ * why the route's `Cache-Control: no-store` cannot help here. Keying on
+ * `updatedAt` forces a fresh element, and with it a fresh GET.
+ */
+function MockupPreview({ slug, version }: { slug: string; version: string }) {
   return (
     <div
       className="rounded-md overflow-hidden"
       style={{ background: 'var(--c-card)', border: '1px solid var(--c-hair)' }}
     >
       <iframe
+        key={`${slug}:${version}`}
         title={`Mockup preview: ${slug}`}
         src={`${API_BASE}/ui-views/${encodeURIComponent(slug)}/mockup`}
         sandbox="allow-scripts allow-forms allow-modals"

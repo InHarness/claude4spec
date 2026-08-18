@@ -36,11 +36,19 @@ function escapeText(raw: string): string {
 }
 
 /**
- * `-->` is the only sequence that can end a comment early. Neutralised so a
- * design-system slug cannot break out of the warning below into markup.
+ * Neutralise every sequence that ends an HTML comment, so a design-system slug
+ * cannot break out of the warning below.
+ *
+ * TWO terminators, not one: the tokenizer's comment-end state closes on `-->`,
+ * and its comment-end-BANG state closes on `--!>` as well. `designSystemSlug`
+ * is a free string with no slug pattern (dangling refs are legal), so both are
+ * reachable by a plain `PATCH`. The `<` escape below already blocks tag
+ * injection; without the `--!>` case the escape merely leaks the warning's tail
+ * as character data in `<head>`, which shunts the parser into `<body>` ahead of
+ * the `<style>` element.
  */
 function escapeComment(raw: string): string {
-  return raw.replace(/--+>/g, '--&gt;').replace(/</g, '&lt;');
+  return raw.replace(/--+!?>/g, (m) => m.replace(/>/, '&gt;')).replace(/</g, '&lt;');
 }
 
 /**
