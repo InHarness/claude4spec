@@ -2,6 +2,7 @@ import type { PluginManifest } from '@c4s/plugin-runtime';
 import { designSystemEntity } from './entity/design-system/index.js';
 import { uiViewEntity } from './entity/ui-view/index.js';
 import { frontendMockupCommands } from './capabilities/commands.js';
+import { uiViewMockupGeneratorSkill } from './skills/ui-view-mockup-generator.js';
 
 /**
  * The built-in envelope contributing `ui-view` and `design-system`.
@@ -36,6 +37,21 @@ import { frontendMockupCommands } from './capabilities/commands.js';
  * registration axis. It is not the activation axis: `config.entities` still
  * whitelists a single type, so deactivating `ui-view` leaves `design-system`
  * active and vice versa, despite the shared envelope.
+ *
+ * 0.2.32 — this envelope now contributes something that is NOT a type: a skill,
+ * through `contributes.skills[]`. That does not touch `hostApiVersion`; the slot
+ * has been in the dictionary since the `2.0.0` baseline as an additive change, so
+ * filling it is a new instance, not new grammar.
+ *
+ * The unit of distribution is therefore the envelope's WHOLE contribution rather
+ * than its set of types: one `unregisterPlugin` takes `ui-view`, `design-system`
+ * AND `ui-view-mockup-generator` off together, and afterwards `resolveForContext`
+ * returns the skill in no context at all. Splitting the skill into an envelope of
+ * its own would let it outlive `ui-view` — a skill teaching how to author mockups
+ * for an entity type that is no longer registered.
+ *
+ * Note the asymmetry with `config.entities`: activation stays per type, and the
+ * contributed skill has no activation gate of its own.
  */
 export const manifest: PluginManifest = {
   name: 'c4s-plugin-frontend-mockups',
@@ -45,6 +61,7 @@ export const manifest: PluginManifest = {
   contributes: {
     // `design-system` FIRST — see `entity/ui-view/index.ts` on `dependsOn`.
     entities: [designSystemEntity, uiViewEntity],
+    skills: [uiViewMockupGeneratorSkill],
     commands: frontendMockupCommands,
   },
 };

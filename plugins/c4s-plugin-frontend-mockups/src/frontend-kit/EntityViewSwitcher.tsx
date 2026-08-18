@@ -1,8 +1,35 @@
 import { useNavigate } from '@tanstack/react-router';
-import { Eye, FileText, History } from 'lucide-react';
-import { SegmentedControl } from './SegmentedControl.js';
+import { SegmentedControlTabs } from '@c4s/plugin-runtime/ui';
 import { clientPluginHost } from '@c4s/plugin-runtime';
 import type { EntityType } from '../types.js';
+
+/**
+ * HOST-LOCAL, and the gap it names is ROUTING — not the control.
+ *
+ * The segmented control itself now comes from the Host UI Kit
+ * (`SegmentedControlTabs`, L12). Until 0.2.32 this file drove a hand-written
+ * `SegmentedControl` + `ButtonGroup` pair living beside it, which was a copy of
+ * a component the catalog already carried: two implementations of one anatomy,
+ * with only one of them receiving the original's fixes. Both files are gone.
+ * `experimental` was never a reason to keep them — the tier withdraws the
+ * prop-stability guarantee and nothing else, and it gates no import; a catalog
+ * component is imported the same way from a host module, a built-in envelope and
+ * a third-party plugin alike.
+ *
+ * What stays local is the part above the control: turning a view into a ROUTE.
+ * The catalog component is deliberately presentational — `active` and `onChange`
+ * are props, it holds no state and knows nothing of a router — so the mapping
+ * from a view name to a path segment under this type's `pathPrefix`, and the
+ * `navigate` call that performs it, have nowhere in the catalog to live. That is
+ * the surface gap, and this wrapper shrinks to nothing the day the catalog grows
+ * a routed variant.
+ *
+ * Note what the swap changed for anyone asserting on this: the tab is now
+ * `role="tab"` with `aria-selected`, where the local copy emitted a plain button
+ * with `aria-pressed`. The per-view icons went with it — the catalog props are
+ * `{ id, label }`, and re-vendoring an icon-capable copy to keep them would
+ * recreate exactly the anti-pattern this removed.
+ */
 
 /**
  * The views a type can advertise in its topbar.
@@ -27,10 +54,10 @@ interface Props {
   views?: readonly EntityView[];
 }
 
-const OPTIONS: Record<EntityView, { label: string; icon: React.ReactNode; title: string }> = {
-  details: { label: 'Details', icon: <FileText size={12} />, title: 'Show details' },
-  preview: { label: 'Preview', icon: <Eye size={12} />, title: 'Show mockup preview' },
-  history: { label: 'History', icon: <History size={12} />, title: 'Show version history' },
+const LABELS: Record<EntityView, string> = {
+  details: 'Details',
+  preview: 'Preview',
+  history: 'History',
 };
 
 export const DEFAULT_VIEWS: readonly EntityView[] = ['details', 'history'];
@@ -41,18 +68,22 @@ export function EntityViewSwitcher({ type, slug, view, views = DEFAULT_VIEWS }: 
   const prefix = clientPluginHost.getAvailable(type)?.pathPrefix ?? '';
 
   return (
-    <SegmentedControl
-      value={view}
-      onChange={(next) =>
+    <SegmentedControlTabs
+      active={view}
+      tabs={views.map((v) => ({ id: v, label: LABELS[v] }))}
+      onChange={(id) => {
+        const next = id as EntityView;
+        // Clicking the active tab is a guarded no-op rather than a re-navigation
+        // to the URL we are already on.
+        if (next === view) return;
         navigate({
           // `details` is the bare detail route; every other view is a child
           // segment named after itself, which is what makes the active tab a
           // function of the URL rather than of any state held here.
           to: next === 'details' ? `${prefix}/$slug` : `${prefix}/$slug/${next}`,
           params: { slug },
-        } as never)
-      }
-      options={views.map((v) => ({ value: v, ...OPTIONS[v] }))}
+        } as never);
+      }}
     />
   );
 }
