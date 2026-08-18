@@ -206,6 +206,75 @@ describe.skipIf(!BASE)('the host-generated entity delta', () => {
   });
 
   /**
+   * The declaration is a CLAIM about the data, and nothing enforces it.
+   * `endpoint.linkedDtos` keys on `dto` + `relation` while its join table also
+   * discriminates on `statusCode` — so two links to the same DTO with different
+   * response codes share one identity, legitimately. Pairing the first of each
+   * side reported an arrival as an edit of its neighbour: exactly the failure
+   * mode the engine's own docstring warns about ("a wrong identity does not
+   * fail, it lies"), reachable from a declaration that looks correct.
+   *
+   * This runs through the real API rather than a synthetic schema on purpose:
+   * the point is that a SHIPPED declaration has this shape.
+   */
+  it('reports an arrival under a contested identity as item_added, not as an edit', async () => {
+    const stamp = Date.now();
+    const { body: dto } = await api<{ data: { slug: string } }>(`/api/projects/${project.id}/dtos`, {
+      method: 'POST',
+      body: JSON.stringify({ title: `Contested ${stamp}`, description: 'e' }),
+    });
+    const link = (statusCode: number) => ({ dto: dto.data.slug, relation: 'response', statusCode });
+    const { body: ep } = await api<{ data: { slug: string } }>(
+      `/api/projects/${project.id}/endpoints`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          title: `Contested Probe ${stamp}`,
+          method: 'GET',
+          path: `/contested-${stamp}`,
+          linkedDtos: [link(404)],
+        }),
+      },
+    );
+    const ep_slug = ep.data.slug;
+
+    try {
+      const deltaAfter = async (): Promise<DiffOp[]> => {
+        const { body } = await api<{ versions: Array<{ version: number }> }>(
+          `/api/projects/${project.id}/entities/endpoint/${ep_slug}/versions`,
+        );
+        const [newer, older] = (body.versions ?? []).map((v) => v.version);
+        const { body: d } = await api<WireDelta>(
+          `/api/projects/${project.id}/entities/endpoint/${ep_slug}/versions/${older}/diff/${newer}`,
+        );
+        return d.changes;
+      };
+
+      await api(`/api/projects/${project.id}/endpoints/${ep_slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ linkedDtos: [link(404), link(500)] }),
+      });
+      const added = await deltaAfter();
+      expect(added.map((c) => c.op)).toContain('item_added');
+      // The 404 link did not move, so it says nothing at all — a contested key
+      // degrades to add/remove, it does not restate the whole collection.
+      expect(added.map((c) => c.op)).not.toContain('item_modified');
+      expect(added).toHaveLength(1);
+
+      await api(`/api/projects/${project.id}/endpoints/${ep_slug}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ linkedDtos: [link(404)] }),
+      });
+      const removed = await deltaAfter();
+      expect(removed.map((c) => c.op)).toContain('item_removed');
+      expect(removed.map((c) => c.op)).not.toContain('item_modified');
+    } finally {
+      await api(`/api/projects/${project.id}/endpoints/${ep_slug}`, { method: 'DELETE' });
+      await api(`/api/projects/${project.id}/dtos/${dto.data.slug}`, { method: 'DELETE' });
+    }
+  });
+
+  /**
    * The card, in a real browser. Three of the eight operations carry content and
    * get an expand affordance; the other five say everything inline. This checks
    * the pair that matters — an inline `field_changed` beside an expandable
